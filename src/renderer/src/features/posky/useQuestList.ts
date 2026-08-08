@@ -1,24 +1,34 @@
 // useQuestList — everything the Quests tab REMEMBERS and DERIVES, in one hook.
 //
 // PoskyView is a container: it owns the confetti burst, the inventory-reload toast, and the
-// layout. The list state — which tab, which classes, the search box, the sort, the three
-// hide-toggles, the page cap — plus the filter/sort/pin derivation it feeds all live here, so
+// layout. The list state — which tab, which classes/island, the search box, sort + direction,
+// list toggles, and page cap — plus the filter/sort derivation it feeds all live here, so
 // the view can stay a view. The state deliberately lives ABOVE the tab switch (in the hook the
 // container calls, not inside the Quests tab's markup) so flipping to Ignored and back does not
 // reset the filters you had set up.
 //
-// Three of those choices outlive the hook entirely, in localStorage: the class filter, the sort
-// order and "hide completed" (JOS-90 — see loadHideCompleted). Living above the Quests/Ignored
-// switch was never enough for them, because leaving the Sky tab for another VIEW unmounts this
-// hook outright.
+// Four of those choices outlive the hook entirely, in localStorage: the class filter, the sort
+// key + direction, and "hide completed" (JOS-90 — see loadHideCompleted). Living above the
+// Quests/Ignored switch was never enough for them, because leaving the Sky tab for another VIEW
+// unmounts this hook outright. The island filter remains session-only: it is a temporary slice of
+// the current run, not a statement about the player's overall Sky progression.
 
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type { QuestProgress } from './useProgress'
 import { useFavorites } from '../favorites/useFavorites'
 import { useQuestFavorites, useQuestIgnored, type QuestFlagSet } from '../favorites/useQuestFlags'
-import { DEFAULT_SORT, isSortKey, sortQuests, type SortKey } from './questSort'
+import {
+  DEFAULT_SORT,
+  defaultSortDirection,
+  isSortDirection,
+  isSortKey,
+  questIslands,
+  sortQuests,
+  type SortDirection,
+  type SortKey
+} from './questSort'
 
-export type { SortKey }
+export type { SortDirection, SortKey }
 
 export type TabKey = 'quests' | 'ignored'
 
@@ -27,6 +37,7 @@ const PAGE = 40
 
 const SELECTED_CLASSES_KEY = 'eq.selectedClasses'
 const SORT_KEY = 'eq.questSort'
+const SORT_DIRECTION_KEY = 'eq.questSortDirection'
 const HIDE_COMPLETED_KEY = 'eq.posky.hideCompleted'
 
 function loadSelectedClasses(): string[] {
@@ -38,10 +49,21 @@ function loadSelectedClasses(): string[] {
   }
 }
 
-// An order retired from SORT_OPTIONS falls back to the default rather than sorting by nothing.
-function loadSort(): SortKey {
-  const v = localStorage.getItem(SORT_KEY)
-  return isSortKey(v) ? v : DEFAULT_SORT
+interface QuestSortState {
+  key: SortKey
+  direction: SortDirection
+}
+
+// A retired order/direction falls back to that order's established direction, preserving the
+// pre-toggle behavior for every existing install.
+function loadSortState(): QuestSortState {
+  const storedKey = localStorage.getItem(SORT_KEY)
+  const key = isSortKey(storedKey) ? storedKey : DEFAULT_SORT
+  const storedDirection = localStorage.getItem(SORT_DIRECTION_KEY)
+  return {
+    key,
+    direction: isSortDirection(storedDirection) ? storedDirection : defaultSortDirection(key)
+  }
 }
 
 /**
@@ -49,8 +71,8 @@ function loadSort(): SortKey {
  * you have turned in is how a user says "show me what is left", and that answer is true until
  * they say otherwise — but the state lived in plain `useState`, and `App`'s `ViewContent` mounts
  * exactly ONE feature view at a time, so every trip to another tab unmounted the hook and handed
- * the list back with completed quests in it. Same storage as the class filter and the sort order
- * two lines up, so it survives the tab switch AND the restart by the same mechanism.
+ * the list back with completed quests in it. It shares storage with the class and sort choices,
+ * so it survives the tab switch AND the restart by the same mechanism.
  *
  * '1'/'0' is the one-bit view-pref idiom (features/combat/useCombatPrefs.ts). An ABSENT key is
  * the DEFAULT (false — a fresh install shows everything), never `false` itself: a user who has
@@ -72,6 +94,8 @@ interface QuestSelection {
   selectedClasses: string[]
   query: string
   sort: SortKey
+  sortDirection: SortDirection
+  selectedIsland: number | null
   hideCompleted: boolean
   hideNoItems: boolean
   favoritesOnly: boolean
@@ -79,12 +103,14 @@ interface QuestSelection {
   isQuestFavorite: (questKey: string) => boolean
 }
 
-/** Filter → sort → pin, in that order. Pure, so the useMemo below is the only caller state. */
+/** Filter, then apply the selected sort as the authoritative order. */
 function selectQuests(sel: QuestSelection): QuestProgress[] {
   const { isFavorite, isQuestFavorite } = sel
   const q = sel.query.trim().toLowerCase()
+  const selectedIsland = sel.selectedIsland
   let list = sel.quests
   if (sel.selectedClasses.length) list = list.filter((x) => sel.selectedClasses.includes(x.className))
+  if (selectedIsland !== null) list = list.filter((x) => questIslands(x).includes(selectedIsland))
   if (sel.hideCompleted) list = list.filter((x) => !x.completed)
   if (sel.hideNoItems) list = list.filter((x) => x.needCount > 0)
   // "Favorites only" = the quest itself is starred OR it needs a starred item.
@@ -100,15 +126,7 @@ function selectQuests(sel: QuestSelection): QuestProgress[] {
         x.items.some((i) => i.name.toLowerCase().includes(q))
     )
   }
-  const sorted = sortQuests(list, sel.sort)
-  // Pin to the top (stable sort, so ties keep the sort above). A quest the user
-  // STARRED outright outranks one that merely contains a favorited item — the star is
-  // an explicit "I'm working on this", so it pins even once turned in; the item-level
-  // pin stays what it always was (only while the quest still needs something).
-  const rank = (x: QuestProgress): number =>
-    isQuestFavorite(x.key) ? 2 : !x.completed && questHasFavorite(x, isFavorite) ? 1 : 0
-  sorted.sort((a, b) => rank(b) - rank(a))
-  return sorted
+  return sortQuests(list, sel.sort, sel.sortDirection)
 }
 
 export interface QuestListState {
@@ -118,7 +136,7 @@ export interface QuestListState {
   visible: QuestProgress[]
   /** the ignored ones, class-then-name sorted, for the Ignored tab */
   ignored: QuestProgress[]
-  /** `visible` after the filters, the sort and the favorite pinning */
+  /** `visible` after filters and the selected authoritative sort */
   filtered: QuestProgress[]
   selectedClasses: string[]
   setSelectedClasses: (v: string[]) => void
@@ -126,12 +144,19 @@ export interface QuestListState {
   setQuery: (v: string) => void
   sort: SortKey
   setSort: (v: SortKey) => void
+  sortDirection: SortDirection
+  toggleSortDirection: () => void
+  selectedIsland: number | null
+  setSelectedIsland: (island: number | null) => void
+  availableIslands: number[]
   hideCompleted: boolean
   setHideCompleted: (v: boolean) => void
   hideNoItems: boolean
   setHideNoItems: (v: boolean) => void
   favoritesOnly: boolean
   setFavoritesOnly: (v: boolean) => void
+  /** Clear every control that narrows the quest list; sorting and flags are not filters. */
+  resetFilters: () => void
   visibleCount: number
   showMore: () => void
   isFavorite: (name: string) => boolean
@@ -152,6 +177,41 @@ export interface QuestListState {
   revealQuest: (name: string) => void
 }
 
+function useQuestGroups(
+  quests: QuestProgress[],
+  ignoredKeys: Set<string>
+): { visible: QuestProgress[]; ignored: QuestProgress[]; availableIslands: number[] } {
+  const [visible, ignored] = useMemo(() => {
+    const shown: QuestProgress[] = []
+    const hidden: QuestProgress[] = []
+    for (const q of quests) (ignoredKeys.has(q.key.toLowerCase()) ? hidden : shown).push(q)
+    hidden.sort((a, b) => a.className.localeCompare(b.className) || a.name.localeCompare(b.name))
+    return [shown, hidden]
+  }, [quests, ignoredKeys])
+  const availableIslands = useMemo(
+    () => [...new Set(quests.flatMap((q) => questIslands(q)))].sort((a, b) => a - b),
+    [quests]
+  )
+  return { visible, ignored, availableIslands }
+}
+
+function usePersistedQuestPreferences(
+  selectedClasses: string[],
+  sortState: QuestSortState,
+  hideCompleted: boolean
+): void {
+  useEffect(() => {
+    localStorage.setItem(SELECTED_CLASSES_KEY, JSON.stringify(selectedClasses))
+  }, [selectedClasses])
+  useEffect(() => {
+    localStorage.setItem(SORT_KEY, sortState.key)
+    localStorage.setItem(SORT_DIRECTION_KEY, sortState.direction)
+  }, [sortState])
+  useEffect(() => {
+    localStorage.setItem(HIDE_COMPLETED_KEY, hideCompleted ? '1' : '0')
+  }, [hideCompleted])
+}
+
 export function useQuestList(quests: QuestProgress[]): QuestListState {
   const { favorites, isFavorite, toggle: toggleFavorite } = useFavorites()
   // Quest-level flags (renderer-local localStorage, keyed by the canonical `Class::Name`
@@ -161,7 +221,8 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
   const [tab, setTab] = useState<TabKey>('quests')
   const [selectedClasses, setSelectedClasses] = useState<string[]>(loadSelectedClasses)
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SortKey>(loadSort)
+  const [sortState, setSortState] = useState<QuestSortState>(loadSortState)
+  const [selectedIsland, setSelectedIsland] = useState<number | null>(null)
   const [hideCompleted, setHideCompleted] = useState(loadHideCompleted)
   const [hideNoItems, setHideNoItems] = useState(true)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
@@ -172,30 +233,10 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
   // Ignored quests are gone from the main list, its filters and its counts — they exist
   // only under the Ignored tab, where the same button un-ignores them.
   const ignoredKeys = questIgnored.keys
-  const [visible, ignored] = useMemo(() => {
-    const shown: QuestProgress[] = []
-    const hidden: QuestProgress[] = []
-    for (const q of quests) (ignoredKeys.has(q.key.toLowerCase()) ? hidden : shown).push(q)
-    hidden.sort((a, b) => a.className.localeCompare(b.className) || a.name.localeCompare(b.name))
-    return [shown, hidden]
-  }, [quests, ignoredKeys])
+  const { visible, ignored, availableIslands } = useQuestGroups(quests, ignoredKeys)
 
-  // Remember the class filter, the sort order and "hide completed" across restarts.
-  useEffect(() => {
-    localStorage.setItem(SELECTED_CLASSES_KEY, JSON.stringify(selectedClasses))
-  }, [selectedClasses])
-
-  useEffect(() => {
-    localStorage.setItem(SORT_KEY, sort)
-  }, [sort])
-
-  // The BOX AND THE PREF ARE ONE THING — which is the whole reason `revealQuest`'s un-tick
-  // (below) persists too rather than being a hidden temporary override. A deep link that reveals
-  // a completed quest genuinely leaves the box unticked on screen, and what the user is looking
-  // at is what they get back next time; re-ticking it is the same one click that set it.
-  useEffect(() => {
-    localStorage.setItem(HIDE_COMPLETED_KEY, hideCompleted ? '1' : '0')
-  }, [hideCompleted])
+  // Remember the class filter, sort order and completed visibility across restarts.
+  usePersistedQuestPreferences(selectedClasses, sortState, hideCompleted)
 
   // Typing echoes immediately; the (accordion-rebuilding) filter consumes a deferred
   // copy so a keystroke never blocks on re-rendering dozens of Accordions (Task #41).
@@ -207,7 +248,9 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
         quests: visible,
         selectedClasses,
         query: deferredQuery,
-        sort,
+        sort: sortState.key,
+        sortDirection: sortState.direction,
+        selectedIsland,
         hideCompleted,
         hideNoItems,
         favoritesOnly,
@@ -219,7 +262,8 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
       visible,
       selectedClasses,
       deferredQuery,
-      sort,
+      sortState,
+      selectedIsland,
       hideCompleted,
       hideNoItems,
       favoritesOnly,
@@ -233,6 +277,15 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
     setVisibleCount(PAGE)
   }, [filtered])
 
+  const resetFilters = (): void => {
+    setQuery('')
+    setSelectedClasses([])
+    setSelectedIsland(null)
+    setHideCompleted(false)
+    setHideNoItems(false)
+    setFavoritesOnly(false)
+  }
+
   return {
     tab,
     setTab,
@@ -243,29 +296,35 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
     setSelectedClasses,
     query,
     setQuery,
-    sort,
-    setSort,
+    sort: sortState.key,
+    setSort: (key) => setSortState({ key, direction: defaultSortDirection(key) }),
+    sortDirection: sortState.direction,
+    toggleSortDirection: () => {
+      setSortState((current) => ({
+        ...current,
+        direction: current.direction === 'asc' ? 'desc' : 'asc'
+      }))
+    },
+    selectedIsland,
+    setSelectedIsland,
+    availableIslands,
     hideCompleted,
     setHideCompleted,
     hideNoItems,
     setHideNoItems,
     favoritesOnly,
     setFavoritesOnly,
+    resetFilters,
     visibleCount,
-    showMore: () => {
-      setVisibleCount((n) => n + PAGE)
-    },
+    showMore: () => setVisibleCount((n) => n + PAGE),
     isFavorite,
     toggleFavorite,
     questFavorites,
     questIgnored,
     revealQuest: (name: string) => {
       setTab('quests')
+      resetFilters()
       setQuery(name)
-      setSelectedClasses([])
-      setHideCompleted(false)
-      setHideNoItems(false)
-      setFavoritesOnly(false)
       setVisibleCount(PAGE)
     }
   }

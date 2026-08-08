@@ -46,6 +46,7 @@ import { questKillTargets, type KillTarget } from './poskyDroppers'
 import type { MobTarget } from '../mobs/mobTarget'
 import { sharingQuestLabel, type SharedItem, type SharingQuest } from './sharedItems'
 import { QuestIgnoreButton, QuestStarButton } from '../favorites/QuestFlagButtons'
+import { questIsland, questIslands } from './questSort'
 
 // Wiki URLs are built in ONE place (src/shared/wiki.ts) — the verified root-path convention.
 function wikiClassPage(className: string): string | undefined {
@@ -153,10 +154,11 @@ function SharedItemsSection({
   )
 }
 
-// The collapsed header line: flags, class, name/reward/giver/kill target, the contested-items
-// count, the ready/missing chip and the progress bar.
+// The collapsed header line: flags, class/primary island, name/reward/giver/kill target, the
+// contested-items count, the ready/missing chip and the progress bar.
 function QuestSummaryRow({
   q,
+  primaryIsland,
   killTargets,
   sharedCount,
   favorited,
@@ -165,6 +167,7 @@ function QuestSummaryRow({
   onOpenLoot
 }: {
   q: QuestProgress
+  primaryIsland?: number
   killTargets: KillTarget[]
   sharedCount: number
   favorited: boolean
@@ -181,7 +184,18 @@ function QuestSummaryRow({
         <QuestStarButton favorited={favorited} onToggle={onToggleFavorite} />
         <QuestIgnoreButton ignored={false} onToggle={onToggleIgnore} />
       </Stack>
-      <Chip label={q.className} size="small" color="secondary" variant="outlined" sx={{ minWidth: 92 }} />
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ width: 160, flexShrink: 0 }}>
+        <Chip label={q.className} size="small" color="secondary" variant="outlined" sx={{ minWidth: 92 }} />
+        {primaryIsland !== undefined && (
+          <Chip
+            data-testid="posky-primary-island-badge"
+            label={`Island ${primaryIsland}`}
+            size="small"
+            variant="outlined"
+            sx={{ height: 22, fontSize: 11 }}
+          />
+        )}
+      </Stack>
       <Box sx={{ minWidth: 220 }}>
         <Typography variant="subtitle2">{q.name}</Typography>
         {q.reward && (
@@ -242,8 +256,8 @@ function QuestItemChips({
   toggleFavorite: (name: string) => void
 }): JSX.Element {
   return (
-    // Indent tracks the header's leading columns (buttons + class chip).
-    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ pl: '164px' }}>
+    // Indent tracks the header's leading columns (buttons + stable class/island badge group).
+    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ pl: '232px' }}>
       {[...q.items]
         .sort((a, b) => Number(isFavorite(b.name)) - Number(isFavorite(a.name)))
         .map((it) => {
@@ -326,7 +340,9 @@ export function QuestAccordion({
   onSelectQuest,
   onOpenMob,
   onOpenLoot,
-  anchored = false
+  expanded,
+  onExpandedChange,
+  anchorNonce
 }: {
   q: QuestProgress
   shared: SharedItem[]
@@ -342,31 +358,55 @@ export function QuestAccordion({
   onOpenMob: (t: MobTarget) => void
   /** an item name → the Loot tab's drill-down for it (App-level routing, `openLoot`) */
   onOpenLoot?: (item: string) => void
+  /** controlled by the list so opening this quest closes the previously open quest */
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
   /**
    * A deep link landed on THIS quest (a celebration toast's reward card,
-   * docs/plans/celebration-toasts.md T6): mount expanded and scroll into view.
-   *
-   * Mount-time, not a controlled `expanded` prop, because PoskyView remounts exactly this one
-   * accordion per link (its key carries the nonce) — which keeps every other accordion in the
-   * list uncontrolled and independently open, the way it has always been.
+   * docs/plans/celebration-toasts.md T6). The nonce changes on every delivery, including two
+   * consecutive links to the same quest, so each request can scroll into view.
    */
-  anchored?: boolean
+  anchorNonce?: number
 }): JSX.Element {
   const wikiHref = wikiClassPage(q.className)
   // A turned-in quest has nothing left to kill for, whatever its item counts say.
   const killTargets = q.completed ? [] : questKillTargets(q.items)
   const ref = useRef<HTMLDivElement>(null)
+  const anchored = anchorNonce !== undefined
+  const primaryIsland = questIsland(q)
   useEffect(() => {
     // `block: 'nearest'` scrolls the enclosing list only as far as it must, so a quest already on
-    // screen does not jump under the user.
-    if (anchored) ref.current?.scrollIntoView({ block: 'nearest' })
-  }, [anchored])
+    // screen does not jump under the user. Wait until it is open so its final height is in layout.
+    if (anchored && expanded) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [anchorNonce, anchored, expanded])
   return (
-    <Accordion disableGutters ref={ref} defaultExpanded={anchored} data-anchored={anchored || undefined}>
+    <Accordion
+      disableGutters
+      ref={ref}
+      expanded={expanded}
+      onChange={(_event, nextExpanded) => onExpandedChange(nextExpanded)}
+      data-anchored={anchored || undefined}
+      data-testid="posky-quest"
+      data-islands={questIslands(q).join(',')}
+      data-primary-island={primaryIsland}
+      sx={{
+        // A quiet tonal fill marks the open quest as the selected block without introducing a
+        // second outline or competing with the gold/green progress states inside it.
+        '&.Mui-expanded': { backgroundColor: 'action.hover' },
+        // MUI normally trades these two hairlines for expanded-row gutters. This list disables
+        // those gutters, so keep its existing dividers visible instead of leaving no boundary.
+        '&.Mui-expanded::before': { opacity: 1 },
+        '&.Mui-expanded + .MuiAccordion-root::before': { display: 'block' },
+        // A group's final row has no next accordion to supply that lower hairline (Favorites is
+        // its own collapsible group), so close only that edge with one ordinary divider.
+        '&.Mui-expanded:last-child': { borderBottom: 1, borderColor: 'divider' }
+      }}
+    >
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <Stack spacing={0.75} sx={{ width: '100%', pr: 2 }}>
           <QuestSummaryRow
             q={q}
+            primaryIsland={primaryIsland}
             killTargets={killTargets}
             sharedCount={shared.length}
             favorited={favorited}

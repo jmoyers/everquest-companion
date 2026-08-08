@@ -1,5 +1,9 @@
-import { type JSX, useCallback, useEffect, useState } from 'react'
-import { Alert, Box, Button, Chip, Snackbar, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { type JSX, useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, Box, Button, Chip, Collapse, Fab, Snackbar, Stack, Tab, Tabs, Typography } from '@mui/material'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import StarIcon from '@mui/icons-material/Star'
 import type { CountSource } from '@shared/types'
 import { useProgress, type QuestProgress } from './useProgress'
 // The `/outputfile` freshness line (JOS-44), wired to the registry: this tab's have/need chips
@@ -13,6 +17,7 @@ import QuestFilterBar from './QuestFilterBar'
 import { useQuestList, type QuestListState, type TabKey } from './useQuestList'
 import type { MobTarget } from '../mobs/mobTarget'
 import Confetti from '../../lib/Confetti'
+import { Tooltip } from '../../lib/Tooltip'
 
 // The Ignored tab: every quest the user hid, in one flat compact list (no accordions —
 // there is nothing to work on here), each row carrying the same button that put it here,
@@ -113,6 +118,58 @@ interface QuestAnchor {
   nonce: number
 }
 
+function FavoritesHeader({
+  count,
+  open,
+  onToggle
+}: {
+  count: number
+  open: boolean
+  onToggle: () => void
+}): JSX.Element {
+  return (
+    <Button
+      data-testid="posky-favorites-toggle"
+      fullWidth
+      color="warning"
+      startIcon={<StarIcon />}
+      endIcon={open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+      aria-expanded={open}
+      onClick={onToggle}
+      sx={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 2,
+        justifyContent: 'flex-start',
+        bgcolor: 'background.paper',
+        borderBottom: 1,
+        borderColor: 'divider',
+        borderRadius: 0,
+        '&:hover': { bgcolor: 'background.paper' }
+      }}
+    >
+      Favorites ({count})
+    </Button>
+  )
+}
+
+function ScrollToTop({ onClick }: { onClick: () => void }): JSX.Element {
+  return (
+    <Tooltip title="Scroll to top">
+      <Fab
+        data-testid="posky-scroll-top"
+        size="small"
+        color="primary"
+        aria-label="Scroll to top"
+        onClick={onClick}
+        sx={{ position: 'absolute', right: 16, bottom: 16, zIndex: 3 }}
+      >
+        <KeyboardArrowUpIcon />
+      </Fab>
+    </Tooltip>
+  )
+}
+
 // The scrolling body: one accordion per quest up to the page cap, then the "show more" button.
 function QuestList({
   list,
@@ -126,42 +183,96 @@ function QuestList({
   list: QuestListState
   sharedItems: SharedItemsMap
   ambiguousNames: Set<string>
-  /** the anchored quest, or null. Its accordion mounts EXPANDED and scrolls itself into view. */
+  /** the anchored quest, or null. It becomes the controlled open row and scrolls into view. */
   anchor: QuestAnchor | null
   setQuestComplete: (key: string, complete: boolean) => Promise<void>
   onOpenMob: (t: MobTarget) => void
   onOpenLoot?: (item: string) => void
 }): JSX.Element {
+  // The list owns the one open key: opening a row replaces it, while closing that row returns
+  // to no selection. A deep link is an external request to make its quest the open row.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [favoritesOpen, setFavoritesOpen] = useState(true)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // Preserve the selected comparator inside BOTH groups. Group membership is presentation, not a
+  // second sort: a quest star, or a still-needed starred item, places the quest in Favorites.
+  const favoriteQuests = list.filtered.filter(
+    (q) =>
+      list.questFavorites.has(q.key) ||
+      (!q.completed && q.items.some((item) => list.isFavorite(item.name)))
+  )
+  const favoriteKeys = new Set(favoriteQuests.map((q) => q.key))
+  const regularQuests = list.filtered.filter((q) => !favoriteKeys.has(q.key))
+  const anchorIsFavorite = anchor !== null && favoriteKeys.has(anchor.key)
+  useEffect(() => {
+    if (!anchor) return
+    setExpandedKey(anchor.key)
+    if (anchorIsFavorite) setFavoritesOpen(true)
+  }, [anchor, anchorIsFavorite])
+
+  const toggleFavorites = (): void => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    setFavoritesOpen(!favoritesOpen)
+  }
+
+  const renderQuest = (q: QuestProgress): JSX.Element => (
+    <QuestAccordion
+      key={q.key}
+      expanded={expandedKey === q.key}
+      onExpandedChange={(nextExpanded) => setExpandedKey(nextExpanded ? q.key : null)}
+      // The nonce lets a second link to the same already-open quest scroll it into view again.
+      anchorNonce={anchor?.key === q.key ? anchor.nonce : undefined}
+      q={q}
+      shared={sharedItems.get(q.key) ?? []}
+      ambiguousNames={ambiguousNames}
+      favorited={list.questFavorites.has(q.key)}
+      onToggleFavorite={() => list.questFavorites.toggle(q.key)}
+      onToggleIgnore={() => list.questIgnored.toggle(q.key)}
+      isFavorite={list.isFavorite}
+      toggleFavorite={list.toggleFavorite}
+      onSetComplete={(complete) => void setQuestComplete(q.key, complete)}
+      onSelectQuest={(name) => list.setQuery(name)}
+      onOpenMob={onOpenMob}
+      onOpenLoot={onOpenLoot}
+    />
+  )
+
   return (
-    <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-      {list.filtered.slice(0, list.visibleCount).map((q) => (
-        <QuestAccordion
-          // The NONCE rides the key for the anchored quest alone: the accordion is uncontrolled
-          // (each one opens and closes independently, and lifting that into one "which is open"
-          // state would silently make the list single-open), so a remount is what lets a SECOND
-          // link to the same quest re-open and re-scroll it.
-          key={anchor?.key === q.key ? `${q.key}#${String(anchor.nonce)}` : q.key}
-          anchored={anchor?.key === q.key}
-          q={q}
-          shared={sharedItems.get(q.key) ?? []}
-          ambiguousNames={ambiguousNames}
-          favorited={list.questFavorites.has(q.key)}
-          onToggleFavorite={() => list.questFavorites.toggle(q.key)}
-          onToggleIgnore={() => list.questIgnored.toggle(q.key)}
-          isFavorite={list.isFavorite}
-          toggleFavorite={list.toggleFavorite}
-          onSetComplete={(complete) => void setQuestComplete(q.key, complete)}
-          onSelectQuest={(name) => list.setQuery(name)}
-          onOpenMob={onOpenMob}
-          onOpenLoot={onOpenLoot}
-        />
-      ))}
-      {list.filtered.length > list.visibleCount && (
-        <Box sx={{ textAlign: 'center', py: 1.5 }}>
-          <Button variant="outlined" size="small" onClick={list.showMore}>
-            Show more ({list.filtered.length - list.visibleCount} more)
-          </Button>
+    <Box sx={{ flexGrow: 1, minHeight: 0, position: 'relative' }}>
+      <Box
+        ref={scrollRef}
+        data-testid="posky-quest-scroll"
+        onScroll={(event) => setShowScrollTop(event.currentTarget.scrollTop > 0)}
+        sx={{ height: '100%', overflow: 'auto' }}
+      >
+        {favoriteQuests.length > 0 && (
+          <>
+            <FavoritesHeader
+              count={favoriteQuests.length}
+              open={favoritesOpen}
+              onToggle={toggleFavorites}
+            />
+            <Collapse in={favoritesOpen}>
+              <Box data-testid="posky-favorites-section" sx={{ mb: 1 }}>
+                {favoriteQuests.map(renderQuest)}
+              </Box>
+            </Collapse>
+          </>
+        )}
+        <Box data-testid="posky-regular-section">
+          {regularQuests.slice(0, list.visibleCount).map(renderQuest)}
         </Box>
+        {regularQuests.length > list.visibleCount && (
+          <Box sx={{ textAlign: 'center', py: 1.5 }}>
+            <Button variant="outlined" size="small" onClick={list.showMore}>
+              Show more ({regularQuests.length - list.visibleCount} more)
+            </Button>
+          </Box>
+        )}
+      </Box>
+      {showScrollTop && (
+        <ScrollToTop onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
       )}
     </Box>
   )

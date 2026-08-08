@@ -14,7 +14,7 @@ export function FavoriteStar({
   onToggle: (name: string) => void
 }): JSX.Element {
   return (
-    <Tooltip title={favorited ? 'Unfavorite' : 'Favorite — pins quests with this item to the top'}>
+    <Tooltip title={favorited ? 'Unfavorite' : 'Favorite'}>
       <IconButton
         size="small"
         onClick={(e) => {
