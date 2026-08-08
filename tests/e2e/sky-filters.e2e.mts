@@ -104,6 +104,34 @@ async function stepDefault(page: Page): Promise<void> {
   check('…and mounts exactly one such box', (await countOf(page, BOX)) === 1)
 }
 
+/** One explicit action clears every list-narrowing control, including the search field. */
+async function stepResetFilters(page: Page): Promise<void> {
+  await page.fill('[data-testid="posky-search"] input', 'Khyldorn')
+  await page.click('[data-testid="posky-class-filter"]')
+  await page.getByRole('option', { name: 'Monk', exact: true }).click()
+  await page.click('[data-testid="posky-island-filter"]')
+  await page.getByRole('option', { name: 'Island 8', exact: true }).click()
+  await page.click(BOX)
+  await page.click('[data-testid="posky-favorites-only"]')
+  await page.click('[data-testid="posky-reset-filters"]')
+  const state = await page.evaluate(() => ({
+    query: document.querySelector<HTMLInputElement>('[data-testid="posky-search"] input')?.value,
+    island: document.querySelector<HTMLInputElement>('[data-testid="posky-island-filter"] input')?.value,
+    classChips: document.querySelectorAll('[data-testid="posky-class-filter"] .MuiChip-root').length,
+    hideCompleted: document.querySelector<HTMLInputElement>('[data-testid="posky-hide-completed"] input')?.checked,
+    turnInsOnly: document.querySelector<HTMLInputElement>('[data-testid="posky-turn-ins-only"] input')?.checked,
+    favoritesOnly: document.querySelector<HTMLInputElement>('[data-testid="posky-favorites-only"] input')?.checked,
+    resetDisabled: document.querySelector<HTMLButtonElement>('[data-testid="posky-reset-filters"]')?.disabled
+  }))
+  check(
+    'Reset filters clears class, island, search, and every list toggle',
+    state.query === '' && state.island === '' && state.classChips === 0 &&
+      state.hideCompleted === false && state.turnInsOnly === false &&
+      state.favoritesOnly === false && state.resetDisabled === true,
+    JSON.stringify(state)
+  )
+}
+
 /** THE HEADLINE: tick it, leave the tab, come back — it is still ticked. */
 async function stepSticksAcrossTabs(page: Page): Promise<void> {
   const ticked = await setBox(page, true)
@@ -162,6 +190,7 @@ async function main(): Promise<void> {
         throw new Error('never reached the Plane of Sky tab — nothing below can be asserted')
       }
       await stepDefault(page)
+      await stepResetFilters(page)
       await stepSticksAcrossTabs(page)
       await stepUntickSticksToo(page)
       await stepArmRestart(page)

@@ -95,7 +95,7 @@ export function QuestItemsTable({
           <TableCell>Where</TableCell>
         </TableRow>
       </TableHead>
-      <TableBody>
+      <TableBody sx={{ '& > tr:last-child > *': { borderBottom: 0 } }}>
         {q.items.map((it) => {
           const done = it.have >= it.need
           return (

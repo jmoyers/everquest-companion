@@ -81,7 +81,7 @@ function useQuestFlagSet(store: QuestFlagStore): QuestFlagSet {
   }
 }
 
-/** Quests the user starred outright (pins them to the top of the list). */
+/** Quests starred outright (shown in the top Favorites section and by the Favorites-only filter). */
 export function useQuestFavorites(): QuestFlagSet {
   return useQuestFlagSet(favoriteStore)
 }
