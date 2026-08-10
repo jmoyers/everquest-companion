@@ -74,7 +74,7 @@
     "@aws-sdk/credential-providers": "^3.1102.0",
     "@aws-sdk/dsql-signer": "^3.1102.0",
     "@aws-sdk/s3-presigned-post": "^3.1102.0",
-    "@eslint/js": "^9.39.5",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.20.3",
     "@types/react": "^18.3.12",
