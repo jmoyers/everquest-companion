@@ -254,7 +254,7 @@ export function groupNeeds(needs: readonly FarmNeed[], opts: FarmGrouping): Farm
 export function costText(tierRequired: ExtractTier): string {
   const cost = extractionCost(tierRequired)
   const drops = cost.d4Copies === 1 ? '1 D4 drop' : `${String(cost.d4Copies)} D4 drops`
-  return `needs +${String(cost.tier)} — ≈${String(cost.d0Copies)} D0 merges or ${drops}`
+  return `needs +${String(cost.tier)} - ≈${String(cost.d0Copies)} D0 merges or ${drops}`
 }
 
 /**

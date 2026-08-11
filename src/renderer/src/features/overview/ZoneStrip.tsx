@@ -33,7 +33,7 @@ export function ZoneStrip(): JSX.Element {
         <PlaceIcon sx={{ fontSize: 16, color: 'text.disabled', flexShrink: 0 }} />
         <Typography variant="body2" noWrap data-testid="overview-zone" sx={{ fontWeight: 600, minWidth: 0 }}>
           {/* A zone we have not seen a line for is left UNSAID, never guessed. */}
-          {who?.zone ?? '—'}
+          {who?.zone ?? '-'}
         </Typography>
         {who?.character && (
           <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>

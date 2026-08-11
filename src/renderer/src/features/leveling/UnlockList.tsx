@@ -52,7 +52,7 @@ function spellCardLines(row: UnlockRow): string[] {
   const lines: string[] = []
   if (s.spellType) lines.push(s.spellType)
   if (s.targetType) lines.push(`Target: ${s.targetType}`)
-  lines.push(s.castTimeMs === undefined ? 'Cast time: —' : `Cast: ${(s.castTimeMs / 1000).toFixed(1)}s`)
+  lines.push(s.castTimeMs === undefined ? 'Cast time: -' : `Cast: ${(s.castTimeMs / 1000).toFixed(1)}s`)
   if (s.mana !== undefined) lines.push(`Mana: ${String(s.mana)}`)
   if (s.durationMs !== undefined && s.durationMs > 0) lines.push(`Duration: ${fmtDuration(s.durationMs)}`)
   return lines

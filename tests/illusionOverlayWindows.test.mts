@@ -12,9 +12,10 @@ import assert from 'node:assert/strict'
 import { readFixture, replayBuffsWithDb, tsOf } from './harness.mts'
 import { parseEvent } from '../src/main/log/parser'
 import { installSpellDb } from '../src/main/log/rulesets'
-import { loadSpellDb } from '../src/main/data/spellDb'
+import { loadSpellDb, buildSpellDb, type SpellDb } from '../src/main/data/spellDb'
 import { BuffsModule } from '../src/main/modules/buffs'
-import type { BuffsSnap } from '../src/shared/types'
+import type { BuffsSnap, SpellDbFile } from '../src/shared/types'
+import spellsJson from '../src/main/data/spells.json' with { type: 'json' }
 
 const db = loadSpellDb()
 
@@ -127,9 +128,37 @@ test('W12a overlay: "You feel different." is classified SHARED (follows multiple
 // wiki's msg_cast_on_you is the wrong "A mystic symbol flashes before your eyes." So the
 // overlay records a CONTRADICTS-WIKI verdict, and the derived correction registers the real
 // line → Symbol of Transal (the "true apply route learned" the task calls for).
-test('W12b overlay: Symbol of Transal real landing message recorded as CONTRADICTS-WIKI', () => {
-  const lines = readFixture('w12-symbol-contradiction.log')
-  const snap = replayBuffsWithDb(lines, tsOf(lines[lines.length - 1]))
+//
+// JOS-150 SPLIT THIS TEST IN TWO, and the split is the point. That wiki inaccuracy is now fixed
+// ON OUR SIDE, in the committed corrections overlay (src/main/data/spellCorrections.ts), on the
+// strength of this very fixture plus 12/16 owner-log casts. So under the EFFECTIVE DB there is no
+// contradiction left to find, and the mined verdict is `verified` — which is the second test
+// below, and is what "the correction landed" looks like from the miner's side. The first test
+// keeps the CONTRADICTION MACHINERY covered by folding the same fixture against a DB built from
+// the RAW scrape, because the machinery is not obsolete: it is how the NEXT wiki inaccuracy gets
+// found, and deleting its only test to celebrate one fix would be a poor trade.
+
+/** Fold a fixture through the real parser + BuffsModule against an EXPLICIT db, then restore. */
+function replayAgainstDb(spellDb: SpellDb, lines: string[]): BuffsSnap {
+  installSpellDb(spellDb)
+  try {
+    const mod = new BuffsModule(spellDb)
+    mod.reset()
+    let seq = 0
+    for (const raw of lines) {
+      const ev = parseEvent(raw, seq++)
+      if (ev) mod.onEvent(ev)
+    }
+    mod.onTick(tsOf(lines[lines.length - 1]))
+    return mod.snapshot().state
+  } finally {
+    installSpellDb(db)
+  }
+}
+
+test('W12b overlay: against the RAW scrape, the real landing message is CONTRADICTS-WIKI', () => {
+  const raw = buildSpellDb((spellsJson as SpellDbFile).spells)
+  const snap = replayAgainstDb(raw, readFixture('w12-symbol-contradiction.log'))
   const ov = snap.overlay
   assert.ok(ov, 'the snapshot carries the overlay')
 
@@ -141,10 +170,18 @@ test('W12b overlay: Symbol of Transal real landing message recorded as CONTRADIC
     flash!.wikiConflict && /mystic symbol flashes/i.test(flash!.wikiConflict.wikiText),
     'the recorded wiki conflict is the wrong "A mystic symbol flashes…" text'
   )
+  assert.ok(ov!.stats.contradictions >= 1, 'the overlay reports at least one wiki contradiction')
+})
 
-  // The derived correction (effective DB = spells.json + overlay, overlay wins) maps the
-  // REAL landing line → Symbol of Transal, so a future parse recognizes it (the wiki route
-  // the DB shipped was wrong).
-  const overlayStats = ov!.stats
-  assert.ok(overlayStats.contradictions >= 1, 'the overlay reports at least one wiki contradiction')
+test('W12b overlay: and against the EFFECTIVE DB the same message is VERIFIED (JOS-150)', () => {
+  const lines = readFixture('w12-symbol-contradiction.log')
+  const snap = replayBuffsWithDb(lines, tsOf(lines[lines.length - 1]))
+  const ov = snap.overlay
+  assert.ok(ov, 'the snapshot carries the overlay')
+
+  const flash = ov!.messages.find((m) => m.text === 'The symbol of Transal flashes before your eyes.')
+  assert.ok(flash, 'the real landing message is still observed and still names its spell')
+  assert.equal(flash!.verdict, 'verified', 'the committed correction made the DB agree with the log')
+  assert.equal(flash!.spells[0].spell, 'Symbol of Transal')
+  assert.equal(flash!.wikiConflict, undefined, 'there is nothing left to conflict with')
 })

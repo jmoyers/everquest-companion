@@ -7,6 +7,12 @@
  * `disableHardwareAcceleration` is decided before Electron is ready). Both live here because
  * both are claims about the window this spec already owns.
  *
+ * SINCE JOS-121 it also owns the meter title bar's BUDGET. The scope word left that row for the
+ * panel floor, and "the freed width went to the fight selector and to the drag surface" is a
+ * geometry claim about a real window at a real width with a real mob name in its title — so
+ * `stepTitleBarRoom` MEASURES it, reconstructing the old row in place to have something to
+ * measure against.
+ *
  * WHAT ONLY THE REAL APP CAN SHOW. The pure halves are pinned elsewhere: the value model and the
  * one-seam wiring in tests/fightSelection.test.mts, the locked-selector mechanism in
  * tests/overlayLockedSelector.test.mts. What no unit test can claim is that the PIECES ARE WIRED
@@ -50,6 +56,17 @@ import {
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, overlayWindow, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture, type FixtureLog } from './logFixture.mjs'
+// The scope word's own two steps — where it lives (JOS-115/121) and what the title bar did with
+// the room it gave back — in their own module, because this file is at the max-lines budget.
+import { stepOverlayScope, stepTitleBarRoom } from './overlayScopeSteps.mjs'
+// …and JOS-158's: the aggregate left that row too, for the panel's own header row, and what the
+// fight NAME did with the pixels is measured in characters there.
+import { stepTotalOnPanel } from './overlayTotalSteps.mjs'
+// …and the pinned pane's scroll grip (JOS-138), in its own module for the same reason.
+import { stepPinnedScroll } from './overlayScrollSteps.mjs'
+// …and JOS-187's: an overlay whose monitor went away, and the rule that the store keeps the
+// rectangle the user chose while the screen gets the one that fits.
+import { stepOverlayDisplay } from './overlayDisplaySteps.mjs'
 
 /** The overlay open-state this spec's second launch runs against (`overlays.fight` in the store). */
 interface OverlayBridge {
@@ -114,6 +131,17 @@ async function writeAndSync(
 async function someFinalizedFight(page: Page): Promise<string | null> {
   const snap = await snapshot(page)
   return snap.segments.find((s) => s.kind === 'fight')?.id ?? null
+}
+
+/**
+ * The LONGEST fight name the staged fixture produced — the hardest title this window will ever be
+ * asked to print, and the subject of JOS-158's measurement. A real name from a real replay rather
+ * than a hand-authored one, so what is measured is a title bar doing its actual job.
+ */
+async function longestFightName(page: Page): Promise<string> {
+  const snap = await snapshot(page)
+  const names = snap.segments.filter((s) => s.kind === 'fight').map((s) => s.name)
+  return names.sort((a, b) => b.length - a.length)[0] ?? ''
 }
 
 // ── P4/P5/P6: the selection crosses windows ─────────────────────────────────────────────
@@ -186,14 +214,24 @@ async function stepStaleId(app: Page, overlay: Page): Promise<void> {
 /** The selector trigger, by the ARIA contract OverlayHeader renders. */
 const TRIGGER = '[aria-haspopup="listbox"]'
 
+/**
+ * The footer's background-opacity slider — the piece of chrome that is present IFF the overlay is
+ * interactive, and therefore the observable of the lock flip.
+ *
+ * It used to be the header's scope readout, which JOS-121 moved to the panel floor and (unlike a
+ * lock/close button) deliberately does NOT hide while locked: it is a watermark you read, not
+ * chrome you reach for, and a pinned meter is exactly the one with nothing else left to explain a
+ * missing name. So the lock needed a different tell, and the footer is the honest one — it holds
+ * the controls that only an interactive window can use.
+ */
+const FOOTER_SLIDER = 'input[type="range"]'
+
 /** Set the lock and wait for the overlay's own chrome to reflect it — the observable of the flip. */
 async function setLocked(overlay: Page, locked: boolean): Promise<void> {
   await overlay.evaluate((v) => {
     ;(window as unknown as { eqOverlay: { setLocked: (b: boolean) => void } }).eqOverlay.setLocked(v)
   }, locked)
-  // The scope chip is the one piece of chrome that is present iff the overlay is INTERACTIVE, so
-  // its presence is exactly "the lock has taken effect in this renderer".
-  await settle(() => countOf(overlay, '[data-testid="overlay-scope-chip"]'), (n) => (locked ? n === 0 : n === 1), {
+  await settle(() => countOf(overlay, FOOTER_SLIDER), (n) => (locked ? n === 0 : n === 1), {
     timeoutMs: 10_000
   })
 }
@@ -243,49 +281,21 @@ async function stepLockedSelector(overlay: Page): Promise<void> {
     `${before} → ${after} control(s)`
   )
 
+  // AND IT GIVES THE MOUSE BACK. The release is half the sensor — a reason left behind would keep
+  // this window capturing for every step below it, which is exactly what a `mouseover` with no
+  // matching `mouseout` used to do here (JOS-138 found it: the scroll step read a captured window
+  // and blamed its own grip).
+  await overlay.evaluate(() => {
+    const row = document.querySelector('[aria-haspopup="listbox"]')?.parentElement
+    row?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+  })
+  const released = await settle(countButtons, (n) => n === 0, { timeoutMs: 8_000 })
+  check('…and moving off the row gives it back', released === 0, `${released} control(s)`)
+
   await setLocked(overlay, false)
 }
 
-/**
- * THE OVERLAY'S SCOPE CHIP (docs/plans/group-model.md §3) — the second half of "on the combat
- * toolbar AND overlay headers", and the half with a rule of its own.
- *
- * The overlay gets a one-click CYCLE and no popover: two inches of transparent chrome pinned
- * over a running game is not where a name-entry box belongs. And it must vanish while LOCKED —
- * a click-through window may not show an affordance it cannot deliver, which is the same
- * discipline the bars are held to just above.
- */
-async function stepOverlayScope(overlay: Page): Promise<void> {
-  const CHIP = '[data-testid="overlay-scope-chip"]'
-  await setLocked(overlay, false)
 
-  check('an INTERACTIVE overlay header carries the scope chip', (await countOf(overlay, CHIP)) === 1)
-  const label = async (): Promise<string> => (await overlay.textContent(CHIP))?.trim() ?? ''
-  const first = await label()
-  // The SAME phrasing the Combat tab shows, because both go through `chipLabel` — one wording,
-  // two renderers. Which of the two Group states the live log leaves behind is not this spec's
-  // business; that both windows would spell it identically is.
-  check(
-    'it defaults to Group, stating any fallback in the chip rather than switching scope for you',
-    first === 'Group' || first === 'Group (no roster yet)',
-    first
-  )
-
-  await overlay.click(CHIP)
-  const cycled = await settle(label, (t) => t === 'Everyone', { timeoutMs: 8_000 })
-  check('one click cycles it — the overlay control is the cycle, with no popover', cycled === 'Everyone', cycled)
-  // …and no roster editor came with it: that is the Combat tab's job.
-  check('the overlay offers no roster popover', (await countOf(overlay, '[data-testid="roster-open"]')) === 0)
-
-  await setLocked(overlay, true)
-  check('a LOCKED overlay hides the chip — no affordance it cannot deliver', (await countOf(overlay, CHIP)) === 0)
-
-  await setLocked(overlay, false)
-  // PERSISTED PER SURFACE: the cycle above survived the lock round trip, because it is a stored
-  // preference rather than component state — and it is the overlay's OWN key, so the Combat tab
-  // is still on whatever the user left it on.
-  check('the overlay remembers its own scope across the lock round trip', (await label()) === 'Everyone', await label())
-}
 
 // ── JOS-35: the overlay meter's levels, driven for real ────────────────────────────────
 //
@@ -298,6 +308,8 @@ async function stepOverlayScope(overlay: Page): Promise<void> {
 
 const CRUMB = '[data-testid="overlay-crumb"]'
 const BAR = '[data-testid="overlay-bar"]'
+/** The rejected JOS-105 damage-type strip — asserted ABSENT now (JOS-113: one bar per ability). */
+const CATEGORY_CHIP = '[data-testid="overlay-category"]'
 
 /** The crumb row's text — the drill subject, if any, and the fight clock. */
 async function crumbText(overlay: Page): Promise<string> {
@@ -309,7 +321,8 @@ async function stepOverlayDrill(overlay: Page): Promise<void> {
   // Start from level 1 however the persisted drill left this window — the drill outlives a run,
   // by design (it is remembered state, like window position). Backing out with the chevron is
   // also the only way to reach level 1, so this loop is the affordance proving itself: bounded at
-  // two, because a nested pet is the deepest the model goes.
+  // two, because a nested pet (a level-2 subject inside your level-2 row) is the deepest the model
+  // goes now (JOS-113 removed the level-3 damage type) — pet → your row → sources.
   for (let i = 0; i < 2 && (await crumbText(overlay)).includes('‹'); i++) {
     const was = await crumbText(overlay)
     await overlay.click(CRUMB)
@@ -334,6 +347,13 @@ async function stepOverlayDrill(overlay: Page): Promise<void> {
   check('clicking a bar opens that entity’s breakdown', (await countOf(overlay, BAR)) > 0 && level2 !== level1, level2)
   check('…and the zoom-out chevron is offered on it (it was not, before JOS-35)', level2.includes('‹'), level2)
   check('…and the fight timer is still on the row', /\d+:\d\d/.test(level2), level2)
+
+  // NO CATEGORY CHIP (JOS-113). JOS-105 put a damage-type strip here and a third drill level; the
+  // owner rejected the grouping, so the drilled overlay is ONE BAR PER ABILITY with no strip. The
+  // per-ability stats live on each bar's hover title in this window (it is compact and, locked,
+  // click-through — there is no room for an inline expansion), so what is asserted here is that
+  // the rejected chip is gone rather than a new level opening.
+  check('the drilled overlay shows NO damage-type chip — one bar per ability, flat', (await countOf(overlay, CATEGORY_CHIP)) === 0)
 
   await overlay.click(CRUMB)
   const back = await settle(() => crumbText(overlay), (t) => t !== level2, { timeoutMs: 8_000 })
@@ -604,8 +624,16 @@ async function main(): Promise<void> {
     await stepStaleId(page, ov)
     await stepOverlayDrill(ov)
     await stepLockedSelector(ov)
-    await stepOverlayScope(ov)
-    // LAST, because it closes and reopens the very window every step above holds a page for.
+    await stepPinnedScroll(app, ov, setLocked)
+    await stepOverlayScope(page, ov, setLocked)
+    // Unlocked is a precondition of the measurement (a locked window has no drag region at all),
+    // and stepOverlayScope leaves it that way.
+    await setLocked(ov, false)
+    await stepTitleBarRoom(ov)
+    await stepTotalOnPanel(ov, await longestFightName(page))
+    // Everything below closes and reopens the very window every step above holds `ov` for, so `ov`
+    // is dead from here on — both of these find their own overlay page.
+    await stepOverlayDisplay(app, page)
     await stepOpaqueOverlays(app, page)
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))

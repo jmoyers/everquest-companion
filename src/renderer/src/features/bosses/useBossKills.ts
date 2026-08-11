@@ -29,11 +29,16 @@ import { useEffect, useRef, useState } from 'react'
 import type { KillMap, KillsDelta, KillsSnap, RaidTarget } from '@shared/types'
 import { killsBaselineStale, mergeKillsDelta } from '@shared/kills'
 import { useModule } from '../../lib/useModule'
-import { allStatuses, bossKills, type TargetStatus } from './bossStatus'
+import { allStatuses, bossKills, type BossKill, type TargetStatus } from './bossStatus'
 
 export interface BossKillCallbacks {
-  /** Fired for any roster-boss kill CREDITED to you, seen live (incl. repeats). */
-  onKill?: (s: TargetStatus) => void
+  /**
+   * Fired for any roster-boss kill CREDITED to you, seen live (incl. repeats). The payload is
+   * the KILL, not just the target: `status` is the fold every card reads and `tier` is the
+   * instance tier THIS kill happened on, which is the only tier a per-event surface may state
+   * (JOS-165 — the toast used to reach for the target's highest-ever tier instead).
+   */
+  onKill?: (kill: BossKill) => void
 }
 
 export function useBossKills(
@@ -69,7 +74,7 @@ export function useBossKills(
     if (prev != null) {
       // Any CREDITED kill, repeats included → confetti/snackbar/toast/sound. `prev != null` is
       // the baseline guard: the first snapshot after a character switch celebrates nothing.
-      for (const s of bossKills(prev, next)) cbsRef.current?.onKill?.(s)
+      for (const kill of bossKills(prev, next)) cbsRef.current?.onKill?.(kill)
     }
     prevRef.current = new Map(next.map((s) => [s.target.name, s]))
   }, [kills, targets])

@@ -30,7 +30,7 @@ export const MIN_ACTIVE_SEC = 10
 
 /** What an absent rate LOOKS like. An em dash, never '0.0' and never a blank cell: a blank
  *  reads as "nothing to say", and this cell has something to say (see its hover). */
-export const ABSENT = '—'
+export const ABSENT = '-'
 
 /**
  * The active-time caveat, stated rather than fixed (plan §4.2). `route()` accrues active time
@@ -39,7 +39,7 @@ export const ABSENT = '—'
  * number, so the number keeps the meter's meaning and the UI says what it means.
  */
 export const ACTIVE_TIME_NOTE =
-  'Procs per minute of ACTIVE combat time — the meter’s own definition: gaps between attributed ' +
+  'Procs per minute of ACTIVE combat time - the meter’s own definition: gaps between attributed ' +
   'hits capped at 3s each, incoming damage included.'
 
 /** ONE cell of a rate column: what to draw, whether it is an absence, and what the hover says. */
@@ -66,7 +66,7 @@ function plural(n: number, word: string): string {
  */
 export function sourceNote(rate: ProcRateView): string {
   if (rate.sourceName !== undefined) {
-    return ` Per minute of ${rate.sourceName}’s own observed window (${Math.round(rate.sourceSec ?? 0)}s), not of the whole selection — a proc cannot fire while its source is off.`
+    return ` Per minute of ${rate.sourceName}’s own observed window (${Math.round(rate.sourceSec ?? 0)}s), not of the whole selection - a proc cannot fire while its source is off.`
   }
   if (rate.sourceAmbiguous) {
     return ' Assumes the source was active the whole fight: nothing in the log bounds when this proc’s source came or went, so the window is the whole selection and this rate is a LOWER bound.'
@@ -90,7 +90,7 @@ export function ppmCell(rate: ProcRateView, activeSec: number): RateCell {
       hint:
         `No per-minute rate: that needs at least ${MIN_ACTIVE_SEC}s of active combat time and ` +
         `${rate.sourceName === undefined ? 'this selection' : `${rate.sourceName}’s window`} has ` +
-        `${sec}s. ${plural(rate.count, 'proc')} counted — the count is exact; only the division ` +
+        `${sec}s. ${plural(rate.count, 'proc')} counted - the count is exact; only the division ` +
         'is withheld.'
     }
   }
@@ -211,7 +211,7 @@ export function procSummary(p: ProcsView): ProcSummary {
 const ORIGIN_NOTE: Record<ProcOrigin, string> = {
   poison: 'A rogue poison Strike: it printed its landing emote and no cast line, which is the only way a Strike ever appears.',
   spell: 'Detected as a proc by INFERENCE: this spell effect landed with no “You begin casting” line of yours behind it. The log never names what fired it, so this is a co-occurrence, not a source.',
-  slay: 'The Slay Undead melee proc, counted from the damage taxonomy — it rides an ordinary weapon swing and prints no spell line of its own.'
+  slay: 'The Slay Undead melee proc, counted from the damage taxonomy - it rides an ordinary weapon swing and prints no spell line of its own.'
 }
 
 /** A drill row's proc annotation: `proc · 3.1 ppm`, plus the hover that states its basis. */

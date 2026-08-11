@@ -38,29 +38,70 @@ import { formatNum } from '../../lib/formatRate'
 
 const MONO = { fontFamily: 'monospace' } as const
 
-/** `out/main/pipeline.js:120:15  Object.foldEvent` — the stack, as the report carries it. */
-function Frames({ exemplar }: { exemplar: TriageErrorExemplar }): JSX.Element {
-  if (exemplar.frames.length === 0) {
-    return (
-      <Typography variant="caption" color="text.secondary">
-        No stack frames — the throw carried none (a rejected non-Error, or a stack with nothing
-        inside the app bundle in it).
-      </Typography>
-    )
-  }
+/** One frame list, as the report carries it: `out/main/pipeline.js:120:15 - Object.foldEvent`. */
+function FrameList({
+  frames,
+  testId
+}: {
+  frames: TriageErrorExemplar['frames']
+  testId: string
+}): JSX.Element {
   return (
-    <Box component="ul" sx={{ m: 0, pl: 2 }} data-testid="release-issue-frames">
-      {exemplar.frames.map((f, i) => (
+    <Box component="ul" sx={{ m: 0, pl: 2 }} data-testid={testId}>
+      {frames.map((f, i) => (
         <Typography
           component="li"
           variant="caption"
           key={`${f.file}:${String(f.line)}:${String(f.col)}:${String(i)}`}
           sx={MONO}
         >
-          {f.file}:{f.line}:{f.col} — {f.func}
+          {f.file}:{f.line}:{f.col} - {f.func}
         </Typography>
       ))}
     </Box>
+  )
+}
+
+/**
+ * WHERE IT HAPPENED, and — since JOS-111 — what kind of "where" that is.
+ *
+ * A `capture` origin means the throw carried no stack of its own and these frames name the site
+ * that CAUGHT it. That distinction is the whole reason the field exists: a reader who took a
+ * capture site for a throw site would go looking for the bug in the console forwarder. The
+ * caption says which, in words, rather than leaving it to a tag nobody would look up.
+ */
+function Frames({ exemplar }: { exemplar: TriageErrorExemplar }): JSX.Element {
+  const external = exemplar.externalFrames ?? []
+  if (exemplar.frames.length === 0 && external.length === 0) {
+    return (
+      <Typography variant="caption" color="text.secondary">
+        No stack frames - the throw carried none, and it was caught somewhere that could not say
+        where it came from.
+      </Typography>
+    )
+  }
+  return (
+    <>
+      {exemplar.frames.length === 0 ? null : (
+        <>
+          {exemplar.frameOrigin !== 'capture' ? null : (
+            <Typography variant="caption" color="warning.main">
+              The throw carried no stack. These frames are where it was CAUGHT, not where it was
+              thrown.
+            </Typography>
+          )}
+          <FrameList frames={exemplar.frames} testId="release-issue-frames" />
+        </>
+      )}
+      {external.length === 0 ? null : (
+        <>
+          <Typography variant="caption" color="text.secondary">
+            Outside the app bundle:
+          </Typography>
+          <FrameList frames={external} testId="release-issue-external-frames" />
+        </>
+      )}
+    </>
   )
 }
 
@@ -94,7 +135,7 @@ function Exemplar({ issue }: { issue: TriageReleaseIssue }): JSX.Element {
   if (e === null) {
     return (
       <Typography variant="caption" color="warning.main" data-testid="release-issue-noexemplar">
-        No example was stored for this fingerprint — the count is still real.
+        No example was stored for this fingerprint - the count is still real.
       </Typography>
     )
   }
@@ -114,6 +155,14 @@ function Exemplar({ issue }: { issue: TriageReleaseIssue }): JSX.Element {
           </>
         )}
       </Typography>
+      {e.componentPath === undefined ? null : (
+        <Typography variant="caption" color="text.secondary" data-testid="release-issue-components">
+          React components, innermost first:{' '}
+          <Box component="span" sx={MONO}>
+            {e.componentPath}
+          </Box>
+        </Typography>
+      )}
       <Frames exemplar={e} />
       <Crumbs exemplar={e} />
       {/*
@@ -193,7 +242,7 @@ export function ReleaseIssues({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }} data-testid="release-issues">
       <Typography variant="caption" color="text.secondary">
-        Top issues by build — grouped by a hash of the error and its top frames, so one bug is one
+        Top issues by build - grouped by a hash of the error and its top frames, so one bug is one
         row however many installs hit it. Expand for the example the first report carried.
       </Typography>
       {withIssues.map((v) => (

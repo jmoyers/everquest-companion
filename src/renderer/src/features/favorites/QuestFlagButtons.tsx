@@ -24,7 +24,16 @@ export function QuestStarButton({
   onToggle: () => void
 }): JSX.Element {
   return (
-    <Tooltip title={favorited ? 'Unfavorite this quest' : 'Favorite this quest'}>
+    // The tooltip states the LIMIT of the pin, because JOS-146 gave it one: sorting by most
+    // recently looted answers a question about an event, and a pin that floated over it made the
+    // order say the wrong thing. Every other order still pins.
+    <Tooltip
+      title={
+        favorited
+          ? 'Unfavorite this quest'
+          : 'Favorite this quest - pins it to the top, except when sorting by most recently looted'
+      }
+    >
       <IconButton
         size="small"
         component="span"
@@ -49,7 +58,7 @@ export function QuestIgnoreButton({
   onToggle: () => void
 }): JSX.Element {
   return (
-    <Tooltip title={ignored ? 'Stop ignoring — show this quest again' : 'Ignore this quest permanently'}>
+    <Tooltip title={ignored ? 'Stop ignoring - show this quest again' : 'Ignore this quest permanently'}>
       <IconButton
         size="small"
         component="span"

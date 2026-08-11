@@ -101,7 +101,7 @@ test('an unavailable section prints the reason; an absent one prints nothing at 
   assert.deepEqual(downloadsLines(undefined), [])
   assert.deepEqual(downloadsLines({ available: true, releases: [], fetchedAtMs: 0 }), [
     '',
-    'GH DOWNLOADS (updater-inflated — NOT installs; global, never cohort-split)',
+    'GH DOWNLOADS (updater-inflated - NOT installs; global, never cohort-split)',
     '  (no published releases)'
   ])
 })

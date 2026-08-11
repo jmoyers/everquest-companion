@@ -1,15 +1,19 @@
 // Presence watcher + the two features it drives (src/main/presence.ts,
 // src/shared/presencePrefs.ts).
 //
-// Everything asserted here is PURE: the stdout line protocol, the "is this window EverQuest"
+// Everything asserted here is PURE: the line protocol, the "is this window EverQuest"
 // predicate, the alt-tab debounce, and the gating matrix that decides whether the overlays hide
-// and whether the 8 ms cursor stream runs. No Electron, no child process, no game — so this
-// suite is as cheap and as unskippable as overlayLayout/storeMigrations.
+// and whether the 8 ms cursor stream runs. No Electron, no thread, no game — so this suite is as
+// cheap and as unskippable as overlayLayout/storeMigrations. (The guard that no shipped code can
+// still spawn PowerShell is the one presence assertion that reads a disk, so it lives in
+// tests/noChildProcess.test.mts rather than here.)
 //
 // THE GATING MATRIX IS THE PERFORMANCE CONTRACT, in test form. "Nothing runs when nothing is
 // on" and "the stream stops when EQ is unfocused" are the owner's explicit requirements; they
 // are decided by two exported predicates, so they are pinned here rather than measured by hand
-// on every change.
+// on every change. The THIRD rule — "with the ring off we never touch the cursor at all"
+// (JOS-193) — spans a predicate, a worker init and three assignments, so it lives together in
+// tests/cursorRingOff.test.mts rather than being scattered through this one.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -108,7 +112,8 @@ test('the HEARTBEAT is a bare line — the one record the child prints unconditi
 })
 
 test('anything malformed decodes to null and can never move the state', () => {
-  // The stream can also carry a PowerShell warning, a blank line, or a partially-flushed write.
+  // The channel can also carry a blank line, or a message from a build that does not agree
+  // with this one about the protocol.
   for (const junk of [
     '',
     '   ',
@@ -217,6 +222,10 @@ test("this app's own windows never look like EverQuest", () => {
   }
 })
 
+// The FOUR-WAY split of that same question — which side of "are you in EverQuest?" the foreground
+// window falls on, including the two answers our OWN pid can give — lives in
+// tests/overlayFocusPolicy.test.mts, beside the alt-tab half of the same ticket (JOS-199).
+
 // ------------------------------------------------------------------- the focus debounce
 
 test('a focus change must hold still for the debounce before it is committed', () => {
@@ -321,10 +330,10 @@ test('each auto-hide switch hides on its own — they are independent, not a mod
 })
 
 test('NOTHING IS HIDDEN BEFORE THE WATCHER HAS REPORTED — never act on a guess', () => {
-  // The child pays a one-time compile before its first line. `eqRunning:false` in that gap means
-  // "we have not looked", and hiding on it would blink every overlay off at launch and back on a
-  // second later on a machine where the game was running the whole time. The same flag resets if
-  // the watcher ever dies, so a dead watcher fails OPEN rather than hiding everything forever.
+  // The watcher opens three system libraries before its first line. `eqRunning:false` in that
+  // gap means "we have not looked", and hiding on it would blink every overlay off at launch and
+  // back on a second later on a machine where the game was running the whole time. The same flag
+  // resets if the watcher dies, so a dead watcher fails OPEN rather than hiding everything.
   const unobserved = INITIAL_PRESENCE
   for (const prefs of [
     DEFAULT_OVERLAY_AUTO_HIDE,
@@ -437,9 +446,9 @@ test('STALENESS: silence past the window is wedged; anything inside it is just q
     [t0, t0 + WATCHER_STALE_MS - 1, false, 'just inside the window is still alive'],
     [t0, t0 + WATCHER_STALE_MS, true, 'the window is inclusive'],
     [t0, t0 + 10 * WATCHER_STALE_MS, true, 'and it stays stale'],
-    // `lastSignalAt` is seeded at SPAWN, so a child that has never spoken gets the same window —
-    // which is what makes the one-time PowerShell compile a non-event.
-    [t0, t0 + 2_000, false, 'the Add-Type compile is inside the first window']
+    // `lastSignalAt` is seeded at START, so a watcher that has never spoken gets the same window
+    // — which is what makes opening three system libraries a non-event.
+    [t0, t0 + 2_000, false, 'the library loading is inside the first window']
   ]
   for (const [last, now, expected, why] of cases) {
     assert.equal(watcherIsStale(last, now), expected, why)
@@ -450,8 +459,8 @@ test('STALENESS: silence past the window is wedged; anything inside it is just q
 })
 
 test('RESTART BACKOFF: fast when it might be a hiccup, CAPPED when it is not', () => {
-  // An uncapped retry against a failure that will never clear on this machine (PowerShell
-  // removed by policy, an execution policy that kills the child on sight) is a spawn storm.
+  // An uncapped retry against a failure that will never clear on this machine (a native surface
+  // that will not load, an EDR product that refuses process enumeration) is a restart storm.
   assert.deepEqual(
     [1, 2, 3, 4, 5].map(watcherRestartDelayMs),
     [...WATCHER_RESTART_BACKOFF_MS],
@@ -471,7 +480,15 @@ test('RESTART BACKOFF: fast when it might be a hiccup, CAPPED when it is not', (
 // ------------------------------------------------------------- prefs: defaults + clamps
 
 test('the shipped defaults are the zero-cost posture', () => {
-  assert.deepEqual(DEFAULT_CURSOR_RING, { enabled: false, sizePx: 44, thicknessPx: 4 })
+  // The colour is part of the posture too: white is what every ring drawn before JOS-125 was, so
+  // the default cannot move without changing a screen somebody already has. The colour rules
+  // themselves live in tests/cursorRingColor.test.mts.
+  assert.deepEqual(DEFAULT_CURSOR_RING, {
+    enabled: false,
+    sizePx: 44,
+    thicknessPx: 4,
+    colorHex: '#ffffff'
+  })
   assert.deepEqual(DEFAULT_OVERLAY_AUTO_HIDE, { hideWhenNotRunning: true, hideWhenUnfocused: false })
 })
 
@@ -480,7 +497,7 @@ test('THE WATCHER IS NEEDED ONLY WHEN A FEATURE ASKS FOR IT', () => {
   assert.equal(
     presenceNeeded(DEFAULT_CURSOR_RING, noHide),
     false,
-    'everything off ⇒ no child process is ever spawned'
+    'everything off ⇒ no watcher thread is ever started'
   )
   assert.equal(presenceNeeded({ ...DEFAULT_CURSOR_RING, enabled: true }, noHide), true)
   assert.equal(presenceNeeded(DEFAULT_CURSOR_RING, { ...noHide, hideWhenNotRunning: true }), true)
@@ -493,7 +510,8 @@ test('ring prefs are clamped, rounded, and never silently re-intended', () => {
   assert.deepEqual(normalizeCursorRing({ enabled: true, sizePx: 43.6, thicknessPx: 3.2 }), {
     enabled: true,
     sizePx: 44,
-    thicknessPx: 3
+    thicknessPx: 3,
+    colorHex: '#ffffff'
   })
   assert.equal(normalizeCursorRing({ sizePx: 5 }).sizePx, 20, 'below the floor clamps up')
   assert.equal(normalizeCursorRing({ sizePx: 5000 }).sizePx, 200, 'above the cap clamps down')

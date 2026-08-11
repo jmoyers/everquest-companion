@@ -196,3 +196,75 @@ export function isInsideDir(path: string, dir: string): boolean {
 export function isSafePackId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 128 && /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(id)
 }
+
+// ---- registry `source_*` fields: same registry, same trust as the pack name ----------
+//
+// A registry row also carries three strings that flow straight into a URL or an archive path,
+// and the registry is the same untrusted producer as `name`:
+//
+//   * `source_repo` → `https://github.com/{source_repo}/archive/refs/tags/{ref}.tar.gz` and
+//     `https://raw.githubusercontent.com/{source_repo}/{ref}` — a `..` or an extra `/` here
+//     re-points the download/preview at another repo or walks the URL path.
+//   * `source_ref`  → the `{ref}` in both of those — a `/` or `..` walks the same paths.
+//   * `source_path` → the pack-root PREFIX inside the extracted archive (and the raw-preview
+//     subpath) — a `..` or an absolute/drive path escapes the archive root.
+//
+// Same posture as isSafePackId: tight ALLOWLISTS of the shapes the honest registry actually
+// uses (`utensils/openpeon-alan-rickman-soundpack`, `v1.1.2`, `.` or `sounds/foo`), not a
+// blocklist of traversal spellings. Total over arbitrary input, unit-tested without Electron.
+
+/** GitHub `owner/repo`: exactly one slash, GitHub-shaped owner + repo, no `..`, no extra path. */
+export function isSafeSourceRepo(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 140) return false
+  const parts = v.split('/')
+  if (parts.length !== 2) return false
+  const [owner, repo] = parts
+  // Owner: 1–39 chars, starts alphanumeric, then alphanumerics and hyphens anywhere.
+  //
+  // JOS-162: this used to also forbid a TRAILING hyphen (and therefore, with the leading-hyphen
+  // anchor, any pair the shape produced) because that is what GitHub's SIGNUP form enforces
+  // today. GitHub's real namespace is older than that form: `heron--` is a live account, and its
+  // 45 Overwatch voice packs were 45 of the 47 rows the live openpeon registry lost at ingest.
+  // Encoding someone else's current signup policy as a security rule made honest data
+  // unreachable, so the rule now encodes only what the boundary needs.
+  //
+  // What the boundary needs is unchanged and is carried entirely by the CHARSET: `[A-Za-z0-9-]`
+  // admits no `/` (so `owner/repo` can never grow a third segment past the `parts.length !== 2`
+  // check) and no `.` (so no `.`, `..`, or any traversal spelling can exist in an owner at all).
+  // The leading-alphanumeric anchor stays — no evidence asks for a leading-hyphen owner, and it
+  // keeps an owner from ever being all-punctuation.
+  if (owner.length > 39 || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(owner)) return false
+  // Repo: 1–100 chars of the GitHub repo-name set, but never `.`/`..` alone.
+  if (repo.length > 100 || repo === '.' || repo === '..') return false
+  return /^[A-Za-z0-9._-]+$/.test(repo)
+}
+
+/** A git tag/ref used verbatim in a URL path: no separators, no `..`, no leading dot/dash. */
+export function isSafeSourceRef(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 100) return false
+  if (v.includes('..')) return false
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v)
+}
+
+/**
+ * A safe relative subpath (the pack root within the archive): `.` (or its empty-string alias)
+ * for repo root, else slash-separated segments of the allowlisted set. No `..`, no absolute
+ * path, no drive letter, no backslash, no NUL, no empty segment. A single trailing slash is
+ * tolerated (the installer already strips one) but nothing else.
+ *
+ * JOS-162: `''` IS `.`, and always was everywhere but here. The registry's convention is a dot,
+ * but two live rows publish an empty string, and every consumer already collapses the two
+ * (`pack.source_path && pack.source_path !== '.' ? … : ''` in packRegistry's tar reader and raw
+ * previewer, and in defaultPacks) — so rejecting `''` dropped two honest packs to enforce a
+ * distinction the code below the validator does not make. It is also the SAFEST value in the
+ * domain: it names the archive root and contains no character at all, let alone a separator.
+ */
+export function isSafeSourcePath(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 200) return false
+  if (v === '' || v === '.') return true
+  if (v.includes('\\') || v.includes('\0')) return false
+  if (v.startsWith('/') || /^[A-Za-z]:/.test(v)) return false
+  const trimmed = v.replace(/\/+$/, '')
+  if (trimmed === '') return false
+  return trimmed.split('/').every((s) => s !== '' && s !== '.' && s !== '..' && /^[A-Za-z0-9._-]+$/.test(s))
+}

@@ -8,6 +8,13 @@
 // 23:02:44 running ROG/PAL/BER after a loadout swap on Sun Aug 02 01:57:42. The card rendered a
 // d4 badge filed under ROG/PAL/BER — a loadout that never killed it at d4.
 //
+// WHAT THAT SECOND KILL IS CALLED NOW (JOS-166). The Mon Aug 03 kill was in `The Plane of Hate`
+// with no `- Solo` suffix — the OPEN WORLD, which has no instance and therefore no lockout. It
+// used to fold to tier 0 because a bare zone name and a base instance decoded identically; it
+// now folds to TIER_OPEN_WORLD. The misattribution this file pins is unaffected either way: what
+// it is about is that a run's tier and its timestamps describe the SAME kills, and the two runs
+// here are still two runs. The assertions below name the key rather than assuming 0.
+//
 // The combo-interval layer was CORRECT and is untouched here (world-model law 10: intervals are
 // revisable and join at READ; nothing stamps an interval id onto a kill). What was lossy was the
 // KILL RECORD. It is now per instance tier (`KillInfo.tiers`, shared/kills.ts), the four scalars
@@ -18,9 +25,9 @@
 //   1. THE FOLD, against the real log window (tests/fixtures/bosstier-lord-of-ire.log, cut by
 //      tests/extract-boss-tier-fixtures.mjs from raw lines 853620 / 865678.. / 1205559 /
 //      1211528..): one entry, two tier runs, each keeping its own timestamps.
-//   2. THE JOIN: d4 files under the Aug-01 interval, d0 under the Aug-03 one — and the OLD rule
-//      (join at the target's overall lastTs) is shown to produce the wrong answer on the same
-//      data, so a regression cannot pass quietly.
+//   2. THE JOIN: d4 files under the Aug-01 interval, the open-world run under the Aug-03 one —
+//      and the OLD rule (join at the target's overall lastTs) is shown to produce the wrong
+//      answer on the same data, so a regression cannot pass quietly.
 //   3. NO VISUAL REGRESSION for the common case: a single-tier target yields exactly one card
 //      whose status is deep-equal to the unprojected one.
 //   4. THE DELTA CONTRACT: a changed mob REPLACES its entry wholesale, and a baseline written
@@ -38,6 +45,7 @@ import { KillsModule } from '../src/main/modules/kills'
 import { recordKill } from '../src/main/log/reducers'
 import {
   KILLS_SHAPE_VERSION,
+  TIER_OPEN_WORLD,
   killTotals,
   killsBaselineStale,
   mergeKillsDelta,
@@ -56,7 +64,8 @@ const at = (stamp: string): number => parseEqTimestamp(stamp)
 /** The three real instants the diagnosis quoted. */
 const D4_KILL = at('Sat Aug 01 16:09:29 2026')
 const SWAP = at('Sun Aug 02 01:57:42 2026')
-const D0_KILL = at('Mon Aug 03 23:02:44 2026')
+/** The Mon Aug 03 kill — in `The Plane of Hate` with no instance suffix, i.e. the open world. */
+const OPEN_KILL = at('Mon Aug 03 23:02:44 2026')
 
 /** Replay raw lines through the REAL parser into a fresh kills module. */
 function replay(lines: string[]): KillsSnap {
@@ -101,7 +110,7 @@ const LORD_OF_IRE: RaidTarget = {
 // 1. THE FOLD — the real two-kill window.
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('golden window: one mob, two instance tiers, two runs that keep their own timestamps', () => {
+test('golden window: one mob, two worlds, two runs that keep their own timestamps', () => {
   const snap = replay(readFixture('bosstier-lord-of-ire.log'))
 
   assert.equal(snap.v, KILLS_SHAPE_VERSION, 'the snapshot states the shape its entries were written at')
@@ -112,8 +121,12 @@ test('golden window: one mob, two instance tiers, two runs that keep their own t
   // THE RECORD: two runs, each carrying the tier AND the timestamps of its own kills — plus,
   // since 2026-08-05, how many of them the log CREDITED to you. Both kills in this window print
   // `You gain experience!` in the second before the slain line, so both are yours.
+  //
+  // The second run's key was `0` until JOS-166 and is now the open world: `You have entered The
+  // Plane of Hate.` names no instance. Nothing else about the run moved — same count, same
+  // timestamps, same credit — which is the point: the key names WHERE, and only where.
   assert.deepEqual(ire.tiers, {
-    0: { count: 1, firstTs: D0_KILL, lastTs: D0_KILL, credited: 1, lastCreditedTs: D0_KILL },
+    [TIER_OPEN_WORLD]: { count: 1, firstTs: OPEN_KILL, lastTs: OPEN_KILL, credited: 1, lastCreditedTs: OPEN_KILL },
     4: { count: 1, firstTs: D4_KILL, lastTs: D4_KILL, credited: 1, lastCreditedTs: D4_KILL }
   })
 
@@ -123,7 +136,7 @@ test('golden window: one mob, two instance tiers, two runs that keep their own t
   assert.equal(ire.count, 2)
   assert.equal(ire.bestTier, 4)
   assert.equal(ire.firstTs, D4_KILL)
-  assert.equal(ire.lastTs, D0_KILL)
+  assert.equal(ire.lastTs, OPEN_KILL)
   assert.deepEqual({ ...killTotals(ire.tiers) }, {
     count: ire.count,
     bestTier: ire.bestTier,
@@ -178,7 +191,7 @@ test('a mob killed at ONE tier folds to one run — the common case is unchanged
 // 2. THE JOIN — the roster's loadout sectioning.
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('golden window: d4 files under the loadout that killed it at d4, d0 under the later one', () => {
+test('golden window: d4 files under the loadout that killed it at d4, open world under the later one', () => {
   const snap = replay(readFixture('bosstier-lord-of-ire.log'))
   const statuses = allStatuses([LORD_OF_IRE], snap.mobs)
 
@@ -199,8 +212,14 @@ test('golden window: d4 files under the loadout that killed it at d4, d0 under t
 
   assert.equal(second.interval?.id, 'ci2')
   assert.equal(second.rows.length, 1)
-  assert.equal(second.rows[0].s.bestTier, 0, 'the card under the Aug-03 loadout wears the d0 badge')
-  assert.equal(second.rows[0].s.lastTs, D0_KILL)
+  // It wore a `D0` badge before JOS-166. That kill was in the open world, so the badge now says
+  // so — the card under this loadout is not claiming a base-difficulty clear.
+  assert.equal(
+    second.rows[0].s.bestTier,
+    TIER_OPEN_WORLD,
+    'the card under the Aug-03 loadout badges the open world, not a difficulty'
+  )
+  assert.equal(second.rows[0].s.lastTs, OPEN_KILL)
 
   // THE REGRESSION ITSELF. The old rule joined the whole target at its overall `lastTs` and
   // painted its overall `bestTier` — which lands the d4 badge in the Aug-03 interval. Nothing in
@@ -208,20 +227,20 @@ test('golden window: d4 files under the loadout that killed it at d4, d0 under t
   assert.equal(
     second.rows.some((r) => r.s.bestTier === 4),
     false,
-    'a d4 badge must never appear under the loadout whose kills were all d0'
+    'a d4 badge must never appear under the loadout whose kills were all open world'
   )
 
-  // Clicking either card still opens the WHOLE mob: both kills, both tiers.
+  // Clicking either card still opens the WHOLE mob: both kills, both runs.
   for (const g of groups) {
     assert.equal(g.rows[0].whole.count, 2)
     assert.equal(g.rows[0].whole.bestTier, 4)
-    assert.deepEqual(Object.keys(g.rows[0].whole.tiers).sort(), ['0', '4'])
+    assert.deepEqual(Object.keys(g.rows[0].whole.tiers).sort(), [String(TIER_OPEN_WORLD), '4'])
   }
 })
 
 test('a single-tier target renders exactly as before: one card, status untouched', () => {
   const kills: KillMap = {}
-  recordKill(kills, { key: 'maestro of rancor', display: 'Maestro of Rancor', tier: 2, ts: D0_KILL, credited: true })
+  recordKill(kills, { key: 'maestro of rancor', display: 'Maestro of Rancor', tier: 2, ts: OPEN_KILL, credited: true })
   const target: RaidTarget = {
     name: 'Maestro of Rancor',
     category: 'Plane of Hate',
@@ -242,8 +261,8 @@ test('two runs of one target inside ONE interval stay one card', () => {
   // Killed at d1 and d3 on the same night: the header’s claim is true of both, and a target
   // must not appear twice under one header.
   const kills: KillMap = {}
-  recordKill(kills, { key: 'a mob', display: 'A mob', tier: 1, ts: D0_KILL - 60_000, credited: true })
-  recordKill(kills, { key: 'a mob', display: 'A mob', tier: 3, ts: D0_KILL, credited: true })
+  recordKill(kills, { key: 'a mob', display: 'A mob', tier: 1, ts: OPEN_KILL - 60_000, credited: true })
+  recordKill(kills, { key: 'a mob', display: 'A mob', tier: 3, ts: OPEN_KILL, credited: true })
   const target: RaidTarget = { name: 'A mob', category: 'Open World', match: ['A mob'] }
   const groups = loadoutGroups([interval('ci1', 0, null)], allStatuses([target], kills))
 
@@ -261,7 +280,7 @@ test('undefeated targets are not grouped — they carry no timestamp to join on'
 test('a target folds its tier runs across every one of its roster match names', () => {
   const kills: KillMap = {}
   recordKill(kills, { key: 'lord of ire', display: 'Lord of Ire', tier: 4, ts: D4_KILL, credited: true })
-  recordKill(kills, { key: 'the lord of ire', display: 'The Lord of Ire', tier: 0, ts: D0_KILL, credited: true })
+  recordKill(kills, { key: 'the lord of ire', display: 'The Lord of Ire', tier: 0, ts: OPEN_KILL, credited: true })
   // lowerKillMap strips the leading article, so both spellings land on one key; two DIFFERENT
   // match names would fold the same way.
   const status = statusFor(LORD_OF_IRE, lowerKillMap(kills))

@@ -125,22 +125,423 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.20.0',
+    date: '2026-08-10',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'A bard\'s Solon\'s Bewitching Bravura is read as the charm it is, so the charm-break alert finally goes off when your charm lets go. Any charm can have an alert of its own now too - pick the spell by name and hear which one broke.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Alt-tab out of EverQuest and you stay where you went - the overlays no longer drag you back into the game as they hide.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: '"Hide overlays when you\'re not in EverQuest" now counts this app too, so the meters get out of the way while you browse the Companion - and the cursor ring rests here as well, since your pointer is not over the game. Clicking an overlay itself still keeps them up.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'A press of the mouse\'s back button goes back a page inside the app - from an item description to the page that opened it. It only listens while the Companion is the focused window, so a back button bound in game stays the game\'s.',
+        fromReport: true
+      }
+    ]
+  },
+  {
+    version: '0.19.0',
+    date: '2026-08-10',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'With the cursor ring off, the app never touches your cursor - cursor tools like YoloMouse get the pointer to themselves, and toggling the ring takes effect immediately.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'All 780 item icons and boss portraits now ship inside the app - instant on a fresh install, there with the internet off. They come from two volunteer-run wikis, credited and linked on the new Thanks page in Preferences.'
+      },
+      {
+        kind: 'new',
+        text: 'A floating XP overlay: experience per hour, time to level (AA pace at max), and motes per hour by tier, with the Leveling tab\'s own time-slice picker and a checkbox per row. Turn it on from the Overlay menu.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'A creature page counts an item once across its +N upgrades - one line with the real total and your observed rate, like "1 per 14 kills" - and expands to each variant on click.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The Plane of Sky list keeps your place - starring, favoriting, or a drop landing no longer collapses it - and a remembered "Show all" button loads everything in one click.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'An overlay never goes missing with the monitor it was on: windows always land on a screen that exists, and your saved spot is restored when the monitor comes back.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'Finding your EverQuest folder no longer launches Windows command-line tools - the app asks Windows directly, about twenty times faster, and looks far less like malware to antivirus. The installer dropped its most suspicious-looking trick too.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The "Add an alert" suggestion rows stop printing on top of themselves - crowded rows wrap to a second line instead.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'A pet-only buff like Burnout now marks the pet as yours the moment it lands - so an upgraded pet shows in the meter without being ordered first.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Items in the Dragon\'s Hoard and other storage tabs now count - the app reads every table the inventory dump contains. Worn gear still comes from your equipment alone.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The /outputfile line gained a How: which windows to open (Bank, Dragon\'s Hoard, Tradeskill Depot) before typing it so the dump is complete - and a note that currency-tab items never dump at all.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Spirit of the Puma and 86 other spells whose wiki durations are written like "60s" or "6:00:00" get their timer bars - those spellings read correctly now. Sicken corrects from 1:00 to its real 1:24.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'All four Tuyen\'s chants get their own bars - a disease landing no longer draws as a resisted frost.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Dooming Darkness, Cascading Darkness and Sha\'s Lethargy turn up on the debuff window - three more landing lines the wiki words differently than the game, corrected.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The app no longer starts a hidden PowerShell to watch for EverQuest - it asks Windows directly. Antivirus stops objecting, and overlay auto-hide now works on machines where the old helper could never start.'
+      },
+      {
+        kind: 'fixed',
+        text: 'No fault may report itself more than a hundred times a session - after that it says so once and goes quiet. The install that reported one problem seven million times in a day is the reason.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The full item card is back when hovering a Plane of Sky item - it opens downward and clicks pass straight through it, so the filter dropdowns keep every click.'
+      }
+    ]
+  },
+  {
+    version: '0.18.0',
+    date: '2026-08-10',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Search your alerts by anything you remember - name, spell, trigger, sound, spoken phrase, or note. The box narrows what you see, never what fires.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Hovering a Plane of Sky item names the mobs that drop it again, with level and zone - since 0.15.0 the hover had answered with the island alone.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Forty-four spells the wiki describes with a placeholder subject - Odium, Tangling Weeds, the ward and blessing lines, the healing echoes - now open timer bars when they land.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'A mez that outlives its estimate still teaches the timer: late wear-offs are learned instead of thrown away, and broken mezzes can no longer drag the learned duration below the truth.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'A boss pull starts when you pull the boss - a mez hold ends when its mob dies or leaves, and is never claimed by your own charmed pet.'
+      }
+    ]
+  },
+  {
+    version: '0.17.0',
+    date: '2026-08-09',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Base difficulty is a real clear now. Killing a boss in a base instance greens its D0 rung like any other difficulty, and killing one out in the open world - where there is no lockout to take - greens nothing and no longer reads as a D0 you already spent.'
+      },
+      {
+        kind: 'changed',
+        text: 'The raid card ends in its ladder: the Locked line under it is gone, resting on a green rung tells you the day that clear landed, and the corner chip says the tier and nothing else.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The raid-kill celebration card names the kill you just made: the difficulty of the instance that boss died in, and which instance it was, instead of the highest difficulty you have ever beaten it at and the zone off the roster. Clear a boss at d1 on Sunday and the card says d1, however many times you beat it at d4. The boss cards still badge your best.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Drilled into your own damage, the total above the bars answers the pet setting the moment you change it. Fold your pet into your damage and the line covers you both; move it out and the line is yours alone. It used to keep the combined number until you picked another fight, so the figure at the top described one thing while the rows under it described another.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Monk strikes get a bar of their own instead of disappearing into Melee. Tiger Claw, Eagle Strike, Dragon Punch and Tail Rake all land as a plain strike, and the game names the one you use only once, at the level-up - so a log that started after that line lumped every strike in with your weapon swings forever. They now read Strike on their own row, and still carry the real ability name whenever your log did catch that line.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'A spell you cast and a weapon proc that fires the same effect stop sharing one row. Your casts keep the spell name; the firings that arrive with no casting line of yours get their own row, marked proc - so a cleric whose weapon procs Banish Undead can read the proc rate straight off the meter instead of putting the spell away for a fight to measure it. Casting the same spell over and over no longer hides every proc behind it either, and a cast that fizzled or was interrupted for good stops claiming the next proc as its own.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Two bard songs the wiki words wrongly now answer to what the game actually prints: Sionachie\'s Dreams lands on your timers and offers its alerts, and the level-39 charm-song page the wiki calls Solon\'s Bravura is known by the name your log sings, Solon\'s Bewitching Bravura. Both hold like the mez they are - and a new per-song mez-break alert can name exactly which song just shattered.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Searching the Loot page now finds items you own but never looted - anything your inventory export knows about turns up by name, spelled the way the game spells it, and its page states how many you hold beside how many times you looted it. The Loot page and the Plane of Sky view can no longer disagree about whether you have an item.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Restart the app with a buff or debuff overlay open and it comes back holding what is actually running. A long hold that survived the restart - a charm, an Ensnare, anything still ticking - used to appear in the app and never in the floating window, which sat on whatever it happened to catch while the log was still being read. Both windows now refill the moment that read finishes, and no spell is announced as dropped just because the window asked again.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Overlay auto-hide and the cursor ring keep working for a whole session on machines where they used to go quietly dead a second after launch. The little watcher behind them asked Windows a process question that some machines - ones with damaged performance counters, or security software that blocks process listings - answer wrongly for programs that are plainly running, and it read that wrong answer as its cue to shut down. It now asks the system directly, so the overlays hide when you leave the game and the ring only ever draws over it.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Forty-seven community sound packs are back in the browser. The safety check on pack sources was stricter than the real world: one longtime creator\'s account name and two packs\' plain spelling of their folder were being refused as unsafe, so their packs silently never appeared. The check now accepts what actually exists while refusing everything it was built to refuse.'
+      }
+    ]
+  },
+  {
+    version: '0.16.0',
+    date: '2026-08-09',
+    entries: [
+      {
+        kind: 'new',
+        text: 'A Classes tab on the Plane of Sky view tracks every class unlock: your Sky turn-ins count toward each class, the closest to done sit on top, stars pin the ones you are chasing, and a class the log declared unlocked says so - the achievement line outranks any tally. Click a class to jump to its quests, filtered to just that class.'
+      },
+      {
+        kind: 'new',
+        text: 'Every raid boss on the This week view carries its difficulty ladder: a rung turns green when your credited kill this reset week proves that clear, the base rung outlines instead of filling when the log cannot name it, and the Bosses view remembers which tab you left it on.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Thirty-five spell messages the game words differently than the wiki are corrected - Drifting Death and the swarm family, root, stuns, runes and more now land and wear off on your timers exactly as the game prints them.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Allure finally opens its charm countdown - the wiki carried no landing text for it at all, so an enchanter charm never started a clock. Charm breaks were always seen; now the whole hold is.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The Leveling page stops piling its panels on top of each other in narrower windows - the bands stack and scroll instead, and nothing covers anything.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'The Ready tab starts on first-time turn-ins: quests you have never handed in before, with a box to bring your refarms back into the list.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The cursor ring stays centered on your pointer at every text size - the app window zoom no longer leans on the ring.'
+      },
+      {
+        kind: 'fixed',
+        text: 'A mob that dies takes its debuff bars with it no matter who landed the kill - your charm pet, a damage-over-time, or another player - even when the killer and the killed share a name.'
+      },
+      {
+        kind: 'fixed',
+        text: 'A debuff whose end you never saw - you died, you zoned, the fight dissolved - leaves within a minute of running out instead of squatting at 0s for its whole stated duration again.'
+      },
+      {
+        kind: 'changed',
+        text: 'The meter overlays put the total where the numbers live: the all figure sits on the You row inside the panel, and the title bar spends its room on the fight name - ten more characters of mob before anything truncates.'
+      }
+    ]
+  },
+  {
+    version: '0.15.0',
+    date: '2026-08-09',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Text too small to read? Preferences - Text size scales the whole app window, from 90% up to 150%, and it stays that way the next time you open it. Your floating overlays keep their own size control.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The cursor ring can be any color you want. Preferences - Cursor ring has a color picker beside the size and thickness sliders, and the ring changes as you pick. It starts white, exactly as it was.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The Plane of Sky tab filters by island and by boss, right beside the class filter - pick Island 7 and see only what is left to do there. Your picks stick around like the other filters.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Loot and leveling can answer for a slice of time, not just all of it: pick Session, Zone, Zone + Session or a custom range and the tables, rates and drop panels all agree on the answer. All time stays the default.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Sky quests can be farmed again: handing one in spends the items and the quest starts counting from zero, with a badge remembering how many times you have turned it in. The hide box now reads Hide quests I have every item for, which is what it always meant to say.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'A second Sky hide box, Hide quests I have turned in, tucks away everything you consider done - independent of the every-item box, so once-and-done farmers and refarmers each get their view.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Most recently looted on the Sky tab means exactly that now: a starred quest no longer squats above the loot you just made. Stars still pin every other sort order.'
+      },
+      {
+        kind: 'new',
+        text: 'A Ready tab on the Sky view lists every quest you can turn in right now - it fills as last items land, empties as you hand them in, and ignores the hide boxes so your walk-the-islands list is always the whole list.'
+      },
+      {
+        kind: 'new',
+        text: 'Map search now answers from every zone, mobs included: look for a name anywhere, the result says which zone it means, and picking it takes you to that map - to the exact spot when the wiki states one.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The add-alert editor keeps your work when you switch away from the app and back - the name, trigger, cooldown and spoken phrase all survive, and an alert you were editing no longer snaps back to how it was saved.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The Loot page sort control can always be clicked - the item cards that used to open over the toolbar are gone, and the page carries far fewer hover cards overall.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Pinned overlays scroll again: the wheel and the scrollbar both work along the right edge of a pinned meter, while clicks everywhere else still pass through to the game.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Cazic-Thule and Innoruuk keep their loot: the gods the log spells differently than the wiki now land on one page, with your drops and the wiki table together no matter how you got there.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Mez, charm and slow timers learn your real durations: cast, let it run, and the bar uses what your log measured instead of a book number - upgraded ranks included, and each row now names the rank you cast. Charm itself finally has a countdown.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The overlays stopped guessing: a friendly spell on a groupmate or your pet never lands on the debuffs window, phantom buffs no longer appear on pets from spells someone else cast, and a bar that expired unseen quietly leaves instead of squatting at 0s.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The debuffs window puts whatever runs out soonest at the top, in one list across all your targets; a footer button groups by target instead if that is how you read it. Quick Buff casts are tracked too, and a charmed pet shows its buffs and its debuffs each in the right window.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Camp out and your buff timers wait with you: the countdowns pick up where they left off when you log back in, instead of expiring while you were gone. Debuffs you landed keep burning down in world time, because the world does not log out with you.'
+      }
+    ]
+  },
+  {
+    version: '0.14.0',
+    date: '2026-08-08',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Two new overlays track buffs and debuffs with live timers - one window for what is on you, one for what you have landed on your targets, each enabled and placed separately. Both start off; turn them on from the Overlay menu.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Chain-mez or slow across a whole pull and each target shows its own named countdown; when a spell breaks, wears off, or the mob dies, its bar goes with it. Only your own casts are tracked, and a resist shows nothing.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The countdowns learn from your log: the app uses the durations your casts actually run - your AAs and focus effects included - and never invents a number it has not seen or the spell data does not state.'
+      },
+      {
+        kind: 'new',
+        text: "Alerts can speak what the log said: name a capture in your pattern and use it in the spoken text - 'Puma on {player}' says who it landed on. Spirit of the Puma is back in the suggested list too.",
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'The combat meters are one surface now: Overview, the Combat tab and the overlay share the same clickable bars, and clicking an ability that has stats (crit, double and triple attack, misses) opens them right under its bar.'
+      },
+      {
+        kind: 'changed',
+        text: 'The You / Group / Everyone choice moved to Preferences - Combat (default: Group), the meters remember where you drilled when you switch tabs, and the scope word sits as a quiet watermark at the bottom of each overlay instead of crowding the title bar.'
+      },
+      {
+        kind: 'changed',
+        text: 'Turning usage analytics off now sends one final anonymous notice so opt-outs can be counted honestly; nothing further is ever sent after it.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Playing through Wine on Linux: the app now recognises it at startup and draws the compatible way on its own, so windows stop coming up blank and a celebration card stops sticking to the screen as a black box. Preferences - Graphics says so when it happens, and either half can be turned back off.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Security: the sound-pack installer is hardened against a path traversal in pack names and registry source fields, and malformed registry entries are dropped on fetch and on cache read. Reported by an outside review; no user data was ever at risk in normal use.'
+      },
+      {
+        kind: 'fixed',
+        text: 'A raid boss finished by a damage-over-time now counts as your kill, and Phinigel Autropos joined the raid targets.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: "Iksar monks' Tail Rake shows up in the combat breakdown, in Dragon Punch's seat.",
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The exaltation planner has the two Any slots, filled from your inventory dump, and a planned exaltation shows what it does on hover.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Finding your EverQuest install no longer re-scans every launch: the found path is remembered, and a slow or offline network drive can no longer stall startup.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The cursor ring no longer twitches on clicks.'
+      }
+    ]
+  },
+  {
     version: '0.13.0',
     date: '2026-08-08',
     entries: [
       {
         kind: 'new',
-        text: "The map you pick stays picked — it survives switching tabs and restarting, and the toolbar says whether the map is following you or pinned. 'Current zone' snaps back to where your character is and follows from there.",
+        text: "The map you pick stays picked - it survives switching tabs and restarting, and the toolbar says whether the map is following you or pinned. 'Current zone' snaps back to where your character is and follows from there.",
         fromReport: true
       },
       {
         kind: 'new',
-        text: 'Paste a /loc into the Maps toolbar and a crosshair lands on that spot. It stays — per zone, across tabs and restarts — until you replace it or clear it.',
+        text: 'Paste a /loc into the Maps toolbar and a crosshair lands on that spot. It stays - per zone, across tabs and restarts - until you replace it or clear it.',
         fromReport: true
       },
       {
         kind: 'changed',
-        text: 'When something breaks, the app now reports the technical details of the failure — the error, where in the app it happened, and what kinds of log line it had just read — so bugs get diagnosed instead of guessed at. Never your log contents, your chat, or any name from the game: the message is redacted on your machine and checked again on arrival. The usage-analytics switch still turns all of it off.'
+        text: 'When something breaks, the app now reports the technical details of the failure - the error, where in the app it happened, and what kinds of log line it had just read - so bugs get diagnosed instead of guessed at. Never your log contents, your chat, or any name from the game: the message is redacted on your machine and checked again on arrival. The usage-analytics switch still turns all of it off.'
       }
     ]
   },
@@ -150,7 +551,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     entries: [
       {
         kind: 'changed',
-        text: 'Anonymous usage reporting (if you have it on) now includes error counts — how many errors happened, never what they said — so a buggy release gets noticed and fixed faster.'
+        text: 'Anonymous usage reporting (if you have it on) now includes error counts - how many errors happened, never what they said - so a buggy release gets noticed and fixed faster.'
       }
     ]
   },
@@ -191,12 +592,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'fixed',
-        text: 'Alerts created from Suggested actually fire — a landing message shared by several spells now matches whichever of them you cast, and the alert speaks the right spell name.',
+        text: 'Alerts created from Suggested actually fire - a landing message shared by several spells now matches whichever of them you cast, and the alert speaks the right spell name.',
         fromReport: true
       },
       {
         kind: 'fixed',
-        text: "Bard crowd-control breaks are detected across the whole song ladder, not just the level-20 song — and a mez break is announced as a mez break, not a charm break.",
+        text: "Bard crowd-control breaks are detected across the whole song ladder, not just the level-20 song - and a mez break is announced as a mez break, not a charm break.",
         fromReport: true
       },
       {
@@ -211,12 +612,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'fixed',
-        text: "Monk Mend appears in the healing breakdown — counted every time, with the amount shown as unstated because the game never says one.",
+        text: 'Monk Mend appears in the healing breakdown - counted every time, and tagged "no amount" because the game never says how much it healed.',
         fromReport: true
       },
       {
         kind: 'fixed',
-        text: 'The celebration overlay introduces itself the first time it appears — named, with a close button, and a way to turn it off right on the card.',
+        text: 'The celebration overlay introduces itself the first time it appears - named, with a close button, and a way to turn it off right on the card.',
         fromReport: true
       },
       {
@@ -237,7 +638,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'new',
-        text: 'The leveling tab highlights what has been dropping in your selected time window — motes and farm targets float to the top — and clicking an item jumps to its detail.',
+        text: 'The leveling tab highlights what has been dropping in your selected time window - motes and farm targets float to the top - and clicking an item jumps to its detail.',
         fromReport: true
       },
       {
@@ -251,7 +652,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'fixed',
-        text: 'Smite has its own row too — the skill swings split out from the Smiting Strike spell.'
+        text: 'Smite has its own row too - the skill swings split out from the Smiting Strike spell.'
       },
       {
         kind: 'fixed',
@@ -282,15 +683,15 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'new',
-        text: 'The exp graph has a timescale picker — and the whole leveling dashboard follows it: rates, AA pace and zone stats all read the window you chose.'
+        text: 'The exp graph has a timescale picker - and the whole leveling dashboard follows it: rates, AA pace and zone stats all read the window you chose.'
       },
       {
         kind: 'new',
-        text: "What's new: this panel — every release, newest first, with a strip along the bottom the first time you launch after an update."
+        text: "What's new: this panel - every release, newest first, with a strip along the bottom the first time you launch after an update."
       },
       {
         kind: 'new',
-        text: 'The app updates itself quietly in the background, so releases were arriving with nothing to say they had — no way to know what was different, or that a fix was there because somebody asked for it.'
+        text: 'The app updates itself quietly in the background, so releases were arriving with nothing to say they had - no way to know what was different, or that a fix was there because somebody asked for it.'
       },
       {
         kind: 'new',
@@ -313,7 +714,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'new',
-        text: 'The exaltation planner has ear, wrist and finger slots — plan two ring effects at once.',
+        text: 'The exaltation planner has ear, wrist and finger slots - plan two ring effects at once.',
         fromReport: true
       },
       {
@@ -340,7 +741,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     entries: [
       {
         kind: 'changed',
-        text: 'The meter no longer asks “your pet?” — order your pet once (/pet attack) or use /pet who leader and it is yours from that moment; re-summoning retires the old pet.',
+        text: 'The meter no longer asks “your pet?” - order your pet once (/pet attack) or use /pet who leader and it is yours from that moment; re-summoning retires the old pet.',
         fromReport: true
       },
       {
@@ -350,7 +751,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'fixed',
-        text: 'Loading no longer pegs a CPU core, and the overlays and cursor ring stay out of the way — and off your mouse — until parsing finishes.'
+        text: 'Loading no longer pegs a CPU core, and the overlays and cursor ring stay out of the way (and off your mouse) until parsing finishes.'
       },
       { kind: 'fixed', text: 'Switching characters no longer replays old alerts and celebrations.' },
       {
@@ -392,7 +793,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     date: '2026-08-05',
     entries: [
       {
-        text: 'Closing the app really closes it — a failed teardown could leave it running with no window, and block the next launch.',
+        text: 'Closing the app really closes it - a failed teardown could leave it running with no window, and block the next launch.',
         fromReport: true
       }
     ]
@@ -403,7 +804,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     entries: [
       { text: 'Attack-round stats, honest about what the log states and what it infers.' },
       {
-        text: 'Picking your EverQuest folder attaches right away — and so does typing /log on, without a restart.',
+        text: 'Picking your EverQuest folder attaches right away - and so does typing /log on, without a restart.',
         fromReport: true
       },
       { text: 'The installer runs under Wine and CrossOver instead of dead-ending.', fromReport: true }
@@ -414,7 +815,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     date: '2026-08-05',
     entries: [
       {
-        text: 'Monk special attacks get their real names — Dragon Punch and Flying Kick stop being counted as anonymous swings.',
+        text: 'Monk special attacks get their real names - Dragon Punch and Flying Kick stop being counted as anonymous swings.',
         fromReport: true
       },
       { text: 'Your /outputfile dumps are read the moment you write them.' },
@@ -440,7 +841,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
         text: 'A card names what you just did, fades on its own, and takes you to the tab with the details if you click it.'
       },
       { text: 'Healing joins the meters, in the panel and in a floating overlay of its own.' },
-      { text: 'Only kills credited to you celebrate — a boss a stranger killed nearby no longer does.' }
+      { text: 'Only kills credited to you celebrate - a boss a stranger killed nearby no longer does.' }
     ]
   },
   {
@@ -448,7 +849,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     date: '2026-08-04',
     entries: [
       { text: 'Maps gain a zone pane that says what lives there, pinned where the wiki says.' },
-      { text: 'Overview tiles link where you would click — a drop opens its item, a fight opens the meter.' },
+      { text: 'Overview tiles link where you would click - a drop opens its item, a fight opens the meter.' },
       { text: 'Kill records go per instance tier, so a d4 badge no longer stands under a d0 loadout.' }
     ]
   },
@@ -482,7 +883,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
         text: 'When something looked wrong there was nowhere to say so, and a problem nobody can see is a problem nobody fixes.'
       },
       {
-        text: 'The attached window carries combat, casts and loot — never chat, and never anyone else’s words — so a defect can be diagnosed from what actually happened instead of from a description of it.'
+        text: 'The attached window carries combat, casts and loot - never chat, and never anyone else’s words - so a defect can be diagnosed from what actually happened instead of from a description of it.'
       }
     ]
   },
@@ -653,12 +1054,12 @@ export function releaseNotesProblems(notes: readonly ReleaseNote[] = RELEASE_NOT
       // stored `false` would read as "we checked and it wasn't a report", which is a claim this
       // file has no way to make. Present means true.
       if (e.fromReport !== undefined && !e.fromReport) {
-        problems.push(`${n.version}: fromReport is a flag — set it to true or leave it out`)
+        problems.push(`${n.version}: fromReport is a flag - set it to true or leave it out`)
       }
     }
     const prev = notes[i - 1]
     if (prev && compareVersions(prev.version, n.version) <= 0) {
-      problems.push(`${n.version} must sort strictly below ${prev.version} — the list is newest first`)
+      problems.push(`${n.version} must sort strictly below ${prev.version} - the list is newest first`)
     }
   })
   return problems

@@ -83,7 +83,7 @@ async function provisionPack(pack: RegistryPack, packsRoot: string): Promise<boo
     } catch (err) {
       const last = attempt === MAX_ATTEMPTS
       logError('main:provisionPacks', {
-        message: `provisioning '${pack.name}' failed (attempt ${attempt}/${MAX_ATTEMPTS})${last ? '' : ' — backing off'}`,
+        message: `provisioning '${pack.name}' failed (attempt ${attempt}/${MAX_ATTEMPTS})${last ? '' : ' - backing off'}`,
         err
       })
       if (last) return false

@@ -113,7 +113,7 @@ function importOne(
   }
   if (bytes > MAX_IMPORT_BYTES) {
     const mb = (bytes / (1024 * 1024)).toFixed(1)
-    const reason = `${mb} MB is too large — alert sounds are capped at ${MAX_IMPORT_MB} MB`
+    const reason = `${mb} MB is too large - alert sounds are capped at ${MAX_IMPORT_MB} MB`
     return { rejected: { file, reason } }
   }
 

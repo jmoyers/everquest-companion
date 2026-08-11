@@ -26,6 +26,8 @@ import {
   COLD_START_MS_EDGES,
   type StartupReplayStats,
   type TelemetryBatch,
+  type TelemetryEnvelope,
+  type TelemetryFlipKind,
   type TelemetryPrefs
 } from '../../shared/telemetry'
 import {
@@ -35,10 +37,12 @@ import {
   telemetryFlushEnabled,
   telemetryPermanentRefusal
 } from './net'
+import { flipNoticeBatch, flipNoticeKind, telemetryFlipNoticeEnabled } from './optOut'
 import {
   beginSession,
   endSession,
   ensureAnalyticsId,
+  envelope,
   markNoticeShown,
   pendingBatch,
   recordEvent,
@@ -265,13 +269,53 @@ export function pauseTelemetry(): void {
 }
 
 /**
+ * SEND ONE FLIP NOTICE (JOS-109). Best effort, exactly once, never retried — `./optOut.ts` holds
+ * the whole argument for why this bypasses `telemetryFlushEnabled`'s `enabled` term and why it
+ * may not keep anything to try again with.
+ *
+ * It does NOT touch the ring, in either direction: it neither reads it (the batch is built from
+ * the envelope alone) nor writes it back on success (`retireBatch`'s resurrection hazard, which
+ * for an opted-out install would recreate the very file the switch just deleted). The return
+ * value exists for the tests and for the log line; no caller acts on it.
+ */
+export async function sendFlipNotice(
+  kind: TelemetryFlipKind,
+  env: TelemetryEnvelope,
+  prefs: TelemetryPrefs
+): Promise<boolean> {
+  if (!telemetryFlipNoticeEnabled(E2E, TELEMETRY_API_URL, prefs)) return false
+  const { status } = await postTelemetryBatch(flipNoticeBatch(kind, env, Date.now()))
+  const accepted = status >= 200 && status < 300
+  logInfo(
+    `[everquest-companion] telemetry: ${kind} notice ${accepted ? 'sent' : 'not delivered'}` +
+      (accepted ? '' : ' (not retried - see telemetry/optOut.ts)')
+  )
+  return accepted
+}
+
+/**
  * Apply the switch AND bring this session's timers into line with it. The one place both the
  * Preferences toggle and the first-run notice go through, so the two can never diverge.
+ *
+ * THE ORDER OF THE FOUR STEPS BELOW IS THE FEATURE (JOS-109), not house style:
+ *
+ *   1. read the switch as it stands, so a write that changes nothing emits nothing;
+ *   2. for an OPT-OUT, build the notice BEFORE applying — `setTelemetryEnabled(false)` discards
+ *      the analyticsId, and an envelope is the only thing that makes the notice countable;
+ *   3. apply, which is what makes "off" mean off immediately: ring gone, id gone, timers stopped.
+ *      Nothing waits on the network for that;
+ *   4. for an OPT-IN, build the notice AFTER — the id it needs was minted by step 3 — and fire
+ *      whichever notice step 2 or 4 produced, unawaited. The switch is a synchronous IPC answer
+ *      and must not sit behind a 15 s POST budget.
  */
 export function applyTelemetryEnabled(enabled: boolean): TelemetryPrefs {
+  const kind = flipNoticeKind(getTelemetryPrefs().enabled, enabled)
+  const farewell = kind === 'optOut' ? envelope() : null
   const next = setTelemetryEnabled(enabled)
   if (next.enabled) resumeTelemetry()
   else pauseTelemetry()
+  const env = farewell ?? (kind === 'optIn' ? envelope(next) : null)
+  if (kind !== null && env !== null) void sendFlipNotice(kind, env, next)
   return next
 }
 

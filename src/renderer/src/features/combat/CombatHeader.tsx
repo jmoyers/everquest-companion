@@ -1,5 +1,14 @@
 // The Combat tab's HEADER — the two-rank bar above the dashboard. Split out of CombatView.tsx;
 // the design rationale for both ranks lives with the markup below, where it is load-bearing.
+//
+// IT MOUNTS NO POPPER (JOS-143). Line 1 carries the fight SELECTOR — a searchable combobox whose
+// list opens under its trigger (FightPicker) — and line 2 sat directly beneath it holding two
+// tooltips on the segmented controls and three more on the passive pills at the right edge. A MUI
+// tooltip flips to `top` when the window has no room below it, which on this bar means opening
+// onto the picker trigger, and it takes pointer events while it is up. Every string here is a
+// native `title` instead: same words on hover, no DOM node, no hit area, nothing to intercept a
+// click. Nothing was dropped — these strings are the only statement of the coat list, the
+// modifier groups and why Timeline is disabled.
 
 import {
   Box,
@@ -14,14 +23,13 @@ import {
 } from '@mui/material'
 import CircleIcon from '@mui/icons-material/Circle'
 import { FightPicker } from './FightPicker'
-import { ScopeChip } from './ScopeChip'
+import { ScopeStatus } from './ScopeStatus'
 import type { CombatScope, MeterMode, ScopeOptions } from './dashboardData'
 import type { MeterScope, RosterSnap } from '@shared/roster'
 import { fmtDur } from './combatShared'
 import { formatDateTime } from '../../lib/formatDate'
 import { formatNum as fmt, formatRate } from '../../lib/formatRate'
 import type { BladeCoatState, CoatSlot, CombatSnapshot, SegmentView } from '@shared/combat'
-import { Tooltip } from '../../lib/Tooltip'
 
 type StanceState = NonNullable<CombatSnapshot['stance']>
 type PoisonState = CombatSnapshot['poison']
@@ -33,7 +41,7 @@ type PoisonState = CombatSnapshot['poison']
  * model keeps exactly those names (`StanceState.stance` / `.invocation`, the timeline's pinned
  * lanes, the parser). The DISPLAY drops the jargon — the categories read as strange next to a
  * value like "Berserker" — and simply numbers the two slots: `1: Berserker`, `2: Inversion`.
- * The slot number is a dim prefix; the VALUE carries the weight. The tooltip still names the
+ * The slot number is a dim prefix; the VALUE carries the weight. The hover text still names the
  * underlying group, so nothing is hidden.
  */
 function ModifierSlot({
@@ -45,43 +53,42 @@ function ModifierSlot({
   slot: 1 | 2 | 3
   value: string
   color: string
-  /** Overrides the default "Modifier n — <group>: <value>" tooltip (slot 3 says more). */
+  /** Overrides the default "Modifier n — <group>: <value>" hover text (slot 3 says more). */
   tip?: string
 }): React.JSX.Element {
   return (
-    <Tooltip title={tip ?? `Modifier ${slot} — ${slot === 1 ? 'combat stance' : 'invocation'}: ${value}`}>
-      {/* A subtle pill, so the two slots read as one passive readout at the end of the lens line
-          rather than as two more bits of loose text competing with the controls. The TEXT is
-          unchanged ('1: Berserker') — it is asserted verbatim by the headless e2e harness. */}
-      <Stack
-        direction="row"
-        spacing={0.25}
-        alignItems="baseline"
-        data-testid={`stance-slot-${slot}`}
-        sx={{
-          // SHRINKABLE, in that order: minWidth 0 lets the pill give ground when the lens line
-          // runs out of room, and the value below ellipsizes rather than pushing the line into
-          // a second row (the header's height is the thing that must not move — see the header
-          // Paper). The tooltip above always carries the full value, so nothing is lost.
-          minWidth: 0,
-          px: 0.5,
-          py: '1px',
-          borderRadius: 999,
-          bgcolor: 'rgba(255,255,255,0.04)'
-        }}
-      >
-        <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }}>
-          {slot}:
-        </Typography>
-        {/* `minWidth: 0` is what makes the promise above TRUE. A `noWrap` Typography in a flex
-            row has `min-width: auto`, so without this it refuses to shrink and pushes the lens
-            line wide no matter how much room the Stack gives up — latent until slot 3 started
-            carrying up to four coat names. The tooltip has every full value either way. */}
-        <Typography variant="caption" noWrap sx={{ minWidth: 0, color, fontWeight: 600, textTransform: 'capitalize' }}>
-          {value}
-        </Typography>
-      </Stack>
-    </Tooltip>
+    /* A subtle pill, so the two slots read as one passive readout at the end of the lens line
+       rather than as two more bits of loose text competing with the controls. The TEXT is
+       unchanged ('1: Berserker') — it is asserted verbatim by the headless e2e harness. */
+    <Stack
+      direction="row"
+      spacing={0.25}
+      alignItems="baseline"
+      data-testid={`stance-slot-${slot}`}
+      title={tip ?? `Modifier ${slot} - ${slot === 1 ? 'combat stance' : 'invocation'}: ${value}`}
+      sx={{
+        // SHRINKABLE, in that order: minWidth 0 lets the pill give ground when the lens line
+        // runs out of room, and the value below ellipsizes rather than pushing the line into
+        // a second row (the header's height is the thing that must not move — see the header
+        // Paper). The title always carries the full value, so nothing is lost.
+        minWidth: 0,
+        px: 0.5,
+        py: '1px',
+        borderRadius: 999,
+        bgcolor: 'rgba(255,255,255,0.04)'
+      }}
+    >
+      <Typography variant="caption" sx={{ fontSize: 10, color: 'text.disabled', flexShrink: 0 }}>
+        {slot}:
+      </Typography>
+      {/* `minWidth: 0` is what makes the promise above TRUE. A `noWrap` Typography in a flex
+          row has `min-width: auto`, so without this it refuses to shrink and pushes the lens
+          line wide no matter how much room the Stack gives up — latent until slot 3 started
+          carrying up to four coat names. The title has every full value either way. */}
+      <Typography variant="caption" noWrap sx={{ minWidth: 0, color, fontWeight: 600, textTransform: 'capitalize' }}>
+        {value}
+      </Typography>
+    </Stack>
   )
 }
 
@@ -94,18 +101,18 @@ function ModifierSlot({
  * utility poison) and this pill named only the utility slot until 2026-08-04 — so the usual
  * asp + siphoning + stunning loadout with no utility poison rendered as nothing at all, which
  * is exactly what the owner reported. Short labels carry it ("Neurotoxic · Asp · Blood Siphon
- * · Stunning"); the trailing "Poison"/"Venom" is noise at pill size and the tooltip has it.
+ * · Stunning"); the trailing "Poison"/"Venom" is noise at pill size and the hover text has it.
  *
  * ORDER IS THE ELLIPSIS BUDGET. The pill is inside the header's one shrinkable group, so under
  * pressure it truncates from the RIGHT — utility first (the slot the player actually chooses
- * between and swaps mid-fight), then the venoms (coated once and forgotten). The tooltip
+ * between and swaps mid-fight), then the venoms (coated once and forgotten). The hover text
  * always carries every full name with its applied time, so nothing is lost.
  */
 function coatShortName(poison: string): string {
   return poison === 'unknown' ? 'unknown' : poison.replace(/\s+(Poison|Venom)$/, '')
 }
 
-/** Utility first, then the venom stack — the one order both the pill and its tooltip use, and
+/** Utility first, then the venom stack — the one order both the pill and its hover text use, and
  *  each coat carries the slot family it came from rather than being re-identified later. */
 function coatList(coat: BladeCoatState): { slot: CoatSlot; group: string }[] {
   return [
@@ -126,7 +133,7 @@ function CoatSlotPill({ coat }: { coat: BladeCoatState }): React.JSX.Element | n
       slot={3}
       value={all.map((c) => coatShortName(c.slot.poison)).join(' · ')}
       color="#c46fd2"
-      tip={`Modifier 3 — blade coats, ${all.length} of a possible 4 (one utility poison plus one venom from each of the three combat lines): ${detail}`}
+      tip={`Modifier 3 - blade coats, ${all.length} of a possible 4 (one utility poison plus one venom from each of the three combat lines): ${detail}`}
     />
   )
 }
@@ -340,30 +347,29 @@ function ViewSwitch({
   noTimeline: boolean
 }): React.JSX.Element {
   return (
-    <Tooltip
+    /* The hover text sits on the GROUP, not on a span around the disabled button: wrapping
+       one child of a ToggleButtonGroup breaks the group's own first/last-child styling, and
+       the explanation belongs to the pair anyway. A native `title` rather than a popper
+       (JOS-143) — this is line 2 of the header and the fight COMBOBOX is line 1, so a card
+       that flipped to `top` for want of room below opened straight onto the picker trigger. */
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      data-testid="view-toggle"
+      value={view}
       title={
         noTimeline
-          ? "Timeline follows a single fight — it's kept for the live and recent encounters. The zone aggregate and older fights have no event ring."
-          : ''
+          ? "Timeline follows a single fight - it's kept for the live and recent encounters. The zone aggregate and older fights have no event ring."
+          : undefined
       }
+      onChange={(_e: unknown, v: 'dash' | 'timeline' | null) => v && setView(v)}
+      sx={segmented('primary')}
     >
-      {/* The tooltip sits on the GROUP, not on a span around the disabled button: wrapping
-          one child of a ToggleButtonGroup breaks the group's own first/last-child
-          styling, and the explanation belongs to the pair anyway. */}
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        data-testid="view-toggle"
-        value={view}
-        onChange={(_e: unknown, v: 'dash' | 'timeline' | null) => v && setView(v)}
-        sx={segmented('primary')}
-      >
-        <ToggleButton value="dash">Dashboard</ToggleButton>
-        <ToggleButton value="timeline" disabled={noTimeline}>
-          Timeline
-        </ToggleButton>
-      </ToggleButtonGroup>
-    </Tooltip>
+      <ToggleButton value="dash">Dashboard</ToggleButton>
+      <ToggleButton value="timeline" disabled={noTimeline}>
+        Timeline
+      </ToggleButton>
+    </ToggleButtonGroup>
   )
 }
 
@@ -387,20 +393,19 @@ function DirectionFilter({
   return (
     <>
       <Divider orientation="vertical" flexItem sx={{ my: 0.25 }} />
-      <Tooltip title="Which dimension the meter lists — damage out, damage in, or healing">
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          data-testid="direction-toggle"
-          value={mode}
-          onChange={(_e: unknown, v: MeterMode | null) => v && setMode(v)}
-          sx={segmented('text')}
-        >
-          <ToggleButton value="out">Outgoing</ToggleButton>
-          <ToggleButton value="in">Incoming</ToggleButton>
-          <ToggleButton value="heal">Healing</ToggleButton>
-        </ToggleButtonGroup>
-      </Tooltip>
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        data-testid="direction-toggle"
+        value={mode}
+        title="Which dimension the meter lists - damage out, damage in, or healing"
+        onChange={(_e: unknown, v: MeterMode | null) => v && setMode(v)}
+        sx={segmented('text')}
+      >
+        <ToggleButton value="out">Outgoing</ToggleButton>
+        <ToggleButton value="in">Incoming</ToggleButton>
+        <ToggleButton value="heal">Healing</ToggleButton>
+      </ToggleButtonGroup>
     </>
   )
 }
@@ -409,20 +414,18 @@ function DirectionFilter({
  * The in-combat dot: state, not a control.
  *
  * The DOT is the signal; the words next to it are the label. Below `lg` they are dropped and the
- * tooltip carries them, because this is the cheapest ~50px on the lens line and at the 900px
+ * hover text carries them, because this is the cheapest ~50px on the lens line and at the 900px
  * minimum window that line has no room to spare (three modifier pills now live at the end of it).
  * A green dot that explains itself on hover is a fair trade for a header that stays one bar.
  */
 function InCombatDot(): React.JSX.Element {
   return (
-    <Tooltip title="In combat">
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-        <CircleIcon sx={{ fontSize: 8, color: 'success.main' }} />
-        <Typography variant="caption" noWrap sx={{ color: 'text.secondary', display: { xs: 'none', lg: 'block' } }}>
-          in combat
-        </Typography>
-      </Stack>
-    </Tooltip>
+    <Stack direction="row" spacing={0.5} alignItems="center" title="In combat" sx={{ flexShrink: 0 }}>
+      <CircleIcon sx={{ fontSize: 8, color: 'success.main' }} />
+      <Typography variant="caption" noWrap sx={{ color: 'text.secondary', display: { xs: 'none', lg: 'block' } }}>
+        in combat
+      </Typography>
+    </Stack>
   )
 }
 
@@ -473,9 +476,9 @@ export interface CombatHeaderProps {
   setMode: (m: MeterMode) => void
   /** WHOSE damage — the group model's scope, a different axis from Fight|Overall (which is
    *  WHICH segment). Sits beside the direction filter because the two together are the sentence
-   *  the meter is answering: "outgoing damage, for my group". */
+   *  the meter is answering: "outgoing damage, for my group". READ-ONLY here since JOS-115: the
+   *  choice lives in Preferences > Combat, this line only states which one is in force. */
   meterScope: MeterScope
-  setMeterScope: (s: MeterScope) => void
   roster: RosterSnap
 }
 
@@ -519,7 +522,7 @@ export function CombatHeader(p: CombatHeaderProps): React.JSX.Element {
       {/* ── LINE 2: LENS + REFINEMENTS ── controls left, passive state right. It NEVER wraps:
           wrapping turns content growth into HEIGHT, and this bar's whole contract is that it
           stays two ranks (the headless harness measures it). Overflow is absorbed by the passive
-          readout instead, which shrinks and ellipsizes with its tooltips intact. */}
+          readout instead, which shrinks and ellipsizes with its hover text intact. */}
       <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="nowrap" useFlexGap sx={{ mt: 0.5, minWidth: 0 }}>
         <ViewSwitch view={p.view} setView={p.setView} noTimeline={p.noTimeline} />
 
@@ -527,11 +530,12 @@ export function CombatHeader(p: CombatHeaderProps): React.JSX.Element {
 
         {/* WHOSE damage (docs/plans/group-model.md §2). Only the two SOURCE dimensions are
             scoped: the Incoming list is always "what is hitting You", and no roster changes
-            that. The chip stays compact because this line never wraps — its two-rank height is
-            a contract the headless harness measures. */}
-        {p.view === 'dash' && p.mode !== 'in' && (
-          <ScopeChip scope={p.meterScope} setScope={p.setMeterScope} roster={p.roster} />
-        )}
+            that. It STATES the scope and no longer offers it (JOS-115 — Preferences > Combat
+            owns the choice); the roster popover beside it is still a control, because a
+            mis-inferred group is corrected where its rows are missing. The readout stays
+            compact because this line never wraps — its two-rank height is a contract the
+            headless harness measures. */}
+        {p.view === 'dash' && p.mode !== 'in' && <ScopeStatus scope={p.meterScope} roster={p.roster} />}
 
         <Box sx={{ flexGrow: 1, minWidth: 8 }} />
 

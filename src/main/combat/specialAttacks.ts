@@ -12,9 +12,12 @@
 //   [Wed Jul 29 15:05:14 2026] You strike a frenzied ghoul for 32 points of damage. (Critical)
 //   [Wed Jul 29 15:05:14 2026] You have become better at Dragon Punch! (84)
 //
-// The damage was always COUNTED — `meleeSkill('strike')` answers "Melee", so it folded into the
-// anonymous melee lane and no Dragon Punch row could ever exist. This module supplies the
+// The damage was always COUNTED — `meleeSkill('strike')` answered "Melee" then, so it folded into
+// the anonymous melee lane and no Dragon Punch row could ever exist. This module supplies the
 // missing half: the log's own statement of which special is live, joined to the swing by VERB.
+// (JOS-163 later gave the verb its own neutral floor — `meleeSkill('strike')` answers "Strike"
+// now — so an unnamed strike is no longer pooled with slash/crush/hit. That changed the FLOOR;
+// this module is still the only thing that can put a NAME on the lane, and it still wins.)
 //
 // ── THE LANES, AND WHY EXACTLY THESE TWO ────────────────────────────────────────────────────
 //
@@ -100,9 +103,17 @@
 // relabelled Dragon Punch swings "Tiger Claw". State comes from the state line (law 1).
 //
 // PRE-STATE IS HONEST BY OMISSION. Until a `You will now use` line has been seen for a lane,
-// this module returns nothing and the parser's ordinary `meleeSkill()` answer stands — "Melee"
+// this module returns nothing and the parser's ordinary `meleeSkill()` answer stands — "Strike"
 // for a strike, "Kick" for a kick. It never seeds a lane from the table's first entry, so it
 // cannot claim a special the log has not stated the character has.
+//
+// THAT OMISSION USED TO COST THE ROW ENTIRELY, AND NOW IT ONLY COSTS THE NAME (JOS-163). The
+// state line prints ONCE, at the level-up, so a log file that begins after it — fresh install,
+// rotation, `/log on` enabled later — never contains it, and before JOS-163 that meant every
+// strike a monk ever threw read "Melee" forever. `meleeSkill()` now answers "Strike" for the
+// bare verb, so the lane exists on its own evidence and this module upgrades it to the real
+// ability name whenever the log does state one. The refusal above is unchanged and load-bearing:
+// the floor is the VERB, never the table's first entry.
 //
 // SELF ONLY. The state line has no third-person grammar (a full-log sweep found zero `now use`
 // lines that are not `You will now use`), so nothing here can ever be known about a mob, a pet

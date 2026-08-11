@@ -23,7 +23,15 @@
 import type { LootEvent } from '@shared/types'
 import { itemCountKey } from '../../lib/itemName'
 
-/** Fold loot history into held counts keyed by the normalized counting key. */
+/**
+ * Fold loot history into held counts keyed by the normalized counting key.
+ *
+ * ALL TIME, ALWAYS (JOS-141). JOS-128 briefly gave this fold a `since` parameter that narrowed it
+ * to loot after an inventory dump was generated — the accumulate half of a
+ * baseline-then-accumulate rule. That rule is gone (owner ruling, 2026-08-09: a dump only covers
+ * what was open when it was written, so resetting to it ate banked items), and with it the reason
+ * for a window. The log is the record; it only grows.
+ */
 export function computeHeldCounts(lootHistory: readonly LootEvent[]): Record<string, number> {
   const c: Record<string, number> = {}
   for (const e of lootHistory) {

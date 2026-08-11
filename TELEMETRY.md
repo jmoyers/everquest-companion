@@ -107,7 +107,7 @@ When you switch away from a tab.
 
 | Field | Values | What it means |
 | --- | --- | --- |
-| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `preferences` · `triage` | Which tab. A fixed list of tab names. |
+| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `preferences` · `triage` | Which tab. A fixed list of tab names. |
 | `ms` | whole number | How long it was on screen. |
 
 ### `overlayToggle`
@@ -116,7 +116,7 @@ When you open or close a floating meter.
 
 | Field | Values | What it means |
 | --- | --- | --- |
-| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` | Which overlay. |
+| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` | Which overlay. |
 | `open` | true / false | Opened or closed. |
 
 ### `featureUse`
@@ -146,7 +146,7 @@ Once per session: what a typical install looks like.
 | `charCountBucket` | bucket index | How many character logs the app can see. |
 | `logSizeBucket` | bucket index | How big the log it reads is. |
 | `alertCountBucket` | bucket index | How many alerts you keep. |
-| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` | Which floating meters are open. |
+| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` | Which floating meters are open. |
 | `cursorRing` | true / false | Is the cursor ring on. |
 | `autoHide` | true / false | Is overlay auto-hide on. |
 | `voiceEngine` | `system` · `kokoro` · `off` | Which speech tier your spoken alerts use — off when no alert is set to speak. |
@@ -175,6 +175,8 @@ With each session report (every few minutes, and at close): counts of things tha
 | `parserStalls` | whole number | Times log reading stalled. Not currently measured — always 0. |
 | `presenceRestarts` | whole number | Times the game-window watcher restarted. |
 | `speechFailures` | whole number | Times an utterance failed to speak. Downloaded voices only. |
+| `imageFetchFailures` | whole number (optional) | Times an item icon or portrait could not be downloaded, usually because the wiki was unreachable. The picture is hidden and the app carries on. Never which picture. |
+| `suppressedErrorLines` | whole number (optional) | The same error line repeating: after the first few, further copies are counted here instead of being written to the local error log again. A count only. |
 
 ### `updateOutcome`
 
@@ -196,12 +198,29 @@ When the app hits an error: the technical details of the failure, so it can be f
 | `code` | e.g. `ENOENT` (optional) | The short machine-readable code, when the error has one. |
 | `redactedMessage` | redacted text, at most 200 characters | The error message with the revealing parts replaced before it is stored: any file path becomes `<path>`, anything in quotes becomes `<str>`, and any long number becomes `<n>`. The replacement runs on your machine AND again on arrival, and a message that is not already redacted is thrown away rather than cleaned up. |
 | `frames` | at most 10 × (file, line, column, function) | Where in the app it happened. Files are named relative to the app’s own program files (they always begin `out/`) — the folder the app is installed in, and therefore your account name, is cut off before the value exists. |
+| `frameOrigin` | `thrown` · `capture` | Whether the places listed above are where the error was thrown, or where the app noticed it. Some failures arrive with no trace of their own, and the app records its own position instead so two different failures do not look like one. |
+| `externalFrames` | at most 5 × (module, line, column, function) | The same thing for code that is not ours: the name of the Node built-in, the Electron script, or the open-source package involved — `node:fs`, `node_modules/chokidar`. The name only, cut at the package: the folder it is installed in never survives. |
+| `componentPath` | at most 8 names joined with > | For an error in the app’s own interface, which of the app’s screen components it came through — the names in this app’s source code, and nothing from the game. |
 | `fingerprint` | 16 hex characters | A hash used to group identical errors together. |
 | `breadcrumbs` | at most 10 × (kind, offset) | What KINDS of log line the app had just read — `damage`, `loot`, `zone` and so on, from a fixed list — and how long before the error each was. The kind only: not the line, not who or what was in it. |
-| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `preferences` · `triage` · `unknown` | Which tab was open. A fixed list. |
+| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `preferences` · `triage` · `unknown` | Which tab was open. A fixed list. |
 | `sessionAgeBucket` | bucket index | How long the app had been running. |
 | `mode` | `live` · `replay` | Was it reading your log history, or following it live. |
-| `count` | whole number | How many times this same error happened since the last report. |
+| `count` | whole number | How many times this same error happened since the last report. It stops at a hundred per error per run of the app: something that goes wrong over and over reports itself a hundred times and then goes quiet, so one repeating fault cannot bury everything else. |
+
+### `optOut`
+
+Once, when you turn usage analytics off. It is the last thing this app ever sends, and it exists so opt-outs can be counted rather than guessed at. Everything else waiting to be sent is thrown away rather than sent with it, it is never retried if you are offline, and nothing further is ever sent.
+
+**This event has no fields at all.** It says only that it happened, alongside the
+five facts every send carries (above).
+
+### `optIn`
+
+Once, when you turn usage analytics back on. The counterpart to the notice above, under the new random id. It carries nothing either.
+
+**This event has no fields at all.** It says only that it happened, alongside the
+five facts every send carries (above).
 
 ## Flows
 
@@ -278,3 +297,11 @@ These are the exact ranges, taken from the schema:
 away everything currently held on your machine, and discards the random id — all
 immediately. Nothing is kept to be sent later. Turning it back on starts from empty, with a
 new id, which counts as a brand-new install.
+
+**One last thing is sent when you turn it off, and this is it:** a single notice saying the
+switch was turned off, so opt-outs can be counted rather than guessed at. It carries no
+measurements at all, only the five facts at the top of this page that every send carries.
+Everything else waiting to be sent is thrown away rather than sent with it, and nothing
+further is ever sent. If your machine is offline at that moment the notice is simply lost;
+it is never retried, because keeping something to send later is exactly what turning this
+off is supposed to stop. Turning it back on sends the matching notice under the new id.

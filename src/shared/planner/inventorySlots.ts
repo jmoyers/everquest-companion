@@ -31,7 +31,13 @@
 // PURE: types plus a fold, no fs and no Electron, so both tsconfigs see it and the node runner
 // drives it against the real 295-line dump (`tests/plannerInventory.test.mts`).
 
-import { parseItemName, walkEntries, type InventoryDump, type InventoryEntry } from '../outputs/inventory'
+import {
+  parseItemName,
+  PRIMARY_ITEM_SECTION,
+  walkEntries,
+  type InventoryDump,
+  type InventoryEntry
+} from '../outputs/inventory'
 import type { EquipLocationToken } from '../outputs/inventory'
 import { ANY_CELLS, cellsForSlot, type EquipSlot, type PlanSlotId } from './types'
 
@@ -110,6 +116,9 @@ export const ANY_CELL_LOCATIONS: ReadonlySet<EquipLocationToken> = new Set<Equip
  * caller takes the first free one, exactly as it does for the second ear.
  */
 function cellsForLocation(entry: InventoryEntry): readonly PlanSlotId[] {
+  // Only the `Location` table says what is WORN (JOS-185): the dump can carry other item-shaped
+  // tables, they all feed held counts, and none of them is the character's body.
+  if (entry.section !== PRIMARY_ITEM_SECTION) return []
   if (entry.path.length > 0 || entry.empty) return []
   if (entry.place.kind !== 'equip') return []
   if (ANY_CELL_LOCATIONS.has(entry.place.token)) return ANY_CELLS

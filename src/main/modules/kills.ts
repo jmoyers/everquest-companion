@@ -85,6 +85,13 @@ export class KillsModule implements EqModule<KillsSnap, KillsDelta> {
     // leave it pending would hand your experience to the next mob that dies near you.
     const credited = this.takeExp(ev.ts)
     if (!isCountedKill(ev)) return
+    // THE TIER IS THE ZONE YOU WERE STANDING IN, and `zoneTier` now answers with four kinds of
+    // thing, not one number in five (JOS-166): a difficulty d0..d4 for an instance, TIER_OPEN_WORLD
+    // for a bare zone name, TIER_UNKNOWN for an instance it cannot decode — and TIER_UNKNOWN for
+    // the empty string, which is this module's state before the scan has reached ANY zone line.
+    // That last case is why the `?? ''` is a real answer rather than a fallback: a kill folded
+    // before the first `You have entered` states nothing about where it happened, and it is not
+    // permitted to state d0.
     const tier = zoneTier(this.zone ?? '').tier
     // Key by the canonical lowercase name so the two casings EQ emits for the same
     // mob (sentence-start "A …" on slain-by lines, mid-sentence "a …" on

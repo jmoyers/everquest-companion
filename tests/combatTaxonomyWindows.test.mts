@@ -101,8 +101,10 @@ test('W-tax1: level-3 per-skill breakdown within the spell category', () => {
   const you = snap.selected!.entities.find((e) => e.id === 'you')!
   const spell = you.categories.find((c) => c.category === 'spell')!
   const skills = new Map(spell.skills.map((s) => [s.name, s]))
-  assert.equal(skills.get('Smiting Strike')?.total, 126)
-  assert.equal(skills.get('Vampiric Embrace')?.total, 58)
+  // Both are CAST-LESS in this window (no `You begin casting` line anywhere in it), so each
+  // lane is named for its origin — JOS-167. The totals are untouched.
+  assert.equal(skills.get('Smiting Strike · proc')?.total, 126)
+  assert.equal(skills.get('Vampiric Embrace · proc')?.total, 58)
 })
 
 /**
@@ -134,8 +136,8 @@ test('W-tax1: per-skill min tracks the smallest LANDED hit, next to max', () => 
   assert.equal(slay.get('Melee')?.max, 75)
 
   const spell = cat('spell')
-  assert.equal(spell.get('Smiting Strike')?.min, 63)
-  assert.equal(spell.get('Vampiric Embrace')?.min, 29)
+  assert.equal(spell.get('Smiting Strike · proc')?.min, 63)
+  assert.equal(spell.get('Vampiric Embrace · proc')?.min, 29)
 
   // The source-level lane merges melee + slay under the same skill name ("Melee"), so its min
   // is the melee 2 and its max the slay 75 — the aggregation is per (lane) there by design.

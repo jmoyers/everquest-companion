@@ -277,7 +277,7 @@ export function speechSetupGap(engine: SpeechEngine, voices: readonly unknown[])
 
 /** What each gap MEANS, in the user's terms. The link that follows it is the fix. */
 export const SPEECH_SETUP_NOTES: Record<SpeechSetupGap, string> = {
-  'engine-not-installed': 'The natural voice isn’t downloaded — a Windows voice speaks until it is.',
+  'engine-not-installed': 'The natural voice isn’t downloaded - a Windows voice speaks until it is.',
   'no-voices': 'This machine has no speech voices installed.'
 }
 
@@ -343,7 +343,7 @@ function warnKokoroFallback(reason: string): void {
   // `console.warn` is the tree's own convention for exactly that (main/errorLog.ts logWarn).
   // eslint-disable-next-line no-console
   console.warn(
-    `[everquest-companion] voice: the downloaded speech engine is unavailable (${reason}) — ` +
+    `[everquest-companion] voice: the downloaded speech engine is unavailable (${reason}) - ` +
       'speaking with the system voice instead.'
   )
 }

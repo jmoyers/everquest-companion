@@ -164,7 +164,9 @@ test('THE REPORT: Lord Nagafen killed by a DoT tick now reads as a kill, not "0 
   // And the one celebration predicate fires: confetti, card flash, snackbar, toast, bossDefeat.
   const fired = bossKills(prevOf(before), after)
   assert.equal(fired.length, 1)
-  assert.equal(fired[0].target.name, 'Lord Nagafen')
+  assert.equal(fired[0].status.target.name, 'Lord Nagafen')
+  // The kill reports d1, the run it landed on — not the target's highest ever (JOS-165).
+  assert.equal(fired[0].tier, 1)
 })
 
 test('Phinigel Autropos is on the raid-target roster', () => {

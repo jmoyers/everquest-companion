@@ -47,17 +47,23 @@ export default defineConfig({
         include: ['pg', '@aws-sdk/client-s3', '@aws-sdk/credential-providers', '@aws-sdk/dsql-signer']
       },
       rollupOptions: {
-        // TWO main-process bundles. `index` is the app; `speechWorker` is the Kokoro
-        // synthesis worker_thread (docs/plans/voice-alerts.md D2 — inference must never run
-        // on the thread that tails the log). It has to be a separate entry because
-        // `new Worker(path)` loads a FILE: rolling it into index.js would give the worker no
-        // file to load, and bundling it as a data-url string would put onnxruntime's native
-        // require inside an eval. Emitted as out/main/speechWorker.js, beside index.js, which
-        // is what `join(__dirname, 'speechWorker.js')` in ipc/speech.ts resolves in dev AND
-        // inside the packaged asar.
+        // THREE main-process bundles. `index` is the app; the other two are worker_threads,
+        // and each is a separate entry for the same reason: `new Worker(path)` loads a FILE, so
+        // rolling one into index.js would give the worker no file to load, and bundling it as a
+        // data-url string would put a native `require` inside an eval. Each is emitted beside
+        // index.js, which is what `join(__dirname, '<name>.js')` resolves in dev AND inside the
+        // packaged asar.
+        //
+        //   * speechWorker — Kokoro synthesis (docs/plans/voice-alerts.md D2: inference must
+        //     never run on the thread that tails the log).
+        //   * presenceWorker — the game-presence poll (JOS-182). Same rule, different number:
+        //     its 5 s process scan is a measured 8.4 ms of `EnumProcesses`, which main cannot
+        //     spend. It replaced a `powershell.exe` child, and this entry is what lets that
+        //     child's job move in-process without moving onto main's thread.
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          speechWorker: resolve(__dirname, 'src/main/speech/worker.ts')
+          speechWorker: resolve(__dirname, 'src/main/speech/worker.ts'),
+          presenceWorker: resolve(__dirname, 'src/main/presenceWorker.ts')
         }
       }
     }

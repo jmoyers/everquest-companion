@@ -74,7 +74,7 @@ function OfferRow({
           </Button>
         </span>
       </Tooltip>
-      <Tooltip title={`Re-point this alert at ${offer.to} — it will no longer fire for ${offer.from}`}>
+      <Tooltip title={`Re-point this alert at ${offer.to} - it will no longer fire for ${offer.from}`}>
         <span>
           <Button
             size="small"
@@ -113,7 +113,7 @@ export default function UpgradeOffers({
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
           <Typography variant="caption" color="text.secondary">
-            Adding keeps the old rank firing — loadout swaps go back to it.
+            Adding keeps the old rank firing - loadout swaps go back to it.
           </Typography>
         </Stack>
         {offers.map((o) => (

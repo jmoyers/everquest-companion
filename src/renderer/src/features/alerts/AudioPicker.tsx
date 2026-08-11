@@ -80,7 +80,7 @@ import { fallbackPack, packLabel } from './SoundPicker'
  * a sentence. The entries stay SELECTABLE either way — a def outlives a machine's voice
  * inventory (an imported alert set, a profile switch), and choosing one is legitimate.
  */
-const VOICE_GAP_SUFFIX = ' — not set up'
+const VOICE_GAP_SUFFIX = ' - not set up'
 
 /** The speak-what entries, as sentences rather than the def's field names. */
 const SAY_LABELS: Record<SpeechMode, string> = {

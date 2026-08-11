@@ -98,6 +98,21 @@
 import type { ProgressionSnap } from '@shared/types'
 import type { RangeStats, ZoneRangeRow } from '@shared/progressionStats'
 import { IDLE_GAP_MS, offlineMsIn, rangeStats } from '../../../../shared/progressionStats'
+// THE PROJECTION ITSELF MOVED (JOS-195) — `shared/levelEta.ts`, because the XP overlay asks the
+// same question from a window that must not import this card's view model. The WORDING stayed
+// here: every sentence below is still this card's, and the four gates are still the one
+// derivation. Re-exported at the bottom so every existing caller (and every existing test) is
+// untouched by the move.
+import {
+  ETA_ABSURD_MS,
+  ETA_BLOCKED_TITLE,
+  ETA_MIN_ONLINE_MS,
+  atCap,
+  currentLevel,
+  levelEta,
+  type EtaBlocked,
+  type LevelEta
+} from '../../../../shared/levelEta'
 import { aaEta } from '../../../../shared/aaPace'
 import { aaPaceLine } from '../leveling/aaPaceRows'
 import { NONE, activeIdleText, idleRuleCaption, offlineText } from '../leveling/rangeStatsRows'
@@ -150,133 +165,18 @@ export function levelingWindows(snap: ProgressionSnap): LevelingWindows {
   return { hour, zone: { t0, t1: end, zone: snap.zoneName[i] } }
 }
 
-/**
- * The CURRENT level as the log last reported it — the tail of `levelValue`, never `max()`.
- * You level three classes at once and a loadout swap re-reports the level of the new (lowest)
- * class with no line of its own, so the latest value is the only honest "your level" (the same
- * rule `latestLevel` follows in the Leveling tab). Null when the snapshot holds no ding: the
- * card omits the chip rather than guessing one.
- */
-export function currentLevel(snap: ProgressionSnap): number | null {
-  const n = snap.levelValue.length
-  return n > 0 ? snap.levelValue[n - 1] : null
-}
-
 // ---------------------------------------------------------------------------------------
-// NEXT-LEVEL PROJECTION
+// NEXT-LEVEL PROJECTION — the derivation lives in `shared/levelEta.ts` (JOS-195); this half is
+// the CARD'S WORDING for it, which nothing else shares.
 // ---------------------------------------------------------------------------------------
 
 const MS_PER_HOUR = 3_600_000
-
-/** Beyond this the estimate is stated as a horizon, not a duration — see `etaText`. */
-export const ETA_ABSURD_MS = 24 * MS_PER_HOUR
-
-/**
- * How much of window A must be ONLINE for a projection to be offered at all.
- *
- * The window is an hour of log time, and a logout can eat almost all of it: log in at 12:55
- * after an overnight and 55 of those 60 minutes are an empty chair. The pace measured over the
- * surviving five minutes is a real rate — it is just not an hour of evidence, and extrapolating
- * it to "~1h 40m to level 44" dresses a sample of five minutes as a prediction. A QUARTER of
- * the window is the floor: enough play to have a shape, and low enough that an ordinary
- * session that began mid-window still gets its estimate.
- *
- * The gate fires ONLY when an offline interval was actually derived, so a window with no
- * logout in it — which is every window this app has ever seen before today — reaches exactly
- * the same verdict it always did.
- */
-export const ETA_MIN_ONLINE_MS = 15 * 60_000
-
-/** WHY there is no estimate. Each one is a hole in the evidence, and each is shown on hover. */
-export type EtaBlocked = 'no-ding' | 'unstated' | 'clipped' | 'overfull' | 'offline' | 'no-pace'
-
-/**
- * Either a projection or the reason there isn't one. A UNION rather than a bag of nullables so
- * the renderer cannot read `ms` without having proven `blocked === null` first. `offlineMs` is
- * carried so the tooltip can state the logged-out assumption ONLY when there was one.
- */
-export type LevelEta =
-  | { blocked: EtaBlocked }
-  | { blocked: null; ms: number; toLevel: number; progress: number; offlineMs: number }
-
-/**
- * Σ stated level-bar percentage for the samples STRICTLY AFTER `dingTs`, plus how many samples
- * in that span stated none.
- *
- * Strictly after, on purpose: EQ timestamps are whole seconds, so the experience line that
- * pushed you over sits in the SAME second as "You have gained a level!". Counting it would
- * credit the previous bar's last gain to the new bar. The carry-over it represents is not in
- * the log either way, so the estimate is deliberately the conservative one.
- *
- * Walks backwards from the tail: the span since the last ding is small, and the columns are
- * ascending, so this stops the moment it passes the anchor.
- */
-function statedSinceDing(snap: ProgressionSnap, dingTs: number): { equiv: number; unstated: number } {
-  let equiv = 0
-  let unstated = 0
-  for (let i = snap.expTs.length - 1; i >= 0 && snap.expTs[i] > dingTs; i--) {
-    if ((snap.expFlag[i] & 1) !== 0) unstated++
-    else equiv += snap.expPct[i] / 100
-  }
-  return { equiv, unstated }
-}
-
-/**
- * True when the window has too little ONLINE play left in it to project an hour's pace from.
- * Guarded on `offlineMs > 0` so a window the log never said anything about is never gated.
- */
-function tooOffline(hour: RangeStats): boolean {
-  return hour.offlineMs > 0 && hour.durationMs - hour.offlineMs < ETA_MIN_ONLINE_MS
-}
-
-/**
- * The next-level estimate, or the reason there is none. `hour` is window A's stats — the same
- * object the headline rate came from, so the number on the card and the number the projection
- * used can never diverge.
- */
-export function levelEta(snap: ProgressionSnap, hour: RangeStats): LevelEta {
-  const n = snap.levelTs.length
-  if (n === 0) return { blocked: 'no-ding' }
-  const dingTs = snap.levelTs[n - 1]
-  // The retention floor rose past the anchor ⇒ samples between the ding and the floor are gone
-  // and the sum below would silently under-count. (`levelTs` itself is uncapped; `expTs` is not.)
-  if (snap.windowStart > 0 && dingTs < snap.windowStart) return { blocked: 'clipped' }
-  const { equiv, unstated } = statedSinceDing(snap, dingTs)
-  if (unstated > 0) return { blocked: 'unstated' }
-  // More than a full bar's worth stated with no ding to show for it: the model and the log
-  // disagree, and the honest answer to "where am I in the bar" is that we do not know.
-  if (equiv >= 1) return { blocked: 'overfull' }
-  // Most of the hour was an empty chair: what is left is a rate, not an hour of evidence.
-  if (tooOffline(hour)) return { blocked: 'offline' }
-  // The ACTIVE rate is the gate (null ⇒ no active time, or at cap); the ONLINE WALL rate
-  // divides — see `RangeStats.levelsPerHourWall`, whose denominator excludes the logout.
-  if (hour.levelsPerHourActive == null) return { blocked: 'no-pace' }
-  const pace = hour.levelsPerHourWall
-  if (pace == null || pace <= 0) return { blocked: 'no-pace' }
-  return {
-    blocked: null,
-    ms: ((1 - equiv) / pace) * MS_PER_HOUR,
-    toLevel: snap.levelValue[n - 1] + 1,
-    progress: equiv,
-    offlineMs: hour.offlineMs
-  }
-}
 
 /** '~2h 10m to level 44', or the horizon phrase past a day. Null when the estimate is blocked. */
 function etaText(eta: LevelEta): string | null {
   if (eta.blocked !== null) return null
   if (eta.ms > ETA_ABSURD_MS) return `>1 day to level ${eta.toLevel} at this pace`
   return `~${fmtDuration(eta.ms)} to level ${eta.toLevel}`
-}
-
-/** The reason there is no estimate — one clause per `EtaBlocked` (AGENTS.md tooltip diet). */
-const ETA_BLOCKED_TITLE: Record<EtaBlocked, string> = {
-  'no-ding': 'No level-up has been recorded yet, so your place in the bar is unknown.',
-  unstated: 'Experience lines since your last level-up stated no percentage — unknown, not zero.',
-  clipped: 'The retained record no longer reaches back to your last level-up.',
-  overfull: 'The percentages since your last level-up already exceed a full level.',
-  offline: 'Most of the last hour is time you were logged out.',
-  'no-pace': 'The last hour states no levels of progress.'
 }
 
 /**
@@ -432,11 +332,6 @@ function aaLine(snap: ProgressionSnap, hour: RangeStats): string | null {
   return aaPaceLine(hour, aaEta(hour, n > 0 ? snap.aaGainTs[n - 1] : null, snap, snap.lastTs))
 }
 
-/** True when the window gained experience but the log stated no percentage for ANY of it. */
-function atCap(stats: RangeStats): boolean {
-  return stats.expSamples > 0 && stats.expSamples === stats.expUnstated
-}
-
 /** A rate, or the em-dash. The ONE place a `number | null` rate becomes text here. */
 function rate(n: number | null, fmt: (v: number) => string): string {
   return n == null ? NONE : fmt(n)
@@ -580,3 +475,12 @@ export function overviewLeveling(snap: ProgressionSnap): OverviewLevelingState {
     spark: levelingSpark(snap, hour)
   }
 }
+
+// THE MOVE IS INVISIBLE FROM OUT HERE (JOS-195). `levelEta` and its vocabulary were this file's
+// for as long as this card was the only surface asking the question; they are `shared/levelEta.ts`
+// now because the XP overlay asks it from a second window. Everything that imported them from here
+// — `overviewLevelingTiles.ts`, `tests/overviewLeveling.test.mts` — still does, and gets the same
+// symbols. A re-export rather than a sweep of the call sites: the names did not change meaning,
+// only address, and a mechanical edit of every importer would put the move in every blame line.
+export { ETA_ABSURD_MS, ETA_MIN_ONLINE_MS, currentLevel, levelEta }
+export type { EtaBlocked, LevelEta }

@@ -10,6 +10,8 @@
 //     and every mutation + censoring path over them.
 //   • buffsStats.ts     — per-SPELL learned knowledge: duration samples, class, recency, DB.
 //   • buffsEntities.ts  — the pet/charm/target identity slots (the who/what).
+//   • buffsSession.ts   — the last-seen clock and the LOG-HOLE question: did the character log
+//     out (their buffs freeze) or did we lose the thread (their buffs are stale)?
 //   • buffsView.ts / buffsShapes.ts — the ActiveBuff projection and the shared constants.
 //
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,17 +49,56 @@
 // instead of pairing with a much-later unrelated fade to yield a bogus multi-hour duration.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// MINING MODEL (byte-identical to Task #30 for the self/pet duration path):
-//   castBegin(S)   → S becomes the PENDING cast (replaces prior pending) AND is shown
-//                    OPTIMISTICALLY right away (provisional) if S is a known buff/debuff.
-//   castFizzle(S) / castInterrupted(S) → clears pending S + retracts its provisional.
-//   buffFade(S,target?) → an active instance of S expired on `target`; pairs with the
-//                    matching landed cast → duration sample; records the target disposition.
+// A TRACKED INSTANCE EXISTS ONLY ONCE THE SPELL LANDS ON A NAMED TARGET (JOS-118).
+// ONE rule, applied to buffs, debuffs and crowd control alike — mez and slow ARE debuffs, and
+// buffs land on individuals too, so none of them is a special case:
+//
+//   An instance opens ONLY on a line that CONFIRMS the landing, and is keyed to the entity that
+//   line NAMES. Never a cast, never an inferred or "current" target, never a resist.
+//
+// Each shape has a real `who` in the log, and the model uses it rather than inferring one:
+//   • DEBUFF ON A MOB    `<mob> slows down.` / `has been mesmerized.` / `has been ensnared.`
+//                        → buffApply/cc carries that mob. A RESIST prints no landing line at
+//                          all, so there is nothing to open — the JOS-118 defect, fixed by
+//                          construction rather than by detecting the resist.
+//   • BUFF ON A PERSON   a self landing (`msg_cast_on_you`) → you; a landing that NAMES a group
+//                        member → that member, never "me by default".
+//   • CC                 a subset of debuffs, same rule. The `cc` broadcast IS the landing, and
+//                        `modules/buffTimers.ts` opens its per-mob hold from `ev.mob`.
+//
+// HONEST LIMIT, stated rather than papered over: where EQ surfaces no landing line, NOTHING is
+// tracked. A buff you cast on another player is tracked only if the log actually names them
+// landing it. Silence stays silence — the same answer a resist gets.
+//
+// WHAT A CAST STILL DOES. `castBegin` records a PENDING cast and an ANCHOR (modules/buffAnchors.ts);
+// that is the CAST-ANCHORED ATTRIBUTION machinery (JOS-89's ownership gate, JOS-84's candidate
+// narrowing, JOS-140's ruling 2). What a cast no longer does is DISPLAY anything — see
+// BuffInstances.beginCast for the defect the old optimistic `provisional` row caused and why the
+// owner cut it whole ("we should drop provisional all together. i dont want to complicate the
+// model").
+//
+// MINING MODEL:
+//   castBegin(S)   → S becomes the PENDING cast (replaces prior pending) and stamps the anchor.
+//   otherCastBegin(caster,S) → an anchor ONLY for an allowlisted external (default: nobody).
+//   aaActivate(Quick Buff)   → a self anchor that names a WINDOW rather than a spell.
+//   castFizzle(S) / castInterrupted(S) → clears pending S and its anchor.
+//   buffApply(S,target) → the landing. Opens the instance on `target` and adds a landing to its
+//                    round group, whose land→fade span is the duration sample. Gated on the anchor.
+//   buffFade(S,target?) → an active instance of S expired on `target`; closes the OLDEST landing
+//                    → duration sample when that landing was a clean cycle.
 //   playerDeath    → strips ALL self buffs; censors open SELF casts.
 //
-// LANDING (mining) APPROXIMATION: a pending cast LANDS when neither a fizzle nor interrupt
-// of S occurs before EITHER the next castBegin OR 15s of log-time elapse. A buffFade of the
-// pending spell also implies it landed. Landed ts = cast-BEGIN ts.
+// A pending cast nobody confirmed within 15s is DROPPED, not landed: no row, and no open cast,
+// so it can never pair into a duration sample (the JOS-114/117 clean-sample rule). Landed ts is
+// the LANDING line's ts — the cast-BEGIN approximation went with the optimistic row.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// JOS-140 UNIFIED THE TWO HALVES. `modules/buffTimers.ts` (the per-target crowd-control holds) is
+// still a separate EqModule — the overlay hydrates it by id and the JOS-134 pause asymmetry is
+// stated there — but it is no longer a separate MODEL: it folds through THIS module's
+// `CastAnchors` and mints into THIS module's `SpellStats`, and both halves keep their landings in
+// the same `HoldGroup` shape from modules/buffRounds.ts. One attribution rule, one learner, one
+// count-and-close rule.
 
 import type { EqModule } from './types'
 import type { LogEvent, BuffExpiredEvent } from '../../shared/logEvents'
@@ -66,31 +107,25 @@ import { idKey } from '../log/parser'
 import type { SpellDb } from '../data/spellDb'
 import { MessageOverlayMiner } from '../data/messageOverlay'
 import { charmedPetDiesOnDeathLine } from '../combat/entityRules'
+import type { BuffTrustPrefs } from '../../shared/buffTrust'
+import { admitLanding, type LandingContext } from './buffLanding'
 import { BuffInstances } from './buffsInstances'
+import { CastAnchors } from './buffAnchors'
 import { PetEntities } from './buffsEntities'
 import { SpellStats } from './buffsStats'
+import { SessionFrame } from './buffsSession'
 import {
   EMOTE_MIN_OBSERVATIONS,
   EMOTE_WINDOW_MS,
   looksLandingMessage,
-  OWN_CAST_WINDOW_MS,
   PERMANENT_ILLUSION,
   QUICK_BUFF,
-  QUICK_BUFF_WINDOW_MS,
   SELF_KEY,
-  SESSION_GAP_MS,
   spellKey
 } from './buffsShapes'
 
 /** One member of the LogEvent union, selected by its `kind` tag. */
 type Ev<K extends LogEvent['kind']> = Extract<LogEvent, { kind: K }>
-
-/** A candidate spell carried by an ambiguous landing message (Task #34). */
-interface Candidate {
-  name: string
-  durationMs: number | null
-  illusion: boolean
-}
 
 export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   readonly id = 'buffs'
@@ -103,18 +138,21 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   /** The live (spell, entity) instances + every mutation over them. */
   private readonly inst: BuffInstances
 
-  /** ts of the last `You activate Quick Buff.` — burst applies within the window are confident. */
-  private quickBuffTs = 0
   /** ts from which the Permanent Illusion AA is owned (self illusions become permanent). */
   private permanentIllusionOwnedTs?: number
-  /** Recently-cast spell keys → last cast ts (Task #34), for ambiguous-message resolution. */
-  private castHistory = new Map<string, number>()
+  /**
+   * CAST-ANCHORED ATTRIBUTION (JOS-140 ruling 2), and the ONE copy of it. The crowd-control half
+   * folds through this same object (pipeline wiring hands it over), so the two halves of the model
+   * cannot end up with two ideas of whose spell just landed — which is precisely how they drifted
+   * apart before this ticket.
+   */
+  private readonly anchors = new CastAnchors()
 
   // ── emote learning (Task #33): recognize real landing-emote TEXTS ──
   private emoteTextCount = new Map<string, number>()
 
-  // ── session-gap tracking (Task #33, finding #5) ──
-  private lastEventTs = 0
+  /** Last-seen clock + the log-hole question (Task #33, finding #5; deferred by JOS-134). */
+  private readonly frame = new SessionFrame()
 
   /**
    * The observed-message overlay miner (Task #36). Mines (message, spell) associations from
@@ -162,6 +200,25 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   }
 
   /**
+   * THE SHARED HALVES (JOS-140 ruling 1). The crowd-control module folds the same events into the
+   * same learner through the same attribution gate — it is handed these rather than building its
+   * own, because two copies of an estimator and two copies of an ownership rule is the state this
+   * ticket exists to end.
+   */
+  spellStats(): SpellStats {
+    return this.stats
+  }
+
+  castAnchors(): CastAnchors {
+    return this.anchors
+  }
+
+  /** The externals allowlist (Preferences). Default is empty — you and nobody else. */
+  setTrust(prefs: BuffTrustPrefs): void {
+    this.anchors.setTrust(prefs)
+  }
+
+  /**
    * Synthesize a RESOLVED `buffExpired` derived event (Task #47) onto the bus. `target` is
    * 'self' for a player-side expiry, else the bound entity's display name. Stamped with the
    * primary event's seq/ts/live so it slots into the stream coherently and alerts respects the
@@ -192,10 +249,9 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     this.inst.reset()
     this.stats.reset()
     this.emoteTextCount = new Map()
-    this.lastEventTs = 0
-    this.quickBuffTs = 0
+    this.frame.reset()
     this.permanentIllusionOwnedTs = undefined
-    this.castHistory = new Map()
+    this.anchors.reset()
     this.pets.reset()
   }
 
@@ -263,14 +319,15 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     // duration and its cast messages are identical across a rebirth, so re-learning them from
     // zero would needlessly cold-start the model. Only the live who/what/when clears.
     if (ev.kind === 'epoch') {
+      this.frame.closeHole()
       this.clearAllForGap()
       return
     }
     // OFFLINE GAP (login/logout): the character was out of the world, and EQ PAUSES buff
-    // timers while it is — verified against the real log, see BuffInstances.onOfflineGap for
-    // the evidence lines. Shift every surviving instance's clock by the absence so countdowns
-    // resume where they stopped instead of reading as long-expired, and mark their open casts
-    // so the stretched land→fade span never becomes a duration sample (law 5).
+    // timers while it is — verified against the real log, see BuffInstances.onOfflinePause for
+    // the evidence lines and for why DEBUFF clocks are pointedly NOT paused. This is also the
+    // event that ANSWERS an open log hole (JOS-134): the hole asked "did the character leave?",
+    // and a derived gap is the log saying yes.
     //
     // It is a DERIVED event (sessionDetector.ts), so the bus drains it immediately after its
     // `sessionStart` has finished reaching every listener — and therefore BEFORE the
@@ -283,7 +340,11 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     // `lastEventTs` is NOT advanced: the gap restates the Welcome's instant, which the
     // Welcome itself already recorded as a primary event.
     if (ev.kind === 'offlineGap') {
-      this.inst.onOfflineGap(ev.toTs - ev.fromTs)
+      this.frame.closeHole()
+      this.inst.onOfflinePause(ev.fromTs, ev.toTs - ev.fromTs)
+      // A logout despawns your pet, so the bindings go even though the buffs on YOU stay. The
+      // instances bound to those entities are censored by the zone line that follows the login.
+      this.pets.clearForGap()
       return
     }
     // Record the primary event's identity so any buffExpired we synthesize while folding it is
@@ -291,12 +352,9 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     this.curSeq = ev.seq
     this.curTs = ev.ts
     this.curLive = live
-    if (this.lastEventTs > 0 && ev.ts - this.lastEventTs >= SESSION_GAP_MS) {
-      this.clearAllForGap()
-    }
-    this.lastEventTs = ev.ts
-    this.inst.maybeLandPendingByTime(ev.ts)
-    this.inst.sweepHygiene(ev.ts)
+    this.holeRuling(this.frame.observe(ev))
+    this.inst.dropUnconfirmedPending(ev.ts)
+    this.inst.sweepHygiene(ev.ts, this.frame.heldBeforeTs)
 
     // Observed-message overlay mining (Task #36): feed the anchor cast + any candidate
     // message line so the miner accretes (message, spell) associations across replay + live.
@@ -324,12 +382,22 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
       case 'spellEmote':
         this.onSpellEmote(ev)
         return true
+      case 'otherCastBegin':
+        // `<Name> begins casting <S>.` — an anchor ONLY for a caster on the externals allowlist
+        // (default: nobody). `CastAnchors` enforces that; the event itself is folded either way so
+        // the refusal lives in one place.
+        this.anchors.noteOtherCast(ev.caster, ev.spell, ev.ts)
+        return true
       case 'castFizzle':
       case 'castInterrupted':
         this.inst.clearPendingCast(spellKey(ev.spell))
+        this.anchors.clearCast(ev.spell)
         return true
       case 'aaActivate':
-        if (idKey(ev.name) === QUICK_BUFF) this.quickBuffTs = ev.ts
+        // `You activate Quick Buff.` is a SELF anchor that names no spell — a window, not a name
+        // (owner amendment, 2026-08-09). It applies many spells at once with no cast line of their
+        // own, so a rule that demanded one per spell would refuse the player's own buffs.
+        if (idKey(ev.name) === QUICK_BUFF) this.anchors.noteQuickBuff(ev.ts)
         return true
       case 'aaSpend':
         this.onAaSpend(ev)
@@ -396,9 +464,8 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   }
 
   private onCastBegin(ev: Ev<'castBegin'>): void {
-    this.inst.landPending(ev.ts)
     const key = spellKey(ev.spell)
-    this.castHistory.set(key, ev.ts)
+    this.anchors.noteSelfCast(ev.spell, ev.ts)
     this.stats.touchLastSeen(key, ev.ts)
     this.inst.beginCast(ev.spell, key, ev.ts)
   }
@@ -421,23 +488,22 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   }
 
   private onBuffApply(ev: Ev<'buffApply'>): void {
-    // OWN-CAST GATING (Task #45, the user's rule: "if something isn't cast by me — we
-    // shouldn't track it"). Cast-on-other landing emotes (a nearby player's Symbol
-    // landing on the mob you're fighting) don't name the caster, so without this gate a
-    // STRANGER's buff binds as ours. Require attribution to the player's OWN casting:
-    // an own castBegin of the resolved spell within the landing window, OR a Quick Buff
-    // activation burst (which applies many spells with no castBegin). No own-cast
-    // context → skip the apply entirely (never guess a stranger's buff).
-    const r = this.resolveCandidate(ev.candidates)
-    if (r && this.ownCastAttributed(spellKey(r.name), ev.ts)) {
-      this.inst.applyMessageBuff(r.name, {
-        target: ev.target,
-        ts: ev.ts,
-        illusion: r.illusion,
-        durationMs: r.durationMs,
-        permanentIllusionOwnedTs: this.permanentIllusionOwnedTs
-      })
-    }
+    // CAST-ANCHORED ATTRIBUTION (JOS-140 ruling 2/3, extending Task #45's own-cast gate). A
+    // landing emote is a BROADCAST and names no caster, so without an anchor a stranger's buff
+    // binds as ours. `admitLanding` is the whole gate; a null answer means the landing produces
+    // nothing at all, which is the honest answer and the one three field reports asked for.
+    const landing = admitLanding(ev.candidates, ev.ts, this.landingContext())
+    if (!landing) return
+    this.inst.applyMessageBuff(landing.spell, {
+      target: ev.target,
+      ts: ev.ts,
+      illusion: landing.illusion,
+      durationMs: landing.durationMs,
+      caster: landing.caster,
+      ...(landing.lineKey ? { lineKey: landing.lineKey } : {}),
+      ...(landing.candidates ? { candidates: landing.candidates } : {}),
+      permanentIllusionOwnedTs: this.permanentIllusionOwnedTs
+    })
   }
 
   private onBuffWearOff(ev: Ev<'buffWearOff'>): void {
@@ -474,9 +540,17 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     this.stats.everFaded.add(key)
     // Resolve the fade's target entity. A possessive 'pet' form resolves against the
     // CURRENT pet entity's key; a named mob → that mob's key; targetless → self.
-    const { entityKey, disp } = this.pets.fadeTargetEntity(ev.target)
-    this.stats.tallyFade(key, disp)
-    if (this.inst.pending?.key === key) this.inst.landPending(ev.ts)
+    // (The fade's DISPOSITION used to be tallied here as a fallback CLASSIFIER for a spell the DB
+    // did not type. JOS-140 ruling 8 deletes that: buff-vs-debuff comes from the spell's nature
+    // and never from the shape of the target — see buffsStats.ts `classOf`.)
+    const { entityKey } = this.pets.fadeTargetEntity(ev.target)
+    // A FADE IS NOT A LANDING (JOS-118). This used to retro-land the pending cast so the
+    // land→fade span became a duration sample, which is unsound whenever the fade belongs to an
+    // EARLIER instance of the same spell: tests/fixtures/e2e-deep-link.log casts Pacify at
+    // 20:31:25 and prints `Your Pacify spell has worn off of a fire giant warrior.` two seconds
+    // later — a different mob's older cast — which minted a 2-second Pacify sample. The pending
+    // cast is simply dropped; only a confirmed landing opens the instance a fade can pair with.
+    this.inst.clearPendingCast(key)
     this.inst.recordFade(key, entityKey, ev.spell, ev.ts)
     // DERIVED buffExpired (Task #47): buffFade already carries a RESOLVED spell + target
     // (the possessive/named-target worn-off shapes name both). Synthesize the unified
@@ -541,76 +615,74 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
     }
   }
 
+  /**
+   * A DEATH IS TWO QUESTIONS, AND THEY HAVE DIFFERENT ANSWERS (JOS-156).
+   *
+   * The first is "did something of that name just die?", and the log answers it the same way in
+   * all three shapes — `You have slain <X>!`, `<X> has been slain by <Y>!` for any Y, and the
+   * killerless `<X> died.` — because `parseWorld` unified them into one `death` event naming the
+   * DEAD one. So the debuff censor runs unconditionally, on `ev.name` and never on the killer.
+   * (The killer is a name too, and in the owner's Plane of Sky bee fight it was the SAME name:
+   * `Bzzazzt has been slain by Bzzazzt!` is a charmed bee killing its twin.)
+   *
+   * The second is "is the ENTITY behind that name retired?", which is about identity and is the
+   * only place the pet bindings get a vote. That is what used to swallow the first question
+   * whole: a death naming the charmed pet went into the conservative never-censor-a-live-pet
+   * branch and nothing at all happened — not even to the slow on the corpse.
+   */
   private onDeath(ev: Ev<'death'>): void {
     const key = idKey(ev.name)
     const pets = this.pets
-    const killerIsYou = ev.bySelf || idKey(ev.killer ?? '') === 'you'
-    if (key === pets.summonedKey) {
-      if (!killerIsYou) this.inst.retireEntity(key)
-    } else if (key === pets.charmedKey) {
-      const killerSameName = !ev.bySelf && ev.killer != null && idKey(ev.killer) === key
-      if (charmedPetDiesOnDeathLine({ killerIsYou, killerSameName })) {
-        this.inst.retireEntity(key)
-      }
-    } else if (key === pets.brokenCharmKey) {
-      // A death naming the broken-charm entity (Task #37): the ex-pet is now a hostile mob
-      // you're likely killing, so THIS death genuinely retires it — censoring its buffs so
-      // the next charm of that name binds a fresh entity (rule #3). It's fully retired now,
-      // not conservatively kept: charm no longer protects it (the twin-ambiguity that made
-      // us keep a LIVE charmed pet doesn't apply once the charm has broken).
-      this.inst.retireEntity(key)
-    } else {
-      // A plain hostile death censors any open/active instance bound to it.
-      this.inst.retireEntity(key, { hostileOnly: true })
-    }
+    this.inst.onEntityDeath(key, ev.ts)
+    if (this.deathRetiresEntity(ev, key)) this.inst.retireEntity(key)
     if (key === pets.petTargetKey) {
       pets.petTargetKey = undefined
       pets.petTargetDisplay = undefined
     }
   }
 
-  onTick(nowMs: number): void {
-    this.inst.maybeLandPendingByTime(nowMs)
-    this.inst.sweepHygiene(nowMs)
+  /** Whether this death retires the ENTITY (its identity + every buff on it), not just its debuffs. */
+  private deathRetiresEntity(ev: Ev<'death'>, key: string): boolean {
+    const pets = this.pets
+    const killerIsYou = ev.bySelf || idKey(ev.killer ?? '') === 'you'
+    if (key === pets.summonedKey) return !killerIsYou
+    if (key === pets.charmedKey) {
+      const killerSameName = !ev.bySelf && ev.killer != null && idKey(ev.killer) === key
+      return charmedPetDiesOnDeathLine({ killerIsYou, killerSameName })
+    }
+    // A death naming the broken-charm entity (Task #37): the ex-pet is now a hostile mob you're
+    // likely killing, so THIS death genuinely retires it — censoring its buffs so the next charm
+    // of that name binds a fresh entity (rule #3). It's fully retired now, not conservatively
+    // kept: charm no longer protects it (the twin-ambiguity that made us keep a LIVE charmed pet
+    // doesn't apply once the charm has broken).
+    return key === pets.brokenCharmKey
   }
 
   /**
-   * OWN-CAST attribution gate (Task #45). True when this apply can be attributed to the
-   * player's OWN casting, so it's a buff WE put up (on self, our pet, or a mob we're
-   * debuffing) — not a stranger's buff that happened to land on an entity near us:
-   *   (a) an own `castBegin` of this spell within OWN_CAST_WINDOW_MS before the emote
-   *       (castHistory records the last own cast ts per spell key), OR
-   *   (b) an active Quick Buff burst (aaActivate 'Quick Buff' within QUICK_BUFF_WINDOW_MS) —
-   *       a burst applies MANY spells with NO castBegin, so its window whitelists those.
-   * No own-cast context → false → the apply is skipped (the user's strict rule).
+   * A log hole that no login ever explained (SessionFrame has the whole argument). We lost the
+   * thread rather than the character having left, so what was standing when it opened goes, and
+   * the pet bindings with it — the same blanket clear this used to do the moment a hole appeared.
+   * `null` is the ordinary case: no hole, or one still waiting for its answer.
    */
-  private ownCastAttributed(key: string, ts: number): boolean {
-    const lastCast = this.castHistory.get(key)
-    if (lastCast != null && ts >= lastCast && ts - lastCast <= OWN_CAST_WINDOW_MS) return true
-    if (this.quickBuffTs > 0 && ts >= this.quickBuffTs && ts - this.quickBuffTs <= QUICK_BUFF_WINDOW_MS) {
-      return true
-    }
-    return false
+  private holeRuling(unexplainedBefore: number | null): void {
+    if (unexplainedBefore === null) return
+    this.inst.dropPredating(unexplainedBefore)
+    this.pets.clearForGap()
   }
 
-  /** Resolve an ambiguous landing-message apply (Task #34) to the candidate the player cast. */
-  private resolveCandidate(cands: Candidate[]): Candidate | null {
-    if (cands.length === 0) return null
-    if (cands.length === 1) return cands[0]
-    let best: Candidate | null = null
-    let bestTs = -1
-    for (const c of cands) {
-      const t = this.castHistory.get(spellKey(c.name))
-      if (t != null && t > bestTs) {
-        best = c
-        bestTs = t
-      }
+  onTick(nowMs: number): void {
+    this.holeRuling(this.frame.tick(nowMs))
+    this.inst.dropUnconfirmedPending(nowMs)
+    this.inst.sweepHygiene(nowMs, this.frame.heldBeforeTs)
+  }
+
+  /** The gate's dependencies, bound once — see modules/buffLanding.ts for the rule itself. */
+  private landingContext(): LandingContext {
+    return {
+      anchors: this.anchors,
+      ...(this.stats.db ? { db: this.stats.db } : {}),
+      hasActiveSpell: (lineKey: string) => this.inst.hasActiveSpell(lineKey)
     }
-    if (best) return best
-    for (const c of cands) {
-      if (this.inst.hasActiveSpell(spellKey(c.name))) return c
-    }
-    return null
   }
 
   /** Session-gap clear (Task #33, finding #5): wipe live actives/opens/pending + pets. */

@@ -24,6 +24,13 @@
 // ITEM NAMES ARE LIVE — hover for the EQ-style item window, click to drill into the item's own
 // loot history. That half lives in MobDropRow.tsx (`DropRow` / `ItemDrillDown`), which explains
 // why the loot module is subscribed only once an item is actually clicked.
+//
+// AN ITEM IS ONE LINE, WHATEVER `+N` IT CAME AS (JOS-196). Both drop sections read ONE fold —
+// `seenVariants.foldSeenVariants`, over JOS-66's `itemCountKey` — so your three `1×` rows for a
+// base, a `+1` and a `+2` are one `3×` line carrying a perceived rate over YOUR kills, with the
+// breakdown one click away. The same key decides section membership: an upgrade of a listed item
+// annotates that item's wiki row rather than reappearing under "also looted by you" as a find the
+// page failed to mention.
 
 import { type JSX, useEffect, useState } from 'react'
 import {
@@ -35,14 +42,16 @@ import {
   Stack,
   Typography
 } from '@mui/material'
-import type { MobDrop, MobEntry, MobKnowledge, MobQuestUse, MobSeenDrop } from '@shared/types'
+import type { MobDrop, MobEntry, MobKnowledge, MobQuestUse } from '@shared/types'
 import { CONSIDER_FACTION_COLOR, CONSIDER_FACTION_LABEL, considerDifficultyShort } from '@shared/logEvents'
 import { wikiPageUrl } from '@shared/wiki'
 import { formatDate, formatDateTime } from '../../lib/formatDate'
+import { itemCountKey } from '../../lib/itemName'
 import { tierStyle } from '../../lib/tierChip'
-import { DropRow, ItemDrillDown } from './MobDropRow'
+import { DropRow, ItemDrillDown, type OpenItem } from './MobDropRow'
 import { knowledgeFromEntry } from './mobSearch'
 import type { MobConsiderContext, MobTarget } from './mobTarget'
+import { foldSeenVariants, type SeenVariantGroup } from './seenVariants'
 
 /** What the calling surface knew about your kills on this mob, when it knew anything. */
 type MobKillFacts = MobTarget['kill']
@@ -166,7 +175,7 @@ function MobConsiderLine({ con }: { con?: MobConsiderContext }): JSX.Element | n
   return (
     <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25, mb: 1.5 }}>
       {considerDifficultyShort(con.difficulty) ?? con.difficulty}
-      {con.difficulty && ` — “${con.difficulty}”`}
+      {con.difficulty && ` - “${con.difficulty}”`}
       {con.zone && ` · ${con.zone}`}
     </Typography>
   )
@@ -235,7 +244,7 @@ function DropsEmptyState({
         </Stack>
       )}
       {data?.notFound && <Quiet>No wiki page for this mob.</Quiet>}
-      {data?.offline && <Quiet>Offline — showing only what&apos;s known locally.</Quiet>}
+      {data?.offline && <Quiet>Offline - showing only what&apos;s known locally.</Quiet>}
       {data && !data.notFound && !data.offline && data.page && (
         <Quiet>The wiki page for this mob lists no loot.</Quiet>
       )}
@@ -247,15 +256,17 @@ function DropsEmptyState({
 function DropsSection({
   wiki,
   seenByKey,
+  kills,
   data,
   loading,
   onOpenItem
 }: {
   wiki: MobDrop[]
-  seenByKey: Map<string, MobSeenDrop>
+  seenByKey: Map<string, SeenVariantGroup>
+  kills?: number
   data: MobKnowledge | null
   loading: boolean
-  onOpenItem: (item: string) => void
+  onOpenItem: OpenItem
 }): JSX.Element {
   return (
     <>
@@ -272,7 +283,8 @@ function DropsSection({
               key={d.item}
               item={d.item}
               rarity={d.rarity}
-              seen={seenByKey.get(d.item.toLowerCase())}
+              seen={seenByKey.get(itemCountKey(d.item))}
+              kills={kills}
               onOpenItem={onOpenItem}
             />
           ))}
@@ -287,10 +299,12 @@ function DropsSection({
 /** ---- 2. ALSO LOOTED BY YOU (corroboration the page doesn't list) ---- */
 function AlsoLootedSection({
   extraSeen,
+  kills,
   onOpenItem
 }: {
-  extraSeen: MobSeenDrop[]
-  onOpenItem: (item: string) => void
+  extraSeen: SeenVariantGroup[]
+  kills?: number
+  onOpenItem: OpenItem
 }): JSX.Element | null {
   if (extraSeen.length === 0) return null
   return (
@@ -304,7 +318,7 @@ function AlsoLootedSection({
       </Typography>
       <Box sx={{ mb: 2 }}>
         {extraSeen.map((d) => (
-          <DropRow key={d.item} item={d.item} seen={d} onOpenItem={onOpenItem} />
+          <DropRow key={d.key} item={d.item} seen={d} kills={kills} onOpenItem={onOpenItem} />
         ))}
       </Box>
     </>
@@ -372,20 +386,42 @@ function WikiSourceLine({ wikiUrl }: { wikiUrl?: string }): JSX.Element | null {
   )
 }
 
+/**
+ * The two drop sections' whole input, derived ONCE from the record (JOS-196).
+ *
+ * `lines` is your history folded to one line per item (`+N` variants included), `byKey` is that
+ * same set addressed by counting key so a wiki row can annotate itself, and `extra` is what no
+ * wiki row claimed. The membership test is the COUNTING key: an upgrade of a listed item belongs
+ * to that item's row, not to a second section reporting it as loot the page never mentioned.
+ */
+function dropSections(data: MobKnowledge | null): {
+  wiki: MobDrop[]
+  lines: SeenVariantGroup[]
+  byKey: Map<string, SeenVariantGroup>
+  extra: SeenVariantGroup[]
+} {
+  const wiki = data?.dropsWiki ?? []
+  const lines = foldSeenVariants(data?.dropsSeen ?? [])
+  const wikiKeys = new Set(wiki.map((d) => itemCountKey(d.item)))
+  return {
+    wiki,
+    lines,
+    byKey: new Map(lines.map((g) => [g.key, g])),
+    extra: lines.filter((g) => !wikiKeys.has(g.key))
+  }
+}
+
 /** The mob page. `target` carries everything the calling surface already knew. */
 export function MobPage({ target }: { target: MobTarget }): JSX.Element {
   const { mob, seed, entry, con, kill } = target
   const { data, loading } = useMobKnowledge(mob, seed, entry)
-  const [drillItem, setDrillItem] = useState<string | null>(null)
+  const [drill, setDrill] = useState<{ item: string; family: boolean } | null>(null)
+  const openItem: OpenItem = (item, family) => {
+    setDrill({ item, family: family === true })
+  }
 
-  const wiki = data?.dropsWiki ?? []
-  const seen = data?.dropsSeen ?? []
+  const { wiki, lines, byKey, extra } = dropSections(data)
   const quests = data?.quests ?? []
-  const seenByKey = new Map(seen.map((d) => [d.item.toLowerCase(), d]))
-  // Observed items the wiki page does NOT list. Kept separate and second: it is evidence, not
-  // the drop table, and silently merging it would let one lucky drop read as documented loot.
-  const wikiKeys = new Set(wiki.map((d) => d.item.toLowerCase()))
-  const extraSeen = seen.filter((d) => !wikiKeys.has(d.item.toLowerCase()))
   const wikiUrl = wikiPageUrl(data?.page)
 
   return (
@@ -394,7 +430,7 @@ export function MobPage({ target }: { target: MobTarget }): JSX.Element {
       <MobConsiderLine con={con} />
       <MobStats
         wikiCount={wiki.length}
-        seenCount={seen.length}
+        seenCount={lines.length}
         page={data?.page}
         con={con}
         kill={kill}
@@ -402,18 +438,21 @@ export function MobPage({ target }: { target: MobTarget }): JSX.Element {
       <WikiLevelZone zone={data?.zone} levelText={data?.levelText} />
       <DropsSection
         wiki={wiki}
-        seenByKey={seenByKey}
+        seenByKey={byKey}
+        kills={kill?.count}
         data={data}
         loading={loading}
-        onOpenItem={setDrillItem}
+        onOpenItem={openItem}
       />
-      <AlsoLootedSection extraSeen={extraSeen} onOpenItem={setDrillItem} />
+      <AlsoLootedSection extraSeen={extra} kills={kill?.count} onOpenItem={openItem} />
       <QuestsSection quests={quests} />
       <KillsSection kill={kill} />
       <WikiSourceLine wikiUrl={wikiUrl} />
 
       {/* One hop deep: the item's own dialog. Mounted only on demand (see ItemDrillDown). */}
-      {drillItem && <ItemDrillDown item={drillItem} onClose={() => setDrillItem(null)} />}
+      {drill && (
+        <ItemDrillDown item={drill.item} family={drill.family} onClose={() => setDrill(null)} />
+      )}
     </>
   )
 }

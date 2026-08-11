@@ -103,7 +103,7 @@ export function readState(): FeedbackState {
         cached = parsed
         return cached
       }
-      logInfo(`[everquest-companion] feedback.json unreadable/foreign — starting fresh`)
+      logInfo(`[everquest-companion] feedback.json unreadable/foreign - starting fresh`)
     } catch (err) {
       logError('main:feedbackState', { message: 'feedback.json parse failed; starting fresh', err })
     }

@@ -31,9 +31,9 @@ const CHIP_SX = { height: 20 } as const
 /** Tooltip for one slot, stated as a fact about what the log did or did not name. */
 function slotTitle(slot: ComboSlot): string {
   const kind = slotKind(slot)
-  if (kind === 'resolved') return `${slot.candidates[0]} — ${provenanceLabel(slot.provenance)}.`
+  if (kind === 'resolved') return `${slot.candidates[0]} - ${provenanceLabel(slot.provenance)}.`
   if (kind === 'unknown') return 'Nothing in this range named a class for this slot.'
-  return `One of ${slot.candidates.join(', ')} — the log never named which.`
+  return `One of ${slot.candidates.join(', ')} - the log never named which.`
 }
 
 /** One slot. Colour carries the kind; the label carries the content. */

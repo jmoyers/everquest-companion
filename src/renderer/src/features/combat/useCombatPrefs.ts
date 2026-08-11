@@ -21,9 +21,9 @@
 // the SAME key by the SAME hook, and no copy of this preference is ever routed over IPC.
 
 import { useCallback, useSyncExternalStore } from 'react'
-// A VALUE import, so relative — see meterScope.ts and useGlobalFight.ts for the rule. The
-// overlay bundle reads this hook too.
-import { isMeterScope } from '../../../../shared/roster'
+// The vocabulary — defaults, guards and degrades — lives in a DOM-free module beside this one so
+// it can be node-tested (combatPrefs.ts says why). This file is the storage half and nothing else.
+import { DEFAULT_METER_SCOPE, METER_SCOPE_KEY, readMeterScope } from './combatPrefs'
 import type { MeterScope } from '@shared/roster'
 
 /**
@@ -68,6 +68,34 @@ function read(key: string, dflt: boolean): boolean {
   return v === null ? dflt : v === '1'
 }
 
+/**
+ * THE RAW STRING BEHIND ONE KEY, live across every reader in this window and every other window
+ * of this origin — the same subscription the boolean prefs use, with no interpretation of its own.
+ *
+ * It exists for the prefs that are not one bit: today the persisted combat DRILL (JOS-116), whose
+ * value is a small JSON blob that `drillMemory.ts` parses and validates. Keeping the storage
+ * primitive here and the vocabulary there is what lets the drill's shaping be node-tested without
+ * a DOM: this hook is the only part that needs one.
+ *
+ * `null` means absent — never the empty string, which is a value a writer could legitimately mean.
+ */
+export function useRawPref(key: string): [string | null, (v: string | null) => void] {
+  const value = useSyncExternalStore<string | null>(
+    subscribe,
+    () => localStorage.getItem(key),
+    () => null
+  )
+  const set = useCallback(
+    (v: string | null) => {
+      if (v === null) localStorage.removeItem(key)
+      else localStorage.setItem(key, v)
+      notifyAll()
+    },
+    [key]
+  )
+  return [value, set]
+}
+
 function write(key: string, v: boolean): void {
   localStorage.setItem(key, v ? '1' : '0')
   // The writing document gets no 'storage' event of its own, so notify it directly. Other
@@ -96,35 +124,37 @@ export function useCombinePetRow(): [boolean, (v: boolean) => void] {
 /**
  * THE METER SCOPE — You / Group / Everyone (docs/plans/group-model.md §2).
  *
- * PERSISTED PER SURFACE, which is why the key takes a suffix. The Combat tab and each floating
- * overlay answer different questions: a docked meter you are reading is often the group's, while
- * a two-inch overlay pinned over the game is often just yours. One shared key would make the two
- * fight over one value every time either changed.
+ * ONE GLOBAL PREFERENCE, ONE KEY (JOS-115, owner: the inline You/Group/Everyone control "is shown
+ * INLINE on every combat surface and is too crowded"). It used to be a per-surface value written by
+ * a chip on each surface — `eq.combat.meterScope.combat`, `.overlay.fight`, and one per overlay
+ * kind — on the theory that a docked meter and a pinned two-inch overlay get asked different
+ * questions. In practice that was three controls to find and three answers to keep straight for one
+ * question ("whose damage am I looking at"), and the surfaces disagreeing was the common case
+ * rather than the useful one. Now every damage and healing meter in the app reads THIS key, and
+ * only Preferences > Combat writes it.
  *
- * DEFAULT 'group', not 'you'. That is the design doc's call and it is safe by construction: with
- * no roster, Group renders as Everyone and the chip says `Group (no roster yet)`
- * (shared/roster.ts effectiveScope), so a solo player sees exactly what they saw before and a
- * grouped player sees their group without having to find a control first.
+ * The old per-surface keys are INERT, not migrated: they are view state a user can restate in one
+ * click, and reading three of them to guess which one the "real" answer was would be a coin flip
+ * dressed as a migration.
+ *
+ * DEFAULT 'group', not 'you' — for a fresh install and for an absent key alike. That is the design
+ * doc's call and it is safe by construction: with no roster, Group renders as Everyone and the
+ * label says `Group (no roster yet)` (shared/roster.ts effectiveScope), so a solo player sees
+ * exactly what they saw before and a grouped player sees their group without having to find a
+ * control first.
  *
  * A value that is not one of the three — a hand-edited localStorage, a key written by a future
- * build — degrades to the default rather than rendering an empty meter.
+ * build — degrades to the default rather than rendering an empty meter (combatPrefs.readMeterScope).
  */
-export function useMeterScope(surface: string): [MeterScope, (v: MeterScope) => void] {
-  const key = `eq.combat.meterScope.${surface}`
+export function useMeterScope(): [MeterScope, (v: MeterScope) => void] {
   const value = useSyncExternalStore<MeterScope>(
     subscribe,
-    () => {
-      const v = localStorage.getItem(key)
-      return isMeterScope(v) ? v : 'group'
-    },
-    () => 'group'
+    () => readMeterScope(localStorage.getItem(METER_SCOPE_KEY)),
+    () => DEFAULT_METER_SCOPE
   )
-  const set = useCallback(
-    (v: MeterScope) => {
-      localStorage.setItem(key, v)
-      notifyAll()
-    },
-    [key]
-  )
+  const set = useCallback((v: MeterScope) => {
+    localStorage.setItem(METER_SCOPE_KEY, v)
+    notifyAll()
+  }, [])
   return [value, set]
 }

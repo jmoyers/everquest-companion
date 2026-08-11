@@ -10,6 +10,8 @@
 //      (an install root with a Logs\eqlog_*.txt, an empty one, a missing one).
 //   3. normalizeEqDirOverride — what the MANUAL override means (JOS-53). The three
 //      shapes a reasonable person picks all resolve to the same {root, logsDir}.
+// The probes that answer about the REAL machine (the in-process registry + mount-table
+// reads that replaced `reg.exe`/`wmic` in JOS-184) are in eqDiscoveryProbes.test.mts.
 // Run: `npm test`.
 
 import { test } from 'node:test'

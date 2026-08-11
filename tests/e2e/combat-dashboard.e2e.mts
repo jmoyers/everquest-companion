@@ -72,7 +72,7 @@ import {
 import { mainWindow } from './appWindow.mjs'
 import { launchOnFixture } from './logFixture.mjs'
 import type { FixtureLog } from './logFixture.mjs'
-import { meterRows } from './drill.mjs'
+import { meterRows, stepDrillRoundTrip } from './drill.mjs'
 import {
   clickScope,
   clickView,
@@ -80,11 +80,12 @@ import {
   stepHealingDimension,
   stepMeterDrill,
   stepMeterScope,
-  stepMultiAttackPanel,
+  stepAbilityStats,
   stepPetAnswersWhoLeads,
   stepPetNeverAsked,
   stepScriptedPull
 } from './combatSteps.mjs'
+import { stepPetPreferenceMovesTheYouLine } from './petPrefSteps.mjs'
 
 // ── the run, one step per numbered section ─────────────────────────────────────────────
 //
@@ -551,7 +552,8 @@ async function main(): Promise<void> {
     snap = await stepCombatLogAndRegression(page, log)
     await stepHealingDimension(page)
     await stepMeterDrill(page)
-    await stepMultiAttackPanel(page)
+    await stepAbilityStats(page)
+    await stepDrillRoundTrip(page)
     await stepPickAFight(page, snap)
     await stepFrozenList(page, log)
     await stepSearch(page, snap)
@@ -567,6 +569,10 @@ async function main(): Promise<void> {
     //     never ordered, forward only, and retires the pet it replaced. Straight after 14 because
     //     it inherits that step's bound pet: the succession is half of what it proves.
     await stepPetAnswersWhoLeads(page, log)
+    // 16. …AND THE LINE ABOVE THE ROWS ANSWERS THE PET PREFERENCE (JOS-170). It inherits 14 and 15
+    //     because it needs exactly what they leave: a live fight carrying YOUR damage and a bound
+    //     pet's, so the folded and unfolded You totals are two different numbers.
+    await stepPetPreferenceMovesTheYouLine(page)
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 

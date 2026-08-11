@@ -93,7 +93,7 @@ export function toDownloadRows(payload: unknown): TriageDownloadRow[] {
  */
 function httpReason(status: number, statusText: string, remaining: string | null): string {
   if (status === 403 && remaining === '0') {
-    return 'github rate limit spent (60/hr unauthenticated) — it refills within the hour'
+    return 'github rate limit spent (60/hr unauthenticated) - it refills within the hour'
   }
   return `github answered ${String(status)}${statusText.length > 0 ? ` ${statusText}` : ''}`
 }

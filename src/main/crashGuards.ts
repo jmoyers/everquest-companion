@@ -11,8 +11,28 @@
 // migrations — run BEFORE index.ts's own body, so a guard installed there would be installed
 // too late to catch them.
 
+// THE STDIO SINKS GO IN FIRST, AND THAT ORDER IS THE FIX (JOS-197).
+//
+// `process.stdout` and `process.stderr` are EventEmitters, and an EventEmitter with no `'error'`
+// listener THROWS its payload (`presence.ts detach` is written around the same law). So when the
+// console's pipe closed under a packaged build, the failed write became an uncaught exception, the
+// handler below answered it by writing to the console, and one install filed 7,272,196 occurrences
+// of `EPIPE: broken pipe, write` in a day. Installing the listener is what stops a dead audience
+// from being promoted into an app error at all; `errorLog.ts`'s `toConsole` is the other half, for
+// the stdio flavours that throw synchronously instead.
+//
+// It is installed BEFORE the two handlers below purely so that no window exists in which this
+// module is loaded and the promotion can still happen.
+import { silenceStdioErrors } from './deadPipe'
 import { logError } from './errorLog'
 
+silenceStdioErrors()
+
+// EPIPE IS NOT SPECIAL-CASED HERE, deliberately. A broken pipe that reaches this handler came from
+// somewhere that is NOT our own stdio — a child process, a socket, the updater — and those are real
+// failures a blanket rule would swallow. What was wrong was never that EPIPE arrived here; it was
+// that handling it wrote to the thing that had just failed. The general backstop for any error that
+// learns to repeat itself is the per-fingerprint budget inside `logError` (JOS-197).
 process.on('uncaughtException', (err) => {
   logError('main:uncaughtException', err)
 })

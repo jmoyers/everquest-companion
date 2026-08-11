@@ -41,9 +41,9 @@ const SEVERITY_COLOR: Record<PerfSeverity, string> = {
 }
 
 const SEVERITY_TITLE: Record<PerfSeverity, string> = {
-  normal: 'Performance — the event loop is keeping up',
-  warn: 'Performance — the event loop is running late (click for detail)',
-  alert: 'Performance — the event loop stalled (click for detail)'
+  normal: 'Performance - the event loop is keeping up',
+  warn: 'Performance - the event loop is running late (click for detail)',
+  alert: 'Performance - the event loop stalled (click for detail)'
 }
 
 const SPARK_W = 240
@@ -107,7 +107,7 @@ function LagFacts({ sample, longtasks }: { sample: PerfHudSample; longtasks: num
         label="event loop, p95"
         value={measured ? formatMs(sample.lag.p95Ms) : 'not measured yet'}
       />
-      <Fact label="event loop, worst" value={measured ? formatMs(sample.lag.maxMs) : '—'} />
+      <Fact label="event loop, worst" value={measured ? formatMs(sample.lag.maxMs) : '-'} />
       <Fact label="long tasks (2 min)" value={String(longtasks)} />
     </Stack>
   )

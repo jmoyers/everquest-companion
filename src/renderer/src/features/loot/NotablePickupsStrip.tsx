@@ -5,10 +5,8 @@ import AutoStoriesIcon from '@mui/icons-material/AutoStories'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
 import { recipeUseLabel } from '@shared/itemKnowledge'
 import { itemCountKey } from '../../lib/itemName'
-import { KnownItemTooltip } from '../../lib/KnownItemTooltip'
 import { isTradeskillOnly } from '../../lib/itemKnowledgeView'
 import { useNotablePickups, type NotablePickup } from './useNotablePickups'
-import { Tooltip } from '../../lib/Tooltip'
 
 // Renderer-local view pref (same shape as App.tsx's saved view / `eq.combat.scope`): does the
 // notable-pickups strip surface pure tradeskill components? Default OFF — a grinding session
@@ -71,8 +69,15 @@ export function useNotableStrip(history: LootEvent[]): {
   }
 }
 
-// One pickup: hovering shows the item card, clicking opens that item's detail dialog, and
-// the delete affordance dismisses it from the strip.
+// One pickup: clicking opens that item's drill-down, and the delete affordance dismisses it
+// from the strip.
+//
+// IT NO LONGER HOVERS (JOS-127). This strip sits DIRECTLY UNDER the loot toolbar, and the chip
+// used to anchor a `placement="top"`, interactive `KnownItemTooltip` — a card up to 380px wide
+// that opened upward across the toolbar and kept `pointer-events: auto` the whole time it was
+// up. That is the text that was sitting on the Sort select and eating its clicks. The card is
+// gone rather than repositioned: the click already opens the drill-down, which shows the item
+// window and its quest/recipe knowledge at full width.
 function PickupChip({
   n,
   onSelect,
@@ -93,24 +98,23 @@ function PickupChip({
         : n.item
   const key = itemCountKey(n.item)
   return (
-    <KnownItemTooltip name={n.item} knowledge={n.knowledge}>
-      <Chip
-        size="small"
-        variant="outlined"
-        color={n.knowledge.lore ? 'warning' : 'secondary'}
-        icon={n.knowledge.lore ? <AutoStoriesIcon /> : undefined}
-        label={label}
-        onClick={() => onSelect(n.item)}
-        onDelete={() => onDismiss(key)}
-        deleteIcon={<CloseIcon />}
-        sx={{ maxWidth: 320 }}
-      />
-    </KnownItemTooltip>
+    <Chip
+      size="small"
+      variant="outlined"
+      color={n.knowledge.lore ? 'warning' : 'secondary'}
+      icon={n.knowledge.lore ? <AutoStoriesIcon /> : undefined}
+      label={label}
+      onClick={() => onSelect(n.item)}
+      onDelete={() => onDismiss(key)}
+      deleteIcon={<CloseIcon />}
+      sx={{ maxWidth: 320 }}
+    />
   )
 }
 
 // The toggle that reveals the hidden components — it says how many are behind it rather
-// than pretending the pickups didn't happen.
+// than pretending the pickups didn't happen. Its own label carries that count, so the tooltip
+// it used to wear was a second voice saying the same thing over the toolbar above it (JOS-127).
 function TradeskillToggle({
   hiddenTradeskill,
   showTradeskill,
@@ -121,26 +125,24 @@ function TradeskillToggle({
   onToggleTradeskill: (v: boolean) => void
 }): JSX.Element {
   return (
-    <Tooltip title="Tradeskill components are hidden here by default.">
-      <FormControlLabel
-        sx={{ m: 0 }}
-        control={
-          <Switch size="small" checked={showTradeskill} onChange={(e) => onToggleTradeskill(e.target.checked)} />
-        }
-        label={
-          <Typography variant="caption" color="text.secondary">
-            show tradeskill{hiddenTradeskill > 0 ? ` (${hiddenTradeskill})` : ''}
-          </Typography>
-        }
-      />
-    </Tooltip>
+    <FormControlLabel
+      sx={{ m: 0 }}
+      control={
+        <Switch size="small" checked={showTradeskill} onChange={(e) => onToggleTradeskill(e.target.checked)} />
+      }
+      label={
+        <Typography variant="caption" color="text.secondary">
+          show tradeskill{hiddenTradeskill > 0 ? ` (${hiddenTradeskill})` : ''}
+        </Typography>
+      }
+    />
   )
 }
 
 // "Notable pickups" strip (Task #53): the last few looted items that are lore- or
 // quest-relevant. Dense, dismissable, no narration — a quiet "hey, that coin you grabbed
-// is for the Tashania spell quest". Hovering a chip shows the item card; clicking it opens
-// that item's detail dialog.
+// is for the Tashania spell quest". Clicking a chip opens that item's drill-down; nothing
+// here hovers (JOS-127 — see PickupChip).
 //
 // TRADESKILL (Task #62): components are hidden by default — see TRADESKILL_KEY above. The
 // strip stays mounted while any are hidden so the toggle that reveals them is reachable, and

@@ -112,7 +112,7 @@ export default function DigestPanel(): JSX.Element {
             </Typography>
             {digest.data.clusters.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
-                Nothing clusters in this window — every report is on its own.
+                Nothing clusters in this window - every report is on its own.
               </Typography>
             ) : (
               digest.data.clusters.map((c) => <ClusterRow key={c.id} cluster={c} />)

@@ -9,7 +9,8 @@
 //       1. an AMBIGUOUS slot prints its candidate SET (`CLR|PAL`) and never picks a member —
 //          the real log has spans where CLR is never exclusively evidenced, so "PAL" there
 //          would be fabricated;
-//       2. an UNKNOWN slot prints an em-dash — not a class, not a blank, not a zero;
+//       2. an UNKNOWN slot prints a dash (JOS-106: a normal one) — not a class, not a blank,
+//          not a zero;
 //       3. a fuzzy boundary prints a WINDOW, because a loadout swap writes nothing to the log
 //          and the events bracketing it can be a day and a half apart.
 //
@@ -98,7 +99,7 @@ test('an ambiguous slot prints the SET and never picks a member', () => {
   assert.ok(!/^PAL$/.test(slotLabel(s)))
 })
 
-test('an unknown slot prints an em-dash — empty and whole-roster both', () => {
+test('an unknown slot prints a dash — empty and whole-roster both', () => {
   assert.equal(slotKind(slot([])), 'unknown')
   assert.equal(slotLabel(slot([])), NONE)
   assert.equal(slotKind(slot([...CLASS_ABBRS])), 'unknown')
@@ -187,7 +188,7 @@ test('confidence and level range read as the panel prints them', () => {
   assert.equal(confidenceText(0), '0%')
   assert.equal(levelRangeText(interval({ id: 'ci1' })), null)
   assert.equal(levelRangeText(interval({ id: 'ci2', levelLo: 50, levelHi: 50 })), 'level 50')
-  assert.equal(levelRangeText(interval({ id: 'ci3', levelLo: 11, levelHi: 24 })), 'levels 11–24')
+  assert.equal(levelRangeText(interval({ id: 'ci3', levelLo: 11, levelHi: 24 })), 'levels 11-24')
 })
 
 // ---------------------------------------------------------------------------

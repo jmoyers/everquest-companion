@@ -5,6 +5,9 @@ import CssBaseline from '@mui/material/CssBaseline'
 import { theme } from './theme/theme'
 import App from './App'
 import { ErrorBoundary } from './lib/ErrorBoundary'
+// The mouse's Back button (JOS-201). ABOVE App on purpose — the app-level answer is a fallback
+// SLOT rather than a stack entry, and effects run children-first; see appBack.tsx's header.
+import { AppBackProvider } from './appBack'
 import { DEV_TOOLS, DEV_TOOLS_DEFINE, OWNER_TOOLS } from './devFlags'
 import { currentViewId } from './lib/currentView'
 
@@ -25,7 +28,7 @@ if (import.meta.env.DEV) {
       `OWNER_TOOLS=${String(OWNER_TOOLS)}${OWNER_TOOLS ? '' : ' (set EQ_OWNER_TOOLS=1 and relaunch for the owner-only surfaces)'}` +
       ', __EQ_DEV_TOOLS__ define ' +
       (DEV_TOOLS_DEFINE === undefined
-        ? 'ABSENT — this dev server booted before the define existed; restart `npm run dev` if a dev-only surface misbehaves'
+        ? 'ABSENT - this dev server booted before the define existed; restart `npm run dev` if a dev-only surface misbehaves'
         : `= ${String(DEV_TOOLS_DEFINE)}`)
   )
 }
@@ -73,7 +76,9 @@ ReactDOM.createRoot(container).render(
     <ErrorBoundary>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <App />
+        <AppBackProvider>
+          <App />
+        </AppBackProvider>
       </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>

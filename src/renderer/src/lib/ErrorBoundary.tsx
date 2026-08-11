@@ -100,9 +100,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
     try {
       window.eq?.reportError({
         // JOS-100: the NAME is half the error report's grouping key, and the VIEW is state only
-        // this process has. The component stack stays appended to `stack` for errors.log; the
-        // report's own frame parser ignores those lines (they carry no `out/…:line:col`), so a
-        // React component name never reaches the wire.
+        // this process has.
+        //
+        // THE COMPONENT STACK IS APPENDED TO `stack` BEHIND A LITERAL MARKER, and since JOS-111
+        // that marker is load-bearing rather than decoration: main reads the text after it as the
+        // chain of COMPONENTS the error came through and sends it as `componentPath`, bounded to
+        // eight identifier-shaped names, so a Tooltip warning can name its anchor. React's own
+        // component-stack lines are character-for-character V8 frames, so a marker is the only
+        // way to tell the two apart without guessing — see shared/errorReportLocation.ts, which
+        // holds the other copy of this string and is pinned equal to it by the contract test.
         name: error?.name,
         message: error?.message ?? String(error),
         stack: `${error?.stack ?? ''}${
@@ -114,9 +120,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
     } catch {
       // Ignore — the visible fallback below is the primary user-facing signal.
     }
-    // Also hit the console so main's console-message forwarder picks it up.
+    // Also hit the console so main's console-message forwarder picks it up. The component stack
+    // carries the SAME marker it carries on the IPC report: the forwarder's payload has no `stack`
+    // field at all, so this string is the only place the component path could be read from on
+    // that path, and an unmarked one is not read at all (JOS-111).
     // eslint-disable-next-line no-console
-    console.error('[everquest-companion] ErrorBoundary caught:', error, info?.componentStack)
+    console.error(
+      '[everquest-companion] ErrorBoundary caught:',
+      error,
+      info?.componentStack ? `\n\nComponent stack:${info.componentStack}` : ''
+    )
   }
 
   render(): React.ReactNode {

@@ -30,15 +30,30 @@
 //   5. Every breadcrumb `kind` must be a member of the closed parser-kind enum — so a
 //      breadcrumb can say `damage` and can never say what was damaged.
 //
-// Plus the two bounds: at most `MAX_ERROR_FRAMES_WIRE` frames and `MAX_BREADCRUMBS` crumbs. An
-// eleventh of either FAILS the event rather than being quietly trimmed, because a client
-// sending eleven is a client that is not running this contract, and trimming would hide that.
+// AND THREE MORE SINCE JOS-111, which added the frameless case's location. They are all OPTIONAL
+// fields and are checked in `applyOptional`, which states the absent/malformed rule:
+//
+//   6. Every `externalFrames` file must match `EXTERNAL_FRAME_FILE_RE` — a PUBLIC module name
+//      (`node:fs`, `node_modules/chokidar`, `electron/js2c/…`) and nothing else. An absolute path
+//      cannot satisfy it, so the install directory cannot ride in on the arm that exists to
+//      carry non-bundle frames.
+//   7. `componentPath` must be up to eight identifier-shaped names joined with `>`. A React
+//      component name is our own code, but the field is still bound by SHAPE, so a sentence —
+//      or a zone, or a character — is not a value it can hold.
+//   8. `frameOrigin` must be a member of `TELEMETRY_FRAME_ORIGINS`.
+//
+// Plus the bounds: at most `MAX_ERROR_FRAMES_WIRE` frames, `MAX_EXTERNAL_FRAMES_WIRE` external
+// frames and `MAX_BREADCRUMBS` crumbs. One past any of them FAILS the event rather than being
+// quietly trimmed, because a client sending it is a client that is not running this contract, and
+// trimming would hide that.
 //
 // PURE and total, like the rest of the set.
 
 import {
+  COMPONENT_PATH_RE,
   ERROR_CODE_RE,
   ERROR_NAME_RE,
+  EXTERNAL_FRAME_FILE_RE,
   FINGERPRINT_RE,
   FRAME_FILE_RE,
   FRAME_FUNC_RE,
@@ -47,12 +62,14 @@ import {
   MAX_BREADCRUMB_OFFSET_MS,
   MAX_COUNT,
   MAX_ERROR_FRAMES_WIRE,
+  MAX_EXTERNAL_FRAMES_WIRE,
   MAX_FRAME_POSITION_WIRE,
   REDACTED_MESSAGE_RE,
   SESSION_AGE_MS_EDGES,
   TELEMETRY_BREADCRUMB_KINDS,
   TELEMETRY_ERROR_MODES,
   TELEMETRY_ERROR_VIEWS,
+  TELEMETRY_FRAME_ORIGINS,
   type EvErrorReport,
   type TelemetryBreadcrumb,
   type TelemetryFrame
@@ -60,10 +77,10 @@ import {
 import { redactMessage } from './errorReport'
 import { bucket, fail, matching, oneOf, whole, type Validated } from './telemetryValidateBase'
 
-function vFrame(raw: unknown, i: number): Validated<TelemetryFrame> {
-  const at = `frames[${String(i)}]`
+/** One frame under whichever file pattern its list is bound to (JOS-111 added the second). */
+function vFrame(raw: unknown, at: string, filePattern: RegExp): Validated<TelemetryFrame> {
   if (!isTelemetryObject(raw)) return fail(at, `${at} must be an object.`)
-  const file = matching(raw.file, `${at}.file`, FRAME_FILE_RE, 'a bundle-relative path under out/')
+  const file = matching(raw.file, `${at}.file`, filePattern, 'a recognised module path')
   if (!file.ok) return file
   const line = whole(raw.line, `${at}.line`, MAX_FRAME_POSITION_WIRE)
   if (!line.ok) return line
@@ -77,18 +94,29 @@ function vFrame(raw: unknown, i: number): Validated<TelemetryFrame> {
   }
 }
 
-function vFrames(raw: unknown): Validated<TelemetryFrame[]> {
-  if (!Array.isArray(raw)) return fail('frames', 'frames must be a list.')
-  if (raw.length > MAX_ERROR_FRAMES_WIRE) {
-    return fail('frames', `frames must hold at most ${String(MAX_ERROR_FRAMES_WIRE)} entries.`)
+/** A frame list, bounded and pattern-bound. An eleventh (or a sixth external) FAILS the event
+ *  rather than being quietly trimmed — see the header. */
+function vFrameList(
+  raw: unknown,
+  field: string,
+  filePattern: RegExp,
+  max: number
+): Validated<TelemetryFrame[]> {
+  if (!Array.isArray(raw)) return fail(field, `${field} must be a list.`)
+  if (raw.length > max) {
+    return fail(field, `${field} must hold at most ${String(max)} entries.`)
   }
   const out: TelemetryFrame[] = []
   for (let i = 0; i < raw.length; i++) {
-    const f = vFrame(raw[i], i)
+    const f = vFrame(raw[i], `${field}[${String(i)}]`, filePattern)
     if (!f.ok) return f
     out.push(f.value)
   }
   return { ok: true, value: out }
+}
+
+function vFrames(raw: unknown): Validated<TelemetryFrame[]> {
+  return vFrameList(raw, 'frames', FRAME_FILE_RE, MAX_ERROR_FRAMES_WIRE)
 }
 
 function vCrumb(raw: unknown, i: number): Validated<TelemetryBreadcrumb> {
@@ -158,6 +186,51 @@ function vContext(o: Record<string, unknown>): Validated<ErrorContext> {
 }
 
 /**
+ * THE FOUR OPTIONAL FIELDS, each of which may simply be absent (JOS-111 added three of them).
+ *
+ * ABSENT AND NULL BOTH MEAN ABSENT, and PRESENT-BUT-WRONG STILL FAILS THE EVENT. That pairing is
+ * the whole additive-field contract read from the server's side: a client older than a field says
+ * nothing about it and is accepted, while a client that sends a malformed one is not running this
+ * contract and is refused exactly like any other bad value. Repairing it would hide that.
+ *
+ * `value` is mutated rather than rebuilt: the caller has already constructed every REQUIRED field
+ * by hand, and re-spreading it here would be the one place a smuggled key could re-enter.
+ */
+/** "The client said something about this field." `null` and `undefined` are the same absence:
+ *  `JSON.stringify` drops an undefined property, and a client that spells its absence as null is
+ *  saying the same thing. Spelled once so all four optional fields agree. */
+const given = (v: unknown): boolean => v !== undefined && v !== null
+
+function applyOptional(o: Record<string, unknown>, value: EvErrorReport): Validated<EvErrorReport> {
+  if (given(o.code)) {
+    const code = matching(o.code, 'code', ERROR_CODE_RE, 'a machine-readable error code')
+    if (!code.ok) return code
+    value.code = code.value
+  }
+  if (given(o.frameOrigin)) {
+    const origin = oneOf(o.frameOrigin, 'frameOrigin', TELEMETRY_FRAME_ORIGINS)
+    if (!origin.ok) return origin
+    value.frameOrigin = origin.value
+  }
+  if (given(o.externalFrames)) {
+    const ext = vFrameList(
+      o.externalFrames,
+      'externalFrames',
+      EXTERNAL_FRAME_FILE_RE,
+      MAX_EXTERNAL_FRAMES_WIRE
+    )
+    if (!ext.ok) return ext
+    value.externalFrames = ext.value
+  }
+  if (given(o.componentPath)) {
+    const path = matching(o.componentPath, 'componentPath', COMPONENT_PATH_RE, 'component names joined with >')
+    if (!path.ok) return path
+    value.componentPath = path.value
+  }
+  return { ok: true, value }
+}
+
+/**
  * ONE ERROR REPORT. Constructed field by field from the schema like every other validator in
  * this set, so a smuggled `characterName` is not stripped by a rule someone has to remember —
  * the property simply never appears in the value that comes back.
@@ -184,10 +257,5 @@ export function validateErrorReport(o: Record<string, unknown>): Validated<EvErr
     breadcrumbs: crumbs.value,
     ...ctx.value
   }
-  if (o.code !== undefined && o.code !== null) {
-    const code = matching(o.code, 'code', ERROR_CODE_RE, 'a machine-readable error code')
-    if (!code.ok) return code
-    value.code = code.value
-  }
-  return { ok: true, value }
+  return applyOptional(o, value)
 }

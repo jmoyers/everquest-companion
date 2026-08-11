@@ -110,7 +110,7 @@ export function readRing(): TelemetryRing {
         cached = parsed
         return cached
       }
-      logInfo('[everquest-companion] telemetry.json unreadable/foreign — starting from empty')
+      logInfo('[everquest-companion] telemetry.json unreadable/foreign - starting from empty')
     } catch (err) {
       logError('main:telemetryRing', { message: 'telemetry.json parse failed; starting empty', err })
     }

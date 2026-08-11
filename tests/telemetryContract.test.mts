@@ -180,7 +180,12 @@ const SAMPLES: TelemetryEvent[] = [
     sessionAgeBucket: 2,
     mode: 'live',
     count: 1
-  }
+  },
+  // JOS-109. Their round-trip below is the strongest assertion in this list precisely because
+  // there is so little of it: `valid({t:'optOut'})` must deep-equal `{t:'optOut'}`, so a future
+  // edit that gave either of these a field would fail here before it could reach the wire.
+  { t: 'optOut' },
+  { t: 'optIn' }
 ]
 
 test('every kind in the union has a sample, and every sample round-trips unchanged', () => {

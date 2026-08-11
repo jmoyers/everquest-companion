@@ -16,7 +16,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FIXTURES, readFixture, replayBuffTimers, tsOf } from './harness.mts'
-import { buildTimerRows, statedDuration, timerReading, type BuffTimerRow } from '../src/shared/buffTimers.ts'
+import {
+  buildTimerRows,
+  rowsForSurface,
+  statedDuration,
+  timerReading,
+  timerRowSurface,
+  type BuffTimerRow
+} from '../src/shared/buffTimers.ts'
 import { CC_UNKNOWN_CAP_MS } from '../src/main/modules/buffTimers.ts'
 import { getParserConfig } from '../src/main/log/rulesets.ts'
 import type { ActiveBuff, SpellDbFile } from '../src/shared/types.ts'
@@ -56,13 +63,32 @@ test('one AE mez cast produces a NAMED row per enemy — the chain-mez the repor
   const scareling = ccRowFor(rows, 'a scareling')
   assert.ok(toad, 'no crowd-control row for a turmoil toad')
   assert.ok(scareling, 'no crowd-control row for a scareling')
-  assert.equal(timers.holds.length, 2, 'one cast, two mobs, two holds')
+
+  // THREE HOLDS, NOT TWO, SINCE JOS-159 — and the extra one is this fixture reporting a defect it
+  // has carried all along. Its first two lines are `You begin casting Allure VI.` /
+  // `phoboplasm has been charmed.` at 20:46:21, a 16-minute charm still running at 20:50:34, and
+  // it used to open NOTHING because the scraped DB left Allure's cast-on-other message empty and
+  // the charm broadcast therefore resolved to seven candidates none of which the player had cast.
+  // The corrections overlay supplies the sentence, so the charm now holds like any other. The AE
+  // mez this test is about is still exactly two of the three.
+  assert.equal(timers.holds.length, 3, 'the AE mez`s two, plus the Allure charm that was already live')
+  assert.equal(
+    timers.holds.filter((h) => h.target !== 'phoboplasm').length,
+    2,
+    'one cast, two mobs, two holds'
+  )
 
   // NAMED, not a family: "has been mesmerized." is FOUR spells in the committed DB (Dazzle,
-  // Mesmerization, Mesmerize, Sathir's Mesmerization). The player's own cast history names one,
+  // Mesmerization, Mesmerize, Sathir's Mesmerization). The player's own cast anchor names one,
   // which is JOS-84's law working — the parser hands over candidates, the MODEL resolves.
-  assert.equal(toad.name, 'Mesmerization')
-  assert.equal(scareling.name, 'Mesmerization')
+  //
+  // AND IT NAMES THE RANK (JOS-140). `You begin casting Mesmerization III.` is the ONLY line in
+  // the whole family that carries one — the landing sentence names no spell at all and the
+  // wear-off names the rank-less base — so the anchor is the one chance the row has to say which
+  // rank of yours is on that mob. This is also the field the alerts tracker was missing
+  // (JOS-126's DF5V60 note): before this, no event in the app ever carried a ranked name.
+  assert.equal(toad.name, 'Mesmerization III')
+  assert.equal(scareling.name, 'Mesmerization III')
   assert.equal(toad.ambiguous, undefined, 'a resolved row must not claim ambiguity')
   assert.equal(scareling.ambiguous, undefined)
 
@@ -177,48 +203,79 @@ test('AN UNKNOWN DURATION NEVER COUNTS DOWN — over every row of every fixture'
   assert.ok(elapsedRows > 0, 'the fixtures produced no count-up rows at all — the test proves nothing')
 })
 
-test('A MINED ESTIMATE IS NOT A STATED DURATION — `observed` provenance never earns a countdown', () => {
-  // The buffs model computes an estimate for spells the DB has no duration for, from the
-  // recency-weighted MAX of the player's own land→fade samples, and tags it
-  // `durationSource: 'observed'`. The Buffs TAB counts down from it. THIS SURFACE MUST NOT — the
-  // model itself calls it an estimate, samples are censored by zones/gaps/deaths, and counting
-  // down from one is exactly the invented remaining this ticket forbids.
+test('OBSERVED WINS OVER DB — an observed duration earns the countdown (JOS-117 unifies the estimator)', () => {
+  // JOS-89 refused to count down from anything but a DB-stated duration, because a mined estimate
+  // could be a censored (too-short) sample. JOS-117's estimator makes an observation safe to trust:
+  // `overlayDurationMs` = max(DB floor, recent observed max), so a below-base click-off cannot pull
+  // it down and a focus-extended cast beats the base. The overlay reads that one field, and the
+  // Buffs TAB reads its own copy of the SAME number (`estimatedMs`/`durationSource`) — they agree.
   //
-  // SAY WHICH: this is asserted on the PROJECTION, not on a fixture replay, because NO committed
-  // fixture reaches the branch. Swept all 103 `tests/fixtures/*.log` through the DB-enabled
-  // replay: not one produced an active with `durationSource === 'observed'` (nor one with no
-  // source at all). With the real spells.json installed, every buff that survives own-cast
-  // gating and reaches `active` is a spell the DB knows. So the branch is real, reachable in
-  // production the moment a player casts something the wiki scrape missed, and structurally
-  // covered here rather than observed in the owner's log. The inputs below are a typed
-  // ActiveBuff — the model's own documented shape, produced by buffsView.ts `durationFields` —
-  // not an invented log sentence.
-  const mined: ActiveBuff = {
-    spell: 'Some Unscraped Spell',
+  // SAY WHICH: asserted on the PROJECTION with typed ActiveBuffs — the model's own documented shape
+  // from buffsView.ts `durationFields` — not an invented log sentence. The end-to-end estimator
+  // (click-off ignored, floor held, refresh reset) is pinned in tests/buffOverlayDuration.test.mts
+  // against the real modules.
+  const observed: ActiveBuff = {
+    spell: 'Swift Like the Wind',
+    cls: 'buff',
+    self: true,
+    startedTs: 1_000,
+    // Both surfaces now carry the player's own observed 33m — the log beat the 16m DB floor.
+    estimatedMs: 1_980_000,
+    durationSource: 'observed',
+    p25: null,
+    p75: null,
+    n: 1,
+    overlayDurationMs: 1_980_000,
+    overlaySource: 'observed'
+  }
+  const dbOnly: ActiveBuff = {
+    spell: 'A Spell Never Observed',
     cls: 'buff',
     self: true,
     startedTs: 1_000,
     estimatedMs: 300_000,
-    durationSource: 'observed',
-    p25: 280_000,
-    p75: 320_000,
-    n: 5
+    durationSource: 'db',
+    p25: null,
+    p75: null,
+    n: 0,
+    overlayDurationMs: 300_000,
+    overlaySource: 'db'
   }
-  const stated: ActiveBuff = { ...mined, spell: 'A Spell The DB Knows', durationSource: 'db' }
-  const rows = buildTimerRows({ active: [mined, stated], stats: {} }, { holds: [], ends: [] })
+  const rows = buildTimerRows({ active: [observed, dbOnly], stats: {} }, { holds: [], ends: [] })
 
-  const minedRow = rows.find((r) => r.name === 'Some Unscraped Spell')
-  assert.ok(minedRow)
-  assert.equal(minedRow.mode, 'elapsed', 'a mined estimate must count UP')
-  assert.equal(minedRow.durationMs, undefined, 'and must not carry the estimate as a duration')
-  assert.equal(timerReading(minedRow, 1_000 + 60_000).remainingMs, undefined)
+  const obsRow = rows.find((r) => r.name === 'Swift Like the Wind')
+  assert.ok(obsRow)
+  assert.equal(obsRow.mode, 'countdown', 'an observed duration now counts DOWN (the reversal)')
+  assert.equal(obsRow.durationMs, 1_980_000, 'and it counts down from the OBSERVED 33m, not the DB 16m')
+  assert.equal(timerReading(obsRow, 1_000 + 60_000).remainingMs, 1_920_000)
 
-  // …while the SAME numbers with `db` provenance do earn the countdown. The provenance flag is
-  // the whole discriminator; nothing else about the two rows differs.
-  const statedRow = rows.find((r) => r.name === 'A Spell The DB Knows')
-  assert.ok(statedRow)
-  assert.equal(statedRow.mode, 'countdown')
-  assert.equal(statedRow.durationMs, 300_000)
+  // A spell the player has never cleanly observed falls back to the DB base — still a countdown.
+  const dbRow = rows.find((r) => r.name === 'A Spell Never Observed')
+  assert.ok(dbRow)
+  assert.equal(dbRow.mode, 'countdown')
+  assert.equal(dbRow.durationMs, 300_000)
+})
+
+test('a buff with NO observed sample and NO DB duration still counts UP — nothing invented', () => {
+  // `overlayDurationMs` null (no sample, no DB base) is the only count-up case left. The overlay
+  // never draws a bar from a number it does not have.
+  const bare: ActiveBuff = {
+    spell: 'Some Unscraped Spell',
+    cls: 'buff',
+    self: true,
+    startedTs: 1_000,
+    estimatedMs: null,
+    p25: null,
+    p75: null,
+    n: 0,
+    overlayDurationMs: null
+  }
+  const rows = buildTimerRows({ active: [bare], stats: {} }, { holds: [], ends: [] })
+  const row = rows.find((r) => r.name === 'Some Unscraped Spell')
+  assert.ok(row)
+  assert.equal(row.mode, 'elapsed', 'no honest duration ⇒ count up')
+  assert.equal(row.durationMs, undefined, 'and carry no duration at all')
+  assert.equal(timerReading(row, 1_000 + 60_000).remainingMs, undefined)
 })
 
 test('a permanent illusion gets no timer at all, rather than a fabricated one', () => {
@@ -339,5 +396,100 @@ test('every row id is stable and unique within a snapshot', () => {
     const { rows } = replayBuffTimers(readFixture(name))
     const ids = rows.map((r) => r.id)
     assert.equal(new Set(ids).size, ids.length, `${name}: duplicate row ids ${ids.join(', ')}`)
+  }
+})
+
+// ---------------------------------------------------------------------------------------------
+// TWO WINDOWS, ONE MODEL (JOS-119). The owner asked for buffs and debuffs to be separate windows
+// he can enable and place independently. The split is a FILTER over the rows this file already
+// pins — not a second fold, not a second model — so the property that matters is a PARTITION:
+// every row lands on exactly one surface and nothing is invented or lost on the way.
+// ---------------------------------------------------------------------------------------------
+
+test('the two timer surfaces PARTITION the rows — nothing lost, nothing duplicated', () => {
+  for (const name of ALL_FIXTURES) {
+    const { rows } = replayBuffTimers(readFixture(name))
+    const buffRows = rowsForSurface(rows, 'buffs')
+    const debuffRows = rowsForSurface(rows, 'debuffs')
+    assert.equal(
+      buffRows.length + debuffRows.length,
+      rows.length,
+      `${name}: ${rows.length} rows split into ${buffRows.length} + ${debuffRows.length}`
+    )
+    const ids = new Set([...buffRows, ...debuffRows].map((r) => r.id))
+    assert.equal(ids.size, rows.length, `${name}: a row reached both windows, or neither`)
+    // …and the order inside each window is the model's own order, untouched by the filter.
+    assert.deepEqual(buffRows, rows.filter((r) => buffRows.includes(r)), `${name}: buffs re-ordered`)
+    assert.deepEqual(debuffRows, rows.filter((r) => debuffRows.includes(r)), `${name}: debuffs re-ordered`)
+  }
+})
+
+test('a beneficial spell goes to the BUFFS window even when it is on somebody else', () => {
+  // g2-buff-fanout.log is the fixture that has one buff up on several entities. `group` is not the
+  // discriminator: a buff you put on your pet is `group: 'target'` and is still a BUFF, so routing
+  // by target would file your own group buffs under "debuffs".
+  const { rows } = replayBuffTimers(readFixture('g2-buff-fanout.log'))
+  const onOthers = rows.filter((r) => r.kind === 'buff' && r.group === 'target')
+  assert.ok(onOthers.length > 0, 'the fan-out fixture should leave a buff standing on somebody else')
+  for (const r of onOthers) {
+    assert.equal(timerRowSurface(r), 'buffs', `${r.name} on ${r.target ?? '?'} was filed as a debuff`)
+  }
+  assert.ok(
+    rowsForSurface(rows, 'buffs').some((r) => r.group === 'target'),
+    'the buffs window must carry the buffs you put on other people'
+  )
+})
+
+test('the chain-mez lands on the DEBUFFS window, and the buffs window never sees a mez', () => {
+  // The owner rules mez and slow ARE debuffs, so the CC holds belong beside the debuffs rather
+  // than in a third place. This is the ten-reports scenario, routed.
+  const { rows } = replayBuffTimers(W10, { until: LANDED })
+  const debuffRows = rowsForSurface(rows, 'debuffs')
+  const buffRows = rowsForSurface(rows, 'buffs')
+
+  const mez = debuffRows.filter((r) => r.kind === 'cc' && r.name === 'Mesmerization III')
+  assert.equal(mez.length, 2, 'both mez holds belong to the debuffs window')
+  assert.deepEqual(
+    mez.map((r) => r.target).sort(),
+    ['a scareling', 'a turmoil toad'],
+    'per-target, on the debuffs window'
+  )
+  assert.equal(buffRows.some((r) => r.kind === 'cc' || r.kind === 'debuff'), false, 'a debuff reached the buffs window')
+  assert.equal(debuffRows.some((r) => r.kind === 'buff'), false, 'a buff reached the debuffs window')
+})
+
+test('a slow you put on a mob is a DEBUFF row on the debuffs window, not a buff', () => {
+  // The ActiveBuff path (land → "worn off of <mob>"), which is the other half of what the debuffs
+  // window is for. MEASURED on the committed fixture: the full w10 replay leaves Shiftless Deeds
+  // (the slow the owner's Plane of Fear pull opens with) and Tashani standing on their targets.
+  const { rows } = replayBuffTimers(W10)
+  const debuffs = rows.filter((r) => r.kind === 'debuff')
+  assert.ok(debuffs.length > 0, 'the Cazic pull should leave debuff rows standing')
+  assert.ok(
+    // The RANK is on the row since JOS-140 — the cast line says `Shiftless Deeds IV` and the
+    // wear-off says `Shiftless Deeds`, and the row now shows the one you actually cast.
+    debuffs.some((r) => r.name === 'Shiftless Deeds IV'),
+    `the slow itself should be one of them: ${debuffs.map((r) => r.name).join(', ')}`
+  )
+  for (const r of debuffs) assert.equal(timerRowSurface(r), 'debuffs', `${r.name} was filed as a buff`)
+  // …and they arrive on the debuffs window under the enemy they are on, not under a self heading.
+  const onDebuffWindow = rowsForSurface(rows, 'debuffs')
+  for (const r of debuffs) {
+    assert.ok(onDebuffWindow.includes(r), `${r.name} never reached the debuffs window`)
+    assert.equal(r.group, 'target', `${r.name} on ${r.target ?? '?'} is not filed per target`)
+  }
+})
+
+// The CC half's DEATH path (JOS-156 — it closes the right hold and mints nothing) lives in
+// tests/deathClearsDebuffs.test.mts beside the buffs half's, so the ticket's evidence is in one
+// place and this file stays under the 400-code-line ceiling.
+test('a debuff row is never routed by GROUP — the row kind is the whole discriminator', () => {
+  // The regression this guards: routing by `group` would send every buff you put on your pet or
+  // your group to the debuffs window, and would send a debuff standing on YOU to the buffs one.
+  for (const name of ALL_FIXTURES) {
+    const { rows } = replayBuffTimers(readFixture(name))
+    for (const r of rows) {
+      assert.equal(timerRowSurface(r), r.kind === 'buff' ? 'buffs' : 'debuffs', `${name}: ${r.id}`)
+    }
   }
 })

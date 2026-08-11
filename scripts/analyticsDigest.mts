@@ -26,7 +26,7 @@ const pct = (v: number): string => `${(v * 100).toFixed(1)}%`
 
 /** Durations read in minutes here: a session is minutes, and `formatMs` lives in the renderer. */
 function minutes(ms: number | null): string {
-  return ms === null ? '—' : `${(ms / 60_000).toFixed(1)} min`
+  return ms === null ? '-' : `${(ms / 60_000).toFixed(1)} min`
 }
 
 function bar(label: string, n: number, max: number, width = 24): string {
@@ -78,7 +78,7 @@ function pulseLines(d: TriageAnalyticsData, live?: TriageLiveSessions): string[]
     `  DAU ${String(p.dau)} · WAU ${String(p.wau)} · MAU ${String(p.mau)} · installs all-time ${String(p.installsTotal)}`,
     `  today (UTC): ${String(p.installsToday)} new install(s) · ${String(p.upgradesToday)} upgrade(s)`,
     `  sessions ${String(p.sessions)} (${p.sessionsPerDay.toFixed(1)}/day on days with data)`,
-    `  session length: mean ${minutes(p.meanSessionMs)} · median ${p.medianSessionLabel ?? '—'}`,
+    `  session length: mean ${minutes(p.meanSessionMs)} · median ${p.medianSessionLabel ?? '-'}`,
     `  log lines parsed ${String(p.linesParsed)} in the window (re-reads included)`,
   ]
 }
@@ -102,7 +102,7 @@ function adoptionLines(d: TriageAnalyticsData): string[] {
     'ADOPTION',
     '  views by dwell share',
     ...(views.length > 0 ? views : ['  (nothing recorded)']),
-    '  features (uses, not reach — see src/main/triage/analytics.ts)',
+    '  features (uses, not reach - see src/main/triage/analytics.ts)',
     ...features,
     '  overlays opened',
     ...mixBlock(a.overlays),
@@ -125,6 +125,35 @@ function funnelLines(d: TriageAnalyticsData): string[] {
   return out
 }
 
+/**
+ * THE TWO SENTENCES THE MIX ABOVE CANNOT SAY (JOS-133), printed under it because both are about
+ * how a number in it should be READ rather than about its size:
+ *
+ *   * `mainErrorLogLines` is no longer the number of times something went wrong. The local error
+ *     log caps identical repeats (src/main/errorRepeat.ts) and counts the rest under
+ *     `suppressedErrorLines`, so the honest occurrence total is the SUM. Printed even when the
+ *     suppressed count is zero — "nothing was suppressed" is the fact that makes the written
+ *     number trustworthy, and it is only worth anything if it is always there to read.
+ *   * `imageFetchFailures` is counted but is NOT an error, so it is excluded from the release
+ *     health rate (`HEALTH_NON_ERROR_FIELDS`). It is right there in the mix, which is precisely
+ *     why the exclusion has to be stated: an operator reading a large number and a small error
+ *     rate on the same screen deserves to be told they are not the same question.
+ */
+function errorHonestyLines(h: TriageAnalyticsData['health']): string[] {
+  const n = (id: string): number => h.errors.find((r) => r.id === id)?.n ?? 0
+  const written = n('mainErrorLogLines')
+  const suppressed = n('suppressedErrorLines')
+  const images = n('imageFetchFailures')
+  const out = [
+    `  error log lines: ${String(written)} written · ${String(suppressed)} suppressed as repeats` +
+      ` · ${String(written + suppressed)} occurrences`
+  ]
+  if (images > 0) {
+    out.push(`  (imageFetchFailures is a handled condition, excluded from the release health rate)`)
+  }
+  return out
+}
+
 function healthLines(d: TriageAnalyticsData): string[] {
   const h = d.health
   return [
@@ -132,11 +161,12 @@ function healthLines(d: TriageAnalyticsData): string[] {
     'HEALTH',
     `  health rollups received: ${String(h.reports)}`,
     ...mixBlock(h.errors),
+    ...errorHonestyLines(h),
     '  update outcomes',
     ...h.update.map(
       (u) =>
         `  ${u.step.padEnd(22)} ok ${String(u.ok).padStart(6)} · failed ${String(u.failed).padStart(6)}` +
-        ` · ${u.rate === null ? '—' : pct(u.rate)}`
+        ` · ${u.rate === null ? '-' : pct(u.rate)}`
     ),
     ...(h.updateFailures.length > 0
       ? ['  update failure classes', ...mixBlock(h.updateFailures, 6)]
@@ -161,10 +191,10 @@ function startupLines(d: TriageAnalyticsData): string[] {
     ...s.byVersion.map(
       (r) =>
         `  ${r.version.padEnd(14)} ${String(r.launches).padStart(5)} launches` +
-        ` · replay p50 ${(r.p50ReplayLabel ?? '—').padStart(11)} p95 ${(r.p95ReplayLabel ?? '—').padStart(11)}` +
-        ` · block p50 ${(r.p50BlockLabel ?? '—').padStart(10)} p95 ${(r.p95BlockLabel ?? '—').padStart(10)}` +
-        ` · duty ${r.dutyAchieved === null ? '—' : pct(r.dutyAchieved)}` +
-        ` · ${r.meanEventsReplayed === null ? '—' : String(Math.round(r.meanEventsReplayed))} events/launch` +
+        ` · replay p50 ${(r.p50ReplayLabel ?? '-').padStart(11)} p95 ${(r.p95ReplayLabel ?? '-').padStart(11)}` +
+        ` · block p50 ${(r.p50BlockLabel ?? '-').padStart(10)} p95 ${(r.p95BlockLabel ?? '-').padStart(10)}` +
+        ` · duty ${r.dutyAchieved === null ? '-' : pct(r.dutyAchieved)}` +
+        ` · ${r.meanEventsReplayed === null ? '-' : String(Math.round(r.meanEventsReplayed))} events/launch` +
         ` · ${String(r.blocksOver50)} stalls >50ms`
     ),
     '  log size of measured launches (all builds)',
@@ -182,7 +212,7 @@ function versionLines(d: TriageAnalyticsData): string[] {
       .map(
         (v) =>
           `  ${v.version.padEnd(14)} ${String(v.installs).padStart(6)} installs · peak ${pct(v.peakShare).padStart(7)}` +
-          ` · first ${v.firstSeenDay ?? '—'} · majority ${v.majorityDay ?? '—'}` +
+          ` · first ${v.firstSeenDay ?? '-'} · majority ${v.majorityDay ?? '-'}` +
           ` · ${v.daysToAdopt === null ? 'not adopted' : `${String(v.daysToAdopt)}d to adopt`}`
       ),
   ]
@@ -200,7 +230,7 @@ function versionLines(d: TriageAnalyticsData): string[] {
  */
 export function downloadsLines(gh: TriageDownloads | undefined): string[] {
   if (gh === undefined) return []
-  const head = ['', 'GH DOWNLOADS (updater-inflated — NOT installs; global, never cohort-split)']
+  const head = ['', 'GH DOWNLOADS (updater-inflated - NOT installs; global, never cohort-split)']
   if (!gh.available) return [...head, `  (unavailable: ${gh.reason})`]
   if (gh.releases.length === 0) return [...head, '  (no published releases)']
   return [
@@ -211,15 +241,57 @@ export function downloadsLines(gh: TriageDownloads | undefined): string[] {
         (r) =>
           `  ${r.tag.padEnd(14)} ${String(r.exeDownloads).padStart(6)} installer` +
           ` · ${String(r.totalDownloads).padStart(6)} all assets` +
-          ` · published ${r.publishedAt?.slice(0, 10) ?? '—'}`
+          ` · published ${r.publishedAt?.slice(0, 10) ?? '-'}`
       ),
   ]
+}
+
+/**
+ * COVERAGE (JOS-109) — the terminal's copy of the tab's coverage block, off the same
+ * `TriageAnalyticsData`, so the CLI cannot disagree with the panel.
+ *
+ * IT PRINTS AFTER `downloadsLines` ON PURPOSE, because it is the only section that reads BOTH the
+ * counters and the GitHub numbers, and the comparison lands better under the per-tag rows it is
+ * comparing against. `src/main/triage/coverage.ts` holds the argument; what is repeated here is
+ * only what stops a reader misreading the two figures.
+ *
+ * THE SUBTRACTION IS NOT PRINTED. `downloads - reporting` reads as a dark-install count and is
+ * not one; both numbers go out and the gap is left to speak for itself.
+ */
+function coverageLines(d: TriageAnalyticsData, gh: TriageDownloads | undefined): string[] {
+  const c = d.coverage
+  const out = [
+    '',
+    'COVERAGE (opt-out flips are EXACT over installs that ever reported; a FLOOR, never a rate)',
+    `  turned off: ${String(c.optOuts)} · turned back on: ${String(c.optIns)} (this window; never netted)`,
+  ]
+  if (!c.anyFlips) {
+    out.push('  (no flips reported: nobody left, OR no install is on a build new enough to say)')
+  } else {
+    out.push('  build            off      on')
+    out.push(
+      ...c.byVersion.map(
+        (v) =>
+          `  ${v.version.padEnd(14)} ${String(v.optOuts).padStart(5)}   ${String(v.optIns).padStart(5)}`
+      )
+    )
+  }
+  out.push(`  installs that ever reported: ${String(c.reportingInstalls)} (all time, not the window)`)
+  if (gh?.available === true) {
+    const fetches = gh.releases.reduce((sum, r) => sum + r.exeDownloads, 0)
+    out.push(
+      `  ESTIMATE: ${String(fetches)} installer fetches vs ${String(c.reportingInstalls)} reporting installs.`,
+      '    Downloads are NOT installs (updater re-fetches, re-downloads, curiosity clicks) and one',
+      '    machine updated four times is four of them. The gap is shown, never subtracted.'
+    )
+  }
+  return out
 }
 
 function retentionLines(d: TriageAnalyticsData): string[] {
   if (d.retention.length === 0) return ['', 'RETENTION', '  (no cohorts yet)']
   const cell = (v: number | null, of: number): string =>
-    v === null ? '   —  ' : `${String(v).padStart(3)} ${pct(of > 0 ? v / of : 0).padStart(6)}`
+    v === null ? '   -  ' : `${String(v).padStart(3)} ${pct(of > 0 ? v / of : 0).padStart(6)}`
   return [
     '',
     'RETENTION (survival: first seen on the day, still seen on or after +N)',
@@ -245,14 +317,14 @@ function retentionLines(d: TriageAnalyticsData): string[] {
 function cohortLines(cohort: string): string[] {
   if (cohort === 'owner') {
     return [
-      'COHORT: owner — YOUR OWN USE (dev builds, tagged from env.channel, plus any install',
+      'COHORT: owner - YOUR OWN USE (dev builds, tagged from env.channel, plus any install',
       '  marked with `analytics owner-add`). Not included in the user digest, and never added',
       '  to it. Rows aggregated before an install was marked are in the USER cohort and stay',
-      '  there — the split is from-marking-onward.',
+      '  there - the split is from-marking-onward.',
     ]
   }
   return [
-    'COHORT: user — your own use is EXCLUDED (`--cohort owner` for it, `all` for both, split).',
+    'COHORT: user - your own use is EXCLUDED (`--cohort owner` for it, `all` for both, split).',
     '  From-marking-onward: counters carry no id, so rows aggregated before an install was',
     '  marked as yours are still counted here and cannot be moved.',
   ]
@@ -274,7 +346,7 @@ export function renderAnalyticsDigest(
   live?: TriageLiveSessions
 ): string {
   const head = [
-    `usage analytics — last ${String(d.windowDays)} days (${d.days[0] ?? '?'} → ${d.days.at(-1) ?? '?'})`,
+    `usage analytics - last ${String(d.windowDays)} days (${d.days[0] ?? '?'} → ${d.days.at(-1) ?? '?'})`,
     ...cohortLines(cohort),
     d.empty
       ? 'NO DATA YET: the tables exist and are empty. Every number below is a true zero.'
@@ -290,6 +362,7 @@ export function renderAnalyticsDigest(
     ...startupLines(d),
     ...versionLines(d),
     ...downloadsLines(downloads),
+    ...coverageLines(d, downloads),
     ...retentionLines(d),
     '',
   ].join('\n')

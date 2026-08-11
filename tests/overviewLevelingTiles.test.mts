@@ -77,11 +77,11 @@ function hourStats(snap: ProgressionSnap): RangeStats {
 
 // ── the value/unit split ───────────────────────────────────────────────────────────────
 
-test('splitRate recovers the two halves of the ONE rate wording, em-dash included', () => {
+test('splitRate recovers the two halves of the ONE rate wording, the dash included', () => {
   assert.deepEqual(splitRate('1.42 lvl/hr'), { value: '1.42', unit: 'lvl/hr' })
   assert.deepEqual(splitRate('240 kills/hr'), { value: '240', unit: 'kills/hr' })
   // The unknown answer has no unit to split off, and must not gain one.
-  assert.deepEqual(splitRate('—'), { value: '—', unit: '' })
+  assert.deepEqual(splitRate('-'), { value: '-', unit: '' })
 })
 
 // ── the tiles ──────────────────────────────────────────────────────────────────────────
@@ -120,12 +120,12 @@ test('no ding folded ⇒ NO level tile, never a guessed or em-dash one', () => {
   )
 })
 
-test('at cap: the pace tile is an em-dash, and it is still a tile', () => {
+test('at cap: the pace tile is a dash, and it is still a tile', () => {
   const snap = farming({ pct: 0, unstated: true })
   const state = overviewLeveling(snap)
   const rateTile = state.tiles.find((t) => t.id === 'rate')
   assert.ok(rateTile)
-  assert.equal(rateTile.value, '—', 'unknown, never 0.00')
+  assert.equal(rateTile.value, '-', 'unknown, never 0.00')
   assert.equal(rateTile.unit, 'lvl/hr', 'the unit survives the unknown — it says WHAT is unknown')
 })
 

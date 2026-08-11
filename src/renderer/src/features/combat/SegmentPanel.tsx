@@ -1,32 +1,30 @@
-// The dashboard's ANCHOR PANEL — the source meter (level 1) and, when drilled, ONE level-2
-// subject. Split out of CombatView.tsx; the tab is now header + body + log, and this is the body's
+// The dashboard's ANCHOR PANEL — the source meter (level 1) and, when drilled, ONE subject below
+// it. Split out of CombatView.tsx; the tab is now header + body + log, and this is the body's
 // first cell.
 //
-// The two drill kinds are a union, so there is always exactly one breadcrumb: an entity's flat
-// skill list, or a MOB's (everything you + pet landed on it).
+// The drill kinds are a union, so there is always exactly one breadcrumb: an entity's flat ability
+// list (whose stat-bearing abilities expand inline, JOS-113), or a MOB's list (everything you +
+// pet landed on it).
+//
+// THE ROWS THEMSELVES ARE NOT HERE ANY MORE. Every level of the body is `MeterRows.tsx`, which
+// the Overview card renders too — this file is the panel's chrome (header, crumb, scroll box,
+// scope/dimension resolution) and the mob-drill arm that only this surface has.
 
-import { useMemo, useState } from 'react'
-import { Box, Breadcrumbs, Button, Link, Paper, Stack, Typography } from '@mui/material'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import { useMemo } from 'react'
+import { Box, Paper, Typography } from '@mui/material'
 import { TargetSkillBars } from './CombatDashboard'
-import { EntityRow } from './EntityRow'
-import { PetBar } from './PetBar'
-import { CAT_COLOR, QuietNote, RESIST_COLOR, SkillBar } from './combatShared'
-import { skillsForTarget, type Drill, type MeterMode, type TargetDetail } from './dashboardData'
+import { meterDrill, skillsForTarget, type Drill, type MeterMode, type TargetDetail } from './dashboardData'
 import { HealBody } from './HealPanel'
-import { MultiAttackPanel } from './MultiAttackPanel'
+import { DrillCrumb, MeterRows, crumbOf } from './MeterRows'
 import { SegmentHeader } from './SegmentHeader'
-import { procAnnotationFor, procTagIndex } from './procRows'
-import { meterPanel, type MeterPanel, type OwnRow } from './petRows'
+import { meterPanel, panelTotals, type MeterPanel } from './petRows'
 import { scopeSources, scopeTotals } from './meterScope'
 import { useCombinePetRow } from './useCombatPrefs'
 import { formatEntityText, formatSegmentText, formatTargetText } from './copyText'
 import { formatNum as fmt } from '../../lib/formatRate'
-import type { DamageCategory, SegmentView, SourceView, TimelineView } from '@shared/combat'
+import type { SegmentView, SourceView, TimelineView } from '@shared/combat'
 import type { ProcSkillTag } from '@shared/procAnalytics'
 import type { MeterScope, RosterSnap } from '@shared/roster'
-import { CATEGORY_LABEL } from '@shared/combat'
-import { Tooltip } from '../../lib/Tooltip'
 
 function IncomingHeals({ seg }: { seg: SegmentView }): React.JSX.Element | null {
   if (seg.incomingHealTotal <= 0) return null
@@ -45,205 +43,32 @@ function IncomingHeals({ seg }: { seg: SegmentView }): React.JSX.Element | null 
   )
 }
 
-/**
- * The compact category legend above the flat list: swatch + label + total, carrying the
- * category-level badges (crit%, resist%) that used to live on the removed category bars.
- * Chips double as filters — click to isolate one category, click again to clear.
- */
-function CategoryLegend({
-  e,
-  active,
-  onToggle
-}: {
-  e: SourceView
-  active: DamageCategory | null
-  onToggle: (c: DamageCategory) => void
-}): React.JSX.Element | null {
-  if (e.categories.length === 0) return null
-  return (
-    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
-      {e.categories.map((c) => {
-        const on = active === c.category
-        return (
-          <Tooltip
-            key={c.category}
-            title={`${CATEGORY_LABEL[c.category]}: ${fmt(c.total)} over ${c.hits} hits · max ${fmt(c.max)} — click to ${
-              on ? 'show all categories' : 'show only this category'
-            }`}
-          >
-            <Box
-              onClick={() => onToggle(c.category)}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                px: 0.75,
-                py: '2px',
-                borderRadius: 999,
-                cursor: 'pointer',
-                userSelect: 'none',
-                border: '1px solid',
-                borderColor: on ? CAT_COLOR[c.category] : 'divider',
-                bgcolor: on ? `${CAT_COLOR[c.category]}22` : 'transparent',
-                opacity: active && !on ? 0.45 : 1,
-                '&:hover': { borderColor: CAT_COLOR[c.category] }
-              }}
-            >
-              <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: CAT_COLOR[c.category], flexShrink: 0 }} />
-              <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                {CATEGORY_LABEL[c.category]}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {fmt(c.total)}
-              </Typography>
-              {c.critPct >= 1 && (
-                <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>
-                  {Math.round(c.critPct)}% crit
-                </Typography>
-              )}
-              {c.resists > 0 && (
-                <Typography component="span" variant="caption" sx={{ color: RESIST_COLOR }}>
-                  {Math.round(c.resistPct)}% resist
-                </Typography>
-              )}
-            </Box>
-          </Tooltip>
-        )
-      })}
-    </Stack>
-  )
-}
-
-/**
- * Level-2 (one of two level-2 subjects): the category legend + ONE flat ranked list of every
- * skill/spell this entity landed. The multi-attack panel rides along below it.
- *
- * `rows` are `MeterPanel.rows` — built by `petRows.meterPanel`, the ONE row builder the floating
- * overlay uses too. They are this entity's skill lanes with any nested pets ranked among them
- * (non-empty only for YOUR row, and only while the 'Combine pet into your damage' preference is
- * on). Each pet nests as one line item that drills into that pet's own breakdown; nothing about
- * your per-skill rows changes, because a pet's damage is never folded into a lane of yours.
- *
- * A category filter hides them: the legend filters YOUR categories, and a pet is not one of
- * them — showing it under "Melee only" would claim it was melee damage of yours.
- */
-function EntitySkillBars({
-  e,
-  rows: all,
-  activeSec,
-  procs,
-  onDrillPet
-}: {
-  e: SourceView
-  rows: OwnRow[]
-  /** The segment's active seconds — every lane's own rate divides by it (petRows.laneDps). */
-  activeSec: number
-  /** The is-a-proc tags for THIS source — empty for anyone but you (see `SegmentContent`). */
-  procs: readonly ProcSkillTag[]
-  onDrillPet: (id: string) => void
-}): React.JSX.Element {
-  const [filter, setFilter] = useState<DamageCategory | null>(null)
-  const rows = filter ? all.filter((r) => r.kind === 'skill' && r.skill.category === filter) : all
-  const tags = useMemo(() => procTagIndex(procs), [procs])
-  return (
-    <Box>
-      <CategoryLegend e={e} active={filter} onToggle={(c) => setFilter((f) => (f === c ? null : c))} />
-      {rows.map((r) =>
-        r.kind === 'pet' ? (
-          <PetBar key={r.pet.id} pet={r.pet} pct={r.pct} onDrill={() => onDrillPet(r.pet.id)} />
-        ) : (
-          <SkillBar
-            key={`${r.skill.category}|${r.skill.name}`}
-            s={r.skill}
-            activeSec={activeSec}
-            proc={procAnnotationFor(tags, r.skill.name)}
-          />
-        )
-      )}
-      {rows.length === 0 && <QuietNote>No skill breakdown for this source.</QuietNote>}
-      {/* MULTI-ATTACK (JOS-37): per attack type, how often it doubled, tripled, flurried — the
-          stats that are orthogonal to damage. Reads the SELECTED segment's source row, so it is
-          scope-aware (fight / overall) with no state of its own, and it renders nothing for a
-          source that never swung. It stays HERE, one level down, because it is a statement about
-          ONE source's swings and the drill is where a source is the subject. */}
-      <MultiAttackPanel source={e} />
-    </Box>
-  )
-}
-
-/**
- * Drill-down breadcrumb + Back. Two levels, plus ONE nested case: a pet that was opened from
- * inside your breakdown (petRows.ts) is a level below it, and the crumb says so —
- * `All › You › Vebarn`. `parent` is what makes the trail honest: Back goes to the row the pet
- * was clicked from, "All" still goes all the way out, and neither pretends the pet is a
- * top-level source while it is being shown as a line item of yours.
- */
-function DrillCrumb({
-  crumb,
-  isTarget,
-  parent,
-  setDrill
-}: {
-  crumb: string
-  isTarget: boolean
-  /** the source this drill was nested inside, when it was (your row, for a nested pet). */
-  parent: SourceView | null
-  setDrill: (d: Drill | null) => void
-}): React.JSX.Element {
-  const up = (): void => setDrill(parent ? { kind: 'entity', entityId: parent.id } : null)
-  return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75, flexShrink: 0 }}>
-      <Button
-        size="small"
-        data-testid="drill-back"
-        startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />}
-        onClick={up}
-        sx={{ minWidth: 0, py: 0 }}
-      >
-        Back
-      </Button>
-      <Breadcrumbs separator="›" sx={{ fontSize: 12 }}>
-        <Link component="button" underline="hover" color="inherit" onClick={() => setDrill(null)} sx={{ fontSize: 12 }}>
-          All
-        </Link>
-        {parent ? (
-          <Link component="button" underline="hover" color="inherit" onClick={up} sx={{ fontSize: 12 }}>
-            {parent.name}
-          </Link>
-        ) : null}
-        <Typography variant="caption" color="text.primary">
-          {isTarget ? `damage to ${crumb}` : crumb}
-        </Typography>
-      </Breadcrumbs>
-    </Stack>
-  )
-}
-
 // ── drill resolution ───────────────────────────────────────────────────────────────────
 
-/** Which level-2 subject (if any) the current drill resolves to, against THIS segment. */
+/** Which subject (if any) the current drill resolves to, against THIS segment. */
 interface DrillState {
-  entity: SourceView | undefined
   targetName: string | null
   targetDetail: TargetDetail | null
-  /** the breadcrumb label; null means we are at level 1. */
-  crumb: string | null
+  /** the breadcrumb, or null at level 1. `isTarget` picks the "damage to <mob>" wording. */
+  crumb: { crumb: string; parent: SourceView | null; isTarget?: boolean } | null
 }
 
 /**
- * The ENTITY half of the drill is `MeterPanel`'s business — including the stale case, where a
- * drill pointing at an entity no longer present (the fight changed) resolves to level 1. This
- * hook only adds the MOB drill, which is this surface's alone: it reads the timeline's ring, and
- * goes stale the same way when the ring disappears.
+ * The SOURCE half of the drill is `MeterPanel`'s business — including both stale cases, where a
+ * drill pointing at an entity no longer present (the fight changed) resolves to level 1 and one
+ * pointing at a damage type this source never dealt resolves to level 2. This hook only adds the
+ * MOB drill, which is this surface's alone: it reads the timeline's ring, and goes stale the same
+ * way when the ring disappears.
  */
 function useDrillState(panel: MeterPanel, tl: TimelineView | null, drill: Drill | null): DrillState {
-  const entity = panel.level === 2 ? panel.subject : undefined
   const targetName = drill?.kind === 'target' ? drill.target : null
   const targetDetail = useMemo(
     () => (tl && targetName ? skillsForTarget(tl, targetName) : null),
     [tl, targetName]
   )
-  return { entity, targetName, targetDetail, crumb: entity?.name ?? (targetDetail ? targetName : null) }
+  const source = crumbOf(panel)
+  const target = targetDetail && targetName ? { crumb: targetName, parent: null, isTarget: true } : null
+  return { targetName, targetDetail, crumb: source ?? target }
 }
 
 /**
@@ -258,12 +83,11 @@ function ownProcTags(seg: SegmentView, e: SourceView): readonly ProcSkillTag[] {
   return e.kind === 'you' ? (seg.procs.procSkills ?? []) : []
 }
 
-/** The scrolling body: the ranked source list at level 1, one level-2 subject when drilled. */
+/** The scrolling body: the ranked source list at level 1, one drilled subject below it. */
 function SegmentContent({
   seg,
   mode,
-  rows,
-  ownRows,
+  panel,
   scope,
   roster,
   d,
@@ -272,11 +96,8 @@ function SegmentContent({
 }: {
   seg: SegmentView
   mode: MeterMode
-  /** the level-1 bars — `MeterPanel.sources`, so the pet is folded into your row when the
-   *  preference says so and appears nowhere twice. Empty while a level-2 subject is open. */
-  rows: SourceView[]
-  /** the drilled source's rows (skill lanes + nested pets) — `MeterPanel.rows`, empty at level 1. */
-  ownRows: OwnRow[]
+  /** the whole body, at whatever level the shared builder resolved (`petRows.meterPanel`). */
+  panel: MeterPanel
   scope: MeterScope
   roster: RosterSnap
   d: DrillState
@@ -286,7 +107,7 @@ function SegmentContent({
 }): React.JSX.Element {
   // THE HEALING DIMENSION IS ITS OWN LIST, top to bottom (P2). It shares this scroll box, the
   // drill token and the segment header — and nothing else: healers are not damage sources, so
-  // there is no ranked-source level to reuse and no category legend to filter by.
+  // there is no ranked-source level to reuse and no damage type to drill into.
   if (mode === 'heal') {
     return (
       <Box data-testid="meter-body" sx={{ overflow: 'auto', flexGrow: 1, minHeight: 0 }}>
@@ -294,52 +115,32 @@ function SegmentContent({
       </Box>
     )
   }
-
+  // A MOB drill replaces the source list entirely; it is this surface's own level and has no
+  // twin on the glance card or the overlay, so it stays here rather than in the shared body.
+  const mob = panel.level === 1 && d.targetDetail && d.targetName
   return (
     <Box data-testid="meter-body" sx={{ overflow: 'auto', flexGrow: 1, minHeight: 0 }}>
-      {!d.crumb &&
-        (rows.length ? (
-          rows.map((e, i) => (
-            <EntityRow
-              key={e.id}
-              e={e}
-              rank={i + 1}
-              onDrill={mode === 'out' ? () => setDrill({ kind: 'entity', entityId: e.id }) : undefined}
-            />
-          ))
-        ) : (
-          <QuietNote>
-            {mode === 'out' ? 'No outgoing damage in this segment.' : 'No incoming damage in this segment.'}
-          </QuietNote>
-        ))}
-
-      {/* Keyed by entity so switching sources resets the legend's category filter. Pets nest
-          into YOUR row only — drilling the pet itself shows the pet's own list, never a pet
-          nested inside a pet. */}
-      {d.entity && (
-        <EntitySkillBars
-          key={d.entity.id}
-          e={d.entity}
-          rows={ownRows}
+      {mob && d.targetName && d.targetDetail ? (
+        <TargetSkillBars target={d.targetName} detail={d.targetDetail} seg={seg} />
+      ) : (
+        <MeterRows
+          panel={panel}
           activeSec={seg.activeSec}
-          procs={ownProcTags(seg, d.entity)}
-          onDrillPet={(id) => setDrill({ kind: 'entity', entityId: id })}
+          procs={panel.level === 1 ? [] : ownProcTags(seg, panel.subject)}
+          // The Incoming direction has no drill: its rows fall back to EntityRow's own inline
+          // expansion, exactly as they did before this body was shared.
+          setDrill={mode === 'out' ? setDrill : null}
+          empty={mode === 'out' ? 'No outgoing damage in this segment.' : 'No incoming damage in this segment.'}
         />
       )}
-      {!d.entity && d.targetDetail && d.targetName && (
-        <TargetSkillBars target={d.targetName} detail={d.targetDetail} seg={seg} />
-      )}
-
       {mode === 'in' && !d.crumb && <IncomingHeals seg={seg} />}
     </Box>
   )
 }
 
 /**
- * WHAT THE SELECTED DIMENSION IS MADE OF: the rows it ranks and the two headline figures.
+ * WHAT THE SELECTED DIMENSION IS MADE OF: the rows it ranks and its headline figures.
  *
- * The header total/DPS stay the SEGMENT's (you + every pet) at every drill level — the same
- * aggregate the Overview card headlines, so the two surfaces can never disagree on a number.
  * The healing pair is `HealingView`'s own total/hps: restored hit points + granted absorption,
  * exactly the figures the heal overlays headline (shared/combat.ts states what each includes).
  *
@@ -347,30 +148,57 @@ function SegmentContent({
  * `meterPanel` over an empty list yields level 1 with nothing in it, the right no-op while
  * another dimension is on screen.
  */
-function dimension(seg: SegmentView, mode: MeterMode): { rows: SourceView[]; total: number; dps: number } {
-  if (mode === 'heal') return { rows: [], total: seg.healing.total, dps: seg.healing.hps }
-  if (mode === 'in') return { rows: seg.incoming, total: seg.inTotal, dps: seg.inDps }
-  return { rows: seg.entities, total: seg.outTotal, dps: seg.outDps }
+interface Dimension {
+  rows: SourceView[]
+  total: number
+  dps: number
+  /** the ACTIVE-time rate that rides beside the headline — printed in the outgoing dimension
+   *  only (`ActiveDpsNote`), so the other two carry their own rate here rather than a fiction. */
+  activeDps: number
+}
+
+function dimension(seg: SegmentView, mode: MeterMode): Dimension {
+  if (mode === 'heal') {
+    return { rows: [], total: seg.healing.total, dps: seg.healing.hps, activeDps: seg.healing.hps }
+  }
+  if (mode === 'in') return { rows: seg.incoming, total: seg.inTotal, dps: seg.inDps, activeDps: seg.inDps }
+  return { rows: seg.entities, total: seg.outTotal, dps: seg.outDps, activeDps: seg.activeDps }
 }
 
 /**
- * …and the same three things once the SCOPE has had its say (docs/plans/group-model.md §2).
+ * …and the same things once the SCOPE has had its say (docs/plans/group-model.md §2).
  *
  * Only the OUTGOING dimension is scoped, because scope is a statement about whose damage — the
- * incoming list is always "what is hitting You", and no roster changes that. The headline pair
- * is recomputed from the surviving rows rather than carried over: `outTotal` counts members, so
+ * incoming list is always "what is hitting You", and no roster changes that. The headline figures
+ * are recomputed from the surviving rows rather than carried over: `outTotal` counts members, so
  * a You-scoped list under a group-scoped total would headline a number no visible row explains.
+ *
+ * BOTH RATES ride through `scopeTotals`, because each shares its denominator with the total it
+ * belongs to (`outDps` divides by elapsed time, `activeDps` by active seconds) — the same pair of
+ * calls DpsCard's `scopedView` makes, so the glance card and this panel scale identically.
  */
-function scopedDimension(
-  seg: SegmentView,
-  mode: MeterMode,
-  scope: MeterScope,
-  roster: RosterSnap
-): { rows: SourceView[]; total: number; dps: number } {
+function scopedDimension(seg: SegmentView, mode: MeterMode, scope: MeterScope, roster: RosterSnap): Dimension {
   const base = dimension(seg, mode)
   if (mode !== 'out') return base
   const rows = scopeSources(base.rows, scope, roster)
-  return { rows, ...scopeTotals(base.rows, rows, base.total, base.dps) }
+  return {
+    rows,
+    ...scopeTotals(base.rows, rows, base.total, base.dps),
+    activeDps: scopeTotals(base.rows, rows, base.total, base.activeDps).dps
+  }
+}
+
+/**
+ * …and finally what THIS PANEL is showing, which is the pair the header prints (JOS-170).
+ *
+ * At level 1 that is the scoped dimension untouched; drilled, it is the subject plus the pets
+ * nested into it — see `petRows.panelTotals`, the ONE derivation the Overview card reads too.
+ * Without it the header stated the fight while the rows stated the subject, and flipping the pet
+ * preference under an open You drill moved the rows and left the number where it was.
+ */
+function headline(panel: MeterPanel, dim: Dimension): { total: number; dps: number; activeDps: number } {
+  const { total, dps } = panelTotals(panel, dim.total, dim.dps)
+  return { total, dps, activeDps: panelTotals(panel, dim.total, dim.activeDps).dps }
 }
 
 export function SegmentBody({
@@ -391,29 +219,27 @@ export function SegmentBody({
   setDrill: (d: Drill | null) => void
 }): React.JSX.Element {
   const heal = mode === 'heal'
-  const { rows: scoped, total, dps } = scopedDimension(seg, mode, scope, roster)
+  const dim = scopedDimension(seg, mode, scope, roster)
+  const scoped = dim.rows
   const [combinePetRow] = useCombinePetRow()
   // THE one row builder — the same call the floating overlay makes (petRows.meterPanel). Nesting
   // is an OUTGOING idea: the Incoming direction lists enemies, and none of them owns a pet of
   // yours, so the preference is folded into the `combine` argument rather than tested downstream.
-  const panel = meterPanel(scoped, mode === 'out' && combinePetRow, drill?.kind === 'entity' ? drill.entityId : null)
+  const panel = meterPanel(scoped, mode === 'out' && combinePetRow, meterDrill(drill))
+  // …and the SAME panel decides the header's figures, so the number over the rows can never
+  // describe a different set of rows than the ones under it (JOS-170).
+  const head = headline(panel, dim)
   const d = useDrillState(panel, tl, drill)
-  // The BARS are the builder's, not the scoped list: at level 1 that is the list with your pets
-  // folded into your row (JOS-35 — with the preference on the pet must not also be its own bar).
-  const rows = panel.level === 1 ? panel.sources : []
-  const ownRows = panel.level === 2 ? panel.rows : []
-  const pets = panel.level === 2 ? panel.pets : []
-  // A drilled pet is NESTED (and so has a parent in the trail) only while it is actually being
-  // shown as a line item inside your row — i.e. while the preference is on and you have a row.
-  const nestedIn = panel.level === 2 ? panel.parent : null
 
-  // "Copy this view" means THIS view: the same three-way choice the body below makes, so the
-  // clipboard can never hold a level the user isn't looking at. Built on click, never on render.
+  // "Copy this view" means THIS view: the same choice the body below makes, so the clipboard can
+  // never hold a level the user isn't looking at. Built on click, never on render. The per-ability
+  // stats a reader expanded inline (JOS-113) are not serialized: the paste is the ranked ability
+  // table, and a single ability's crit/double/triple is a click-state, not a level to copy.
   const copyView = (): string =>
-    d.entity
+    panel.level !== 1
       ? // The SAME pets the body nests into this list — `MeterPanel.pets` IS what was nested,
         // so the clipboard can no longer drop a row the reader can see on screen.
-        formatEntityText(seg, d.entity, pets)
+        formatEntityText(seg, panel.subject, panel.pets)
       : d.targetDetail && d.targetName
         ? formatTargetText(seg, d.targetName, d.targetDetail)
         : formatSegmentText(seg, mode === 'in' ? 'in' : 'out')
@@ -435,17 +261,28 @@ export function SegmentBody({
         flexDirection: 'column'
       }}
     >
-      <SegmentHeader seg={seg} mode={mode} total={total} dps={dps} copyView={heal ? null : copyView} />
+      <SegmentHeader
+        seg={seg}
+        mode={mode}
+        total={head.total}
+        dps={head.dps}
+        activeDps={head.activeDps}
+        copyView={heal ? null : copyView}
+      />
       {/* The damage crumb; the Healing dimension draws its own inside HealBody, because its one
           drill level has no nested-pet case and therefore no parent link to render. */}
       {!heal && d.crumb && (
-        <DrillCrumb crumb={d.crumb} isTarget={!!d.targetDetail} parent={nestedIn} setDrill={setDrill} />
+        <DrillCrumb
+          crumb={d.crumb.crumb}
+          isTarget={d.crumb.isTarget}
+          parent={d.crumb.parent}
+          setDrill={setDrill}
+        />
       )}
       <SegmentContent
         seg={seg}
         mode={mode}
-        rows={rows}
-        ownRows={ownRows}
+        panel={panel}
         scope={scope}
         roster={roster}
         d={d}

@@ -271,3 +271,75 @@ test('every scope says WHICH stretch it covers, in one spelling per scope', () =
     'a selection is never described as the timescale it sits inside'
   )
 })
+
+// ── 5. the slice the tab now follows (JOS-130) ────────────────────────────────────────
+//
+// The timescale became four rungs of an app-wide TIMESLICE, so the scope grew three optional
+// inputs: an exact range (a slice states both its ends and must not be re-derived from a padded
+// drawn window), a zone filter, and its own wording. What is pinned here is that all three are
+// PASS-THROUGH — the scope still runs exactly one `rangeStats` and invents no arithmetic of its
+// own — and that omitting them is byte-identical to JOS-71's behaviour.
+
+test('a slice hands its EXACT range through — a stated end is never pushed out by the drawn pad', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const exact = { t0: T0 + 2 * HOUR, t1: T0 + 3 * HOUR }
+  const scope = scopedStats({
+    snap,
+    // The drawn window deliberately runs past `exact.t1` (that is the trailing gutter); the point
+    // is that the NUMBERS do not.
+    win: windowFor(lo, hi, 'full'),
+    bounds: { lo, hi },
+    id: 'full',
+    range: exact,
+    label: 'the custom range',
+    selection: null
+  })
+  assert.deepEqual(scope.range, exact)
+  assert.equal(scope.label, 'the custom range', 'and the slice supplies the wording')
+  assert.deepEqual(scope.stats, rangeStats({ snap, range: exact }), 'still ONE derivation, not a second')
+})
+
+test('the zone half rides on the scope and reaches rangeStats untouched', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const args = { snap, win: windowFor(lo, hi, 'full'), bounds: { lo, hi }, id: 'full' as const, selection: null }
+  const all = scopedStats(args)
+  assert.equal(all.zoneKey, null, 'an unrestricted scope says so rather than leaving it undefined')
+  assert.equal(all.zoneName, null)
+
+  const guk = scopedStats({ ...args, zoneKey: 'lower guk', zoneName: 'Lower Guk', label: 'Lower Guk' })
+  assert.equal(guk.zoneKey, 'lower guk')
+  assert.deepEqual(guk.stats, rangeStats({ snap, range: guk.range, zoneKey: 'lower guk' }))
+  assert.ok(guk.stats.kills < all.stats.kills, 'day one happened in Befallen and is not counted here')
+  assert.equal(guk.label, 'Lower Guk')
+})
+
+test('a drag narrows TIME and keeps the zone — and the wording says both', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const sel = { t0: T0 + DAY + 30 * MIN, t1: T0 + DAY + 90 * MIN }
+  const scope = scopedStats({
+    snap,
+    win: windowFor(lo, hi, 'full'),
+    bounds: { lo, hi },
+    id: 'full',
+    zoneKey: 'lower guk',
+    zoneName: 'Lower Guk',
+    label: 'Lower Guk',
+    selection: sel
+  })
+  assert.equal(scope.kind, 'selection')
+  assert.deepEqual(scope.range, sel)
+  assert.equal(scope.zoneKey, 'lower guk', 'the zone survives the drag — it is the other dimension')
+  assert.equal(scope.label, `${SELECTION_LABEL} in Lower Guk`)
+  assert.deepEqual(scope.stats, rangeStats({ snap, range: sel, zoneKey: 'lower guk' }))
+})
+
+test('omitting all three new inputs is EXACTLY the JOS-71 scope', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  for (const id of ['full', 'h24', 'h1'] as const) {
+    const win = windowFor(lo, hi, id)
+    const scope = scopedStats({ snap, win, bounds: { lo, hi }, id, selection: null })
+    assert.deepEqual(scope.range, statsRangeFor(win, { lo, hi }), `${id}: still derived from the drawn window`)
+    assert.equal(scope.label, timescaleLabel(id))
+    assert.deepEqual(scope.stats, rangeStats({ snap, range: statsRangeFor(win, { lo, hi }) }))
+  }
+})

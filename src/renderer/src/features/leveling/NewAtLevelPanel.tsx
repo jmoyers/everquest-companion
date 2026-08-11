@@ -177,7 +177,7 @@ export function NewAtLevelPanel({
         </Stack>
       ) : (
         <Typography variant="caption" color="text.secondary" data-testid="new-at-level-unknown">
-          Your class loadout isn&apos;t known yet — a <code>/who</code> on yourself, or a correction on the
+          Your class loadout isn&apos;t known yet - a <code>/who</code> on yourself, or a correction on the
           Profile tab, and this fills in.
         </Typography>
       )}

@@ -45,8 +45,9 @@ const RATE_TITLE = 'AA completions per hour of active time.'
 
 const POINTS_TITLE = 'Ability points per hour of active time.'
 
-/** The reason there is no estimate — one clause per `AaEtaBlocked`. */
-const ETA_BLOCKED_TITLE: Record<AaEtaBlocked, string> = {
+/** The reason there is no estimate — one clause per `AaEtaBlocked`. Exported since JOS-195: the
+ *  XP overlay refuses the same estimate for the same two reasons and must say the same words. */
+export const AA_ETA_BLOCKED_TITLE: Record<AaEtaBlocked, string> = {
   'no-pace': 'Fewer than two AA completions here, so there is no gap to project forward.',
   stale: 'The last completion is far older than this window’s rhythm between them.'
 }
@@ -57,6 +58,19 @@ function etaTitle(meanIntervalMs: number, samples: number, sinceLastMs: number, 
   return overdue ? `${base} Already past that gap.` : base
 }
 
+/**
+ * The WAIT, as a bare value: 'due', or '~12m'. Null when the estimate is blocked.
+ *
+ * Exported since JOS-195, because the XP overlay prints the same wait in a two-column row and a
+ * second spelling of `'~' + fmtDuration(ms)` is exactly how two surfaces come to round the same
+ * estimate differently. The REASON for a refusal stays with the surfaces that have room for it
+ * (`etaTile` below, and `aaNextText`'s deliberate silence); this is only the number.
+ */
+export function aaEtaValue(eta: AaEta): string | null {
+  if (eta.blocked !== null) return null
+  return eta.overdue ? 'due' : `~${fmtDuration(eta.ms)}`
+}
+
 function etaTile(eta: AaPace['eta']): AaPaceTile {
   if (eta.blocked !== null) {
     return {
@@ -65,12 +79,12 @@ function etaTile(eta: AaPace['eta']): AaPaceTile {
       unit: '',
       label: 'to next AA',
       inferred: true,
-      title: ETA_BLOCKED_TITLE[eta.blocked]
+      title: AA_ETA_BLOCKED_TITLE[eta.blocked]
     }
   }
   return {
     id: 'eta',
-    value: eta.overdue ? 'due' : `~${fmtDuration(eta.ms)}`,
+    value: aaEtaValue(eta) ?? NONE,
     unit: '',
     label: 'to next AA',
     inferred: true,

@@ -47,6 +47,38 @@
 // which the first Ear keeps its four sockets and the second Ear keeps its own.
 //
 // ---------------------------------------------------------------------------
+// A SECTION IS A SHAPE, NOT A NAME (JOS-185)
+// ---------------------------------------------------------------------------
+// The two tables above are the two this repo has ever held bytes for. The file can carry MORE:
+// `/outputfile inventory` exports "Inventory items, items from all keyrings, Dragon's Hoard items
+// if the Dragon's Hoard window is open, and Personal Tradeskill Depot items if the depot is
+// loaded" (eqlwiki.com/Commands, verbatim) — and NO source anywhere publishes a dump containing
+// hoard rows, so what the hoard's table is CALLED is unknown to this repo and to the internet.
+//
+// That mattered, because the old rule keyed on the name: a section header we did not recognize
+// went to `unknownSections` and its rows never reached `heldCountsFromDump`. If the hoard prints
+// its own table, every item in it was silently uncounted — which is exactly the shape of the
+// report that opened JOS-185 (a player's Plane of Sky weapons sat in the hoard, eqlposky.com read
+// them out of his dump, and this app said he had none).
+//
+// So a header is classified by its COLUMNS instead (`SectionShape`):
+//
+//   `<anything> Name ID Count Slots`  → `items`   — parsed as the item table, counted as held.
+//   `<anything> Name ID`              → `keyRing` — parsed as the keyring table.
+//   anything else                     → `unknown` — retained verbatim, never interpreted.
+//
+// This is NOT a retreat from JOS-44's refusal to guess. That refusal was about a table "whose
+// shape we have never seen", and it stands: `Mercenary / Name / ID / Rank / Tier` still refuses,
+// because Rank and Tier are not Count and Slots and nobody has said what they mean. What changed
+// is that a table which spells the item header EXACTLY is a table whose shape we HAVE seen — the
+// only thing we do not know is its name, and a name was never what made those five columns
+// readable. The awaiting-sample law is satisfied by the shape and says nothing about the label.
+//
+// `PRIMARY_ITEM_SECTION` stays load-bearing for the two consumers that ask a POSITIONAL question
+// ("what is this character wearing"): what you have on is stated by the `Location` table alone,
+// and a hoard row that happened to spell `Head` must never become the hat on the character sheet.
+//
+// ---------------------------------------------------------------------------
 // WHAT THE FILE DOES *NOT* SAY (do not invent these)
 // ---------------------------------------------------------------------------
 // * Whether a child row is BAG CONTENTS or an EXALTATION SOCKET. Both are spelled
@@ -59,7 +91,11 @@
 // * What a trailing `*` on a name means (`Bandages*`, `Backpack*`). It is preserved
 //   verbatim in `name` and flagged in `starred`, uninterpreted.
 // * Which of two `Ear` rows is the left ear. There is no such column.
-// * Anything about an `Empty` row beyond "this slot exists and holds nothing".
+// * Anything about an `Empty` row beyond "this slot exists and holds nothing". In particular an
+//   `Empty` row is NOT evidence that the container is empty — it is evidence that the client
+//   ENUMERATED that slot. Measured proof, in the owner's own dump: it lists `SharedBank1..6`, all
+//   `Empty`, on a game whose wiki states there is no shared bank at all (eqlwiki.com/Banker). The
+//   same reading applies to `Bank1..24` in a dump taken away from a banker.
 
 import type { HeldCounts } from '../types'
 
@@ -183,8 +219,26 @@ export function parseItemName(name: string): ParsedItemName {
   }
 }
 
-/** One row of the `Location` table, with the rows nested under it attached. */
+/**
+ * How a section's header row reads, and therefore how its rows are parsed. See "A SECTION IS A
+ * SHAPE, NOT A NAME" in the header.
+ */
+export type SectionShape = 'items' | 'keyRing' | 'unknown'
+
+/**
+ * The item table the game writes FIRST, and the only one that states what you are WEARING.
+ *
+ * Every item-shaped section feeds held counts (a hoard is items you own wherever it is filed), but
+ * a positional reader — the character sheet's slot grid, the planner's equipped hosts — must ask
+ * this one alone, or an item stored in some other table under a slot-shaped token would be drawn
+ * on the character's body.
+ */
+export const PRIMARY_ITEM_SECTION = 'Location'
+
+/** One row of an item-shaped table, with the rows nested under it attached. */
 export interface InventoryEntry {
+  /** the section this row was read under — `PRIMARY_ITEM_SECTION` for the ordinary item table */
+  section: string
   /** the Location column, verbatim */
   location: string
   /** the base token of `location`, classified */
@@ -213,8 +267,10 @@ export interface InventoryEntry {
   line: number
 }
 
-/** One row of the `KeyRing` table (3 columns: category, name, id). */
+/** One row of a keyring-shaped table (3 columns: category, name, id). */
 export interface KeyRingEntry {
+  /** the section this row was read under — `KeyRing` for the ordinary keyring table */
+  section: string
   /** the first column — `Equipment` and `Activated` in the real dump */
   category: string
   name: string
@@ -232,16 +288,20 @@ export interface RawOutputRow {
 
 /** A parsed `/outputfile inventory` dump. */
 export interface InventoryDump {
-  /** the `Location` table, nested */
+  /** every item-shaped table's rows, nested, in file order — `Location` first, then any other */
   items: InventoryEntry[]
-  /** the `KeyRing` table */
+  /** every keyring-shaped table's rows */
   keyRing: KeyRingEntry[]
-  /** rows belonging to a section header we do not recognize — retained, never interpreted */
+  /** rows belonging to a section whose header SHAPE we do not recognize — retained, never
+   *  interpreted (see "A SECTION IS A SHAPE, NOT A NAME") */
   unknownSections: RawOutputRow[]
-  /** rows of a known section that did not have that section's column count */
+  /** rows of a shaped section that did not have that shape's column count */
   malformed: RawOutputRow[]
   /** section names seen, in file order (`['Location', 'KeyRing']` for the real dump) */
   sections: string[]
+  /** each seen section name → the shape its header declared. A section name repeated in one file
+   *  keeps the LAST shape, which is also the shape its later rows were read with. */
+  sectionShapes: Record<string, SectionShape>
 }
 
 /** Depth-first walk over every entry (parents before children). */
@@ -278,6 +338,17 @@ export function* walkEntries(entries: readonly InventoryEntry[]): Generator<Inve
  * `Guise of the Deceiver` — an illusion clicky, the classic shape of a consumed item traded
  * for a permanent claim — and one row is no evidence about whether that category holds a
  * copy or a receipt. It ships when a dump proves which.
+ *
+ * JOS-185 FOUND EVIDENCE POINTING THE OTHER WAY, and records it here rather than acting on it.
+ * The category is the live client's Activated Items Key Ring, which the documentation describes
+ * as a BIN: it "allows you to place up to 500 nonexpendable items with activatable effects that
+ * are not already part of another key ring, freeing up bag space and keeping them always
+ * available" (Fanra's EverQuest Wiki, Activated_Items_Key_Ring). NONEXPENDABLE and PLACE are the
+ * two words the parking argument assumed the other way round. It still does not ship, because the
+ * bar written above is a DUMP and a wiki sentence is not one — and because the same sentence is
+ * about live EQ rather than Legends. What settles it is one dump in which `Guise of the Deceiver`
+ * is on the keyring: if the `Location` table does not also name it (it does not, in the owner's
+ * dump today), counting the category ADDS a copy instead of doubling one, and it graduates.
  */
 export const HELD_KEYRING_CATEGORIES: readonly string[] = ['Equipment']
 
@@ -288,6 +359,10 @@ const HELD_KEYRING_SET: ReadonlySet<string> = new Set(HELD_KEYRING_CATEGORIES)
  * `posky/heldCounts.ts` count as "in the player's possession". Pinned by
  * `tests/outputsInventory.test.mts` against the real dump:
  *
+ *   * every row of EVERY item-shaped table counts (JOS-185) — the `Location` table and any other
+ *     table the file carries that spells the same five columns. An item is yours wherever the
+ *     client filed it; the section name is filing, not ownership, and the section that was
+ *     invisible here is the one a reporter's Plane of Sky weapons were sitting in;
  *   * every row of the `Location` table counts, INCLUDING socket rows and bag rows
  *     themselves (`backpack*` is 3 in the real dump — three bags);
  *   * `Empty`/blank names never count;

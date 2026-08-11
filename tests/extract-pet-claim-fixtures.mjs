@@ -153,3 +153,48 @@ for (const [re, what] of [
 const jaberHits = p2.filter((l) => /\] Jaber .* for \d+ points? of (magic )?damage/.test(l)).length
 const gonekHits = p2.filter((l) => /\] Gonekn .* for \d+ points? of (magic )?damage/.test(l)).length
 console.log(`p2-pet-arc-bound.log: Jaber ${jaberHits} hits, Gonekn ${gonekHits} hits, 2 binding tells`)
+
+// P3 — THE UPGRADED PET, AND THE BUFF THAT NAMES IT (Sun Jul 19 21:06–21:12, Oggok). JOS-188.
+//
+// The reporter's defect ("if you change pets, they stop showing up in the damage meter — I
+// upgraded from a level 10 water elemental to a level 14 … relogging did not resolve"), in the
+// OWNER'S OWN BYTES, which is why the fixture is this window and not the reporter's slice
+// (AGENTS.md: a reporter's slice never becomes a fixture):
+//
+//   21:06:26  `Vebann told you, 'Attacking Lost Crusader Master.'` — the PREDECESSOR, bound the
+//             only way the app has ever been able to bind one: the owner ordered it.
+//   21:09:29  `You begin casting Haunting Corpse.` — the upgrade. The game says NOTHING about
+//             the pet it replaces (JOS-54's whole premise) and the successor has a new name, so
+//             the claim that would retire Vebann never arrives.
+//   21:09:55  `You begin casting Intensify Death.` — a `targetType: Pet` spell. Only the player
+//             prints this line, and the game will not let the spell land on anyone else's pet.
+//   21:10:02  `Vabantik's eyes gleam with madness.` — the landing NAMES the new pet.
+//   21:10:44→ Vabantik fights. Before JOS-188 every point of it was nobody's.
+//   21:12:31  `Vabantik told you, 'Attacking an ogre guard Master.'` — the tell, 149 SECONDS
+//             after the buff already said whose it was.
+//
+// The window is the measurement in miniature: whole-log, the pet-buff rung binds 14 names and
+// all 14 are names a tell ALSO binds, always later — 1,865 hits / 27,088 points arrive in those
+// gaps. Here it is 76 hits / 1,356 points, and the same bind retires Vebann.
+const p3 = slice(117380, 119420, 'p3-pet-upgraded-buff-bound.log')
+
+const p3has = (re) => p3.filter((l) => re.test(l)).length
+for (const [re, n, what] of [
+  [/^\[.*\] Vebann told you, 'Attacking Lost Crusader Master\.'$/, 1, "the predecessor's binding tell"],
+  [/^\[.*\] You begin casting Haunting Corpse\.$/, 1, 'the re-summon'],
+  [/^\[.*\] You begin casting Intensify Death\.$/, 1, 'the own cast of the pet-only spell'],
+  [/^\[.*\] Vabantik's eyes gleam with madness\.$/, 1, 'the landing that names the successor'],
+  [/^\[.*\] Vabantik told you, 'Attacking an ogre guard Master\.'$/, 1, "the successor's late tell"]
+]) {
+  const got = p3has(re)
+  if (got !== n) throw new Error(`p3-pet-upgraded-buff-bound.log: expected ${n} × ${what}, got ${got}`)
+}
+// The gap between the buff and the tell IS the fixture. A window that lost either end, or that
+// crossed a zone line (which would retire the world model out from under the succession), proves
+// nothing at all.
+if (p3has(/^\[.*\] You have entered /) !== 0)
+  throw new Error('p3-pet-upgraded-buff-bound.log: a zone line inside the window would reset the world model')
+const vabantikHits = p3.filter((l) => /\] Vabantik .* for \d+ points? of (\w+ )?damage/.test(l)).length
+const vebannHits = p3.filter((l) => /\] Vebann .* for \d+ points? of (\w+ )?damage/.test(l)).length
+if (vabantikHits < 60) throw new Error(`p3-pet-upgraded-buff-bound.log: the successor's hits must survive, got ${vabantikHits}`)
+console.log(`p3-pet-upgraded-buff-bound.log: Vebann ${vebannHits} hits, Vabantik ${vabantikHits} hits, buff bind 149s before the tell`)

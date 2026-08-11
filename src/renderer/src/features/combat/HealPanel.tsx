@@ -21,6 +21,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { Bar, QuietNote } from './combatShared'
 import {
+  UNSTATED_AMOUNT,
   hasAbsorbCounts,
   healPanel,
   healerAmount,
@@ -127,7 +128,7 @@ function SpellBar({ s, healerKind }: { s: HealSpellView; healerKind: string }): 
               {isUnstatedLane(s) && (
                 <Typography component="span" variant="caption" sx={{ color: 'text.secondary', fontWeight: 400 }}>
                   {' '}
-                  ·unvalued
+                  ·{UNSTATED_AMOUNT}
                 </Typography>
               )}
               <Typography component="span" variant="caption" sx={{ ml: 0.75, color: 'text.secondary', fontWeight: 400 }}>
@@ -173,7 +174,7 @@ function EnemyHealedLine({ enemy }: { enemy: { total: number; healers: HealSourc
   if (enemy.total <= 0) return null
   const top = enemy.healers.slice(0, 3).map((h) => `${h.name} ${fmt(h.total)}`).join(', ')
   return (
-    <Tooltip title={`Healing that landed on mobs you were engaged with — it undid this much of your damage. Top: ${top}`}>
+    <Tooltip title={`Healing that landed on mobs you were engaged with - it undid this much of your damage. Top: ${top}`}>
       <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: 'text.secondary' }}>
         enemies healed {fmt(enemy.total)}
       </Typography>

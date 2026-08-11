@@ -35,6 +35,19 @@ import { POISON_PROCS } from '../../shared/poisons'
 // the name class it produces are security-relevant, and a second copy would drift out of the
 // threat model that argues for them.
 import { subjectCapturePattern } from '../../shared/alertCaptures'
+// THE crowd-control roster, imported rather than restated (JOS-161). It is what decides whether a
+// `Your <X> spell has worn off of <mob>.` line becomes a `cc` event at all, so it is also what
+// decides whether the `breaks` template can fire. rulesets.ts's only reference back here is an
+// `import type`, so this edge is one-way at runtime.
+import { CC_STEMS, CHARM_STEMS } from '../log/rulesets'
+// OUR corrections to the scrape (JOS-150). They are applied to the ENTRIES, before any table is
+// derived, so the suffix index, the wears-off map, the suggestion catalog and every search string
+// all see one corrected text. Read that file's header before adding one: it carries the evidence
+// bar, and the reason the fixes live beside the scrape instead of inside it.
+import { applySpellCorrections, type CorrectionsReport } from './spellCorrections'
+// The wiki's own duration strings, read by the SAME function the scrape uses (JOS-189). See
+// `fillDerivedDurations` below for why the load path reads them at all.
+import { parseDurationMs } from '../../shared/spellDuration'
 // Import the committed catalog directly so it's BUNDLED into the main build (electron-vite
 // inlines JSON imports). A readFileSync from a path relative to import.meta.url would look
 // beside out/main/index.js in production, where the JSON isn't copied — so import it.
@@ -419,6 +432,36 @@ export const CLASSIFIED_SPELL_TYPES: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * A spell's NATURE — the one answer to "is this a good thing or a bad thing" (JOS-140 ruling 8).
+ *
+ * The two tables above already existed for the suggestion catalog; this exports the same fold for
+ * the BUFFS MODEL, which had its own two-string-literal version of the question and was wrong in
+ * the same 134 rows. The owner's ruling is that buff-vs-debuff comes from HERE and from nowhere
+ * else — never from the shape of the target.
+ *
+ * THE DEFECT THAT NAMES THE RULING (JOS-136, folded into JOS-140). `Resist Magic` is spellType
+ * `Resist Buff`, which matched neither literal, so `SpellStats.classOf` fell through to a tally of
+ * the ENTITY DISPOSITIONS its fades had landed on — and a buff you put on somebody the model does
+ * not currently hold as a pet tallies 'hostile'. A friendly resist buff on an ally therefore
+ * classified as a debuff and walked onto the DEBUFFS overlay. The reporter's slice
+ * (01KZKVA30Y4QW0DW22ZAK1XR6Z) is a Quick Buff burst landing eleven beneficial spells on a charmed
+ * pet; `Resist Magic` and `Resist Cold`/`Resist Disease` are the ones that had no nature at all.
+ *
+ * 'unknown' is a real answer and is returned rather than guessed: an unlisted type (a re-scrape
+ * that grows the vocabulary) and a spell absent from the DB both land here, and the caller decides
+ * what to do with a spell whose nature nobody states. It must never be resolved by looking at who
+ * it landed on.
+ */
+export type SpellNature = 'beneficial' | 'detrimental' | 'unknown'
+
+export function spellNature(spellType: string | undefined): SpellNature {
+  if (spellType === undefined) return 'unknown'
+  if (BENEFICIAL_TYPES.has(spellType)) return 'beneficial'
+  if (DETRIMENTAL_TYPES.has(spellType)) return 'detrimental'
+  return 'unknown'
+}
+
+/**
  * Which one-click suggestion templates a spell can offer (see SpellCatalogEntry.templates).
  *
  * EVERY FLAG IS A CLAIM THAT THE ALERT CAN ACTUALLY FIRE — the law shared/alertGroups.ts states
@@ -453,7 +496,18 @@ function suggestionTemplates(s: SpellEntry): SpellCatalogEntry['templates'] {
     landsOnOther:
       !!s.msgCastOnOther &&
       !POISON_PROC_MSGS.has(s.msgCastOnOther) &&
-      subjectCapturePattern(s.msgCastOnOther) !== null
+      subjectCapturePattern(s.msgCastOnOther) !== null,
+    // THE HOLD BREAKING (JOS-161). Gated on the parser's own crowd-control roster and on nothing
+    // else: `Your <X> spell has worn off of <mob>.` becomes a `cc {refresh:true}` for exactly the
+    // spells `ccSpell` matches, and a plain `buffFade` for every other spell — so the roster IS
+    // the "can this fire" question. Not gated on disposition: the roster is already all
+    // detrimental, and the flag would then be making a second, weaker claim about the same thing.
+    breaks: CC_STEMS.test(s.name),
+    // THE CHARM BREAKING (JOS-200) — the same sentence, the other roster, and therefore the other
+    // EVENT. `charmSpell` is tested FIRST in classifyWornOff, so these two gates are disjoint by
+    // construction and no spell can be offered both chips. See buffTypes.ts `charmBreaks` for why
+    // the per-spell offer had to exist beside the curated group.
+    charmBreaks: CHARM_STEMS.test(s.name)
   }
 }
 
@@ -481,7 +535,7 @@ export function searchTextFor(s: SpellEntry, rankNames: readonly string[] | unde
  * JOS-103 was filed for.
  */
 function offersAnyTemplate(t: SpellCatalogEntry['templates']): boolean {
-  return t.wearsOff || t.fade || t.lands || t.landsOnOther
+  return t.wearsOff || t.fade || t.lands || t.landsOnOther || t.breaks || t.charmBreaks
 }
 
 export function buildSpellCatalog(
@@ -537,14 +591,88 @@ export function buildSpellCatalog(
   return { entries, total: db.byKey.size, withUsage, hasIllusions }
 }
 
-let cached: SpellDb | null = null
+/** What one duration pass did, for the audit test that pins its blast radius. */
+export interface DurationReport {
+  /** Rows the scrape left `null` and the reader can read: a spell that could not be tracked. */
+  filled: number
+  /** Rows where the scrape's own number and the reader now DISAGREE — see `applyDerivedDurations`. */
+  corrected: { spell: string; text: string | undefined; from: number; to: number }[]
+}
 
-/** Load + build the spell DB (cached) from the bundled spells.json. */
+/**
+ * RE-DERIVE `durationMs` FROM `durationText`, through the one reader (JOS-189). Returns a NEW list,
+ * copying only the rows that change — the same non-mutation rule `applySpellCorrections` follows
+ * and for the same reason (spells.json is one shared object for the whole process).
+ *
+ * THE DEFECT. `durationMs` was never data; it is DERIVED from `durationText`, and the function that
+ * derives it used to live inside `scripts/scrape-spells.ts` — so it only ever ran when somebody
+ * re-scraped, and every duration string it could not read became a PERMANENT null in the committed
+ * catalog. That null is fatal rather than cosmetic: `BuffInstances.applyMessageBuff` returns early
+ * for a landing with no duration and no illusion flag, so those spells could never open an
+ * instance, never draw a bar and never reach the Buffs tab, however correct their three messages
+ * were. Spirit of the Puma — whose wiki duration is the three characters `60s` — is the reported
+ * case, and 87 rows of the committed scrape were in that state.
+ *
+ * IT RE-DERIVES RATHER THAN MERELY FILLING, and the reason is a row a fill would have missed:
+ * `Sicken` states `1 min 24s`, and the old reader summed only the component it could see, so the
+ * catalog says 60,000 for a 84,000 ms debuff. A pass that refused to touch a stated number would
+ * leave that wrong forever while fixing the nulls beside it, which is the arrangement least likely
+ * to be noticed. The reader is the single source of truth for what a wiki duration string means;
+ * `tests/spellDuration.test.mts` pins the whole delta by name, so a future change to the reader has
+ * to state its blast radius rather than slip through.
+ *
+ * IDEMPOTENT IN BOTH DIRECTIONS, like the corrections overlay: once a re-scrape through the same
+ * reader writes the numbers itself, this pass finds nothing to do.
+ */
+export function applyDerivedDurations(spells: readonly SpellEntry[]): {
+  spells: SpellEntry[]
+  report: DurationReport
+} {
+  const report: DurationReport = { filled: 0, corrected: [] }
+  const out = spells.map((s) => {
+    const ms = parseDurationMs(s.durationText)
+    if (ms === s.durationMs) return s
+    if (s.durationMs == null) report.filled += 1
+    else if (ms != null) report.corrected.push({ spell: s.name, text: s.durationText, from: s.durationMs, to: ms })
+    // A reader that stopped reading a form the scrape DID read would land here with `ms === null`,
+    // which the audit test refuses — better a loud test than a spell that quietly stops drawing.
+    return { ...s, durationMs: ms }
+  })
+  return { spells: out, report }
+}
+
+let cached: SpellDb | null = null
+let cachedCorrections: CorrectionsReport | null = null
+
+/**
+ * Load + build the spell DB (cached) from the bundled spells.json, with our corrections applied to
+ * the ENTRIES first (JOS-150).
+ *
+ * THE ORDER IS THE WHOLE POINT. A correction patches `SpellEntry.msgCastOnYou/Other/WearsOff`
+ * BEFORE `buildSpellDb` reads them, so there is exactly one corrected text and every derived
+ * structure agrees with it: the cast-on-you map, the wears-off map, the cast-on-other suffix table
+ * AND its last-word index, `buildSpellCatalog`'s template flags, and the wizard's `searchText`.
+ * Patching the derived tables instead — the shape `applyOverlayCorrections` uses for the per-user
+ * learned overlay, which only ever needs to reach `castOnYou` — would have left the suffix index
+ * and the catalog still holding the wiki's text, which is how a spell ends up matching in the
+ * parser and missing from the search box.
+ */
 export function loadSpellDb(): SpellDb {
   if (cached) return cached
   const file = spellsJson as SpellDbFile
-  cached = buildSpellDb(file.spells)
+  // DURATIONS FIRST, then the message overlay. The two never touch the same field, so the order is
+  // legibility rather than semantics: this one reads what the wiki already said and the corrections
+  // state what it got wrong.
+  const dated = applyDerivedDurations(file.spells).spells
+  const { spells, report } = applySpellCorrections(dated)
+  cachedCorrections = report
+  cached = buildSpellDb(spells)
   return cached
+}
+
+/** What the committed corrections overlay did on this load (startup line + the audit test). */
+export function spellCorrectionsReport(): CorrectionsReport | null {
+  return cachedCorrections
 }
 
 /**

@@ -55,7 +55,7 @@ export function wineDetection(): WineDetection {
   }
   if (cached.wine) {
     logInfo(
-      `[everquest-companion] wine: running under Wine (${cached.signals.join(', ')}) — graphics ` +
+      `[everquest-companion] wine: running under Wine (${cached.signals.join(', ')}) - graphics ` +
         'switches left on auto take the compatibility path.'
     )
   }

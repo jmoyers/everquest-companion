@@ -35,7 +35,7 @@ const AUTO_COLOR = '#7a7a7a'
 function rangeLabel(ranks: readonly number[]): string {
   if (ranks.length === 0) return ''
   const contiguous = ranks[ranks.length - 1] - ranks[0] + 1 === ranks.length
-  if (contiguous && ranks.length > 1) return `${String(ranks[0])}–${String(ranks[ranks.length - 1])}`
+  if (contiguous && ranks.length > 1) return `${String(ranks[0])}-${String(ranks[ranks.length - 1])}`
   return ranks.map(String).join(', ')
 }
 
@@ -191,7 +191,7 @@ function AbilityRow({
           variant="caption"
           sx={{ minWidth: 46, textAlign: 'right', color: paid ? 'text.secondary' : 'text.disabled' }}
         >
-          {paid ? `${String(row.invested)} pts` : '—'}
+          {paid ? `${String(row.invested)} pts` : '-'}
         </Typography>
       </Stack>
       {open && <RankRungs row={row} />}
@@ -236,7 +236,7 @@ export function AaLedgerPanel({
         </Typography>
       </Typography>
       <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-        every rank the log recorded, grouped into ladders and sorted by points invested — click a
+        every rank the log recorded, grouped into ladders and sorted by points invested - click a
         row for its rungs
       </Typography>
       {/* The list owns the scroll (the standing list law) so the reconciliation footer below it
@@ -254,7 +254,7 @@ export function AaLedgerPanel({
       >
         {summary.invested.toLocaleString()} pts across {summary.paidRanks} bought rank
         {summary.paidRanks === 1 ? '' : 's'}
-        {summary.autoRanks > 0 && ` · ${String(summary.autoRanks)} granted`} — the same total as
+        {summary.autoRanks > 0 && ` · ${String(summary.autoRanks)} granted`} - the same total as
         the {allocated.toLocaleString()} AA points spent above
       </Typography>
     </Paper>

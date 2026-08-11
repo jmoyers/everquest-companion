@@ -2,7 +2,7 @@
 // Extracted from CombatView so both surfaces render the SAME bar, the SAME category
 // colors and the SAME card chrome (one look, one source of truth).
 
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Box, Collapse, Paper, Stack, Typography } from '@mui/material'
 import type { DamageCategory } from '@shared/combat'
 import { CATEGORY_LABEL } from '@shared/combat'
@@ -11,6 +11,9 @@ import { laneDps } from './petRows'
 import { MARKER_COLOR } from './markerStyle'
 import type { ProcAnnotation } from './procRows'
 import { landEvidence } from './landEvidence'
+import { useAbilityExpand } from './abilityExpand'
+import { abilityExpandable } from './abilityStats'
+import type { AbilityMulti } from './abilityStats'
 import type { FlatSkill, SkillRow } from './dashboardData'
 import { Tooltip } from '../../lib/Tooltip'
 
@@ -20,6 +23,8 @@ export { fmtDur } from './copyText'
 // The copy affordance moved to its own file (see its header — this one hit the line ceiling).
 // Re-exported so every panel header keeps the import it already had.
 export { CopyButton } from './CopyButton'
+// …and so did the readout atoms, for the same reason and to the same kind of file.
+import { MultiAttackStats, StatItem } from './meterBits'
 
 // `member` (a group-mate, docs/plans/group-model.md) is a green in the same muted family as the
 // pet's blue — a friendly, clearly not you, and clearly not the enemy's red.
@@ -174,30 +179,6 @@ export function skillStatText(s: FlatSkill, a = ''): string {
   return parts.join(' · ')
 }
 
-/** One labeled figure in the expanded readout: a small uppercase caption over the value. */
-function StatItem({ label, value, color }: { label: string; value: string; color?: string }): React.JSX.Element {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography
-        variant="caption"
-        noWrap
-        sx={{
-          display: 'block',
-          fontSize: 9,
-          lineHeight: 1.4,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          color: 'text.disabled'
-        }}
-      >
-        {label}
-      </Typography>
-      <Typography variant="caption" noWrap sx={{ display: 'block', fontWeight: 600, color: color ?? 'text.primary' }}>
-        {value}
-      </Typography>
-    </Box>
-  )
-}
 
 /**
  * The three figures that only exist once a lane has LANDED A HIT: the average, the crit rate and
@@ -218,11 +199,11 @@ function DamageStats({ s, a }: { s: FlatSkill; a: string }): React.JSX.Element |
 }
 
 /**
- * The expanded per-ability readout (one level below the flat row, inline — no new nav level,
- * no breadcrumb). Everything the bar compresses, spelled out and labeled: the category, the
- * total, hit/crit counts with the crit rate, the miss rate over swings, resists over casts,
- * the damage range and the average per hit (total ÷ hits — derived, so it's labeled as an
- * average and never presented as an observed hit).
+ * The expanded per-ability readout (inline — no new nav level, no breadcrumb). Everything the bar
+ * compresses, spelled out and labeled: the category, the total, hit/crit counts with the crit
+ * rate, the miss rate over swings, resists over casts, the damage range and the average per hit
+ * (total ÷ hits — derived, so it's labeled as an average and never presented as an observed hit),
+ * and — for a stat-bearing ability — the double/triple/quad attack rates (JOS-113).
  * `a` carries the `~` sample-estimate marker through; the observed range is never prefixed
  * (a sampled max is a lower bound, a sampled min an upper bound — the panel's chip says so).
  * `after` rides INSIDE the same block, under the figures — the grouped Slay Undead row uses it
@@ -230,10 +211,13 @@ function DamageStats({ s, a }: { s: FlatSkill; a: string }): React.JSX.Element |
  */
 function SkillReadout({
   s,
+  multi,
   approx,
   after
 }: {
   s: FlatSkill
+  /** this ability's own multi-attack reading (double/triple/quad/flurry), or null when it has none. */
+  multi?: AbilityMulti | null
   approx?: boolean
   after?: ReactNode
 }): React.JSX.Element {
@@ -245,6 +229,7 @@ function SkillReadout({
   const color = CAT_COLOR[s.category]
   return (
     <Box
+      data-testid="ability-stats"
       sx={{
         mt: '-1px',
         mb: '3px',
@@ -272,7 +257,13 @@ function SkillReadout({
             first. */}
         {(s.lands ?? 0) > 0 && <StatItem label="Landed" value={`${a}${s.lands}`} />}
         {resists > 0 && <StatItem label="Resists" value={land.resistText} color={RESIST_COLOR} />}
+        {multi && <MultiAttackStats multi={multi} a={a} />}
       </Stack>
+      {multi?.flurry != null && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+          {multi.flurry}
+        </Typography>
+      )}
       {after}
     </Box>
   )
@@ -344,6 +335,32 @@ function ProcTag({ proc }: { proc: ProcAnnotation }): React.JSX.Element {
 }
 
 /**
+ * A row's RIGHT END: `rate · total` inside a drill, the total alone outside one and in the glance
+ * card, where a bar a third of the width cannot carry two numbers and a name.
+ * Its own function so `SkillBar` stays inside the complexity budget.
+ */
+function skillRight(s: SkillRow, a: string, activeSec: number | undefined, compact?: boolean): string {
+  if (activeSec === undefined || compact) return `${a}${fmt(s.total)}`
+  return `${a}${formatRate(laneDps(s.total, activeSec))} · ${a}${fmt(s.total)}`
+}
+
+/**
+ * The stat run that rides INSIDE the bar: the two stats a reader cannot get off the bar itself,
+ * or — on a lane with no damage line of its own — the landing evidence, whose hover carries the
+ * basis and, where there is none, the reason the resist rate is being withheld. Nothing at all in
+ * the glance card, where there is no room for it.
+ */
+function skillInline(s: SkillRow, a: string, land: ReturnType<typeof landEvidence>, compact?: boolean): ReactNode {
+  if (compact) return null
+  if (s.hits > 0) return skillStatText(s, a)
+  return (
+    <Tooltip title={land.hint}>
+      <span>{land.text}</span>
+    </Tooltip>
+  )
+}
+
+/**
  * One flat skill/spell row, colored by its parent category (fill + left stripe). Layout:
  * `<name> <embedded labeled stats> ………… <total>` — the stats live INSIDE the bar next to the
  * name (dimmed), and the right end is the total and nothing else, so a column of these reads
@@ -359,11 +376,19 @@ export function SkillBar({
   approx,
   nested,
   activeSec,
+  compact,
   proc
 }: {
   s: SkillRow
   approx?: boolean
   nested?: boolean
+  /**
+   * The GLANCE variant (the Overview card, JOS-105): the embedded stat run and the lane's own
+   * rate come off, leaving name and total, because the card's bar is a third of the tab's width
+   * and a truncated stat run is worse than none. The CLICK is untouched — the same expansion
+   * opens the same full readout, so the row behaves identically on both surfaces.
+   */
+  compact?: boolean
   /**
    * The segment's active seconds. Present ⇒ the row's right end carries its OWN rate beside its
    * total (`rate · total`, petRows.laneDps — owner ruling 2026-08-05: "every lane shows its own
@@ -377,7 +402,19 @@ export function SkillBar({
 }): React.JSX.Element {
   // Click expands the full per-ability readout in place (the same inline-Collapse pattern the
   // incoming meter rows use) — no extra nav level, so the flat ranked list never moves.
-  const [open, setOpen] = useState(false)
+  //
+  // ONLY A STAT-BEARING ABILITY EXPANDS (JOS-113, owner): a melee/slay swing, anything that
+  // multi-attacked, a spell that crit — click it and its crit/double/triple/miss open beneath it.
+  // A DoT tick has none, so it is not clickable and does nothing (abilityStats.abilityExpandable).
+  //
+  // THE OPEN STATE IS NOT THIS COMPONENT'S ANY MORE (JOS-116). It was a `useState` here, which
+  // died with the view on every tab switch — the same lifecycle bug as the drill one level up. A
+  // surface that REMEMBERS (the Combat tab, the Overview card) provides the answer through
+  // `abilityExpand`; anywhere with no provider the hook falls back to exactly the local state this
+  // line used to hold, so nothing had to opt in to keep working.
+  const multi = s.multi ?? null
+  const expandable = abilityExpandable(s, multi)
+  const [open, toggle] = useAbilityExpand(s.category, s.name, expandable)
   const color = CAT_COLOR[s.category]
   const resists = s.resists ?? 0
   const a = approx ? '~' : ''
@@ -387,34 +424,28 @@ export function SkillBar({
   // with no landing evidence at all has no denominator, and 100% would be a fabrication.
   const land = landEvidence(s, a)
   return (
-    <Box>
+    <Box data-testid="skill-bar">
       <Bar
         color={color}
         accent={color}
         pct={s.pct}
+        // `open` is already gated on `expandable` (useAbilityExpand), so a non-expandable row is
+        // never outlined and never expands — including a row that WAS expandable when its key was
+        // remembered and is not any more.
         selected={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={expandable ? toggle : undefined}
         name={
           <>
             <SkillName name={s.name} category={s.category} plain={nested} />
             {land.resistPct !== undefined && (
-              <Tooltip title={`${resists} resisted, ${land.landed} landed — ${Math.round(100 - land.resistPct)}% landed. ${land.hint}`}>
+              <Tooltip title={`${resists} resisted, ${land.landed} landed - ${Math.round(100 - land.resistPct)}% landed. ${land.hint}`}>
                 <Typography component="span" variant="caption" sx={{ ml: 0.75, color: RESIST_COLOR }}>
                   {Math.round(land.resistPct)}% resist
                 </Typography>
               </Tooltip>
             )}
             <InlineStats>
-              {s.hits > 0 ? (
-                skillStatText(s, a)
-              ) : (
-                // The hover carries the basis on a damage-less row — and, for the row with no
-                // landing evidence at all, carries the REASON the resist rate is missing. A
-                // withheld number that never says why reads as a bug.
-                <Tooltip title={land.hint}>
-                  <span>{land.text}</span>
-                </Tooltip>
-              )}
+              {skillInline(s, a, land, compact)}
               {/* A group row says how many skills it stands for, so the merge is visible from the
                   row itself and the expansion is obviously worth a click. */}
               {s.children && s.children.length > 0 ? ` · ${s.children.length} skills` : ''}
@@ -422,19 +453,18 @@ export function SkillBar({
           </>
         }
         adorn={proc ? <ProcTag proc={proc} /> : undefined}
-        right={
-          activeSec === undefined
-            ? `${a}${fmt(s.total)}`
-            : `${a}${formatRate(laneDps(s.total, activeSec))} · ${a}${fmt(s.total)}`
-        }
+        right={skillRight(s, a, activeSec, compact)}
       />
-      <Collapse in={open} unmountOnExit>
-        <SkillReadout
-          s={s}
-          approx={approx}
-          after={s.children && s.children.length > 0 ? <SkillChildren rows={s.children} approx={approx} /> : undefined}
-        />
-      </Collapse>
+      {expandable && (
+        <Collapse in={open} unmountOnExit>
+          <SkillReadout
+            s={s}
+            multi={multi}
+            approx={approx}
+            after={s.children && s.children.length > 0 ? <SkillChildren rows={s.children} approx={approx} /> : undefined}
+          />
+        </Collapse>
+      )}
     </Box>
   )
 }
@@ -549,7 +579,7 @@ export function ApproxChip({
   truncated?: boolean
 }): React.JSX.Element {
   const why = truncated
-    ? `This fight outgrew its event ring, so its OLDEST instants were dropped: ${shown} of ${raw} instants are still held. Numbers below (marked ~) cover only that retained window — read them as LOWER BOUNDS on the fight, not as its totals.`
+    ? `This fight outgrew its event ring, so its OLDEST instants were dropped: ${shown} of ${raw} instants are still held. Numbers below (marked ~) cover only that retained window - read them as LOWER BOUNDS on the fight, not as its totals.`
     : `This fight's event ring was downsampled: ${shown} of ${raw} instants were kept. Numbers below are scaled sample estimates (marked ~).`
   return (
     <Tooltip

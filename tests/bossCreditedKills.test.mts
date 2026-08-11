@@ -35,6 +35,7 @@ import { readFileSync } from 'node:fs'
 import { parseEvent, parseEqTimestamp } from '../src/main/log/parser'
 import { KillsModule } from '../src/main/modules/kills'
 import { allStatuses, bossKills, type TargetStatus } from '../src/renderer/src/features/bosses/bossStatus'
+import { TIER_OPEN_WORLD } from '../src/shared/kills'
 import type { KillsSnap, RaidTarget } from '../src/shared/types'
 import { readFixture } from './harness.mts'
 
@@ -99,9 +100,14 @@ test('the same boss killed by YOU celebrates — the exp line is the whole diffe
   assert.equal(before[0].killed, false, 'undefeated before your kill')
   const fired = bossKills(prevOf(before), after)
   assert.equal(fired.length, 1, 'your own kill fires the one predicate')
-  assert.equal(fired[0].target.name, 'Thunder Spirit Princess')
-  assert.equal(fired[0].credited, 1)
-  assert.equal(fired[0].count, 1, 'one kill, credited — count and credit agree here')
+  assert.equal(fired[0].status.target.name, 'Thunder Spirit Princess')
+  assert.equal(fired[0].status.credited, 1)
+  assert.equal(fired[0].status.count, 1, 'one kill, credited — count and credit agree here')
+  // And the kill carries the tier it happened on (JOS-165). It used to read `0`, the base
+  // difficulty, because a bare zone name and a base INSTANCE both decoded to tier 0. This kill
+  // happened in the open-world Plane of Sky, which is not a difficulty at all (JOS-166), and the
+  // toast now says so rather than announcing a d0 clear the player never made.
+  assert.equal(fired[0].tier, TIER_OPEN_WORLD)
 })
 
 test('the whole fixture, folded: two kills of one boss, exactly one of them yours', () => {
@@ -110,12 +116,18 @@ test('the whole fixture, folded: two kills of one boss, exactly one of them your
   assert.ok(princess, 'both casings fold onto the canonical lowercase key')
   assert.equal(princess.count, 2, 'both deaths are recorded — the tracker is not a credit filter')
   assert.equal(princess.credited, 1, 'and exactly one of them paid you experience')
-  // Same zone, same tier: the credit lives on the RUN, beside the kills it describes — and
+  // Same zone, same key: the credit lives on the RUN, beside the kills it describes — and
   // `lastCreditedTs` dates YOUR kill, not the stranger's, which is exactly the distinction the
   // weekly lockout view rests on (`lastTs` here is the kill that paid you nothing).
+  //
+  // THE KEY IS THE OPEN WORLD, NOT d0 (JOS-166). `You have entered The Plane of Sky.` names no
+  // instance, and there is no lockout on an open-world spawn — so this run is filed where it can
+  // never green a ladder rung, while still counting toward the mob's kill history exactly as it
+  // did before.
   assert.deepEqual(princess.tiers, {
-    0: { count: 2, firstTs: MINE, lastTs: STRANGERS, credited: 1, lastCreditedTs: MINE }
+    [TIER_OPEN_WORLD]: { count: 2, firstTs: MINE, lastTs: STRANGERS, credited: 1, lastCreditedTs: MINE }
   })
+  assert.equal(princess.bestTier, TIER_OPEN_WORLD, 'and the summary reports no difficulty either')
 })
 
 test('an exp line is consumed once — it cannot credit the next mob that dies near you', () => {
@@ -140,7 +152,7 @@ test('the celebration surfaces all hang off the ONE credited predicate', () => {
   )
   // The signal AND the toast live inside the same `onKill` block, so gating the predicate gates
   // both — there is no second producer that could still speak for a stranger's kill.
-  const onKill = /onKill:\s*\(s\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(app)
+  const onKill = /onKill:\s*\(\{[^}]*\}\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(app)
   assert.ok(onKill, 'the always-mounted detector wires onKill to a block')
   assert.match(onKill[1], /fireAppSignal\('bossDefeat'/)
   assert.match(onKill[1], /window\.eq\.showToast\(/)

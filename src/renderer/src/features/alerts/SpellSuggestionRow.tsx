@@ -5,10 +5,11 @@
 // factoring ceiling.
 //
 // COMPACT (docs/plans/suggest-dialog-redesign.md §3, owner: "more compact so things fit on
-// screen"). The row is now ONE LINE and never wraps: `flexWrap` turns overflow into HEIGHT
-// (AGENTS.md), which is exactly what made the old row two and three lines tall on a spell with
-// several classes. So the contract is the compact-bar one — `nowrap`, the NAME is the single
-// shrinkable/ellipsizing group, and the controls (template chips) never shrink.
+// screen"). The row is ONE LINE whenever one line will hold it: the NAME is the single
+// shrinkable/ellipsizing thing, and the chips never shrink. `flexWrap` turns overflow into HEIGHT
+// (AGENTS.md), which is what made the old pre-redesign row two and three lines tall on a spell
+// with several classes, so height is spent only where it is the alternative to a collision —
+// see SUGGEST_ROW_SX for what JOS-190 measured and why the row now wraps as its last resort.
 //
 // WHAT THE ROW STATES (never process — AGENTS.md UI conventions):
 //   * the spell's line name,
@@ -21,7 +22,7 @@
 // in "From your fights", which mixes both — that section passes `showType`.
 
 import { memo, useMemo, type JSX } from 'react'
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { Box, Chip, Typography } from '@mui/material'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import type { SpellCatalogEntry } from '@shared/types'
 import type { ClassAbbr } from '@shared/classCombo'
@@ -50,25 +51,81 @@ const MAX_LEVEL_CHIPS = 2
  * EXPORTED because the poison-slow offer is a row in the same list (SuggestSections.tsx): its
  * chips have to be the same 18px objects, not a second opinion about density.
  */
-export const ROW_CHIP_SX = { height: 18, '& .MuiChip-label': { px: 0.6, fontSize: '0.68rem' } } as const
+export const ROW_CHIP_SX = {
+  height: 18,
+  // A CHIP IS A FACT, NOT A SPRING (JOS-190). Left to the default `flex-shrink: 1` these squeezed
+  // below their own labels the moment the facts group ran out of room, and — the group being an
+  // un-clipped nowrap flex box — kept drawing past its edge and over the template chips beside it.
+  // They hold their size now; what gives is the NAME, which ellipsizes, and then the row wraps.
+  flexShrink: 0,
+  '& .MuiChip-label': { px: 0.6, fontSize: '0.68rem' }
+} as const
 const CHIP_SX = ROW_CHIP_SX
 
 /**
- * The row shell every suggestion line wears: one line, never wrapping (`flexWrap` turns
- * overflow into HEIGHT — AGENTS.md), hover-highlighted. Exported for the same reason as
- * ROW_CHIP_SX — "the offer is just another row" is a claim that only holds if it is literally
- * the same box.
+ * The row shell every suggestion line wears: facts on the left, one-click chips on the right,
+ * hover-highlighted. Exported for the same reason as ROW_CHIP_SX — "the offer is just another
+ * row" is a claim that only holds if it is literally the same box.
+ *
+ * IT WRAPS (JOS-190, GitHub issue 22). It used to be `nowrap` on the compact-bar contract
+ * (AGENTS.md: "`flexWrap` converts content overflow into HEIGHT"), and that contract is still
+ * right about height — but it comes with a second half the row was not honouring: the shrinkable
+ * group must actually CLIP. A row wears up to seven chips whose labels are whole sentences
+ * ("When it wears off (you or your pet)", "When it lands on someone (say who)", plus a rank-pinned
+ * pair when the log has seen you cast one), and past ~836px of dialog those simply do not fit on
+ * one line at any font. The old row answered that by squeezing the facts group and letting it
+ * overprint the chips; wrapping answers it by giving the chips their own line when — and ONLY
+ * when — they cannot share one. A row that fitted before still fits on one line and is
+ * byte-identical: flex wrapping is decided on the items' natural widths, so nothing that used to
+ * fit moves.
  */
 export const SUGGEST_ROW_SX = {
   display: 'flex',
   alignItems: 'center',
-  flexWrap: 'nowrap',
+  flexWrap: 'wrap',
   gap: 0.5,
+  rowGap: 0.25,
   px: 0.75,
   py: 0.125,
   minHeight: 26,
   borderRadius: 1,
   '&:hover': { bgcolor: 'action.hover' }
+} as const
+
+/**
+ * The FACTS half of a row (name · type · class levels · recency · usage).
+ *
+ * It is the group that gives — `flexGrow: 1` so it owns the free space, `minWidth: 0` so the name
+ * may ellipsize — and it CLIPS (`overflow: hidden`), which is the half the compact-bar contract
+ * was missing: a shrinkable group whose overflow is visible does not shrink, it overprints its
+ * neighbour. Its chips hold their width (ROW_CHIP_SX), so the name is what shortens.
+ */
+export const SUGGEST_ROW_FACTS_SX = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 0.5,
+  minWidth: 0,
+  flexGrow: 1,
+  overflow: 'hidden'
+} as const
+
+/**
+ * The ACTIONS half of a row: the one-click template chips, right-aligned.
+ *
+ * `flexWrap` here is the second line's second line — once the chips have a row to themselves they
+ * still have to fit in it, and at the app's 900px minimum a spell with five templates does not.
+ * `minWidth: 0` lets the group take the width it is given rather than its content's, which is what
+ * makes that inner wrap happen at all (and a single chip wider than the dialog ellipsizes inside
+ * itself — MUI's own `max-width: 100%`). A plain Box rather than a Stack: Stack spaces its
+ * children with MARGINS, which do not survive wrapping.
+ */
+export const SUGGEST_ROW_ACTIONS_SX = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  gap: 0.5,
+  minWidth: 0
 } as const
 
 /** Coarse relative-time label for the usage tooltip's "last seen" (Task #45 recency hint). */
@@ -86,7 +143,7 @@ export function relativeTime(ms: number): string {
 
 /** "ENC 16" — one class's entry level for this LINE. Yours is coloured; the DB fact is the same. */
 function LevelChip({ chip }: { chip: ClassLevelChip }): JSX.Element {
-  const title = `${chip.cls} learns this spell line at level ${chip.level}${chip.yours ? ' — one of your classes' : ''}`
+  const title = `${chip.cls} learns this spell line at level ${chip.level}${chip.yours ? ' - one of your classes' : ''}`
   return (
     <Tooltip title={title}>
       <Chip
@@ -196,8 +253,8 @@ function SpellRow({
   // rank — so a re-render that changes neither (a parent re-render, a hover) does none of it.
   const suggestions = useMemo(() => suggestionsFor(entry, rank), [entry, rank])
   return (
-    <Box sx={SUGGEST_ROW_SX}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flexGrow: 1 }}>
+    <Box sx={SUGGEST_ROW_SX} data-testid="suggest-row">
+      <Box sx={SUGGEST_ROW_FACTS_SX}>
         <Typography variant="body2" sx={{ fontWeight: 500, minWidth: 0 }} noWrap>
           {entry.name}
         </Typography>
@@ -224,7 +281,7 @@ function SpellRow({
         )}
         {entry.usageCount > 0 && <UsageChip entry={entry} />}
       </Box>
-      <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
+      <Box sx={SUGGEST_ROW_ACTIONS_SX}>
         {suggestions.map((s) => (
           <TemplateChip
             key={s.def.id}
@@ -233,7 +290,7 @@ function SpellRow({
             onClick={() => onCreate(s)}
           />
         ))}
-      </Stack>
+      </Box>
     </Box>
   )
 }

@@ -6,13 +6,16 @@
 //     requirements, newest first;
 //   - LAW 1 CASE: a quest with NO drops has no recency — it sorts BELOW every quest that has
 //     one, and the no-drop block orders by quest name. Never a fabricated timestamp, never 0;
-//   - the same absence rule for "by island", whose primary island is DERIVED from the first
-//     item whose `where` states Island N because no quest carries an island field;
-//   - progress ("closest to done") leads with ready/turned-in quests, then ratio-descending —
-//     completed quests remain visible unless "hide completed" is ticked;
+//   - the same absence rule for "by island", whose island is DERIVED from item `where` strings
+//     (lowest island named) because no quest carries an island field;
+//   - progress ("closest to done") is ratio-descending, completed quests included — the list
+//     shows them unless "hide completed" is ticked, and that is unchanged here;
 //   - every order is total: ties fall through to quest name, so no order depends on input order;
 //   - computeLastLootedAt's disposition rule (sold never dropped for you; combined did) and its
-//     agreement with computeHeldCounts' counting key.
+//     agreement with computeHeldCounts' counting key;
+//   - JOS-146: the FAVORITE PIN is part of the order, and "most recently looted" is the one order
+//     it may not override. The owner's live case is replayed at the bottom of this file, from his
+//     own two log lines through the real parser.
 //
 // Run: `npm test`.
 
@@ -20,18 +23,18 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   compareQuests,
-  defaultSortDirection,
+  orderQuests,
+  pinsFavorites,
   questDropRecency,
   questIsland,
-  questIslands,
   sortQuests,
-  isSortDirection,
   isSortKey,
   DEFAULT_SORT,
   SORT_OPTIONS
 } from '../src/renderer/src/features/posky/questSort'
 import { computeLastLootedAt, computeHeldCounts } from '../src/renderer/src/features/posky/heldCounts'
 import { itemCountKey } from '../src/renderer/src/lib/itemName'
+import { parseEvent } from '../src/main/log/parser'
 import type { QuestProgress, ItemProgress } from '../src/renderer/src/features/posky/useProgress'
 import type { LootEvent, PoskyQuest } from '../src/shared/types'
 import poskyRaw from '../src/renderer/src/data/eqlegends/posky.json' with { type: 'json' }
@@ -54,6 +57,10 @@ function quest(name: string, opts: Partial<QuestProgress> = {}): QuestProgress {
     needCount: 1,
     ratio: 0,
     missing: [],
+    // JOS-131: completion is a COUNT (`turnIns`), and `completed` is its one-bit reading. The
+    // sorts below never read either — they are here because a QuestProgress has them.
+    turnIns: 0,
+    logTurnIns: 0,
     completed: false,
     ...opts
   }
@@ -61,25 +68,14 @@ function quest(name: string, opts: Partial<QuestProgress> = {}): QuestProgress {
 
 const names = (list: QuestProgress[]): string[] => list.map((q) => q.name)
 
-test('most recent drop is the default order', () => {
+test('most recently looted is the default order', () => {
   assert.equal(DEFAULT_SORT, 'recent')
   assert.equal(SORT_OPTIONS[0]?.value, 'recent')
+  // The stored key never changed with the JOS-146 relabel — an existing user's saved choice
+  // still resolves.
+  assert.equal(SORT_OPTIONS[0]?.label, 'Most recently looted')
   assert.equal(isSortKey('recent'), true)
   assert.equal(isSortKey('by-vibes'), false)
-  assert.equal(isSortDirection('asc'), true)
-  assert.equal(isSortDirection('desc'), true)
-  assert.equal(isSortDirection('sideways'), false)
-  assert.deepEqual(
-    SORT_OPTIONS.map((o) => [o.value, defaultSortDirection(o.value)]),
-    [
-      ['recent', 'desc'],
-      ['closest', 'desc'],
-      ['least-missing', 'asc'],
-      ['name', 'asc'],
-      ['class', 'asc'],
-      ['island', 'asc']
-    ]
-  )
 })
 
 test('recent: newest drop first', () => {
@@ -89,7 +85,6 @@ test('recent: newest drop first', () => {
     quest('Middle', { lastDropAt: 5_000 })
   ]
   assert.deepEqual(names(sortQuests(list, 'recent')), ['Newest', 'Middle', 'Older'])
-  assert.deepEqual(names(sortQuests(list, 'recent', 'asc')), ['Older', 'Middle', 'Newest'])
 })
 
 test('LAW 1 — a quest with no drops sorts below every keyed quest, by name', () => {
@@ -106,13 +101,6 @@ test('LAW 1 — a quest with no drops sorts below every keyed quest, by name', (
     'Alpha never dropped',
     'Mid never dropped',
     'Zeta never dropped'
-  ])
-  assert.deepEqual(names(sortQuests(list, 'recent', 'asc')), [
-    'Ancient drop',
-    // The unknown block reverses internally, but remains BELOW every real timestamp.
-    'Zeta never dropped',
-    'Mid never dropped',
-    'Alpha never dropped'
   ])
 })
 
@@ -140,11 +128,6 @@ test('name: A–Z, class only as the tiebreak for a repeated quest name', () => 
     sorted.map((q) => q.className),
     ['Shaman', 'Cleric', 'Ranger']
   )
-  assert.deepEqual(names(sortQuests(list, 'name', 'desc')), ['Test of Wind', 'Test of Wind', 'Test of Earth'])
-  assert.deepEqual(
-    sortQuests(list, 'name', 'desc').map((q) => q.className),
-    ['Ranger', 'Cleric', 'Shaman']
-  )
 })
 
 test('class: grouped by class, name-ordered inside a class', () => {
@@ -156,49 +139,14 @@ test('class: grouped by class, name-ordered inside a class', () => {
   assert.deepEqual(names(sortQuests(list, 'class')), ['Faith', 'Bravery', 'Zeal'])
 })
 
-test('closest: completed quests stay on top even when recorded progress is lower', () => {
+test('closest: highest ratio first, completed quests included and on top', () => {
   const list = [
     quest('Barely started', { ratio: 0.1, missing: ['a', 'b'] }),
-    quest('Turned in', { ratio: 0, missing: ['not recorded'], completed: true }),
+    quest('Turned in', { ratio: 1, turnIns: 1, completed: true }),
     quest('Nearly there', { ratio: 0.9, missing: ['a'] })
   ]
   // Completion is not a filter here — 'hide completed' is a separate toggle and is untouched.
   assert.deepEqual(names(sortQuests(list, 'closest')), ['Turned in', 'Nearly there', 'Barely started'])
-})
-
-test('closest: every ready-to-turn-in quest leads every incomplete quest, ties by name', () => {
-  const list = [
-    quest('Nearly there', { ratio: 0.99, missing: ['last item'] }),
-    quest('Zeta ready', { ratio: 1, missing: [], completed: false }),
-    quest('Barely started', { ratio: 0.2, missing: ['a', 'b'] }),
-    quest('Alpha ready', { ratio: 1, missing: [], completed: false }),
-    quest('Middle ready', { ratio: 1, missing: [], completed: false })
-  ]
-
-  assert.deepEqual(names(sortQuests(list, 'closest')), [
-    'Alpha ready',
-    'Middle ready',
-    'Zeta ready',
-    'Nearly there',
-    'Barely started'
-  ])
-})
-
-test('closest: a noncompleted zero-item quest is ready even when its ratio is zero', () => {
-  const list = [
-    quest('Almost complete', { ratio: 0.99, missing: ['last item'] }),
-    quest('Zero-item ready', {
-      items: [],
-      haveCount: 0,
-      needCount: 0,
-      ratio: 0,
-      missing: [],
-      completed: false
-    })
-  ]
-
-  assert.deepEqual(names(sortQuests(list, 'closest')), ['Zero-item ready', 'Almost complete'])
-  assert.deepEqual(names(sortQuests(list, 'closest', 'asc')), ['Almost complete', 'Zero-item ready'])
 })
 
 test('closest: equal ratio breaks on fewest missing, then name', () => {
@@ -223,7 +171,7 @@ test('least-missing: fewest missing first, then ratio', () => {
   assert.deepEqual(names(sortQuests(list, 'least-missing')), ['None left', 'One', 'Three'])
 })
 
-test('questIsland reads the FIRST explicitly-stated island in source order', () => {
+test('questIsland reads the LOWEST island any required item names', () => {
   assert.equal(questIsland(quest('q', { items: [item('x', { where: 'Island 5' })] })), 5)
   assert.equal(
     questIsland(
@@ -231,43 +179,13 @@ test('questIsland reads the FIRST explicitly-stated island in source order', () 
         items: [item('x', { where: 'Island 7' }), item('y', { where: 'Island 3' })]
       })
     ),
-    7
-  )
-  // A Wind Rune and an unlocated Efreeti-cycle item can lead the source list without becoming
-  // the primary progression item. The first real island still wins.
-  assert.equal(
-    questIsland(
-      quest('q', {
-        items: [
-          item('Wind Rune Kala', { where: 'Plane of Sky' }),
-          item('Efreeti War Axe'),
-          item('Blood Sky Ruby', { where: 'Island 8' })
-        ]
-      })
-    ),
-    8
+    3
   )
   // "Plane of Sky" and empty are not islands — no island named means no island, not island 0.
   assert.equal(
     questIsland(quest('q', { items: [item('x', { where: 'Plane of Sky' }), item('y')] })),
     undefined
   )
-})
-
-test('questIslands returns every explicit island, sorted and de-duplicated', () => {
-  const q = quest('q', {
-    items: [
-      item('primary', { where: 'Island 8' }),
-      item('Wind Rune Kala', { where: 'Plane of Sky' }),
-      item('Efreeti War Axe'),
-      item('earlier drop', { where: 'Island 5' }),
-      item('same island again', { where: 'island 8' })
-    ]
-  })
-  assert.deepEqual(questIslands(q), [5, 8])
-  // The filter helper is comprehensive and sorted; it does not redefine the source-order
-  // primary island used by the quest sort.
-  assert.equal(questIsland(q), 8)
 })
 
 test('island: ascending, and a quest naming no island sorts below, by name', () => {
@@ -283,13 +201,6 @@ test('island: ascending, and a quest naming no island sorts below, by name', () 
     'Also unknown',
     'Unknown island'
   ])
-  assert.deepEqual(names(sortQuests(list, 'island', 'desc')), [
-    'Seventh',
-    'Second',
-    // Unknowns stay below every stated island even when the keyed block reverses.
-    'Unknown island',
-    'Also unknown'
-  ])
 })
 
 test('every order is total — no order depends on the input order', () => {
@@ -299,48 +210,9 @@ test('every order is total — no order depends on the input order', () => {
     quest('Gamma', { className: 'Cleric', ratio: 0.5, missing: ['x'], lastDropAt: 5 })
   ]
   for (const opt of SORT_OPTIONS) {
-    for (const direction of ['asc', 'desc'] as const) {
-      const forward = names(sortQuests(build(), opt.value, direction))
-      const reversed = names(sortQuests([...build()].reverse(), opt.value, direction))
-      assert.deepEqual(reversed, forward, `${opt.value}/${direction} is order-dependent`)
-    }
-  }
-})
-
-test('every order honors both directions while its natural direction remains the default', () => {
-  const list = [
-    quest('Alpha', {
-      className: 'Cleric',
-      ratio: 0.1,
-      missing: ['a', 'b', 'c'],
-      lastDropAt: 1,
-      items: [item('a', { where: 'Island 2' })]
-    }),
-    quest('Beta', {
-      className: 'Druid',
-      ratio: 0.5,
-      missing: ['a', 'b'],
-      lastDropAt: 5,
-      items: [item('b', { where: 'Island 5' })]
-    }),
-    quest('Gamma', {
-      className: 'Warrior',
-      ratio: 0.9,
-      missing: ['a'],
-      lastDropAt: 9,
-      items: [item('c', { where: 'Island 8' })]
-    })
-  ]
-  for (const opt of SORT_OPTIONS) {
-    const natural = defaultSortDirection(opt.value)
-    const opposite = natural === 'asc' ? 'desc' : 'asc'
-    const expected = names(sortQuests(list, opt.value, natural))
-    assert.deepEqual(names(sortQuests(list, opt.value)), expected, `${opt.value} default drifted`)
-    assert.deepEqual(
-      names(sortQuests(list, opt.value, opposite)),
-      [...expected].reverse(),
-      `${opt.value} did not reverse`
-    )
+    const forward = names(sortQuests(build(), opt.value))
+    const reversed = names(sortQuests([...build()].reverse(), opt.value))
+    assert.deepEqual(reversed, forward, `${opt.value} is order-dependent`)
   }
 })
 
@@ -383,48 +255,142 @@ test('recency joins the real quest items on the loot counting key', () => {
   assert.equal(questDropRecency(items), 8_000)
 })
 
-test('real primary-island anchors: Azarack 2 → Eagle 7 → Khyldorn 8 → unknown Efreeti-only', () => {
-  const find = (name: string): PoskyQuest => {
-    const q = realQuests.find((candidate) => candidate.name === name)
-    assert.ok(q, `missing committed quest ${name}`)
-    return q
+// ---------------------------------------------------------------------------------------------
+// JOS-146 — THE FAVORITE PIN, AND THE ONE ORDER IT MAY NOT OVERRIDE
+// ---------------------------------------------------------------------------------------------
+
+/** The pin rank useQuestList supplies: 2 for a starred quest, 1 for a starred item, 0 otherwise. */
+const starred =
+  (...names: string[]) =>
+  (q: QuestProgress): number =>
+    names.includes(q.name) ? 2 : 0
+
+test('the pin applies to the five standing-property orders and not to recency', () => {
+  for (const opt of SORT_OPTIONS) {
+    assert.equal(pinsFavorites(opt.value), opt.value !== 'recent', `${opt.value} pin rule`)
   }
-  const azarack = find('Beastlord Test of Azarack')
-  const eagle = find('Druid Test of Eagle')
-  const khyldorn = find('Shadow Knight Test of Necropotence')
-  const unknown = find('Shadow Knight Test of Envenoming')
+})
 
-  assert.equal(questIsland(azarack), 2)
-  // Source order, not minimum: Ethereal Ruby (7) is the primary item; the later Spiroc
-  // Elder's Totem (5) remains available to the all-islands filter.
-  assert.equal(questIsland(eagle), 7)
-  assert.deepEqual(questIslands(eagle), [5, 7])
-  assert.equal(khyldorn.reward, 'Khyldorn the Blood Drinker')
-  assert.equal(questIsland(khyldorn), 8)
-  assert.deepEqual(questIslands(khyldorn), [8])
-  // Efreeti War Shield has no stated location and its Wind Rune says only Plane of Sky.
-  assert.equal(questIsland(unknown), undefined)
-  assert.deepEqual(questIslands(unknown), [])
+test('a starred quest is pinned above the sort in every standing-property order', () => {
+  const list = [
+    quest('Alpha', { ratio: 0.9, missing: [], lastDropAt: 9_000, items: [item('a', { where: 'Island 1' })] }),
+    quest('Zulu', { ratio: 0.1, missing: ['x'], lastDropAt: 1_000, items: [item('a', { where: 'Island 8' })] })
+  ]
+  for (const opt of SORT_OPTIONS) {
+    if (opt.value === 'recent') continue
+    // Zulu loses every one of these orders on merit, so being first can only be the pin.
+    assert.equal(orderQuests(list, opt.value, starred('Zulu'))[0]?.name, 'Zulu', `${opt.value} pin`)
+  }
+})
 
-  const asProgress = (q: PoskyQuest): QuestProgress =>
-    quest(q.name, {
-      className: q.className,
-      items: q.items.map((it) => item(it.name, { where: it.where }))
-    })
-  const anchors = [unknown, khyldorn, eagle, azarack].map(asProgress)
-  assert.deepEqual(names(sortQuests(anchors, 'island')), [
-    'Beastlord Test of Azarack',
-    'Druid Test of Eagle',
-    'Shadow Knight Test of Necropotence',
-    'Shadow Knight Test of Envenoming'
+test('JOS-146 — a star may NOT outrank the loot you just made', () => {
+  const list = [
+    quest('Starred and stale', { lastDropAt: 1_000 }),
+    quest('Just looted', { lastDropAt: 9_000 })
+  ]
+  assert.deepEqual(names(orderQuests(list, 'recent', starred('Starred and stale'))), [
+    'Just looted',
+    'Starred and stale'
   ])
-  assert.deepEqual(names(sortQuests(anchors, 'island', 'desc')), [
-    'Shadow Knight Test of Necropotence',
-    'Druid Test of Eagle',
-    'Beastlord Test of Azarack',
-    // Unknown remains last in descending order too.
-    'Shadow Knight Test of Envenoming'
+  // …and the star is not merely being ignored: it still decides ties, because the order it is
+  // layered onto is total and a tie is the only place a pin can act without lying.
+  assert.equal(orderQuests(list, 'closest', starred('Starred and stale'))[0]?.name, 'Starred and stale')
+})
+
+test('orderQuests does not mutate the list it is handed', () => {
+  const list = [quest('B', { lastDropAt: 1 }), quest('A', { lastDropAt: 9 })]
+  const before = names(list)
+  orderQuests(list, 'recent', starred('B'))
+  assert.deepEqual(names(list), before)
+})
+
+/**
+ * THE OWNER'S CASE, END TO END (JOS-146), from his own log rather than from an invented shape.
+ *
+ * Live-testing 2026-08-09: sorted by most recently looted, he looted a Hazy Opal and the list did
+ * not move — a quest he had already gathered every item for stayed on top. The two lines below are
+ * VERBATIM from `eqlog_Primitive_freeport.txt` (13:13:41 and 13:25:14 that afternoon), and the two
+ * quests are the real committed ones they belong to:
+ *   Warrior Test of Think          needs Wind Tablet, Efreeti Belt, Wind Rune Fana
+ *   Magician Test of Gesticulation needs Hazy Opal, Efreeti Magi Staff, Wind Rune Jaka
+ * `eq.questFavorites` in his dev app read ["rogue::rogue test of silence","warrior::warrior test
+ * of think"], so the Warrior quest was STARRED — and that, not the recency key, is what held it in
+ * place. Replaying his whole log proves the key was right the entire time: the Magician quest
+ * takes first place the instant that opal lands. This test states both halves.
+ *
+ * Both lines are the "stored it in your <container>" shape, which is not a disposition
+ * computeLastLootedAt skips — only an auto-vendored 'sold' row is, because that item never helped
+ * a quest.
+ */
+test('JOS-146 — the Hazy Opal moves the Magician quest to the top, star or no star', () => {
+  const LINES = [
+    "[Sun Aug 09 13:13:41 2026] You looted a Wind Rune Fana from a soul harvester's corpse and stored it in your currency",
+    "[Sun Aug 09 13:25:14 2026] You looted a Hazy Opal from Eye of Veeshan's corpse and stored it in your Dragon Hoard"
+  ]
+  const loot: LootEvent[] = []
+  LINES.forEach((raw, i) => {
+    const ev = parseEvent(raw, i)
+    assert.equal(ev?.kind, 'loot', `the real parser reads line ${String(i)} as a loot event`)
+    if (ev?.kind !== 'loot') return
+    loot.push({ ts: ev.ts, item: ev.item, source: ev.source, disposition: ev.disposition, count: ev.count })
+  })
+  const lastLooted = computeLastLootedAt(loot)
+  assert.ok(lastLooted['hazy opal'] > lastLooted['wind rune fana'], 'the opal is the newer loot')
+
+  const build = (className: string, name: string): QuestProgress => {
+    const real = realQuests.find((q) => q.className === className && q.name === name)
+    assert.ok(real, `${className}::${name} is in the committed quest data`)
+    const items = real.items.map((it) =>
+      item(it.name, { lastLootedAt: lastLooted[itemCountKey(it.name)] })
+    )
+    return quest(name, { className, key: `${className}::${name}`, items, lastDropAt: questDropRecency(items) })
+  }
+  // The Warrior quest is the one he had every item for, so it carries no `missing` — which is what
+  // put the "completed" badge on the row he was staring at.
+  const warrior = build('Warrior', 'Warrior Test of Think')
+  const magician = build('Magician', 'Magician Test of Gesticulation')
+  assert.equal(warrior.lastDropAt, lastLooted['wind rune fana'])
+  assert.equal(magician.lastDropAt, lastLooted['hazy opal'])
+
+  const list = [warrior, magician]
+  const star = starred('Warrior Test of Think')
+  // WHAT HE SAW: the pin ran after the sort and the starred quest was first regardless.
+  assert.deepEqual(sortQuests(list, 'recent').concat().sort((a, b) => star(b) - star(a))[0]?.name,
+    'Warrior Test of Think')
+  // WHAT HE GETS NOW: the loot he just made is the answer the order was asked for.
+  assert.deepEqual(names(orderQuests(list, 'recent', star)), [
+    'Magician Test of Gesticulation',
+    'Warrior Test of Think'
   ])
+  // And with nothing starred at all the order was ALREADY this — the recency key was never wrong.
+  assert.deepEqual(names(orderQuests(list, 'recent', () => 0)), [
+    'Magician Test of Gesticulation',
+    'Warrior Test of Think'
+  ])
+})
+
+/**
+ * RECENCY IS KEYED ON THE LOOT LEDGER, AND NOTHING ELSE CAN HIDE A LOOT (JOS-146's other half).
+ *
+ * The suspicion the ticket carried was that recency might be derived from COUNT deltas, which the
+ * JOS-141 additive rule could suppress: an inventory dump that already covers an item leaves the
+ * held count unchanged, so a count-derived recency would show no loot at all. It is not — the key
+ * is the loot event's own timestamp. This pins that independence so a future "derive it from the
+ * counts, they are right there" cannot quietly reintroduce it.
+ */
+test('JOS-146 — a loot dates the quest even when it moves no count', () => {
+  const loot: LootEvent[] = [
+    { ts: 1_000, item: 'Hazy Opal' },
+    // The SAME item again. Held counts go 1 -> 2, but even a fold that saw no change (a dump
+    // already covering it, a turn-in subtracting it back off) must not lose the instant.
+    { ts: 9_000, item: 'Hazy Opal' }
+  ]
+  assert.equal(computeLastLootedAt(loot)['hazy opal'], 9_000)
+  // Recency does not consult holdings: a quest with none of its items in hand still dates.
+  const held = computeHeldCounts(loot)
+  assert.equal(held['hazy opal'], 2)
+  const items = [item('Hazy Opal', { lastLootedAt: 9_000, have: 0, need: 1 })]
+  assert.equal(questDropRecency(items), 9_000)
 })
 
 test('the island derivation holds over the real committed quest data', () => {

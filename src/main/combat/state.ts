@@ -24,7 +24,7 @@ import { SEC_RINGS, type EngineFoldProbe } from './foldProbe'
 import { StateTimeline } from './stateTimeline'
 import { CharmModel } from './charmModel'
 import { SpecialAttacks } from './specialAttacks'
-import type { RecentCasts } from './procDetect'
+import { RecentCasts } from './procDetect'
 import { EMPTY_ROSTER, EMPTY_ROSTER_VIEW, type RosterSnap, type RosterView } from '../../shared/roster'
 import type { ClassifiedLine, CoatSlot } from '../../shared/combat'
 
@@ -37,6 +37,19 @@ export class EngineState {
    *  distinction lives on WorldModel Instance.petKind — see world.charmedInstances(). */
   petNames = new Set<string>()
   world = new WorldModel()
+
+  constructor() {
+    // A RETIRED INSTANCE CANNOT REDEEM ITS CC HOLD (JOS-176). The hold in
+    // `Encounter.ccActiveUntil` is a claim that a mez'd mob is still alive and still in this
+    // fight; the moment the world model retires that instance the claim is false forever,
+    // because a later sighting of the name spawns a fresh `nameKey#gen` (world.ts spawn). Wired
+    // here rather than at each call site so DEATH, STALENESS, zone, pet succession and the
+    // foreign-killer ghost all agree — before this only ingestDeath cleaned up, and a mez'd mob
+    // aged out by staleness went on vetoing the death-close for the rest of its 120 seconds.
+    this.world.onRetire = (inst): void => {
+      this.current?.ccActiveUntil.delete(inst.instanceId)
+    }
+  }
   /**
    * OWNERSHIP for the two caster-less broadcasts (`<mob> has been charmed.` /
    * `<mob> has been mesmerized.`) — see charmModel.ts for the state table and the
@@ -175,11 +188,11 @@ export class EngineState {
    */
   stateTimeline = new StateTimeline()
   /**
-   * Rank-normalized own-casts (`You begin casting <Spell>.`) → ts, for the cast-less proc
-   * detector. Only the PLAYER prints that line, which is exactly the gate the detector needs.
-   * Pruned to the 12s attribution window on write.
+   * Rank-normalized own-casts (`You begin casting <Spell>.`), for the cast-less proc detector.
+   * Only the PLAYER prints that line, which is exactly the gate the detector needs. Each record
+   * explains ONE firing and is then spent (JOS-167); pruned to the 12s attribution window.
    */
-  recentCasts: RecentCasts = new Map()
+  recentCasts = new RecentCasts()
   /**
    * ts of the last `You activate Quick Buff.` (0 = never). That AA re-applies the player's
    * memorized buffs and prints only their LANDINGS — no cast line for any of them — so the
@@ -508,7 +521,7 @@ export class EngineState {
     for (const d of this.charm.sweep(now)) {
       this.world.uncharm(d.display, now)
       this.petNames.delete(d.nameKey)
-      this.log(now, 'charm', 'dropped', `✕ ${d.display}: charm bind never corroborated — unbound`)
+      this.log(now, 'charm', 'dropped', `✕ ${d.display}: charm bind never corroborated - unbound`)
     }
   }
 

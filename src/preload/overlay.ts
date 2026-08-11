@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc'
 import type { CombatSnapshot, SnapshotOpts } from '../shared/combat'
 import type {
   AppFocus,
+  CharacterRef,
   ItemKnowledge,
   MobKnowledge,
   ModuleDelta,
@@ -65,6 +66,22 @@ const overlayApi = {
     const listener = (_e: unknown, d: ModuleDelta<D>): void => cb(d)
     ipcRenderer.on(IPC.onModuleDelta, listener)
     return () => ipcRenderer.removeListener(IPC.onModuleDelta, listener)
+  },
+  /**
+   * THE OTHER HALF OF THAT TRANSPORT (JOS-172): "the world for this character was rebuilt in
+   * main — everything you hold is stale, ask again."
+   *
+   * The SAME member, under the SAME name and on the SAME channel as the main app's bridge
+   * (preload/index.ts), for the reason the fight-selection trio below is duplicated: an overlay
+   * that folds a module has exactly the main window's problem, and a second name for one signal
+   * is how the two windows end up disagreeing about what the world is. Deltas alone cannot carry
+   * a REBUILD — the registry discards what a historical fold accumulated (main/modules/registry.ts),
+   * so a window that hydrated mid-fold rides increments that describe none of it.
+   */
+  onCharacter: (cb: (c: CharacterRef | null) => void): (() => void) => {
+    const listener = (_e: unknown, c: CharacterRef | null): void => cb(c)
+    ipcRenderer.on(IPC.onCharacter, listener)
+    return () => ipcRenderer.removeListener(IPC.onCharacter, listener)
   },
   /** Item knowledge for the feed's hover card — cache-first in main, never rejects. */
   lookupItem: (name: string): Promise<ItemKnowledge> => ipcRenderer.invoke(IPC.itemsLookup, name),

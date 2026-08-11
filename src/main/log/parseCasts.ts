@@ -19,6 +19,12 @@ const UNCHARM_RE = /^Your (.+?) spell has worn off of (.+?)\.$/
 // (poisoned/diseased) and unrelated spell notices (smitten/overwritten) are NOT CC
 // and are excluded. `ensnared` is a root (a hold), so it counts.
 const CC_APPLY_RE = /^(.+?) has been (?:mesmerized|enthralled|entranced|ensnared)\.$/
+// The CC BREAK ANNOTATION (JOS-180): "<mob> has been awakened by <name>." — one shape, measured
+// over the whole log (1,518 occurrences, zero variants; `by` is the player 1,364 times, a group
+// member or a mob for the rest). It was `{kind:'unknown'}` before this rule existed, so it can
+// neither shadow nor be shadowed. Anchored end-to-end so the zone name `The Plane of Fear - Solo 1
+// (Awakened)` and the mob tier suffix `(Awakened)` cannot reach it.
+const CC_WAKE_RE = /^(.+?) has been awakened by (.+?)\.$/
 // Pet-ownership claim (direct tell). Two phrasings, both pet-only in the real log:
 //   "<Name> told you, 'Attacking <target> Master.'"
 //   "<Name> told you, 'I am unable to wake <mob>, Master.'"
@@ -45,11 +51,21 @@ const SAY_KIND_BY_TEXT = new Map<string, PetSayKind>(PET_SAY_LINES.map(([k, s]) 
 //   "Your pet's <Spell> spell has worn off."  (buff the player cast on their pet expired)
 // The worn-off-OF-<mob> shape (charm/mez) is handled earlier by uncharm/cc; these
 // TARGETLESS forms are never charm/cc, so buffFade is a pure fallthrough with no
-// overlap. "You regain your concentration…" is a recovered cast — deliberately NOT
-// treated as an interrupt.
+// overlap. "You regain your concentration…" is a recovered cast — never treated as an
+// interrupt; it is its own `castResumed` kind (JOS-167), because a cast that recovers still
+// lands and the proc detector has to be able to put back the record the interrupt took away.
 const CAST_BEGIN_RE = /^You begin (?:casting|singing) (.+?)\.$/
+// THIRD-PERSON cast (JOS-140): "<Name> begins casting <Spell>." — the only line that says who else
+// is casting what, and therefore the only thing that can ANCHOR a landing sentence to an
+// allowlisted external caster. The subject is a name-shaped token (EQ names carry spaces,
+// apostrophes and backticks: "Lord Nagafen", "Innoruuk`s Chosen"); the verb is third-person so
+// "You begin casting" cannot reach it, and the first-person branch above runs first anyway.
+const OTHER_CAST_BEGIN_RE = /^(.+?) begins (?:casting|singing) (.+?)\.$/
 const CAST_FIZZLE_RE = /^Your (.+?) spell fizzles!$/
 const CAST_INTERRUPT_RE = /^Your (.+?) spell is interrupted\.$/
+// The interrupt's counterpart (JOS-167): the cast recovered and WILL land. One exact sentence in
+// the whole log — matched as an equality, never as a /concentration/ pattern.
+const CAST_RESUMED_LINE = 'You regain your concentration and continue your casting.'
 // Targetless worn-off (no " of <mob>"): self-cast or pet-cast buff expiry.
 const BUFF_FADE_PET_RE = /^Your pet's (.+?) spell has worn off\.$/
 const BUFF_FADE_SELF_RE = /^Your (.+?) spell has worn off\.$/
@@ -159,6 +175,14 @@ export function classifyCastLifecycle({ text, ts, seq, raw }: ClassifyCtx): LogE
     const m = CAST_BEGIN_RE.exec(text)
     if (m) return { kind: 'castBegin', seq, ts, raw, spell: m[1].trim() }
   }
+  if (text.includes(' begins casting ') || text.includes(' begins singing ')) {
+    const m = OTHER_CAST_BEGIN_RE.exec(text)
+    // `idKey(m[1]) !== 'you'` mirrors classifySpellEmote's guard: the first-person branch above
+    // owns every line about the player, and a subject that folds to "you" is never somebody else.
+    if (m && idKey(m[1]) !== 'you') {
+      return { kind: 'otherCastBegin', seq, ts, raw, caster: norm(m[1]), spell: m[2].trim() }
+    }
+  }
   if (text.includes('spell fizzles!')) {
     const m = CAST_FIZZLE_RE.exec(text)
     if (m) return { kind: 'castFizzle', seq, ts, raw, spell: m[1].trim() }
@@ -169,14 +193,36 @@ export function classifyCastLifecycle({ text, ts, seq, raw }: ClassifyCtx): LogE
     const m = CAST_INTERRUPT_RE.exec(text)
     if (m) return { kind: 'castInterrupted', seq, ts, raw, spell: m[1].trim() }
   }
+  // The RECOVERY (JOS-167). Exact sentence, no capture: it names no spell, and casting is
+  // serial, so the only cast it can be about is the one just interrupted. See CastResumedEvent
+  // for the measurement that made it load-bearing.
+  if (text === CAST_RESUMED_LINE) return { kind: 'castResumed', seq, ts, raw }
   return null
 }
 
-/** Charm application — the first half of the charm lifecycle. */
-export function classifyCharm({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+/**
+ * Charm application — the first half of the charm lifecycle.
+ *
+ * THE CANDIDATE LIST (JOS-140), on exactly the argument `classifyCcApply` below already makes:
+ * charm is a detrimental HOLD, the owner wants its countdown, and `<mob> has been charmed.` is
+ * seven spells in the committed DB with durations from 48 s to 19 minutes. Purely additive — the
+ * branch is gated on a spell DB being installed, so with no DB the event is byte-identical to what
+ * it was, and `mob` is untouched either way.
+ */
+export function classifyCharm({ text, ts, seq, raw, cfg }: ClassifyCtx): LogEvent | null {
   if (text.includes('has been charmed')) {
     const m = CHARM_RE.exec(text)
-    if (m) return { kind: 'charm', seq, ts, raw, mob: norm(m[1]) }
+    if (!m) return null
+    const db = cfg.spellDb
+    const cands = db ? matchCastOnOtherSuffix(text, db)?.entry.cands : undefined
+    return {
+      kind: 'charm',
+      seq,
+      ts,
+      raw,
+      mob: norm(m[1]),
+      ...(cands ? { candidates: cands.map((s) => ({ name: s.name, durationMs: s.durationMs })) } : {})
+    }
   }
   return null
 }
@@ -192,7 +238,11 @@ export function classifyWornOff({ text, ts, seq, raw, cfg }: ClassifyCtx): LogEv
       // A charm spell wearing off retires the pet (uncharm). A MEZ/ROOT spell wearing
       // off is instead a CC keep-alive refresh — the mob was held right up to now.
       // Charm/cc precedence is UNCHANGED (regression-gated).
-      if (cfg.charmSpell.test(m[1])) return { kind: 'uncharm', seq, ts, raw, mob: norm(m[2]) }
+      // `spell` is carried since JOS-140: the charm hold it ends is keyed by LINE, and this is the
+      // line that names it. (The capture is unchanged — it was simply discarded before.)
+      if (cfg.charmSpell.test(m[1])) {
+        return { kind: 'uncharm', seq, ts, raw, mob: norm(m[2]), spell: m[1].trim() }
+      }
       if (cfg.ccSpell.test(m[1])) return { kind: 'cc', seq, ts, raw, mob: norm(m[2]), spell: m[1].trim(), refresh: true }
       // NAMED-TARGET buff fade (Task #30): a NON-charm, NON-cc spell wearing off OF a
       // named target is a real buff the player cast on that target (e.g. a pet buff
@@ -245,6 +295,31 @@ export function classifyCcApply({ text, ts, seq, raw, cfg }: ClassifyCtx): LogEv
     }
   }
   return null
+}
+
+/**
+ * The CROWD-CONTROL BREAK (JOS-180) — `<mob> has been awakened by <name>.`
+ *
+ * WHY THE PARSER CARRIES IT. `Your <S> spell has worn off of <mob>.` is the same sentence whether
+ * the mez ran its course or a nuke ended it two seconds in, and the duration learner cannot tell
+ * those apart from the wear-off alone — which is the whole of JOS-180's trap (a learner fed break
+ * spans settles below the real duration, culls every full-length hold before its wear-off arrives,
+ * and can never climb back out). This line is the only thing in the log that names the difference.
+ *
+ * IT CLOSES NOTHING, AND THE MEASUREMENT IS WHY (see CcWakeEvent for the full tally): the wear-off
+ * line always comes FIRST and in the same second, so by the time this arrives the hold is already
+ * closed and its sample already minted. The consumer's job is to go back and mark that sample
+ * CENSORED, never to end a second thing.
+ *
+ * It sits directly beneath `classifyCcApply` — the same family, the other end of the hold — and
+ * beneath rather than above so the four APPLICATION sentences are always offered to the
+ * application rule first. Neither can shadow the other (`awakened` is in neither pattern).
+ */
+export function classifyCcWake({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+  if (!text.includes(' has been awakened by ')) return null
+  const m = CC_WAKE_RE.exec(text)
+  if (!m) return null
+  return { kind: 'ccWake', seq, ts, raw, mob: norm(m[1]), by: norm(m[2]) }
 }
 
 /** Pet-ownership claim (direct tell ⇒ the named entity is your pet). */

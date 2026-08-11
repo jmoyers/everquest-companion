@@ -101,7 +101,7 @@ const SAFE_MODE_REASON: Record<SafeModeSource, string> = {
   user: 'Preferences → Graphics',
   // The one a support reply needs to be able to read back off a user's errors.log without asking
   // them what they clicked: nobody clicked anything.
-  auto: 'detected automatically — see the wine: line above'
+  auto: 'detected automatically - see the wine: line above'
 }
 
 export function applyGraphicsSafeMode(): void {

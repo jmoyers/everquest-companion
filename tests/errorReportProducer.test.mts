@@ -26,6 +26,7 @@ import {
   resetErrorReports,
   takeErrorReports
 } from '../src/main/telemetry/errorReports'
+import { errorFingerprint } from '../src/shared/errorReport'
 import { MAX_SESSION_FINGERPRINTS, SESSION_AGE_MS_EDGES } from '../src/shared/telemetry'
 import { validateTelemetryEvent } from '../src/shared/telemetryValidate'
 
@@ -253,6 +254,147 @@ test('a failure INSIDE the error logger does not mint a report about the error l
   fresh()
   noteError('errorLog', thrown('failed to write errors.log'))
   assert.deepEqual(peekErrorReports(), [])
+})
+
+// =========================================================================================
+// 4. THE FRAMELESS CASE (JOS-111) — the two loudest live issues had no in-bundle stack
+// =========================================================================================
+
+/** What `errorLog.ts` hands over as the capture-site thunk, with a stack we can state. `logError`
+ *  uses `Error.captureStackTrace(holder, logError)` so the top frame really is the caller; here
+ *  the caller is spelled out, which is the same thing without a bundle to build. */
+const site = (fn: string, line: number) => (): string =>
+  [
+    '[object Object]',
+    `    at ${fn} (C:\\Users\\jmoye\\eqc\\out\\main\\index.js:${String(line)}:9)`,
+    '    at EventEmitter.emit (node:events:518:28)'
+  ].join('\n')
+
+/** The console forwarder's payload, verbatim: no stack, no name, and never had either. */
+const forwarded = (message: string) => ({ level: 3, message, source: 'index.html:1' })
+
+test('TWO FRAMELESS ERRORS FROM DIFFERENT PLACES ARE TWO ISSUES, not one', () => {
+  // THE HEADLINE DEFECT. Before JOS-111 both of these hashed `Error` and nothing else, so every
+  // frameless failure in the app — a forwarded console error, a failed load, a rejected string —
+  // collapsed into ONE row that could only be read by squinting at its one stored message.
+  fresh()
+  noteError('renderer:console', forwarded('Failed to load resource'), 1, site('forwardConsole', 5178))
+  noteError('main:did-fail-load', { errorCode: -105, isMainFrame: true }, 1, site('onDidFailLoad', 5310))
+  const drained = takeErrorReports()
+  assert.equal(drained.length, 2, 'two capture sites are two issues')
+  assert.notEqual(drained[0].fingerprint, drained[1].fingerprint)
+  for (const ev of drained) {
+    assert.equal(validateTelemetryEvent(ev).ok, true)
+    assert.equal(ev.frameOrigin, 'capture', 'and each says the frames are the CATCH site')
+    assert.deepEqual(ev.frames.map((f) => f.file), ['out/main/index.js'])
+  }
+  assert.equal(JSON.stringify(drained).includes('jmoye'), false, 'no account name anywhere in it')
+})
+
+test('a report WITH frames keeps the fingerprint it has always had', () => {
+  // The property that lets this ship without re-minting every issue in the store: a fingerprint
+  // change is indistinguishable, from the outside, from an old bug ending and a new one starting.
+  fresh()
+  noteError('main:uncaughtException', thrown('boom'), 1, site('shouldNotBeUsed', 1))
+  const [ev] = takeErrorReports()
+  assert.equal(ev.frameOrigin, 'thrown', 'the capture site is not consulted when there is a stack')
+  assert.equal(
+    ev.fingerprint,
+    errorFingerprint('TypeError', [
+      { file: 'out/main/pipeline.js', line: 120, col: 15, func: 'foldEvent' },
+      { file: 'out/main/log/bus.js', line: 78, col: 20, func: 'LogBus.emit' }
+    ]),
+    'name + top frames, exactly as before this ticket'
+  )
+})
+
+test('a NESTED error is unwrapped: `{ preloadPath, error }` reports the real stack', () => {
+  // The `main:preload-error` shape, verbatim. The outer object has no message, no name and no
+  // stack; the whole error is one property down, and the old read gave up at the top level.
+  fresh()
+  const inner = thrown('preload blew up')
+  noteError('main:preload-error', { preloadPath: 'C:\\Users\\jmoye\\eqc\\out\\preload\\index.js', error: inner })
+  const [ev] = takeErrorReports()
+  assert.equal(ev.errorName, 'TypeError', 'the inner error names it')
+  assert.equal(ev.frameOrigin, 'thrown', 'a real stack, not a capture site')
+  assert.deepEqual(ev.frames.map((f) => f.file), ['out/main/pipeline.js', 'out/main/log/bus.js'])
+  assert.equal(validateTelemetryEvent(ev).ok, true)
+  assert.equal(JSON.stringify(ev).includes('jmoye'), false, 'and the wrapper path does not ride')
+})
+
+test('EXTERNAL frames ride along, and they are what the fingerprint falls back on', () => {
+  fresh()
+  const enoent = new Error('ENOENT: no such file or directory, open <path>')
+  ;(enoent as unknown as { code: string }).code = 'ENOENT'
+  enoent.stack = [
+    'Error: ENOENT',
+    '    at Object.readFileSync (node:fs:452:20)',
+    '    at FSWatcher._handle (C:\\Users\\jmoye\\eqc\\node_modules\\chokidar\\lib\\handler.js:88:9)'
+  ].join('\n')
+  const other = new Error('ENOENT: no such file or directory, open <path>')
+  other.stack = 'Error: ENOENT\n    at Object.statSync (node:fs:1600:3)'
+
+  noteError('main:uncaughtException', enoent)
+  noteError('main:uncaughtException', other)
+  const drained = takeErrorReports()
+  assert.equal(drained.length, 2, 'same name, same message, different module — two issues')
+  const [first] = drained
+  assert.equal(validateTelemetryEvent(first).ok, true)
+  assert.deepEqual(first.frames, [], 'nothing of ours in the stack')
+  assert.deepEqual(
+    (first.externalFrames ?? []).map((f) => f.file),
+    ['node:fs', 'node_modules/chokidar']
+  )
+  assert.equal('frameOrigin' in first, false, 'no frames means nothing to say about their origin')
+  assert.equal(first.code, 'ENOENT')
+  assert.equal(JSON.stringify(drained).includes('jmoye'), false)
+})
+
+test('with no location at all, the MESSAGE SHAPE is what stops the collision', () => {
+  fresh()
+  noteError('renderer:unhandledrejection', { message: 'the network went away' })
+  noteError('renderer:unhandledrejection', { message: 'the disk went away' })
+  // …and two occurrences of the SAME failure are still one issue, because the skeleton is coarse.
+  noteError('renderer:unhandledrejection', { message: 'the network went away' })
+  const drained = takeErrorReports()
+  assert.equal(drained.length, 2, 'two shapes, two issues')
+  assert.equal(drained.reduce((n, ev) => n + ev.count, 0), 3)
+  for (const ev of drained) {
+    assert.equal(validateTelemetryEvent(ev).ok, true)
+    assert.deepEqual(ev.frames, [])
+    // THE SKELETON ITSELF IS NEVER SENT — it lives inside the hash and nowhere else.
+    assert.equal(Object.keys(ev).includes('skeleton'), false)
+  }
+})
+
+test('a React componentStack rides as a bounded componentPath, on BOTH carriers', () => {
+  const componentStack =
+    '\n    at Tooltip (http://localhost:5173/src/Tooltip.tsx:5:11)\n    at div\n    at InventoryRow'
+
+  // 1. THE IPC REPORT (`error:report`), where the boundary appends the marked stack to `stack`.
+  fresh()
+  const err = thrown('cannot read anchorEl of null')
+  err.stack = `${err.stack ?? ''}\n\nComponent stack:${componentStack}`
+  noteError('renderer:ErrorBoundary', err)
+  const [viaIpc] = takeErrorReports()
+  assert.equal(viaIpc.componentPath, 'Tooltip>InventoryRow')
+  assert.equal(validateTelemetryEvent(viaIpc).ok, true)
+
+  // 2. THE CONSOLE FORWARDER, whose payload has no `stack` field at all — the whole console line
+  //    arrives as `message`, so the same marker has to be read from there or that path silently
+  //    does not work.
+  fresh()
+  noteError(
+    'renderer:console',
+    forwarded(`[everquest-companion] ErrorBoundary caught: TypeError\n\nComponent stack:${componentStack}`),
+    1,
+    site('forwardConsole', 5178)
+  )
+  const [viaConsole] = takeErrorReports()
+  assert.equal(viaConsole.componentPath, 'Tooltip>InventoryRow')
+  assert.equal(validateTelemetryEvent(viaConsole).ok, true)
+  // …and the localhost URL in the component stack is not a frame and is not in the message.
+  assert.equal(JSON.stringify(viaConsole).includes('localhost'), false)
 })
 
 test('resetting a session drops the pending reports AND the crumbs behind them', () => {

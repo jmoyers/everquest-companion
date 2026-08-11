@@ -735,7 +735,7 @@ function quarantineStore(storePath: string, hooks: MigrationHooks): StoreFileMig
   try {
     renameSync(storePath, quarantine)
     hooks.error?.(
-      `store schema: ${storePath} is not valid JSON — moved to ${quarantine} and starting from defaults`
+      `store schema: ${storePath} is not valid JSON - moved to ${quarantine} and starting from defaults`
     )
     return { ...startsCurrent(), path: storePath, wrote: false, fileMissing: true, quarantinedPath: quarantine }
   } catch (err) {
@@ -819,7 +819,7 @@ export function migrateStoreFile(storePath: string, hooks: MigrationHooks = {}):
   if (outcome.status === 'future') {
     hooks.error?.(
       `store schema: ${storePath} is at v${outcome.from} but this build only knows v${CURRENT_SCHEMA_VERSION}. ` +
-        'Leaving it untouched and running best-effort — a downgrade never rewrites a newer store.'
+        'Leaving it untouched and running best-effort - a downgrade never rewrites a newer store.'
     )
     return result
   }

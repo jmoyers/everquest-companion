@@ -156,7 +156,7 @@ function TierBlock({
       {!compact && (
         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.6 }}>
           {sockets.map((s) => (
-            <Tooltip key={s.type} title={`${s.what} — unlocks at +${s.unlocksAt}`} placement="top">
+            <Tooltip key={s.type} title={`${s.what} - unlocks at +${s.unlocksAt}`} placement="top">
               <Chip
                 size="small"
                 variant="outlined"

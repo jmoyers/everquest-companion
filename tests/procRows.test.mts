@@ -18,7 +18,7 @@
 // engine withheld.
 //
 // THE LAWS UNDER TEST:
-//   law 5 — an absent rate renders an EM DASH. Never 0, never blank.
+//   law 5 — an absent rate renders a DASH (a normal one since JOS-106). Never 0, never blank.
 //   law 2 — the ambiguity `~` marks the NAME while the count beside it stays exact.
 
 import { test } from 'node:test'
@@ -95,7 +95,7 @@ const LANES: ProcLaneView[] = [
 const SEG: SegmentView = {
   id: 'zone',
   kind: 'zone',
-  name: 'The Plane of Sky — overall',
+  name: 'The Plane of Sky - overall',
   durationSec: 83,
   active: false,
   activeSec: 70,
@@ -130,7 +130,7 @@ const SEG: SegmentView = {
 
 // ── the ppm cell: absence is a FIRST-CLASS value (it still backs the drill's proc tag) ──
 
-test('a rate below its sample floor is an EM DASH that states the floor — never 0', () => {
+test('a rate below its sample floor is a DASH that states the floor — never 0', () => {
   // The engine withholds `ppmActive` below MIN_ACTIVE_SEC of active time. A 2-second pull with
   // one proc is not "30 ppm", and a meter that prints it once prints it forever.
   const short = ppmCell(rate(1, 6), 2)
@@ -194,7 +194,7 @@ test('an older payload with no unified lanes still lists its poison Strikes', ()
   const rows = procListRows(legacy)
   assert.deepEqual(
     rows.map((r) => `${r.name} ${r.ppm} ×${r.count}`),
-    ['Smiting Strike — ×9', 'Weakening Strike — ×2']
+    ['Smiting Strike - ×9', 'Weakening Strike - ×2']
   )
 })
 
@@ -213,7 +213,7 @@ test('formatProcsText is the panel’s three columns, and it fits the paste widt
   assert.equal(
     text,
     [
-      'Procs — The Plane of Sky — overall · 1:23',
+      'Procs - The Plane of Sky - overall · 1:23',
       '278 procs · 238 ppm',
       '',
       'Proc                                          PPM  Count',
@@ -233,11 +233,11 @@ test('a selection with no procs pastes one honest line, never an empty table', (
   const bare = { ...SEG, procs: { ...SEG.procs, lanes: [], overall: undefined } }
   assert.equal(
     formatProcsText(bare),
-    ['Procs — The Plane of Sky — overall · 1:23', 'No procs in this selection.'].join('\n')
+    ['Procs - The Plane of Sky - overall · 1:23', 'No procs in this selection.'].join('\n')
   )
 })
 
-test('a rate-less selection pastes em dashes, never zeroes', () => {
+test('a rate-less selection pastes dashes, never zeroes', () => {
   const tiny: ProcLaneView[] = [
     { name: 'Smiting Strike', count: 1, origin: 'spell', rate: rate(1, 4), directDamage: 0, directHeal: 0, pctOfOut: 0, dpsContribution: 0, linked: [] }
   ]
@@ -245,7 +245,7 @@ test('a rate-less selection pastes em dashes, never zeroes', () => {
   assert.equal(
     text,
     [
-      'Procs — The Plane of Sky — overall · 1:23',
+      'Procs - The Plane of Sky - overall · 1:23',
       '1 proc',
       '',
       'Proc            PPM  Count',

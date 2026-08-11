@@ -62,12 +62,13 @@ export interface BuffStat {
    */
   dbDurationMs?: number | null
   /**
-   * The value the estimator uses for the remaining-time bar (Task #34): the DB duration
-   * when known, else the recency-weighted MAX of mined samples. Provenance in
-   * `estimatorSource`. Null when neither is available (n=0, no DB duration).
+   * The value the estimator uses for the remaining-time bar (JOS-117): max(DB baseline, recent
+   * observed max) — the DB is a FLOOR that below-base click-off samples cannot pull under, and a
+   * logged cast that beat the floor wins. Provenance in `estimatorSource`. Null when neither is
+   * available (n=0, no DB duration).
    */
   estimateMs?: number | null
-  /** Where `estimateMs` came from: 'db' | 'observed'. */
+  /** Where `estimateMs` came from: 'db' (floor held) | 'observed' (a logged cast beat it). */
   estimatorSource?: 'db' | 'observed'
   /**
    * The newest event ts (ms epoch) this spell was seen — the last castBegin / apply / fade
@@ -90,8 +91,7 @@ export interface ActiveBuff {
   self: boolean
   /**
    * The bound entity disposition (Task #32), kept for the module's own censor logic:
-   * 'self' | 'summoned' | 'charmed' | 'hostile'. Undefined only for a provisional entry
-   * cast before its target was known. The UI groups by `self`/`target`, not by this.
+   * 'self' | 'summoned' | 'charmed' | 'hostile'. The UI groups by `self`/`target`, not by this.
    */
   disposition?: 'self' | 'summoned' | 'charmed' | 'hostile'
   /** ts (ms) the cast landed / was last refreshed. */
@@ -116,20 +116,23 @@ export interface ActiveBuff {
    */
   inferredTarget?: boolean
   /**
-   * True while this is an OPTIMISTIC (not-yet-confirmed) landing (Task #30): shown
-   * the instant `castBegin` fires so a buff is visible immediately, before the 15s
-   * land timeout / next-cast / fade confirms it. A fizzle/interrupt retracts a
-   * provisional entry; confirmation clears the flag. The UI dims provisional rows
-   * and shows a subtle "casting…" hint.
-   */
-  provisional?: boolean
-  /**
-   * Where `estimatedMs` came from (Task #34):
-   *   'db'       — the authoritative wiki duration (spells.json). The prior/truth.
-   *   'observed' — the recency-weighted MAX of mined samples (no DB duration known).
+   * Where `estimatedMs` came from (JOS-117):
+   *   'db'       — the spell-database baseline held (no logged cast beat it).
+   *   'observed' — a logged cast beat the floor: max over the recent sample window.
    *   undefined  — no estimate (n=0 and no DB duration).
    */
   durationSource?: 'db' | 'observed'
+  /**
+   * THE BUFFS/TIMER OVERLAY's countdown duration (ms). Since JOS-117 this is the SAME estimator the
+   * Buffs TAB uses — max(DB floor, recent observed max) — so both surfaces agree; a below-base
+   * click-off no longer becomes the overlay number (JOS-114's most-recent-sample rule did exactly
+   * that, showing Swift at ~28m for a 33:36 buff) and a focus-extended duration is honoured. Null
+   * for a permanent buff, or when there is no floor and no sample (the overlay counts UP). See
+   * buffsStats.ts `estimateFor` and shared/buffTimers.ts `timerModeOf`.
+   */
+  overlayDurationMs?: number | null
+  /** Where `overlayDurationMs` came from: 'db' (floor held) | 'observed' (a logged cast beat it). */
+  overlaySource?: 'db' | 'observed'
   /**
    * True when this buff is PERMANENT (Task #34): an illusion-flagged spell the player
    * self-cast while the Permanent Illusion AA is owned (self-cast illusions last forever
@@ -138,10 +141,36 @@ export interface ActiveBuff {
   permanent?: boolean
   /**
    * True when this active was applied by an EXACT chat MESSAGE match (Task #34) — a
-   * msg_cast_on_you / msg_cast_on_other / self-heal-by-buff line — rather than inferred
-   * from cast timing. Message-driven applies are confident (no provisional dimming).
+   * msg_cast_on_you / msg_cast_on_other / self-heal-by-buff line. Since JOS-118 this is the ONLY
+   * way an instance is opened, so it is true on every active the model produces; it is kept as
+   * the explicit statement that a row rests on a line the log actually printed.
    */
   messageDriven?: boolean
+  /**
+   * HOW MANY OF THAT NAME ARE HOLDING THIS SPELL (JOS-140 ruling 7). Absent or 1 for the ordinary
+   * case; 2+ when a round landed on several entities that share a display name.
+   *
+   * EQ stamps are second-resolution and print no instance identifier, so one AE cast landing on
+   * five mobs called `a wan ghoul knight` is five byte-identical lines in one second — the model
+   * cannot separate them and does not pretend to. It keeps a landing each and draws ONE row with a
+   * count chip, because five identical rows with five identical clocks is noise. `startedTs` is
+   * the OLDEST of them, which is the one the next anonymous wear-off will close.
+   */
+  count?: number
+  /**
+   * WHOSE cast this is: absent for your own (the overwhelming case), else the allowlisted external
+   * caster's name (shared/buffTrust.ts). It is what the row's countdown is keyed on — a duration
+   * is a fact about a caster's AAs and focus, so their estimate is theirs and never pooled with
+   * yours (JOS-140 ruling 4).
+   */
+  caster?: string
+  /**
+   * Present only when the landing sentence is shared by several spells and the anchor could not
+   * narrow it — a Quick Buff burst names no spell, so its landings can be admitted as YOURS
+   * without being resolvable to one (JOS-140). `spell` then reads as the joined family and the UI
+   * shows the ~ chip; a family instance mints nothing into the learner.
+   */
+  candidates?: string[]
 }
 
 // ----- Observed-message overlay (Task #36) -----
@@ -285,6 +314,41 @@ export interface SpellTemplateFlags {
    * and "who did this land on" is a question worth asking of a buff and a debuff alike.
    */
   landsOnOther: boolean
+  /**
+   * A CROWD-CONTROL spell the parser's `ccSpell` roster claims → "the hold broke" (kind: `cc`
+   * with `refresh:true`, pinned to this spell's name).
+   *
+   * THE HOLE IT FILLS (JOS-161). `wearsOff` is beneficial-only and rests on the derived
+   * `buffExpired`, which the buffs module synthesizes ONLY from an authoritative wear-off
+   * message. A mez on a mob has neither: `Your <Song> spell has worn off of <mob>.` is claimed
+   * by `classifyWornOff` and becomes a `cc` refresh, and the silent hygiene cull that retires an
+   * unwitnessed hold emits nothing on purpose. So a bard who reached for "alert me when this
+   * expires" found no template that could fire and no trigger they could hand-write that would —
+   * which is the report this ticket came from, and it was true of every mez and root in the game.
+   * The curated "Mez / root broke" GROUP already fires on this event; what did not exist was the
+   * per-spell version, and it is the per-spell version a user goes looking for by name.
+   *
+   * The roster is the gate for the usual reason: the flag is a CLAIM the alert can fire, and a
+   * spell `ccSpell` does not match parses to `buffFade` instead, where this trigger never sees it.
+   */
+  breaks: boolean
+  /**
+   * A CHARM spell the parser's `charmSpell` roster claims → "the charm broke" (kind: `uncharm`,
+   * pinned to this spell's name).
+   *
+   * THE TWIN OF `breaks`, AND WHY IT IS A SEPARATE FLAG (JOS-200). The same sentence — `Your <X>
+   * spell has worn off of <mob>.` — becomes `uncharm` for a charm and `cc {refresh:true}` for a
+   * mez/root, so the two rosters answer to two different EVENTS and one template cannot author
+   * both triggers. Until now only the mez half had a per-spell offer: the curated "Charm break"
+   * GROUP fired for every charm at once, but a user who went looking for their charm BY NAME —
+   * which is what all three JOS-200 reporters did, and what a bard reaching for Solon's Bewitching
+   * Bravura does — found nothing. An enchanter searching "Allure" had the identical hole.
+   *
+   * Same gate argument as `breaks`: the flag is a CLAIM the alert can fire, and a spell
+   * `charmSpell` does not match parses to `cc` or `buffFade` instead, where this trigger never
+   * sees it.
+   */
+  charmBreaks: boolean
 }
 
 /** One catalog row: a spell the wizard can build alerts for. */

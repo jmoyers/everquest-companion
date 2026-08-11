@@ -47,6 +47,13 @@
         very soft dark glow. Over a snowfield the contours are what separate the ring from the
         background; over a dungeon the white stroke does that on its own and the glow just
         softens the edge.
+
+        The border-color below is the DEFAULT (JOS-125), and the only frame it decides is the
+        one before the window's config arrives — after that cursorRing.ts assigns the player's
+        chosen colour through `ringStrokeColor()`. It is written here as the literal that
+        function answers with for the default, and tests/cursorRingColor.test.mts reads this
+        file to prove the two still agree: an upgrading player's ring must not change colour
+        because a shared constant moved.
       */
       #ring {
         position: absolute;

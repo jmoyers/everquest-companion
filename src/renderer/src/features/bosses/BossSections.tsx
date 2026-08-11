@@ -28,7 +28,8 @@ import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
 import CheckIcon from '@mui/icons-material/Check'
 import type { RaidTarget } from '@shared/types'
 import type { TargetStatus } from './bossStatus'
-import type { TierLock } from './lockout'
+import { tierLadder, type LadderRung, type TierLock } from './lockout'
+import DifficultyLadder from './DifficultyLadder'
 import { loadoutGroups, type LoadoutCard, type LoadoutGrouping } from './loadoutGroups'
 import type { MobTarget } from '../mobs/mobTarget'
 import { tierStyle, type TierStyle } from '../../lib/tierChip'
@@ -137,26 +138,20 @@ function chipFacts(
   s: TargetStatus,
   tier: TierStyle,
   lock?: TierLock[]
-): { on: boolean; label: string; title: string; style: TierStyle } {
+): { on: boolean; label: string; style: TierStyle } {
   if (!lock) {
     return {
       on: s.killed,
       label: s.killed ? tier.label : 'not defeated',
-      title: s.killed ? tier.long : 'Not defeated',
       style: tier
     }
   }
   const top = lock[lock.length - 1]
-  if (!top) return { on: false, label: 'open', title: 'Open this week', style: tier }
+  if (!top) return { on: false, label: 'open', style: tier }
   const style = tierStyle(top.tier)
-  return {
-    on: true,
-    // The chip is 20px tall on a 116px card, so it names the highest difficulty and COUNTS the
-    // rest rather than spelling three labels into a space that fits one; the tooltip has them.
-    label: lock.length > 1 ? `${style.label} +${lock.length - 1}` : style.label,
-    title: lock.map((l) => tierStyle(l.tier).long).join(' · '),
-    style
-  }
+  // The chip states the highest tier and nothing else (owner ruling 2026-08-09) — the
+  // difficulty ladder on the weekly card already carries the full per-tier picture.
+  return { on: true, label: style.label, style }
 }
 
 type ChipFacts = ReturnType<typeof chipFacts>
@@ -175,23 +170,21 @@ function TargetCardMedia({
   return (
     <Box sx={{ position: 'relative' }}>
       <BossImage target={s.target} height={height} dim={!chip.on} />
-      <Tooltip title={chip.title}>
-        <Chip
-          size="small"
-          label={chip.label}
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            height: 20,
-            bgcolor: chip.on ? chip.style.bg : 'rgba(0,0,0,0.65)',
-            color: chip.on ? chip.style.fg : '#fff',
-            fontWeight: 700,
-            fontSize: 11,
-            '& .MuiChip-label': { px: 0.75 }
-          }}
-        />
-      </Tooltip>
+      <Chip
+        size="small"
+        label={chip.label}
+        sx={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          height: 20,
+          bgcolor: chip.on ? chip.style.bg : 'rgba(0,0,0,0.65)',
+          color: chip.on ? chip.style.fg : '#fff',
+          fontWeight: 700,
+          fontSize: 11,
+          '& .MuiChip-label': { px: 0.75 }
+        }}
+      />
     </Box>
   )
 }
@@ -215,41 +208,27 @@ function TargetKillDate({ s, compact }: { s: TargetStatus; compact: boolean }): 
   )
 }
 
-/** Inside a seven-day window the weekday is the referent; the year is noise. */
-const LOCK_DAY: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'numeric', day: 'numeric' }
-
-/**
- * The week view's line under the name: the day the locking kill landed, and the tier it was at.
- * Locked at two difficulties, the line states the highest and the tooltip spells out each —
- * the same division of labour TargetKillDate already makes for a repeat kill.
- */
-function LockLine({ lock }: { lock: TierLock[] }): JSX.Element {
-  const top = lock[lock.length - 1]
-  if (!top) {
-    return (
-      <Typography variant="caption" color="text.disabled" noWrap display="block">
-        open
-      </Typography>
-    )
-  }
-  return (
-    <Tooltip title={lock.map((l) => `${tierStyle(l.tier).label} ${formatDate(l.ts, LOCK_DAY)}`).join(' · ')}>
-      <Typography variant="caption" color="text.secondary" noWrap display="block">
-        Locked · {formatDate(top.ts, LOCK_DAY)}
-      </Typography>
-    </Tooltip>
-  )
-}
-
-// Everything below the portrait: name, zone (comfortable only) and the kill/no-kill line.
+// Everything below the portrait: name, zone (comfortable only) and — depending on the view — the
+// difficulty ladder or the kill/no-kill line.
+//
+// THE WEEK CARD ENDS IN THE LADDER (JOS-171, owner ruling 2026-08-09). It used to end in a
+// `LockLine` under the rungs: `Locked · Sat 8/8` when any difficulty was taken, `open` when none
+// was, with a tooltip spelling out each lock. Every word of that is now either drawn by the rungs
+// themselves or one hover away (`rungTitle` — lockout.ts), so the line was the card saying the
+// same thing twice in less detail: it could name only the HIGHEST lock, while five chips name all
+// five. The same ruling that stripped the tier chip back to its label (JOS-169) applies here — the
+// ladder tells the whole per-tier story, so nothing is written underneath it.
+//
+// The OVERALL view is untouched: it has no ladder, so its date line is the only thing that ever
+// stated when the kill landed and it stays exactly as it was.
 function TargetCardCaption({
   s,
   compact,
-  lock
+  ladder
 }: {
   s: TargetStatus
   compact: boolean
-  lock?: TierLock[]
+  ladder?: LadderRung[]
 }): JSX.Element {
   return (
     <Box sx={{ p: compact ? 0.75 : 1 }}>
@@ -266,8 +245,12 @@ function TargetCardCaption({
           {s.target.zone ?? ''}
         </Typography>
       )}
-      {lock ? (
-        <LockLine lock={lock} />
+      {/* The five difficulties, every week, whether or not any of them is taken (JOS-152) — and
+          since JOS-171 the last thing on the card. Its presence IS the view: a ladder is derived
+          exactly when the week's lock function is (see `Section`), so it is the discriminator the
+          removed `lock` prop used to be. */}
+      {ladder ? (
+        <DifficultyLadder rungs={ladder} compact={compact} />
       ) : s.killed ? (
         <TargetKillDate s={s} compact={compact} />
       ) : (
@@ -302,6 +285,7 @@ function TargetCard({
   compact,
   flash,
   lock,
+  ladder,
   onOpen
 }: {
   s: TargetStatus
@@ -309,6 +293,11 @@ function TargetCard({
   flash?: boolean
   /** present ⇒ THIS WEEK view; the difficulties this card is locked at (empty = open). */
   lock?: TierLock[]
+  /**
+   * The five-rung difficulty ladder (JOS-152), derived from the WHOLE target rather than from
+   * this card's slice — see `Section`, which is where the two inputs part company.
+   */
+  ladder?: LadderRung[]
   onOpen: () => void
 }): JSX.Element {
   const imgH = compact ? 70 : 120
@@ -317,10 +306,11 @@ function TargetCard({
   const tierColor = tier.bg
   return (
     <Paper
+      data-testid="boss-card"
       variant="outlined"
       // A raid target IS a mob, so it opens the same mob PAGE everything else does (Task #64).
       onClick={onOpen}
-      title={`${s.target.name} — drops, quests, your kills`}
+      title={`${s.target.name} - drops, quests, your kills`}
       sx={{
         overflow: 'hidden',
         position: 'relative',
@@ -339,7 +329,7 @@ function TargetCard({
     >
       {chip.on && <TargetKilledBadge tier={tier} />}
       <TargetCardMedia s={s} chip={chip} height={imgH} />
-      <TargetCardCaption s={s} compact={compact} lock={lock} />
+      <TargetCardCaption s={s} compact={compact} ladder={ladder} />
     </Paper>
   )
 }
@@ -397,6 +387,13 @@ function Section({ header, rows, compact, minCol, flashing, onOpenMob, lockOf }:
             compact={compact}
             flash={flashing.has(row.s.target.name)}
             lock={lockOf?.(row.s)}
+            // THE LADDER READS `whole`, NOT `s` (JOS-152). The chip and the date line are claims
+            // about THIS CARD's kills, which under the loadout grouping is one tier run — right
+            // for them, wrong for a ladder. "Which of this boss's difficulties has my week taken"
+            // is a question about the BOSS, and answering it from a d4-only slice would grey out
+            // four rungs a d0 card two sections down is showing green. Under the category
+            // grouping (the default) `whole` IS `s`, so nothing moves there.
+            ladder={lockOf && tierLadder(lockOf(row.whole))}
             onOpen={() => onOpenMob(mobTargetForStatus(row.whole))}
           />
         ))}

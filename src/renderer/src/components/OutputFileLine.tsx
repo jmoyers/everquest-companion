@@ -21,9 +21,23 @@
 // SHARED BY CONSTRUCTION rather than by refactor-later: it takes the command and the clause as
 // props and knows nothing about inventories, so a second `/outputfile` surface adopts it by
 // importing it (JOS-44's sequencing note — whichever of us landed second was to use the other's).
+//
+// AND THE FOURTH THING (JOS-185): HOW to type it. This is not a retreat from the caveat diet — it
+// is the same argument that put the command here in the first place. `/outputfile inventory` is
+// CONDITIONAL: the Dragon's Hoard is exported only while its window is open, the tradeskill depot
+// only if it has been loaded, and both third-party EQ Legends trackers tell their users to stand
+// at a banker with the Bank up. A dump typed anywhere else is not an error, does not look like
+// one, and quietly omits whole storages — which is a player's Sky weapons going missing from a
+// file that parsed perfectly. So the steps are part of the CONTROL SURFACE for the action, in the
+// same row as the action, and they are COLLAPSED by default: nothing about the line changes for
+// somebody who is not asking, and one click gets the answer without leaving the tab.
+//
+// A surface with no steps to give renders exactly what it rendered before — the toggle only
+// exists when `steps` is non-empty, so the three-things-and-stop contract is intact everywhere it
+// was already true.
 
 import { type JSX, useEffect, useState } from 'react'
-import { Box, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, Collapse, Paper, Stack, Typography } from '@mui/material'
 import { formatDateTime } from '../lib/formatDate'
 import { outputAgeLabel, outputUpdatedMillis } from '../lib/outputFreshness'
 
@@ -42,11 +56,23 @@ export interface OutputFileLineProps {
    * at all (JOS-44: the never-run state is a state, not an omission).
    */
   updatedAt?: string
+  /**
+   * How to type the command so it captures everything, one short imperative per step. The
+   * registry owns them (`OutputKindDef.steps`); an empty list renders no toggle at all.
+   */
+  steps?: readonly string[]
   testId?: string
 }
 
-export default function OutputFileLine({ command, why, updatedAt, testId }: OutputFileLineProps): JSX.Element {
+export default function OutputFileLine({
+  command,
+  why,
+  updatedAt,
+  steps = [],
+  testId
+}: OutputFileLineProps): JSX.Element {
   const [now, setNow] = useState(() => Date.now())
+  const [showSteps, setShowSteps] = useState(false)
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), AGE_TICK_MS)
     return () => {
@@ -72,6 +98,19 @@ export default function OutputFileLine({ command, why, updatedAt, testId }: Outp
           {why}
         </Typography>
         <Box sx={{ flexGrow: 1, minWidth: 8 }} />
+        {/* The steps toggle sits BEFORE the age and never shrinks: it is a control, and the
+            why-clause remains the one group allowed to give up room (the compact-bar contract). */}
+        {steps.length > 0 && (
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => setShowSteps((v) => !v)}
+            data-testid={testId === undefined ? undefined : `${testId}-steps-toggle`}
+            sx={{ flexShrink: 0, minWidth: 0, px: 0.75, py: 0 }}
+          >
+            {showSteps ? 'Hide steps' : 'How'}
+          </Button>
+        )}
         {/* The exact clock time is one hover away; the ambient text stays coarse (formatDate's
             own contract). This is the ONE place a tooltip is warranted here — it states the
             precise value of the number beside it, which is what makes the coarse one safe. */}
@@ -85,6 +124,21 @@ export default function OutputFileLine({ command, why, updatedAt, testId }: Outp
           {age}
         </Typography>
       </Stack>
+      {/* Numbered because the ORDER is the content: opening the hoard after typing the command
+          captures nothing, which is the whole failure this is here to prevent. */}
+      <Collapse in={showSteps} unmountOnExit>
+        <Box
+          component="ol"
+          data-testid={testId === undefined ? undefined : `${testId}-steps`}
+          sx={{ m: 0, mt: 0.75, pl: 2.5 }}
+        >
+          {steps.map((s) => (
+            <Typography key={s} component="li" variant="caption" color="text.secondary">
+              {s}
+            </Typography>
+          ))}
+        </Box>
+      </Collapse>
     </Paper>
   )
 }

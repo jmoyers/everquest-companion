@@ -84,6 +84,13 @@ import { perfBridge } from './perf'
 // The two graphics-compatibility switches (JOS-40), spread in below for the same file-size
 // reason as perfBridge. Shapes live beside their normalizer in shared/graphicsPrefs.ts.
 import { graphicsBridge } from './graphics'
+// The buff externals allowlist (JOS-140), spread in below for the same file-size reason. Shape
+// and normalizer live together in shared/buffTrust.ts.
+import { buffTrustBridge } from './buffTrust'
+import { respawnBridge } from './respawn'
+// The main window's text size (JOS-123), split out for the same file-mass reason. Its shapes are
+// a single number; the ladder and the normalizer live in shared/uiScale.ts.
+import { uiScaleBridge } from './uiScale'
 // The dev-only restart button's one method (JOS-61), split out for the same file-mass reason.
 import { devBridge } from './dev'
 // What's new (JOS-73): the one store key behind the release-notes panel and its teaser strip.
@@ -269,6 +276,11 @@ const api = {
   ...perfBridge,
   // …and the two graphics-compatibility switches (./graphics.ts), for the same reason.
   ...graphicsBridge,
+  // …and the buff externals allowlist (./buffTrust.ts), likewise.
+  ...buffTrustBridge,
+  ...respawnBridge,
+  // …and the main window's text size (./uiScale.ts), likewise.
+  ...uiScaleBridge,
   // …and `restartApp` (./dev.ts), whose handler refuses in a packaged build.
   ...devBridge,
   // …and the two what's-new methods (./releaseNotes.ts), for the same file-size reason.
@@ -322,8 +334,13 @@ const api = {
    * and null means the command has never been run here.
    */
   outputsStatus: (): Promise<OutputFileStatus[]> => ipcRenderer.invoke(IPC.outputsStatus),
-  setQuestComplete: (questKey: string, complete: boolean): Promise<ProgressState> =>
-    ipcRenderer.invoke(IPC.setQuestComplete, questKey, complete),
+  /**
+   * State this quest's turn-ins: the epoch-ms instants it was handed in, ascending (JOS-131).
+   * An empty list means "never turned in" and clears a pre-JOS-131 completion too. Main
+   * sanitizes the list before it is persisted.
+   */
+  setQuestTurnIns: (questKey: string, instants: number[]): Promise<ProgressState> =>
+    ipcRenderer.invoke(IPC.setQuestTurnIns, questKey, instants),
   getCombatSnapshot: (opts: SnapshotOpts): Promise<CombatSnapshot> =>
     ipcRenderer.invoke(IPC.getCombatSnapshot, opts),
   /** Fuzzy-search the whole fight history + the live fight by name/zone (Task #61). An
@@ -544,6 +561,17 @@ const api = {
     const listener = (_e: unknown, focus: AppFocus): void => cb(focus)
     ipcRenderer.on(IPC.onFocusView, listener)
     return () => ipcRenderer.removeListener(IPC.onFocusView, listener)
+  },
+  /**
+   * The mouse's Back button was pressed in THIS window (JOS-201). No payload — the message is the
+   * press; what "back" means is the renderer's own question (src/renderer/src/appBack.tsx). Main
+   * only forwards a `browser-backward` app-command that arrived on the focused main window
+   * (src/main/appBack.ts), so nothing global and nothing from the game reaches here.
+   */
+  onAppBack: (cb: () => void): (() => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.onAppBack, listener)
+    return () => ipcRenderer.removeListener(IPC.onAppBack, listener)
   },
 
   // ---- auto-update (Task #27; reworked in Task #55) ----

@@ -54,10 +54,10 @@ export function landEvidence(s: SkillView, a = ''): LandEvidence {
       landed,
       resists,
       text: `${a}${resists} resisted`,
-      resistText: `${a}${resists} (no landing recorded — rate unknown)`,
+      resistText: `${a}${resists} (no landing recorded - rate unknown)`,
       hint:
         `${resists} resisted. No landing of this spell is recorded: it prints no damage line and no ` +
-        'landing message, so the log cannot say how many times it succeeded — and a resist RATE ' +
+        'landing message, so the log cannot say how many times it succeeded - and a resist RATE ' +
         'needs that number. The count is exact; only the division is withheld.'
     }
   }
@@ -72,7 +72,7 @@ export function landEvidence(s: SkillView, a = ''): LandEvidence {
     hint:
       `${landed} landed of ${attempts} attempt${attempts === 1 ? '' : 's'}` +
       (lands > 0
-        ? ' — counted from this proc’s own landing emotes, which is the only line it prints when it works.'
+        ? ' - counted from this proc’s own landing emotes, which is the only line it prints when it works.'
         : '.')
   }
 }

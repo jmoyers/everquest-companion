@@ -21,7 +21,7 @@ import { formatDateTime } from '../../lib/formatDate'
 import { fmtDuration } from '../leveling/levelChartGeometry'
 
 /** Every unknown prints as this — the app's one spelling for "the log did not say". */
-export const NONE = '—'
+export const NONE = '-'
 
 /**
  * How many candidates make a slot UNKNOWN rather than merely ambiguous. Mirrors
@@ -82,8 +82,8 @@ export function provenanceLabel(p: ComboProvenance): string {
  */
 export function loadoutSourceText(interval: ComboInterval): string {
   const p = intervalProvenance(interval)
-  if (p === 'user') return 'Set by you — autodetection will not change it.'
-  if (p === 'who') return 'Named by your own /who row — the game stated this outright.'
+  if (p === 'user') return 'Set by you - autodetection will not change it.'
+  if (p === 'who') return 'Named by your own /who row - the game stated this outright.'
   return 'Autodetected from the classes showing up in your log.'
 }
 
@@ -150,5 +150,5 @@ export function confidenceText(confidence: number): string {
 export function levelRangeText(interval: ComboInterval): string | null {
   const { levelLo: lo, levelHi: hi } = interval
   if (lo === null || hi === null) return null
-  return lo === hi ? `level ${lo}` : `levels ${lo}–${hi}`
+  return lo === hi ? `level ${lo}` : `levels ${lo}-${hi}`
 }

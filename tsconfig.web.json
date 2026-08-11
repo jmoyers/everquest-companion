@@ -47,6 +47,12 @@
     // …and `sounds.ts` (packs, the registry browser, the user's own imports — JOS-68), likewise.
     "src/preload/sounds.ts",
     // …and `releaseNotes.ts` (the one what's-new store key, JOS-73), likewise.
-    "src/preload/releaseNotes.ts"
+    "src/preload/releaseNotes.ts",
+    // …and `uiScale.ts` (the main window's text size, JOS-123), likewise.
+    "src/preload/uiScale.ts",
+    // …and `buffTrust.ts` (the buff externals allowlist, JOS-140), likewise.
+    "src/preload/buffTrust.ts",
+    // …and `respawn.ts` (the respawn watch list, JOS-194), likewise.
+    "src/preload/respawn.ts"
   ]
 }

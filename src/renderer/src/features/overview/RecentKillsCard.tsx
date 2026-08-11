@@ -63,7 +63,7 @@ function ExpCell({ row }: { row: ProgressionKill }): JSX.Element {
   return (
     <Tooltip title={tip}>
       <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
-        —
+        -
       </Typography>
     </Tooltip>
   )
@@ -150,7 +150,7 @@ export function RecentKillsCard({ rows, onOpenLeveling, onOpenMob }: RecentKills
     >
       <Box data-testid="overview-kills" sx={{ height: FEED_HEIGHT, overflow: 'auto', minWidth: 0 }}>
         {rows.length === 0 ? (
-          <QuietNote>Nothing killed yet — your kills land here as you make them.</QuietNote>
+          <QuietNote>Nothing killed yet - your kills land here as you make them.</QuietNote>
         ) : (
           rows.map((row, i) => (
             <Row key={`${String(row.ts)}|${row.name}|${String(i)}`} row={row} onOpenMob={onOpenMob} />

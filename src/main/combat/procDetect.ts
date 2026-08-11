@@ -59,6 +59,47 @@
 //      and Quick Buff casts no nuke, so there is nothing for a damage-side gate to catch and a
 //      real proc to lose by adding one.
 
+// ── ONE CAST LINE EXPLAINS ONE FIRING (JOS-167, owner's discriminator made into a join) ──
+//
+// The wave-1 rule above was "is there a cast of this spell in the last 12 seconds", which is a
+// MEMBERSHIP test, and a membership test cannot separate a spell you are SPAMMING from a proc
+// that shares its name. A cleric casting `Banish Undead` on a 4-second cycle keeps the 12-second
+// window permanently open, so every weapon proc of the same effect scores as a cast and the proc
+// rate reads ZERO — the reported defect, and it is a defect of the JOIN, not of the window.
+//
+// So a cast record is CONSUMED. `You begin casting <Spell>.` explains exactly one FIRING, and a
+// firing is identified by its INSTANT: every landing stamped at the same second belongs to it,
+// and a landing at any later second needs a cast line of its own or it is a proc. The instant is
+// the unit rather than the line because one firing legitimately prints several lines:
+//   - an AoE nuke prints one damage line per target, all in one second (w43: four `Earthquake`
+//     lines for 246 each inside one second) — one cast, four lines, all casts;
+//   - a lifetap prints a damage line AND a heal line (the LaneSides rule below) — one firing,
+//     two sides, and the second must not become a phantom proc.
+//
+// HONEST LIMIT, stated because the log's clock cannot do better: EQ stamps to the SECOND, so a
+// proc that fires in the same second as its own spell's cast landing is absorbed into the cast
+// and is invisible. Nothing in the line distinguishes them, and the alternative — refusing the
+// second line — would fabricate procs out of every AoE.
+//
+// A CAST THAT NEVER RESOLVED EXPLAINS NOTHING (`forget`). A fizzle, an interrupt or a full
+// resist means no effect landed, so the record must not stay behind to claim the next proc.
+// MEASURED over the whole 1.4M-line log before writing this:
+//   - FIZZLE, 478 lines: not ONE is followed within 12s by a landing of the same spell.
+//     A fizzle is an unambiguous failure and dropping its record can cost nothing.
+//   - INTERRUPT, 1,030 lines: 1,019 are followed by no landing at all; the 9 that ARE followed
+//     by one are ALL preceded by `You regain your concentration and continue your casting.` —
+//     EQ prints the interrupt, then the recovery, and the spell lands anyway. So the interrupt
+//     alone is NOT evidence the cast failed, and dropping the record on it without handling the
+//     recovery would have turned three real casts into procs (Lifedraw n2928, Siphon Life
+//     n60339, Anarchy n361597 — each verified line by line). Hence `resume()`, wired to that
+//     recovery line: forget on the interrupt, restore on the recovery.
+//     (6 of those 9 have NO cast line at all — the SPELLBLADE proc itself gets interrupted and
+//     recovers, printing `Your Discordant Mind spell is interrupted.` with nothing behind it.
+//     That is the strongest available proof the interrupt line says nothing about ownership.)
+// `forget` only drops an UNCLAIMED record: once a cast has explained a firing it can no longer
+// claim a later instant anyway, and keeping it lets the REST of that instant's lines (an AoE's
+// other targets, a tap's heal side) still join after a mid-burst resist line.
+
 import { spellCanonKey } from '../log/parseCommon'
 import type { DamageType } from '../../shared/combat'
 
@@ -72,42 +113,152 @@ export const PROC_CAST_WINDOW_MS = 12_000
  *  this is the belt-and-braces cap for a pathological burst of distinct spell names. */
 export const RECENT_CAST_CAP = 512
 
-/** Rank-normalized recent own-casts: `spellCanonKey(spell)` → ts of the last `castBegin`. */
-export type RecentCasts = Map<string, number>
+/** Where a landed spell effect of YOURS came from — the whole of this feature's judgement. */
+export type SpellOrigin = 'cast' | 'proc'
 
-/**
- * Record an own-cast (`You begin casting <Spell>.` / `You begin singing <Song>.`). Only the
- * PLAYER's casts produce that line, which is exactly the gate this detector needs — a mob's
- * or another player's cast of the same spell never suppresses one of our procs, because it
- * never enters this map.
- *
- * Rank-normalized via the repo's existing `spellCanonKey`: casts print `Swift Like the Wind I`
- * while effect lines are rank-less (law 2, at the COUNTING boundary).
- */
-export function noteCast(recent: RecentCasts, spell: string, ts: number): void {
-  recent.set(spellCanonKey(spell), ts)
-  if (recent.size > RECENT_CAST_CAP) pruneCasts(recent, ts)
+/** One `You begin casting <Spell>.`, and the firing it has already explained (if any). */
+interface CastRecord {
+  /** ts of the cast line. */
+  ts: number
+  /** ts of the firing this cast explained; `undefined` until it explains one. */
+  claimTs?: number
 }
 
-/** Drop cast records that can no longer suppress anything. */
-export function pruneCasts(recent: RecentCasts, now: number): void {
-  for (const [key, ts] of recent) {
-    if (now - ts > PROC_CAST_WINDOW_MS) recent.delete(key)
+/**
+ * THE OWN-CAST LEDGER. Rank-normalized (`spellCanonKey`) because casts print
+ * `Swift Like the Wind I` while effect lines are rank-less — law 2, at the COUNTING boundary.
+ *
+ * Only the PLAYER prints `You begin casting`, which is exactly the gate this detector needs: a
+ * mob's or another player's cast of the same spell never enters here and so can never explain
+ * away one of our procs.
+ */
+export class RecentCasts {
+  private readonly casts = new Map<string, CastRecord>()
+  /** The record `forget()` most recently dropped, held for a `resume()`. */
+  private suspended?: { key: string; rec: CastRecord }
+
+  /** Record an own-cast (`You begin casting <Spell>.` / `You begin singing <Song>.`). */
+  note(spell: string, ts: number): void {
+    // Casting is SERIAL — a new cast line means whatever was interrupted is over, so a pending
+    // suspension can never belong to the recovery that follows this one.
+    this.suspended = undefined
+    this.casts.set(spellCanonKey(spell), { ts })
+    if (this.casts.size > RECENT_CAST_CAP) this.prune(ts)
+  }
+
+  /**
+   * A cast line that resolved to NOTHING (fizzle / interrupt / full resist). See the file
+   * header: dropped only while UNCLAIMED, and remembered so `resume()` can put it back.
+   */
+  forget(spell: string): void {
+    const key = spellCanonKey(spell)
+    const rec = this.casts.get(key)
+    if (!rec || rec.claimTs !== undefined) return
+    this.casts.delete(key)
+    this.suspended = { key, rec }
+  }
+
+  /** `You regain your concentration and continue your casting.` — the interrupted cast is back
+   *  on, so the record it lost comes back with its ORIGINAL cast ts (the window is measured from
+   *  when the cast began, and the recovery does not restart it). The line names no spell; it does
+   *  not have to, because only one cast can be in flight. */
+  resume(): void {
+    const s = this.suspended
+    if (!s) return
+    this.suspended = undefined
+    if (!this.casts.has(s.key)) this.casts.set(s.key, s.rec)
+  }
+
+  /**
+   * THE JOIN, and it CONSUMES: ask this once per landed effect line, in log order. Returns
+   * `'cast'` when an in-window cast line explains this firing (claiming it if it had not claimed
+   * one yet, or matching the instant it already claimed), `'proc'` otherwise.
+   *
+   * A cast in the FUTURE relative to this line (possible only on an out-of-order replay) is
+   * treated as no cast at all: the window is `0 <= ts - castTs <= PROC_CAST_WINDOW_MS`.
+   */
+  origin(spell: string, ts: number): SpellOrigin {
+    const rec = this.inWindow(spell, ts)
+    if (!rec) return 'proc'
+    if (rec.claimTs === undefined) {
+      rec.claimTs = ts
+      return 'cast'
+    }
+    return rec.claimTs === ts ? 'cast' : 'proc'
+  }
+
+  /** The same verdict WITHOUT consuming — diagnostics and tests only. Nothing on the ingest
+   *  path may use it: two readers of one claim is how the join starts double-counting. */
+  peek(spell: string, ts: number): SpellOrigin {
+    const rec = this.inWindow(spell, ts)
+    if (!rec) return 'proc'
+    return rec.claimTs === undefined || rec.claimTs === ts ? 'cast' : 'proc'
+  }
+
+  /** Cast keys still held — memory-bound assertions and tests. */
+  keys(): string[] {
+    return [...this.casts.keys()]
+  }
+
+  clear(): void {
+    this.casts.clear()
+    this.suspended = undefined
+  }
+
+  private inWindow(spell: string, ts: number): CastRecord | undefined {
+    const rec = this.casts.get(spellCanonKey(spell))
+    if (!rec) return undefined
+    const age = ts - rec.ts
+    return age < 0 || age > PROC_CAST_WINDOW_MS ? undefined : rec
+  }
+
+  /** Drop cast records that can no longer explain anything. */
+  private prune(now: number): void {
+    for (const [key, rec] of this.casts) {
+      if (now - rec.ts > PROC_CAST_WINDOW_MS) this.casts.delete(key)
+    }
   }
 }
 
-/**
- * True when `spell` had NO own cast behind it within the window — i.e. it procced.
- *
- * A cast in the FUTURE relative to this line (possible only on an out-of-order replay) is
- * treated as no cast at all: the window is `0 <= ts - castTs <= PROC_CAST_WINDOW_MS`, so the
- * test can never be satisfied by a cast that had not happened yet.
- */
-export function isCastless(recent: RecentCasts, spell: string, ts: number): boolean {
-  const castTs = recent.get(spellCanonKey(spell))
-  if (castTs === undefined) return true
-  const age = ts - castTs
-  return age < 0 || age > PROC_CAST_WINDOW_MS
+// ── THE TWO LANES (JOS-167) ──────────────────────────────────────────────────────────────
+//
+// A spell that both CASTS and PROCS used to be one meter row, and the owner could not estimate
+// the proc rate without deliberately not casting. The origin now decides the LANE NAME, so the
+// two land in different rows of the same category and the split needs no new plumbing: the
+// drill, the category rollup, the timeline lane, the copy-to-clipboard text and the overlay all
+// read the same `skill` string the engine already files a hit under.
+//
+// The marker rides the NAME rather than a flag on the row for exactly that reason. The Combat
+// drill's `proc · N ppm` tag (procViews.procSkillTags) reaches only YOUR rows on that one
+// surface; the name reaches every surface there is. Two lanes therefore appear precisely when
+// both origins occurred, which is the whole of the requirement.
+//
+// It is a DECORATION, not an identity: `laneCanonKey` strips it, so every join that matches a
+// meter row to a spell (the is-a-proc tag, the effect-landing graft, the lane's own damage
+// read-back) still sees one spell. Law 2 — canonicalize at the boundary, display raw.
+
+/** What a cast-less lane's display name ends with. Never present in an EQ spell name. */
+export const PROC_LANE_SUFFIX = ' · proc'
+
+/** The meter lane a landing of `spell` belongs to, given where it came from. */
+export function laneNameFor(spell: string, origin: SpellOrigin): string {
+  return origin === 'proc' ? spell + PROC_LANE_SUFFIX : spell
+}
+
+/** True when a lane name is the cast-less half of a split. */
+export function isProcLaneName(lane: string): boolean {
+  return lane.endsWith(PROC_LANE_SUFFIX)
+}
+
+/** A lane name with the proc marker removed — the SPELL the row is about. */
+export function baseLaneName(lane: string): string {
+  return isProcLaneName(lane) ? lane.slice(0, -PROC_LANE_SUFFIX.length) : lane
+}
+
+/** `spellCanonKey` for a METER LANE: the marker is display, so both halves of a split key
+ *  to the one spell they are both firings of. */
+export function laneCanonKey(lane: string): string {
+  return spellCanonKey(baseLaneName(lane))
 }
 
 /**
@@ -158,7 +309,10 @@ export function isCastlessHeal(recent: RecentCasts, h: HealProcInput): boolean {
   if (h.overTime) return false
   const burst = h.ts - h.quickBuffTs
   if (h.quickBuffTs > 0 && burst >= 0 && burst <= QUICK_BUFF_BURST_MS) return false
-  return isCastless(recent, h.spell, h.ts)
+  // CONSUMING, like the damage side, and deliberately sharing one claim with it: a lifetap's
+  // damage line and heal line are one firing at one instant, so whichever arrives first claims
+  // the cast and the other matches the instant it claimed (see the header's firing rule).
+  return recent.origin(h.spell, h.ts) === 'proc'
 }
 
 /**

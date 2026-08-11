@@ -152,3 +152,35 @@ who already knows which program to blame).
   label or an outline.
 - `intro` joins `ToastKind` but NOT `TOAST_KINDS`: the overlay builds the
   card for itself out of its own config, so the wire must keep refusing it.
+
+## 9. The toast names the kill, not the career — JOS-165, 2026-08-09
+
+The boss card and the boss toast were built from the same number, and only
+one of them was entitled to it. `TargetStatus.bestTier` is a fold over every
+kill a target ever took — its highest instance tier EVER — which is what a
+card should badge and the opposite of what an event should announce. The
+owner clears d0 through d4 every week, so his most recent kill of a target is
+routinely BELOW his best; a Sunday d1 Maestro of Rancor kept announcing
+itself as the d4 he beat nine days earlier. (The d3 he reported seeing was
+the same bug on the boss beside it: three of that session's twelve toasts
+read "D3 · Fused" for targets whose career best genuinely is d3.)
+
+- **The tier is a fact about the EVENT, so it rides the event.**
+  `bossStatus.bossKills` now returns a `BossKill` — `{ status, tier }` —
+  where `tier` is the run whose CREDITED count just grew (ties resolve to
+  the latest `lastCreditedTs`, then the higher tier). Nothing was added to
+  `TargetStatus`: a field that means nothing on the statuses no kill just
+  fired for is a field someone will read on a card.
+- **The zone is the one you were standing in.** The subtitle took
+  `target.zone` — the roster's static "Plane of Hate" — and now takes the
+  character module's live zone, raw as the game spells it, so
+  "- Solo 1 (Awakened)" is distinguishable from "- Group 2 (Awakened)". A
+  zone no line has ever named falls back to the roster's; nothing is
+  invented.
+- **CURRENT IS PRIMARY** (owner semantics): a toast may show highest AND
+  current, current first — never highest alone. It shows current only.
+- **The card is untouched.** `BossView`/`BossSections` still badge
+  `bestTier`, and the per-loadout cards still project one tier run each.
+- Pinned by `tests/bossToastTier.test.mts` against
+  `tests/fixtures/bosstier-maestro-ladder.log` — one mob, d3 then d4 then,
+  nine days later, d1.

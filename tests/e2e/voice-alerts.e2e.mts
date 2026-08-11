@@ -346,8 +346,10 @@ function noteLink(count: number): void {
 /** The alert name the dialog is editing, read off its own title ("Edit alert — <name>"). */
 async function editingName(page: Page): Promise<string> {
   const title = (await textOf(page, '[data-testid="alert-dialog"] .MuiDialogTitle-root')).replace(/\s+/g, ' ').trim()
-  const dash = title.indexOf('—')
-  return dash === -1 ? '' : title.slice(dash + 1).trim()
+  // `Edit alert - <name>` (JOS-106 took the em dash out of the copy). The FIRST ` - ` is the
+  // separator, so an alert whose own name carries a hyphen still resolves.
+  const dash = title.indexOf(' - ')
+  return dash === -1 ? '' : title.slice(dash + 3).trim()
 }
 
 /**

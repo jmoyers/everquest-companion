@@ -59,6 +59,12 @@ export async function mainWindow(app: ElectronApplication, timeoutMs = 60_000): 
  * may not have run yet, so the BRIDGE is the readiness signal, never the window's existence.
  * `getFightSelection` is on every kind's overlay bridge (the cross-window selection trio), so it
  * is the cheapest such probe and works for a meter, the event log and the toast alike.
+ *
+ * THE MATCH IS EXACT, NOT A SUBSTRING (JOS-119). It used to be `search.includes('kind=' + kind)`,
+ * which was unambiguous only while no kind's id was a suffix of another's. Splitting the timer
+ * overlay produced 'buffs' and 'debuffs', and `'?kind=debuffs'.includes('kind=buffs')` is TRUE —
+ * so a caller asking for the buffs window could be handed the debuffs one, and every "these two
+ * windows are independent" assertion would have passed against a single window. Parse the query.
  */
 export async function overlayWindow(
   app: ElectronApplication,
@@ -69,7 +75,7 @@ export async function overlayWindow(
   while (Date.now() - t0 < timeoutMs) {
     for (const w of app.windows()) {
       const search = await w.evaluate(() => window.location.search).catch(() => '')
-      if (!search.includes(`kind=${kind}`)) continue
+      if (new URLSearchParams(search).get('kind') !== kind) continue
       const ready = await w
         .evaluate(
           () =>

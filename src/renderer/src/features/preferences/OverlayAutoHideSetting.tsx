@@ -16,6 +16,11 @@
 // HIDE, NEVER CLOSE, and the copy says so: an auto-hidden overlay keeps its position, its lock
 // state and its drill-down, and the TitleBar menu still lists it as open. That is the difference
 // between a setting and a surprise.
+//
+// "NOT IN EVERQUEST" INCLUDES THIS APP (JOS-199). The caption used to promise the opposite — "this
+// app's own windows don't count" — which a player reported as the bug it was: the meters sat on top
+// of the Companion while they were trying to read it. The OVERLAYS still don't count (clicking one
+// must not make it vanish under your cursor); the main window does.
 
 import { type JSX, useCallback, useEffect, useState } from 'react'
 import { FormControlLabel, Stack, Switch, Typography } from '@mui/material'
@@ -65,7 +70,7 @@ export function OverlayAutoHideSetting(): JSX.Element {
         />
         <Typography variant="caption" color="text.secondary">
           {prefs.hideWhenNotRunning
-            ? 'Your open overlays disappear while the game is closed and come back when it starts. They keep their position, size and lock — nothing is closed.'
+            ? 'Your open overlays disappear while the game is closed and come back when it starts. They keep their position, size and lock - nothing is closed.'
             : 'Off. Open overlays stay on screen whether or not the game is running.'}
         </Typography>
       </Stack>
@@ -84,7 +89,7 @@ export function OverlayAutoHideSetting(): JSX.Element {
         />
         <Typography variant="caption" color="text.secondary">
           {prefs.hideWhenUnfocused
-            ? 'Your open overlays disappear while another app is in front. This app’s own windows don’t count — clicking an overlay, or the main window, keeps them up.'
+            ? 'Your open overlays disappear whenever anything else is in front - including this app’s own window, so they’re out of the way while you browse it. Clicking an overlay itself keeps them up.'
             : 'Off. Open overlays stay on screen while you work in other apps.'}
         </Typography>
       </Stack>

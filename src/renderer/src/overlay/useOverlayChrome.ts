@@ -41,8 +41,14 @@ import { clampTextScale } from '@shared/types'
  *   'selector' — the pointer is over the SELECTOR ROW specifically (P3). The meters use this
  *                instead of 'window', so a locked meter's BODY stays genuinely click-through.
  *   'popup'    — the selector's list is open. Outlives 'selector' by construction (above).
+ *   'scroll'   — the pointer is in the SCROLL GRIP: the narrow strip along the right edge of a
+ *                content pane that has more rows than it can show (JOS-138, overlayScale.tsx).
+ *                It is the reason a pinned overlay can be scrolled at all, and it is deliberately
+ *                the narrowest of the four: a wheel notch is only delivered to a window that is
+ *                not ignoring the mouse, so scrolling and click-through cannot both be true of the
+ *                same pixel, and this is the smallest patch of pixels that buys the scroll.
  */
-export type CaptureReason = 'window' | 'selector' | 'popup'
+export type CaptureReason = 'window' | 'selector' | 'popup' | 'scroll'
 
 export interface OverlayChrome {
   /**
@@ -106,6 +112,24 @@ export function useOverlayChrome(): OverlayChrome {
   const bgAlpha = cfg?.bgAlpha ?? 0.72
   const drill = cfg?.drill ?? null
   const textScale = clampTextScale(cfg?.textScale)
+
+  /**
+   * THE LOCK CHANGING IS A RESET, HOWEVER IT CHANGED.
+   *
+   * `toggleLock` (the pin button) already forgets every reason, because main re-applies
+   * click-through from scratch (`applyOverlayLocked`) without asking this side anything. But the
+   * pin is not the only door: Preferences flips a lock, the celebration toast's does, and every
+   * flip comes back as a config ECHO — and a reason held at that moment used to survive it. Then
+   * `capturedRef` disagrees with the window, and the next genuine hover sends NOTHING because it
+   * believes it is already captured: a pinned overlay that has quietly stopped listening.
+   * MEASURED in the e2e (JOS-138): a locked meter arrived at the scroll step already showing its
+   * hover chrome, from a `capture('selector', true)` two steps earlier that no unlock ever cleared.
+   */
+  useEffect(() => {
+    reasonsRef.current.clear()
+    capturedRef.current = !locked
+    setHovering(false)
+  }, [locked])
 
   const patch = (p: Partial<OverlayConfig>): void => {
     setCfg((c) => (c ? { ...c, ...p } : c))

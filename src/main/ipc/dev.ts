@@ -37,7 +37,7 @@ export function registerDevIpc(): void {
     const result = performDevRestart(app, ctx)
     if (result.action !== 'relaunched') {
       logInfo(
-        `[everquest-companion] dev restart: ${result.action}${result.detail === undefined ? '' : ` — ${result.detail}`}`
+        `[everquest-companion] dev restart: ${result.action}${result.detail === undefined ? '' : ` - ${result.detail}`}`
       )
     }
     return result

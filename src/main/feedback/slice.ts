@@ -223,7 +223,7 @@ export function previewOf(lines: readonly string[]): {
   return {
     previewLines: [
       ...lines.slice(0, PREVIEW_HEAD_LINES),
-      `… ${omitted.toLocaleString()} lines omitted from this preview — use “Save a copy…” to read all ${lines.length.toLocaleString()} …`,
+      `… ${omitted.toLocaleString()} lines omitted from this preview - use “Save a copy…” to read all ${lines.length.toLocaleString()} …`,
       ...lines.slice(-tail)
     ],
     truncatedPreview: true

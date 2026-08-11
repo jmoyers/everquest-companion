@@ -39,9 +39,12 @@ import { startTelemetry, stopTelemetry } from './telemetry'
 import { registerAppSchemes } from './appSchemes'
 import { applyGraphicsSafeMode } from './graphics'
 import { installImageCacheProtocol } from './imageCache'
+// The wiki art this build SHIPS (JOS-198). Pure path probing — Electron's three path facts are
+// passed in below, so the module itself imports nothing from electron.
+import { bundledImageRoots, findBundledImagesDir } from './bundledImages'
 import { installSpeechCacheProtocol } from './speech/cache'
 import { registerIpc } from './ipc'
-import { DATA_READY_MS, bus, buffsModule, epoch, sessionDetector } from './pipeline'
+import { DATA_READY_MS, bus, buffsModule, epoch, sendWorldRebuilt, sessionDetector } from './pipeline'
 import { markStartupPhase, startPerfSampler, stopPerf } from './perf'
 import { initPresenceEffects, stopPresenceEffects } from './presenceEffects'
 import { provisionDefaultPacks } from './provisionPacks'
@@ -55,8 +58,10 @@ import {
   getMainWindow,
   hardenSession,
   hardenWebContents,
+  reconcileOverlayDisplays,
   sendToMain
 } from './windows'
+import { watchDisplays } from './windowPlacement'
 import { OVERLAY_KINDS } from '../shared/types'
 
 // --- custom schemes: the permanent image cache (eqimg://) and the speech cache (eqspeech://) ---
@@ -118,7 +123,10 @@ bus.subscribe((ev, live) => {
     // derived epoch event finishes draining to the modules (they reset) BEFORE the renderer
     // re-fetches their snapshots. During a rescan (live:false) the post-scan onCharacter send
     // in tailCharacter already covers this, so we only do it live.
-    if (live) queueMicrotask(() => sendToMain(IPC.onCharacter, getActiveCharacter()))
+    // …and to the module-reading OVERLAYS as well as the main window (JOS-172): they fold the
+    // same modules and have the same nothing-but-deltas problem, so one signal, one list
+    // (pipeline.ts `sendWorldRebuilt`).
+    if (live) queueMicrotask(() => { sendWorldRebuilt(getActiveCharacter()) })
   }
 })
 
@@ -201,7 +209,7 @@ if (!gotSingleInstanceLock) {
   void app.whenReady().then(() => {
     markStartupPhase('appReady')
     logInfo(
-      `[everquest-companion] Channel '${CHANNEL}' — userData ${USER_DATA}, error log ${errorLogPath()}`
+      `[everquest-companion] Channel '${CHANNEL}' - userData ${USER_DATA}, error log ${errorLogPath()}`
     )
     registerIpc()
     registerDevTriageIpc()
@@ -212,11 +220,26 @@ if (!gotSingleInstanceLock) {
     // Permissions are a SESSION property; every window here uses the default session (no
     // custom `partition` anywhere — the same fact that lets one eqimg:// handler serve them all).
     hardenSession(session.defaultSession)
-    // Serve `eqimg://item/<id>` from <userData>/image-cache BEFORE any window loads a page
-    // that can reference an item icon. One handler on the default session covers the main
-    // window and every overlay (none of them use a custom partition).
+    // Serve `eqimg://item/<id>` BEFORE any window loads a page that can reference an item icon.
+    // One handler on the default session covers the main window and every overlay (none of them
+    // use a custom partition). Since JOS-198 the FIRST place it looks is the art this build
+    // ships — `resources/wiki-images/`, whose three possible addresses (project root in dev and
+    // e2e, inside the asar, beside it once unpacked) are probed here rather than guessed at in
+    // the cache. A build without it resolves to null and falls back to the runtime cache,
+    // exactly as before.
+    const bundledDir = findBundledImagesDir(
+      bundledImageRoots({
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath ?? '',
+        cwd: process.cwd()
+      })
+    )
+    logInfo(
+      `[everquest-companion] Bundled wiki images: ${bundledDir ?? 'none (falling back to the runtime cache)'}`
+    )
     installImageCacheProtocol(protocol, {
       userData: USER_DATA,
+      bundledDir,
       onError: (msg, err) => logError('main:imageCache', { message: msg, err })
     })
     // …and `eqspeech://<hash>` from <userData>/speech-cache, beside it and for the same
@@ -309,9 +332,16 @@ if (!gotSingleInstanceLock) {
       if (getOverlayConfig(kind).open) createOverlayWindow(kind)
     }
 
+    // …and keep them on a display that exists (JOS-187). The line above places them against the
+    // monitors present at launch; this one re-places them when that changes under a running app —
+    // the moment the player unplugs the widescreen their meters are parked on. Registered after
+    // the restore for the obvious reason (there is nothing to reconcile before it) and never
+    // removed: it is app-lifetime, like the security catch-alls above.
+    watchDisplays(reconcileOverlayDisplays)
+
     // Presence-driven features (overlay auto-hide + the cursor ring). LAST, because both act on
     // windows that must already exist. Costs one store read when both are off — which is the
-    // default install: `presenceNeeded()` decides whether the watcher child is spawned at all.
+    // default install: `presenceNeeded()` decides whether the watcher thread is started at all.
     initPresenceEffects()
 
     // The performance HUD (docs/plans/perf-profiling.md P1). Costs one store read when it is
@@ -328,14 +358,18 @@ if (!gotSingleInstanceLock) {
 }
 
 /**
- * REAPING THE WATCHER, BELT AND BRACES. `window-all-closed` below is the ordinary teardown, but
- * it is not the only way this process ends: an auto-updater `quitAndInstall`, a `app.quit()`
+ * STOPPING THE WATCHER, BELT AND BRACES. `window-all-closed` below is the ordinary teardown, but
+ * it is not the only way this process ends: an auto-updater `quitAndInstall`, an `app.quit()`
  * from anywhere, or an OS session logoff can reach `before-quit` on a path that never lands
- * there. The presence watcher is a CHILD PROCESS, and Windows does not kill children with their
- * parent — one missed teardown is a PowerShell loop polling user32 forever with nobody reading
- * the pipe. `stopPresenceEffects()` is idempotent, so running it on both events costs nothing.
- * (The child also self-reaps when this pid disappears — see presence.ts — which is what covers
- * the kill -9 case that no in-process handler can.)
+ * there. The presence watcher is a WORKER THREAD, and a live thread is one more thing holding a
+ * quitting process open. `stopPresenceEffects()` is idempotent, so running it on both events
+ * costs nothing.
+ *
+ * THE HARD CASE STOPPED EXISTING IN JOS-182, which is worth recording rather than quietly
+ * deleting: the watcher used to be a `powershell.exe` CHILD, Windows does not kill children with
+ * their parent, and one missed teardown left a PowerShell loop polling user32 forever with nobody
+ * reading the pipe. It carried a self-reap for exactly the kill -9 case no in-process handler can
+ * cover. A thread cannot outlive its process, so both the hazard and its workaround are gone.
  */
 app.on('before-quit', () => teardownStep('main:stopPresence', stopPresenceEffects))
 
@@ -358,8 +392,8 @@ function teardownStep(label: string, fn: () => void): void {
 
 app.on('window-all-closed', () => {
   teardownStep('main:stopSession', stopSession)
-  // Kill the presence watcher child + the cursor stream. Both already unref their timers, but a
-  // child process is not a timer: nothing else would reap it.
+  // Stop the presence watcher thread + the cursor stream. Both already unref, but an unref'd
+  // worker is still a running thread: nothing else would end it.
   teardownStep('main:stopPresence', stopPresenceEffects)
   // Stop the feedback drain's timers. They are unref'd, so they cannot be the reason the
   // process lives on; this is about not starting an attempt into a process that is quitting.

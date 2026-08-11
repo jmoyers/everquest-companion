@@ -97,12 +97,33 @@ segmented; scope only filters SOURCES, never targets.
 
 ## 3. UI
 
-- Scope control: compact three-state chip on the combat toolbar + overlay
-  headers (persisted per surface — overlay config field, combat pref).
-- Roster visibility: a small popover from the scope chip listing members with
-  provenance (joined · confirmed · instance · added by you · stale), each
-  removable; an add box (name entry) for the member whose join message the log
-  never carried. User edits persist per character until epoch.
+- Scope control: **one preference, in Preferences > Combat** (JOS-115). It
+  shipped as a compact three-state chip repeated on the combat toolbar and on
+  every overlay header, each persisting its own key; the owner retired that —
+  a selector on every surface is clutter answering a question you set once,
+  and three surfaces holding three answers was the common case rather than the
+  useful one. One key (`eq.combat.meterScope`, default Group), read by the
+  Combat tab, the Overview damage card and every floating meter.
+- Scope visibility: the surfaces keep the WORD, read-only — the Combat tab's
+  lens line and, on the floating meters, the PANEL FLOOR (JOS-121). A meter
+  that is filtering rows out has to be able to say so where the rows are
+  missing, and `Group (no roster yet)` is the sentence that explains the law-1
+  fallback. On an overlay the word started in the title bar beside the kind
+  tag; that row is also the fight selector's whole width budget and the
+  window's only drag handle, so it moved down to an understated, low-contrast,
+  `pointerEvents: none` watermark in a reserved band at the bottom of the bars
+  pane (`src/renderer/src/overlay/scopeFloor.tsx`). Two consequences worth
+  stating: the band is reserved rather than shared, so a bar can never cover
+  the long form; and unlike the header tag it replaced, it does NOT vanish
+  when the overlay is locked — a pinned meter has no selector, no controls and
+  no tooltip left, so it is the one that most needs to be able to say why a
+  name is missing.
+- Roster visibility: a small popover from the group icon beside that readout,
+  listing members with provenance (joined · confirmed · instance · added by
+  you · stale), each removable; an add box (name entry) for the member whose
+  join message the log never carried. Still a CONTROL: correcting a
+  mis-inferred group is a different act from choosing a scope. User edits
+  persist per character until epoch.
 - Nothing about the roster is ever transmitted: names stay local (same law as
   everything else; telemetry carries no names, slices already scrub group
   social lines).

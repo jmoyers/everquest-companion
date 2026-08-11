@@ -65,6 +65,7 @@ import {
   TELEMETRY_VOICE_ENGINES,
   UUID_V4_RE,
   type EvFunnelStep,
+  type EvHealthCounters,
   type EvSessionEnd,
   type EvSessionHeartbeat,
   type EvUpdateOutcome,
@@ -294,6 +295,19 @@ const HEALTH_FIELDS = [
   'speechFailures'
 ] as const
 
+/**
+ * The fields JOS-133 added, which are OPTIONAL for the additive-field rule's reason (see
+ * `EvHealthCounters`): this validator also runs in the ingest Lambda, which is deployed by hand
+ * and therefore reads events from clients both newer AND older than itself. Required here, a
+ * client predating the field would fail the whole batch and be told 400 — which
+ * `telemetryPermanentRefusal` classes as permanent, so it would DROP every counter it holds.
+ *
+ * Absent and null both mean "this client does not measure it", exactly as they do for
+ * `linesParsed`. The field is then not copied across at all rather than defaulted to 0, which is
+ * what keeps `tests/telemetryContract.test.mts`'s round-trip assertion meaningful.
+ */
+const HEALTH_OPTIONAL_FIELDS = ['imageFetchFailures', 'suppressedErrorLines'] as const
+
 function vHealthCounters(o: Record<string, unknown>): Validated<TelemetryEvent> {
   const counts: number[] = []
   for (const field of HEALTH_FIELDS) {
@@ -301,17 +315,22 @@ function vHealthCounters(o: Record<string, unknown>): Validated<TelemetryEvent> 
     if (!n.ok) return n
     counts.push(n.value)
   }
-  return {
-    ok: true,
-    value: {
-      t: 'healthCounters',
-      rendererCrashes: counts[0],
-      mainErrorLogLines: counts[1],
-      parserStalls: counts[2],
-      presenceRestarts: counts[3],
-      speechFailures: counts[4]
-    }
+  const value: EvHealthCounters = {
+    t: 'healthCounters',
+    rendererCrashes: counts[0],
+    mainErrorLogLines: counts[1],
+    parserStalls: counts[2],
+    presenceRestarts: counts[3],
+    speechFailures: counts[4]
   }
+  for (const field of HEALTH_OPTIONAL_FIELDS) {
+    const raw = o[field]
+    if (raw === undefined || raw === null) continue
+    const n = whole(raw, field, MAX_COUNT)
+    if (!n.ok) return n
+    value[field] = n.value
+  }
+  return { ok: true, value }
 }
 
 function vUpdateOutcome(o: Record<string, unknown>): Validated<TelemetryEvent> {
@@ -326,6 +345,33 @@ function vUpdateOutcome(o: Record<string, unknown>): Validated<TelemetryEvent> {
     value.failureClass = cls.value
   }
   return { ok: true, value }
+}
+
+/**
+ * THE TWO SWITCH-FLIP EVENTS (JOS-109), and their validator is the shortest one in the file
+ * because the schema gave them nothing to check: a flip is the ENVELOPE plus the fact that it
+ * happened.
+ *
+ * "REFUSES PAYLOADS" IS SPELLED AS CONSTRUCTION, NOT AS REJECTION, and that is the same decision
+ * every other validator here makes for the same reason (`validateTelemetryEvent`'s note, and the
+ * pin in `tests/telemetryContract.test.mts`). These functions return a literal — so a client that
+ * bolted a character name, a session length or anything else onto an `optOut` does not get it
+ * stripped by a rule somebody has to remember; the property simply never appears in the value
+ * that comes back, on the client and again on the server.
+ *
+ * A HARD REJECTION WOULD BE THE WORSE ANSWER, and it is worth saying why rather than leaving it as
+ * a style choice. `validateTelemetryBatch` fails the WHOLE batch on one bad event and the endpoint
+ * answers 400, which `telemetryPermanentRefusal` classes as "these bytes will never be accepted" —
+ * so a future client that adds an optional field to a flip event would black out every counter in
+ * the fleet until the Lambda caught up. Dropping is what makes THE ADDITIVE-FIELD RULE work; the
+ * privacy property is the construction, not the refusal.
+ */
+function vOptOut(): Validated<TelemetryEvent> {
+  return { ok: true, value: { t: 'optOut' } }
+}
+
+function vOptIn(): Validated<TelemetryEvent> {
+  return { ok: true, value: { t: 'optIn' } }
 }
 
 const EVENT_VALIDATORS: Record<
@@ -343,7 +389,9 @@ const EVENT_VALIDATORS: Record<
   funnelStep: vFunnelStep,
   healthCounters: vHealthCounters,
   updateOutcome: vUpdateOutcome,
-  errorReport: validateErrorReport
+  errorReport: validateErrorReport,
+  optOut: vOptOut,
+  optIn: vOptIn
 }
 
 /**

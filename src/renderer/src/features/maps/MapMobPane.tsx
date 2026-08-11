@@ -7,12 +7,17 @@
 // to choose an authority before typing and then answered in a fourth list somewhere else on
 // screen. One box, three labelled sections, is the same corpus with the choice removed.
 //
-// THREE SECTIONS BECAUSE THERE ARE THREE AUTHORITIES, and merging them would be the unlabelled
+// THREE SECTIONS BECAUSE THERE ARE THREE SCOPES, and blurring them would be the unlabelled
 // inference the world-model laws forbid. "Named mobs" is the committed wiki catalog joined to
 // this zone; "Map labels" is the parser's own `MapData.points` — the same points already drawn
-// on the surface, never re-parsed; "Other zones" is `maps:search` over the whole installed
-// corpus, which is a different MAP, not a different part of this one, and says so by living
-// under its own heading. A row from one is never silently presented as a row from another.
+// on the surface, never re-parsed; "Other zones" is SOMEWHERE ELSE, which is a different MAP and
+// not a different part of this one, and says so by living under its own heading. The first two
+// scopes are this map and rank first by simply being above; the third is the rest of the world.
+//
+// THE THIRD SECTION CARRIES TWO AUTHORITIES AND NAMES BOTH PER ROW (JOS-135): the installed map
+// packs' label text (`maps:search` with no zone) and the wiki bestiary matched on mob name. They
+// are ranked into one list because they answer one question, and every row states its zone, its
+// kind and what it can and cannot tell you — so a wiki claim never reads as a map fact.
 //
 // THE HONEST BIT IS THE PIN AFFORDANCE. Roughly four in five catalog pages state coordinates;
 // the rest say "Various" or "?" (MEASURED, 2026-08-04: 6,283 of 7,866 state at least one). A mob
@@ -51,7 +56,7 @@ import {
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import PlaceIcon from '@mui/icons-material/Place'
-import type { MapSearchHit } from '@shared/maps'
+import { jumpTarget, type CrossZoneRow, type JumpTarget } from './crossZone'
 import {
   MAX_PINS,
   isLocatable,
@@ -75,15 +80,15 @@ export interface MapMobPaneProps {
   hasMap: boolean
   mobs: readonly MobPaneRow[]
   labels: readonly LabelPaneRow[]
-  /** Matching labels in every OTHER zone — the cross-zone lookup, under its own heading. */
-  hits: readonly MapSearchHit[]
+  /** Matches in every OTHER zone, map labels and wiki mobs alike, under their own heading. */
+  hits: readonly CrossZoneRow[]
   counts: PaneCounts
   query: string
   onQuery: (q: string) => void
   selectedId: string | null
   onSelect: (row: MapPaneRow) => void
-  /** A cross-zone hit was clicked: change zone, then centre on it. */
-  onHit: (hit: MapSearchHit) => void
+  /** A cross-zone hit was clicked: change zone, then centre on it when it named a spot. */
+  onHit: (to: JumpTarget) => void
   /** The drawn pin set hit its ceiling — said out loud rather than quietly trimmed. */
   pinsCapped: boolean
   onClose: () => void
@@ -204,13 +209,60 @@ function Section({
 }
 
 /**
- * THE CROSS-ZONE SECTION — a label on a DIFFERENT map, so every row names its zone.
+ * ONE cross-zone row: what it is, which zone it is in, and what that zone can tell you.
  *
- * Absent until the box has something in it, because with no query it would be the whole 35,720-
- * record corpus and a scroll bar to nowhere. Clicking one loads that zone and centres on it, so
- * the row is a doorway out of this map rather than a thing to select on it: it carries no
- * selection ring, and the pin column is deliberately empty here — the coordinate is real, but it
- * is real somewhere else.
+ * The second line is the ZONE FIRST, always, because the zone is the answer this section exists to
+ * give (JOS-135: "which zone is Tarn Visilin in?"). The row's own note follows it when there is
+ * one, so a row that cannot take you anywhere says why on the same line rather than by being
+ * mysteriously dead.
+ */
+function HitRow({ row, onHit }: { row: CrossZoneRow; onHit: (to: JumpTarget) => void }): JSX.Element {
+  const to = jumpTarget(row)
+  return (
+    <ListItemButton
+      dense
+      disabled={to == null}
+      data-testid="maps-pane-hit"
+      data-kind={row.kind}
+      data-zone={row.zone ?? ''}
+      onClick={() => {
+        if (to) onHit(to)
+      }}
+      sx={{ gap: 0.75, alignItems: 'flex-start' }}
+    >
+      {/* The pin column states whether this row lands on a SPOT. A map label always does; a wiki
+          mob does only when its page stated a position it can attribute to that one zone. */}
+      <PinMark locatable={row.at != null} />
+      <ListItemText
+        primary={row.name}
+        secondary={row.note == null ? row.zoneName : `${row.zoneName} · ${row.note}`}
+        slotProps={{
+          primary: { variant: 'body2', noWrap: true },
+          secondary: { variant: 'caption' }
+        }}
+      />
+      {row.level !== undefined && row.level !== '' && (
+        <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, pt: 0.25 }}>
+          {row.level}
+        </Typography>
+      )}
+    </ListItemButton>
+  )
+}
+
+/**
+ * THE CROSS-ZONE SECTION — an answer from a DIFFERENT map, so every row names its zone.
+ *
+ * TWO AUTHORITIES, ONE RANKED LIST (JOS-135). It used to be map-label text only, which is why
+ * searching a High Keep NPC from High Pass answered nothing: no pack labels him. The wiki's
+ * bestiary answers that question and the map corpus answers "what is that place called", so both
+ * feed one list scored by the same scorer — see crossZone.ts for why merging them is honest and
+ * why the zone tokens are kept out of the query side.
+ *
+ * Absent until the box has something in it, because with no query it would be the whole corpus and
+ * a scroll bar to nowhere. Clicking one loads that zone, so the row is a doorway out of this map
+ * rather than a thing to select on it: it carries no selection ring. A pick here PINS the map
+ * (JOS-97) — an explicit choice, which is exactly the case that rule exists to honour.
  */
 function HitSection({
   query,
@@ -218,40 +270,22 @@ function HitSection({
   onHit
 }: {
   query: string
-  hits: readonly MapSearchHit[]
-  onHit: (hit: MapSearchHit) => void
+  hits: readonly CrossZoneRow[]
+  onHit: (to: JumpTarget) => void
 }): JSX.Element | null {
   if (query.trim().length === 0) return null
   return (
     <Stack spacing={0.5} sx={{ mb: 1 }}>
-      <SectionHead title="Other zones" note="every installed map" />
+      <SectionHead title="Other zones" note="every map + the wiki" />
       {hits.length > 0 ? (
         <List dense disablePadding>
-          {hits.map((hit) => (
-            <ListItemButton
-              key={`${hit.zone}#${hit.point.label}#${String(hit.point.x)},${String(hit.point.y)}`}
-              dense
-              data-testid="maps-pane-hit"
-              onClick={() => {
-                onHit(hit)
-              }}
-              sx={{ gap: 0.75, alignItems: 'flex-start' }}
-            >
-              <PinMark locatable={false} />
-              <ListItemText
-                primary={hit.point.display}
-                secondary={hit.zone}
-                slotProps={{
-                  primary: { variant: 'body2', noWrap: true },
-                  secondary: { variant: 'caption' }
-                }}
-              />
-            </ListItemButton>
+          {hits.map((row) => (
+            <HitRow key={row.id} row={row} onHit={onHit} />
           ))}
         </List>
       ) : (
         <Typography variant="caption" color="text.disabled" sx={{ px: 1, pb: 0.5 }}>
-          No other installed map labels that.
+          Nothing anywhere else answers to that.
         </Typography>
       )}
     </Stack>

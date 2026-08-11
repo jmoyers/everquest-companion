@@ -202,7 +202,13 @@ const EVENTS: TelemetryEvent[] = [
     sessionAgeBucket: 2,
     mode: 'live',
     count: 1
-  }
+  },
+  // THE TWO FIELDLESS KINDS (JOS-109). They contribute exactly one string slot each — their own
+  // `t` — and the poison walk below therefore proves the only thing there is to prove about
+  // them: that `optOut[2J` is not an event kind. An event with no fields cannot smuggle
+  // text because it has nowhere to put any, which is the entire design.
+  { t: 'optOut' },
+  { t: 'optIn' }
 ]
 
 const ENVELOPE = {

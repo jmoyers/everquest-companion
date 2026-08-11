@@ -21,19 +21,38 @@ import { Tooltip } from '../../lib/Tooltip'
 const HEAL_COLOR = '#7fd1a0'
 
 
-/** Active-time DPS: only worth printing when the fight actually had idle gaps. */
-function ActiveDpsNote({ seg, mode }: { seg: SegmentView; mode: MeterMode }): React.JSX.Element | null {
+/**
+ * Active-time DPS: only worth printing when the fight actually had idle gaps.
+ *
+ * BOTH RATES ARE THE CALLER'S, not the segment's (JOS-170). The headline beside this note
+ * describes what the panel is showing — the scoped list, or the drilled subject with its nested
+ * pets — so an `(act …)` read straight off `seg` would put the whole fight's rate in brackets
+ * next to one source's. Only the DURATIONS below come from the segment: they are the divisors,
+ * and they are the same for every row in it.
+ */
+function ActiveDpsNote({
+  seg,
+  mode,
+  dps,
+  activeDps
+}: {
+  seg: SegmentView
+  mode: MeterMode
+  /** the wall-clock rate this header is printing — what the tooltip contrasts against. */
+  dps: number
+  activeDps: number
+}): React.JSX.Element | null {
   if (mode !== 'out' || seg.activeSec <= 0 || seg.activeSec >= seg.durationSec) return null
   return (
     <Tooltip
       title={`Active-time DPS: damage ÷ ${fmtDur(
         seg.activeSec
       )} of actual combat time (gaps between hits capped at 3s each). Wall-clock DPS (${formatRate(
-        seg.outDps
+        dps
       )}) divides by the full ${fmtDur(seg.durationSec)} fight length.`}
     >
       <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mr: 0.25 }}>
-        (act {formatRate(seg.activeDps)})
+        (act {formatRate(activeDps)})
       </Typography>
     </Tooltip>
   )
@@ -46,7 +65,7 @@ function EnemyHealNote({ seg, mode }: { seg: SegmentView; mode: MeterMode }): Re
     <Tooltip
       title={`Enemies healed for ${fmt(
         seg.enemyHealTotal
-      )} during this fight — that much of your damage was undone (effective DPS is lower).`}
+      )} during this fight - that much of your damage was undone (effective DPS is lower).`}
     >
       <Typography component="span" variant="caption" sx={{ color: '#5fbf7f', ml: 0.5 }}>
         · +{fmt(seg.enemyHealTotal)} enemy heal
@@ -90,12 +109,21 @@ export function SegmentHeader({
   mode,
   total,
   dps,
+  activeDps,
   copyView
 }: {
   seg: SegmentView
   mode: MeterMode
+  /**
+   * WHAT THE PANEL BELOW IS SHOWING, never the raw segment (JOS-170): the scoped ranked list at
+   * level 1, the drilled subject with its nested pets at level 2 — `petRows.panelTotals`. This
+   * number carries no label, so it has to be the one the visible rows add up to; the overlay's
+   * crumb figure is labelled `all` and is allowed to state the whole fight instead.
+   */
   total: number
   dps: number
+  /** the same figures' active-time rate, scaled by the same fraction (SegmentPanel.headline). */
+  activeDps: number
   /** null in the Healing dimension — see the comment below. */
   copyView: (() => string) | null
 }): React.JSX.Element {
@@ -114,9 +142,12 @@ export function SegmentHeader({
           sx={{ color: heal ? HEAL_COLOR : mode === 'out' ? 'primary.main' : KIND_COLOR.enemy }}
           title={heal ? healTotalTitle(seg.healing) : undefined}
         >
-          {heal ? formatHealRate(dps) : formatRate(dps)} <ActiveDpsNote seg={seg} mode={mode} />
+          {heal ? formatHealRate(dps) : formatRate(dps)}{' '}
+          <ActiveDpsNote seg={seg} mode={mode} dps={dps} activeDps={activeDps} />
           <Typography component="span" variant="caption" color="text.secondary">
-            · {fmt(total)} · {fmtDur(seg.durationSec)}
+            {/* The bare total, testid'd because it is the number JOS-170 is about: it must follow
+                the drill and the pet preference, and only the real app can say that it does. */}
+            · <span data-testid="meter-total">{fmt(total)}</span> · {fmtDur(seg.durationSec)}
             <EnemyHealNote seg={seg} mode={mode} />
             <SlowChip seg={seg} mode={mode} />
           </Typography>

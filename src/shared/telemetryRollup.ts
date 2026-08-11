@@ -197,6 +197,9 @@ export const USAGE_METRICS = {
    * denominator the two would be the same absent row.
    */
   healthReports: 'healthReports',
+  // (`HEALTH_NON_ERROR_FIELDS`, below this object, says which of the `health` dims may be summed
+  //  into an error RATE and which may not. It lives outside `USAGE_METRICS` because it names
+  //  fields of the event, not metrics of the table.)
   /**
    * THE STARTUP REPLAY (JOS-57), and every one of these is dimensioned BY VERSION because that is
    * the only question worth asking of it: "did the throttle we shipped make launches better" is a
@@ -238,6 +241,38 @@ export const USAGE_METRICS = {
   /** dim = `<version>`; n = distinct errorReport EVENTS. One event is one fingerprint-session,
    *  so `errors / errorEvents` is the average burst size — a loop that throws is visible. */
   errorEvents: 'errorEvents',
+  /**
+   * SWITCH FLIPS PER BUILD (JOS-109) — how many installs turned usage analytics off, and how many
+   * turned it back on. dim = `<version>`, n = flips.
+   *
+   * The JOS-96 / JOS-57 additive pattern exactly: `usage_daily` has no version COLUMN (the key is
+   * day+cohort+metric+dim and cannot grow one — infra/schema.sql), so the version lives in `dim`,
+   * which makes these new metric NAMES in a table built to hold arbitrary ones. No schema change,
+   * no migration.
+   *
+   * WHAT THESE TWO NUMBERS CAN AND CANNOT CLAIM, because a counter with a confident name is the
+   * easiest thing in this pipeline to misread:
+   *
+   *   * EXACT, over installs that ever reported. One flip is one event and one event is one
+   *     count; a user who flips off, on and off again contributes two `optOuts` and one `optIn`,
+   *     which is the truth about what they did rather than a de-duplicated guess at what they
+   *     meant. `main/telemetry/optOut.ts` is what makes "one per flip" mechanical.
+   *   * BLIND TO THE FULLY-DARK INSTALL. An install that opted out before its first batch never
+   *     sends one of these, so `optOuts` is a FLOOR on opt-outs and can never be a rate over
+   *     downloads. `shared/telemetry.ts` states that problem where the events are declared, and
+   *     the panel prints the two measurements side by side rather than dividing them.
+   *   * AN UNDERCOUNT BY ONE MORE MECHANISM, stated so nobody has to rediscover it: the notice is
+   *     ONE best-effort POST with no retry (retrying would mean keeping state after the user said
+   *     stop), so a flip made while offline is simply never counted.
+   *   * NO DENOMINATOR EXISTS, and none is invented. There is no per-session "this build can
+   *     report a flip" signal the way `healthReports` is one for errors, so a version with no row
+   *     here is genuinely ambiguous between "nobody left" and "this build predates the counter".
+   *     The panel renders absence as a dash and says so; it does not render a zero.
+   */
+  optOuts: 'optOuts',
+  /** dim = `<version>`. The counterpart, on a build that re-enabled. Never netted against
+   *  `optOuts`: "flips off minus flips on" is not a population, it is two actions subtracted. */
+  optIns: 'optIns',
   /** dim = `<step>:ok` / `<step>:failed`. */
   update: 'update',
   /** dim = `<step>:<failureClass>`. */
@@ -247,6 +282,36 @@ export const USAGE_METRICS = {
 } as const
 
 export type UsageMetric = (typeof USAGE_METRICS)[keyof typeof USAGE_METRICS]
+
+/**
+ * HEALTH FIELDS THAT ARE COUNTED BUT ARE NOT ERRORS (JOS-133).
+ *
+ * `USAGE_METRICS.health` holds one row per field per build, and two readers add those rows up:
+ * the fleet-wide Health mix (which wants every field, and shows them by name), and the RELEASE
+ * HEALTH error rate (`errors / healthReports` per build — main/triage/releaseHealth.ts), which
+ * wants only the fields that mean something went wrong with THIS APP. The two are not the same
+ * list, and this is where the difference is written down once.
+ *
+ * `imageFetchFailures` is the case that forced it. It counts a fully handled condition — a
+ * volunteer wiki was unreachable, the image was hidden, the app carried on — and it is the single
+ * largest number this app has ever counted (17,632 occurrences in 14 days, roughly two thirds of
+ * every error line the fleet reported). Summed into the rate it would swamp every real signal and
+ * make "did I release buggy code" unanswerable, and it would move with somebody else's uptime
+ * rather than with anything a release could change.
+ *
+ * IT IS A DENY LIST RATHER THAN AN ALLOW LIST on purpose. A field added later and forgotten here
+ * counts as an error — noisy, visible, and fixed by adding a line. The other way round, a
+ * forgotten field would silently vanish from the rate, which is the failure this whole section
+ * exists to prevent. `suppressedErrorLines` is deliberately NOT here: it counts error lines that
+ * a cap withheld from the local file, so leaving it out of the rate would let the cap flatter a
+ * build that had started looping.
+ */
+export const HEALTH_NON_ERROR_FIELDS: readonly string[] = ['imageFetchFailures']
+
+/** Whether a `health` dim's field name is an ERROR for rate purposes. See the list above. */
+export function isErrorHealthField(field: string): boolean {
+  return !HEALTH_NON_ERROR_FIELDS.includes(field)
+}
 
 /**
  * Session-length histogram edges: 1m / 5m / 15m / 30m / 1h / 2h / 4h ⇒ eight buckets.
@@ -298,7 +363,7 @@ function msBucketLabel(edges: readonly number[], i: number): string {
   const clamped = Math.max(0, Math.min(i, edges.length))
   if (clamped >= edges.length) return `${msSpan(edges[edges.length - 1])}+`
   if (clamped === 0) return `<${msSpan(edges[0])}`
-  return `${msSpan(edges[clamped - 1])}–${msSpan(edges[clamped])}`
+  return `${msSpan(edges[clamped - 1])}-${msSpan(edges[clamped])}`
 }
 
 /** Human range for a `startupReplayMs` bucket index. */
@@ -323,7 +388,7 @@ export function sessionBucketLabel(i: number): string {
   const clamped = Math.max(0, Math.min(i, SESSION_MS_EDGES.length))
   const lo = clamped === 0 ? 0 : SESSION_MS_EDGES[clamped - 1]
   if (clamped >= SESSION_MS_EDGES.length) return `${span(lo)}+`
-  return `${clamped === 0 ? '0' : span(lo)}–${span(SESSION_MS_EDGES[clamped])}`
+  return `${clamped === 0 ? '0' : span(lo)}-${span(SESSION_MS_EDGES[clamped])}`
 }
 
 /**
@@ -479,6 +544,11 @@ function foldHealth(
   add(bag, USAGE_METRICS.health, `${version}:parserStalls`, ev.parserStalls)
   add(bag, USAGE_METRICS.health, `${version}:presenceRestarts`, ev.presenceRestarts)
   add(bag, USAGE_METRICS.health, `${version}:speechFailures`, ev.speechFailures)
+  // JOS-133's two, OPTIONAL on the wire (the additive-field rule) and so read through `?? 0` —
+  // which needs no special case downstream, because `add()` already refuses a non-positive value
+  // and an absent row reads identically to a zero row TO A SUM.
+  add(bag, USAGE_METRICS.health, `${version}:imageFetchFailures`, ev.imageFetchFailures ?? 0)
+  add(bag, USAGE_METRICS.health, `${version}:suppressedErrorLines`, ev.suppressedErrorLines ?? 0)
 }
 
 /**
@@ -574,9 +644,28 @@ function foldErrors(records: readonly TelemetryRecord[], appVersion: string): Er
   return [...bag.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v)
 }
 
+/**
+ * THE TWO SWITCH-FLIP EVENTS (JOS-109), split out for exactly the reason `foldSession` and
+ * `foldOutcome` were: `foldEvent`'s one switch would otherwise be past the repo's complexity
+ * ceiling, and the answer to that here is a helper, not a widened threshold.
+ *
+ * Both are one row and nothing else — a flip has no payload to fold — and both are dimmed by the
+ * build that was running when the user reached for the switch, which is the only version the
+ * question "did the build I shipped make people leave" can be about.
+ */
+function foldFlip(bag: Bag, ev: TelemetryEvent, version: string): boolean {
+  if (ev.t === 'optOut') {
+    add(bag, USAGE_METRICS.optOuts, version, 1)
+    return true
+  }
+  if (ev.t !== 'optIn') return false
+  add(bag, USAGE_METRICS.optIns, version, 1)
+  return true
+}
+
 /** One event's contribution. TOTAL: a kind with nothing to count simply adds nothing. */
 function foldEvent(bag: Bag, ev: TelemetryEvent, version: string): void {
-  if (foldSession(bag, ev, version) || foldOutcome(bag, ev)) return
+  if (foldSession(bag, ev, version) || foldOutcome(bag, ev) || foldFlip(bag, ev, version)) return
   switch (ev.t) {
     case 'viewDwell':
       add(bag, USAGE_METRICS.viewVisits, ev.view, 1)
@@ -605,7 +694,8 @@ function foldEvent(bag: Bag, ev: TelemetryEvent, version: string): void {
       add(bag, USAGE_METRICS.errorEvents, version, 1)
       return
     default:
-      // The session kinds and the two outcome kinds, already folded by the helpers above.
+      // The session kinds, the two outcome kinds and the two flip kinds, already folded by the
+      // three helpers above.
       return
   }
 }

@@ -210,7 +210,7 @@ export const ALERT_GROUPS: AlertGroup[] = [
         // is on and the mob is out of reach (3,329 lines, in bursts). 8s = one nudge per
         // approach; anything shorter is a machine-gun.
         id: 'group:range:melee',
-        name: 'Out of range — melee',
+        name: 'Out of range - melee',
         trigger: rawLine('Your target is too far away, get closer!'),
         soundId: SOUND.outOfRange,
         cooldownMs: 8000,
@@ -221,7 +221,7 @@ export const ALERT_GROUPS: AlertGroup[] = [
         // The SPELL-side twin — a different sentence entirely, and rarer (you notice a failed
         // cast sooner than a failed swing). Same 8s episode length.
         id: 'group:range:spell',
-        name: 'Out of range — spell',
+        name: 'Out of range - spell',
         trigger: rawLine('Your target is out of range, get closer!'),
         soundId: SOUND.outOfRange,
         cooldownMs: 8000,
@@ -338,9 +338,9 @@ export const ALERT_GROUPS: AlertGroup[] = [
         line2: 'Your Languid Pace spell has worn off of a froglok ton knight.',
         observed2: 23,
         note:
-          'Fires for any player-castable attack slow — the enchanter line (Languid Pace, Tepid ' +
+          'Fires for any player-castable attack slow - the enchanter line (Languid Pace, Tepid ' +
           'Deeds, Shiftless Deeds, Forlorn Deeds) and the shaman line (Drowsy, Walking Sleep, ' +
-          "Tagar's, Togor's, Turgur's, Tigir's) — so it keeps working when you out-level the " +
+          "Tagar's, Togor's, Turgur's, Tigir's) - so it keeps working when you out-level the " +
           'one you cast today. Tepid Deeds accounts for 3 more wear-offs in the reference log.'
       },
       {
@@ -450,7 +450,7 @@ export const ALERT_GROUPS: AlertGroup[] = [
   {
     id: 'mana',
     title: 'Out of mana',
-    subtitle: 'The cast never started — not enough mana.',
+    subtitle: 'The cast never started - not enough mana.',
     verified: true,
     defs: [
       {
@@ -551,7 +551,7 @@ export const ALERT_GROUPS: AlertGroup[] = [
         line: "Stonesoul the Unmoving's limbs move slower!",
         observed: 800,
         note:
-          'Weakening Strike — the attack slow (3:30) granted by Weakening, Binding, Neurotoxic ' +
+          'Weakening Strike - the attack slow (3:30) granted by Weakening, Binding, Neurotoxic ' +
           'and Paralytic poison. Clumsiness Strike, the casting slow, is deliberately not ' +
           'included. Each mob gets its own 30-second quiet period: the first slow on a mob ' +
           'always speaks, and only re-lands on that same mob are held back.'
@@ -609,7 +609,7 @@ export const ALERT_GROUPS: AlertGroup[] = [
         line: "--You have looted a Mote of Infinitesimal Potential from a zol ghoul knight's corpse.--",
         observed: 285,
         note:
-          'Every tier of Mote of Potential, from Infinitesimal to Ascendant — the currency the ' +
+          'Every tier of Mote of Potential, from Infinitesimal to Ascendant - the currency the ' +
           'Item Upgrade System runs on. All tiers share one sound: nothing in the game or the ' +
           'catalog states which tier outranks which.'
       }
@@ -695,7 +695,7 @@ export function alertGroupDefs(group: AlertGroup, packId: string = GROUP_PACK_ID
       sound: { packId, soundId: spec.soundId },
       cooldownMs: spec.cooldownMs,
       note:
-        `Suggested group "${group.title}" — fires on: ${spec.line}` +
+        `Suggested group "${group.title}" - fires on: ${spec.line}` +
         (spec.line2 ? ` and: ${spec.line2}` : '') +
         (spec.note ? ` ${spec.note}` : '')
     }

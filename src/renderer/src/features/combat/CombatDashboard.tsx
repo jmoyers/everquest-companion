@@ -35,7 +35,7 @@ export type Ringless = 'zone' | 'evicted' | null
  *  only case the two surfaces have in common (Overview never selects a zone session). */
 export function ringlessText(r: Ringless): string {
   return r === 'zone'
-    ? 'Per-event detail isn’t kept for zone sessions — pick a fight to see this.'
+    ? 'Per-event detail isn’t kept for zone sessions - pick a fight to see this.'
     : 'Per-event detail is no longer kept for this fight.'
 }
 
@@ -200,7 +200,7 @@ export function TargetSkillBars({
           {detail.misses > 0 ? ` · ${a}${detail.misses} avoided` : ''}
           {detail.resists > 0 ? ` · ${a}${detail.resists} resisted` : ''}
         </Typography>
-        <Tooltip title="You and your pet are combined in this per-mob list — it answers “what killed this mob”, not “who”. Use the source rows above for per-source splits.">
+        <Tooltip title="You and your pet are combined in this per-mob list - it answers “what killed this mob”, not “who”. Use the source rows above for per-source splits.">
           <Typography variant="caption" color="text.disabled">
             you + pet combined
           </Typography>

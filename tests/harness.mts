@@ -18,6 +18,7 @@ import { installSpellDb } from '../src/main/log/rulesets'
 import { loadSpellDb } from '../src/main/data/spellDb'
 import { BuffsModule } from '../src/main/modules/buffs'
 import { BuffTimersModule } from '../src/main/modules/buffTimers'
+import type { SpellStats } from '../src/main/modules/buffsStats'
 import { buildTimerRows } from '../src/shared/buffTimers'
 import type { BuffTimerRow, BuffTimersSnap } from '../src/shared/buffTimers'
 import type { BuffsSnap } from '../src/shared/types'
@@ -42,13 +43,21 @@ export function readFixture(name: string): string[] {
  * ≥30-min session-gap clear, which wipes stale ACTIVES/entities but PRESERVES the learned
  * maps (that's the point of priming): the window starts from a clean active set with a
  * warm classifier.
+ *
+ * THE SPELL DB IS INSTALLED, because production installs it (JOS-118). This replay used to
+ * clear it deliberately — "the W1–W6 windows assert the pre-DB cast-timing/emote path" — which
+ * modelled a configuration the app has not run since Task #34: `installSpellDb` fires at main
+ * startup, so the live parser ALWAYS has the DB and always emits the message-driven
+ * `buffApply`/`buffWearOff` events. With the DB cleared, no landing line parses at all, and the
+ * only thing that could ever open an instance was the cast-timing INFERENCE — the optimistic
+ * provisional JOS-118 deletes, and the source of the resisted-debuff bar the owner reported.
+ * So these windows were pinning the fallback rather than the behaviour. They keep their real
+ * bytes and their assertions; what changed is that they now run the configuration the user has.
  */
 export function replayBuffs(lines: string[], finalTickMs?: number, opts?: { prime?: string[] }): BuffsSnap {
-  // Ensure the shared parser config has NO DB (Task #34): the W1–W6 windows assert the
-  // pre-DB cast-timing/emote path. A prior DB-enabled test in the same process would
-  // otherwise leave the DB installed and change parser output; clear it deterministically.
-  installSpellDb(undefined)
-  const mod = new BuffsModule()
+  const db = loadSpellDb()
+  installSpellDb(db)
+  const mod = new BuffsModule(db)
   mod.reset()
   let seq = 0
   for (const raw of opts?.prime ?? []) {
@@ -68,10 +77,11 @@ export function replayBuffs(lines: string[], finalTickMs?: number, opts?: { prim
  * AND give it to the BuffsModule, then replay — exactly what production does. This
  * exercises the message-driven path (buffApply/buffWearOff from exact chat messages,
  * self-heal-by-buff applies, Permanent Illusion). Used by the W7–W9 golden windows.
- * The DB install is process-global, so DB-off tests (W1–W6) must not run interleaved with
- * the DB installed — they don't, because node:test runs files/tests sequentially and these
- * DB tests are in a separate file; still, we keep the plain replayBuffs above DB-free by
- * constructing its own module without a DB (the parser config is the only shared state).
+ *
+ * Since JOS-118 this is behaviourally identical to `replayBuffs` above (which no longer clears
+ * the DB) and the two are kept apart only so each window still says which path it was written
+ * to exercise. There is no longer a DB-off replay to interleave with, so the ordering caveat
+ * this comment used to carry is gone.
  */
 export function replayBuffsWithDb(
   lines: string[],
@@ -103,22 +113,40 @@ export function replayBuffsWithDb(
  * `until` stops the fold at an instant (inclusive), which is how a per-target mez is observed
  * BEFORE and AFTER its break line without cutting a second fixture. `tickMs` fires the wall-clock
  * heartbeat both modules take, modelling an idle log at a chosen observation instant.
+ *
+ * `ticks` fires the heartbeat MID-FOLD, at each listed instant, just before the first event at or
+ * after it — which is the only way to model what production actually does between two log lines
+ * (JOS-180 needed it: a hold has to be culled by the 1 s heartbeat BEFORE its wear-off arrives, or
+ * the test proves the cull and the late join in one event and never shows they are two).
+ *
+ * `spellStats` comes back beside the snapshots because the LEARNER is the subject of some of these
+ * tests and the snapshot only reports the SELF caster's rounded columns.
  */
 export function replayBuffTimers(
   lines: string[],
-  opts?: { until?: number; tickMs?: number; prime?: string[] }
-): { buffs: BuffsSnap; timers: BuffTimersSnap; rows: BuffTimerRow[] } {
+  opts?: { until?: number; tickMs?: number; prime?: string[]; ticks?: number[] }
+): { buffs: BuffsSnap; timers: BuffTimersSnap; rows: BuffTimerRow[]; spellStats: SpellStats } {
   const db = loadSpellDb()
   installSpellDb(db)
   const buffs = new BuffsModule(db)
-  const timers = new BuffTimersModule()
+  // ONE MODEL, TWO MODULES (JOS-140): the CC half folds through the buffs module's own cast
+  // anchors and mints into its own learner, exactly as `modules/wiring.ts` wires it in production.
+  // Constructing it bare would give it a private (and permanently empty) cast history, so no
+  // landing would ever be anchored and every hold in this harness would silently vanish.
+  const timers = new BuffTimersModule(buffs.castAnchors(), buffs.spellStats())
   buffs.reset()
   timers.reset()
   let seq = 0
+  const pending = [...(opts?.ticks ?? [])].sort((a, b) => a - b)
   const feed = (raw: string): void => {
     const ev = parseEvent(raw, seq++)
     if (!ev) return
     if (opts?.until != null && ev.ts > opts.until) return
+    while (pending.length > 0 && pending[0] <= ev.ts) {
+      const at = pending.shift() as number
+      buffs.onTick(at)
+      timers.onTick(at)
+    }
     buffs.onEvent(ev)
     timers.onEvent(ev)
   }
@@ -130,7 +158,7 @@ export function replayBuffTimers(
   }
   const b = buffs.snapshot().state
   const t = timers.snapshot().state
-  return { buffs: b, timers: t, rows: buildTimerRows(b, t) }
+  return { buffs: b, timers: t, rows: buildTimerRows(b, t), spellStats: buffs.spellStats() }
 }
 
 /** Parse an EQ timestamp out of a raw fixture line (ms epoch), or 0. */

@@ -52,6 +52,14 @@ const SURFACES = {
 /** The one file that applies the scale. */
 const SCALE = '../src/renderer/src/overlay/overlayScale.tsx'
 
+/**
+ * The two meters' shared body wrapper (JOS-121): the scrolling pane plus the scope watermark on
+ * its floor. It is BETWEEN a meter and `OverlayContent` now, so it is the file that must forward
+ * the scale rather than re-apply it — and the watermark it adds is chrome, deliberately outside
+ * the zoom (a watermark that grew with the reading matter would be the loudest thing at 2.0).
+ */
+const FLOOR = '../src/renderer/src/overlay/scopeFloor.tsx'
+
 // ---- the normalizer ---------------------------------------------------------------------
 
 test('an absent or malformed scale is the default, not a broken window', () => {
@@ -140,13 +148,23 @@ test('the zoom is applied in exactly ONE place: the content pane', () => {
   for (const [name, path] of Object.entries(SURFACES)) {
     assert.doesNotMatch(code(path), /zoom:/, `${name} must not grow a second copy of the zoom`)
   }
+  // …including the meters' shared body wrapper, which forwards the scale and applies none of it.
+  const floor = code(FLOOR)
+  assert.doesNotMatch(floor, /zoom:/, 'the meter pane must not grow a second copy of the zoom')
+  assert.match(floor, /<OverlayContent textScale=\{textScale\}/, 'the meter pane must forward the scale')
 })
 
 test('THE CHROME IS NEVER SCALED, and cannot be pushed out of a narrow window', () => {
   // The scale reaches the rows through the content component and nothing else, so the header and
   // footer keep laying out against the real window width at every scale.
+  // `MeterPane` (JOS-121) is the damage/heal pair's wrapper around OverlayContent — one more name
+  // for the same seam, and the assertion above pins that it forwards rather than re-applies.
   for (const [name, path] of Object.entries(SURFACES)) {
-    assert.match(code(path), /<(OverlayContent|ScaledContent) textScale=/, `${name} scales no content`)
+    assert.match(
+      code(path),
+      /<(OverlayContent|ScaledContent|MeterPane)\s+textScale=/,
+      `${name} scales no content`
+    )
   }
   // …and the footers themselves fit a genuinely narrow window, zoom or no zoom. ONE ROW: the
   // range input is the give (`flexBasis: 0` + a small floor), the buttons never shrink — the
@@ -188,7 +206,7 @@ test('nothing under the zoom sizes itself in viewport units', () => {
   // A viewport unit resolves against the window and is THEN scaled, so `100vw` at 1.5 is half a
   // screen wider than the pane it is supposed to fill. Percentages resolve against the parent and
   // fill it at any scale — which is why overlay.html sizes html/body too.
-  for (const [name, path] of Object.entries(SURFACES)) {
+  for (const [name, path] of Object.entries({ ...SURFACES, 'the meter pane': FLOOR })) {
     assert.doesNotMatch(code(path), /100vw|100vh/, `${name} still sizes itself in viewport units`)
   }
   const html = code('../src/renderer/overlay.html')

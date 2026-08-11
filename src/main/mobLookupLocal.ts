@@ -15,7 +15,8 @@
 // Both JSONs are ES-imported so electron-vite INLINES them into the main bundle — a
 // path-relative readFile would miss in out/main/ (AGENTS.md toolchain note).
 
-import { mobKey } from './mobLookupParse'
+import { type MobLootIndex, mobKey } from './mobLookupParse'
+import type { MobIdentity } from './mobAliases'
 import type { MobData, MobDrop, MobEntry, MobKnowledge, MobQuestUse, QuestData } from '../shared/types'
 import mobsJson from '../renderer/src/data/eqlegends/mobs.json'
 import questsJson from '../renderer/src/data/eqlegends/quests.json'
@@ -93,4 +94,62 @@ for (const q of questData.quests ?? []) {
 export function localMobQuests(name: string): MobQuestUse[] | null {
   const uses = questsByMob.get(mobKey(name))
   return uses?.length ? uses : null
+}
+
+/**
+ * Quests the LOCAL catalog ties to this CREATURE, under every spelling the roster states for it
+ * (JOS-142). De-duped by quest name; an unaliased identity is one key, so this is exactly the
+ * single `localMobQuests` call it has always been.
+ */
+function identityQuests(id: MobIdentity): MobQuestUse[] | null {
+  if (!id.aliased) return localMobQuests(id.canonical)
+  const merged: MobQuestUse[] = []
+  for (const key of id.keys) {
+    for (const q of localMobQuests(key) ?? []) {
+      if (!merged.some((x) => x.quest.toLowerCase() === q.quest.toLowerCase())) merged.push(q)
+    }
+  }
+  return merged.length ? merged : null
+}
+
+// ---- the LOCAL merge (mobLookup's every-read step) -----------------------------
+
+/**
+ * Attach the two LOCAL sources to a (possibly cached) wiki record. Done on EVERY read, never
+ * baked into the cache: your own loot history changes with every corpse, and the quest catalog
+ * ships with the app, so caching either would immediately be stale (JOS-137 constraint 6).
+ *
+ * Reads by IDENTITY rather than by the one name the caller happened to hold (JOS-142). The
+ * own-loot index files a drop under the corpse's LOG name and the boss card asks with the ROSTER
+ * name; `id.keys` is the roster's own statement that those are one creature, so the union is
+ * evidence rather than a guess. What comes back is still `dropsSeen` — YOUR observations — and
+ * the mob page keeps showing anything the wiki page does not list under its own separate "Also
+ * looted by you" heading, so alias-gathered loot is never dressed up as documented drops
+ * (JOS-137 constraint 7).
+ *
+ * LIVES HERE, not in mobLookup.ts, so the node test runner can drive the real merge: mobLookup
+ * imports electron's `app` for the userData cache path and cannot be loaded under tsx, and an
+ * untestable merge is exactly where the JOS-137 defect sat unseen (the suggestions.ts precedent).
+ * `loot` is passed in for the same reason — production hands it mobLookup's shared singleton.
+ */
+export function mergeLocalKnowledge(
+  base: MobKnowledge,
+  id: MobIdentity,
+  loot: MobLootIndex
+): MobKnowledge {
+  const out: MobKnowledge = { ...base }
+  const seen = loot.dropsAcross(id.keys)
+  if (seen.length) out.dropsSeen = seen
+  else delete out.dropsSeen
+  const quests = identityQuests(id)
+  // The wiki page's own `|related_quests` links and the catalog's `relatedNpcs` are two views of
+  // the same relation, so de-dupe by quest name; local wins (it carries the giver + zone).
+  if (quests) {
+    const merged = [...quests]
+    for (const u of base.quests ?? []) {
+      if (!merged.some((x) => x.quest.toLowerCase() === u.quest.toLowerCase())) merged.push(u)
+    }
+    out.quests = merged
+  }
+  return out
 }

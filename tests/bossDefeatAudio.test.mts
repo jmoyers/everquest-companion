@@ -69,9 +69,10 @@ test('B1 a REPEAT kill at the SAME tier is a kill — the case the sound used to
 
   const fired = bossKills(prev, next)
   assert.equal(fired.length, 1, 'the second kill counts')
-  assert.equal(fired[0].target.name, 'Lord Nagafen')
-  assert.equal(fired[0].count, 2)
-  assert.equal(fired[0].bestTier, 0, 'no new tier was reached — that used to be the disqualifier')
+  assert.equal(fired[0].status.target.name, 'Lord Nagafen')
+  assert.equal(fired[0].status.count, 2)
+  assert.equal(fired[0].status.bestTier, 0, 'no new tier was reached — that used to be the disqualifier')
+  assert.equal(fired[0].tier, 0, 'and the kill reports the tier it happened on (JOS-165)')
 
   // The third, the fourth, the tenth: nothing about the predicate decays with repetition.
   const third = allStatuses([NAGAFEN], killed(3, 0, 1_785_001_200_000))
@@ -97,7 +98,8 @@ test('B3 the sound rides the every-kill callback, and the baseline guard is stil
   // and it is inside `onKill` — the callback that fires for repeats too.
   const calls = app.match(/fireAppSignal\('bossDefeat'/g) ?? []
   assert.equal(calls.length, 1, 'exactly one bossDefeat emitter in the renderer entry')
-  const onKill = /onKill:\s*\(s\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(app)
+  // The callback takes the KILL, not the target (JOS-165): `{ status: s, tier }`.
+  const onKill = /onKill:\s*\(\{[^}]*\}\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(app)
   assert.ok(onKill, 'the detector wires onKill to a block')
   assert.match(onKill[1], /fireAppSignal\('bossDefeat', s\.target\.name\)/)
 

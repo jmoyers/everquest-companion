@@ -107,7 +107,7 @@ export function subjectLine(lead: string | null, seg: SegmentView): string {
   const budget = MAX_WIDTH - tail.length
   if (!lead) return clip(seg.name, budget) + tail
   const l = clip(lead, Math.max(MIN_LABEL, budget - MIN_LABEL - 3))
-  return `${l} — ${clip(seg.name, Math.max(MIN_LABEL, budget - l.length - 3))}${tail}`
+  return `${l} - ${clip(seg.name, Math.max(MIN_LABEL, budget - l.length - 3))}${tail}`
 }
 
 /**

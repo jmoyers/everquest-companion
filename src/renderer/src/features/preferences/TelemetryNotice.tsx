@@ -99,7 +99,7 @@ export function TelemetryNotice({ onOpenDetails }: { onOpenDetails: () => void }
 
         <IconButton
           size="small"
-          aria-label="Dismiss — keeps anonymous usage data on"
+          aria-label="Dismiss - keeps anonymous usage data on"
           data-testid="telemetry-notice-dismiss"
           onClick={() => {
             answer(true)

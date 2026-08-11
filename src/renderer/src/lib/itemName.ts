@@ -29,3 +29,17 @@ export function normalizeItemName(name: string): string {
 export function itemCountKey(name: string): string {
   return normalizeItemName(name).toLowerCase()
 }
+
+/**
+ * The upgrade level a display name carries: `0` for a base name, `N` for a ` +N` variant
+ * (JOS-196, which folds a mob's variant loots into one drop line and orders the breakdown).
+ *
+ * Deliberately spelled in terms of `normalizeItemName` rather than a second ` +\d+$` regex:
+ * the strip is a SUFFIX, so whatever the one regex above removed is exactly the tail this
+ * reads back. One statement in the tree about what a `+N` suffix is — a second copy would be
+ * free to disagree with the first about `Sword +1a`.
+ */
+export function itemVariantLevel(name: string): number {
+  const suffix = name.slice(normalizeItemName(name).length)
+  return suffix ? Number(suffix.trim().slice(1)) : 0
+}

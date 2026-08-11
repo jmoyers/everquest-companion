@@ -1,6 +1,11 @@
-# Buffs / Timer overlay (JOS-89)
+# Buffs / Timer overlay (JOS-89; split into two windows by JOS-119)
 
 **Status**: built, default OFF, for internal validation before promotion.
+**Amended (JOS-119, 2026-08-08)**: what shipped as ONE window is now TWO — `'buffs'` and
+`'debuffs'` — each with its own open/locked/bounds config, its own window and its own chrome, so
+they can be enabled and positioned separately. Everything below still describes the model, the
+honesty law and the projection unchanged: the split is a FILTER over the rows §2.3 builds, not a
+second model. See §2.4a for what the second window changed and what it deliberately did not.
 **Owner direction (2026-08-08)**: build it now, ship it off, use it internally first to
 validate correctness. The buff-system rework the owner paused earlier is *not* reopened by
 this ticket — this overlay is built strictly on what the tracking can honestly claim today.
@@ -281,6 +286,55 @@ A sixth meter kind, following every JOS-83 convention:
   "dropped" line for it. No protocol change, and it can only ever fire on a removal the model
   already believed.
 
+### 2.4a TWO WINDOWS OVER ONE MODEL (JOS-119)
+
+The owner asked for the two halves of this surface to be windows he can enable and place
+separately: what is running on *you* and what you are holding on *them* are read at different
+moments and belong in different corners of the screen.
+
+**The split is a filter, and the row's own `kind` is the whole discriminator.**
+`buildTimerRows` is unchanged and still folds the two modules exactly once;
+`shared/buffTimers.ts timerRowSurface` routes each row and `rowsForSurface` is the split:
+
+| row kind | window | why |
+| --- | --- | --- |
+| `buff` | `'buffs'` | a beneficial spell you have running |
+| `debuff` | `'debuffs'` | something you put on something else |
+| `cc` | `'debuffs'` | the owner rules mez and slow ARE debuffs, so the holds sit beside them |
+
+`group` is deliberately **not** the discriminator. A Symbol on your pet and a Valor on the
+cleric you buffed are `group: 'target'` and are still buffs; routing by target would file your
+own group buffs under "debuffs", which is a lie about what they are. `tests/buffTimers.test.mts`
+pins that both ways, plus the partition property (every row lands on exactly one surface) over
+every committed fixture.
+
+**One component.** `BuffsOverlay.tsx` takes a `kind` prop and everything that differs is one
+data table (`SURFACE`): tag, title, accent, empty sentence, the heading a self row sits under,
+and whether the drop flash renders. A copy of that file would be the defect (the JOS-105 rule).
+The drop flash stays on the buffs surface only: it answers "flash when a positive spell drops",
+and a debuff or a mez ending is not a loss to shout about — the row simply leaves.
+
+**No migration, and that is the design.** `overlays.buffs` keeps its key, so an existing
+install's stored window (bounds, open flag, alpha, text scale) carries over to the window that
+still draws that user's buffs. `overlays.debuffs` has never been written by any build, so it
+reads the default and arrives OFF. Schema version untouched at 11. Content **moved** rather than
+appeared — nobody loses a row, they are in a window that ships off, the same internal-validation
+stance this ticket shipped under.
+
+**The seventh meter slot, and the warning in §2.4 coming true.** That section said a seventh
+stacked kind would wrap into a third column and overlap on the 1366×728 laptop, and it was
+right: seven 380×320 slots do not fit that work area under *any* arrangement (three columns fit,
+two rows fit — six slots). The fix is in `overlayLayout.ts`: the uniform first-open size is now a
+function of the work area and shrinks all kinds **together** (a fixed ladder, largest rung that
+fits wins) rather than letting two windows open on the same spot. Anything 1080p or larger is
+untouched at 380×320; the laptop opens every overlay at 323×272. Uniformity and the no-overlap
+guarantee both survive, and `overlayLayout.test.mts` states them per work area now.
+
+**Telemetry.** `TelemetryOverlayKind` gains `'debuffs'` and `TELEMETRY.md` is regenerated. The
+enum is CLOSED and the ingest Lambda validates it through the same shared validator, which fails
+the WHOLE batch on one unknown value (the endpoint answers 400, which the client classes as a
+permanent refusal and drops) — **so the Lambda ships before any client that can emit it.**
+
 ### 2.5 The one piece of plumbing that is missing today
 
 `pipeline.ts` pushes `module:delta` to the main window and then forwards it to the `'events'`
@@ -387,7 +441,17 @@ regression run that this ticket is not the place for.
 - the first-open window is **3.4 %** of a 2560×1392 work area (invariant: < 25 %), on-screen;
 - opening mid-session **hydrates from the replay** — the fixture's own buffs render, with the
   debuffs filed under the enemies they are on (`Your buffs` / `Lord Nagafen` /
-  `a fire giant warrior`), which is the per-target half of the reports' ask, unscripted;
+  `a fire giant warrior`), which is the per-target half of the reports' ask, unscripted.
+  **THAT SENTENCE COVERED ONLY THE WINDOW YOU OPEN AFTER LAUNCH, AND FOR MONTHS IT READ AS IF IT
+  COVERED BOTH (JOS-172).** Opening the window mid-session hydrates from a FINISHED fold; a window
+  that was ALREADY OPEN when the app started hydrates part-way THROUGH one, and `endReplay()`
+  discards what that fold accumulated, so nothing ever described the rest of it. A charm or an
+  Ensnare that survived a restart was in the model, in the app, and missing here. The fix is the
+  rebuilt-world signal (`log:character`) reaching the module-reading overlays as well as the main
+  window — `sendWorldRebuilt` in pipeline.ts — and the restart is now a step of its own
+  (`tests/e2e/buffRestartSteps.mts`), with its fold deliberately PADDED so the window really does
+  hydrate mid-fold: measured, the unpadded fixture folds faster than a second BrowserWindow loads,
+  and the first cut of that step passed with the bug still in the tree;
 - **the chain-mez**: one `You begin casting Mesmerization III.` appended to the LIVE log, followed
   by two `has been mesmerized.` broadcasts, produces **two rows, both named `Mesmerization`, both
   counting down from 24 s, grouped under `a turmoil toad` and `a scareling`** — the whole real

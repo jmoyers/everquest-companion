@@ -44,7 +44,7 @@ function PathRow({
         sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
         title={path}
       >
-        {path ?? '—'}
+        {path ?? '-'}
       </Typography>
     </Box>
   )
@@ -113,7 +113,7 @@ function EqFolderCheck({ config }: { config: EqConfig | null }): JSX.Element | n
     return (
       <Alert severity="warning" variant="standard" data-testid="eq-folder-check">
         This folder doesn&apos;t exist. Pick the folder your <code>eqlog_*.txt</code> files are
-        in — or pick one of the files itself.
+        in - or pick one of the files itself.
       </Alert>
     )
   }
@@ -125,7 +125,7 @@ function EqFolderCheck({ config }: { config: EqConfig | null }): JSX.Element | n
   ) : (
     <Alert severity="warning" variant="standard" data-testid="eq-folder-check">
       No character logs (eqlog_*.txt) found here. Make sure EverQuest logging is enabled
-      (/log on), then pick the folder those files are in — or pick one of the files itself.
+      (/log on), then pick the folder those files are in - or pick one of the files itself.
     </Alert>
   )
 }

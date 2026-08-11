@@ -261,7 +261,7 @@ function logStartupSummary(profile: StartupProfile): void {
       ? ''
       : `, worst main-loop block ${String(profile.block.maxBlockMs)}ms (${String(profile.block.blocksOver50Ms)} over 50ms` +
         // WHERE it landed, so errors.log alone says which phase to look at (JOS-59).
-        `${profile.block.worstAtMs === undefined ? '' : `, at ${String(Math.round(profile.block.worstAtMs))}ms — ${phaseAt(profile, profile.block.worstAtMs)}`})`
+        `${profile.block.worstAtMs === undefined ? '' : `, at ${String(Math.round(profile.block.worstAtMs))}ms - ${phaseAt(profile, profile.block.worstAtMs)}`})`
   // …and so does the duty the replay ACHIEVED (JOS-50). The slicer aims at REPLAY_DUTY and the
   // Windows timer decides what it actually gets, so the launch states the measurement rather than
   // the intention — a replay that somehow rested not at all is then visible in errors.log.
@@ -273,7 +273,7 @@ function logStartupSummary(profile: StartupProfile): void {
         ` over ${String(profile.replay.slices)} slices)`
   logInfo(
     `[everquest-companion] Startup ${String(Math.round(profile.totalMs))}ms` +
-      `${replayed}${blocked}${duty} (${worst}) — profile at ${profilePath()}`
+      `${replayed}${blocked}${duty} (${worst}) - profile at ${profilePath()}`
   )
 }
 

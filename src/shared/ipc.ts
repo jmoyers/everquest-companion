@@ -10,7 +10,9 @@ export const IPC = {
   // ---- progress / inventory (per-character persisted state) ----
   getProgress: 'progress:get',
   reloadInventory: 'inventory:reload',
-  setQuestComplete: 'progress:setQuestComplete',
+  // renderer -> main: this quest's turn-ins, as the instants they happened at (JOS-131). It
+  // replaced `progress:setQuestComplete` when completion became a COUNT rather than a flag.
+  setQuestTurnIns: 'progress:setQuestTurnIns',
   // main -> renderer: progress changed (quest completion / inventory), so every
   // view that shows progress stays consistent without re-fetching on a timer.
   onProgress: 'progress:changed',
@@ -254,6 +256,15 @@ export const IPC = {
   // hands the target down (today: the mob to drill into).
   onFocusView: 'app:focusedView',
 
+  // ---- the mouse's Back button (JOS-201) ----
+  // main -> renderer(main app): the user pressed the browser-Back button on their mouse while
+  // THIS window had focus. No payload: the message is the press, and what "back" means is a
+  // question only the renderer can answer (src/renderer/src/appBack.tsx). The event is
+  // WINDOW-SCOPED by construction — it originates in a BrowserWindow `app-command` handler
+  // (src/main/appBack.ts), so a press landing in EverQuest, or in any other app, never reaches
+  // here. There is deliberately no global hook and no forward channel.
+  onAppBack: 'app:back',
+
   // ---- class-combo corrections (docs/plans/class-combo-inference.md § 5.3) ----
   // READS need no channel of their own — the combo module rides the generic module transport
   // (`module:getSnapshot('combo')` + `module:delta`). These two exist because a correction is a
@@ -484,6 +495,51 @@ export const IPC = {
   // once and re-folds locally through the SAME `resolveGraphics` main used, so the card can never
   // describe a precedence the windows did not use.
   graphicsEnvGet: 'graphicsPrefs:env',
+
+  // ---- the buff externals allowlist (JOS-140 — shared/buffTrust.ts) ----------------------
+  //
+  // WHOSE spells the buff/debuff model is allowed to track. It ships EMPTY — you and nobody else
+  // — because a landing sentence names no caster, so in a crowded zone the only thing separating
+  // your work from a stranger's is that you have a cast line and they do not. An allowlisted name
+  // gets the IDENTICAL rule, anchored on `<Name> begins casting <Spell>.`; it is never a looser
+  // one, and never something the app infers from proximity or from the group roster.
+  //
+  // renderer -> main: the persisted `{externals: string[]}`. Returns BuffTrustPrefs.
+  buffTrustGet: 'buffTrust:get',
+  // renderer -> main: replace the list. VALIDATED AT THE HANDLER through the same normalizer the
+  // store reader uses (the `graphicsPrefs:set` rule), and applied to the live model on the way
+  // through so a name added mid-session anchors the next cast rather than the next launch.
+  // Returns what was stored.
+  buffTrustSet: 'buffTrust:set',
+
+  // ---- respawn clocks (JOS-194 — shared/respawn.ts) -------------------------------------
+  //
+  // WHICH MOBS GET A CLOCK. The clocks themselves are log-derived and ride the generic module
+  // transport (`respawn`); this pair carries the ONE thing the log cannot state — the mobs you
+  // chose to watch and the respawn you typed for them.
+  //
+  // main -> renderer: the persisted watch list. Returns RespawnPrefs.
+  respawnGet: 'respawn:get',
+  // renderer -> main: replace it. VALIDATED AT THE HANDLER through the same normalizer the store
+  // reader uses, applied to the running module, and PUSHED immediately (`registry.flushNow`) —
+  // the module's own revision counter is what keeps the push from being deduped, because a watch
+  // edit advances no log seq (JOS-87). Returns what was stored.
+  respawnSet: 'respawn:set',
+
+  // ---- main window text size (JOS-123 — shared/uiScale.ts) ------------------------------
+  //
+  // The main window's zoom factor: the Preferences control a player asked for after reporting
+  // they could barely read the app. The floating overlays are NOT on this channel and never
+  // were — they carry their own `textScale` inside the per-kind overlay config, because an
+  // overlay scales only its reading matter and keeps its chrome laid out against a small window.
+  //
+  // renderer -> main: the persisted factor. Returns a number (1 on every store that predates it).
+  uiScaleGet: 'uiScale:get',
+  // renderer -> main: store a factor and APPLY it to the live window in the same call. Unlike the
+  // graphics switches above this one takes effect immediately, which is not a courtesy: a size
+  // control you have to relaunch to evaluate cannot be evaluated. Returns what was stored, snapped
+  // to the ladder by the same normalizer the store reader and the window factory use.
+  uiScaleSet: 'uiScale:set',
 
   // ---- dev restart (JOS-61, JOS-63 — src/main/devRestart.ts) ----------------------------
   //

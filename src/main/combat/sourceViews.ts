@@ -23,7 +23,7 @@ import {
   type SourceStat
 } from './aggregate'
 import { roundStatsView } from './roundViews'
-import { spellCanonKey } from '../log/parseCommon'
+import { laneCanonKey } from './procDetect'
 import { CATEGORY_ORDER } from '../../shared/combat'
 import type { CategoryView, DamageCategory, RoundsView, SkillView, SourceView } from '../../shared/combat'
 
@@ -51,7 +51,9 @@ function withLandings(s: SourceStat, lands: EffectLandings): SourceStat {
   const bySkill = new Map(s.bySkill)
   const spell = { ...(s.byCategory.get('spell') ?? newCategory('spell')) }
   spell.bySkill = new Map(spell.bySkill)
-  const byKey = new Map([...bySkill].map(([k, v]) => [spellCanonKey(v.name), k]))
+  // `laneCanonKey`, not `spellCanonKey`: a cast-less lane carries JOS-167's proc marker in its
+  // name, and a landing belongs to the SPELL either half of a split is about.
+  const byKey = new Map([...bySkill].map(([k, v]) => [laneCanonKey(v.name), k]))
   for (const [key, l] of lands) {
     const existing = byKey.get(key)
     const name = existing ?? l.name

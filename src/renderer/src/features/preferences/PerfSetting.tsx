@@ -208,10 +208,10 @@ function DevRestartRow(): JSX.Element {
       </Stack>
       {phase !== 'idle' && (
         <Typography variant="caption" color="text.secondary" data-testid="pref-dev-restart-note">
-          {phase === 'waiting' && 'Rebuilding — the dev watcher relaunches the app.'}
+          {phase === 'waiting' && 'Rebuilding - the dev watcher relaunches the app.'}
           {phase === 'stalled' &&
             'Nothing restarted. This dev server is running without --watch, so restart it from the terminal.'}
-          {phase === 'refused' && `Restart refused${detail === undefined ? '' : ` — ${detail}`}.`}
+          {phase === 'refused' && `Restart refused${detail === undefined ? '' : ` - ${detail}`}.`}
         </Typography>
       )}
     </Stack>
@@ -277,8 +277,8 @@ export function PerfSetting(): JSX.Element {
         />
         <Typography variant="caption" color="text.secondary">
           {prefs.enabled
-            ? 'A live reading sits in the title bar. Click it for a breakdown by process, how far behind the app is running, and the last two minutes. It turns amber or red only when the app is actually being held up — not merely when it is busy.'
-            : 'Off. Nothing is measured and nothing is shown. Turn it on if the app ever feels like it is stuttering — a low reading here while the app feels slow says the machine is loaded, not this app.'}
+            ? 'A live reading sits in the title bar. Click it for a breakdown by process, how far behind the app is running, and the last two minutes. It turns amber or red only when the app is actually being held up - not merely when it is busy.'
+            : 'Off. Nothing is measured and nothing is shown. Turn it on if the app ever feels like it is stuttering - a low reading here while the app feels slow says the machine is loaded, not this app.'}
         </Typography>
       </Stack>
 

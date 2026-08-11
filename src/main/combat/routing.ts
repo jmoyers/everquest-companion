@@ -10,6 +10,7 @@ import { idKey } from '../log/parser'
 import { meleeSkill } from '../log/parseCombat'
 import { SEC_AGGREGATE, SEC_CLASSIFY } from './foldProbe'
 import { ensureEncounter } from './lifecycle'
+import { baseLaneName } from './procDetect'
 import { ACTIVE_MS, type Encounter } from './encounter'
 import type { DamageEvent, MissFold, SourceRef } from './aggregate'
 import type { HealAccum, HealInput } from './healing'
@@ -238,8 +239,12 @@ function routeOutgoingDamage(st: EngineState, enc: Encounter, ev: DamageEvent, a
   const p = st.probe
   if (ev.dclass === 'poison') {
     if (p) p.enter(SEC_AGGREGATE)
-    enc.agg.procs.addPoisonDamage(ev.skill, ev.amount)
-    st.zoneAgg.procs.addPoisonDamage(ev.skill, ev.amount)
+    // `baseLaneName`: the LEDGER is about the venom, not the meter row. A cast-less firing's
+    // meter lane carries JOS-167's origin marker and this counter must not inherit it — every
+    // other proc counter (`spellProcs`, `strikes`) is keyed on the spell for the same reason.
+    const venom = baseLaneName(ev.skill)
+    enc.agg.procs.addPoisonDamage(venom, ev.amount)
+    st.zoneAgg.procs.addPoisonDamage(venom, ev.amount)
     if (p) p.leave()
   }
   // Resolve the target to an instance. For a same-name ambiguous pet hit the

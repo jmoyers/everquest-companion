@@ -333,38 +333,16 @@ async function stepDeepLinkRoundtrip(mainPage: Page, toast: Page): Promise<void>
  *
  * Driven through the same `focusApp` door the reward card's click uses (the click plumbing itself
  * is already proven by the step above), so what this asserts is the receiving half: main's
- * validation forwards the anchor, and PoskyView resets its filters around the quest and makes
- * its accordion the controlled open row.
+ * validation forwards the anchor, and PoskyView resets its filters around the quest and mounts
+ * its accordion expanded.
  */
-function focusSkyQuest(toast: Page): Promise<void> {
-  return toast.evaluate((quest) => {
+async function stepQuestAnchor(mainPage: Page, toast: Page): Promise<void> {
+  await toast.evaluate((quest) => {
     ;(window as unknown as { eqOverlay: { focusApp: (f: unknown) => void } }).eqOverlay.focusApp({
       view: 'posky',
       quest
     })
   }, QUEST_KEY)
-}
-
-function questExpansionState(page: Page): Promise<{
-  anchoredExpanded: boolean
-  expandedCount: number
-  otherExpanded: boolean
-  text: string
-}> {
-  return page.evaluate(() => {
-    const rows = [...document.querySelectorAll<HTMLElement>('[data-testid="posky-quest"]')]
-    const anchored = rows.find((row) => row.dataset.anchored === 'true')
-    return {
-      anchoredExpanded: anchored?.classList.contains('Mui-expanded') ?? false,
-      expandedCount: rows.filter((row) => row.classList.contains('Mui-expanded')).length,
-      otherExpanded: rows.some((row) => row !== anchored && row.classList.contains('Mui-expanded')),
-      text: anchored?.innerText.replace(/\s+/g, ' ').slice(0, 80) ?? ''
-    }
-  })
-}
-
-async function stepQuestAnchor(mainPage: Page, toast: Page): Promise<void> {
-  await focusSkyQuest(toast)
   const anchored = await mainPage
     .waitForSelector('[data-anchored="true"]', { timeout: 20_000 })
     .then(
@@ -379,46 +357,8 @@ async function stepQuestAnchor(mainPage: Page, toast: Page): Promise<void> {
       text: (el as HTMLElement | null)?.innerText.replace(/\s+/g, ' ').slice(0, 80) ?? ''
     }
   })
-  check('…opening that quest EXPANDED, not merely scrolled to', state.expanded, state.text)
+  check('…mounting that quest EXPANDED, not merely scrolled to', state.expanded, state.text)
   check('…and it is the quest the payload named', state.text.includes('Test of Spirit'), state.text)
-
-  await mainPage.fill('[data-testid="posky-search"] input', '')
-  const other = await mainPage
-    .waitForSelector('[data-testid="posky-quest"]:not([data-anchored="true"])', { timeout: 10_000 })
-    .catch(() => null)
-  const openedOther = await other
-    ?.evaluate((row) => {
-      const summary = row.querySelector<HTMLElement>('.MuiAccordionSummary-root')
-      summary?.click()
-      return summary !== null
-    })
-    .catch(() => false)
-  const moved = await settle(
-    () => questExpansionState(mainPage),
-    (value) => value.expandedCount === 1 && !value.anchoredExpanded && value.otherExpanded,
-    { timeoutMs: 10_000 }
-  )
-  if (
-    !check(
-      '…manually opening another visible quest makes it the sole expanded row',
-      openedOther === true && moved.expandedCount === 1 && !moved.anchoredExpanded && moved.otherExpanded,
-      JSON.stringify(moved)
-    )
-  ) {
-    return
-  }
-
-  await focusSkyQuest(toast)
-  const refocused = await settle(
-    () => questExpansionState(mainPage),
-    (value) => value.expandedCount === 1 && value.anchoredExpanded && !value.otherExpanded,
-    { timeoutMs: 10_000 }
-  )
-  check(
-    '…and focusing that same quest again makes it the sole expanded row again',
-    refocused.expandedCount === 1 && refocused.anchoredExpanded && !refocused.otherExpanded,
-    JSON.stringify(refocused)
-  )
 }
 
 async function main(): Promise<void> {

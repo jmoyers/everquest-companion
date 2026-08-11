@@ -21,6 +21,10 @@ import {
   EQIMG_SCHEME,
   IMAGE_CACHE_DIR_NAME,
   IMAGE_URL_ALLOWLIST,
+  MAX_REMEMBERED_FAILURES,
+  rememberImageFailure,
+  rememberedImageFailure,
+  resetImageFailures,
   cacheCandidateNames,
   cacheCandidatePaths,
   cacheFileName,
@@ -339,4 +343,41 @@ test('sniffImageMime gates what may become a permanent cache entry', () => {
   assert.equal(sniffImageMime(new TextEncoder().encode('<!DOCTYPE html><html>404')), null)
   assert.equal(sniffImageMime(new Uint8Array(0)), null)
   assert.equal(sniffImageMime(new Uint8Array([0x89, 0x50, 0x4e])), null)
+})
+
+// ---- remembering a NO (JOS-198) ------------------------------------------------------
+//
+// The disk rule is unchanged and is asserted above: nothing that fails to sniff may become a
+// permanent entry. What is new is that a refusal survives until the process ends, so a
+// re-mounted `<img>` cannot re-ask a wiki that has already answered. These pin WHICH failures
+// count — the whole design is in that distinction, and getting it backwards would lock a laptop
+// that briefly lost its network out of every icon until the user restarted the app.
+
+test('a refusal is remembered for the session, per entry', () => {
+  resetImageFailures()
+  const item = cacheStem(parseEqImgUrl('eqimg://item/4242')!)
+  const other = cacheStem(parseEqImgUrl('eqimg://item/4243')!)
+  assert.equal(rememberedImageFailure(item), null, 'nothing is refused before it has failed')
+
+  rememberImageFailure(item, 'status')
+  assert.equal(rememberedImageFailure(item), 'status')
+  // Per ENTRY, not per host or per route: one bad icon id must not hide every other icon.
+  assert.equal(rememberedImageFailure(other), null)
+
+  rememberImageFailure(other, 'not-an-image')
+  assert.equal(rememberedImageFailure(other), 'not-an-image')
+
+  resetImageFailures()
+  assert.equal(rememberedImageFailure(item), null)
+})
+
+test('the refusal memory is bounded, and degrades to the old behaviour when full', () => {
+  resetImageFailures()
+  for (let i = 0; i < MAX_REMEMBERED_FAILURES; i++) rememberImageFailure(`item-${i}`, 'status')
+  assert.equal(rememberedImageFailure(`item-${MAX_REMEMBERED_FAILURES - 1}`), 'status')
+  // Past the cap nothing is recorded — the request simply behaves as it did before this
+  // existed (one fetch, one 404) rather than evicting something that is still useful.
+  rememberImageFailure('item-overflow', 'status')
+  assert.equal(rememberedImageFailure('item-overflow'), null)
+  resetImageFailures()
 })

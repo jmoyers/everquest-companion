@@ -134,7 +134,7 @@ function ConsiderRowView({ r, onOpen }: { r: ConsiderRow; onOpen: (r: ConsiderRo
 
   return (
     <Stack direction="row" spacing={1} alignItems="baseline" sx={{ py: 0.25, minWidth: 0 }}>
-      <Tooltip title={`${CONSIDER_FACTION_LABEL[r.faction]} — click to open its page`}>
+      <Tooltip title={`${CONSIDER_FACTION_LABEL[r.faction]} - click to open its page`}>
         <Typography
           variant="body2"
           role="button"

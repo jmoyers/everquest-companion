@@ -101,7 +101,7 @@ test('NOT REPORTING and ZERO ERRORS are structurally different, not two renderin
   assert.equal(quiet?.rate, null)
   // And the panel's own honesty rules turn those into different glyphs: `0%` vs `—`.
   assert.equal(rateLabel(clean?.rate ?? null), '0%')
-  assert.equal(rateLabel(quiet?.rate ?? null), '—')
+  assert.equal(rateLabel(quiet?.rate ?? null), '-')
 })
 
 test('the rate is SELF-NORMALIZING — a build with more users cannot look buggier for it', () => {
@@ -137,6 +137,37 @@ test('the error mix per build strips its own version prefix and keeps the fields
     { id: 'rendererCrashes', n: 1 }
   ])
   assert.equal(v?.errors, 7)
+})
+
+test('a HANDLED condition is counted but never enters the rate — that number is for real faults', () => {
+  // JOS-133, and the owner's decision in one assertion (2026-08-09): "real code failures in that
+  // number". `imageFetchFailures` is a wiki that did not answer — 17,632 of them in 14 days,
+  // roughly two thirds of every error line the fleet has ever reported — and summed into
+  // `errors / healthReports` it would swamp every real signal and would move with somebody else's
+  // uptime rather than with anything a release changed.
+  const d = buildWith({
+    usage: [
+      u(TODAY, USAGE_METRICS.healthReports, '0.11.0', 100),
+      u(TODAY, USAGE_METRICS.health, '0.11.0:mainErrorLogLines', 4),
+      u(TODAY, USAGE_METRICS.health, '0.11.0:imageFetchFailures', 17_632),
+      // …and suppressed lines DO count. They are real errors a cap withheld from the local file,
+      // so excluding them would let the cap flatter a build that had started looping.
+      u(TODAY, USAGE_METRICS.health, '0.11.0:suppressedErrorLines', 6)
+    ]
+  }).releaseHealth
+  const v = d.versions.find((x) => x.version === '0.11.0')
+  assert.equal(v?.errors, 10, '4 written + 6 suppressed; the 17,632 downloads are not errors')
+  assert.equal(v?.rate, 0.1)
+  // COUNTED, NOT HIDDEN: the mix still shows it, because an operator reading a big number and a
+  // small rate on one screen is exactly who needs to be told they are different questions.
+  assert.deepEqual(v?.byField, [
+    { id: 'imageFetchFailures', n: 17_632 },
+    { id: 'suppressedErrorLines', n: 6 },
+    { id: 'mainErrorLogLines', n: 4 }
+  ])
+  // The per-DAY series obeys the same rule as the per-build total — two sums, one list.
+  assert.equal(v?.days.find((day) => day.day === TODAY)?.errors, 10)
+  assert.equal(v?.days.find((day) => day.day === TODAY)?.rate, 0.1)
 })
 
 test('release dates come from the COMMITTED notes, and an unreleased build gets null not a guess', () => {

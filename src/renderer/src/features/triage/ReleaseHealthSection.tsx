@@ -175,7 +175,7 @@ function VersionRow({ v, hue }: { v: TriageReleaseHealthVersion; hue: string }):
         </Typography>
       ) : (
         <Typography variant="caption" color="warning.main" data-testid="release-health-quiet">
-          not reporting — no health data from this build
+          not reporting - no health data from this build
         </Typography>
       )}
       <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -188,7 +188,7 @@ function VersionRow({ v, hue }: { v: TriageReleaseHealthVersion; hue: string }):
         {v.byField.length === 0
           ? v.reporting
             ? 'no errors reported'
-            : '—'
+            : '-'
           : v.byField.map((f) => `${f.id} ${formatNum(f.n)}`).join(' · ')}
       </Typography>
     </Box>
@@ -199,11 +199,11 @@ export function ReleaseHealthSection({ data }: { data: TriageAnalyticsData }): J
   const health = data.releaseHealth
   const geo = releaseChart(health, data.days)
   return (
-    <Section title="Release health — error rate per build, over adoption">
+    <Section title="Release health - error rate per build, over adoption">
       <Typography variant="caption" color="text.secondary">
         Errors per health report, per build, on the same x-axis as how much of the fleet was
         running that build; dashed verticals are release dates from the committed notes. The rate
-        is self-normalizing — a popular build cannot look buggier just for having more sessions —
+        is self-normalizing - a popular build cannot look buggier just for having more sessions -
         and the bug-report column is a separate kind of evidence that is never added to it.
       </Typography>
       {/*
@@ -226,7 +226,7 @@ export function ReleaseHealthSection({ data }: { data: TriageAnalyticsData }): J
         <>
           <Chart geo={geo} />
           <Typography variant="caption" color="text.secondary">
-            Top: errors per report, 0 to {geo.maxRate.toFixed(geo.maxRate < 1 ? 2 : 0)} — a gap in
+            Top: errors per report, 0 to {geo.maxRate.toFixed(geo.maxRate < 1 ? 2 : 0)} - a gap in
             a line is a day that build filed nothing, drawn as a hole rather than as a zero.
             Bottom: share of daily active installs per build, with reporting coverage dashed over
             it. Builds that cannot report have no line at all.

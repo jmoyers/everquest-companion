@@ -267,17 +267,33 @@ test('a lane the log named no spell for is LABELED, never folded into a real spe
 /** The lane the model builds for Mend: a count, and every size field at its empty value. */
 const MEND = lane('Mend', { total: 0, count: 3, max: 0, classification: 'unstated' })
 
-test('an unstated lane prints its COUNT and the reason there is no amount — never a 0', () => {
+test('an unstated lane prints its COUNT and nothing else — never a 0', () => {
   assert.equal(isUnstatedLane(MEND), true)
   assert.equal(isAbsorbLane(MEND), false, 'unstated and absorbed are different claims')
   const stat = spellStat(MEND)
   assert.match(stat, /3x/, 'the count is the one real figure the lane has')
-  assert.match(stat, new RegExp(UNSTATED_AMOUNT))
+  // JOS-106: the REASON is no longer repeated here. It rides the `·no amount` tag the panel and
+  // the overlay render immediately to the left of this string, and saying it twice on one row is
+  // what made the row read like an error message.
+  assert.doesNotMatch(stat, new RegExp(UNSTATED_AMOUNT), 'the tag is said once per row, not twice')
   // `healRange(undefined, 0)` is the string '0' — the exact rendering this lane must not produce,
   // because "Mend · 0" reads as a heal that restored nothing.
   assert.doesNotMatch(stat, /\b0\b/, 'an unstated lane printed a 0 as though it were an amount')
   assert.doesNotMatch(stat, /over\b/, 'an unstated heal cannot have an overheal')
   assert.doesNotMatch(stat, /granted/, 'an unstated heal is not absorption')
+})
+
+test('the lane tag says what the LOG did, in words a player does not file as a bug', () => {
+  // JOS-106, from report 01KZGFH4QDTVG7XNW4G24TZYR4: 'unvalued' and 'amount not stated' both
+  // describe OUR bookkeeping, and a v0.12.0 user read the by-design label as a defect within a
+  // day. The replacement is pinned by shape, not just by value, so a future edit cannot drift
+  // back toward jargon without this failing.
+  assert.equal(UNSTATED_AMOUNT, 'no amount')
+  assert.doesNotMatch(UNSTATED_AMOUNT, /unvalued|unstated|not stated/, 'the jargon came back')
+  assert.ok(UNSTATED_AMOUNT.length <= 16, 'the tag sits inline beside a lane name; keep it short')
+  // One source for all three surfaces: the lane tag, the healer row's stat run, the hover title.
+  assert.match(healerStat(healer('you', { name: 'You', unstatedCount: 2, spells: [MEND] })), new RegExp(UNSTATED_AMOUNT))
+  assert.match(spellTitle(MEND), new RegExp(UNSTATED_AMOUNT))
 })
 
 test('an unstated lane derives NOTHING — no average, no range, no "0 effective"', () => {
@@ -296,8 +312,8 @@ test('an unvalued heal is counted BESIDE the row stats, never inside their denom
   // nothing after it, which is how the meter looked in the report that opened JOS-86.
   const mendOnly = healer('you', { name: 'You', unstatedCount: 2, spells: [MEND] })
   // Asserted WHOLE, not by match: the bare `2x` this row must never print is a prefix of the
-  // `2x unvalued` it must, so only the exact string can tell the two apart.
-  assert.equal(healerStat(mendOnly), '2x unvalued')
+  // `2x no amount` it must, so only the exact string can tell the two apart.
+  assert.equal(healerStat(mendOnly), '2x no amount')
   // …and the right end of the bar, which is the LAST place a 0 could still get through.
   assert.equal(healerAmount(mendOnly), NO_AMOUNT_MARK)
   assert.match(healerTitle(mendOnly), new RegExp(UNSTATED_NOTE.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
@@ -308,7 +324,7 @@ test('an unvalued heal is counted BESIDE the row stats, never inside their denom
   const mixedStat = healerStat(mixed)
   assert.match(mixedStat, /4x/, 'the valued heal count moved when a Mend was added')
   assert.match(mixedStat, /25% crit/, 'the crit rate was diluted by a line that cannot crit')
-  assert.match(mixedStat, /2x unvalued/)
+  assert.match(mixedStat, /2x no amount/)
   // A row that DOES have valued sustain keeps printing it — the mark is for rows that have none.
   assert.match(healerAmount(mixed), /1.4k/)
 })

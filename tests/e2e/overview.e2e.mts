@@ -56,6 +56,9 @@ import {
   type Snap
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
+// The drill walk is the COMBAT tab's own, run against this card on purpose (JOS-105): the whole
+// claim is that the two surfaces are one meter, so they are asserted by one step.
+import { stepGlanceDrill } from './drill.mjs'
 import { PULL_DAMAGE, playPull } from './gameplay.mjs'
 import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
 
@@ -576,6 +579,13 @@ async function main(): Promise<void> {
     await stepGridAndDps(page, snap)
     await stepHeadLabel(page, snap)
     await stepZoneAndMob(page, snap)
+    // 6b. THE SAME METER, THE SAME CLICKS (JOS-105). It goes HERE, and not beside the DPS card's
+    //     own step, because every step above reads the snapshot taken back in `stepPlayAFight`:
+    //     the pull this spec plays FINALIZES on a timer, so a step that spends seconds clicking
+    //     ahead of them turns "a fight is open ⇒ the label says live" into a flake (measured —
+    //     it failed exactly that way when this sat at 4b). Nothing below reads that snapshot, and
+    //     this leaves the card back on level 1 for `stepLinkDown`.
+    await stepGlanceDrill(page)
     await stepLevelingPanel(page)
     await stepNavOrder(page)
     await stepUpdateChipClearsPreferences(page)

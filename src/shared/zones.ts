@@ -498,3 +498,48 @@ export function catalogZonesFor(raw: string | undefined | null): string[] {
   const names = zoneEntryFor(raw)?.mobCatalogNames
   return names ? [...names] : []
 }
+
+/**
+ * The OTHER DIRECTION of the same knowledge: a MOB-CATALOG zone spelling -> its map stem.
+ *
+ * `zoneEntryFor` indexes `name` + `aliases`, which is the right corpus for a name the LOG printed.
+ * The catalog is a third naming authority and spells nine zones in ways neither of those reaches
+ * (`EC`, `Lower Guk`, `The Hole`, `Dalnir`, …) — exactly the set `mobCatalogNames` already records
+ * for the forward direction. Reading them the other way turns "which zone is this mob in?" into
+ * "which map do I open", which is what the Maps tab's cross-zone search needs (JOS-135).
+ *
+ * A SECOND INDEX rather than widening `zoneEntryFor`, because the two questions have different
+ * corpora and only one of them should admit catalog spellings: a log line saying `EC` is not
+ * something this app has ever seen, and quietly teaching the log-side fold a wiki abbreviation
+ * would widen an inlet nothing asked for. MEASURED 2026-08-09 over the committed catalog's 192
+ * distinct zone strings: `zoneEntryFor` alone resolves 151, this resolves 160, and no
+ * `mobCatalogNames` entry collides with another zone's own name or alias (pinned by
+ * tests/zones.test.mts).
+ *
+ * The 32 that stay `null` are the ones the table deliberately refuses (see the TODO above): the
+ * ambiguous city names (`Freeport`, `Qeynos`, `Neriak`, `Kaladim`, `Felwithe`), the placeholders
+ * (`Various`), and the wiki table cells whose links ran together. Null means the caller states the
+ * zone as the wiki spells it and offers no map, never a nearest guess (world-model law 1).
+ */
+let CATALOG_INDEX: Map<string, ZoneEntry> | null = null
+
+function catalogIndex(): Map<string, ZoneEntry> {
+  if (CATALOG_INDEX) return CATALOG_INDEX
+  // Seeded from the log-side index so a name/alias always wins over a catalog spelling; the
+  // collision test proves there is never a contest, so this is order-as-documentation.
+  const m = new Map(index())
+  for (const entry of ZONES) {
+    for (const catalogName of entry.mobCatalogNames ?? []) {
+      const key = zoneKey(catalogName)
+      if (key !== '' && !m.has(key)) m.set(key, entry)
+    }
+  }
+  CATALOG_INDEX = m
+  return m
+}
+
+export function zoneShortNameFromCatalog(name: string | undefined | null): ZoneShort | null {
+  const key = zoneKey(name)
+  if (key === '') return null
+  return catalogIndex().get(key)?.short ?? null
+}

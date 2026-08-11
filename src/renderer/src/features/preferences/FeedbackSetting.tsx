@@ -40,7 +40,7 @@ export function FeedbackSetting({ onSend }: { onSend: OpenFeedback }): JSX.Eleme
         </Button>
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        A bug report can attach a scrubbed slice of your EverQuest log — chat, tells, group and
+        A bug report can attach a scrubbed slice of your EverQuest log - chat, tells, group and
         /who lines are removed, and you read every line that remains before it leaves the machine.
       </Typography>
     </Stack>

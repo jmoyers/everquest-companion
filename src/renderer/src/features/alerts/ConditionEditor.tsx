@@ -57,6 +57,7 @@ function EventConditionFields({ draft, onChange }: ConditionFieldProps): JSX.Ele
           size="small"
           label="Field (optional)"
           placeholder="e.g. spell, target"
+          data-testid="alert-field-key"
           value={draft.fieldKey}
           onChange={(e) => set({ fieldKey: e.target.value })}
           fullWidth
@@ -64,6 +65,7 @@ function EventConditionFields({ draft, onChange }: ConditionFieldProps): JSX.Ele
         <TextField
           size="small"
           label="Equals or /regex/"
+          data-testid="alert-field-val"
           value={draft.fieldVal}
           onChange={(e) => set({ fieldVal: e.target.value })}
           error={fieldValErr != null}

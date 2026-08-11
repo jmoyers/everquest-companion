@@ -16,6 +16,7 @@ export type View =
   | 'loot'
   | 'planner'
   | 'buffs'
+  | 'timers'
   | 'preferences'
   // OWNER-ONLY view (src/renderer/src/features/triage/**). It stays in the union
   // unconditionally because a union member is a TYPE and types are erased — nothing of it
@@ -59,6 +60,7 @@ export const VIEW_LABELS: Record<View, string> = {
   // tab is named, so the nav row and a drill's Back button rename together by construction.
   planner: 'Exaltations',
   buffs: 'Buffs',
+  timers: 'Timers',
   preferences: 'Preferences',
   triage: 'Triage',
   character: 'Character'
@@ -78,6 +80,7 @@ const KNOWN_VIEWS: View[] = [
   'loot',
   'planner',
   'buffs',
+  'timers',
   'preferences',
   // Compile-time in a BUILD (`false ? [...] : []` folds away, taking the literal with it) and a
   // runtime read of the opt-in on a dev server — so a contributor's checkout, which has no

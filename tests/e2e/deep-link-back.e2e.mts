@@ -25,12 +25,17 @@
  * run: the guards are honesty, not a lottery. What was never conditional is the DIRECTION of the
  * assertion — where Back went.
  *
+ * SINCE JOS-201 IT ALSO OWNS THE MOUSE'S BACK BUTTON, and that is the right file rather than a new
+ * one: mouse4 is not a second navigation model, it is a second way to press the SAME Back this spec
+ * already drives, so the two belong under one round trip. What it can and cannot reach is spelled
+ * out at `stepMouseBack`.
+ *
  * WHY IT NEVER TAKES THE SCREEN: `EQ_E2E=1` (src/main/e2e.ts) shows no window, skips the
  * single-instance lock, and points `userData` at a throwaway temp dir minted per launch.
  *
  * Run: `npm run test:e2e -- deep-link`.
  */
-import type { Page } from 'playwright-core'
+import type { ElectronApplication, Page } from 'playwright-core'
 import {
   buildIfStale,
   check,
@@ -41,6 +46,7 @@ import {
   reportRun,
   settleCount,
   settleGone,
+  settleStable,
   waitHydrated
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
@@ -215,6 +221,77 @@ async function stepManualNavClears(page: Page): Promise<void> {
   check('…with no drill left over', (await countOf(page, LOOT_DETAIL)) === 0)
 }
 
+/**
+ * PRESS THE MOUSE'S BACK BUTTON (JOS-201).
+ *
+ * WHAT THIS DOES AND DOES NOT PROVE, stated rather than implied. It raises the `app-command` on the
+ * real main window, so everything from `installBackButton`'s listener onward is the shipping path:
+ * the command filter, the `app:back` IPC, the preload bridge, the provider's subscription and
+ * whatever back affordance is registered. The ONE link it cannot drive is the OS's — Windows
+ * turning a physical mouse4 into WM_APPCOMMAND — because Electron surfaces that only as this event
+ * and Playwright's synthetic mouse has no XButton at all. (A CDP-injected `mousedown` would prove
+ * even less: Chromium routes the real button through the browser process, so it never appears in
+ * the renderer as a mouse event on Windows in the first place. That is exactly why this feature is
+ * an `app-command` handler and not a DOM listener.)
+ *
+ * The window is identified by its URL, positively, for the same reason `mainWindow()` identifies
+ * it by `window.eq`: the overlays load `overlay.html` and any of them may be open.
+ */
+function pressMouseBack(app: ElectronApplication): Promise<boolean> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('index.html'))
+    if (!win) return false
+    win.emit('app-command', {}, 'browser-backward')
+    return true
+  })
+}
+
+/**
+ * 5. THE BUTTON THE TICKET IS ABOUT: mouse-Back walks the SAME contract the on-screen arrow does.
+ *
+ * Three presses, three different states, because a back button that only works in the easy case is
+ * the bug being fixed rather than the fix: a DEEP-LINKED drill goes back to the tab that sent you
+ * (the reported ask — an item description returning to the page that opened it); a NATIVE drill
+ * goes back to its own list, unchanged; and a press with no drill and nothing parked does NOTHING,
+ * which is the assertion that stops this from becoming a tab-switch generator.
+ */
+async function stepMouseBack(page: Page, app: ElectronApplication): Promise<void> {
+  await page.click('[data-testid="nav-overview"]', { timeout: 15_000 })
+  if (!(await appears(page, GRID)) || !(await haveRow(page, DROP_ROW))) {
+    note('no drops feed this run — the mouse-back round trip has nothing to deep-link from')
+    return
+  }
+  await page.click(DROP_ROW, { timeout: 15_000 })
+  if (!check('a recent-drop row opens the item drill (again)', await appears(page, LOOT_DETAIL, 30_000))) return
+
+  if (!check('the main window accepts the browser-back app-command', await pressMouseBack(app))) return
+  check('the mouse’s Back button returns to the tab that deep-linked here', await appears(page, GRID))
+  check('…leaving the drill behind, exactly as the arrow does', await settleGone(page, LOOT_DETAIL))
+
+  // A drill opened from the list it belongs to: Back is the list, and the mouse must agree.
+  await page.click('[data-testid="nav-loot"]', { timeout: 15_000 })
+  if (!(await appears(page, LOOT_LIST)) || !(await haveRow(page, LOOT_ROW))) return
+  await page.click(LOOT_ROW, { timeout: 15_000 })
+  if (!(await appears(page, LOOT_DETAIL))) return
+  await pressMouseBack(app)
+  check('on a natively opened drill it means that drill’s own list', await appears(page, LOOT_LIST))
+  check('…without leaving the Loot tab', (await countOf(page, '[data-testid="nav-loot"].Mui-selected')) === 1)
+
+  // Nothing to back out of. An ABSENCE, so it is asserted the way this suite asserts absences:
+  // wait for the reading to stop moving, THEN read it (wave E3).
+  await pressMouseBack(app)
+  const stayed = await settleStable(async () => ({
+    ledger: await countOf(page, LOOT_LIST),
+    drill: await countOf(page, LOOT_DETAIL),
+    onLoot: await countOf(page, '[data-testid="nav-loot"].Mui-selected')
+  }))
+  check(
+    'a press with nowhere to go does nothing at all',
+    stayed.ledger === 1 && stayed.drill === 0 && stayed.onLoot === 1,
+    JSON.stringify(stayed)
+  )
+}
+
 async function main(): Promise<void> {
   buildIfStale()
 
@@ -236,6 +313,7 @@ async function main(): Promise<void> {
       await stepManualNavClears(page)
     }
     await stepMobRoundTrip(page)
+    await stepMouseBack(page, app)
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 

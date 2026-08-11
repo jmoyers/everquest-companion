@@ -97,6 +97,15 @@ const ITEM_ACTIVATE_EFFECT: Record<string, 'shimmer' | 'alive'> = {
 }
 
 /**
+ * The unlock sentence, up to and including the separator (JOS-148). A PREFIX rather than a
+ * regex because everything after it is the class name and nothing else, and because the prefix
+ * is what carries the safety: it is anchored at the start of the message, so no third-person or
+ * quoted form can reach the rule. The separator is a plain hyphen with spaces around it, exactly
+ * as the client prints it (`Primary Class Unlock - Paladin`).
+ */
+const CLASS_UNLOCK_PREFIX = 'You have completed achievement: Primary Class Unlock - '
+
+/**
  * The character's OWN `/who` row — the only authoritative statement of the class loadout.
  *
  * The self-name check is the WHOLE guard. A `/who` prints every player in the zone in exactly
@@ -189,6 +198,35 @@ export function classifySpecialAttack({ text, ts, seq, raw }: ClassifyCtx): LogE
  * starts with, which is why this rule sits AFTER classifyWornOff in the cascade and matches on
  * the exact trailing phrase rather than on the possessive).
  */
+/**
+ * A CLASS UNLOCKED — `You have completed achievement: Primary Class Unlock - <Class>` (JOS-148).
+ *
+ * It belongs in this module for the same reason its three neighbours do: it is a STATEMENT ABOUT
+ * THE CHARACTER rather than an event in the world. The `/who` row says what the character is
+ * running, the skill-up and the special say what it can do, and this one says what it is allowed
+ * to be.
+ *
+ * SELF ONLY and ANCHORED AT THE START of the message, which is the whole safety argument: the
+ * classifier is handed the line with its `[timestamp] ` prefix already stripped, so the
+ * third-person form (`<Name> has completed achievement: …`, 3 lines whole-log) and any chat line
+ * quoting the sentence both begin with somebody's name and can never reach it. The third person
+ * is left `{kind:'unknown'}` on purpose — see ClassUnlockEvent for why a stranger's unlock is not
+ * a fact about this character.
+ *
+ * The other 112 `You have completed achievement:` lines (Traveler, Level N, Hunter of X, named
+ * quests, Race Unlock, Deity Unlock) are DECLINED rather than emitted as a generic achievement
+ * event: nothing consumes them, and a kind invented ahead of a consumer is a shape nobody has
+ * had to be right about. They stay `{kind:'unknown'}`, exactly as they were.
+ *
+ * A blank class is refused rather than emitted — an unlock naming nothing unlocks nothing.
+ */
+export function classifyClassUnlock({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+  if (text.charCodeAt(0) !== 89 /* 'Y' */ || !text.startsWith(CLASS_UNLOCK_PREFIX)) return null
+  const className = text.slice(CLASS_UNLOCK_PREFIX.length).trim()
+  if (!className) return null
+  return { kind: 'classUnlock', seq, ts, raw, className }
+}
+
 export function classifyItemActivate({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
   if (!text.startsWith('Your ')) return null
   const m = ITEM_ACTIVATE_RE.exec(text)

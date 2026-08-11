@@ -54,7 +54,7 @@ import {
  */
 const DISCLOSURE =
   'Your log slice is included. Chat, tells, group and /who lines are removed. Your character’s ' +
-  'name, zones, spells and combat lines stay — that’s what makes a bug reproducible. Read the ' +
+  'name, zones, spells and combat lines stay - that’s what makes a bug reproducible. Read the ' +
   'whole thing below before you send it.'
 
 /** Feature request | Bug report. The entry point picks the default; this is the override. */
@@ -106,7 +106,7 @@ function DraftFieldsBlock({ state }: { state: FeedbackState }): JSX.Element {
         data-testid="feedback-description"
         error={overlong}
         helperText={`${fields.description.trim().length.toString()} / ${MAX_DESCRIPTION.toString()}${
-          problem ? ` — ${problem}` : ''
+          problem ? ` - ${problem}` : ''
         }`}
         onChange={(e) => setField('description', e.target.value)}
       />
@@ -251,7 +251,7 @@ export default function FeedbackDialog({ open, onClose, prefill }: FeedbackDialo
           <Stack spacing={1.5}>
             {dark && (
               <Alert severity="info" variant="standard" data-testid="feedback-unavailable">
-                Sending isn’t available in this build — it has no feedback endpoint. You can still
+                Sending isn’t available in this build - it has no feedback endpoint. You can still
                 save a copy of your log slice below and send it another way.
               </Alert>
             )}

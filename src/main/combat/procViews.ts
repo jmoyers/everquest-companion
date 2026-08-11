@@ -42,7 +42,7 @@
 import { sumMap } from './aggregate'
 import { stateKeyOf } from './stateTimeline'
 import { buildAttributionReport, concentrationOf, linkStrength, procRate } from './procWindows'
-import { laneCount, sidesCount } from './procDetect'
+import { isProcLaneName, laneCanonKey, laneCount, sidesCount } from './procDetect'
 import { idKey, spellCanonKey } from '../log/parseCommon'
 import { POISONS, isSlowCapable } from '../../shared/poisons'
 import { PROC_BUFF_CATALOG } from '../../shared/procBuffs'
@@ -324,15 +324,16 @@ function candidateKeys(label: string): string[] {
  * the meter's own skill lanes. Both consumers read it (the lane's Tier-A damage, and the
  * is-a-proc join below), so "which rows is this lane" can never come to mean two things.
  *
- * Names are matched rank-normalized (law 2, at the counting boundary) and returned RAW, because
- * the raw string is what `SkillView.name` carries and therefore what the drill row is labelled
- * with.
+ * Names are matched rank-normalized AND proc-marker-stripped (`laneCanonKey` — law 2 at the
+ * counting boundary; JOS-167's split is a display decoration, so both halves of a split spell
+ * match here) and returned RAW, because the raw string is what `SkillView.name` carries and
+ * therefore what the drill row is labelled with.
  */
 function skillsMatching(you: SourceStat | undefined, keys: readonly string[]): { name: string; total: number; hits: number }[] {
   const out: { name: string; total: number; hits: number }[] = []
   if (!you) return out
   for (const s of you.bySkill.values()) {
-    if (keys.includes(spellCanonKey(s.name))) out.push({ name: s.name, total: s.total, hits: s.hits })
+    if (keys.includes(laneCanonKey(s.name))) out.push({ name: s.name, total: s.total, hits: s.hits })
   }
   return out
 }
@@ -349,7 +350,7 @@ function resistedBy(you: SourceStat | undefined, keys: readonly string[]): numbe
   if (!you) return 0
   let n = 0
   for (const s of you.bySkill.values()) {
-    if (keys.includes(spellCanonKey(s.name))) n += s.resists
+    if (keys.includes(laneCanonKey(s.name))) n += s.resists
   }
   return n
 }
@@ -435,7 +436,15 @@ function procSkillTags(spec: ProcsViewSpec, lanes: readonly ProcLaneView[]): Pro
  */
 function taggedSkills(you: SourceStat | undefined, l: ProcLaneView): string[] {
   if (l.origin === 'slay') return [l.name]
-  return skillsMatching(you, candidateKeys(l.name)).map((s) => s.name)
+  const rows = skillsMatching(you, candidateKeys(l.name))
+  // THE SPLIT (JOS-167). A 'spell' lane counts the CAST-LESS firings of that spell, and those
+  // now have a meter row of their own. Tagging every row the spell occupies would put the proc
+  // rate on the hand-casts too, which is the exact confusion the split exists to end. When the
+  // spell only ever procced there is one row and it carries the marker, so this narrows nothing;
+  // when it also has a matching row with no marker at all (a poison Strike, an emote lane) the
+  // filter would empty the list, so it applies only once a marked row exists.
+  const split = rows.filter((s) => isProcLaneName(s.name))
+  return (l.origin === 'spell' && split.length > 0 ? split : rows).map((s) => s.name)
 }
 
 /** Healing recorded under a given skill name by the cast-less detector (`Lifetap Strike`,

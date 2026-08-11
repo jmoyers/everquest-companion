@@ -15,7 +15,12 @@
 //      chain whose arithmetic can only be explained by timers that stop while you are out of
 //      the world), then the CONTRACT it justifies, driven through BuffsModule with
 //      hand-built events so the pause and the mining censor are pinned independently of the
-//      30-minute session-gap clear that would otherwise mask them.
+//      30-minute log hole that would otherwise mask them.
+//
+// WHAT THE MODEL DOES ABOUT ALL THIS lives next door in tests/buffPauseOffline.test.mts —
+// JOS-134's half: that a buff survives a real overnight camp (the case layer 3 could not reach,
+// because the hole used to wipe it before the gap arrived), and that a DEBUFF pointedly does not
+// pause with it.
 //
 // Run: `npm test`.
 

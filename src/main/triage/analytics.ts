@@ -48,6 +48,7 @@ import type {
   TriageUpdateRow,
   TriageVersionRow
 } from '../../shared/triage'
+import { buildCoverage } from './coverage'
 import { buildReleaseHealth } from './releaseHealth'
 import {
   addDays,
@@ -380,7 +381,7 @@ function buildStartup(usage: readonly UsageRow[]): TriageAnalyticsStartup {
 function logSizeBucketLabel(i: number): string {
   const { lo, hi } = bucketRange(LOG_SIZE_BYTES_EDGES, Number.isInteger(i) ? i : 0)
   const mb = (bytes: number): string => `${String(Math.round(bytes / 1_048_576))} MB`
-  return hi === null ? `≥ ${mb(lo)}` : i === 0 ? `< ${mb(hi)}` : `${mb(lo)}–${mb(hi)}`
+  return hi === null ? `≥ ${mb(lo)}` : i === 0 ? `< ${mb(hi)}` : `${mb(lo)}-${mb(hi)}`
 }
 
 // ---- versions ------------------------------------------------------------------------
@@ -502,6 +503,10 @@ export function buildAnalytics(input: AnalyticsInput): TriageAnalyticsData {
     // goes wrong and how launches went; this one asks WHICH BUILD, over time, against how many
     // people were on it. Its own file (./releaseHealth.ts) — this one is at the line ceiling.
     releaseHealth: buildReleaseHealth(input.usage, input.bugReports ?? [], days, input.issues ?? []),
+    // …and the section that describes the LIMITS of all of the above: who turned it off, and how
+    // much of the fleet these counters can see at all (JOS-109). Its own file for the same reason
+    // release health has one, and because the argument it has to carry is longer than its code.
+    coverage: buildCoverage(input.usage, input.installs),
     versions: buildVersions(input.usage, input.installs),
     retention: buildRetention(input.installs, ref)
   }

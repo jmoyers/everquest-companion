@@ -52,7 +52,6 @@ test('W7 Quick Buff burst: self Clarity/Valor/Symbol/Swift visible with no cast 
     assert.equal(a!.self, true, `${needle} instance is on the player`)
     assert.equal(a!.durationSource, 'db', `${needle} uses the authoritative DB duration`)
     assert.equal(a!.messageDriven, true, `${needle} was applied by an exact chat message`)
-    assert.equal(a!.provisional, undefined, `${needle} is confident (not provisional)`)
     // DB duration matches the wiki value.
     assert.equal(Math.round((a!.estimatedMs ?? 0) / MIN), dbMin, `${needle} DB duration ~${dbMin}m`)
   }
@@ -173,14 +172,16 @@ test('W10 Cazic-Thule slow: Shiftless Deeds bound BY MESSAGE to entity Cazic-Thu
 
   // Exactly one Shiftless Deeds instance, on Cazic-Thule, by MESSAGE (not inferred).
   const sds = snap.active.filter((a) => a.spell.toLowerCase().includes('shiftless'))
-  assert.equal(sds.length, 1, 'a single Shiftless Deeds instance (the message replaced the cast-timing guess)')
+  // ONE instance, because the landing message is the only thing that opens one (JOS-118). This
+  // used to read "the message replaced the cast-timing guess" — there is no longer a guess to
+  // replace, so a second, differently-targeted copy of the spell cannot come into existence.
+  assert.equal(sds.length, 1, 'a single Shiftless Deeds instance, opened by the landing message')
   const sd = sds[0]
   assert.equal(sd.cls, 'debuff', 'Shiftless Deeds is a debuff (spell property: Detrimental)')
   assert.equal(sd.self, false, 'a debuff is never the player’s own buff')
   assert.equal(sd.target, 'Cazic-Thule', 'bound to the entity the MESSAGE named')
   assert.equal(sd.messageDriven, true, 'applied by the exact "Cazic-Thule slows down." message')
   assert.notEqual(sd.inferredTarget, true, 'the target is message-bound, NOT inferred (user standard)')
-  assert.notEqual(sd.provisional, true, 'confirmed by the landing message, not provisional')
   // Duration is Shiftless Deeds' authoritative DB value (2m30s), not another candidate's.
   assert.equal(Math.round((sd.estimatedMs ?? 0) / 1000), 150, 'Shiftless Deeds DB duration ~2m30s')
 })

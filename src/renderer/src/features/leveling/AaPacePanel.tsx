@@ -84,7 +84,7 @@ export function AaPacePanel({ pace, windowLabel }: AaPacePanelProps): JSX.Elemen
     <Paper variant="outlined" sx={{ p: 2 }} data-testid="leveling-aa-pace">
       <Typography variant="subtitle2">AA pace</Typography>
       <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-        {windowLabel} — {aaPaceCaption(pace)}
+        {windowLabel} - {aaPaceCaption(pace)}
       </Typography>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
         {tiles.map((t) => (

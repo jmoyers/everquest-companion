@@ -1,23 +1,30 @@
-import { type JSX, useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Chip, Collapse, Fab, Snackbar, Stack, Tab, Tabs, Typography } from '@mui/material'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
-import StarIcon from '@mui/icons-material/Star'
+import { type JSX, useCallback, useEffect, useState } from 'react'
+import {
+  Alert,
+  Box,
+  Checkbox,
+  Chip,
+  FormControlLabel,
+  Snackbar,
+  Stack,
+  Tab,
+  Tabs,
+  Typography
+} from '@mui/material'
 import type { CountSource } from '@shared/types'
 import { useProgress, type QuestProgress } from './useProgress'
 // The `/outputfile` freshness line (JOS-44), wired to the registry: this tab's have/need chips
 // read the same dump the Exaltations tab does, so they get the same one-line treatment — the
 // command, one clause of why, and the FILE's own age (or "not yet run").
 import OutputKindLine from '../../components/OutputKindLine'
-import type { SharedItemsMap } from './sharedItems'
 import { QuestIgnoreButton } from '../favorites/QuestFlagButtons'
-import { QuestAccordion } from './QuestAccordion'
+import { TurnInBadge } from './TurnInControls'
 import QuestFilterBar from './QuestFilterBar'
+import ClassUnlockList from './ClassUnlockList'
 import { useQuestList, type QuestListState, type TabKey } from './useQuestList'
+import { QuestList, type QuestAnchor, type QuestListProps } from './QuestList'
 import type { MobTarget } from '../mobs/mobTarget'
 import Confetti from '../../lib/Confetti'
-import { Tooltip } from '../../lib/Tooltip'
 
 // The Ignored tab: every quest the user hid, in one flat compact list (no accordions —
 // there is nothing to work on here), each row carrying the same button that put it here,
@@ -33,7 +40,7 @@ function IgnoredList({
   if (quests.length === 0) {
     return (
       <Typography color="text.secondary">
-        No ignored quests — hide one with the eye icon on its row and it lands here.
+        No ignored quests - hide one with the eye icon on its row and it lands here.
       </Typography>
     )
   }
@@ -62,7 +69,7 @@ function IgnoredList({
               </Typography>
             )}
             <Box sx={{ flexGrow: 1 }} />
-            {q.completed && <Chip size="small" color="success" variant="outlined" label="Turned in" />}
+            <TurnInBadge count={q.turnIns} />
           </Stack>
         ))}
       </Stack>
@@ -100,181 +107,138 @@ function CountsLine({
     // Data exists, it is all ignored — say so, and point at the tab that undoes it.
     return (
       <Typography color="text.secondary">
-        Every quest is ignored — the Ignored tab can bring them back.
+        Every quest is ignored - the Ignored tab can bring them back.
       </Typography>
     )
   }
   return (
-    <Typography variant="body2" color="text.secondary">
+    // The stable handle for the filter specs: this line is where a narrowing filter becomes
+    // VISIBLE, so it is what an e2e reads to prove a facet pick actually removed rows.
+    <Typography variant="body2" color="text.secondary" data-testid="posky-counts">
       {filteredCount} of {totalQuests} quests · counting from{' '}
-      {countSource === 'log' ? 'looted log' : countSource === 'inventory' ? 'inventory export' : 'log + inventory'}
+      {countSource === 'log'
+        ? 'looted log'
+        : countSource === 'inventory'
+          ? 'inventory export plus loot since'
+          : 'inventory export if any, else the looted log'}
     </Typography>
   )
 }
 
-/** The quest a deep link asked us to open, and the nonce that re-delivers the same ask twice. */
-interface QuestAnchor {
-  key: string
-  nonce: number
-}
-
-function FavoritesHeader({
-  count,
-  open,
-  onToggle
-}: {
-  count: number
-  open: boolean
-  onToggle: () => void
-}): JSX.Element {
+/**
+ * The Ready tab's ONE control (JOS-155): show only the quests you have never handed in.
+ *
+ * It ships TICKED, which is the owner's direction rather than a guess - the default
+ * walk-the-islands list is first-time turn-ins, and untickng it is how you ask for the refarms you
+ * have already completed. The stored sense is inverted to match (useQuestList's `useStoredFlag`
+ * argues it); nothing about that is visible here, where the box is simply on until you turn it off.
+ *
+ * The LABEL is the whole explanation, deliberately, and there is no hover text on it: this tab sits
+ * directly above the same accordion rows QuestFilterBar's controls do, and JOS-143 is the standing
+ * answer to putting anything hoverable over a control here. It is worded to mirror the Quests tab's
+ * "Hide quests I have turned in" from the other side, because it is the same predicate read as a
+ * keep rather than a hide.
+ */
+function ReadyFirstTimeToggle({ list }: { list: QuestListState }): JSX.Element {
   return (
-    <Button
-      data-testid="posky-favorites-toggle"
-      fullWidth
-      color="warning"
-      startIcon={<StarIcon />}
-      endIcon={open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-      aria-expanded={open}
-      onClick={onToggle}
-      sx={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 2,
-        justifyContent: 'flex-start',
-        bgcolor: 'background.paper',
-        borderBottom: 1,
-        borderColor: 'divider',
-        borderRadius: 0,
-        '&:hover': { bgcolor: 'background.paper' }
-      }}
-    >
-      Favorites ({count})
-    </Button>
-  )
-}
-
-function ScrollToTop({ onClick }: { onClick: () => void }): JSX.Element {
-  return (
-    <Tooltip title="Scroll to top">
-      <Fab
-        data-testid="posky-scroll-top"
-        size="small"
-        color="primary"
-        aria-label="Scroll to top"
-        onClick={onClick}
-        sx={{ position: 'absolute', right: 16, bottom: 16, zIndex: 3 }}
-      >
-        <KeyboardArrowUpIcon />
-      </Fab>
-    </Tooltip>
-  )
-}
-
-// The scrolling body: one accordion per quest up to the page cap, then the "show more" button.
-function QuestList({
-  list,
-  sharedItems,
-  ambiguousNames,
-  anchor,
-  setQuestComplete,
-  onOpenMob,
-  onOpenLoot
-}: {
-  list: QuestListState
-  sharedItems: SharedItemsMap
-  ambiguousNames: Set<string>
-  /** the anchored quest, or null. It becomes the controlled open row and scrolls into view. */
-  anchor: QuestAnchor | null
-  setQuestComplete: (key: string, complete: boolean) => Promise<void>
-  onOpenMob: (t: MobTarget) => void
-  onOpenLoot?: (item: string) => void
-}): JSX.Element {
-  // The list owns the one open key: opening a row replaces it, while closing that row returns
-  // to no selection. A deep link is an external request to make its quest the open row.
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  const [favoritesOpen, setFavoritesOpen] = useState(true)
-  const [showScrollTop, setShowScrollTop] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  // Preserve the selected comparator inside BOTH groups. Group membership is presentation, not a
-  // second sort: a quest star, or a still-needed starred item, places the quest in Favorites.
-  const favoriteQuests = list.filtered.filter(
-    (q) =>
-      list.questFavorites.has(q.key) ||
-      (!q.completed && q.items.some((item) => list.isFavorite(item.name)))
-  )
-  const favoriteKeys = new Set(favoriteQuests.map((q) => q.key))
-  const regularQuests = list.filtered.filter((q) => !favoriteKeys.has(q.key))
-  const anchorIsFavorite = anchor !== null && favoriteKeys.has(anchor.key)
-  useEffect(() => {
-    if (!anchor) return
-    setExpandedKey(anchor.key)
-    if (anchorIsFavorite) setFavoritesOpen(true)
-  }, [anchor, anchorIsFavorite])
-
-  const toggleFavorites = (): void => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-    setFavoritesOpen(!favoritesOpen)
-  }
-
-  const renderQuest = (q: QuestProgress): JSX.Element => (
-    <QuestAccordion
-      key={q.key}
-      expanded={expandedKey === q.key}
-      onExpandedChange={(nextExpanded) => setExpandedKey(nextExpanded ? q.key : null)}
-      // The nonce lets a second link to the same already-open quest scroll it into view again.
-      anchorNonce={anchor?.key === q.key ? anchor.nonce : undefined}
-      q={q}
-      shared={sharedItems.get(q.key) ?? []}
-      ambiguousNames={ambiguousNames}
-      favorited={list.questFavorites.has(q.key)}
-      onToggleFavorite={() => list.questFavorites.toggle(q.key)}
-      onToggleIgnore={() => list.questIgnored.toggle(q.key)}
-      isFavorite={list.isFavorite}
-      toggleFavorite={list.toggleFavorite}
-      onSetComplete={(complete) => void setQuestComplete(q.key, complete)}
-      onSelectQuest={(name) => list.setQuery(name)}
-      onOpenMob={onOpenMob}
-      onOpenLoot={onOpenLoot}
+    <FormControlLabel
+      control={
+        <Checkbox
+          // The stable handle for tests/e2e/sky-turnin.e2e.mts, which drives the whole arc: a
+          // refarmed quest is absent under the default and present the moment this is unticked.
+          data-testid="posky-ready-first-time"
+          checked={list.readyFirstTimeOnly}
+          onChange={(e) => list.setReadyFirstTimeOnly(e.target.checked)}
+        />
+      }
+      label="Only quests I have never turned in"
     />
   )
+}
 
+/**
+ * The Ready tab (JOS-147): what you can hand in RIGHT NOW, in the order you would walk it if the
+ * data said where the givers stood (it does not - see questCompletion.readyQuests).
+ *
+ * Same rows as the main list, deliberately: this is the same quest, so it gets the same star, the
+ * same ignore button, the same item chips and the same expandable panel with the turn-in counter
+ * in it. A second, thinner row rendering would be a second thing to keep in step with the first.
+ *
+ * The set itself is `list.ready`, which no filter and neither of the QUESTS tab's hide-boxes can
+ * reach. Since JOS-155 the tab has one control of its own, drawn above BOTH states rather than only
+ * above the list: a toggle that can empty the tab has to stay reachable when it has, or the user is
+ * left staring at an empty pane with no way to ask for the rest.
+ */
+function ReadyList(props: QuestListProps): JSX.Element {
+  const n = props.quests.length
+  const { readyFirstTimeOnly, readyRefarmCount } = props.list
   return (
-    <Box sx={{ flexGrow: 1, minHeight: 0, position: 'relative' }}>
-      <Box
-        ref={scrollRef}
-        data-testid="posky-quest-scroll"
-        onScroll={(event) => setShowScrollTop(event.currentTarget.scrollTop > 0)}
-        sx={{ height: '100%', overflow: 'auto' }}
-      >
-        {favoriteQuests.length > 0 && (
-          <>
-            <FavoritesHeader
-              count={favoriteQuests.length}
-              open={favoritesOpen}
-              onToggle={toggleFavorites}
-            />
-            <Collapse in={favoritesOpen}>
-              <Box data-testid="posky-favorites-section" sx={{ mb: 1 }}>
-                {favoriteQuests.map(renderQuest)}
-              </Box>
-            </Collapse>
-          </>
-        )}
-        <Box data-testid="posky-regular-section">
-          {regularQuests.slice(0, list.visibleCount).map(renderQuest)}
-        </Box>
-        {regularQuests.length > list.visibleCount && (
-          <Box sx={{ textAlign: 'center', py: 1.5 }}>
-            <Button variant="outlined" size="small" onClick={list.showMore}>
-              Show more ({regularQuests.length - list.visibleCount} more)
-            </Button>
-          </Box>
-        )}
-      </Box>
-      {showScrollTop && (
-        <ScrollToTop onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
+    <Box
+      data-testid="posky-ready"
+      sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+    >
+      <ReadyFirstTimeToggle list={props.list} />
+      {n === 0 ? (
+        <Typography color="text.secondary">
+          Nothing is ready to turn in - a quest lands here the moment you are holding every item it
+          needs, and leaves when you hand them over.
+          {readyFirstTimeOnly && readyRefarmCount > 0
+            ? ` ${String(readyRefarmCount)} you have run before ${readyRefarmCount === 1 ? 'is' : 'are'} ready now - untick the box to see ${readyRefarmCount === 1 ? 'it' : 'them'}.`
+            : ''}
+        </Typography>
+      ) : (
+        <>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} data-testid="posky-ready-count">
+            {n} quest{n === 1 ? '' : 's'} you are holding every item for
+            {readyFirstTimeOnly ? ' and have never turned in' : ''}.
+            {readyFirstTimeOnly && readyRefarmCount > 0
+              ? ` ${String(readyRefarmCount)} more you have run before ${readyRefarmCount === 1 ? 'is' : 'are'} ready too.`
+              : ''}
+          </Typography>
+          <QuestList {...props} />
+        </>
       )}
     </Box>
+  )
+}
+
+/**
+ * The four tabs, in the order the work happens: what you are farming, what you can hand in, what
+ * all that grinding is FOR, and what you told the app to forget. Ready and Ignored carry their own
+ * count, because the number IS the reason to look.
+ *
+ * Classes deliberately does not (JOS-148). Its number would be "how many classes are unlocked",
+ * which needs the classUnlocks module — and subscribing to it HERE, just to letter a tab, would
+ * put a second copy of the tab's own model in the container that mounts it. The count is the first
+ * thing the tab says when you open it, one line above the rows.
+ */
+function PoskyTabs({ list }: { list: QuestListState }): JSX.Element {
+  return (
+    <Tabs
+      value={list.tab}
+      onChange={(_e, v: TabKey) => list.setTab(v)}
+      sx={{ minHeight: 36, mb: -1, '& .MuiTab-root': { minHeight: 36, py: 0 } }}
+    >
+      <Tab value="quests" label="Quests" data-testid="posky-tab-quests" />
+      {/* "Ready" - the shortest true name for it, and the same word the row's own chip already
+          uses ("Ready to turn in"). Anything longer would be a sentence on a tab. The COUNT is
+          `list.ready.length`, the same array the tab draws, so it follows JOS-155's first-time
+          toggle without knowing the toggle exists - a number that disagreed with the rows under
+          it would be worse than no number. */}
+      <Tab
+        value="ready"
+        label={list.ready.length ? `Ready (${list.ready.length})` : 'Ready'}
+        data-testid="posky-tab-ready"
+      />
+      {/* "Classes" - what the tests are for. The word is the class, not the unlock, because a row
+          is a class whether or not it is unlocked and the tab is as much a progress list. */}
+      <Tab value="classes" label="Classes" data-testid="posky-tab-classes" />
+      <Tab
+        value="ignored"
+        label={list.ignored.length ? `Ignored (${list.ignored.length})` : 'Ignored'}
+        data-testid="posky-tab-ignored"
+      />
+    </Tabs>
   )
 }
 
@@ -350,7 +314,8 @@ export default function PoskyView({
     countSource,
     setCountSource,
     reloadInventory,
-    setQuestComplete,
+    recordTurnIn,
+    undoTurnIn,
     sharedItems,
     ambiguousQuestNames
   } = useProgress({ onQuestComplete })
@@ -367,19 +332,35 @@ export default function PoskyView({
   // Counts describe the list you are looking at, so ignored quests are not in them.
   const totalQuests = list.visible.length
 
+  // Everything a quest ROW needs except which quests to draw. Both tabs that draw rows pass the
+  // identical bundle, which is what "same row rendering" means in code rather than in prose.
+  const rows: Omit<QuestListProps, 'quests'> = {
+    list,
+    sharedItems,
+    ambiguousNames: ambiguousQuestNames,
+    anchor,
+    recordTurnIn,
+    undoTurnIn,
+    onOpenMob,
+    onOpenLoot
+  }
+
   return (
     <Stack spacing={2} sx={{ height: '100%', position: 'relative' }}>
       {burst != null && <Confetti key={burst} onDone={() => setBurst(null)} />}
-      <Tabs
-        value={list.tab}
-        onChange={(_e, v: TabKey) => list.setTab(v)}
-        sx={{ minHeight: 36, mb: -1, '& .MuiTab-root': { minHeight: 36, py: 0 } }}
-      >
-        <Tab value="quests" label="Quests" />
-        <Tab value="ignored" label={list.ignored.length ? `Ignored (${list.ignored.length})` : 'Ignored'} />
-      </Tabs>
+      <PoskyTabs list={list} />
       {list.tab === 'ignored' ? (
         <IgnoredList quests={list.ignored} onUnignore={list.questIgnored.toggle} />
+      ) : list.tab === 'ready' ? (
+        <ReadyList quests={list.ready} {...rows} />
+      ) : list.tab === 'classes' ? (
+        // The VISIBLE quests, like every other tab: a quest the user permanently ignored is not
+        // shown here either, and a class's total shrinks with it rather than counting a quest the
+        // app has been told to forget. `list.visible` is that set (useQuestList.useVisibleQuests).
+        // A row is a DOOR (JOS-157): clicking a class lands on the Quests tab filtered to it. The
+        // navigation is `list.showClassQuests`, so the drill-down writes the same stored pick the
+        // class chip writes and the state it leaves behind is one a user could have set by hand.
+        <ClassUnlockList quests={list.visible} onOpenClass={list.showClassQuests} />
       ) : (
         <>
           <QuestFilterBar
@@ -401,15 +382,7 @@ export default function PoskyView({
             filteredCount={list.filtered.length}
             countSource={countSource}
           />
-          <QuestList
-            list={list}
-            sharedItems={sharedItems}
-            ambiguousNames={ambiguousQuestNames}
-            anchor={anchor}
-            setQuestComplete={setQuestComplete}
-            onOpenMob={onOpenMob}
-            onOpenLoot={onOpenLoot}
-          />
+          <QuestList quests={list.filtered} {...rows} />
         </>
       )}
 

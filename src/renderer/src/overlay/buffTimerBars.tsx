@@ -37,12 +37,26 @@ export function timeLabel(row: BuffTimerRow, nowMs: number): string {
     // fmtDuration renders a 0 as an em-dash (it is the app's "no value" spelling); a buff that
     // landed this second has a real elapsed time of zero, so spell it as one.
     const elapsed = fmtDuration(r.elapsedMs)
-    return `+${elapsed === '—' ? '0s' : elapsed}`
+    return `+${elapsed === '-' ? '0s' : elapsed}`
   }
   return r.overdue ? '0s' : fmtDuration(r.remainingMs ?? 0)
 }
 
-export function BuffTimerBar({ row, nowMs }: { row: BuffTimerRow; nowMs: number }): JSX.Element {
+export function BuffTimerBar({
+  row,
+  nowMs,
+  showTarget = false
+}: {
+  row: BuffTimerRow
+  nowMs: number
+  /**
+   * Print the target ON the row. True in the FLAT soonest-first arrangement (JOS-140), where there
+   * is no per-target heading above it — the owner's ask was a queue of things running out, and
+   * which mob a row is on is then a detail on the row rather than a section it lives under.
+   * Without this a flat list of five mez bars would be five rows that cannot be told apart.
+   */
+  showTarget?: boolean
+}): JSX.Element {
   const r = timerReading(row, nowMs)
   const accent = rowAccent(row.kind)
   const countdown = row.mode === 'countdown'
@@ -50,17 +64,19 @@ export function BuffTimerBar({ row, nowMs }: { row: BuffTimerRow; nowMs: number 
     <div
       data-testid="buff-timer-row"
       data-timer-mode={row.mode}
-      title={row.candidates ? `Shared landing message — one of: ${row.candidates.join(', ')}` : undefined}
+      // The row's own facts as ATTRIBUTES, so a test reads what the model decided rather than
+      // re-deriving it from rendered text: the name span also carries the ~ chip, the count and
+      // the caster, and the target is a chip here but a block heading in the other arrangement.
+      data-spell={row.name}
+      data-target={row.target ?? ''}
+      title={row.candidates ? `Shared landing message - one of: ${row.candidates.join(', ')}` : undefined}
       style={{
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
         padding: '3px 4px 4px',
         borderLeft: `2px solid ${accent}`,
-        marginBottom: 3,
-        // A provisional landing is a cast we have SEEN but not had confirmed; dimming is how
-        // every other surface in this app says "not yet a fact".
-        opacity: row.provisional === true ? 0.55 : 1
+        marginBottom: 3
       }}
     >
       {/* ONE ROW, never wrapping: a wrap turns overflow into height and a compact bar list is
@@ -87,6 +103,27 @@ export function BuffTimerBar({ row, nowMs }: { row: BuffTimerRow; nowMs: number 
           {row.ambiguous === true && (
             <span data-testid="buff-timer-ambiguous" style={{ color: 'rgba(255,255,255,0.45)', marginLeft: 4 }}>
               ~
+            </span>
+          )}
+          {/* THE COUNT CHIP (JOS-140 ruling 7). EQ prints no instance identifier and stamps to the
+              second, so five mobs of one name mezzed in one round are five identical lines: this
+              row stands for all of them, and the chip is how it says so instead of pretending to
+              be one. The clock is the OLDEST of them, which is the one the next wear-off closes. */}
+          {row.count != null && row.count > 1 && (
+            <span data-testid="buff-timer-count" style={{ color: 'rgba(255,255,255,0.55)', marginLeft: 4 }}>
+              {`x${row.count}`}
+            </span>
+          )}
+          {/* Whose spell this is, when it is not yours (the externals allowlist). Absent for your
+              own, which is nearly every row — a caster chip on all of them would be noise. */}
+          {row.caster != null && (
+            <span data-testid="buff-timer-caster" style={{ color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
+              {row.caster}
+            </span>
+          )}
+          {showTarget && row.target != null && (
+            <span data-testid="buff-timer-target" style={{ color: 'rgba(255,255,255,0.45)', marginLeft: 6 }}>
+              {row.target}
             </span>
           )}
         </span>
@@ -131,22 +168,26 @@ export function BuffTimerGroup({
 }): JSX.Element {
   return (
     <div data-testid="buff-timer-group" style={{ marginBottom: 6 }}>
-      <div
-        style={{
-          fontSize: 9,
-          letterSpacing: 0.6,
-          textTransform: 'uppercase',
-          color: 'rgba(255,255,255,0.45)',
-          padding: '0 4px 2px'
-        }}
-      >
-        {label}
-        {/* `inferred` is not decoration: the model marks a target it INFERRED rather than read
-            out of a sentence, and law 1 says an inference is labelled, never silently shown. */}
-        {inferred && <span style={{ marginLeft: 4, opacity: 0.8 }}>· inferred</span>}
-      </div>
+      {/* NO HEADING when there is no label — the flat soonest-first arrangement (JOS-140) is one
+          block covering every target, and a heading over the whole list would name nothing. */}
+      {label !== '' && (
+        <div
+          style={{
+            fontSize: 9,
+            letterSpacing: 0.6,
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.45)',
+            padding: '0 4px 2px'
+          }}
+        >
+          {label}
+          {/* `inferred` is not decoration: the model marks a target it INFERRED rather than read
+              out of a sentence, and law 1 says an inference is labelled, never silently shown. */}
+          {inferred && <span style={{ marginLeft: 4, opacity: 0.8 }}>· inferred</span>}
+        </div>
+      )}
       {rows.map((r) => (
-        <BuffTimerBar key={r.id} row={r} nowMs={nowMs} />
+        <BuffTimerBar key={r.id} row={r} nowMs={nowMs} showTarget={label === ''} />
       ))}
     </div>
   )

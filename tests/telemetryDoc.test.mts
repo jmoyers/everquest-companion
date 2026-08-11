@@ -29,6 +29,7 @@ import {
   TELEMETRY_EVENT_KINDS,
   TELEMETRY_FEATURES,
   TELEMETRY_FUNNELS,
+  TELEMETRY_FLIP_KINDS,
   TELEMETRY_FUNNEL_STEPS,
   TELEMETRY_OVERLAY_KINDS,
   TELEMETRY_VIEWS,
@@ -53,8 +54,17 @@ test('COMPLETENESS: every event in the schema has a doc row, in the schema’s o
   assert.deepEqual(DOC_EVENT_KINDS, [...TELEMETRY_EVENT_KINDS])
   assert.equal(docCoversSchema(), true)
   // …and every row lists at least one field, so an event cannot be documented as a name only.
+  //
+  // TWO KINDS ARE EXEMPT, AND THE EXEMPTION IS SPELLED BY NAME rather than as a loosened
+  // predicate — the same shape as the `errorReport` exemption in `telemetryContract.test.mts`,
+  // so a THIRTEENTH fieldless event still fails here and has to argue for itself. `optOut` and
+  // `optIn` (JOS-109) genuinely have no fields: a switch flip is the envelope plus the fact that
+  // it happened, and the emptiness IS the privacy claim. What they owe instead is prose, which
+  // the `when` assertion below already demands of every row, and a rendered sentence in place of
+  // an empty table — pinned in its own test at the bottom of this file.
+  const fieldless = new Set<string>(TELEMETRY_FLIP_KINDS)
   for (const e of TELEMETRY_DOC_EVENTS) {
-    assert.ok(e.fields.length > 0, `${e.t} documents no fields`)
+    if (!fieldless.has(e.t)) assert.ok(e.fields.length > 0, `${e.t} documents no fields`)
     assert.ok(e.when.length > 10, `${e.t} does not say when it fires`)
   }
 })
@@ -121,4 +131,18 @@ test('THE LIT-BUILD SENTENCE is on the page, with the three facts that make it d
   assert.match(md, /turning this off deletes/i, 'opt-out is total: the buffer AND the id')
   assert.match(md, /Preferences/)
   assert.doesNotMatch(md, /no build sends anything at all/i)
+})
+
+test('THE OPT-OUT NOTICE IS DISCLOSED — the one send that happens after you said stop', () => {
+  // JOS-109. The page previously read, defensibly, as "turning it off means nothing more leaves
+  // this machine". One thing now does, so this suite pins the disclosure the same way it pins
+  // the lit-build sentence: as a forcing function, not as a courtesy.
+  const md = committed()
+  assert.match(md, /One last thing is sent when you turn it off/i)
+  assert.match(md, /so opt-outs can be counted/i, 'the page says WHY, not just that it happens')
+  assert.match(md, /nothing further is ever sent/i, 'the bound on it is stated')
+  assert.match(md, /never retried/i, 'an offline flip is lost, and the page says so')
+  // …and both fieldless events render a sentence rather than an empty table.
+  for (const kind of TELEMETRY_FLIP_KINDS) assert.ok(md.includes(`### \`${kind}\``), kind)
+  assert.match(md, /\*\*This event has no fields at all\.\*\*/)
 })

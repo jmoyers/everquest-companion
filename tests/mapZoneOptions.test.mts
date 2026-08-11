@@ -20,12 +20,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { ZONES, zoneShortName } from '../src/shared/zones'
+import { tokenize } from '../src/shared/fuzzy'
 import {
   ZONE_OPTIONS_MAX,
   filterZones,
   zoneLabel,
   zoneMatches,
-  zoneOptions
+  zoneOptions,
+  zoneScore
 } from '../src/renderer/src/features/maps/zoneOptions'
 
 /** A stand-in corpus in the shape `listMapZones` returns: stems, ascending. */
@@ -54,6 +56,22 @@ test('the filter narrows on both spellings and is capped', () => {
   assert.equal(filterZones(CORPUS, '', 3).length, 3)
   assert.ok(ZONE_OPTIONS_MAX > 0)
   assert.equal(filterZones(CORPUS, 'no-such-zone-anywhere').length, 0)
+})
+
+test('the filter is the app’s ONE scorer: a typo reaches the zone, and the best match leads', () => {
+  // Same rules as every other search box in the app (shared/fuzzy) — the selector used to be a
+  // private substring test, so a fat-fingered zone name found nothing at all (JOS-135).
+  assert.deepEqual(filterZones(CORPUS, 'nagafn'), ['soldungb'])
+  assert.deepEqual(filterZones(CORPUS, 'befalen'), ['befallen'])
+  // RANKED, which is what `autoHighlight` selects on Enter: the list comes back best-first, and an
+  // exact word match leads it. ("guk" is exact for both Guks and a mere fragment elsewhere.)
+  const query = tokenize('guk')
+  const scores = filterZones(CORPUS, 'guk').map((z) => zoneScore(z, query) ?? 0)
+  assert.ok(scores.length > 1, 'several zones answer to it')
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a), 'the list is ranked, best first')
+  assert.equal(scores[0], 1, 'and an exact word match leads it')
+  // Coverage still bites: EVERY typed word has to land somewhere, so one shared word is not a hit.
+  assert.deepEqual(filterZones(CORPUS, 'plane of nowhere'), [])
 })
 
 test('the current selection is always offered, even from a pack that is gone', () => {

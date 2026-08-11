@@ -31,6 +31,18 @@
 //     there and nowhere else, exactly as it is for every other event.
 //
 // ---------------------------------------------------------------------------------------
+// WHEN THE THROW WILL NOT SAY WHERE (JOS-111)
+// ---------------------------------------------------------------------------------------
+// "At which bundle position" assumes the payload HAS a bundle position, and the fleet's own
+// numbers said otherwise: the two loudest issues in the live 0.13.0 stream were both FRAMELESS,
+// so both hashed the error name alone and collapsed into one row. `locate` below is the ladder
+// that answers it anyway — the throw's own frames, else a stack `errorLog` captured at its call
+// site (labelled `capture`, never passed off as a throw site), else nothing — with external
+// frames and an unwrapped nested error riding independently, and the fingerprint falling back on
+// a shape of the already-redacted message when there is no location at all. The classification,
+// the unwrap and the skeleton are all pure and live in `shared/errorReportLocation.ts`.
+//
+// ---------------------------------------------------------------------------------------
 // ONE EXEMPLAR PER FINGERPRINT PER SESSION
 // ---------------------------------------------------------------------------------------
 // The first occurrence of a fingerprint keeps its message, frames and breadcrumbs. Every repeat
@@ -43,14 +55,35 @@
 // most its last window. The EXEMPLAR is kept across drains, so a fingerprint that fires again
 // after a heartbeat re-sends the same stack with the new count — and the server's UPSERT is
 // first-wins, so that is idempotent by construction rather than by agreement.
+//
+// ---------------------------------------------------------------------------------------
+// …AND AT MOST N OCCURRENCES OF IT, EVER (JOS-197)
+// ---------------------------------------------------------------------------------------
+// "One exemplar carrying `count: 10000`" was written as a boast about how cheap a repeat is. The
+// fleet then filed 7,272,196 occurrences of ONE fingerprint from ONE install in ONE day, and the
+// sentence above is exactly why nothing stopped it: the count was free, so nobody bounded it.
+// `../errorBudget.ts` bounds it now, and `noteError` RETURNS its verdict rather than merely obeying
+// it — because the budget has to govern the errors.log line and the dev stdout line too, and
+// `logError` is the only place that owns those. That module's header carries the whole rule; what
+// matters here is that this file no longer decides on its own how many times a fingerprint may be
+// reported, and that the fingerprint is computed HERE because here is where it already was.
 
+import { errorBudget, resetErrorBudget, type BudgetVerdict } from '../errorBudget'
 import {
   errorCodeOf,
   errorFingerprint,
   errorNameOf,
   parseStackFrames,
-  redactMessage
+  redactMessage,
+  type ErrorFrame
 } from '../../shared/errorReport'
+import {
+  caughtFields,
+  fingerprintFallback,
+  parseComponentPath,
+  parseExternalFrames,
+  type CaughtFields
+} from '../../shared/errorReportLocation'
 import {
   bucketOf,
   MAX_SESSION_FINGERPRINTS,
@@ -92,6 +125,10 @@ const pending = new Map<string, Pending>()
 let sessionStartedAt = 0
 let currentView: TelemetryErrorView = 'unknown'
 
+/** The verdict for an occurrence that never reached the budget at all — see `noteError`'s two
+ *  named fail-open cases. It says "write it as you always did", and never carries a notice. */
+const UNBUDGETED: BudgetVerdict = { report: true, notice: null }
+
 /**
  * WHICH TAB IS OPEN, as the renderer last stated it.
  *
@@ -115,28 +152,43 @@ export function noteCurrentView(view: unknown): void {
  * What `logError` hands over. Deliberately NOT `Error`: the renderer's IPC report is a plain
  * object, `unhandledRejection` can carry anything at all, and `throw 42` is legal JavaScript.
  * Every field is read defensively and every one has an honest fallback.
+ *
+ * The read itself lives in `shared/errorReportLocation.ts` (`caughtFields`), because since
+ * JOS-111 it also FOLLOWS NESTED ERRORS — `logError('main:preload-error', { preloadPath, error })`
+ * carries a real stack one property down — and that unwrap is pure, adversarial, and worth
+ * driving from a test with no Electron in the process.
  */
-export interface CaughtError {
-  name?: unknown
-  message?: unknown
-  stack?: unknown
-  code?: unknown
+export type CaughtError = CaughtFields
+
+/**
+ * WHERE THIS ERROR HAPPENED, in the order that prefers the truest answer (JOS-111).
+ *
+ * 1. THE THROW'S OWN BUNDLE FRAMES. Everything below is only reached when there are none.
+ * 2. THE CAPTURE SITE, synthesised from a stack `logError` took at its own call site. A forwarded
+ *    renderer console error is `{ level, message, source }` and never had a stack; the app still
+ *    knows which of its eighty-odd `logError` calls the report came out of, and those are
+ *    different issues. It is labelled `capture` so it is never read as a throw site.
+ * 3. NOTHING, and the fingerprint's fallback (below) is what stops that colliding.
+ *
+ * `externalFrames` is independent of all three: a stack can carry Node/Electron/dependency frames
+ * whether or not it carries ours, and they are worth having either way.
+ */
+interface Location {
+  frames: ErrorFrame[]
+  external: ErrorFrame[]
+  origin: 'thrown' | 'capture'
 }
 
-/** Pull the four fields out of whatever was actually thrown. */
-function fieldsOf(payload: unknown): CaughtError {
-  if (payload instanceof Error) {
-    return {
-      name: payload.name,
-      message: payload.message,
-      stack: payload.stack,
-      // Node hangs `code` off the error object; it is not on the `Error` type.
-      code: (payload as unknown as { code?: unknown }).code
-    }
+function locate(stack: unknown, captureSite: (() => string) | undefined): Location {
+  const external = parseExternalFrames(stack)
+  const frames = parseStackFrames(stack)
+  if (frames.length > 0 || captureSite === undefined) {
+    return { frames, external, origin: 'thrown' }
   }
-  if (typeof payload === 'object' && payload !== null) return payload
-  // A thrown string or number is its own message and has nothing else.
-  return { message: typeof payload === 'string' ? payload : String(payload) }
+  const site = parseStackFrames(captureSite())
+  return site.length > 0
+    ? { frames: site, external, origin: 'capture' }
+    : { frames, external, origin: 'thrown' }
 }
 
 /**
@@ -147,43 +199,114 @@ function fieldsOf(payload: unknown): CaughtError {
  * `source` is the tag `logError` already uses (`main:uncaughtException`, `renderer:ErrorBoundary`,
  * …). It is NOT sent: it is free text by nature, and the frames say where far better. It is
  * taken only so this function can refuse the one source that would be circular.
+ *
+ * `captureSite` IS A THUNK AND IS CALLED AT MOST ONCE, only when the payload turned out to carry
+ * no bundle frames of its own. Capturing a stack is the expensive part of this function and the
+ * overwhelming majority of errors do not need it, so the cost is paid by the reports that would
+ * otherwise have had no location at all. `errorLog.ts` supplies it; a direct caller (the tests,
+ * and nothing else) may leave it out, in which case step 2 above simply does not happen.
+ *
+ * IT RETURNS THE BUDGET'S VERDICT (JOS-197). The per-fingerprint session cap is the OUTER gate over
+ * every reporting path, and two of those paths — the errors.log line and the dev stdout line —
+ * belong to `logError`. The fingerprint is known only here, so the decision is taken here and
+ * handed back rather than computed a second time on the app's error path.
+ *
+ * THE TWO FAIL-OPEN CASES ARE NAMED RATHER THAN IMPLIED, and both stay bounded downstream by
+ * `errorRepeat`'s five identical lines: the `errorLog` self-report refusal and the `catch`. Neither
+ * computes a fingerprint, so neither has anything to budget — and neither can be the shape this
+ * ticket is about, which had a fingerprint and is how the store counted it to seven million.
  */
-export function noteError(source: string, payload: unknown, now = Date.now()): void {
+export function noteError(
+  source: string,
+  payload: unknown,
+  now = Date.now(),
+  captureSite?: () => string
+): BudgetVerdict {
   try {
     // A failure INSIDE the error-log writer must not mint a report about the error-log writer,
     // on the path that is already failing to write. `errorLog.ts` tags that line `[errorLog]`.
-    if (source.includes('errorLog')) return
-    const f = fieldsOf(payload)
-    const frames = parseStackFrames(f.stack)
+    if (source.includes('errorLog')) return UNBUDGETED
+    const f = caughtFields(payload)
+    const where = locate(f.stack, captureSite)
     const errorName = errorNameOf(f.name)
-    const fingerprint = errorFingerprint(errorName, frames)
+    const redactedMessage = redactMessage(f.message)
+    // The fallback is read only when `where.frames` is empty (errorFingerprint says why), so a
+    // report that HAS frames hashes exactly what it hashed before this ticket and keeps the
+    // identity the error store already knows it by.
+    const fingerprint = errorFingerprint(
+      errorName,
+      where.frames,
+      fingerprintFallback(where.external, redactedMessage)
+    )
+    // THE HARD CAP (JOS-197), asked BEFORE anything is recorded and before the storm bound below,
+    // so that a fingerprint the exemplar ring had no room for is budgeted all the same — its
+    // occurrences still reach errors.log, and they still have to stop.
+    const budget = errorBudget(fingerprint)
+    if (!budget.report) return budget
     const held = pending.get(fingerprint)
     if (held) {
       held.n += 1
-      return
+      return budget
     }
     // THE STORM BOUND. A session that has already produced this many DISTINCT issues is a
     // session where something is badly wrong, and the twenty-first fingerprint is not the one
     // that explains it. Repeats of a fingerprint already held still count (the branch above),
     // so the cap limits distinct exemplars and never the totals of what is already tracked.
-    if (pending.size >= MAX_SESSION_FINGERPRINTS) return
-    const code = errorCodeOf(f.code)
-    const exemplar: Omit<EvErrorReport, 'count'> = {
-      t: 'errorReport',
-      errorName,
-      redactedMessage: redactMessage(f.message),
-      frames,
-      fingerprint,
-      breadcrumbs: wireCrumbs(),
-      view: currentView,
-      sessionAgeBucket: bucketOf(sessionAgeMs(now), SESSION_AGE_MS_EDGES),
-      mode: currentMode()
-    }
-    if (code !== undefined) exemplar.code = code
-    pending.set(fingerprint, { exemplar, n: 1 })
+    if (pending.size >= MAX_SESSION_FINGERPRINTS) return budget
+    pending.set(fingerprint, {
+      exemplar: exemplarOf({ errorName, redactedMessage, fingerprint }, where, f, now),
+      n: 1
+    })
+    return budget
   } catch {
     // A telemetry producer is never worth an app failure, and this one runs on the error path.
+    return UNBUDGETED
   }
+}
+
+/** The three values `noteError` has already computed and would otherwise pass one by one — the
+ *  parameter that keeps `exemplarOf` inside the repo's four. */
+interface Identity {
+  errorName: string
+  redactedMessage: string
+  fingerprint: string
+}
+
+/**
+ * THE EXEMPLAR. Every OPTIONAL field is set only when it has something to say, which is the wire
+ * contract read from the producer's side: a field that is absent costs an older server nothing,
+ * and a field that is present is one the reader can trust to mean something.
+ */
+function exemplarOf(
+  id: Identity,
+  where: Location,
+  f: CaughtFields,
+  now: number
+): Omit<EvErrorReport, 'count'> {
+  const exemplar: Omit<EvErrorReport, 'count'> = {
+    t: 'errorReport',
+    errorName: id.errorName,
+    redactedMessage: id.redactedMessage,
+    frames: where.frames,
+    fingerprint: id.fingerprint,
+    breadcrumbs: wireCrumbs(),
+    view: currentView,
+    sessionAgeBucket: bucketOf(sessionAgeMs(now), SESSION_AGE_MS_EDGES),
+    mode: currentMode()
+  }
+  const code = errorCodeOf(f.code)
+  if (code !== undefined) exemplar.code = code
+  // Stated whenever there are frames to describe. A report with none says nothing about their
+  // origin rather than claiming one, which is also what an exemplar from an older client means.
+  if (where.frames.length > 0) exemplar.frameOrigin = where.origin
+  if (where.external.length > 0) exemplar.externalFrames = where.external
+  // BOTH CARRIERS, because the ErrorBoundary reports itself twice by design: over the `error:report`
+  // IPC, where the marked component stack is appended to `stack`, and through `console.error`,
+  // where the console forwarder's payload has no `stack` field at all and the whole line arrives
+  // as `message`. Same marker, same parser, so neither path is the one that quietly does not work.
+  const componentPath = parseComponentPath(f.stack) ?? parseComponentPath(f.message)
+  if (componentPath !== undefined) exemplar.componentPath = componentPath
+  return exemplar
 }
 
 function sessionAgeMs(now: number): number {
@@ -217,11 +340,17 @@ export function takeErrorReports(): EvErrorReport[] {
  * boundaries beside `resetHealth()` — a switch turned off must not leave a session's errors
  * waiting to be reported if it is turned back on, and the crumbs that would have travelled with
  * them are the same data.
+ *
+ * THE BUDGET RESETS WITH THEM (JOS-197), because this is what a SESSION boundary means in this
+ * process and the cap is per session. It also means the two can never drift: there is no path that
+ * starts a fresh session's exemplars while the previous session's spend is still holding a
+ * fingerprint silent.
  */
 export function resetErrorReports(now = Date.now()): void {
   pending.clear()
   sessionStartedAt = now
   currentView = 'unknown'
+  resetErrorBudget()
   resetBreadcrumbs()
 }
 

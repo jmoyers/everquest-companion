@@ -58,7 +58,7 @@ function have(questName: string, itemName: string, net: Record<string, number>):
 
 function netFor(text: string, countSource: CountSource): Record<string, number> {
   const inv = heldCountsFromDump(parseInventoryDump(text))
-  return reconcile({ log: {}, inv, lootNames: {}, countSource, completedKeys: [], quests }).net
+  return reconcile({ log: {}, inv, lootNames: {}, countSource, turnIns: {}, quests }).net
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ test('JOS-66: the Sky view finds both items — the suffixed one and the unsuffi
   // THE SYMPTOM, reproduced: with the keyring dropped (the pre-fix rule), both read zero.
   const dropped = heldCountsFromDump({ ...parseInventoryDump(REPORT_DUMP), keyRing: [] })
   const before = reconcile({
-    log: {}, inv: dropped, lootNames: {}, countSource: 'inventory', completedKeys: [], quests
+    log: {}, inv: dropped, lootNames: {}, countSource: 'inventory', turnIns: {}, quests
   }).net
   assert.equal(have('Bard Test of Tone', 'Light Woolen Mask', before), 0, 'the report, exactly')
   assert.equal(have('Bard Test of Voice', 'Light Woolen Mantle', before), 0)
@@ -144,10 +144,17 @@ test('the keyring never invents a count: one row is one copy, and the item table
   })
   // Keys stay RAW here (law 2): `+N` folds downstream at the counting boundary, not before.
   const rows = reconcile({
-    log: {}, inv: counts, lootNames: {}, countSource: 'inventory', completedKeys: [], quests
+    log: {}, inv: counts, lootNames: {}, countSource: 'inventory', turnIns: {}, quests
   }).rows
   const mantle = rows.find((r) => r.key === 'light woolen mantle')
   assert.ok(mantle)
   assert.equal(mantle.inv, 1)
-  assert.equal(mantle.name, 'light woolen mantle +1', 'display falls back to the export spelling')
+  // DISPLAY FALLS BACK TO THE QUEST DATA'S SPELLING, not the export's key (changed by JOS-160).
+  // This used to read `light woolen mantle +1` and was described as "the export spelling" — but
+  // `heldCountsFromDump` LOWERCASES every name it folds, so that fallback was never a spelling at
+  // all; it was a lookup key with the capitals rubbed off. Nobody noticed while inventory-only rows
+  // were an opt-in tail; JOS-160 puts one in a search result and on the item page's breadcrumb,
+  // where a lowercased name is simply wrong. The `+N` is gone with it because the counting key is
+  // the base item, which is the row this is (`key === 'light woolen mantle'`).
+  assert.equal(mantle.name, 'Light Woolen Mantle', 'the game spelling, from the quest data')
 })

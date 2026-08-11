@@ -60,7 +60,7 @@ function message(err: unknown): string {
   // prose: a dropped socket is a transient fact about the connection, not a bug in the panel,
   // and `Connection terminated unexpectedly` alone reads like one.
   if (unreachable(err)) {
-    return `${raw}\n\nThe DSQL cluster stopped answering (the connection dropped). Nothing needs migrating — retrying opens a fresh connection.`
+    return `${raw}\n\nThe DSQL cluster stopped answering (the connection dropped). Nothing needs migrating - retrying opens a fresh connection.`
   }
   return raw
 }
@@ -74,7 +74,7 @@ async function attempt<T>(run: () => Promise<T>): Promise<TriageResult<T>> {
   }
 }
 
-const REJECT = { ok: false as const, error: 'Invalid triage request — rejected at the handler.' }
+const REJECT = { ok: false as const, error: 'Invalid triage request - rejected at the handler.' }
 
 /**
  * `backend` is injectable so the surface can be driven without AWS; the default is the real

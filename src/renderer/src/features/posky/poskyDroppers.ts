@@ -225,18 +225,77 @@ export function islandOf(where: string | undefined): string | undefined {
   return m ? `Island ${m[1]}` : undefined
 }
 
-/** Ascending by island NUMBER (so 10 would sort after 9, which a string sort gets wrong). */
-function islandNo(island: string): number {
+/** The NUMBER inside an "Island N" label, for ordering (a string sort puts 10 before 9).
+ *  Exported so the facet filter (questFacets.ts) orders islands by the same arithmetic rather
+ *  than growing a third copy of this regex. 0 for anything that is not an island label. */
+export function islandNumber(island: string): number {
   return Number(ISLAND_RE.exec(island)?.[1] ?? 0)
 }
 
 /** "Island 3" / "Islands 3, 5" — a LIST, never a range: a quest whose items sit on islands 3 and
  *  6 must not read as though island 4 and 5 were involved. Empty string for none stated. */
 export function islandLabel(islands: readonly string[]): string {
-  const sorted = [...new Set(islands)].sort((a, b) => islandNo(a) - islandNo(b))
+  const sorted = [...new Set(islands)].sort((a, b) => islandNumber(a) - islandNumber(b))
   if (sorted.length === 0) return ''
   if (sorted.length === 1) return sorted[0]
-  return `Islands ${sorted.map((i) => String(islandNo(i))).join(', ')}`
+  return `Islands ${sorted.map((i) => String(islandNumber(i))).join(', ')}`
+}
+
+// ---- the ITEM hover roster (the required-item chip's, and the item name's, hover card) ----
+//
+// THE SHAPE HAS MOVED TWICE, so the history is worth one paragraph. Until v0.15.0 each
+// required-item chip anchored `ItemTooltip`, whose lower block printed posky's stated `where` AND a
+// "Drops: <names>" line. JOS-143 deleted every popper on this tab — correctly at the time, they
+// were `placement="top"` and INTERACTIVE, so they opened onto QuestFilterBar and ate the clicks
+// aimed at its dropdowns — and carried the DropperCell rosters over to native `title`s; but the
+// chip was given `title={it.where}` alone, so a 0.16.0 player hovering a required item read the
+// single word "Island 5" and reported exactly that. JOS-173 answered with `itemDropTitle`, the whole
+// roster flattened into ONE newline-joined string, because one string is all a title can carry.
+//
+// JOS-181 IS THE OWNER RULING THE TRADE THE OTHER WAY: the rich card comes back to this tab, with
+// the click-eating defect solved in the POPPER instead of by deleting it (lib/KnownItemTooltip's
+// click-through mode — opens downward, cannot flip up, holds no pointer events, closes on
+// pointerdown). So the facts no longer have to fit an OS tooltip, and this is the same derivation
+// handing back the two PARTS a card draws rather than the string that had to join them. Every
+// golden in tests/poskyDroppers.test.mts moved with it, line for line.
+//
+// The order is the sentence the player is asking: where, then who — the card's own header already
+// says WHAT (the item window prints the name). `where` is carried VERBATIM rather than through
+// `islandOf`: the v0.14.0 card printed it verbatim too, and "Plane of Sky" (the wind runes' honest
+// "anywhere") is a true answer that the island matcher deliberately drops. Nothing known ⇒ both
+// parts empty and the caller draws no block at all; never a guess (law 1).
+
+/** The part of an item row the hover roster reads — `ItemProgress` satisfies it structurally. */
+export interface ItemDropRow {
+  /** the posky scrape's raw `who` — the fallback when nothing resolved to a catalog mob */
+  who?: readonly string[]
+  /** posky's stated location string for this item, e.g. "Island 5" */
+  where?: string
+  droppers: readonly DropperMob[]
+}
+
+/** What the card's Drops block draws: posky's location, then one line per mob. */
+export interface ItemDropFacts {
+  /** posky's stated location, verbatim ("Island 5", "Plane of Sky"). Empty when it states none. */
+  where: string
+  /** "Gorgalosk · level 63+ · Plane of Sky" per dropper — or posky's own words when none resolved. */
+  droppers: string[]
+}
+
+/**
+ * Every fact this tab holds about one required item, ready for the card's lower block.
+ *
+ * The whole roster, uncapped: the card is a block of lines with a 380px ceiling, so the display cap
+ * that keeps the inline table cell to ONE line buys nothing here.
+ */
+export function itemDropFacts(it: ItemDropRow): ItemDropFacts {
+  return {
+    where: (it.where ?? '').trim(),
+    droppers:
+      it.droppers.length > 0
+        ? it.droppers.map((m) => dropperFacts(m))
+        : (it.who ?? []).map((w) => w.trim()).filter((w) => w !== '')
+  }
 }
 
 // ---- the QUEST-level kill set (the collapsed summary row's "Kill: <boss>" caption) ----
@@ -295,7 +354,7 @@ export function questKillTargets(items: readonly KillTargetItem[]): KillTarget[]
   }
   return [...byPage.values()]
     .sort((a, b) => (a.covers === b.covers ? byName(a.mob, b.mob) : b.covers - a.covers))
-    .map((e) => ({ mob: e.mob, covers: e.covers, islands: [...e.islands].sort((a, b) => islandNo(a) - islandNo(b)) }))
+    .map((e) => ({ mob: e.mob, covers: e.covers, islands: [...e.islands].sort((a, b) => islandNumber(a) - islandNumber(b)) }))
 }
 
 /**

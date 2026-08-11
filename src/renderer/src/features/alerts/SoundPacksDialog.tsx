@@ -278,7 +278,7 @@ function RegistryError({
   return (
     <Alert severity={fromCache ? 'warning' : 'error'} variant="outlined">
       {fromCache
-        ? `Showing cached list — couldn't reach the registry (${error}).`
+        ? `Showing cached list - couldn't reach the registry (${error}).`
         : `Couldn't load the registry: ${error}`}
     </Alert>
   )
@@ -358,7 +358,7 @@ export default function SoundPacksDialog({
           </Box>
 
           <Typography variant="caption" color="text.secondary">
-            Packs from openpeon.com (PeonPing/og-packs) — game-audio packs are typically
+            Packs from openpeon.com (PeonPing/og-packs) - game-audio packs are typically
             CC-BY-NC; personal use.
           </Typography>
         </Stack>

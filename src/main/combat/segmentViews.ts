@@ -52,7 +52,7 @@ export function buildSelected(st: EngineState, id: string, now: number): Segment
   if (id === 'zone') {
     const zDur = zoneDurationSec(st)
     return buildView({
-      id: 'zone', kind: 'zone', name: `${st.zone ?? 'Session'} — overall`, zone: st.zone,
+      id: 'zone', kind: 'zone', name: `${st.zone ?? 'Session'} - overall`, zone: st.zone,
       agg: st.zoneAgg, durationSec: zDur, activeSec: Math.min(zDur, zoneActiveSec(st)), active: false,
       st, startTs: st.zoneStartTs, endTs: st.zoneLastTs
     })
@@ -63,7 +63,7 @@ export function buildSelected(st: EngineState, id: string, now: number): Segment
     const zDur = Math.max(1, zs.finalizedMs / 1000)
     const zActive = Math.min(zDur, zs.activeMs / 1000)
     return buildView({
-      id: zs.id, kind: 'zone', name: `${zs.zone} — overall`, zone: zs.zone,
+      id: zs.id, kind: 'zone', name: `${zs.zone} - overall`, zone: zs.zone,
       agg: zs.agg, durationSec: zDur, activeSec: zActive, active: false,
       st, startTs: zs.startTs, endTs: zs.lastTs
     })

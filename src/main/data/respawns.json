@@ -1,0 +1,2935 @@
+{
+ "source": "eqlwiki.com — |respawn_time on every page in the committed mob catalog",
+ "scrapedAt": "2026-08-11",
+ "rows": [
+  {
+   "key": "a alchemist`s acolyte",
+   "page": "A Alchemist`s Acolyte",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "a bandit",
+   "page": "A bandit (Eastern Karana)",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "a black reaver",
+   "page": "A black reaver",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "a bloodgill marauder",
+   "page": "A Bloodgill Marauder",
+   "text": "8 hours",
+   "seconds": 28800
+  },
+  {
+   "key": "a bloodthirsty ghoul",
+   "page": "A bloodthirsty ghoul",
+   "text": "9.5 min",
+   "seconds": 570
+  },
+  {
+   "key": "a broken golem",
+   "page": "A broken golem",
+   "text": "72 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "a brownie outcast",
+   "page": "A Brownie Outcast",
+   "text": "6.5 minutes",
+   "seconds": 390
+  },
+  {
+   "key": "a brownie scout",
+   "page": "A Brownie Scout",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "a clay golem",
+   "page": "A clay golem",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "a cliff golem",
+   "page": "A Cliff Golem",
+   "text": "6 minutes 40 seconds",
+   "seconds": 400
+  },
+  {
+   "key": "a cloaked dhampyre",
+   "page": "A cloaked dhampyre",
+   "text": "10 min",
+   "seconds": 600
+  },
+  {
+   "key": "a clockwork receptionist",
+   "page": "A clockwork receptionist",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "a coldain tracking wolf",
+   "page": "A coldain tracking wolf",
+   "text": "10m 30s",
+   "seconds": 630
+  },
+  {
+   "key": "a coldain wolfmaster",
+   "page": "A coldain wolfmaster",
+   "text": "10m 30s",
+   "seconds": 630
+  },
+  {
+   "key": "a crazed ghoul",
+   "page": "A Crazed Ghoul",
+   "text": "12 minutes",
+   "seconds": 720
+  },
+  {
+   "key": "a crystal guardian",
+   "page": "Crystal Guardian",
+   "text": "1 Hour",
+   "seconds": 3600
+  },
+  {
+   "key": "a crystal spider",
+   "page": "A Crystal Spider",
+   "text": "Skyshrine: 3hours"
+  },
+  {
+   "key": "a dancing skeleton",
+   "page": "A dancing skeleton",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "a dark elf noble",
+   "page": "A dark elf noble",
+   "text": "~15 min",
+   "seconds": 900
+  },
+  {
+   "key": "a deepwater barracuda",
+   "page": "A deepwater barracuda",
+   "text": "6 min?"
+  },
+  {
+   "key": "a di`zok observer",
+   "page": "A Di`zok Observer",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "a dracoliche",
+   "page": "A dracoliche",
+   "text": "7 Days (+/- 8 Hours)",
+   "seconds": 604800
+  },
+  {
+   "key": "a dusty werebat",
+   "page": "A Dusty Werebat",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "a faerie dragon",
+   "page": "A Faerie Dragon",
+   "text": "7 minutes",
+   "seconds": 420
+  },
+  {
+   "key": "a failed apprentice",
+   "page": "A failed apprentice",
+   "text": "Triggered"
+  },
+  {
+   "key": "a ferocious hammerhead",
+   "page": "A ferocious hammerhead",
+   "text": "22 min (with PH)",
+   "seconds": 1320
+  },
+  {
+   "key": "a frenzied ghoul",
+   "page": "A frenzied ghoul",
+   "text": "9.5 min",
+   "seconds": 570
+  },
+  {
+   "key": "a froglok guk shaman",
+   "page": "A froglok guk shaman",
+   "text": "28 min",
+   "seconds": 1680
+  },
+  {
+   "key": "a fungus mutant",
+   "page": "A Fungus Mutant",
+   "text": "~17 min (PH)",
+   "seconds": 1020
+  },
+  {
+   "key": "a ghoul ritualist",
+   "page": "A ghoul ritualist",
+   "text": "28 min 00 sec",
+   "seconds": 1680
+  },
+  {
+   "key": "a glacier bear",
+   "page": "A Glacier Bear",
+   "text": "6-8 hours"
+  },
+  {
+   "key": "a glacier yeti",
+   "page": "A Glacier Yeti",
+   "text": "16:00 minutes",
+   "seconds": 960
+  },
+  {
+   "key": "a glowing cliff golem",
+   "page": "A glowing cliff golem",
+   "text": "Triggered"
+  },
+  {
+   "key": "a goblin headmaster",
+   "page": "A Goblin Headmaster",
+   "text": "6 mins",
+   "seconds": 360
+  },
+  {
+   "key": "a goblin jailmaster",
+   "page": "A goblin jailmaster",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "a goblin scryer",
+   "page": "A goblin scryer",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "a goblin traitor",
+   "page": "A goblin traitor",
+   "text": "2 Hours 30 Minutes",
+   "seconds": 9000
+  },
+  {
+   "key": "a gorgalask",
+   "page": "A gorgalask",
+   "text": "?"
+  },
+  {
+   "key": "a guardian wurm",
+   "page": "A Guardian Wurm",
+   "text": "13 minutes",
+   "seconds": 780
+  },
+  {
+   "key": "a hermit",
+   "page": "A Hermit",
+   "text": "2 min",
+   "seconds": 120
+  },
+  {
+   "key": "a lesser spirit",
+   "page": "A lesser spirit",
+   "text": "Triggered"
+  },
+  {
+   "key": "a minotaur patriarch",
+   "page": "A minotaur patriarch",
+   "text": "28:00",
+   "seconds": 1680
+  },
+  {
+   "key": "a minotaur slaver",
+   "page": "A minotaur slaver",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "a plasmatic priest",
+   "page": "A Plasmatic Priest",
+   "text": "Triggered"
+  },
+  {
+   "key": "a priest of najena",
+   "page": "A priest of najena",
+   "text": "55 min",
+   "seconds": 3300
+  },
+  {
+   "key": "a raider",
+   "page": "A Raider",
+   "text": "3 min",
+   "seconds": 180
+  },
+  {
+   "key": "a ry'gorr messenger",
+   "page": "Ry'Gorr Messenger",
+   "text": "1 hour (as of 1-Jun-2025 patch)",
+   "seconds": 3600
+  },
+  {
+   "key": "a ry`gorr avenger",
+   "page": "A Ry`Gorr Avenger",
+   "text": "Triggered by killing [[Chief Ry`Gorr]]"
+  },
+  {
+   "key": "a ry`gorr invader",
+   "page": "A Ry`Gorr invader",
+   "text": "Triggered"
+  },
+  {
+   "key": "a ry`gorr oracle",
+   "page": "A Ry`Gorr oracle",
+   "text": "Triggered, 14:45"
+  },
+  {
+   "key": "a saltwater croc",
+   "page": "A Saltwater Croc",
+   "text": "16min 30sec (see notes)",
+   "seconds": 990
+  },
+  {
+   "key": "a seahorse matriarch",
+   "page": "A seahorse matriarch",
+   "text": "15 minutes}}",
+   "seconds": 900
+  },
+  {
+   "key": "a shadowed man",
+   "page": "A shadowed man (Lavastorm Mountains)",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "a shady goblin",
+   "page": "A shady goblin",
+   "text": "24 hours",
+   "seconds": 86400
+  },
+  {
+   "key": "a skeletal cook",
+   "page": "A skeletal cook",
+   "text": "18:20 min",
+   "seconds": 1100
+  },
+  {
+   "key": "a skeleton",
+   "page": "A Skeleton (Najena)",
+   "text": "10 minutes",
+   "seconds": 600
+  },
+  {
+   "key": "a sleeping ogre",
+   "page": "A Sleeping Ogre",
+   "text": "3 hours",
+   "seconds": 10800
+  },
+  {
+   "key": "a soul tamer",
+   "page": "A soul tamer",
+   "text": "Triggered"
+  },
+  {
+   "key": "a spirit of flame",
+   "page": "A Spirit of Flame",
+   "text": "Triggered"
+  },
+  {
+   "key": "a splitpaw assassin",
+   "page": "A Splitpaw assassin",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "a steel golem",
+   "page": "A steel golem",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "a stone skeleton",
+   "page": "A stone skeleton",
+   "text": "6min 40sec",
+   "seconds": 400
+  },
+  {
+   "key": "a swirlspine seahorse",
+   "page": "A Swirlspine Seahorse",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "a tar goo",
+   "page": "A Tar Goo",
+   "text": "14 mins 30 secs",
+   "seconds": 870
+  },
+  {
+   "key": "a teir`dal priestess",
+   "page": "A Teir`Dal priestess",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "a teir`dal ranger",
+   "page": "A Teir`Dal ranger",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "a teir`dal rogue",
+   "page": "A Teir`Dal rogue",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "a teir`dal shadowknight",
+   "page": "A Teir`Dal shadowknight",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "a tesch mas gnoll",
+   "page": "A Tesch Mas Gnoll",
+   "text": "6:40 (South Karana)",
+   "seconds": 400
+  },
+  {
+   "key": "a thought bleeder",
+   "page": "A thought bleeder",
+   "text": "Ultra Rare"
+  },
+  {
+   "key": "a thunder spirit",
+   "page": "A Thunder Spirit",
+   "text": "6 hours",
+   "seconds": 21600
+  },
+  {
+   "key": "a thunder spirit princess",
+   "page": "Thunder Spirit Princess",
+   "text": "6 hours",
+   "seconds": 21600
+  },
+  {
+   "key": "a tortured revenant",
+   "page": "A Tortured Revenant",
+   "text": "Triggered"
+  },
+  {
+   "key": "a tortured soul",
+   "page": "A tortured soul",
+   "text": "Triggered"
+  },
+  {
+   "key": "a treant",
+   "page": "A Treant",
+   "text": "4 min (South Karana) - 6 min 30 sec (West Karana)"
+  },
+  {
+   "key": "a tundra yeti",
+   "page": "A Tundra Yeti",
+   "text": "16:00 minutes",
+   "seconds": 960
+  },
+  {
+   "key": "a vampire bat",
+   "page": "A vampire bat",
+   "text": "12am"
+  },
+  {
+   "key": "a very unpleasant hand",
+   "page": "A very unpleasant hand",
+   "text": "?"
+  },
+  {
+   "key": "a voracious hatchling",
+   "page": "A voracious hatchling",
+   "text": "Triggered"
+  },
+  {
+   "key": "a white stallion",
+   "page": "A White Stallion",
+   "text": "3 days (+/- 8-hours variance)",
+   "seconds": 259200
+  },
+  {
+   "key": "a.s.a. vi",
+   "page": "A.S.A. VI",
+   "text": "?"
+  },
+  {
+   "key": "aaryonar",
+   "page": "Aaryonar",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "aglthin dasmore",
+   "page": "Aglthin Dasmore",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "allizewsaur",
+   "page": "Allizewsaur",
+   "text": "6.0 min",
+   "seconds": 360
+  },
+  {
+   "key": "alun bilgum",
+   "page": "Alun Bilgum",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "ambassador dvinn",
+   "page": "Ambassador DVinn",
+   "text": "9 mins; orc pawn as PH."
+  },
+  {
+   "key": "ambassador k`ryn",
+   "page": "Ambassador K`Ryn",
+   "text": "15 minutes",
+   "seconds": 900
+  },
+  {
+   "key": "an advisor",
+   "page": "An advisor",
+   "text": "4 hours",
+   "seconds": 14400
+  },
+  {
+   "key": "an agitated snowfang",
+   "page": "An Agitated Snowfang",
+   "text": "Triggered"
+  },
+  {
+   "key": "an ancient croc",
+   "page": "An Ancient Croc",
+   "text": "16min 30sec",
+   "seconds": 990
+  },
+  {
+   "key": "an ancient jarsath",
+   "page": "An Ancient Jarsath",
+   "text": "8 hours",
+   "seconds": 28800
+  },
+  {
+   "key": "an ancille cook",
+   "page": "An Ancille Cook",
+   "text": "40 minutes",
+   "seconds": 2400
+  },
+  {
+   "key": "an angry goblin",
+   "page": "An angry goblin",
+   "text": "3 days w/ 7h12m window. The window starts 3 days from turn-in to Angry Goblin and lasts 7 hours and 12 minutes."
+  },
+  {
+   "key": "an elf skeleton",
+   "page": "An Elf Skeleton",
+   "text": "6m40s",
+   "seconds": 400
+  },
+  {
+   "key": "an erudite madman",
+   "page": "An erudite madman",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "an ice giant",
+   "page": "An Ice Giant",
+   "text": "6 min 40 sec",
+   "seconds": 400
+  },
+  {
+   "key": "an ice goblin alchemist",
+   "page": "A goblin alchemist (Permafrost)",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "an icy goblin",
+   "page": "An icy goblin",
+   "text": "22min",
+   "seconds": 1320
+  },
+  {
+   "key": "an ishva lteth gnoll",
+   "page": "An Ishva Lteth gnoll",
+   "text": "28 minutes",
+   "seconds": 1680
+  },
+  {
+   "key": "an island madman",
+   "page": "An island madman",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "an orc arsonist",
+   "page": "An orc arsonist",
+   "text": "?"
+  },
+  {
+   "key": "an undead bard",
+   "page": "An Undead Bard",
+   "text": "18 hours (+/- 3)",
+   "seconds": 64800
+  },
+  {
+   "key": "an undead cyclops",
+   "page": "An Undead Cyclops",
+   "text": "6 Min",
+   "seconds": 360
+  },
+  {
+   "key": "an undead jester",
+   "page": "An undead jester",
+   "text": "18:20",
+   "seconds": 1100
+  },
+  {
+   "key": "an undead knight of unrest",
+   "page": "An undead knight of Unrest",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "arantir karondor",
+   "page": "Arantir Karondor",
+   "text": "Triggered"
+  },
+  {
+   "key": "argyn shieldstan",
+   "page": "Argyn Shieldstan",
+   "text": "12 min",
+   "seconds": 720
+  },
+  {
+   "key": "arisen thaumaturgist",
+   "page": "Arisen Thaumaturgist",
+   "text": "4:30",
+   "seconds": 270
+  },
+  {
+   "key": "asaka l`rei",
+   "page": "Asaka L`Rei",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "atdehim sqonci",
+   "page": "Atdehim Sqonci",
+   "text": "4 minutes 24 seconds",
+   "seconds": 264
+  },
+  {
+   "key": "avatar of fear",
+   "page": "Avatar of Fear",
+   "text": "7 min 5 sec",
+   "seconds": 425
+  },
+  {
+   "key": "ayillish",
+   "page": "Ayillish",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "azzar habbib",
+   "page": "Azzar Habbib",
+   "text": "1 Hour (+/- 10 Minutes)",
+   "seconds": 3600
+  },
+  {
+   "key": "barma dunfire",
+   "page": "Barma Dunfire",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "baron telyx v`zher",
+   "page": "Baron Telyx V`Zher",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "bazzt zzzt",
+   "page": "Bazzt Zzzt",
+   "text": "Triggered"
+  },
+  {
+   "key": "bazzzazzt",
+   "page": "Bazzzazzt",
+   "text": "Triggered"
+  },
+  {
+   "key": "beef",
+   "page": "Beef",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "beka",
+   "page": "Beka",
+   "text": "?"
+  },
+  {
+   "key": "bizazzzt",
+   "page": "Bizazzzt",
+   "text": "Triggered"
+  },
+  {
+   "key": "bloodmaw",
+   "page": "Bloodmaw",
+   "text": "10:40 (same as zone spawn timer)",
+   "seconds": 640
+  },
+  {
+   "key": "bloody gnome captive",
+   "page": "Bloody gnome captive",
+   "text": "5:50 (different than zone spawn timer)",
+   "seconds": 350
+  },
+  {
+   "key": "boondin babbinsbort",
+   "page": "Boondin Babbinsbort",
+   "text": "3 Hours 57 Minutes",
+   "seconds": 14220
+  },
+  {
+   "key": "bristlebane",
+   "page": "Bristlebane (God)",
+   "text": "?"
+  },
+  {
+   "key": "brother balatin",
+   "page": "Brother Balatin",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "bryan mcgee",
+   "page": "Bryan McGee",
+   "text": "10 Minutes",
+   "seconds": 600
+  },
+  {
+   "key": "bugrin the gatherer",
+   "page": "Bugrin the Gatherer",
+   "text": "Triggered"
+  },
+  {
+   "key": "bzzazzt",
+   "page": "Bzzazzt",
+   "text": "12 hours",
+   "seconds": 43200
+  },
+  {
+   "key": "bzzzt",
+   "page": "Bzzzt",
+   "text": "Triggered"
+  },
+  {
+   "key": "caninel",
+   "page": "Caninel",
+   "text": "20 min",
+   "seconds": 1200
+  },
+  {
+   "key": "captain berradin",
+   "page": "Captain Berradin",
+   "text": "1 Hour",
+   "seconds": 3600
+  },
+  {
+   "key": "captain boshinko",
+   "page": "Captain Boshinko",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "captain silverwind",
+   "page": "Captain Silverwind",
+   "text": "24 minutes",
+   "seconds": 1440
+  },
+  {
+   "key": "casalen",
+   "page": "Casalen",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "cauldronbubble",
+   "page": "Cauldronbubble",
+   "text": "6 hours",
+   "seconds": 21600
+  },
+  {
+   "key": "ceel moonwhisper",
+   "page": "Ceel Moonwhisper",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "cei sunjumper",
+   "page": "Cei Sunjumper",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "cekenar",
+   "page": "Cekenar",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "chancellor of di`zok",
+   "page": "Chancellor of Di`Zok",
+   "text": "2 hours <span class='ddb'>(8/13/11 patch)</span>"
+  },
+  {
+   "key": "chief ry`gorr",
+   "page": "Chief Ry`Gorr",
+   "text": "Triggered for quest or ~2 hours for normal version"
+  },
+  {
+   "key": "choon",
+   "page": "Choon",
+   "text": "18:00",
+   "seconds": 1080
+  },
+  {
+   "key": "colnro cedar",
+   "page": "Colnro Cedar",
+   "text": "?"
+  },
+  {
+   "key": "constructed potential",
+   "page": "Constructed Potential",
+   "text": "Unknown"
+  },
+  {
+   "key": "cordelia minster",
+   "page": "Cordelia Minster",
+   "text": "6 min",
+   "seconds": 360
+  },
+  {
+   "key": "corflunk",
+   "page": "Corflunk",
+   "text": "~7 min (w/ PH)",
+   "seconds": 420
+  },
+  {
+   "key": "corrupted barracuda",
+   "page": "Corrupted barracuda",
+   "text": "Triggered"
+  },
+  {
+   "key": "councilor juliash lockhear",
+   "page": "Councilor Juliash Lockhear",
+   "text": "1 Hour",
+   "seconds": 3600
+  },
+  {
+   "key": "crenn salbet",
+   "page": "Crenn Salbet",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "crusader swiftmoon",
+   "page": "Crusader Swiftmoon",
+   "text": "Triggered"
+  },
+  {
+   "key": "cyanelle",
+   "page": "Cyanelle",
+   "text": "6 min 40 secs",
+   "seconds": 400
+  },
+  {
+   "key": "cyndreela",
+   "page": "Cyndreela",
+   "text": "6min 40sec",
+   "seconds": 400
+  },
+  {
+   "key": "cynthia",
+   "page": "Cynthia",
+   "text": "5 min 50 sec",
+   "seconds": 350
+  },
+  {
+   "key": "dagarn the destroyer",
+   "page": "Dagarn the Destroyer",
+   "text": "7 days +/- 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "dain frostreaver iv",
+   "page": "Dain Frostreaver IV",
+   "text": "7 Days -/+ 8 Hours",
+   "seconds": 604800
+  },
+  {
+   "key": "dalbar tarbrind",
+   "page": "Dalbar Tarbrind",
+   "text": "12 min",
+   "seconds": 720
+  },
+  {
+   "key": "danloc starn",
+   "page": "Danloc Starn",
+   "text": "?"
+  },
+  {
+   "key": "dark elf reaver",
+   "page": "Dark Elf Reaver",
+   "text": "Triggered"
+  },
+  {
+   "key": "darm dundam",
+   "page": "Darm Dundam",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "dartain the lost",
+   "page": "Dartain the Lost",
+   "text": "36 hours",
+   "seconds": 129600
+  },
+  {
+   "key": "deep",
+   "page": "Deep",
+   "text": "Triggered"
+  },
+  {
+   "key": "deldryn splendyr",
+   "page": "Deldryn Splendyr",
+   "text": "6:40 min",
+   "seconds": 400
+  },
+  {
+   "key": "delin ironblend",
+   "page": "Delin Ironblend",
+   "text": "12 mins",
+   "seconds": 720
+  },
+  {
+   "key": "denn ironblend",
+   "page": "Den Ironblend",
+   "text": "12 min",
+   "seconds": 720
+  },
+  {
+   "key": "deputy alltin",
+   "page": "Deputy Alltin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy antana",
+   "page": "Deputy Antana",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy banto",
+   "page": "Deputy Banto",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy finlip",
+   "page": "Deputy Finlip",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy goltin",
+   "page": "Deputy Goltin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy heepo",
+   "page": "Deputy Heepo",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy higley",
+   "page": "Deputy Higley",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy higrin",
+   "page": "Deputy Higrin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy hiltop",
+   "page": "Deputy Hiltop",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy jeggin",
+   "page": "Deputy Jeggin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy kapop",
+   "page": "Deputy Kapop",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy pigon",
+   "page": "Deputy Pigon",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy quillto",
+   "page": "Deputy Quillto",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy raynin",
+   "page": "Deputy Raynin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "deputy tilo",
+   "page": "Deputy Tilo",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "derakor the vindicator",
+   "page": "Derakor the Vindicator",
+   "text": "8 Hours +/- 1 Hour",
+   "seconds": 28800
+  },
+  {
+   "key": "derasinal",
+   "page": "Derasinal",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "doldigun steinwielder",
+   "page": "Doldigun Steinwielder",
+   "text": "Triggered"
+  },
+  {
+   "key": "dolgin codslayer",
+   "page": "Dolgin Codslayer",
+   "text": "12 (+/- 2 Hours Variance)"
+  },
+  {
+   "key": "doran glosglen",
+   "page": "Doran Glosglen",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "dorn b`dynn",
+   "page": "Dorn B`Dynn",
+   "text": "12:22",
+   "seconds": 742
+  },
+  {
+   "key": "dozekar the cursed",
+   "page": "Dozekar the Cursed",
+   "text": "7 Days +/- 8 Hours",
+   "seconds": 604800
+  },
+  {
+   "key": "draazak",
+   "page": "Draazak",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "dragoon szorn",
+   "page": "Dragoon Szorn",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "dread",
+   "page": "Dread",
+   "text": "Every 72 hours +- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "drosco",
+   "page": "Drosco",
+   "text": "20 minutes",
+   "seconds": 1200
+  },
+  {
+   "key": "dru razbind",
+   "page": "Dru Razbind",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "drusella sathir",
+   "page": "Drusella Sathir",
+   "text": "24 hours",
+   "seconds": 86400
+  },
+  {
+   "key": "druushk",
+   "page": "Druushk",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "dyrna nlith",
+   "page": "Dyrna Nlith",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "dzan amo",
+   "page": "Dzan Amo",
+   "text": "4 minutes 22 seconds",
+   "seconds": 262
+  },
+  {
+   "key": "eashen of the sky",
+   "page": "Eashen of the Sky",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "edvard tommels",
+   "page": "Edvard Tommels",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "eejag",
+   "page": "Eejag",
+   "text": "Triggered"
+  },
+  {
+   "key": "efreeti lord djarn",
+   "page": "Efreeti Lord Djarn",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "eichvul",
+   "page": "Eichvul",
+   "text": "16 minutes",
+   "seconds": 960
+  },
+  {
+   "key": "einhorst mcmannus",
+   "page": "Einhorst McMannus",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "elgahn starn",
+   "page": "Elgahn Starn",
+   "text": "?"
+  },
+  {
+   "key": "elial brook",
+   "page": "Elial Brook",
+   "text": "5 Minutes",
+   "seconds": 300
+  },
+  {
+   "key": "emperor crush",
+   "page": "Emperor Crush",
+   "text": "9 minutes",
+   "seconds": 540
+  },
+  {
+   "key": "entariz",
+   "page": "Entariz",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "enynti",
+   "page": "Enynti",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "equestrielle the corrupted",
+   "page": "Equestrielle the Corrupted",
+   "text": "60 min (Placeholder: a mist wolf)",
+   "seconds": 3600
+  },
+  {
+   "key": "ergrez shortpaw",
+   "page": "Ergrez Shortpaw",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "essedera",
+   "page": "Essedera",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "estrella of gloomwater",
+   "page": "Estrella of Gloomwater",
+   "text": "3 Days (2.5-3?)",
+   "seconds": 259200
+  },
+  {
+   "key": "faydedar",
+   "page": "Faydedar",
+   "text": "7 Days (+/- 8 Hours Variance)",
+   "seconds": 604800
+  },
+  {
+   "key": "flame goblin foreman",
+   "page": "Flame Goblin Foreman",
+   "text": "~18 min (w/ PH)",
+   "seconds": 1080
+  },
+  {
+   "key": "flayer hopkins",
+   "page": "Flayer Hopkins",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "fomgrut borkel",
+   "page": "Fomgrut Borkel",
+   "text": "30 minutes",
+   "seconds": 1800
+  },
+  {
+   "key": "footman of v`zher",
+   "page": "Footman of V`Zher",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "founy jestands",
+   "page": "Founy Jestands",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "frebin tinderhue",
+   "page": "Frebin Tinderhue",
+   "text": "7 min",
+   "seconds": 420
+  },
+  {
+   "key": "fright",
+   "page": "Fright",
+   "text": "Every 72 hours +- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "froglok chef",
+   "page": "Froglok Chef",
+   "text": "~30 min",
+   "seconds": 1800
+  },
+  {
+   "key": "froglok hunter",
+   "page": "Froglok hunter",
+   "text": "See Below"
+  },
+  {
+   "key": "froon",
+   "page": "Froon",
+   "text": "18:00",
+   "seconds": 1080
+  },
+  {
+   "key": "gabbie mardoddle",
+   "page": "Gabbie Mardoddle",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "ganbar dundam",
+   "page": "Ganbar Dundam",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "gann dunbull",
+   "page": "Gann Dunbull",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "garadain glacierbane",
+   "page": "Garadain Glacierbane",
+   "text": "~30 minutes",
+   "seconds": 1800
+  },
+  {
+   "key": "garanel rucksif",
+   "page": "Garanel Rucksif",
+   "text": "22 minutes (or A Festering Hag)",
+   "seconds": 1320
+  },
+  {
+   "key": "gharg oberbord",
+   "page": "Gharg Oberbord",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "gibi bilgum",
+   "page": "Gibi Bilgum",
+   "text": "22 minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "ginleen harltop",
+   "page": "Ebon Strongbear",
+   "text": "?"
+  },
+  {
+   "key": "giz dinree",
+   "page": "Giz Dinree",
+   "text": "6:40 (4 times per night if killed quickly)",
+   "seconds": 400
+  },
+  {
+   "key": "glorin binfurr",
+   "page": "Glorin Binfurr",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "glubbsink",
+   "page": "Glubbsink",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "glynda smeltpot",
+   "page": "Glynda Smeltpot",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "glynn smeltpot",
+   "page": "Glynn Smeltpot",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "goblin drunkard",
+   "page": "Goblin Drunkard",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "goblin janitor",
+   "page": "Goblin Janitor",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "gorenaire",
+   "page": "Gorenaire",
+   "text": "7 Days (+/- 8 hours)",
+   "seconds": 604800
+  },
+  {
+   "key": "gozzrem",
+   "page": "Gozzrem",
+   "text": "7 days +/- 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "grahan rothkar",
+   "page": "Grahan Rothkar",
+   "text": "?"
+  },
+  {
+   "key": "grand herbalist mak`ha",
+   "page": "Grand Herbalist Mak`ha",
+   "text": "20 minutes",
+   "seconds": 1200
+  },
+  {
+   "key": "grand huntsman darral",
+   "page": "Grand Huntsman Darral",
+   "text": "6 Hours",
+   "seconds": 21600
+  },
+  {
+   "key": "grazhak the berzerker",
+   "page": "Grazhak the Berzerker",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "groi gutblade",
+   "page": "Groi Gutblade",
+   "text": "78 seconds",
+   "seconds": 78
+  },
+  {
+   "key": "grozzmel",
+   "page": "Grozzmel",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "guano harvester",
+   "page": "Guano harvester",
+   "text": "22:00",
+   "seconds": 1320
+  },
+  {
+   "key": "guard abbilash",
+   "page": "Guard Abbilash",
+   "text": "10 minutes 30 seconds",
+   "seconds": 630
+  },
+  {
+   "key": "guard ackin",
+   "page": "Guard Ackin",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard belg",
+   "page": "Guard Belg",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard buldoral",
+   "page": "Guard Buldoral",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard captain latorl",
+   "page": "Guard Captain Latorl",
+   "text": "24 minutes",
+   "seconds": 1440
+  },
+  {
+   "key": "guard clendin",
+   "page": "Guard Clendin",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard cozak",
+   "page": "Guard Cozak",
+   "text": "24 min 00 sec",
+   "seconds": 1440
+  },
+  {
+   "key": "guard drath",
+   "page": "Guard Drath",
+   "text": "?"
+  },
+  {
+   "key": "guard dunil",
+   "page": "Guard Dunil",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard dunn",
+   "page": "Guard Dunn",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard elron",
+   "page": "Guard Elron",
+   "text": "?"
+  },
+  {
+   "key": "guard exclorpt",
+   "page": "Guard Exclorpt",
+   "text": "10 minutes 30 seconds",
+   "seconds": 630
+  },
+  {
+   "key": "guard fredrick",
+   "page": "Guard Fredrick",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "guard furithane",
+   "page": "Guard Furithane",
+   "text": "?"
+  },
+  {
+   "key": "guard ginton",
+   "page": "Guard Ginton",
+   "text": "?"
+  },
+  {
+   "key": "guard gregor",
+   "page": "Guard Gregor",
+   "text": "6 min",
+   "seconds": 360
+  },
+  {
+   "key": "guard haldin",
+   "page": "Guard Haldin",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard hartt",
+   "page": "Guard Hartt",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard hetorzuz",
+   "page": "Guard Hetorzuz",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard ishvlor",
+   "page": "Guard Ishvlor",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard kellolonren",
+   "page": "Guard Kellolonren",
+   "text": "10 minutes 30 seconds",
+   "seconds": 630
+  },
+  {
+   "key": "guard kizzburr",
+   "page": "Guard Kizzburr",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard korlack",
+   "page": "Guard Korlack",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard lecknar",
+   "page": "Guard Lecknar",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard lelton",
+   "page": "Guard Lelton",
+   "text": "10 minutes 30 seconds",
+   "seconds": 630
+  },
+  {
+   "key": "guard mertanor",
+   "page": "Guard Mertanor",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard norin",
+   "page": "Guard Norin",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard obyn",
+   "page": "Guard Obyn",
+   "text": "?"
+  },
+  {
+   "key": "guard pendleir",
+   "page": "Guard Pendleir",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "guard polzdurn",
+   "page": "Guard Polzdurn",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard potren",
+   "page": "Guard Potren",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard rireboln",
+   "page": "Guard Rireboln",
+   "text": "10 minutes 30 seconds",
+   "seconds": 630
+  },
+  {
+   "key": "guard rundul",
+   "page": "Guard Rundul",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard sheltuin",
+   "page": "Guard Sheltuin",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard shorm",
+   "page": "Guard Shorm",
+   "text": "?"
+  },
+  {
+   "key": "guard sornn",
+   "page": "Guard Sornn",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard srinn",
+   "page": "Guard Srinn",
+   "text": "24 min",
+   "seconds": 1440
+  },
+  {
+   "key": "guard swang",
+   "page": "Guard Swang",
+   "text": "24 minutes",
+   "seconds": 1440
+  },
+  {
+   "key": "guard tynaryn",
+   "page": "Guard Tynaryn",
+   "text": "25 minutes",
+   "seconds": 1500
+  },
+  {
+   "key": "guard wefnin",
+   "page": "Guard Wefnin",
+   "text": "?"
+  },
+  {
+   "key": "guard yerlash",
+   "page": "Guard Yerlash",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "guard zyburr",
+   "page": "Guard Zyburr",
+   "text": "18:40",
+   "seconds": 1120
+  },
+  {
+   "key": "guardian kozzalym",
+   "page": "Guardian Kozzalym",
+   "text": "5 Days (no variance)",
+   "seconds": 432000
+  },
+  {
+   "key": "guardian of takish",
+   "page": "Guardian of Takish",
+   "text": "12 hours 30 minutes",
+   "seconds": 45000
+  },
+  {
+   "key": "guardian wurm",
+   "page": "Guardian wurm",
+   "text": "13 minutes",
+   "seconds": 780
+  },
+  {
+   "key": "gull skytalon",
+   "page": "Gull Skytalon",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "gundl",
+   "page": "Gundl",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "gylton",
+   "page": "Gylton",
+   "text": "6 min 40 sec",
+   "seconds": 400
+  },
+  {
+   "key": "gynok moltor",
+   "page": "Gynok Moltor",
+   "text": "16.0 min (PH)",
+   "seconds": 960
+  },
+  {
+   "key": "hadden",
+   "page": "Hadden",
+   "text": "6 to 8 minutes"
+  },
+  {
+   "key": "hand of the maestro",
+   "page": "Hand of the Maestro (Mob)",
+   "text": "?"
+  },
+  {
+   "key": "haneka irontoe",
+   "page": "Haneka Irontoe",
+   "text": "?"
+  },
+  {
+   "key": "happ dremblenod",
+   "page": "Happ Dremblenod",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "hasten bootstrutter",
+   "page": "Hasten Bootstrutter",
+   "text": "2 min 45 seconds",
+   "seconds": 165
+  },
+  {
+   "key": "hoshkar",
+   "page": "Hoshkar",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "ikatiar the venom",
+   "page": "Ikatiar the Venom",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "iksar bandit lord",
+   "page": "Iksar Bandit Lord",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "inferno goblin torturer",
+   "page": "Inferno Goblin Torturer",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "innoruuk",
+   "page": "Innoruuk (God)",
+   "text": "7 Days (+/- 8 Hours Variance)",
+   "seconds": 604800
+  },
+  {
+   "key": "ionat",
+   "page": "Ionat",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "ixiblat fer",
+   "page": "Ixiblat Fer",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "jacker",
+   "page": "Jacker",
+   "text": "8 Minutes",
+   "seconds": 480
+  },
+  {
+   "key": "jayla nybright",
+   "page": "Jayla Nybright",
+   "text": "~6 min",
+   "seconds": 360
+  },
+  {
+   "key": "jo jo",
+   "page": "Jo Jo",
+   "text": "18 mins",
+   "seconds": 1080
+  },
+  {
+   "key": "jonah brucker",
+   "page": "Jonah Brucker",
+   "text": "6 min 40 sec",
+   "seconds": 400
+  },
+  {
+   "key": "jorlleag",
+   "page": "Jorlleag",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "junth mcmannus",
+   "page": "Junth McMannus",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "kahaptra z`taj",
+   "page": "Kahaptra Z`Taj",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "karkona",
+   "page": "Karkona",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "kayla nybright",
+   "page": "Kayla Nybright",
+   "text": "~6 min",
+   "seconds": 360
+  },
+  {
+   "key": "kazen fecae",
+   "page": "Kazen Fecae",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "keljemor",
+   "page": "Keljemor",
+   "text": "33 minutes",
+   "seconds": 1980
+  },
+  {
+   "key": "khrix abomination",
+   "page": "Khrix Abomination",
+   "text": "Triggered"
+  },
+  {
+   "key": "kihun solstin",
+   "page": "Kihun Solstin",
+   "text": "10M;40S",
+   "seconds": 640
+  },
+  {
+   "key": "kindle",
+   "page": "Kindle",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "king tormax",
+   "page": "King Tormax",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "king tranix",
+   "page": "King Tranix",
+   "text": "8 Hours",
+   "seconds": 28800
+  },
+  {
+   "key": "knight v`tal",
+   "page": "Knight V`Tal",
+   "text": "4:27",
+   "seconds": 267
+  },
+  {
+   "key": "kobold predator",
+   "page": "Kobold predator",
+   "text": "18min",
+   "seconds": 1080
+  },
+  {
+   "key": "korrigain",
+   "page": "Korrigain",
+   "text": "Night"
+  },
+  {
+   "key": "korven nisere",
+   "page": "Korven Nisere",
+   "text": "4:30",
+   "seconds": 270
+  },
+  {
+   "key": "krigara",
+   "page": "Krigara",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "krystal aspen",
+   "page": "Krystal Aspen",
+   "text": "Approximately 6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "lady mccabe",
+   "page": "Lady McCabe",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "lady mirenilla",
+   "page": "Lady Mirenilla",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lady nevederia",
+   "page": "Lady Nevederia",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lady vox",
+   "page": "Lady Vox",
+   "text": "7 Days (+/- 8 Hours Variance)",
+   "seconds": 604800
+  },
+  {
+   "key": "lanadin",
+   "page": "Lanadin",
+   "text": "?"
+  },
+  {
+   "key": "lann dabldrin",
+   "page": "Lann Dabldrin",
+   "text": "12 min",
+   "seconds": 720
+  },
+  {
+   "key": "lars mcmannus",
+   "page": "Lars McMannus",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "lava elemental",
+   "page": "Lava elemental",
+   "text": "~18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "lendiniara the keeper",
+   "page": "Lendiniara the Keeper",
+   "text": "7 Days +/- 8 Hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lepethida",
+   "page": "Lepethida",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "lheron drast",
+   "page": "Lheron Drast",
+   "text": "?"
+  },
+  {
+   "key": "lhranc",
+   "page": "Lhranc",
+   "text": "3 days",
+   "seconds": 259200
+  },
+  {
+   "key": "lich of miragul",
+   "page": "Lich of Miragul",
+   "text": "1 week?"
+  },
+  {
+   "key": "lieutenant leafstalker",
+   "page": "Lieutenant Leafstalker",
+   "text": "24 minutes",
+   "seconds": 1440
+  },
+  {
+   "key": "lithiniath",
+   "page": "Lithiniath (Black Version)",
+   "text": "3 days (+/- 8-hours variance)",
+   "seconds": 259200
+  },
+  {
+   "key": "lodizal",
+   "page": "Lodizal",
+   "text": "18 hours([[variance"
+  },
+  {
+   "key": "lord doljonijiarnimorinar",
+   "page": "Lord Doljonijiarnimorinar",
+   "text": "3 Days +/- 12 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "lord feshlak",
+   "page": "Lord Feshlak",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lord gimblox",
+   "page": "Lord Gimblox",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "lord koi`doken",
+   "page": "Lord Koi'Doken",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lord kreizenn",
+   "page": "Lord Kreizenn",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lord vyemm",
+   "page": "Lord Vyemm",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "lord yelinak",
+   "page": "Lord Yelinak",
+   "text": "7 days +/- 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "maestro of rancor",
+   "page": "Maestro of Rancor",
+   "text": "3 Days (+/- 8 Hours)",
+   "seconds": 259200
+  },
+  {
+   "key": "magi p`tasa",
+   "page": "Magi P`Tasa",
+   "text": "3 Days +/- 12 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "magnus boran",
+   "page": "Magnus Boran",
+   "text": "22 min",
+   "seconds": 1320
+  },
+  {
+   "key": "maligar's enraged doppleganger",
+   "page": "Maligar's Enraged Doppleganger",
+   "text": "Triggered"
+  },
+  {
+   "key": "master of elements",
+   "page": "Master of Elements",
+   "text": "Triggered"
+  },
+  {
+   "key": "master of the guard",
+   "page": "Master of the Guard",
+   "text": "3 Days +/- 12 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "master yael",
+   "page": "Master Yael",
+   "text": "3 Days -/+8",
+   "seconds": 259200
+  },
+  {
+   "key": "maugarim",
+   "page": "Maugarim",
+   "text": "18 mins",
+   "seconds": 1080
+  },
+  {
+   "key": "melalafen",
+   "page": "Melalafen",
+   "text": "84 - 86 hours"
+  },
+  {
+   "key": "midayor",
+   "page": "Midayor",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "miragul",
+   "page": "Miragul",
+   "text": "Triggered"
+  },
+  {
+   "key": "misty storyswapper",
+   "page": "Misty Storyswapper",
+   "text": "6 min",
+   "seconds": 360
+  },
+  {
+   "key": "mortificator syythrak",
+   "page": "Mortificator Syythrak",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "mraaka",
+   "page": "Mraaka",
+   "text": "?"
+  },
+  {
+   "key": "mrak",
+   "page": "Mrak",
+   "text": "8 Minutes",
+   "seconds": 480
+  },
+  {
+   "key": "murdrick tardok",
+   "page": "Murdrick Tardok",
+   "text": "1 Hour",
+   "seconds": 3600
+  },
+  {
+   "key": "nanzata the warder",
+   "page": "Nanzata the Warder",
+   "text": "?"
+  },
+  {
+   "key": "neuven",
+   "page": "Neuven",
+   "text": "?"
+  },
+  {
+   "key": "nexona",
+   "page": "Nexona",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "noble dojorn",
+   "page": "Noble Dojorn",
+   "text": "7 Days / 3 Days (No Variance)"
+  },
+  {
+   "key": "nyzil bloodforge",
+   "page": "Nyzil Bloodforge",
+   "text": "6m 40s",
+   "seconds": 400
+  },
+  {
+   "key": "old dimshimmer",
+   "page": "Old Dimshimmer",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "oobnopterbevny biddilets",
+   "page": "Oobnopterbevny Biddilets",
+   "text": "1 hour",
+   "seconds": 3600
+  },
+  {
+   "key": "oosa shadowthumper",
+   "page": "Oosa Shadowthumper",
+   "text": "8 minutes",
+   "seconds": 480
+  },
+  {
+   "key": "oracle of k`arnon",
+   "page": "Oracle of K`Arnon",
+   "text": "~6 hours",
+   "seconds": 21600
+  },
+  {
+   "key": "otumar",
+   "page": "Otumar (Paineel)",
+   "text": "?"
+  },
+  {
+   "key": "overking bathezid",
+   "page": "Overking Bathezid",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "pained soul",
+   "page": "Pained Soul",
+   "text": "6 min 40 sec",
+   "seconds": 400
+  },
+  {
+   "key": "pained unicorn",
+   "page": "Pained Unicorn",
+   "text": "90 min?"
+  },
+  {
+   "key": "peffin ambersnow",
+   "page": "Peffin Ambersnow",
+   "text": "1 Hour",
+   "seconds": 3600
+  },
+  {
+   "key": "peg leg",
+   "page": "Peg Leg",
+   "text": "6m 40s",
+   "seconds": 400
+  },
+  {
+   "key": "phara dar",
+   "page": "Phara Dar",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "phenocryst",
+   "page": "Phenocryst",
+   "text": "27+ min"
+  },
+  {
+   "key": "phinigel autropos",
+   "page": "Phinigel Autropos",
+   "text": "12 hours",
+   "seconds": 43200
+  },
+  {
+   "key": "pietro drast",
+   "page": "Pietro Drast",
+   "text": "?"
+  },
+  {
+   "key": "poxbreath yellowfang",
+   "page": "Poxbreath Yellowfang",
+   "text": "Triggered"
+  },
+  {
+   "key": "prince selrach di`zok",
+   "page": "Prince Selrach Di'zok",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "proon",
+   "page": "Proon",
+   "text": "Triggered"
+  },
+  {
+   "key": "queen klicnik",
+   "page": "Queen Klicnik",
+   "text": "6 min 40 sec",
+   "seconds": 400
+  },
+  {
+   "key": "queen velazul di`zok",
+   "page": "Queen Velazul Di`zok",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "rahotep",
+   "page": "Rahotep",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "reckless efreeti",
+   "page": "Reckless efreeti",
+   "text": "70 min",
+   "seconds": 4200
+  },
+  {
+   "key": "renell bekea",
+   "page": "Renell Bekea",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "rlabok",
+   "page": "Rlabok",
+   "text": "?"
+  },
+  {
+   "key": "rodrick tardok",
+   "page": "Rodrick Tardok",
+   "text": "Triggered"
+  },
+  {
+   "key": "rotting skeleton",
+   "page": "Rotting skeleton",
+   "text": "6 minutes 40 secs",
+   "seconds": 400
+  },
+  {
+   "key": "royal scribe kaavin",
+   "page": "Royal Scribe Kaavin",
+   "text": "6 Hours",
+   "seconds": 21600
+  },
+  {
+   "key": "sasie rambleroot",
+   "page": "Sasie Rambleroot",
+   "text": "?"
+  },
+  {
+   "key": "scarbrow ga`hruk",
+   "page": "Scarbrow Ga`Hruk",
+   "text": "Triggered"
+  },
+  {
+   "key": "sebilite guardian",
+   "page": "Sebilite Guardian",
+   "text": "27 minutes",
+   "seconds": 1620
+  },
+  {
+   "key": "sebilite protector",
+   "page": "Sebilite protector",
+   "text": "2 hours 45 minutes",
+   "seconds": 9900
+  },
+  {
+   "key": "seneschal aldikar",
+   "page": "Seneschal Aldikar (Icewell Keep)",
+   "text": "?"
+  },
+  {
+   "key": "sentry badain",
+   "page": "Sentry Badain",
+   "text": "3 Days + 2.5 hours (roughly)",
+   "seconds": 259200
+  },
+  {
+   "key": "sentry kale",
+   "page": "Sentry Kale",
+   "text": "30 minutes",
+   "seconds": 1800
+  },
+  {
+   "key": "servant of sythrax",
+   "page": "Servant of Sythrax",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "sevalak",
+   "page": "Sevalak",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "severilous",
+   "page": "Severilous",
+   "text": "7 Days (+/- 8 Hours Variance)",
+   "seconds": 604800
+  },
+  {
+   "key": "shadow treebright",
+   "page": "Shadow Treebright",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "shadowman leader",
+   "page": "Shadowman Leader",
+   "text": "22:00",
+   "seconds": 1320
+  },
+  {
+   "key": "shannis macdarren",
+   "page": "Shanis MacDarren",
+   "text": "?"
+  },
+  {
+   "key": "shayla nybright",
+   "page": "Shayla Nybright",
+   "text": "~6 min",
+   "seconds": 360
+  },
+  {
+   "key": "shazda asad",
+   "page": "Shazda Asad",
+   "text": "17-18m"
+  },
+  {
+   "key": "shiel glimmerspindle",
+   "page": "Shiel Glimmerspindle",
+   "text": "28 minutes",
+   "seconds": 1680
+  },
+  {
+   "key": "shmendrik lavawalker",
+   "page": "Shmendrik Lavawalker",
+   "text": "3 hours",
+   "seconds": 10800
+  },
+  {
+   "key": "sil silverstar",
+   "page": "Sil Silverstar",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "siltria marwind",
+   "page": "Siltria Marwind",
+   "text": "6:40 min",
+   "seconds": 400
+  },
+  {
+   "key": "silverwing",
+   "page": "Silverwing",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "singe",
+   "page": "Singe",
+   "text": "7 minutes (timed on 7/31/26)",
+   "seconds": 420
+  },
+  {
+   "key": "sir lucan d`lere",
+   "page": "Sir Lucan D`Lere",
+   "text": "7 hours",
+   "seconds": 25200
+  },
+  {
+   "key": "sir lucan dlere",
+   "page": "Sir Lucan Dlere",
+   "text": "7 hours",
+   "seconds": 25200
+  },
+  {
+   "key": "sister of the spire",
+   "page": "Sister of the Spire",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "slaythe",
+   "page": "Slaythe",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "smithy xzatik",
+   "page": "Smithy Xzatik",
+   "text": "10 mins 40 sec",
+   "seconds": 640
+  },
+  {
+   "key": "soldier of v`zher",
+   "page": "Soldier of V`Zher",
+   "text": "5:30",
+   "seconds": 330
+  },
+  {
+   "key": "solusek goblin king",
+   "page": "Solusek Goblin King",
+   "text": "~18 min (with PH)",
+   "seconds": 1080
+  },
+  {
+   "key": "squallslither",
+   "page": "Squallslither",
+   "text": "2min",
+   "seconds": 120
+  },
+  {
+   "key": "squire wimbley",
+   "page": "Squire Wimbley",
+   "text": "6 min 10 sec",
+   "seconds": 370
+  },
+  {
+   "key": "stanos herkanor",
+   "page": "Stanos Herkanor",
+   "text": "Triggered"
+  },
+  {
+   "key": "starr dreamspinner",
+   "page": "Starr Dreamspinner",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "storm dragonchaser",
+   "page": "Storm Dragonchaser",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "strathbone runelord",
+   "page": "Strathbone Runelord",
+   "text": "18 minutes",
+   "seconds": 1080
+  },
+  {
+   "key": "strathbone spider",
+   "page": "Strathbone spider",
+   "text": "Kaesora: 18:00, Temple of Droga: 20:30, Mines of Nurga: 20:30"
+  },
+  {
+   "key": "stump rundl",
+   "page": "Stump Rundl",
+   "text": "400 sec",
+   "seconds": 400
+  },
+  {
+   "key": "tagnis ginfarr",
+   "page": "Tagnis Ginfarr",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "talendor",
+   "page": "Talendor",
+   "text": "7 Days (+/- 8 Hours Variance)",
+   "seconds": 604800
+  },
+  {
+   "key": "tani n`mar",
+   "page": "Tani N`Mar",
+   "text": "15:00",
+   "seconds": 900
+  },
+  {
+   "key": "tantor",
+   "page": "Tantor",
+   "text": "?"
+  },
+  {
+   "key": "targin the rock",
+   "page": "Targin the Rock",
+   "text": "23.5 Minutes",
+   "seconds": 1410
+  },
+  {
+   "key": "targishin",
+   "page": "Targishin",
+   "text": "22 Minutes",
+   "seconds": 1320
+  },
+  {
+   "key": "tavekalem",
+   "page": "Tavekalem",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "tayla nybright",
+   "page": "Tayla Nybright",
+   "text": "~6 min",
+   "seconds": 360
+  },
+  {
+   "key": "tazgar",
+   "page": "Tazgar",
+   "text": "2hours 58 Minutes",
+   "seconds": 10680
+  },
+  {
+   "key": "teir`dal reaver",
+   "page": "Teir`Dal Reaver",
+   "text": "Triggered"
+  },
+  {
+   "key": "telkorenar",
+   "page": "Telkorenar",
+   "text": "7 days +/- 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "terror",
+   "page": "Terror",
+   "text": "Every 72 hours +- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "thar kelgand",
+   "page": "Thar Kelgand",
+   "text": "6 min 30 sec",
+   "seconds": 390
+  },
+  {
+   "key": "the avatar of war",
+   "page": "The Avatar of War",
+   "text": "[[Triggered]]"
+  },
+  {
+   "key": "the final arbiter",
+   "page": "The Final Arbiter",
+   "text": "3 Days +/- 12 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "the froglok king",
+   "page": "The froglok king",
+   "text": "28 min (or PH)",
+   "seconds": 1680
+  },
+  {
+   "key": "the froglok warden",
+   "page": "The Froglok Warden",
+   "text": "16min 30sec",
+   "seconds": 990
+  },
+  {
+   "key": "the ghost of kindle",
+   "page": "The Ghost of Kindle",
+   "text": "21 minutes and 30 seconds",
+   "seconds": 1290
+  },
+  {
+   "key": "the ghoul lord",
+   "page": "The Ghoul Lord",
+   "text": "9 min",
+   "seconds": 540
+  },
+  {
+   "key": "the great oowomp",
+   "page": "The Great Oowomp",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "the ishva mal",
+   "page": "The Ishva Mal",
+   "text": "Not sure but if the Ishva Lteth gnoll is the place holder the spawn is fast."
+  },
+  {
+   "key": "the progenitor",
+   "page": "The Progenitor",
+   "text": "3 Days +/- 12 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "the statue of rallos zek",
+   "page": "The Statue of Rallos Zek",
+   "text": "5 days +- 8 hours",
+   "seconds": 432000
+  },
+  {
+   "key": "the swarm mother",
+   "page": "The Swarm Mother",
+   "text": "See description"
+  },
+  {
+   "key": "the tangrin",
+   "page": "The Tangrin",
+   "text": "48 hours",
+   "seconds": 172800
+  },
+  {
+   "key": "tolapumj",
+   "page": "Tolapumj",
+   "text": "2:45h"
+  },
+  {
+   "key": "tolkar parlone",
+   "page": "Tolkar Parlone",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "tomekeeper danl",
+   "page": "Tomekeeper Danl",
+   "text": "6 min",
+   "seconds": 360
+  },
+  {
+   "key": "torklar battlemaster",
+   "page": "Torklar Battlemaster",
+   "text": "2 hours",
+   "seconds": 7200
+  },
+  {
+   "key": "trakanon",
+   "page": "Trakanon",
+   "text": "3 Days (+/- 8 hours)",
+   "seconds": 259200
+  },
+  {
+   "key": "troll mercenary",
+   "page": "Troll Mercenary",
+   "text": "7 Minutes",
+   "seconds": 420
+  },
+  {
+   "key": "trunt",
+   "page": "Trunt",
+   "text": "Triggered"
+  },
+  {
+   "key": "tsaria jnarus",
+   "page": "Tsaria Jnarus",
+   "text": "18 min",
+   "seconds": 1080
+  },
+  {
+   "key": "tsiraka",
+   "page": "Tsiraka",
+   "text": "30 minutes",
+   "seconds": 1800
+  },
+  {
+   "key": "tuloline",
+   "page": "Tuloline",
+   "text": "?"
+  },
+  {
+   "key": "tyrana slil",
+   "page": "Tyrana Slil",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "ugrak da raider",
+   "page": "Ugrak da Raider",
+   "text": "12 min",
+   "seconds": 720
+  },
+  {
+   "key": "uiliak",
+   "page": "Uiliak",
+   "text": "?"
+  },
+  {
+   "key": "ulrich mcmannus",
+   "page": "Ulrich McMannus",
+   "text": "6 minutes",
+   "seconds": 360
+  },
+  {
+   "key": "ulump pujluk",
+   "page": "Ulump Pujluk",
+   "text": "12 hours",
+   "seconds": 43200
+  },
+  {
+   "key": "unbound flame",
+   "page": "Unbound Flame",
+   "text": "4:26",
+   "seconds": 266
+  },
+  {
+   "key": "undead cleric",
+   "page": "Undead Cleric",
+   "text": "6 minutes, 40 seconds",
+   "seconds": 400
+  },
+  {
+   "key": "undertow",
+   "page": "Undertow",
+   "text": "8 hours",
+   "seconds": 28800
+  },
+  {
+   "key": "vekis",
+   "page": "Vekis",
+   "text": "Triggered"
+  },
+  {
+   "key": "velketor the sorcerer",
+   "page": "Velketor the Sorcerer",
+   "text": "3 Days +/- 8 Hours",
+   "seconds": 259200
+  },
+  {
+   "key": "venenzi oberzendi",
+   "page": "Venenzi Oberzendi",
+   "text": "??"
+  },
+  {
+   "key": "venril sathir",
+   "page": "Venril Sathir",
+   "text": "3 Days (+/- 8 Hours Variance)",
+   "seconds": 259200
+  },
+  {
+   "key": "venril sathir's remains",
+   "page": "Venril Sathirs remains",
+   "text": "24 Hours +/- (2 Hour Variance)",
+   "seconds": 86400
+  },
+  {
+   "key": "ventani the warder",
+   "page": "Ventani the Warder",
+   "text": "?"
+  },
+  {
+   "key": "verina tomb",
+   "page": "Verina Tomb",
+   "text": "2-4 days (random)"
+  },
+  {
+   "key": "verix kyloxs remains",
+   "page": "Verix Kyloxs Remains",
+   "text": "27 minutes",
+   "seconds": 1620
+  },
+  {
+   "key": "vessel drozlin",
+   "page": "Vessel Drozlin",
+   "text": "2-7 days (random)"
+  },
+  {
+   "key": "vilefang",
+   "page": "Vilefang",
+   "text": "1 Day",
+   "seconds": 86400
+  },
+  {
+   "key": "vopuk shralok",
+   "page": "Vopuk Shralok",
+   "text": "5min",
+   "seconds": 300
+  },
+  {
+   "key": "vorash",
+   "page": "Vorash",
+   "text": "Triggered"
+  },
+  {
+   "key": "vulak`aerr",
+   "page": "Vulak`Aerr",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "waldadar",
+   "page": "Waldadar",
+   "text": "?"
+  },
+  {
+   "key": "wallin slyfoot",
+   "page": "Wallin Slyfoot",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "warlord skargus",
+   "page": "Warlord Skargus",
+   "text": "Triggered"
+  },
+  {
+   "key": "watchman halv",
+   "page": "Watchman Halv",
+   "text": "6M",
+   "seconds": 360
+  },
+  {
+   "key": "watchman mylz",
+   "page": "Watchman Mylz",
+   "text": "6M",
+   "seconds": 360
+  },
+  {
+   "key": "willie garrote",
+   "page": "Willie Garrote",
+   "text": "6 Minutes",
+   "seconds": 360
+  },
+  {
+   "key": "wuoshi",
+   "page": "Wuoshi",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "xalgoz",
+   "page": "Xalgoz",
+   "text": "30 minutes",
+   "seconds": 1800
+  },
+  {
+   "key": "xenevorash",
+   "page": "Xenevorash",
+   "text": "Triggered"
+  },
+  {
+   "key": "xygoz",
+   "page": "Xygoz",
+   "text": "7 days +/- 8(?) hours",
+   "seconds": 604800
+  },
+  {
+   "key": "ymmeln",
+   "page": "Ymmeln",
+   "text": "3 days +/- 8 hours",
+   "seconds": 259200
+  },
+  {
+   "key": "zarchoomi",
+   "page": "Zarchoomi",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "ziglark whisperwing",
+   "page": "Ziglark Whisperwing",
+   "text": "20:00",
+   "seconds": 1200
+  },
+  {
+   "key": "zlandicar",
+   "page": "Zlandicar",
+   "text": "4.5 Days (+/- 8 Hours Variance)",
+   "seconds": 388800
+  },
+  {
+   "key": "zlexak",
+   "page": "Zlexak",
+   "text": "7 days -/+ 8 hours",
+   "seconds": 604800
+  },
+  {
+   "key": "zondo hyzill",
+   "page": "Zondo Hyzill",
+   "text": "6:40",
+   "seconds": 400
+  },
+  {
+   "key": "zordak ragefire",
+   "page": "Zordak Ragefire",
+   "text": "24 hours (+/- 8 hours) & 72 hours (+/- 8 hours)"
+  },
+  {
+   "key": "zordakalicus ragefire",
+   "page": "Zordakalicus Ragefire",
+   "text": "[[Triggered]]"
+  }
+ ]
+}

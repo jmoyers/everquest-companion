@@ -1,18 +1,16 @@
 import { type JSX, useMemo, useState } from 'react'
 import type { OverlayKind } from '@shared/types'
 import type { CombatSnapshot, SegmentView } from '@shared/combat'
-import { formatHealRate } from '../lib/formatRate'
 import { formatTime } from '../lib/formatDate'
 import { scopeOptions } from '../features/combat/dashboardData'
 import { useGlobalFight } from '../features/combat/useGlobalFight'
 import { type OverlaySelectRow } from './OverlaySelect'
 import { OverlayHeader } from './OverlayHeader'
 import { HealBars } from './healBars'
-import { healTotalTitle } from '../features/combat/healRows'
 import { useMeterScope } from '../features/combat/useCombatPrefs'
-import { EMPTY_ROSTER, SCOPE_HINT, SCOPE_LABEL, chipLabel, nextScope } from '@shared/roster'
+import { EMPTY_ROSTER, SCOPE_HINT, chipLabel } from '@shared/roster'
 import { ICON_ACCENT_GREEN } from './IconButton'
-import { OverlayContent } from './overlayScale'
+import { MeterPane } from './scopeFloor'
 import { TextScaleStepper } from './TextScaleStepper'
 import { useOverlayChrome, type OverlayChrome } from './useOverlayChrome'
 import { useOverlayCombat } from './useOverlayCombat'
@@ -77,8 +75,6 @@ interface HealView {
   seg: SegmentView | undefined
   live: boolean
   headerName: string
-  totalHps: number
-  totalTitle: string
 }
 
 /**
@@ -99,12 +95,11 @@ function selectedSeg(snap: CombatSnapshot | null): {
 
 function healView(snap: CombatSnapshot | null, isFight: boolean): HealView {
   const { hydrating, seg } = selectedSeg(snap)
-  const healing = seg?.healing
-  const totalHps = healing?.hps ?? 0
-  // The restored/absorbed split, phrased once (healRows) and printed by both healing surfaces.
-  const totalTitle = healTotalTitle(healing)
   const live = !hydrating && !!snap?.inCombat
-  return { seg, live, headerName: headerNameFor(hydrating, seg, isFight), totalHps, totalTitle }
+  // The RATE is not resolved here any more (JOS-158): the aggregate — and the restored/absorbed
+  // sentence that used to ride its hover — are stated from the panel's own header row, off the
+  // same segment, by overlay/healBars.tsx.
+  return { seg, live, headerName: headerNameFor(hydrating, seg, isFight) }
 }
 
 /** "Reading log…" during hydration, then the segment's name — never a borrowed one. */
@@ -130,7 +125,7 @@ function healSelectRows(snap: CombatSnapshot | null, isFight: boolean, now: numb
     value: o.value,
     label: o.label,
     rate: '',
-    timing: [o.startTs ? formatTime(o.startTs) : '', relativeAge(o.startTs, now), o.durationSec > 0 ? fmtDur(o.durationSec) : o.live ? 'live' : '—']
+    timing: [o.startTs ? formatTime(o.startTs) : '', relativeAge(o.startTs, now), o.durationSec > 0 ? fmtDur(o.durationSec) : o.live ? 'live' : '-']
       .filter(Boolean)
       .join(' · '),
     live: o.live
@@ -153,12 +148,13 @@ export default function HealMeter(): JSX.Element {
   const { locked, bgAlpha, textScale, drill, hovering, patch, setDrill, toggleLock, capture, dragRegion, noDrag } =
     useOverlayChrome()
   const now = Date.now()
-  // WHOSE healing (docs/plans/group-model.md §2), persisted per overlay kind like the damage
-  // pair. The healing model already had the ally lane, so this is purely a filter over healers.
-  const [meterScope, setMeterScope] = useMeterScope(`overlay.${kind}`)
+  // WHOSE healing (docs/plans/group-model.md §2) — the app-wide preference, same key as every
+  // other meter since JOS-115 (Preferences > Combat writes it; this window only reads). The
+  // healing model already had the ally lane, so this is purely a filter over healers.
+  const [meterScope] = useMeterScope()
   const roster = snap?.roster ?? EMPTY_ROSTER
 
-  const { seg, live, headerName, totalHps, totalTitle } = healView(snap, isFight)
+  const { seg, live, headerName } = healView(snap, isFight)
   const selectRows = useMemo(
     () => healSelectRows(snap, isFight, now),
     // Same deps as before the extraction: the two lists the rows are built from, plus the
@@ -203,17 +199,11 @@ export default function HealMeter(): JSX.Element {
         tag={isFight ? 'HEAL · FIGHT' : 'HEAL · ZONE'}
         title={headerName}
         titleColor={HEAL_GOLD}
-        // The rate alone — the fight clock lives on the crumb row above the bars now, exactly as
-        // it does on the damage pair (overlay/meterCrumb.tsx; JOS-35).
-        tail={formatHealRate(totalHps)}
-        tailTitle={totalTitle}
+        // The NAME alone. The fight clock went to the crumb row with JOS-35 and the aggregate
+        // followed it with JOS-158 — same move, same row, same reasoning as the damage pair, and
+        // the same freed width for a long mob name (overlay/meterCrumb.tsx).
         iconAccentBg={ICON_ACCENT_GREEN}
         select={{ rows: selectRows, value: selection, onChange: selectSegment, accent: HEAL_GOLD }}
-        scope={{
-          label: chipLabel(meterScope, roster),
-          title: `${SCOPE_HINT[meterScope]}. Click for ${SCOPE_LABEL[nextScope(meterScope)]}.`,
-          onCycle: () => setMeterScope(nextScope(meterScope))
-        }}
         chrome={{ locked, hovering, dragRegion, noDrag, toggleLock, capture }}
       />
 
@@ -222,9 +212,22 @@ export default function HealMeter(): JSX.Element {
       {/* Same testid as the damage meter's body — the click-through half of the locked contract
           (P3) is measured on exactly this box. Every healer renders and the pane scrolls, and the
           pane is also where the text scale is applied; the chrome around it stays at 1. */}
-      <OverlayContent textScale={textScale} testId="overlay-bars">
+      {/* JOS-121: the scope word is on this pane's FLOOR now, not in the title bar — same
+          watermark, same reserved band, same helper as the damage meter (overlay/scopeFloor.tsx). */}
+      {/* JOS-138: pinned, the strip along the pane's right edge takes the mouse while the rows
+          overflow, so the wheel and the scrollbar work there and the rest of the body stays
+          click-through — the same grip the damage meter has (overlay/overlayScale.tsx). */}
+      <MeterPane
+        textScale={textScale}
+        locked={locked}
+        capture={capture}
+        scope={{
+          label: chipLabel(meterScope, roster),
+          title: `${SCOPE_HINT[meterScope]}. Change it in Preferences > Combat.`
+        }}
+      >
         <HealBars seg={seg} scope={meterScope} roster={roster} drill={drill} setDrill={locked ? null : setDrill} live={live} />
-      </OverlayContent>
+      </MeterPane>
 
       {!locked && <HealFooter bgAlpha={bgAlpha} textScale={textScale} patch={patch} noDrag={noDrag} />}
     </div>

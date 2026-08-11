@@ -53,6 +53,7 @@ import type { ItemStat, ItemStatBlock } from './itemStats'
 import { statLabel } from './itemStats'
 import {
   parseItemName,
+  PRIMARY_ITEM_SECTION,
   type EquipLocationToken,
   type InventoryDump,
   type InventoryEntry
@@ -140,9 +141,18 @@ export interface SheetCell {
   item: SheetItem | null
 }
 
-/** A top-level equipment row of the Location table: the thing being worn, not its sockets. */
+/**
+ * A top-level equipment row of the Location table: the thing being worn, not its sockets.
+ *
+ * The SECTION test is not decoration (JOS-185). The dump can carry more than one item-shaped
+ * table, and every one of them feeds held counts — but only `Location` states what is on the
+ * character's body. Without this, a row filed in some other table under a slot-shaped token would
+ * be drawn as the hat.
+ */
 function isEquipRow(entry: InventoryEntry): boolean {
-  return entry.path.length === 0 && entry.place.kind === 'equip'
+  return (
+    entry.section === PRIMARY_ITEM_SECTION && entry.path.length === 0 && entry.place.kind === 'equip'
+  )
 }
 
 /** The `<Item> (Exaltation)` children of a row, in the order the client wrote them. */

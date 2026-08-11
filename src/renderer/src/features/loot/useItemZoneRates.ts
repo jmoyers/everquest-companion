@@ -6,10 +6,16 @@
 // Leveling tab's range panel reads. Nothing here divides anything by anything; `lootRates.ts` does
 // the arithmetic and this hook only decides WHICH RANGE.
 //
-// THE RANGE IS THE WHOLE RECORD. The drill-down's question is "where does this drop for me",
-// full stop — it has no timescale control of its own and inventing one would be a second opinion
-// about a scope the tab that owns scopes already answers. So the range is `dataBounds` end to end,
-// with the same `+1 ms` tail `windowScope.statsRangeFor` uses so the newest event is inside it.
+// THE RANGE IS THE CALLER'S SLICE, AND THE WHOLE RECORD WHEN THERE IS NONE (JOS-130). This
+// drill-down still invents no scope of its own — it now FOLLOWS the app's one timeslice control
+// when the surface it was opened from has one (the Loot ledger, which already cut the `events` it
+// hands in), and falls back to `dataBounds` end to end for the Mobs tab's dialog, which opens over
+// a page that carries no control. Either way the same `+1 ms` tail `windowScope.statsRangeFor`
+// uses keeps the newest event inside a half-open range.
+//
+// THE DENOMINATOR AND THE NUMERATOR COME FROM ONE SLICE OR NEITHER. `events` is cut by the caller
+// and the zone rows are queried here; handing in a sliced numerator and asking for a whole-record
+// denominator would read as a farm that fell off a cliff.
 //
 // WHAT IT DOES NOT DO: it never consults the wiki's `dropsFrom`. Those rows are elsewhere on this
 // page, chipped `db`, answering the same question from the committed catalog — and blending them
@@ -17,6 +23,7 @@
 
 import { useMemo } from 'react'
 import type { LootEvent, ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { Timeslice } from '@shared/timeslice'
 import { rangeStats } from '@shared/progressionStats'
 import { itemZoneRows, type ItemZoneRow } from '@shared/lootRates'
 import { useModule } from '../../lib/useModule'
@@ -46,15 +53,14 @@ const NO_ROWS: ItemZoneRates = { rows: [], clipped: false }
  * columns too). An empty list short-circuits to no rows — a never-looted item asks the
  * progression snapshot nothing.
  */
-export function useItemZoneRates(events: readonly LootEvent[]): ItemZoneRates {
+export function useItemZoneRates(events: readonly LootEvent[], slice?: Timeslice): ItemZoneRates {
   const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
   return useMemo(() => {
     if (events.length === 0) return NO_ROWS
     const bounds = dataBounds(prog, [])
+    const range = slice?.range ?? (bounds ? { t0: bounds.lo, t1: bounds.hi + TAIL_MS } : null)
     // No record at all ⇒ no zone rows, so every rate is null and every count is still true.
-    const stats = bounds
-      ? rangeStats({ snap: prog, range: { t0: bounds.lo, t1: bounds.hi + TAIL_MS } })
-      : null
+    const stats = range ? rangeStats({ snap: prog, range, zoneKey: slice?.zoneKey ?? null }) : null
     return { rows: itemZoneRows({ events, zones: stats?.zones ?? [] }), clipped: stats?.clipped ?? false }
-  }, [events, prog])
+  }, [events, prog, slice])
 }

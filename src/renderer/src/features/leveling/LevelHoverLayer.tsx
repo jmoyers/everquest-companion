@@ -104,7 +104,7 @@ function levelContent(segments: readonly LevelSegment[], aaPoints: readonly AaPo
         { label: 'next reported', value: String(at.afterLevel) },
         { label: 'unlogged gap', value: fmtDelta(at.gapMs) }
       ],
-      note: 'the class swap is not logged — the level here is unknown'
+      note: 'the class swap is not logged - the level here is unknown'
     }
   }
   const rows: TooltipRow[] = [{ label: 'since', value: formatDateTime(at.sinceTs) }]
@@ -139,7 +139,7 @@ function aaContent(points: readonly AaPoint[], ts: number, gainIdx: number): Con
     title: `${points[i].y.toLocaleString()} AA gained`,
     subtitle: formatDateTime(ts),
     rows,
-    note: 'cumulative gain lines — includes points re-gained after a respec'
+    note: 'cumulative gain lines - includes points re-gained after a respec'
   }
 }
 

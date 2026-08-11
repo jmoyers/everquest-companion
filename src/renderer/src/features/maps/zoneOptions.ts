@@ -10,9 +10,18 @@
 // has never heard of is offered under its own name rather than a guessed prettification
 // (world-model law 1). It is still selectable, and its map still draws.
 //
-// RELATIVE value import, the repo-wide rule for node-tested pure modules (mobPins.ts:38).
+// THE FILTER IS THE APP'S ONE SCORER, not a private substring test (JOS-135). `shared/fuzzy` is
+// what the fight search, the Mobs tab and the map corpus all rank with, so a typo behaves the same
+// in every box in the app: `nagafn` reaches Nagafen's Lair here exactly as `gohul knigt` reaches
+// the ghoul knights there. It also RANKS — exact > prefix > substring > typo — which matters for a
+// control with `autoHighlight`: the row Enter selects is now the best match rather than whichever
+// stem happens to sort first alphabetically. The tokens are built ONCE PER STEM and cached, rather
+// than lowercasing every option's long name on every keystroke.
+//
+// RELATIVE value imports, the repo-wide rule for node-tested pure modules (mobPins.ts:38).
 
 import type { ZoneShort } from '@shared/maps'
+import { scoreQuery, tokenize } from '../../../../shared/fuzzy'
 import { ZONES } from '../../../../shared/zones'
 
 /**
@@ -37,20 +46,61 @@ export function zoneLabel(short: ZoneShort): string {
   return NAMES.get(short) ?? short
 }
 
-/** Either spelling matches. `q` is already trimmed and lowercased; stems are lowercase on disk. */
-export function zoneMatches(short: ZoneShort, q: string): boolean {
-  return short.includes(q) || zoneLabel(short).toLowerCase().includes(q)
+/**
+ * BOTH SPELLINGS IN ONE HAYSTACK — the stem on disk and the long name the table gives it.
+ *
+ * Built once per stem and kept for the window's lifetime (the mobSearch.ts posture: the corpus is
+ * immutable, so the tokens are too). A Map rather than an array because the caller hands us stems,
+ * not indices, and the corpus arrives from the pack scan in whatever order the packs did.
+ */
+const HAYSTACKS = new Map<ZoneShort, string[]>()
+
+function haystack(short: ZoneShort): string[] {
+  const cached = HAYSTACKS.get(short)
+  if (cached) return cached
+  const built = tokenize(`${short} ${zoneLabel(short)}`)
+  HAYSTACKS.set(short, built)
+  return built
 }
 
-/** The offered rows for a query: every stem when it is empty, matches otherwise, capped. */
+/**
+ * How well a stem answers an already-tokenized query — `null` when it does not answer at all.
+ *
+ * Every query token must land somewhere (fuzzy.ts's coverage rule), so `plane sky` reaches The
+ * Plane of Sky and no other plane.
+ */
+export function zoneScore(short: ZoneShort, query: readonly string[]): number | null {
+  return scoreQuery([...query], haystack(short))
+}
+
+/** Either spelling matches. `q` is the raw typed text; tokenizing and folding is this call's job. */
+export function zoneMatches(short: ZoneShort, q: string): boolean {
+  const query = tokenize(q)
+  return query.length === 0 || zoneScore(short, query) != null
+}
+
+/**
+ * The offered rows for a query: every stem when it is empty, RANKED matches otherwise, capped.
+ *
+ * An empty query keeps the corpus in the order it arrived (ascending stems, the pack scan's own
+ * order) — there is nothing to rank by, and re-sorting a 600-row list into some other order would
+ * only move the rows a user was about to scroll to. Ties break on the stem, so the list is fully
+ * deterministic and never reshuffles under the cursor.
+ */
 export function filterZones(
   zones: readonly ZoneShort[],
   query: string,
   limit = ZONE_OPTIONS_MAX
 ): ZoneShort[] {
-  const q = query.trim().toLowerCase()
-  const hits = q.length === 0 ? zones : zones.filter((z) => zoneMatches(z, q))
-  return hits.slice(0, limit)
+  const q = tokenize(query)
+  if (q.length === 0) return zones.slice(0, limit)
+  const scored: { zone: ZoneShort; score: number }[] = []
+  for (const zone of zones) {
+    const score = zoneScore(zone, q)
+    if (score != null) scored.push({ zone, score })
+  }
+  scored.sort((a, b) => (a.score === b.score ? (a.zone < b.zone ? -1 : 1) : b.score - a.score))
+  return scored.slice(0, limit).map((s) => s.zone)
 }
 
 /**

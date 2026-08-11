@@ -161,6 +161,6 @@ export function emptyRowText(scope: CombatScope, query: string, results: SearchS
   if (scope === 'overall') return `No zone sessions match “${query.trim()}”.`
   if (!results) return 'Searching…'
   return results.corpus > 0
-    ? `No fights match “${query.trim()}” — searched ${results.corpus} fights.`
+    ? `No fights match “${query.trim()}” - searched ${results.corpus} fights.`
     : `No fights match “${query.trim()}”.`
 }

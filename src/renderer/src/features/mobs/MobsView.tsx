@@ -56,6 +56,7 @@ import type {
 } from '@shared/types'
 import { killsBaselineStale, mergeKillsDelta } from '@shared/kills'
 import type { NavBack } from '../../appRouting'
+import { useBackTarget } from '../../appBack'
 import { useModule } from '../../lib/useModule'
 import { MobPage } from './MobPage'
 import { RecentlyConsidered, applyConsiderDelta } from './RecentlyConsidered'
@@ -184,7 +185,7 @@ function ZoneRoster({
         In {zone}{' '}
         {rows.length > 0 && (
           <Typography component="span" variant="caption" color="text.secondary">
-            — {rows.length} in the catalog
+            - {rows.length} in the catalog
           </Typography>
         )}
       </Typography>
@@ -233,7 +234,7 @@ function NoZoneYet({ hasConsidered }: { hasConsidered: boolean }): JSX.Element {
       <Typography variant="body2" sx={{ maxWidth: 460 }}>
         {hasConsidered
           ? 'Zone into somewhere and this becomes an overview of what lives there. Until then, search the catalog by name or zone.'
-          : `Your zone, cons and kills show up here as you play — a roster of whatever you're standing in. Meanwhile, search ${MOB_CATALOG.length.toLocaleString()} creatures by name or zone: levels, zones and full drop tables, all offline.`}
+          : `Your zone, cons and kills show up here as you play - a roster of whatever you're standing in. Meanwhile, search ${MOB_CATALOG.length.toLocaleString()} creatures by name or zone: levels, zones and full drop tables, all offline.`}
       </Typography>
       <Typography variant="caption" color="text.disabled">
         Anything you <code>/con</code> in game shows up here too.
@@ -260,17 +261,18 @@ function MobDrill({
   nav?: NavBack
   onClose: () => void
 }): JSX.Element {
+  // ONE expression, read by TWO things (JOS-201): the button below, and the mouse's Back button,
+  // which registers it for as long as this page is on screen. The browse surface behind it
+  // registers nothing, so a press there falls through to the app-level origin walk.
+  const back = (): boolean => {
+    if (!nav?.back()) onClose()
+    return true
+  }
+  useBackTarget(back)
   return (
     <Stack spacing={1} sx={{ height: '100%' }}>
       <Box>
-        <Button
-          size="small"
-          data-testid="mobs-back"
-          startIcon={<ArrowBackIcon />}
-          onClick={() => {
-            if (!nav?.back()) onClose()
-          }}
-        >
+        <Button size="small" data-testid="mobs-back" startIcon={<ArrowBackIcon />} onClick={back}>
           {nav?.origin?.label ?? 'Mobs'}
         </Button>
       </Box>

@@ -243,7 +243,7 @@ async function readAnalytics(
         missing,
         reason:
           `This cluster does not have '${missing}', which the usage-analytics readout selects. ` +
-          'The tables and the user/owner `cohort` column both ship in infra/schema.sql — run ' +
+          'The tables and the user/owner `cohort` column both ship in infra/schema.sql - run ' +
           '`npx tsx scripts/triage-feedback.mts migrate --refresh` after the apply that ' +
           'carries them.'
       }
@@ -254,7 +254,7 @@ async function readAnalytics(
       state: 'unreachable',
       reason:
         'The DSQL cluster stopped answering while the readout was reading it (the connection ' +
-        'dropped). Nothing is wrong with the schema and nothing needs migrating — the next ' +
+        'dropped). Nothing is wrong with the schema and nothing needs migrating - the next ' +
         'attempt opens a fresh connection. If it keeps happening, check that this shell still ' +
         'holds valid credentials for the triage role.'
     }

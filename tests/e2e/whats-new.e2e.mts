@@ -222,7 +222,7 @@ async function checkBulletsAndThanks(page: Page): Promise<void> {
   )
   check(
     '…collectively, naming nobody',
-    seen.firstThanks === 'Thanks to everyone who filed reports — many of these came from you.',
+    seen.firstThanks === 'Thanks to everyone who filed reports - many of these came from you.',
     `line="${seen.firstThanks}"`
   )
 }

@@ -50,7 +50,17 @@ export interface WindowDropsPanelProps {
 function useScopedDrops(scope: ScopedStats): WindowItemRow[] {
   const events = useLootHistory()
   return useMemo(
-    () => windowItemRows({ events, t0: scope.range.t0, t1: scope.range.t1, activeMs: scope.stats.activeMs }),
+    () =>
+      windowItemRows({
+        events,
+        t0: scope.range.t0,
+        t1: scope.range.t1,
+        activeMs: scope.stats.activeMs,
+        // BOTH halves of the slice (JOS-130). `activeMs` above is already the zone's own active
+        // time when the slice carries a zone, so counting every zone's drops against it would
+        // put a rate under a denominator it was never measured over.
+        zoneKey: scope.zoneKey
+      }),
     [events, scope]
   )
 }

@@ -304,6 +304,11 @@ function Row({ e, interactive }: { e: FeedEvent; interactive: boolean }): JSX.El
  * Hydrate the feed, then ride deltas. A `log:character` rebuild resets the module's ring; the
  * next delta's seq restarts low, so we accept a delta whose seq went BACKWARDS by re-hydrating
  * rather than silently dropping rows forever. Same gap/dupe rule useModule enforces in the app.
+ *
+ * …AND WE NO LONGER WAIT FOR THAT DELTA TO ARRIVE (JOS-172). A backwards seq is evidence that only
+ * exists once something happens; `log:character` is main SAYING the world was rebuilt, and it now
+ * reaches this window (pipeline.ts `sendWorldRebuilt`). On a switch the previous character's rows
+ * used to sit here until the new one's log produced a live event of a kind this feed admits.
  */
 function useEventFeed(): FeedSnap {
   const [rows, setRows] = useState<FeedSnap>([])
@@ -333,9 +338,13 @@ function useEventFeed(): FeedSnap {
         return next.length > 100 ? next.slice(next.length - 100) : next
       })
     })
+    const offChar = window.eqOverlay.onCharacter(() => {
+      hydrate()
+    })
     return () => {
       alive = false
       off()
+      offChar()
     }
   }, [])
 

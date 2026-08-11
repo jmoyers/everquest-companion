@@ -26,13 +26,13 @@ export const REFUSED_ALERT_GROUPS: AlertGroup[] = [
   {
     id: 'feignDeath',
     title: 'Feign death failed',
-    subtitle: 'Not available — the log never says a feign failed.',
+    subtitle: 'Not available - the log never says a feign failed.',
     verified: false,
     unverifiedReason:
       'Full-log sweep: the ONLY feign-death lines are the success emote "<Name> has fallen to ' +
       'the ground." (103), the spell casts ("Rigamortis begins casting Feign Death."), the ' +
       'interrupt of that spell, and skill-ups ("You have become better at Feign Death!"). ' +
-      'There is no failure line at all — no "ruse", no "fooled", no "not successful". A failed ' +
+      'There is no failure line at all - no "ruse", no "fooled", no "not successful". A failed ' +
       'feign is invisible in the log (world-model law 6: say what the log cannot say), so any ' +
       'regex here would be a guess that never fires.',
     defs: []
@@ -40,15 +40,15 @@ export const REFUSED_ALERT_GROUPS: AlertGroup[] = [
   {
     id: 'petDeath',
     title: 'Pet died',
-    subtitle: 'Not available — the log does not mark your pet.',
+    subtitle: 'Not available - the log does not mark your pet.',
     verified: false,
     unverifiedReason:
       'Your summoned pet carries a random proper name (Giber, Kibn, Vebann…) and dies with the ' +
-      'ordinary "<Name> has been slain by <X>!" line — byte-identical to any other entity\'s ' +
+      'ordinary "<Name> has been slain by <X>!" line - byte-identical to any other entity\'s ' +
       'death. The " pet" token seen in "A necro neophyte pet has been slain by Kibn!" belongs ' +
       "to OTHER owners' pets, never to yours. Only the world model knows which name is your " +
       'pet (bound by the owner-only "…Master." tell), and an AlertDef cannot express that ' +
-      'binding — it matches text, not entities. Needs a derived event before it can ship.',
+      'binding - it matches text, not entities. Needs a derived event before it can ship.',
     defs: []
   },
   {
@@ -56,19 +56,19 @@ export const REFUSED_ALERT_GROUPS: AlertGroup[] = [
     // line evidenced it. It does not, so this is what shipped instead.
     id: 'friendOnline',
     title: 'A friend came online',
-    subtitle: 'Not available — the game never announces an arrival.',
+    subtitle: 'Not available - the game never announces an arrival.',
     verified: false,
     unverifiedReason:
       'Full-log sweep (eqlog_Primitive_freeport.txt, 1,406,311 lines, 2026-08-06) for every ' +
-      'shape an arrival could take — "online", "has come online", "logged in/on/out", "has ' +
+      'shape an arrival could take - "online", "has come online", "logged in/on/out", "has ' +
       'entered the game", "friend": the friend system prints exactly TWO things and neither is ' +
       'an event. `Friends currently on EverQuest Legends:` (43×) is the /friends command\'s own ' +
-      'output — a header, a dashed rule and a /who-style roster row per friend, printed only ' +
+      'output - a header, a dashed rule and a /who-style roster row per friend, printed only ' +
       'when you ask, describing the moment you asked. `<name> is now your friend.` (3×) is the ' +
       'confirmation of /friend add. There is no line for a friend logging IN, none for logging ' +
       'OUT, and every other occurrence of the word in the log is players using it in chat. So ' +
       'the only way to know a friend arrived is to poll /friends and diff the rosters, which is ' +
-      'a thing the app would be doing, not a thing the log says — and an alert cannot fire on ' +
+      'a thing the app would be doing, not a thing the log says - and an alert cannot fire on ' +
       'the absence of a line (the feign-death rule above). Ships when a real arrival line does.',
     defs: []
   }

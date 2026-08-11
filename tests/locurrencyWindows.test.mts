@@ -123,7 +123,7 @@ test('W14: currency Wind Runes COUNT toward quest held; sold items do NOT', () =
     inv: {},
     lootNames,
     countSource: 'log',
-    completedKeys: [],
+    turnIns: {},
     quests
   })
 

@@ -14,7 +14,7 @@
 //
 // ================================= THE PERFORMANCE CONTRACT =================================
 // The owner's gate was "it can't feel like it's lagging — performance thought through by
-// default". Main's half of that is four rules, all enforced here:
+// default". Main's half of that is five rules, all enforced here:
 //
 //   1. NOTHING RUNS WHEN NOTHING IS ON. `presenceNeeded()` gates the watcher itself: with the
 //      ring off and both auto-hide switches at a state that needs no watcher, no child process
@@ -22,8 +22,8 @@
 //      made. That is the default install.
 //   2. THE 8 ms POLL IS THE NARROWEST GATE IN THE APP. It runs only while the ring is ENABLED
 //      *and* EQ is FOCUSED *and* the SYSTEM CURSOR IS VISIBLE *and* the ring window exists.
-//      Alt-tab out of the game — or hold right-click for mouselook, which hides the cursor — and
-//      the interval is cleared, not skipped, cleared. The ring is parked with a single message on
+//      Alt-tab out of the game — or hold a mouse button for mouselook, which hides the cursor —
+//      and the interval is cleared, not skipped, cleared. The ring is parked with a single message on
 //      the way out and reads nothing until it is active again, so a mouselook turn costs zero
 //      `getCursorScreenPoint()` calls rather than one per tick of a pointer EverQuest is
 //      re-centering every frame. `cursorStreamStats()` exists so that can be MEASURED rather
@@ -36,6 +36,13 @@
 //   4. WINDOW GEOMETRY IS NEVER TOUCHED PER SAMPLE. The ring window is re-bounded only when the
 //      EQ window actually moves; the per-sample work is two subtractions against a cached
 //      origin. `setBounds()` at 125 Hz would be a window-manager round trip per frame.
+//   5. WITH THE RING OFF, THE APP DOES NOT TOUCH THE CURSOR — the owner's ruling, 2026-08-10
+//      (JOS-193). Rule 1 covers the case where NOTHING is on; this one covers the DEFAULT install,
+//      where auto-hide is on and the ring is not. The watcher exists there, so it used to poll
+//      `GetCursorInfo` ~69 times a second for `cursorVisible` — a fact whose only consumer in the
+//      whole application is `cursorRingActive`, for a ring that does not exist. `setCursorWatch`
+//      below is that gate, and it is the reason a cursor tool like Yolomouse shares the cursor
+//      with nothing of ours unless the user asked for a ring.
 //
 // The renderer's half of the contract (coalesce to rAF, compositor-only transform, never queue)
 // is in `src/renderer/src/overlay/cursorRing.ts`.
@@ -43,8 +50,8 @@
 import { screen, type BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc'
 import { logError } from './errorLog'
-import { presenceSnapshot, stopPresence, subscribePresence } from './presence'
-import { cursorRingActive, overlaysShouldHide } from './presenceProtocol'
+import { presenceSnapshot, setCursorWatch, stopPresence, subscribePresence } from './presence'
+import { CURSOR_POLL_MS, cursorRingActive, overlaysShouldHide } from './presenceProtocol'
 import { historicalReplayRunning, ringDisposition } from './replayGate'
 import { getCursorRing, getOverlayAutoHide } from './store'
 import {
@@ -55,25 +62,8 @@ import {
   setCursorRingVisible,
   setOverlaysHidden
 } from './windows'
-import { presenceNeeded } from '../shared/presencePrefs'
+import { cursorWatchNeeded, presenceNeeded } from '../shared/presencePrefs'
 import type { CursorPoint, PresenceState, ScreenRect } from '../shared/presencePrefs'
-
-/**
- * Cursor sampling period: ask for 8 ms, i.e. "as fast as the platform will give us".
- *
- * MEASURED (Electron 3x 30 s windows on this machine): a `setInterval(8)` in Electron's main
- * process actually fires ~64 times a second, not 125 — Windows' default 15.6 ms timer quantum
- * clamps it, and Chromium does not raise the system timer resolution for a main-process timer.
- * The number stays 8 anyway: it is a request for the platform's floor, and if a future Electron
- * (or a machine with a raised timer resolution) delivers more, the renderer already coalesces to
- * `requestAnimationFrame` and simply drops the surplus.
- *
- * ~64 Hz is at or above a 60 Hz display's frame rate, so the ring has a fresh point for every
- * composed frame there. On a 144 Hz panel some frames reuse the previous point — a sub-16 ms
- * lag on a HALO whose real cursor is drawn by Windows at full rate, which is the trade this
- * whole design makes on purpose (see the renderer file's rule 1).
- */
-const CURSOR_POLL_MS = 8
 
 /** Where a parked ring goes when the pointer leaves the EQ window (a half-ring clipped against
  *  the window edge reads as a bug; absence reads as "not over the game"). */
@@ -111,8 +101,17 @@ function sendPoint(w: BrowserWindow, next: CursorPoint): void {
   w.webContents.send(IPC.onCursorPoint, next)
 }
 
-/** One cursor sample: read the pointer, convert to the ring window's own CSS px, send if it
- *  moved. Kept tiny on purpose — this is the only code in the app that runs at 125 Hz. */
+/**
+ * One cursor sample: read the pointer, convert to the ring window's own CSS px, send if it moved.
+ * Kept tiny on purpose — this is the only code in the app that runs at 125 Hz.
+ *
+ * BOTH READINGS ARE DIP — `screen.getCursorScreenPoint()` and the cached `getBounds()` origin —
+ * so the difference is a DIP offset, and it is a CSS pixel offset only while the ring window is
+ * drawn at zoom 1. That is not an assumption, it is pinned at the far end
+ * (`webFrame.setZoomLevel(0)` in src/preload/cursor.ts, JOS-154, with the measurement). No zoom
+ * arithmetic belongs in this function: it runs 125 times a second, and a division here would be
+ * paying per sample for a constant that is fixed at 1 for the life of the window.
+ */
 function sampleCursor(): void {
   const w = getCursorRingWindow()
   const origin = ringOrigin
@@ -133,6 +132,14 @@ function sampleCursor(): void {
  * sample. Parking also settles the inside/outside question ONCE: while the ring is suppressed the
  * stream is stopped, so nothing re-evaluates the edge test against a pointer EverQuest is
  * re-centering, and a cursor sitting on the window border cannot flip the ring on and off.
+ *
+ * A PARK IS ONLY REAL ONCE IT IS COMPOSITED (JOS-120). This is one IPC message and the renderer
+ * paints it on the next animation frame — so it does nothing at all if the window is already
+ * hidden, because a hidden window produces no frames (measured: the pending frame simply waits,
+ * for as long as the window stays hidden, and runs 1 ms after it is shown again — one frame too
+ * late to keep the stale halo off the screen). Every caller therefore parks while the window is
+ * still visible, and `ringDisposition`'s 'parked' exists so that the case that happens on every
+ * click never hides the window at all.
  */
 function parkRing(): void {
   const w = getCursorRingWindow()
@@ -158,10 +165,23 @@ function stopStream(): void {
   pollTimer = null
 }
 
+/** Stop sampling and park the halo, leaving the window exactly where it is — the 'parked'
+ *  disposition. The window stays VISIBLE on purpose: that is what lets the park actually reach
+ *  the screen (see `parkRing`), and it is why a click no longer ends in a displaced ring. */
+function parkRingInPlace(): void {
+  stopStream()
+  parkRing()
+}
+
 /**
  * Stop sampling and take the ring off screen, without touching the window itself.
  *
- * Order matters: stop sampling FIRST, then park, so the park is the last word the ring hears.
+ * ORDER MATTERS, and it is not the order this had (JOS-120). Stop sampling FIRST so the park is
+ * the last word the ring hears — and park BEFORE hiding, never after. `hide()` stops the window's
+ * frames, so a park sent after it is a message the renderer records and cannot paint; the window
+ * then keeps its last composited surface, and the next `showInactive()` puts the old halo back on
+ * screen for a frame. Parking first gives the renderer a visible window to paint into.
+ *
  * Exported because session.ts needs exactly this on the way INTO a historical replay (JOS-62) —
  * and only this. `refreshPresenceEffects` would be the symmetric-looking call and is the wrong
  * one there: at cold start the replay begins before `initPresenceEffects` has run, and a full
@@ -171,8 +191,8 @@ function stopStream(): void {
  */
 export function suspendCursorStream(): void {
   stopStream()
-  setCursorRingVisible(false)
   parkRing()
+  setCursorRingVisible(false)
 }
 
 /** Fold the current presence + settings into the ring window's existence, bounds and stream. */
@@ -187,6 +207,9 @@ function applyRing(state: PresenceState): void {
     enabled: ring.enabled,
     hasBounds: bounds !== null,
     active: cursorRingActive(state, ring),
+    // Asked SEPARATELY from `active`, not derived from it: it is the difference between "the
+    // pointer is gone" (park in place) and "the game is gone" (take the window off screen).
+    focused: state.eqFocused,
     replayRunning: historicalReplayRunning()
   })
   if (disposition === 'off') {
@@ -216,6 +239,14 @@ function applyRing(state: PresenceState): void {
   if (disposition === 'run') {
     setCursorRingVisible(true)
     startStream()
+    return
+  }
+  if (disposition === 'parked') {
+    // 'parked' — EverQuest still owns the screen, there is just no pointer to ring (mouselook, or
+    // any mouse button held in the world view). The window is left VISIBLE and merely emptied:
+    // this is the transition that happens on every click, and hiding for it is what put a stale
+    // halo back on screen a frame later (JOS-120, replayGate.ts).
+    parkRingInPlace()
     return
   }
   // 'idle' — warm and positioned, but not on screen and not sampling.
@@ -260,6 +291,13 @@ export function refreshPresenceEffects(): void {
     setOverlaysHidden(false)
     return
   }
+  // THE CURSOR GATE, SET BEFORE THE WATCHER CAN EXIST (JOS-193). This is the only place in the app
+  // that reads `cursorRing.enabled` for this purpose, and it runs before the `subscribePresence`
+  // below — so the very first watcher of a session is already told whether it may call
+  // `GetCursorInfo`, and there is no window in which a default-install watcher polls a cursor for
+  // a ring that is off. On a later call it is the live toggle: `setCursorWatch` replaces the
+  // running thread when the answer changes.
+  setCursorWatch(cursorWatchNeeded(ring))
   // Push the (possibly resized) ring config to a live ring window so a Preferences slider
   // resizes the halo under the user's pointer instead of on the next restart.
   getCursorRingWindow()?.webContents.send(IPC.onCursorRingConfig, ring)

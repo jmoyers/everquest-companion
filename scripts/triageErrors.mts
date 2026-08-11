@@ -155,10 +155,54 @@ async function cmdList(ctx: ErrorsCtx): Promise<void> {
 
 // ---- errors show ---------------------------------------------------------------------
 
-function printExemplar(ex: Record<string, unknown>, mapsDir: string): void {
+/**
+ * THE FRAMES, under a heading that says what kind of location they are (JOS-111).
+ *
+ * `frameOrigin: 'capture'` means the throw had no stack and these name the site that CAUGHT it.
+ * Printing that as plain `frames:` would send a reader hunting for the bug in the console
+ * forwarder, so the heading changes rather than a flag appearing somewhere they have to notice.
+ */
+function printFrames(frames: Frame[], heading: string, mapsDir: string): void {
+  if (frames.length === 0) return
+  console.log(`\n  ${heading}`)
+  if (mapsDir === '') {
+    for (const f of frames) console.log(`    at ${f.func} (${f.file}:${f.line}:${f.col})`)
+  } else {
+    for (const line of symbolicateFrames(frames, mapsDir).map(formatFrame)) console.log(line)
+  }
+}
+
+/** Every location the exemplar has, in the order a reader wants them (JOS-111). */
+function printLocation(ex: Record<string, unknown>, mapsDir: string): void {
   const frames = (ex.frames ?? []) as Frame[]
+  const external = (ex.externalFrames ?? []) as Frame[]
+  if (frames.length === 0 && external.length === 0) {
+    console.log('\n  frames:')
+    console.log('    (none — the throw carried no stack, and the capture site had none either)')
+    return
+  }
+  printFrames(
+    frames,
+    str(ex.frameOrigin) === 'capture'
+      ? 'CAPTURE SITE (the throw carried no stack — this is where it was CAUGHT):'
+      : 'frames:',
+    mapsDir
+  )
+  // NOT symbolicated, and cannot be: these name a package or a Node module, not a bundle
+  // position, so there is no sourcemap of ours they could be resolved against.
+  if (external.length > 0) {
+    console.log('\n  outside the app bundle:')
+    for (const f of external) console.log(`    at ${f.func} (${f.file}:${f.line}:${f.col})`)
+  }
+  if (frames.length > 0 && mapsDir === '') {
+    console.log('\n  (pass --maps <dir> with that version\'s sourcemaps for source terms)')
+  }
+}
+
+function printExemplar(ex: Record<string, unknown>, mapsDir: string): void {
   console.log(`\n  ${str(ex.errorName, 'Error')}: ${str(ex.redactedMessage)}`)
   const code = str(ex.code)
+  const components = str(ex.componentPath)
   const bits = [
     `mode=${str(ex.mode)}`,
     `view=${str(ex.view)}`,
@@ -166,14 +210,8 @@ function printExemplar(ex: Record<string, unknown>, mapsDir: string): void {
     ...(code === '' ? [] : [`code=${code}`])
   ]
   console.log(`  ${bits.join(' · ')}`)
-  console.log('\n  frames:')
-  if (frames.length === 0) console.log('    (none — the throw carried no in-bundle stack)')
-  else if (mapsDir === '') {
-    for (const f of frames) console.log(`    at ${f.func} (${f.file}:${f.line}:${f.col})`)
-    console.log('\n  (pass --maps <dir> with that version\'s sourcemaps for source terms)')
-  } else {
-    for (const line of symbolicateFrames(frames, mapsDir).map(formatFrame)) console.log(line)
-  }
+  if (components !== '') console.log(`  React components, innermost first: ${components}`)
+  printLocation(ex, mapsDir)
   const crumbs = (ex.breadcrumbs ?? []) as { kind: string; offsetMs: number }[]
   if (crumbs.length > 0) {
     console.log('\n  log events just before, newest first (offsets in LOG time):')

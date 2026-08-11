@@ -41,7 +41,7 @@ import { parseEvent } from '../src/main/log/parser'
 import { installSpellDb } from '../src/main/log/rulesets'
 import { loadSpellDb } from '../src/main/data/spellDb'
 import { CombatEngine } from '../src/main/combat/engine'
-import { QUICK_BUFF_AA, QUICK_BUFF_BURST_MS, isCastlessHeal, noteCast, type RecentCasts } from '../src/main/combat/procDetect'
+import { QUICK_BUFF_AA, QUICK_BUFF_BURST_MS, RecentCasts, isCastlessHeal } from '../src/main/combat/procDetect'
 import { QUICK_BUFF, QUICK_BUFF_WINDOW_MS } from '../src/main/modules/buffsShapes'
 import { flattenSkills } from '../src/renderer/src/features/combat/dashboardData'
 import { landEvidence } from '../src/renderer/src/features/combat/landEvidence'
@@ -240,7 +240,7 @@ test('the Quick Buff gate is a HEAL gate, and its two constants are the buffs mo
   assert.equal(QUICK_BUFF_AA, QUICK_BUFF)
   assert.equal(QUICK_BUFF_BURST_MS, QUICK_BUFF_WINDOW_MS)
 
-  const recent: RecentCasts = new Map()
+  const recent = new RecentCasts()
   const burst = 1_000_000
   const heal = (ts: number, overTime = false): boolean =>
     isCastlessHeal(recent, { spell: 'Symbol of Pinzarn', ts, overTime, quickBuffTs: burst })
@@ -252,7 +252,7 @@ test('the Quick Buff gate is a HEAL gate, and its two constants are the buffs mo
   assert.equal(heal(burst + 100_000, true), false, 'a HoT tick is refused whatever the burst says')
 
   // And an own cast still suppresses, which is the rule these two only add to.
-  noteCast(recent, 'Symbol of Pinzarn', burst + 100_000)
+  recent.note('Symbol of Pinzarn', burst + 100_000)
   assert.equal(heal(burst + 100_001), false)
 })
 
@@ -328,8 +328,10 @@ test('an UNKNOWN source window is assumed and LABELED, never silently assumed', 
   assert.match(ppmCell(quake.rate, seg.activeSec).hint, /Assumes the source was active the whole fight/)
   assert.match(ppmCell(quake.rate, seg.activeSec).hint, /LOWER bound/)
 
-  // The drill annotation carries the same sentence — one wording, both surfaces.
-  const a = procAnnotationFor(procTagIndex(seg.procs.procSkills), 'Earthquake')
+  // The drill annotation carries the same sentence — one wording, both surfaces. The row it
+  // hangs on is the CAST-LESS lane (JOS-167): this log never casts Earthquake, so the meter has
+  // exactly one Earthquake row and its name says where the damage came from.
+  const a = procAnnotationFor(procTagIndex(seg.procs.procSkills), 'Earthquake · proc')
   assert.match(a?.hint ?? '', /Assumes the source was active the whole fight/)
 })
 

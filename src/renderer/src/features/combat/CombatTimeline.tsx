@@ -80,7 +80,7 @@ function TimelineToolbar({ tl, vp }: { tl: TimelineView; vp: TimelineViewport })
       </Typography>
       <Stack direction="row" alignItems="center" spacing={0.5}>
         <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-          {zoomedIn ? `${fmtDur(view.start)}–${fmtDur(view.end)} of ` : ''}
+          {zoomedIn ? `${fmtDur(view.start)}-${fmtDur(view.end)} of ` : ''}
           {fmtDur(tl.durationMs)} · {tl.lanes.length} lanes ·{' '}
           {/* The count after "of" is the fight's TRUE instant count (totalCount), so a ring
               that overflowed its drop-oldest cap reports what it LOST, not its own size. */}

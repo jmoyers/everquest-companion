@@ -446,11 +446,11 @@ test('CONFOUNDS ARE DECLARED, NEVER CORRECTED — including the ones that could 
   }).confounds
   // Offensive stance was up in 100% of active windows and 0% of inactive ones — the exact
   // failure mode ("your spellblade bonus is really your stance") this list exists to expose.
-  assert.ok(c.some((s) => s.startsWith('co-state — stance:offensive')))
+  assert.ok(c.some((s) => s.startsWith('co-state - stance:offensive')))
   assert.ok(c.some((s) => s.includes('100% of active windows but 0% of inactive')))
   // Level drift and mob mix are NOT in the minute ledger. Declared as untested rather than
   // omitted: a confound list that silently drops the checks it could not run reads as a pass.
-  assert.ok(c.some((s) => s.startsWith('not tested —')))
+  assert.ok(c.some((s) => s.startsWith('not tested -')))
   // …and the numbers are untouched by any of it. Nothing here adjusts a median.
   const m = marginalOf(partitionWindows(arms(25, 25, ['stance:offensive']), KEY, 'invocation'))
   assert.equal(m.deltaDps, 50)
@@ -463,7 +463,7 @@ test('temporally separated arms are declared not-interleaved', () => {
   ]
   const e = attributeEffect({ kind: 'invocation', key: 'spellblade', name: 'spellblade', windows: ws })
   assert.equal(e.verdict, 'estimate')
-  assert.ok(e.confounds.some((s) => s.startsWith('not-interleaved —')))
+  assert.ok(e.confounds.some((s) => s.startsWith('not-interleaved -')))
   // The interleaved build of the same comparison does NOT carry it.
   const inter = attributeEffect({ kind: 'invocation', key: 'spellblade', name: 'spellblade', windows: arms(25, 25) })
   assert.equal(inter.confounds.some((s) => s.startsWith('not-interleaved')), false)

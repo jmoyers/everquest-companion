@@ -49,7 +49,6 @@ import { CLASS_ABBRS, MAX_COMBO_SLOTS, resolvedClasses, type ClassAbbr } from '@
 import type { ExaltPlan } from '@shared/planner/types'
 import { useComboSnap } from '../profiles/ClassComboData'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
-import { Tooltip } from '../../lib/Tooltip'
 import EffectBrowser from './EffectBrowser'
 import FarmList from './FarmList'
 import PlanBoard from './PlanBoard'
@@ -184,17 +183,19 @@ function ClassFilter({ plan, plans }: { plan: ExaltPlan; plans: PlansApi }): JSX
  */
 function DetectedChip({ offer, onApply }: { offer: ClassAbbr[]; onApply: () => void }): JSX.Element {
   return (
-    <Tooltip title="Use the combo detected from your log">
-      <Chip
-        size="small"
-        color="warning"
-        variant="outlined"
-        data-testid="planner-detected-chip"
-        label={`detected: ${offer.join(' ')} — apply`}
-        onClick={onApply}
-        sx={{ flexShrink: 0 }}
-      />
-    </Tooltip>
+    // No popper (JOS-143). This chip renders IMMEDIATELY after ClassFilter on a nowrap row, so its
+    // card opened into the same space the chip-select's option list uses — which is the hover box
+    // ClassFilter's own comment already refused, arriving one control to the right instead.
+    <Chip
+      size="small"
+      color="warning"
+      variant="outlined"
+      data-testid="planner-detected-chip"
+      title="Use the combo detected from your log"
+      label={`detected: ${offer.join(' ')} - apply`}
+      onClick={onApply}
+      sx={{ flexShrink: 0 }}
+    />
   )
 }
 
@@ -240,11 +241,16 @@ function Toolbar({
           </ToggleButton>
         ))}
       </ToggleButtonGroup>
-      <Tooltip title="How exaltation works">
-        <IconButton size="small" data-testid="planner-explainer-open" onClick={onExplain} sx={{ flexShrink: 0 }}>
-          <HelpOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <IconButton
+        size="small"
+        aria-label="How exaltation works"
+        title="How exaltation works"
+        data-testid="planner-explainer-open"
+        onClick={onExplain}
+        sx={{ flexShrink: 0 }}
+      >
+        <HelpOutlineIcon fontSize="small" />
+      </IconButton>
     </Stack>
   )
 }

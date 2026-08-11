@@ -40,7 +40,6 @@ import { formatDateTime } from '../../lib/formatDate'
 import { LogChip, SeverityChip, SpamChip, StatusChip } from './triageChips'
 import ReportDetail from './ReportDetail'
 import { useTriageCall } from './useTriage'
-import { Tooltip } from '../../lib/Tooltip'
 
 const ROW_HEIGHT = 34
 const TABLE_HEIGHT = 320
@@ -157,11 +156,15 @@ function Toolbar({
       {loading ? (
         <CircularProgress size={18} />
       ) : (
-        <Tooltip title="Re-run the query">
-          <IconButton size="small" onClick={onRefresh} data-testid="triage-refresh">
-            <RefreshIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <IconButton
+          size="small"
+          onClick={onRefresh}
+          data-testid="triage-refresh"
+          aria-label="Re-run the query"
+          title="Re-run the query"
+        >
+          <RefreshIcon fontSize="small" />
+        </IconButton>
       )}
     </Stack>
   )

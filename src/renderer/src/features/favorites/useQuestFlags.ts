@@ -15,8 +15,15 @@ import { useSyncExternalStore } from 'react'
 // alone: Sky quest names repeat across classes, so a name-keyed flag would star or
 // hide every class's copy at once.
 
+// JOS-148 added a THIRD key, at a different granularity: the CLASS star on the Sky tab's Classes
+// tab. It gets its own key rather than reusing either of the two above, for the reason the header
+// gives about items and quests — starring the Warrior class and starring Warrior Test of Think are
+// different intents, and one key holding both would make a class star silently pin six quests.
+// The store shape is identical (a set of lowercased keys in localStorage), so it is the same
+// factory rather than a fourth copy of it.
 const FAVORITES_KEY = 'eq.questFavorites'
 const IGNORED_KEY = 'eq.questIgnored'
+const CLASS_FAVORITES_KEY = 'eq.classFavorites'
 
 export interface QuestFlagSet {
   /** Raw lowercased keys — stable identity, so it is a sound useMemo dependency. */
@@ -70,6 +77,7 @@ function createQuestFlagStore(storageKey: string): QuestFlagStore {
 
 const favoriteStore = createQuestFlagStore(FAVORITES_KEY)
 const ignoredStore = createQuestFlagStore(IGNORED_KEY)
+const classFavoriteStore = createQuestFlagStore(CLASS_FAVORITES_KEY)
 
 function useQuestFlagSet(store: QuestFlagStore): QuestFlagSet {
   const keys = useSyncExternalStore(store.subscribe, store.snapshot)
@@ -81,7 +89,7 @@ function useQuestFlagSet(store: QuestFlagStore): QuestFlagSet {
   }
 }
 
-/** Quests starred outright (shown in the top Favorites section and by the Favorites-only filter). */
+/** Quests the user starred outright (pins them to the top of the list). */
 export function useQuestFavorites(): QuestFlagSet {
   return useQuestFlagSet(favoriteStore)
 }
@@ -89,4 +97,18 @@ export function useQuestFavorites(): QuestFlagSet {
 /** Quests the user hid permanently (excluded from the list, filters and counts). */
 export function useQuestIgnored(): QuestFlagSet {
   return useQuestFlagSet(ignoredStore)
+}
+
+/**
+ * CLASSES the user starred on the Sky tab's Classes tab (JOS-148) — pins them above the
+ * closest-to-done order, which JOS-146's rule permits because that order's subject is a standing
+ * property rather than an event (classUnlocks.orderClassUnlockRows argues it).
+ *
+ * Keyed by the class name as the bundled Sky data spells it, lowercased by the store like every
+ * other flag here. There is no ignore twin: a class you do not care about is one row among
+ * sixteen, and hiding it would take a class's tests out of a view whose whole subject is how many
+ * tests are left.
+ */
+export function useClassFavorites(): QuestFlagSet {
+  return useQuestFlagSet(classFavoriteStore)
 }

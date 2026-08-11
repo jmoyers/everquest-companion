@@ -216,3 +216,54 @@ slice(1210281, 1212412, 'w42-effect-proc-resist.log')
 // `sourceAmbiguous` — the illusion that grants it opens no span this model tracks, so the ppm
 // assumes it was up all along and SAYS so, rather than quietly pretending to know.
 slice(1182112, 1183531, 'w43-earthquake-proc.log')
+
+// ---------------------------------------------------------------------------------------
+// THE CAST/PROC SPLIT (JOS-167). Two windows, and neither is hypothetical: the owner's OWN log
+// contains both halves of the reported defect, because `Discordant Mind` is his gem-1 nuke AND
+// what the `spellblade` invocation fires cast-lessly. Whole-log: 739 cast lines against 1,132
+// landings.
+
+// ---------------------------------------------------------------------------------------
+// W59 THE SAME SPELL, BOTH WAYS, IN ONE PULL (Sat Aug 01 13:59:10 → 14:04:02, raw
+// 828325..830860).
+//
+// TWO fights in The Plane of Hate, and the split is legible by eye across them.
+//   13:59:10  opens on `Auto attack is on.` for the Ashenbone Broodmaster pull.
+//   13:59:50 / 14:00:07 / :11 / :16   FOUR `You hit Ashenbone Broodmaster … by Discordant
+//             Mind.` lines with no cast line anywhere behind them — the last
+//             `You begin casting Discordant Mind II.` in the log before this window is at
+//             13:54:50, five minutes earlier. Spellblade firings, 1,503 damage.
+//             The first of them is preceded by `You regain your concentration and continue
+//             your casting.` with NO cast line at all: the PROC itself was interrupted and
+//             recovered, which is why the interrupt line can never be read as ownership.
+//   14:00:24 → 14:01:21  ELEVEN cast/landing pairs, each `You begin casting Discordant Mind
+//             II.` followed one second later by its own hit — 5,407 damage, including the
+//             1,234 crit. Under the old membership rule the four procs above fell inside these
+//             casts' windows and the lane read fifteen hits with a proc rate of zero.
+//   14:01:16/:17  a twelfth cast, RESISTED (`Ashenbone Broodmaster resisted your Discordant
+//             Mind II!`) — a cast that landed nothing, and its record must not survive to
+//             claim the next firing.
+//   14:01:22  Ashenbone Broodmaster dies. The second fight (Magi P`tasa, to 14:04:02) has SIX
+//             Discordant Mind firings and not one cast line: a PROC-ONLY lane, in the same
+//             fixture as the mixed one.
+// What it pins: two `you` rows for one spell where both origins occurred, one row where only
+// one did, and the tripwire — the two rows sum to exactly what the single row used to hold.
+slice(828325, 830860, 'w59-proc-cast-split.log')
+
+// ---------------------------------------------------------------------------------------
+// W60 THE INTERRUPTED CAST THAT CAME BACK (Wed Jul 29 17:12:53 → 17:13:28, raw
+// 361471..361670).
+//
+// The case that decides how `castInterrupted` may be used, on real bytes:
+//   17:13:03/:04  `You begin casting Tepid Deeds.` then `You regain your concentration…` —
+//             a recovery with NO interrupt line before it. The model must shrug at that.
+//   17:13:10  `You begin casting Anarchy.`
+//   17:13:11  `Your Anarchy spell is interrupted.`
+//   17:13:22  `You regain your concentration and continue your casting.` and, in the SAME
+//             second, `You hit a bloodthirsty ghoul for 271 points of magic damage by
+//             Anarchy.` — twelve seconds after the cast began, exactly on the window edge.
+// One of only three cast-line-backed interrupts in the whole log that are followed by a
+// landing, and every one of the three recovers first. So dropping the cast record on the
+// interrupt is right ONLY if the recovery puts it back: without that, this 271 becomes a
+// phantom proc. What it pins: Anarchy lands as a CAST here, with no `· proc` lane at all.
+slice(361471, 361670, 'w60-cast-interrupt-recovery.log')

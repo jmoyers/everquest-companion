@@ -38,7 +38,7 @@ export function formatHealRate(n: number): string {
  * "ONE source" rule (AGENTS.md, Formatting) is about the file, not about the algorithm.
  */
 function formatSmall(n: number): string {
-  if (!Number.isFinite(n)) return '—'
+  if (!Number.isFinite(n)) return '-'
   const v = Math.abs(n)
   if (v >= 100) return n.toFixed(0)
   if (v >= 10) return n.toFixed(1)
@@ -66,6 +66,28 @@ export function formatKillRate(n: number): string {
  */
 export function formatDropRate(n: number): string {
   return `${formatSmall(n)} drops/hr`
+}
+
+/**
+ * A PERCEIVED DROP RATE over your own kills of one mob (JOS-196): '1 per 14 kills',
+ * '2.50 per kill'.
+ *
+ * TWO SPELLINGS, and the reason is that `formatSmall` would destroy this quantity in the band it
+ * mostly lives in. A rare drop off a mob you have killed three hundred times is 0.0033 per kill,
+ * which every other rate formatter in this file renders as a flat '0.00' — the null-not-zero rule
+ * (JOS-78) broken by the FORMATTER rather than by the derivation, which is the harder version to
+ * notice. So below one drop per two kills the number is inverted and stated as "1 per N kills",
+ * which is also how a player says it out loud; at or above that, the drops-per-kill number reads
+ * naturally and is stated directly (a stacking item legitimately exceeds one per kill — the
+ * numerator counts items, not corpses).
+ *
+ * The 0.5 threshold is where the inverted form stops being able to say something silly: any rate
+ * below it inverts to 2 or more, so "1 per 1 kills" is unrepresentable.
+ */
+export function formatDropsPerKill(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  if (n >= 0.5) return `${formatSmall(n)} per kill`
+  return `1 per ${Math.round(1 / n).toLocaleString()} kills`
 }
 
 /** AA COMPLETIONS per hour: '2.40 AA/hr'. Gain lines — what the AA bar did, which the

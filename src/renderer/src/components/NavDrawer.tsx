@@ -7,6 +7,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
+import TimerIcon from '@mui/icons-material/Timer'
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'
 import PetsIcon from '@mui/icons-material/Pets'
 import MapIcon from '@mui/icons-material/Map'
@@ -64,7 +65,10 @@ const ROWS: NavRow[] = [
   { view: 'posky', icon: <ShieldMoonIcon /> },
   { view: 'alerts', icon: <NotificationsActiveIcon /> },
   { view: 'leveling', icon: <TrendingUpIcon /> },
-  { view: 'buffs', icon: <AutoFixHighIcon />, badge: IN_DEV }
+  { view: 'buffs', icon: <AutoFixHighIcon />, badge: IN_DEV },
+  // Respawn clocks (JOS-194) sit beside Buffs because both tabs are the same shape of answer —
+  // a list of things counting down — and a player checking one is usually checking the other.
+  { view: 'timers', icon: <TimerIcon />, badge: IN_DEV }
 ]
 
 /** Bottom-aligned, outside ROWS — it is not a feature view and never moves. */

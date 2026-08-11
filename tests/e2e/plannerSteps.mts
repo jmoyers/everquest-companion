@@ -47,6 +47,9 @@ export const NOSLOT_CHIP = '[data-testid="planner-noslot-chip"]'
 export const DONOR_NAME = '[data-testid="planner-donor-name"]'
 /** JOS-42 — the freshness line at the top of the Inventory tab. */
 export const INVENTORY_FRESH = '[data-testid="planner-inventory-fresh"]'
+/** JOS-185 — the freshness line's "How" control, and the capture steps it opens. */
+export const INVENTORY_STEPS_TOGGLE = '[data-testid="planner-inventory-fresh-steps-toggle"]'
+export const INVENTORY_STEPS = '[data-testid="planner-inventory-fresh-steps"]'
 /** JOS-42 — the expansion named beside an out-of-era zone in a farm row's "also:" tail. */
 export const FARM_ALSO_ERA = '[data-testid="planner-farm-also-era"]'
 /** JOS-42 — a farm heading that names a zone from a later expansion. Never present with the
@@ -346,6 +349,33 @@ export async function stepFocusFamilies(page: Page): Promise<void> {
 }
 
 /**
+ * THE FRESHNESS LINE TEACHES HOW TO CAPTURE, NOT JUST WHEN (JOS-185).
+ *
+ * `/outputfile inventory` is CONDITIONAL in ways the file it writes never admits to: the Dragon's
+ * Hoard is exported only while its window is open, the tradeskill depot only if it has been
+ * loaded. A dump typed anywhere else is not an error and does not look like one — it is a
+ * well-formed file that silently omits whole storages, which is a player's Plane of Sky weapons
+ * going missing from a tab that is otherwise right (report 01KZNQK6ZSRB8SMN8D5PJ8BS28).
+ *
+ * So this asserts the two things that make the steps worth having: the ORDER (open the hoard
+ * BEFORE typing the command — afterwards captures nothing), and the one limit no order can fix
+ * (currency-tab items never dump at all). Collapsed until asked, so the click is part of the test.
+ */
+async function stepCaptureSteps(page: Page): Promise<void> {
+  check('the freshness line offers the capture steps', (await countOf(page, INVENTORY_STEPS_TOGGLE)) > 0)
+  await page.click(INVENTORY_STEPS_TOGGLE, { timeout: 15_000 })
+  await until(async () => (await countOf(page, INVENTORY_STEPS)) > 0, 5_000)
+  const steps = (await textOf(page, INVENTORY_STEPS)).replace(/\s+/g, ' ').trim()
+  check(
+    '…and they say to open the Hoard BEFORE typing the command, and that currency never dumps',
+    /Hoard/.test(steps) &&
+      steps.indexOf('Hoard') < steps.indexOf('/outputfile inventory') &&
+      /Wind Runes/.test(steps),
+    steps.slice(0, 160)
+  )
+}
+
+/**
  * THE `/outputfile` REGISTRY IS LIVE OVER ITS OWN CHANNEL (JOS-44).
  *
  * The freshness line above the Inventory tab renders from strings the renderer already holds; the
@@ -380,4 +410,7 @@ export async function stepOutputsRegistry(page: Page, dumpOnScreen: boolean): Pr
     registry.dated === dumpOnScreen,
     `registry dated=${String(registry.dated)} · tab shows a dump=${String(dumpOnScreen)}`
   )
+  // The capture steps come out of that same registry, and are only on screen where the freshness
+  // line is — so they are checked here, on the one branch that has a line to open.
+  if (dumpOnScreen) await stepCaptureSteps(page)
 }

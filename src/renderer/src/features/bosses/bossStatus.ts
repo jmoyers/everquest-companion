@@ -86,9 +86,56 @@ export function allStatuses(targets: RaidTarget[], kills: KillMap): TargetStatus
 }
 
 /**
+ * ONE KILL, as the celebration detector reports it: the target's status AFTER the kill, and the
+ * INSTANCE TIER that kill happened on.
+ *
+ * WHY THE TIER IS NOT ON THE STATUS (JOS-165). A TargetStatus is a FOLD over every kill the
+ * target has ever taken — `bestTier` is its highest tier EVER, which is exactly right on a card
+ * and exactly wrong on a per-event toast. The owner clears d0 through d4 every week, so a d1
+ * kill announced as "D4 · Refined" is not a summary, it is a wrong sentence about a thing that
+ * just happened. The tier of THIS kill is a fact about the EVENT, so it rides the event
+ * (world-model law 10, the same argument that put `tier` and `credited` on the kill record
+ * rather than beside it) and never widens the fold's shape with a field that means nothing on
+ * the 500 statuses no kill just fired for.
+ */
+export interface BossKill {
+  /** The target AFTER the kill — the same fold the cards read, unchanged. */
+  status: TargetStatus
+  /** The instance difficulty tier THIS kill happened on (0 = base … 4 = Refined). */
+  tier: number
+}
+
+/**
+ * WHICH TIER just got a kill: the run whose CREDITED count grew, most recent first.
+ *
+ * The kill record is a per-tier breakdown, so "what tier was that kill" is answerable by diffing
+ * the previous snapshot's runs against the current one — no new state, no second source. Ties
+ * (two runs grown by one delta, which takes two instances inside 100 ms) resolve to the run whose
+ * most recent credited kill is LATEST, then to the higher tier; that is the kill the toast is
+ * about, since a delta is delivered after the fold that produced it.
+ *
+ * The `bestTier` seed is unreachable from `bossKills` — it only asks after `credited` grew, and a
+ * total cannot grow unless one of its runs did — and is stated rather than thrown because a
+ * celebration that cannot name its tier should still celebrate.
+ */
+function killedTier(before: TargetStatus | undefined, after: TargetStatus): number {
+  let tier = after.bestTier
+  let at = -1
+  for (const [key, run] of Object.entries(after.tiers)) {
+    const n = Number(key)
+    if (run.credited <= (before?.tiers[n]?.credited ?? 0)) continue
+    if (run.lastCreditedTs < at || (run.lastCreditedTs === at && n < tier)) continue
+    at = run.lastCreditedTs
+    tier = n
+  }
+  return tier
+}
+
+/**
  * ANY roster-boss kill CREDITED TO YOU: a target whose credited-kill count increased since the
  * previous snapshot — including a REPEAT kill at the same-or-lower tier. Compares a previous
- * status snapshot (keyed by target name) to the current one; returns the targets just killed.
+ * status snapshot (keyed by target name) to the current one; returns the kills that just landed,
+ * each carrying the TIER it landed on (see BossKill — the per-event fact the fold cannot state).
  *
  * THE ONLY DEFEAT PREDICATE THERE IS, since 2026-08-04. It drives confetti, the card flash,
  * the snackbar, the celebration toast AND the bossDefeat alert sound. There used to be a second,
@@ -113,13 +160,13 @@ export function allStatuses(targets: RaidTarget[], kills: KillMap): TargetStatus
 export function bossKills(
   prev: Map<string, TargetStatus>,
   next: TargetStatus[]
-): TargetStatus[] {
-  const out: TargetStatus[] = []
+): BossKill[] {
+  const out: BossKill[] = []
   for (const s of next) {
     if (!s.killed) continue
     const before = prev.get(s.target.name)
     const prevCredited = before?.credited ?? 0
-    if (s.credited > prevCredited) out.push(s)
+    if (s.credited > prevCredited) out.push({ status: s, tier: killedTier(before, s) })
   }
   return out
 }

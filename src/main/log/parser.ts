@@ -34,6 +34,7 @@ import {
   classifyAaActivate,
   classifyCastLifecycle,
   classifyCcApply,
+  classifyCcWake,
   classifyCharm,
   classifyDbBuff,
   classifyIllusionFade,
@@ -46,8 +47,15 @@ import {
   classifyStance,
   classifyWornOff
 } from './parseCasts'
-import { classifyItemActivate, classifySelfWho, classifySkillUp, classifySpecialAttack } from './parseWho'
-import { classifyCamp, classifySessionStart } from './parseSession'
+import {
+  classifyClassUnlock,
+  classifyItemActivate,
+  classifySelfWho,
+  classifySkillUp,
+  classifySpecialAttack
+} from './parseWho'
+import { classifyAcquire } from './parseAcquire'
+import { classifyCamp, classifyOutputFile, classifySessionStart } from './parseSession'
 import { classifyGroup } from './parseGroup'
 import {
   classifyAa,
@@ -107,6 +115,11 @@ const CLASSIFIERS: readonly Classifier[] = [
   classifyCharm,
   classifyWornOff,
   classifyCcApply,
+  // …and the OTHER end of the same hold (JOS-180): `<mob> has been awakened by <name>.`, the one
+  // line that says a mez ENDED EARLY rather than merely ended. All 1,518 occurrences in the real
+  // log measured `{kind:'unknown'}` before this entry existed, so the position is for legibility
+  // (beside the family it annotates) and not for disambiguation.
+  classifyCcWake,
   classifyPetClaim,
   // …and the PUBLIC half of the same family, directly beneath it so the private/public split
   // is visible in the cascade itself (JOS-47). Cannot shadow anything: the six sentences it
@@ -129,6 +142,12 @@ const CLASSIFIERS: readonly Classifier[] = [
   // position is for legibility, not disambiguation.
   classifySessionStart,
   classifyCamp,
+  // THE EXPORT RECEIPT (JOS-128) — `Outputfile Complete: <file>`. Beside the session frame
+  // because it is the same level: the player operating the CLIENT, not the world. It is
+  // anchored at the start of the message and gated on a leading `O`, and the whole log holds
+  // exactly two lines of this shape, both previously `{kind:'unknown'}` — so like its three
+  // neighbours it can neither shadow nor be shadowed, and the position is for legibility.
+  classifyOutputFile,
   // WHO YOU ARE WITH (docs/plans/group-model.md §1) — beside the session frame for the same
   // reason those two are beside the zone rule: they are the frame around the world model, one
   // level up from its contents. Every shape it claims was MEASURED to be `{kind:'unknown'}`
@@ -137,6 +156,14 @@ const CLASSIFIERS: readonly Classifier[] = [
   classifyGroup,
   classifyLoot,
   classifyItemMerge,
+  // EVERY OTHER WAY AN ITEM OR A COIN REACHES YOU (JOS-144, parseAcquire.ts) — coin off a
+  // corpse, a merchant buy or sell, a destroy payout, a marketplace delivery, a tradeskill
+  // combine. It sits directly beneath the two corpse families because it is the rest of the
+  // same question, and BENEATH rather than above so a loot sentence is never offered to it
+  // first. It cannot shadow anything regardless: a full-log replay measured all 5,002 lines it
+  // claims as `{kind:'unknown'}` beforehand, and the histogram of the 46 pre-existing kinds is
+  // byte-identical across the change.
+  classifyAcquire,
   classifyTurnIn,
   classifyLevel,
   // Experience: gated on a `You gain ` prefix and END-anchored, so it can only ever claim the
@@ -163,6 +190,12 @@ const CLASSIFIERS: readonly Classifier[] = [
   // statements about the CHARACTER — and, like them, MEASURED to claim only lines that were
   // `{kind:'unknown'}` before it existed (all 21).
   classifySpecialAttack,
+  // WHAT THE CHARACTER IS ALLOWED TO BE (JOS-148) — the fourth statement-about-the-character,
+  // beside the three above for that reason. Anchored on the full `You have completed
+  // achievement: Primary Class Unlock - ` prefix and gated on the leading `Y`; a full-log sweep
+  // measured all 155 lines of the achievement family as `{kind:'unknown'}` before it existed, so
+  // like its neighbours it can neither shadow nor be shadowed and the position is legibility.
+  classifyClassUnlock,
   classifyIllusionFade,
   classifyPoisonCoat,
   classifyPoisonProc,

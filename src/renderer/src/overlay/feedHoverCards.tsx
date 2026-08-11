@@ -223,7 +223,7 @@ export function ItemHoverCard({ item, stats }: { item: string; stats?: string })
       {data && <WhatItsFor k={data} />}
       {data?.offline && (
         <div style={{ ...LABEL_STYLE, fontFamily: CARD_MONO, marginTop: 4 }}>
-          offline — showing what&apos;s known locally
+          offline - showing what&apos;s known locally
         </div>
       )}
     </div>
@@ -433,7 +433,7 @@ function MobCardFooter({
         <div style={{ ...LABEL_STYLE, marginTop: 4 }}>its wiki page lists no loot</div>
       )}
       {data?.offline && (
-        <div style={{ ...LABEL_STYLE, marginTop: 4 }}>offline — showing what&apos;s known locally</div>
+        <div style={{ ...LABEL_STYLE, marginTop: 4 }}>offline - showing what&apos;s known locally</div>
       )}
     </>
   )

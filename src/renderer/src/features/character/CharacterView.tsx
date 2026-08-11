@@ -18,11 +18,17 @@
 import { type JSX } from 'react'
 import { Box, Paper, Stack, Typography } from '@mui/material'
 import type { SheetCellView } from '@shared/characterSheet'
+// The `/outputfile` registry (JOS-44) owns the command string and — since JOS-185 — the steps
+// that make the dump complete. This tab never re-types either of them.
+import { outputKind } from '@shared/outputs/kinds'
 import OutputFileLine from '../../components/OutputFileLine'
 import CharacterIdentity from './CharacterIdentity'
 import GearStats from './GearStats'
 import SlotGrid from './SlotGrid'
 import { useCharacterSheet } from './useCharacterSheet'
+
+/** The dump this tab is fed by, as the registry states it. */
+const INVENTORY = outputKind('inventory')
 
 /**
  * The one card that teaches the dump, shown only while there is no dump to read — the same
@@ -37,7 +43,7 @@ function InstructionsCard(): JSX.Element {
         <Typography variant="subtitle2">Fill this in from the game</Typography>
         <Typography variant="body2" color="text.secondary">
           Type <b>/outputfile inventory</b> in EverQuest. Every slot below fills with what you are
-          wearing, straight away — leave this tab open and watch it happen.
+          wearing, straight away - leave this tab open and watch it happen.
         </Typography>
       </Stack>
     </Paper>
@@ -74,9 +80,10 @@ export default function CharacterView(): JSX.Element {
           the difference between reading your gear and reading a memory of it. */}
       {sheet && (
         <OutputFileLine
-          command="/outputfile inventory"
-          why="Re-type it in game whenever your gear changes — this sheet follows the dump."
+          command={INVENTORY.command}
+          why="Re-type it in game whenever your gear changes - this sheet follows the dump."
           updatedAt={sheet.loadedAt}
+          steps={INVENTORY.steps}
           testId="character-outputfile"
         />
       )}

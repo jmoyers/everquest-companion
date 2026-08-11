@@ -208,8 +208,8 @@ test('stepIndexAt binary-searches to the same answer as a linear scan', () => {
 })
 
 test('fmtDelta keeps the leveling view’s existing duration shapes', () => {
-  assert.equal(fmtDelta(0), '—')
-  assert.equal(fmtDelta(-1), '—')
+  assert.equal(fmtDelta(0), '-')
+  assert.equal(fmtDelta(-1), '-')
   assert.equal(fmtDelta(90_000), '2m')
   assert.equal(fmtDelta(3 * H), '3.0h')
   assert.equal(fmtDelta(47 * H), '47.0h')

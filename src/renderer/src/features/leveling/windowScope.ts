@@ -59,6 +59,16 @@ export interface ScopedStats {
   /** The instants the numbers cover — always `stats.t0`/`stats.t1`, restated for callers that
    *  need the range without the whole answer (the progress feed filters on it). */
   range: ScopeRange
+  /**
+   * The ZONE half of the slice (JOS-130) — a `shared/zones.zoneKey` fold, or null for every zone.
+   * It rides
+   * on the scope for the same reason the range does: a consumer that filters its own rows (the
+   * in-window drops panel, the progress feed) has to apply BOTH halves or it will describe a
+   * different stretch of play than the numbers beside it.
+   */
+  zoneKey: string | null
+  /** RAW display name of that zone, for wording. Null when the slice is not restricted. */
+  zoneName: string | null
   stats: RangeStats
 }
 
@@ -119,6 +129,25 @@ export interface ScopeArgs {
   selection: ScopeRange | null
   /** The optional class-combo seam `rangeStats` declares. Absent ⇒ `combos: []`. */
   combo?: ComboSource
+  /**
+   * THE SLICE'S OWN RANGE, when the caller has one (JOS-130). Absent ⇒ derived from the drawn
+   * window exactly as before (rule 2), which is what the duration rungs still want: their ends
+   * come from the bucket snap and must be clamped back to the record.
+   *
+   * A semantic slice states BOTH its ends (this session starts at a login line; a custom range is
+   * two instants the user typed), so re-deriving them from a padded drawn window would push the
+   * end past what was asked for. Passed through verbatim.
+   */
+  range?: ScopeRange
+  /**
+   * The slice's zone restriction — a `shared/zones.zoneKey` fold, or null. Handed straight to
+   * `rangeStats`; nothing here interprets it, which is what keeps "one derivation" true.
+   */
+  zoneKey?: string | null
+  /** The slice's own wording. Absent ⇒ `timescaleLabel(id)`, the JOS-71 spelling. */
+  label?: string
+  /** RAW display name of the restricted zone, for the wording only. */
+  zoneName?: string | null
 }
 
 /**
@@ -128,11 +157,19 @@ export interface ScopeArgs {
  */
 export function scopedStats(args: ScopeArgs): ScopedStats {
   const { snap, win, bounds, id, selection, combo } = args
-  const range = selection ?? statsRangeFor(win, bounds)
+  const zoneKey = args.zoneKey ?? null
+  const zoneName = args.zoneName ?? null
+  const range = selection ?? args.range ?? statsRangeFor(win, bounds)
+  // A DRAG NARROWS TIME AND NOTHING ELSE (JOS-130). The zone half of a slice is a different
+  // dimension from the range half, so a selection drawn while `Zone` is in force still describes
+  // that zone — and the wording says both, rather than letting one silently outrank the other.
+  const drag = zoneName ? `${SELECTION_LABEL} in ${zoneName}` : SELECTION_LABEL
   return {
     kind: selection ? 'selection' : 'window',
-    label: selection ? SELECTION_LABEL : timescaleLabel(id),
+    label: selection ? drag : (args.label ?? timescaleLabel(id)),
     range,
-    stats: rangeStats({ snap, range, combo })
+    zoneKey,
+    zoneName,
+    stats: rangeStats({ snap, range, combo, zoneKey })
   }
 }

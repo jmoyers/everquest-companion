@@ -10,6 +10,19 @@ import type { ExaltPlan } from './planner/types'
 // The toast overlay's per-kind knobs live beside its payload in ./toast (this file is at its
 // factoring ceiling); OverlayConfig names the blob, that file owns its shape + normalizer.
 import type { ToastOverlayConfig } from './toast'
+// TYPE-ONLY, and the cycle it closes (buffTimers.ts imports `OverlayKind` from here) is erased at
+// compile time. The union lives beside the function that applies it, which is where the argument
+// for each value is written down.
+import type { TimerGrouping } from './buffTimers'
+// Same posture again for the XP overlay's two knobs (JOS-195): TYPE-ONLY, so the cycles they
+// close (both files import from here) are erased at compile time, and each union lives beside the
+// code that gives it meaning rather than in this file, which is at its factoring ceiling.
+import type { XpRowId } from './xpOverlay'
+import type { SliceId } from './timeslice'
+// Same posture for the inventory dump's baseline (JOS-128): ProgressState names the blob, and
+// ./outputs/baseline owns its shape beside the rules that produce and read it. Type-only, so
+// the import is erased and this file keeps no runtime dependency on the outputs engine.
+import type { InventorySource } from './outputs/baseline'
 
 export type { LootDisposition, ItemStatBlock }
 
@@ -25,22 +38,49 @@ export type { LootDisposition, ItemStatBlock }
  *   - 'toast' (docs/plans/celebration-toasts.md): the CELEBRATION strip — normally renders
  *                 nothing; a boss kill or a Sky quest completion animates a card in, holds, and
  *                 leaves. Not a meter: it has no selector, no drill and no scope.
- *   - 'buffs' (JOS-89, docs/plans/buff-timer-overlay.md): the BUFF/TIMER bars — your self buffs,
- *                 the debuffs you put on each target, and a per-enemy crowd-control clock, so a
- *                 chain-mez shows a named countdown per enemy. Ships DEFAULT OFF for internal
- *                 validation. It has no selector and no drill, and its bars obey one law: a
- *                 duration spells.json STATES counts down, a duration nobody states counts UP.
+ *   - 'buffs' / 'debuffs' (JOS-89, split in JOS-119; docs/plans/buff-timer-overlay.md): the
+ *                 BUFF/TIMER bars, as TWO windows over ONE model. 'buffs' draws the beneficial
+ *                 spells you have running (on yourself, on your pet, on whoever you buffed);
+ *                 'debuffs' draws what you have put ON something else — debuffs and the
+ *                 per-enemy crowd-control clocks (mez and slow ARE debuffs, owner ruling), so a
+ *                 chain-mez shows a named countdown per enemy. They are two SURFACES, not two
+ *                 models: both hydrate the same `buffs` + `buffTimers` modules and both project
+ *                 through `shared/buffTimers.ts buildTimerRows`; the only difference is which
+ *                 rows each one keeps (`overlayShowsRow`). Both ship DEFAULT OFF — JOS-89's
+ *                 internal-validation stance continues. Neither has a selector or a drill, and
+ *                 both obey one law: a duration spells.json STATES counts down, a duration
+ *                 nobody states counts UP.
+ *   - 'xp' (JOS-195): the PROGRESS read, floating — how fast the bar is moving, when it lands,
+ *                 and motes per hour by type, over the app-wide slice (shared/timeslice.ts) with
+ *                 `session` as its own default. It derives nothing: every number is the Leveling
+ *                 tab's, through `renderer/overlay/xpRows.ts`. Ships DEFAULT OFF like the timer
+ *                 windows. Its only configurability is a ROW CHECKLIST (`OverlayConfig.xpRows`) —
+ *                 no widget builder, by owner scope.
  * Each kind has its own independently-persisted OverlayConfig (bounds/alpha/lock/text size/drill)
  * and can be open simultaneously. IPC channels + the store are keyed by this.
  *
  * APPEND NEW KINDS AT THE END. `overlayLayout.ts` derives a kind's reserved dock slot from its
  * INDEX here and `tests/overlayLayout.test.mts` pins the exact bounds of slots 0–2, so inserting
- * in the middle moves somebody's window. The wrap has room for the six meter kinds below (slot 5
- * lands in the second column on a 1366×728 laptop); a SEVENTH would clamp a third column onto the
- * second and the layout test will say so.
+ * in the middle moves somebody's window. The SEVENTH meter kind ('debuffs') is the one this note
+ * used to warn about: on a 1366×728 laptop seven uniform 380×320 slots cannot be laid out without
+ * a column landing on its neighbour. That is now answered in `overlayLayout.ts` — the uniform size
+ * SHRINKS (uniformly, all kinds together) on a display that cannot hold the full reserved grid —
+ * rather than by silently overlapping two windows. The EIGHTH ('xp') is the first kind to arrive
+ * after that machinery existed, and it absorbed it exactly as promised: MEASURED in
+ * tests/overlayLayout.test.mts, 1080p and up still seat all eight reserved slots at 380×320 and
+ * the small laptop shrinks one rung further rather than overlapping anything.
+ *
+ * The NINTH ('respawn', JOS-194) is appended on the same terms and needed no geometry code at
+ * all — but it did MOVE a rung, and the measurement is recorded rather than glossed: 1080p and
+ * 1440p still seat all nine at 380x320, while a 1920x960 work area (80 px shorter than 1080p with
+ * a taskbar, which costs it a third row) drops to 323x272 and seats fifteen. `meterSize` chose
+ * that on its own, which is the whole point of deriving the layout instead of tabulating it.
+ * tests/overlayLayout.test.mts pins both halves.
  */
-export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs'
-export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs']
+// prettier-ignore
+export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn'
+// prettier-ignore
+export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn']
 
 /** True for the two HEALING overlay kinds (they render HealMeter, not OverlayMeter). */
 export function isHealOverlayKind(kind: OverlayKind): boolean {
@@ -52,9 +92,20 @@ export function isFightOverlayKind(kind: OverlayKind): boolean {
   return kind === 'fight' || kind === 'heal-fight'
 }
 
+// The TIMER kinds' vocabulary (`TimerOverlayKind` / `isTimerOverlayKind` / `timerRowSurface`) is
+// NOT here: it lives in `shared/buffTimers.ts` beside the projection whose rows it routes, so the
+// two windows' one rule sits in one file. This module is at its factoring ceiling anyway — the
+// same argument that put `ToastOverlayConfig` in ./toast.
+
 /**
- * The overlay meter's mini drill-down (Task #54): which entity's flat skill/spell list is on
- * screen. `null` (or absent) = level 1, the entity bars.
+ * The overlay meter's mini drill-down (Task #54): which entity's flat ability list is on screen.
+ * `null` (or absent) = level 1, the entity bars.
+ *
+ * JOS-105 added an optional `category` (a third drill level, one damage type of the source);
+ * JOS-113 removed that level — per-ability stats expand INLINE now, not as a level — so the field
+ * is gone. A store written by a JOS-105 build that carries a `category` needs no migration: the
+ * normalizer (`store.ts`) rebuilds the drill field by field and simply drops it, degrading to the
+ * flat ability list — the same "a stale drill degrades to the level it can still show" rule.
  */
 export interface OverlayDrill {
   entityId: string
@@ -113,31 +164,46 @@ export interface OverlayConfig {
    * fills (and clamps) it on the way out, exactly as it does the toast blob above.
    */
   textScale?: number
+  /**
+   * HOW THE TWO TIMER WINDOWS ARRANGE THEIR ROWS (JOS-140) — 'none' for one flat
+   * soonest-to-expire list, 'target' for per-target blocks. Present only on the 'buffs' and
+   * 'debuffs' kinds; every other kind ignores it, and `setOverlayConfig` deletes it there so a
+   * malformed patch cannot grow one a meter.
+   *
+   * ABSENT MEANS "the window's own default", which is not the same for both: debuffs open flat
+   * (the owner's ask — a queue of things running out) and buffs keep their blocks. So it is
+   * optional rather than defaulted here, and shared/buffTimers.ts holds the per-surface answer.
+   */
+  grouping?: TimerGrouping
+  /**
+   * WHICH ROWS THE XP OVERLAY DRAWS (JOS-195) — the whole of that window's configurability, by
+   * owner scope: a checklist, never a widget builder. Present only on the 'xp' kind;
+   * `setOverlayConfig` deletes it everywhere else so a malformed patch cannot grow one on a meter.
+   *
+   * ABSENT MEANS EVERY ROW, and it is deliberately a different answer from `[]` — which is a user
+   * who switched all three off and is entitled to their empty window. `shared/xpOverlay.ts`
+   * normalizes it (closed union, deduped, this-file's order) on the way in.
+   */
+  xpRows?: XpRowId[]
+  /**
+   * WHICH STRETCH THAT WINDOW MEASURES (JOS-195) — one id from the app-wide slice vocabulary
+   * (shared/timeslice.ts, JOS-130), which is also where JOS-71's duration rungs live now.
+   *
+   * ABSENT MEANS `session`, and that default is the ticket's: a floating pace read is something
+   * you glance at while playing, and "how am I doing right now" is this session rather than the
+   * whole record. It DEGRADES rather than sticks — a log that states no logout cannot define a
+   * session, and `resolveSliceId` falls back to `all` exactly as the tab's control does.
+   *
+   * It is remembered per window like position is, not shared with the main app's pick: the two
+   * are read at different moments, and a slice chosen on the Loot tab has no business silently
+   * re-scoping a window floating over the game.
+   */
+  xpSlice?: SliceId
 }
 
-// ---- overlay text scale (owner feedback 2026-08-05) ------------------------------------
-
-/** Below this the bars stop being legible at all — a smaller number is not a smaller meter,
- *  it is an unreadable one. */
-export const TEXT_SCALE_MIN = 0.8
-/** Above this a default 380x320 overlay holds barely a row; make the WINDOW bigger instead. */
-export const TEXT_SCALE_MAX = 2
-/** One press of the stepper. Coarse on purpose: this is a reading-distance control, not a slider. */
-export const TEXT_SCALE_STEP = 0.1
-export const TEXT_SCALE_DEFAULT = 1
-
-/**
- * Coerce a stored/patched text scale into range. Absent, malformed or non-finite ⇒ the default:
- * the field is renderer-writable and optional in the store, so it is clamped on the way IN and
- * on the way OUT (store.ts), like bgAlpha and the toast blob.
- *
- * The 2-decimal round is not cosmetic: the stepper walks in 0.1 from a float, and without it a
- * few presses persist 1.2000000000000002 and print it back as the tooltip's percentage.
- */
-export function clampTextScale(v: unknown): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return TEXT_SCALE_DEFAULT
-  return Math.min(TEXT_SCALE_MAX, Math.max(TEXT_SCALE_MIN, Math.round(v * 100) / 100))
-}
+// The overlays TEXT SIZE (owner feedback 2026-08-05) lives in ./overlayTextScale.ts and is
+// re-exported here, so every importer of `@shared/types` is untouched. See that file for why.
+export { TEXT_SCALE_DEFAULT, TEXT_SCALE_MAX, TEXT_SCALE_MIN, TEXT_SCALE_STEP, clampTextScale } from './overlayTextScale'
 
 /** One EverQuest character whose log we watch. */
 export interface CharacterRef {
@@ -572,6 +638,10 @@ export interface TurnInDelta {
   appended: TurnInEvent[]
 }
 
+// classUnlocks module (JOS-148). Defined in ./classUnlocks beside the record itself and the
+// argument for its shape, on the `kills.ts` precedent — this file is at its line budget.
+export type { ClassUnlockDelta, ClassUnlockRecord, ClassUnlockSnap } from './classUnlocks'
+
 // kills module. Snapshot = the map + its shape version; delta = the per-mob entries that
 // changed, each REPLACING its mob wholesale. Defined in ./kills beside the record itself.
 export type { KillsSnap, KillsDelta } from './kills'
@@ -708,10 +778,20 @@ export interface FeedReport {
 export type HeldCounts = Record<string, number>
 
 /**
- * How the app decides which items you "have":
- * - 'log'       : count everything the character has ever looted (log parsing)
- * - 'inventory' : count only what's in the latest /outputfile inventory dump
- * - 'both'      : the higher of the two per item
+ * How the app decides which items you "have". A DUMP ADDS AND NEVER SUBTRACTS (JOS-141, owner
+ * ruling 2026-08-09): loading one cannot lower any count, because a dump only covers what was
+ * OPEN when it was generated and reading its silence as zero deleted banked Sky items. JOS-128
+ * briefly made a dump load a BASELINE that reset the model; that is reverted.
+ * - 'log'       : count everything the character has ever looted (log parsing). Never consults
+ *                 a dump, and therefore CANNOT see an item you destroyed, sold to a vendor or
+ *                 handed to another player; "ever looted" is exactly what it says.
+ * - 'inventory' : the dump, exactly as written. Never consults the log. The only source that can
+ *                 show a deletion, and it does so by ignoring the log rather than by resetting.
+ * - 'both'      : `max(log, dump)` per item — whichever witness can vouch for more copies. A
+ *                 maximum and not a sum, because the two OVERLAP: an item you looted and still
+ *                 hold is in both.
+ * The combination and the turn-in consumption that follows it live in ONE place,
+ * renderer/features/inventory/reconcile.ts, which argues both.
  */
 export type CountSource = 'log' | 'inventory' | 'both'
 
@@ -719,10 +799,38 @@ export type CountSource = 'log' | 'inventory' | 'both'
 export interface ProgressState {
   /** counts from the last inventory dump, keyed lowercased name */
   inventory: HeldCounts
-  /** quest keys (className::name) the user marked complete/turned-in */
+  /**
+   * Quest keys (className::name) turned in AT LEAST ONCE. Since JOS-131 this is the DOWNGRADE
+   * MIRROR of `questTurnIns` rather than the record itself: it is written whenever the ledger is,
+   * carries no count and no instant, and a build that predates JOS-131 still reads it and still
+   * shows those quests as turned in. `questTurnIns` is what this build reads.
+   */
   completedQuests: string[]
+  /**
+   * EVERY TURN-IN, AS AN EVENT (JOS-131): quest key → the epoch-ms instants it was turned in,
+   * ascending. A Sky quest can be run again, so completion is a count, not a terminal flag, and
+   * the count is the length of this list.
+   *
+   * WHY INSTANTS AND NOT A TALLY. Turn-ins have to be subtractable against an inventory dump,
+   * and the dump already reflects every turn-in made BEFORE it was generated (JOS-128's
+   * baseline). Only a dated turn-in can be placed on the right side of that line, and only exact
+   * instants let the log-detected turn-ins and the persisted ones be MERGED without
+   * double-counting the same event (the detected `ts` is stored verbatim, so the union dedupes
+   * itself).
+   *
+   * WHAT IS IN IT. Both kinds: turn-ins detected in the log (`TurnInEvent.ts`, EQ's own clock)
+   * and turn-ins the user recorded by hand (`Date.now()` at the click). Detected ones are
+   * persisted deliberately, the way the old auto-complete persisted a completion: the log is
+   * re-scanned per character epoch and truncated logs happen, and a turn-in the log can no longer
+   * show is still a thing that happened.
+   *
+   * ADDITIVE and OPTIONAL — no schema bump and no migration (the `exaltPlans` precedent). A store
+   * without this key reads its counts from `completedQuests`: one turn-in, undated, which is all
+   * any reader needs now that consumption is windowed by SOURCE rather than by instant (JOS-141).
+   */
+  questTurnIns?: Record<string, number[]>
   /** metadata about the last inventory load */
-  inventorySource?: { path: string; loadedAt: string }
+  inventorySource?: InventorySource
   /**
    * Class-combo user corrections (docs/plans/class-combo-inference.md § 7). Character-scoped,
    * because a loadout is. This is the ONLY durable combo state: intervals are re-derived from

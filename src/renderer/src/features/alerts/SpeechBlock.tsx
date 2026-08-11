@@ -206,12 +206,12 @@ function CaptureHint({ phrase, captureNames }: { phrase: string; captureNames: s
     <Box data-testid="alert-speech-captures">
       {captureNames.length > 0 && (
         <Typography variant="caption" color="text.secondary" display="block">
-          {`This alert’s pattern captures: ${captureNames.map((n) => `{${n}}`).join(' ')} — write one in the phrase to speak it.`}
+          {`This alert’s pattern captures: ${captureNames.map((n) => `{${n}}`).join(' ')} - write one in the phrase to speak it.`}
         </Typography>
       )}
       {unknown.length > 0 && (
         <Typography variant="caption" color="warning.main" display="block">
-          {`${unknown.map((n) => `{${n}}`).join(' ')} ${unknown.length === 1 ? 'is not' : 'are not'} captured by this alert’s pattern — spoken as written.`}
+          {`${unknown.map((n) => `{${n}}`).join(' ')} ${unknown.length === 1 ? 'is not' : 'are not'} captured by this alert’s pattern - spoken as written.`}
         </Typography>
       )}
     </Box>
@@ -271,7 +271,7 @@ function SaysRow({
           user will hear if the capture is ever missing, and `CaptureHint` above is where they
           learn that the pattern really does declare it. */}
       <Typography variant="caption" color="text.secondary" data-testid="alert-speech-preview">
-        {preview ? `Speaks: “${preview}”` : 'Speaks nothing — give the alert a name or a phrase.'}
+        {preview ? `Speaks: “${preview}”` : 'Speaks nothing - give the alert a name or a phrase.'}
       </Typography>
     </Stack>
   )

@@ -93,7 +93,7 @@ function OverrideDialog({
           <Typography variant="caption" color="text.secondary" data-testid="loadout-override-count">
             {picked.length === 0
               ? 'Pick 1 to 3 classes.'
-              : `${picked.join(' / ')} — ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
+              : `${picked.join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             This applies from the start of your current loadout onward and stays until you change
@@ -134,7 +134,7 @@ export default function LoadoutOverride({ current }: { current: ComboInterval | 
   if (!current) {
     return (
       <Typography variant="caption" color="text.disabled" data-testid="loadout-override">
-        No loadout read yet — one appears as soon as the log names classes you played, and you
+        No loadout read yet - one appears as soon as the log names classes you played, and you
         can set it by hand from there.
       </Typography>
     )

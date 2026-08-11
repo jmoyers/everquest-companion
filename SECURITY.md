@@ -6,12 +6,14 @@ it does not, and how you can verify that the copy you installed is the one we bu
 
 ## Reporting a vulnerability
 
-Use **[GitHub private security advisories](https://github.com/jmoyers/everquest-companion/security/advisories/new)**
-— that gives us a private channel to confirm and fix before anything is public.
+Email **[jmoyers+eqc@gmail.com](mailto:jmoyers+eqc@gmail.com)** — that inbox reaches the
+person who maintains this project directly and privately, so a vulnerability can be confirmed
+and fixed before anything is public. Put enough to reproduce it in the mail; don't file it in
+a public issue.
 
-If advisories are unavailable to you, open a normal
-[issue](https://github.com/jmoyers/everquest-companion/issues) and say only that you
-have a security report and how to reach you; don't put the details in the issue.
+If you'd rather use GitHub, [private security advisories](https://github.com/jmoyers/everquest-companion/security/advisories/new)
+are an optional second channel when they're available on the repo — but the email above is the
+one that's always open, so prefer it if you're unsure.
 
 This is a small hobby project maintained by one person. There is no bounty and no
 guaranteed response time, but reports are taken seriously and credited unless you
@@ -154,9 +156,9 @@ and the whole stack is in this repo under [`infra/`](infra/).
 
 **Asking us to delete something.** The dialog shows a **report id** after a successful
 send — keep it. Quote that id in a
-[GitHub issue](https://github.com/jmoyers/everquest-companion/issues) (or a
-[private advisory](https://github.com/jmoyers/everquest-companion/security/advisories/new)
-if you'd rather it not be public) and say what you want removed. Deleting a slice
+[GitHub issue](https://github.com/jmoyers/everquest-companion/issues) (or, if you'd rather it
+not be public, email [jmoyers+eqc@gmail.com](mailto:jmoyers+eqc@gmail.com)) and say what you
+want removed. Deleting a slice
 deletes the object outright and stamps the row so we can tell it was done. The
 description itself stays unless you ask for the whole report to go, in which case the
 report and its slice both go — that is what the `wipe` path in the triage tool exists

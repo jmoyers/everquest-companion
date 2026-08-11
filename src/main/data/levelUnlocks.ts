@@ -21,6 +21,10 @@
 
 import classesJson from './classes.json'
 import spellsJson from './spells.json'
+// The corrections overlay, applied here for the same reason `spellDb.ts` applies it (JOS-161):
+// every row of this dataset is DISPLAYED by name, and a card announcing a spell by a name the
+// game never prints is a card a player cannot act on.
+import { applySpellCorrections } from './spellCorrections'
 import { parseSpellClasses } from '../../shared/spellLevels'
 import { isClassAbbr, type ClassAbbr } from '../../shared/classCombo'
 import type { LevelUnlockData, UnlockSkill, UnlockSpell } from '../../shared/levelUnlocks'
@@ -75,7 +79,7 @@ function skillsFor(
 function unlockSpells(): UnlockSpell[] {
   const file = spellsJson as SpellDbFile
   const out: UnlockSpell[] = []
-  for (const s of file.spells) {
+  for (const s of applySpellCorrections(file.spells).spells) {
     const at = parseSpellClasses(s.classes)
     if (at.length === 0) continue
     const spell: UnlockSpell = { name: s.name, at }

@@ -16,6 +16,8 @@ import {
   type ScopeOptions
 } from './dashboardData'
 import { useMeterScope } from './useCombatPrefs'
+import { useDrillMemory, type DrillMemoryApi } from './useDrillMemory'
+import { AbilityExpandProvider } from './abilityExpand'
 import { EMPTY_ROSTER, type MeterScope, type RosterSnap } from '@shared/roster'
 import type { CombatFocus } from './combatFocus'
 import type { CombatSnapshot, SegmentView, TimelineView } from '@shared/combat'
@@ -162,33 +164,28 @@ function DashboardGrid({
 /**
  * DRILL STATE for the main panel — and the LEVEL it opens on.
  *
- * LEVEL 1, ALWAYS (owner ruling, 2026-08-05 — JOS-35): the tab opens on the ranked source list,
- * one bar per combatant, and a drill is something the USER did. It used to open on your own
- * breakdown whenever the pet preference was on (`petRows.defaultDrill`, deleted) — a shortcut
- * from when this app assumed solo play, and one that hid every group-mate's row behind a chevron
- * the moment the meters learned about groups.
+ * LEVEL 1 IS WHERE A FRESH INSTALL OPENS (owner ruling, 2026-08-05 — JOS-35): the ranked source
+ * list, one bar per combatant, and a drill is something the USER did. It used to open on your own
+ * breakdown whenever the pet preference was on (`petRows.defaultDrill`, deleted) — a shortcut from
+ * when this app assumed solo play, and one that hid every group-mate's row behind a chevron the
+ * moment the meters learned about groups.
  *
- * Two states now, not three: `null` is level 1 and it is both the opening value and what an
- * explicit un-drill produces, so there is nothing left for a third state to distinguish.
+ * …AND WHERE YOU LEFT IT IS WHERE YOU COME BACK TO (JOS-116). Those are not in tension: the
+ * opening level is still level 1 and nothing auto-drills, but a drill you performed is no longer
+ * thrown away by the tab switch that unmounts this view. It lives in `useDrillMemory`, beside the
+ * abilities you had expanded inside it, and it survives a restart the way the overlay's has all
+ * along.
  *
- * Navigation NEVER writes a preference: drilling your row, a mob or a nested pet — and backing
- * out of any of them — is movement inside one fight, and the next fight still opens on level 1.
- * (A nested pet's Back hands us its PARENT, your breakdown, not `null`; the crumb spells that
- * hierarchy out.)
+ * A DRILL IS STILL PER-FIGHT AND PER-DIRECTION — but that is enforced on the CHANGE HANDLERS
+ * (below, in CombatView) and no longer by an effect keyed on `selection`/`mode`. An effect fires
+ * on MOUNT, which is precisely the moment this view has just hydrated a stored drill; and
+ * `selection` arrives asynchronously from main (useGlobalFight), so it would fire a second time a
+ * frame later. Either firing wipes the value the ticket exists to keep. The overlay learned this
+ * first and says so in OverlayMeter.tsx.
  */
-function useDashboardDrill({
-  mode,
-  selection,
-  view
-}: {
-  mode: MeterMode
-  selection: string
-  view: 'dash' | 'timeline'
-}): { drill: Drill | null; setDrill: (d: Drill | null) => void } {
-  const [drill, setDrill] = useState<Drill | null>(null)
-
-  // A drill is per-fight and per-direction: changing either returns to level 1.
-  useEffect(() => setDrill(null), [selection, mode])
+function useDashboardDrill(view: 'dash' | 'timeline'): DrillMemoryApi {
+  const memory = useDrillMemory('combat')
+  const { drill, setDrill } = memory
 
   // Esc leaves the drill-down.
   useEffect(() => {
@@ -204,16 +201,53 @@ function useDashboardDrill({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, drill])
+  }, [view, drill, setDrill])
 
-  return { drill, setDrill }
+  return memory
+}
+
+/**
+ * THE FOUR NAVIGATIONS THAT MAKE A DRILL STOP MEANING ANYTHING, and the one place they undrill.
+ *
+ * A drill names a source (or a mob) INSIDE one fight, read in one direction. Pick another fight,
+ * flip Fight↔Overall, switch Outgoing↔Incoming↔Healing, or follow a deep link here from another
+ * tab, and the subject you were reading is not on screen any more — so the meter goes back to
+ * level 1, exactly as it always did.
+ *
+ * WHAT CHANGED IN JOS-116 IS WHERE THAT LIVES: on the HANDLERS, not in an effect keyed on
+ * `selection`/`mode`. An effect cannot tell a user's click from a mount, and this view now mounts
+ * holding a stored drill — so the effect that used to enforce this rule would clear the value the
+ * ticket exists to keep, twice (once on mount, once when the global fight id arrives from main a
+ * frame later). Only a genuine navigation undrills. The overlay reached the same conclusion first
+ * and OverlayMeter.tsx states it at length.
+ */
+interface Navigation {
+  setSelection: (v: string) => void
+  setScope: (s: CombatScope) => void
+  setMode: (m: MeterMode) => void
+  focusFight: (f: CombatFocus) => void
+}
+
+function undrilling(nav: Navigation, setDrill: (d: Drill | null) => void): Navigation {
+  const clear =
+    <T,>(f: (v: T) => void) =>
+    (v: T): void => {
+      setDrill(null)
+      f(v)
+    }
+  return {
+    setSelection: clear(nav.setSelection),
+    setScope: clear(nav.setScope),
+    setMode: clear(nav.setMode),
+    focusFight: clear(nav.focusFight)
+  }
 }
 
 /** The timeline pane's defensive fallback — see CombatBody for why it should be unreachable. */
 function NoTimelinePane(): React.JSX.Element {
   return (
     <Paper variant="outlined" sx={{ p: 2, flexGrow: 1 }}>
-      <Typography color="text.secondary">No timeline for this selection — pick a recent fight.</Typography>
+      <Typography color="text.secondary">No timeline for this selection - pick a recent fight.</Typography>
     </Paper>
   )
 }
@@ -227,8 +261,8 @@ function ScopeEmptyPane({ scope }: { scope: 'fight' | 'overall' }): React.JSX.El
     <Paper variant="outlined" data-testid="scope-empty" sx={{ p: 2, flexGrow: 1 }}>
       <Typography color="text.secondary">
         {scope === 'fight'
-          ? 'No fights yet — engage something and it’ll appear here live. Switch to Overall for this zone’s totals.'
-          : 'No zone session yet — it starts with your first damage in a zone.'}
+          ? 'No fights yet - engage something and it’ll appear here live. Switch to Overall for this zone’s totals.'
+          : 'No zone session yet - it starts with your first damage in a zone.'}
       </Typography>
     </Paper>
   )
@@ -252,24 +286,23 @@ export default function CombatView({
   focusNonce?: number
   onFocusConsumed?: () => void
 }): React.JSX.Element {
-  const {
-    snap,
-    showUnparsed,
-    setShowUnparsed,
-    selection,
-    setSelection,
-    scope,
-    setScope,
-    focusFight,
-    maxSegments,
-    loadMore
-  } = useCombat()
-  const [mode, setMode] = useState<MeterMode>('out')
+  const { snap, showUnparsed, setShowUnparsed, selection, scope, maxSegments, loadMore, ...combat } =
+    useCombat()
+  const [mode, setModeState] = useState<MeterMode>('out')
   const [view, setView] = useState<'dash' | 'timeline'>('dash')
-  // WHOSE damage (docs/plans/group-model.md §2) — persisted per surface, so the docked tab and a
-  // pinned overlay can answer different questions. `EMPTY_ROSTER` while the first snapshot is in
-  // flight means Group renders as Everyone for that instant, never as an empty meter.
-  const [meterScope, setMeterScope] = useMeterScope('combat')
+  // WHERE YOU HAD DRILLED TO — persisted, so a tab switch (which unmounts this whole view) no
+  // longer throws it away, and neither does a restart (JOS-116).
+  const { drill, setDrill, isOpen, setOpen } = useDashboardDrill(view)
+  // …and the four navigations that make a drill meaningless go back to level 1 first.
+  const { setSelection, setScope, setMode, focusFight } = undrilling(
+    { setSelection: combat.setSelection, setScope: combat.setScope, setMode: setModeState, focusFight: combat.focusFight },
+    setDrill
+  )
+  // WHOSE damage (docs/plans/group-model.md §2) — ONE persisted preference for every combat
+  // surface since JOS-115, read here and written only in Preferences > Combat. `EMPTY_ROSTER`
+  // while the first snapshot is in flight means Group renders as Everyone for that instant, never
+  // as an empty meter.
+  const [meterScope] = useMeterScope()
   const roster = snap?.roster ?? EMPTY_ROSTER
 
   // An inbound focus (deep link) picks the scope + selection, then is consumed. Keyed on the
@@ -294,7 +327,6 @@ export default function CombatView({
   const tl = useStableTimeline(snap?.timeline)
   const ringless = ringlessOf(tl, seg)
   const live = isLiveSelection(opts.head, selection)
-  const { drill, setDrill } = useDashboardDrill({ mode, selection, view })
 
   // TIMELINE AVAILABILITY. The timeline is drawn from an encounter's event ring, and a ring only
   // exists for the live + most recent fights (older ones drop theirs at finalize; a zone
@@ -333,24 +365,28 @@ export default function CombatView({
         mode={mode}
         setMode={setMode}
         meterScope={meterScope}
-        setMeterScope={setMeterScope}
         roster={roster}
       />
 
-      <CombatBody
-        hydrating={hydrating}
-        view={view}
-        seg={seg}
-        tl={tl}
-        mode={mode}
-        meterScope={meterScope}
-        roster={roster}
-        drill={drill}
-        setDrill={setDrill}
-        live={live}
-        ringless={ringless}
-        scope={scope}
-      />
+      {/* The expanded per-ability stats are remembered beside the drill they sit inside (JOS-116),
+          and reach `combatShared.SkillBar` four levels down through this provider rather than
+          through four components' props (abilityExpand.tsx says why). */}
+      <AbilityExpandProvider value={{ isOpen, setOpen }}>
+        <CombatBody
+          hydrating={hydrating}
+          view={view}
+          seg={seg}
+          tl={tl}
+          mode={mode}
+          meterScope={meterScope}
+          roster={roster}
+          drill={drill}
+          setDrill={setDrill}
+          live={live}
+          ringless={ringless}
+          scope={scope}
+        />
+      </AbilityExpandProvider>
 
       <ProcessingLog lines={snap?.recent ?? []} showUnparsed={showUnparsed} setShowUnparsed={setShowUnparsed} />
     </Stack>

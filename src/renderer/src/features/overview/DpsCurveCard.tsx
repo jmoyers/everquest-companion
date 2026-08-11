@@ -29,7 +29,7 @@ export function DpsCurveCard({ snap }: { snap: CombatSnapshot | null }): JSX.Ele
       // Two honest empty states, never one: no fights at all is the same "engage something"
       // idiom the DPS card uses; a fight whose event ring has been dropped is a different fact
       // and gets the Combat tab's own wording rather than a second phrasing of it.
-      noRing={head ? ringlessText('evicted') : 'No fights yet — the curve starts with your first hit.'}
+      noRing={head ? ringlessText('evicted') : 'No fights yet - the curve starts with your first hit.'}
       compact
       testId="overview-dps-curve"
     />

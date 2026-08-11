@@ -162,9 +162,14 @@ test('R3: the ranged split is a SLOT rule over one verb, and it moves no other v
   assert.equal(meleeSkill('smite'), 'Smite')
   assert.equal(meleeSkill('frenzy'), 'Frenzy')
   assert.equal(meleeSkill('flurry'), 'Flurry')
+  // `strike` also left, in JOS-163, and on a THIRD argument again — neither this slot rule nor
+  // JOS-77's class-skill test. It is the generic verb every monk special prints as, so it earns
+  // an anonymous row named after the verb itself.
+  assert.equal(meleeSkill('strike'), 'Strike')
+  assert.equal(meleeSkill('strikes'), 'Strike')
   // …and every verb a weapon IN A HAND prints stays in the one auto-attack lane. `shoot` leaving
   // is a slot rule, not a licence to promote big-damage verbs: `slice` remains the trap.
-  for (const v of ['slash', 'pierce', 'crush', 'hit', 'slice', 'claw', 'punch', 'strike', 'reave', 'gore',
+  for (const v of ['slash', 'pierce', 'crush', 'hit', 'slice', 'claw', 'punch', 'reave', 'gore',
     'maul', 'sting', 'rend', 'smash', 'gnaw', 'lash', 'bite', 'slam']) {
     assert.equal(meleeSkill(v), 'Melee', v)
   }
@@ -340,9 +345,12 @@ test('W57: the window carries a real bow, and the meter shows nothing — becaus
   lane(skills, 'you|Frenzy', 106, 4)
   lane(skills, 'you|Kick', 54, 2)
   lane(skills, 'you|Smite', 65, 2)
-  lane(skills, 'you|Smiting Strike', 260, 2)
+  // The two CAST-LESS spell lanes carry JOS-167's origin marker; the amounts are the same
+  // pre-change values. Blood Siphon Strike is a DoT (see the `you|dot` category below), which
+  // the detector never judges, so its lane name is untouched.
+  lane(skills, 'you|Smiting Strike · proc', 260, 2)
   lane(skills, 'you|Blood Siphon Strike', 94, 2)
-  lane(skills, 'you|Condemnation of Nife', 486, 2)
+  lane(skills, 'you|Condemnation of Nife · proc', 486, 2)
   lane(skills, 'enemy|Melee', 417, 5)
   lane(skills, 'enemy|Bash', 102, 3)
 
@@ -365,7 +373,12 @@ test('W58: a CRITICAL bow shot beside the owner\'s own pull, and his numbers are
   const { skills, categories, outTotal, inTotal } = laneRollup(W58)
   assert.equal(skills.has('you|Ranged'), false)
   assert.equal(skills.has('member|Ranged'), false)
-  lane(skills, 'you|Melee', 2890, 21)
+  // 2,633 over 17 hits since JOS-163: the 4 `You strike` swings that used to be inside this
+  // number (257 damage, hand-tallied off the fixture) moved to their own neutral row. This window
+  // carries no `You will now use` line, so the verb earns the row and nothing names it. The melee
+  // CATEGORY total below is unchanged, which is what the law-8 dump this test was built from says.
+  lane(skills, 'you|Melee', 2633, 17)
+  lane(skills, 'you|Strike', 257, 4)
   lane(skills, 'you|Bash', 160, 1)
   lane(skills, 'you|Kick', 92, 1)
   lane(skills, 'enemy|Melee', 170, 4)

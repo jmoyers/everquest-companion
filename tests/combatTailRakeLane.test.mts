@@ -149,8 +149,12 @@ test('T4: no `tail rake` VERB is invented — the game has never printed one', (
   assert.notEqual(invented?.kind, 'damage', 'no `tail rake` damage family is claimed')
   const real = parseEvent('[Wed Jul 29 15:05:14 2026] You strike a frenzied ghoul for 32 points of damage.', 0)
   assert.equal(real?.kind === 'damage' ? real.verb : undefined, 'strike')
-  // Unlaned, a strike is generic — the lane label comes from the state line and nowhere else.
-  assert.equal(real?.kind === 'damage' ? real.skill : undefined, 'Melee')
+  // Unlaned, a strike is the ANONYMOUS "Strike" row (JOS-163) — the verb earns the row, and the
+  // NAME still comes from the state line and nowhere else. That distinction is the whole reason
+  // this ticket wrote no `tail rake` branch: had the floor been seeded from the chain instead of
+  // taken from the verb, an Iksar's unlaned strikes would read "Dragon Punch", which is a claim
+  // about his race that no line in his log has made.
+  assert.equal(real?.kind === 'damage' ? real.skill : undefined, 'Strike')
 })
 
 // ── T5: the state model ───────────────────────────────────────────────────────────────────

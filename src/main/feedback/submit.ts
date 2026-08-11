@@ -256,7 +256,7 @@ function queueFailure(res: SubmitFailure, req: SubmitRequest, gz: Buffer | null)
     ...res,
     queued,
     message: queued
-      ? "Saved — we'll send it next time you're online."
+      ? "Saved - we'll send it next time you're online."
       : 'There are already 10 reports waiting to send. Please try again later.'
   }
 }

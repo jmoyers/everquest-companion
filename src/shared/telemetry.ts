@@ -84,6 +84,10 @@ export const TELEMETRY_VIEWS = [
   'loot',
   'planner',
   'buffs',
+  // The respawn clocks (JOS-194). SAME CLOSED-ENUM DEPLOY ORDER as every member added since
+  // JOS-119: the ingest Lambda validates through this module, so the server has to learn the value
+  // before a client that can emit it ships, or one dwell on this tab 400s the whole batch.
+  'timers',
   'preferences',
   'triage'
 ] as const
@@ -97,7 +101,22 @@ export const TELEMETRY_OVERLAY_KINDS = [
   'heal-overall',
   'events',
   'toast',
-  'buffs'
+  'buffs',
+  // JOS-119 split the one buff/timer window into two placeable windows. A CLOSED ENUM the server
+  // validates, so this member has to reach the ingest Lambda BEFORE any client that can emit it:
+  // `validateTelemetryBatch` fails the WHOLE batch on one unknown value and the endpoint answers
+  // 400, which the client classes as a permanent refusal and drops. Deploy order, not a preference.
+  'debuffs',
+  // JOS-195 added the XP window. SAME DEPLOY ORDER AS THE ROW ABOVE, and for the same reason:
+  // the enum is CLOSED and the ingest Lambda validates it through this very module, so a batch
+  // carrying an unknown value is refused WHOLE with a 400 that the client classes as permanent
+  // and drops. The server ships first.
+  'xp',
+  // JOS-194 added the respawn-clock window. THE SAME DEPLOY ORDER APPLIES A THIRD TIME, for the
+  // third identical reason: the enum is CLOSED, the ingest Lambda validates through this module,
+  // and a batch carrying a value the server has not learned yet is refused WHOLE with a 400 the
+  // client classes as permanent and drops. The server ships first.
+  'respawn'
 ] as const
 export type TelemetryOverlayKind = (typeof TELEMETRY_OVERLAY_KINDS)[number]
 
@@ -245,6 +264,24 @@ export const MAX_REDACTED_MESSAGE_WIRE = 200
 export const MAX_ERROR_FRAMES_WIRE = 10
 export const MAX_FRAME_POSITION_WIRE = 1_000_000
 export const MAX_FRAME_FUNC_WIRE = 80
+/** External (non-bundle) frames per report — JOS-111, `MAX_EXTERNAL_FRAMES` in errorReportLocation.ts. */
+export const MAX_EXTERNAL_FRAMES_WIRE = 5
+/** Component names in a `componentPath` — JOS-111, and the `{0,7}` inside `COMPONENT_PATH_RE`. */
+export const MAX_COMPONENT_DEPTH_WIRE = 8
+
+/**
+ * WHERE `frames` CAME FROM (JOS-111). `thrown` is the throw's own stack, which is what every
+ * frame on this event meant before the field existed. `capture` is the site that CAUGHT it,
+ * synthesised because the payload had no stack of its own — a forwarded renderer console error,
+ * a failed load, a rejected string.
+ *
+ * THE FIELD IS OPTIONAL AND ABSENT MEANS `thrown`, which is how an exemplar stored by an older
+ * client still reads correctly. It exists so that a capture-site frame is never silently
+ * presented as a throw site: the two answer different questions, and a reader who cannot tell
+ * them apart would go looking for a bug in the console forwarder.
+ */
+export const TELEMETRY_FRAME_ORIGINS = ['thrown', 'capture'] as const
+export type TelemetryFrameOrigin = (typeof TELEMETRY_FRAME_ORIGINS)[number]
 
 /** `TypeError`, `Error`, `EqError`. An identifier — a sentence cannot be one. */
 export const ERROR_NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/
@@ -265,6 +302,33 @@ export const FINGERPRINT_RE = /^[0-9a-f]{16}$/
  */
 export const FRAME_FILE_RE =
   /^out\/[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$/
+/**
+ * AN EXTERNAL FRAME'S FILE (JOS-111): a PUBLIC module name, and nothing that is not one.
+ *
+ * `node:fs`, `node:internal/fs/promises`, `electron/js2c/renderer_init`, `node_modules/chokidar`,
+ * `node_modules/@scope/pkg` — three arms, each naming an artefact that is identical on every
+ * install in the fleet. The privacy property is the same one `FRAME_FILE_RE` has and is held the
+ * same way: an absolute path cannot satisfy this pattern, so the install directory (and therefore
+ * the user's account name) is not a value this field can hold however it was constructed. Every
+ * segment must start with a non-dot, which refuses `node_modules/../../secret`. At most three
+ * segments on the two path-shaped arms, each at most 40 characters.
+ *
+ * `EXTERNAL_FILE_PATTERN` in `./errorReportLocation.ts` is the producer's copy; the contract test
+ * pins the two source strings equal.
+ */
+export const EXTERNAL_FRAME_FILE_RE =
+  /^(?:node:[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39}(?:\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39}){0,2}|electron\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39}(?:\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39}){0,2}|node_modules\/(?:@[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39}\/)?[A-Za-z0-9_-][A-Za-z0-9_.-]{0,39})$/
+/**
+ * A REACT COMPONENT PATH (JOS-111): up to eight identifier-shaped component names, innermost
+ * first, joined with `>`. `Tooltip>InventoryRow>InventoryPanel`.
+ *
+ * Component names are OUR OWN identifiers — they come out of this repo's `.tsx` files, not out of
+ * the game — but the field is still bound by shape rather than by that argument: no spaces, no
+ * punctuation beyond the dot a namespaced component uses, forty characters per name and eight
+ * names. A sentence cannot be one, and neither can a zone, a mob or a character.
+ */
+export const COMPONENT_PATH_RE =
+  /^[A-Za-z_$][A-Za-z0-9_$.]{0,39}(?:>[A-Za-z_$][A-Za-z0-9_$.]{0,39}){0,7}$/
 /** A frame's function: identifier-shaped, dotted method paths and `<anonymous>` allowed.
  *  A NAME WITH A SPACE IN IT IS REFUSED — that is prose wearing a function's clothes. */
 export const FRAME_FUNC_RE = /^[A-Za-z0-9_$.<>[\]]{1,80}$/
@@ -538,6 +602,27 @@ export interface EvHealthCounters {
   parserStalls: number
   presenceRestarts: number
   speechFailures: number
+  /**
+   * Image fetches that failed at the NETWORK leg (JOS-133). OPTIONAL under the additive-field
+   * rule above: this rides an event kind that has shipped, so a deployed ingest that has never
+   * heard of the field ignores it and keeps counting everything else, and a client too old to
+   * send it must not fail validation on the day the field lands. The producer always sends it.
+   *
+   * NOT AN ERROR, and the rollup keeps that promise structurally: the field is listed in
+   * `HEALTH_NON_ERROR_FIELDS` (./telemetryRollup.ts) and so is excluded from the release-health
+   * error rate, while still being counted, reported and rendered in the health mix.
+   */
+  imageFetchFailures?: number
+  /**
+   * Error lines withheld from `<userData>/errors.log` because the identical line had already been
+   * written `MAX_IDENTICAL_ERROR_LINES` times this session (src/main/errorRepeat.ts). Optional for
+   * the same reason as the field above.
+   *
+   * IT IS AN ERROR — it counts occurrences of something that really went wrong and really would
+   * have been logged — so unlike `imageFetchFailures` it IS summed into the error rate. That is
+   * the whole point of having it: the cap must not be able to make a looping build look healthy.
+   */
+  suppressedErrorLines?: number
 }
 export interface EvUpdateOutcome {
   t: 'updateOutcome'
@@ -598,6 +683,29 @@ export interface EvErrorReport {
   redactedMessage: string
   /** At most `MAX_ERROR_FRAMES_WIRE`, newest first, every file `^out/`. */
   frames: TelemetryFrame[]
+  /**
+   * WHETHER `frames` IS THE THROW SITE OR THE CATCH SITE (JOS-111). Absent means `thrown`, which
+   * is what every frame meant before this field existed and is what an older client's stored
+   * exemplar still means. See `TELEMETRY_FRAME_ORIGINS`.
+   */
+  frameOrigin?: TelemetryFrameOrigin
+  /**
+   * THE FRAMES THAT ARE NOT OURS (JOS-111): at most `MAX_EXTERNAL_FRAMES_WIRE`, newest first,
+   * each a public module name matching `EXTERNAL_FRAME_FILE_RE` — `node:internal/fs/promises`,
+   * `node_modules/chokidar`, `electron/js2c/renderer_init`.
+   *
+   * A SEPARATE FIELD RATHER THAN A WIDER `frames`, and the reason is the deploy-skew law above:
+   * widening `FRAME_FILE_RE` would make every new client's report ILLEGAL to the deployed
+   * validator, which 400s the whole batch and drops every counter the client was carrying. A new
+   * optional field is free — the validators construct their result field by field, so an older
+   * server simply does not copy it across.
+   */
+  externalFrames?: TelemetryFrame[]
+  /**
+   * WHICH REACT COMPONENTS IT CAME THROUGH (JOS-111), innermost first, `>`-joined —
+   * `COMPONENT_PATH_RE`. Present only for a renderer error our ErrorBoundary caught.
+   */
+  componentPath?: string
   /** `hash(errorName + top app frames)` — the grouping key, 16 hex characters. */
   fingerprint: string
   /** At most `MAX_BREADCRUMBS` parser event KINDS, newest first. */
@@ -610,10 +718,68 @@ export interface EvErrorReport {
    * HOW MANY TIMES THIS FINGERPRINT FIRED since the last report, and it is the field that makes
    * the client-side dedupe expressible. One exemplar per fingerprint per SESSION: the first
    * occurrence keeps its message, frames and breadcrumbs, and every repeat afterwards adds to
-   * this number instead of minting a second copy of the same stack. A loop that throws ten
-   * thousand times is one row with `count: 10000`, not ten thousand rows.
+   * this number instead of minting a second copy of the same stack.
+   *
+   * IT IS A FLOOR, NOT A TOTAL (JOS-197). This used to say "a loop that throws ten thousand times
+   * is one row with `count: 10000`" — which was written as a boast about how cheap a repeat is,
+   * and is exactly why nothing bounded it: an install then filed 7,272,196 occurrences of one
+   * fingerprint in a day, and the store was unreadable around the row. The client now stops
+   * counting a fingerprint at `MAX_REPORTS_PER_FINGERPRINT` per session (src/main/errorBudget.ts),
+   * so a looping issue reports that number and goes quiet.
+   *
+   * THE TOTAL IS STILL KNOWABLE, from the other side: `mainErrorLogLines + suppressedErrorLines`
+   * on `healthCounters` counts every occurrence whether it was reported or silenced, which is the
+   * ledger JOS-133 built for precisely this. So a build that starts looping still shows up in the
+   * error RATE; what the cap takes away is only the ability of one issue to say it ten thousand
+   * times over in the exemplar table.
    */
   count: number
+}
+
+// ------------------------------------------------------- the switch itself (JOS-109)
+//
+// THE HONEST-MEASUREMENT PROBLEM, stated once, here, because everything downstream of these two
+// kinds is only as honest as this paragraph.
+//
+// The owner's question is "how many installs turn usage analytics OFF". It cannot be answered
+// exactly, and the reason is structural rather than a gap in the instrumentation: AN INSTALL THAT
+// GOES DARK BEFORE IT EVER REPORTS IS INVISIBLE BY DEFINITION. Somebody who opens the app, reads
+// the first-run notice and dismisses it before the flush loop's first tick has sent anything is,
+// to this pipeline, indistinguishable from somebody who never downloaded the app at all — and
+// making them distinguishable would mean sending something before they answered, which is exactly
+// the promise the notice exists to keep.
+//
+// So the ticket is TWO MEASUREMENTS, and they are labelled differently everywhere they are
+// rendered because conflating them would produce a confident wrong number:
+//
+//   1. OPT-OUT FLIPS — EXACT, over the population that ever reported. These two events. When the
+//      user turns the switch off, the app sends ONE final minimal notice and then goes quiet;
+//      turning it back on sends the counterpart. Both are exact counts of an action a user took.
+//      What they cannot count is the install that was never in the population to begin with.
+//   2. THE DARK COHORT — an ESTIMATE, and only ever a comparison. GitHub download counts beside
+//      distinct reporting installs, both printed, never subtracted. `src/main/triage/coverage.ts`
+//      argues that half; the short version is that a download is not an install (re-downloads,
+//      the auto-updater, curiosity clicks) so the difference of the two numbers is not a count of
+//      anything, and the panel refuses to print it.
+//
+// FIELDLESS ON PURPOSE. The envelope already carries everything a flip is worth knowing by —
+// version, channel, platform, timezone — and the event itself has nothing to add. It is also the
+// strongest form of the disclosure in TELEMETRY.md: "one final anonymous notice" is a claim the
+// SHAPE keeps, because there is no slot on either of these for anything else to ride along in.
+//
+// THEY ARE NEW EVENT KINDS, so THE ADDITIVE-FIELD RULE below applies in its fatal form and the
+// deploy order is part of the feature: the ingest Lambda must understand `optOut`/`optIn` BEFORE
+// any client emits one. `optOut` travels as its own single-event batch (main/telemetry/optOut.ts),
+// so under deploy skew it would only lose ITSELF — but `optIn` does not, and a 400 on a batch is a
+// dropped batch. Server first, client on the next tag. (JOS-100 is where that lesson was paid for.)
+
+/** The user turned usage analytics OFF. The last thing this install ever sends. */
+export interface EvOptOut {
+  t: 'optOut'
+}
+/** The user turned it back ON. Under a NEW analyticsId — a re-enable is a new cohort member. */
+export interface EvOptIn {
+  t: 'optIn'
 }
 
 export type TelemetryEvent =
@@ -629,6 +795,8 @@ export type TelemetryEvent =
   | EvHealthCounters
   | EvUpdateOutcome
   | EvErrorReport
+  | EvOptOut
+  | EvOptIn
 
 export type TelemetryEventKind = TelemetryEvent['t']
 
@@ -645,8 +813,17 @@ export const TELEMETRY_EVENT_KINDS = [
   'funnelStep',
   'healthCounters',
   'updateOutcome',
-  'errorReport'
+  'errorReport',
+  // Last, and they read as the coda they are: the doc's "Turning it off" section is directly
+  // below them, and a reader who has just been told what the app measures should meet the two
+  // events that say "stop" in the same breath as the sentence explaining them.
+  'optOut',
+  'optIn'
 ] as const
+
+/** The two kinds a SWITCH FLIP produces. One list, so the client, the doc and the rollup agree. */
+export const TELEMETRY_FLIP_KINDS = ['optOut', 'optIn'] as const
+export type TelemetryFlipKind = (typeof TELEMETRY_FLIP_KINDS)[number]
 
 // ---------------------------------------------------------------- envelope + batch
 //

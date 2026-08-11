@@ -27,6 +27,15 @@
  * the LOG is deterministic while the packs stay where the game put them. A machine with no EQ
  * install simply gets no junction, and the maps spec says so and skips — the same honesty branch
  * it has always had.
+ *
+ * THE `/outputfile` CARVE-OUT (JOS-185). EQ writes an export dump into the INSTALL ROOT, beside
+ * the executable and NOT into `Logs\` — so a staged install with only a log in it is a machine
+ * where the player has never run `/outputfile`, and every surface fed by a dump took its
+ * never-run branch on every launch the suite has ever made. That is half of those surfaces never
+ * measured: the freshness line, the filled hosts, the capture steps. `{ inventory: <fixture> }`
+ * copies a committed dump in beside the log for the specs whose subject is the dump-present half.
+ * A COPY like the log, for the same reason — main WATCHES this file, and a spec that ever writes
+ * one must not be writing into the working tree.
  */
 
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, symlinkSync, writeSync } from 'node:fs'
@@ -98,6 +107,21 @@ export interface FixtureLog {
   dispose(): Promise<void>
 }
 
+/**
+ * Copy a committed `/outputfile inventory` dump into the staged install ROOT — beside the
+ * executable, which is where EQ writes exports and is NOT `Logs\`.
+ *
+ * The NAME is load-bearing for the same reason `LOG_NAME` is: `preferredOutputFile` prefers
+ * `<Character>_<server>-Inventory.txt` over everything else, so a fixture staged under its own
+ * file name would be found only by the newest-file fallback and would stop being found at all the
+ * day a spec staged two.
+ */
+function stageInventory(installDir: string, fixture: string): void {
+  const dump = join(FIXTURES, fixture)
+  if (!existsSync(dump)) throw new Error(`e2e: no such fixture — ${dump}`)
+  copyFileSync(dump, join(installDir, `Primitive_${SERVER}-Inventory.txt`))
+}
+
 /** The real EQ install, if this machine has one — the only source of map packs. */
 function realEqRoot(): string | null {
   // The FS half of discovery only: no `reg query` subprocesses in a test harness.
@@ -113,7 +137,7 @@ function realEqRoot(): string | null {
  */
 export function stageFixture(
   fixture: string,
-  opts: { maps?: boolean; others?: Readonly<Record<string, string>> } = {}
+  opts: { maps?: boolean; inventory?: string; others?: Readonly<Record<string, string>> } = {}
 ): FixtureLog {
   const source = join(FIXTURES, fixture)
   if (!existsSync(source)) {
@@ -136,6 +160,8 @@ export function stageFixture(
     copyFileSync(otherSource, otherPath)
     others[name] = otherPath
   }
+
+  if (opts.inventory !== undefined) stageInventory(installDir, opts.inventory)
 
   if (opts.maps) {
     const root = realEqRoot()
@@ -196,6 +222,7 @@ export async function launchOnFixture(
   fixture: string | FixtureLog,
   opts: {
     maps?: boolean
+    inventory?: string
     userData?: string
     env?: Record<string, string>
     others?: Readonly<Record<string, string>>
@@ -205,6 +232,7 @@ export async function launchOnFixture(
   const log = owned
     ? stageFixture(fixture, {
         ...(opts.maps === undefined ? {} : { maps: opts.maps }),
+        ...(opts.inventory === undefined ? {} : { inventory: opts.inventory }),
         ...(opts.others === undefined ? {} : { others: opts.others })
       })
     : fixture

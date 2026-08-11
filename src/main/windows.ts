@@ -19,17 +19,28 @@
 // to Electron: the shared webPreferences object and the per-webContents / per-session
 // hardening that installs those predicates.
 
-import { BrowserWindow, screen, shell } from 'electron'
+import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { IPC } from '../shared/ipc'
+// The mouse's Back button (JOS-201). Its own module, and never installed per-overlay — the
+// scope argument (window-scoped, focused-only, no forward, no global hook) lives in its header.
+import { installBackButton } from './appBack'
 import { E2E } from './e2e'
 import { logError } from './errorLog'
-import { defaultOverlayBounds, overlayDefaultSize } from './overlayLayout'
+import { OVERLAY_TITLE, overlayDefaultSize } from './overlayLayout'
+// WHERE A WINDOW MAY GO ON THE SCREENS THAT EXIST NOW (JOS-187). The `screen` module is not
+// consulted here any more: both questions this file asks of it — where an overlay opens, where the
+// main window opens — are decided in windowPlacement.ts over the pure geometry in displayFit.ts,
+// so the policy is testable and both windows can never drift into two answers.
+import { mainWindowBounds, overlayFittedBounds } from './windowPlacement'
 import { overlayMouseForward, windowsMayShow } from './replayGate'
 import { allowedExternalUrl, isInternalPageUrl } from './security'
 import { captureMainWindowErrors, forwardConsoleMessages } from './windowErrors'
 import { resolvedGraphics } from './graphics'
 import { getOverlayConfig, getWindowBounds, setOverlayConfig, setWindowBounds } from './store'
+// The main window's text size (JOS-123). Its own module because store.ts is at the 400-code-line
+// ceiling — see the banner there.
+import { getUiScale } from './uiScale'
 import { TRANSPARENT_OVERLAY_BG, overlayBackgroundColor } from '../shared/graphicsPrefs'
 import { OVERLAY_KINDS, type OverlayKind } from '../shared/types'
 // ScreenRect lives in shared/presencePrefs.ts, not shared/types.ts — see the note at the
@@ -70,6 +81,22 @@ export function getMainWindow(): BrowserWindow | null {
   // every method on it throws "Object has been destroyed". Callers get null instead.
   if (mainWindow?.isDestroyed()) return null
   return mainWindow
+}
+
+/**
+ * Is the COMPANION WINDOW the active window right now? (JOS-199.)
+ *
+ * The presence watcher can tell that the foreground window belongs to this process; it cannot tell
+ * WHICH of our windows it is, because they all report the same pid and the same image path and the
+ * only remaining field is a page-supplied title. Electron knows, so it is asked here — one query,
+ * in the module that owns every window handle, exactly as the file header requires.
+ *
+ * A read, never a write: nothing here shows, focuses or raises anything. `presence.ts` calls it on
+ * FOREGROUND-CHANGE records only (a handful a second at most), and a `false` is always the safe
+ * answer — it lands on the pre-JOS-199 behavior, which is to leave the overlays up.
+ */
+export function mainWindowFocused(): boolean {
+  return getMainWindow()?.isFocused() === true
 }
 
 /**
@@ -239,8 +266,27 @@ export function hardenSession(ses: Electron.Session): void {
 // `./windowErrors.ts` when this file reached the 400-code-line ceiling — a split, not a widened
 // threshold. This file keeps what it is about: creating windows, and the trust boundary.
 
+/**
+ * Draw the main window at `scale` NOW (JOS-123 — shared/uiScale.ts). No-op when there is no
+ * window, like every other push in this file.
+ *
+ * It lives here rather than in the IPC handler for the reason stated at the top of the file:
+ * nothing outside this module reaches for a BrowserWindow, so "which window does the text size
+ * apply to" is answered in one place. The answer is the MAIN window and only the main window —
+ * the overlays scale their own content through the per-kind `textScale` and must not be zoomed
+ * out from under it.
+ */
+export function applyMainWindowScale(scale: number): void {
+  getMainWindow()?.webContents.setZoomFactor(scale)
+}
+
 export function createMainWindow(): void {
-  const bounds = getWindowBounds()
+  // The remembered rectangle, KEPT ON A SCREEN THAT STILL EXISTS (JOS-187). A main window lost off
+  // the edge is worse than a lost overlay, not better: it is frameless, so there is no title bar
+  // sticking onto the remaining display to drag it back by. Unlike the overlays it needs no live
+  // re-placement — the user can move this one, and Windows itself relocates ordinary top-level
+  // windows when their monitor goes away; it is the RESTORE that had no answer.
+  const bounds = mainWindowBounds(getWindowBounds())
   mainWindow = new BrowserWindow({
     ...(bounds ?? { width: 1280, height: 860 }),
     minWidth: 900,
@@ -253,7 +299,16 @@ export function createMainWindow(): void {
     frame: false,
     title: 'EQ Legends Companion',
     backgroundColor: '#0f1115',
-    webPreferences: WEB_PREFERENCES(join(__dirname, '../preload/index.js'))
+    webPreferences: {
+      ...WEB_PREFERENCES(join(__dirname, '../preload/index.js')),
+      // THE TEXT SIZE, APPLIED BEFORE THE FIRST PAINT (JOS-123). Not a second opinion about the
+      // trust boundary — `zoomFactor` is a rendering preference and the security posture above is
+      // spread in whole and unedited. It is set at CONSTRUCTION because the alternative (zoom the
+      // page once it has loaded) is a window that visibly resizes its own contents on every
+      // launch. Only this window carries it: the overlays and the cursor ring take
+      // WEB_PREFERENCES() unchanged.
+      zoomFactor: getUiScale()
+    }
   })
 
   // E2E: never show (and therefore never focus) the window — the harness drives it
@@ -273,6 +328,25 @@ export function createMainWindow(): void {
   mainWindow.on('unmaximize', pushMaximized)
   // Give the renderer its initial state once the page is ready to receive it.
   mainWindow.webContents.on('did-finish-load', pushMaximized)
+
+  // NO SECOND `did-finish-load` LISTENER RE-STATING THE TEXT SIZE, AND THAT IS MEASURED (JOS-123).
+  // The first cut had one, on the theory that Chromium keeps zoom per ORIGIN and a reload or a
+  // dev-server navigation is where that bookkeeping is easiest to lose. Both halves of the theory
+  // turned out to be wrong, in opposite directions:
+  //   * IT WAS NOT NEEDED. The constructor's `zoomFactor` survives a reload of this window —
+  //     asserted in tests/e2e/text-size.e2e.mts, which reloads and re-measures rather than
+  //     assuming either way.
+  //   * IT WAS NOT FREE. A `setZoomFactor` call AFTER the page has loaded left this window in a
+  //     state where Playwright's actionability check ("visible, enabled and stable") never
+  //     completed: loadout-override.e2e.mts went from 30 s green to a 60 s timeout on its next
+  //     click, deterministically, with no other change in the tree. That is a hidden, never
+  //     composited window (EQ_E2E) whose rAF is already throttled to nothing — but a call that
+  //     buys nothing and can wedge a frame loop does not get to stay on the strength of a maybe.
+  // The setter still zooms the live window, because there the call is the whole point.
+
+  // The mouse's Back button (JOS-201). Installed on THIS window only, and only for a press this
+  // window received while focused — see appBack.ts for why that is the entire scope.
+  installBackButton(mainWindow)
 
   // --- webContents error capture (Task #13) ---
   // The window is passed as a GETTER: every guard inside fires long after this call returns, and
@@ -410,39 +484,129 @@ function applyOpaqueToastVisibility(kind: OverlayKind, idle: boolean): void {
   raiseCursorRing()
 }
 
-/** Apply the locked/interactive mouse + focus behavior to a kind's overlay window. */
+// ---- `setFocusable` IS NOT AN ATTRIBUTE WRITE, IT MOVES THE FOREGROUND (JOS-199) --------------
+//
+// THE ALT-TAB HIJACK, and it is Electron's documented Windows behavior rather than a mystery.
+// `BrowserWindow.setFocusable` is spelled "changes whether the window can be focused" and carries
+// the note "on macOS it does not remove the focus from the window" — i.e. on WINDOWS it does.
+// `setFocusable(false)` deactivates the window, and Chromium's deactivate walks the Z-ORDER and
+// calls `SetForegroundWindow` on the first VISIBLE window below it. An overlay of ours is
+// always-on-top directly over the game, so the first window below it is EverQuest.
+//
+// That turned every auto-hide into a foreground grab, because `setOverlaysHidden` re-asserted the
+// locked mode on the way DOWN as well as up, and the locked mode is `setFocusable(false)`:
+//
+//   "Alt tabbing from EQ will bring you back to EQ the first time but with hidden overlay… but if
+//    you click into EQ, alt tab will continue to bring you back ANY TIME THE OVERLAYS ARE VISIBLE"
+//                                            — report 01KZPTD3MHP3DFG7NJY5QF96VJ, v0.18.0
+//
+// The reporter's last clause is the diagnosis: Chromium's deactivate is a no-op on a window that
+// is not visible, so the alt-tab that happened while the overlays were already hidden worked, and
+// the next one — after they came back — did not. Alt-tab away, the debounce commits ~300 ms later,
+// the hide pass re-states `setFocusable(false)` on five still-visible topmost windows, and the
+// user is standing in EverQuest again wondering what they did wrong.
+//
+// THE FIX IS TO STOP RE-STATING IT. Focusability is a WINDOW STYLE (WS_EX_NOACTIVATE); it survives
+// hide/show, so unlike always-on-top and the mouse mode it has nothing to re-assert. So:
+//
+//   * a window is BORN with the focusability its persisted lock implies, which costs no call at
+//     all and takes the very first `setFocusable` — the one at `ready-to-show`, which used to fire
+//     while another app was in front and could yank the foreground off it — out of existence too;
+//   * and every later apply is a no-op unless the value actually CHANGED, which now happens only
+//     when the user toggles the lock. There, moving the foreground is the point: locking hands the
+//     game back, unlocking gives you the window you are about to drag.
+//
+// THE WINDOW ITSELF IS ASKED, never a remembered copy. `isFocusable()` is the exact state
+// `setFocusable` writes, so there is no bookkeeping to seed at construction, none to clear when an
+// overlay closes, and no way for a map to disagree with the window it describes.
+
+/** Set a window's focusability, but ONLY on a real change — see the block above. */
+function setOverlayFocusable(w: BrowserWindow, focusable: boolean): void {
+  if (w.isFocusable() === focusable) return
+  w.setFocusable(focusable)
+}
+
+/**
+ * Apply the locked/interactive mouse + focus behavior to a kind's overlay window.
+ *
+ * The MOUSE half is idempotent and re-stated freely (a hidden window must drop its WH_MOUSE_LL
+ * hook, which is why the auto-hide path calls this at all). The FOCUS half is guarded, because on
+ * Windows it is not idempotent at all — it moves the foreground window. See above.
+ */
 export function applyOverlayLocked(kind: OverlayKind, locked: boolean): void {
   const w = overlayWindows[kind]
   if (!w || w.isDestroyed()) return
   setOverlayIgnoreMouse(kind, locked)
-  w.setFocusable(!locked)
+  setOverlayFocusable(w, !locked)
 }
 
-/** Per-kind title (the OS window title; never user-visible on a frameless overlay, but it is
- *  what shows up in a window list / crash report). Partial + fallback so a new kind can't
- *  break the build here. */
-const OVERLAY_TITLE: Partial<Record<OverlayKind, string>> = {
-  fight: 'Fight Overlay',
-  overall: 'Zone Overlay',
-  events: 'Event Log Overlay',
-  'heal-fight': 'Fight Healing Overlay',
-  'heal-overall': 'Zone Healing Overlay',
-  toast: 'Celebration Overlay',
-  buffs: 'Buff Timer Overlay'
+// ---- WHAT IS SHOWN vs WHAT IS STORED (JOS-187) ------------------------------------------------
+//
+// THE STORE KEEPS THE RECTANGLE THE USER CHOSE. THE SCREEN GETS THE ONE THAT FITS. That is the
+// whole policy, and it is what makes a docking round trip lossless: undock the widescreen and the
+// overlay is DRAWN on the laptop panel while `overlays.<kind>.bounds` still says "x: 2600, on the
+// right-hand monitor"; plug the monitor back in and the same fit puts it back where it was, on the
+// display the user actually put it on. Persisting the corrected rectangle instead would silently
+// destroy that layout the first time a cable came out — and it would do it on a laptop screen the
+// user may only be on for the length of a train journey.
+//
+// The mechanism is one remembered rectangle. Every rectangle this file applies to a window ITSELF
+// is recorded here first, and `saveOverlayBounds` refuses to persist the one it recognises as its
+// own — so the only writes that reach the store are the user's own moves and resizes. The marker is
+// dropped the moment a window reports any OTHER rectangle, so a user who later drags a window back
+// onto that exact spot still has it saved. Deliberately not a timer or a re-entrancy flag: Electron
+// may emit 'moved'/'resized' synchronously from `setBounds` or a tick later, and a policy that
+// depended on which would be a policy that worked on one platform.
+//
+// A PIXEL OF SLACK, because `setBounds` is not always an identity: on a scaled display the value
+// makes a round trip through physical pixels and can come back one off. The cost is that a 1px
+// nudge in the instant after a re-placement is not persisted — which is not a position anyone is
+// expressing — and it is paid only until the window next moves anywhere else.
+const appliedBounds = new Map<OverlayKind, Electron.Rectangle>()
+const RECT_KEYS = ['x', 'y', 'width', 'height'] as const
+const sameSpot = (a: Electron.Rectangle, b: Electron.Rectangle): boolean =>
+  RECT_KEYS.every((k) => Math.abs(a[k] - b[k]) <= 1)
+/** The EXACT twin of `sameSpot`, for the ring: it is re-bounded to the EQ window and re-drawn from
+ *  that origin, so a pixel of slack here would be a pixel of drift in the halo's offset. */
+const sameRect = (a: Electron.Rectangle, b: ScreenRect): boolean =>
+  RECT_KEYS.every((k) => a[k] === b[k])
+
+/**
+ * Where a kind's overlay opens. Persisted bounds win — FITTED to the displays that exist right now
+ * (windowPlacement.ts), so a position remembered from a monitor that has since been unplugged
+ * lands on screen instead of past the edge of it. A first open (and a rectangle on no display at
+ * all) is placed by the shared layout (bottom-right, stacked per kind — overlayLayout.ts) so two
+ * overlays never open exactly on top of each other.
+ */
+function overlayPlacement(kind: OverlayKind) {
+  const b = overlayFittedBounds(kind, getOverlayConfig(kind).bounds)
+  if (!b) return overlayDefaultSize(kind) // no display info (headless/e2e) — size only
+  appliedBounds.set(kind, b)
+  return b
+}
+
+/** Move a kind's overlay onto `b` without that move being mistaken for the user's own (see above). */
+export function applyOverlayBounds(kind: OverlayKind, b: Electron.Rectangle): void {
+  const w = overlayWindows[kind]
+  if (!w || w.isDestroyed() || sameSpot(w.getBounds(), b)) return
+  appliedBounds.set(kind, b)
+  w.setBounds(b)
 }
 
 /**
- * Where a kind's overlay opens. Persisted bounds ALWAYS win; a first open is placed by the
- * shared layout (bottom-right, stacked per kind — overlayLayout.ts) so two overlays never open
- * exactly on top of each other.
+ * Put every open overlay back on a display that exists — the live half of JOS-187, run whenever the
+ * monitor arrangement changes (index.ts wires it to `watchDisplays`).
+ *
+ * It re-fits the STORED rectangle rather than the window's current one, which is what lets a
+ * re-plugged monitor take its overlays back: the correction applied while that display was gone was
+ * never written down, so the user's own position is still there to return to.
  */
-function overlayPlacement(kind: OverlayKind) {
-  const cfg = getOverlayConfig(kind)
-  if (cfg.bounds) return cfg.bounds
-  try {
-    return defaultOverlayBounds(kind, screen.getPrimaryDisplay().workArea)
-  } catch {
-    return overlayDefaultSize(kind) // no display info (headless/e2e) — size only
+export function reconcileOverlayDisplays(): void {
+  for (const kind of OVERLAY_KINDS) {
+    const w = overlayWindows[kind]
+    if (!w || w.isDestroyed()) continue
+    const b = overlayFittedBounds(kind, getOverlayConfig(kind).bounds)
+    if (b) applyOverlayBounds(kind, b)
   }
 }
 
@@ -460,8 +624,14 @@ export function createOverlayWindow(kind: OverlayKind): void {
   // 'auto' arrives here as `true` without the user having found anything.
   const opaque = resolvedGraphics().opaqueOverlays.on
   if (kind === 'toast') opaqueToastWindow = opaque
+  // BORN WITH THE RIGHT FOCUSABILITY (JOS-199 — see `setOverlayFocusable`). The lock state is read
+  // here, at construction, purely so that the `ready-to-show` apply below has nothing to do:
+  // `setFocusable` on Windows moves the FOREGROUND window, and an overlay opened from the
+  // Companion's own Overlay menu used to deactivate itself the instant it appeared.
+  const locked = getOverlayConfig(kind).locked
   const w = new BrowserWindow({
     ...overlayPlacement(kind),
+    focusable: !locked,
     minWidth: 200,
     minHeight: 90,
     maxWidth: 720,
@@ -541,9 +711,15 @@ export function createOverlayWindow(kind: OverlayKind): void {
     raiseCursorRing()
   })
 
-  // Persist position + size so the overlay restores where the user left it.
+  // Persist position + size so the overlay restores where the user left it — the USER's moves only,
+  // never one of ours (JOS-187; the marker is explained at `appliedBounds`).
   const saveOverlayBounds = (): void => {
-    if (!w.isDestroyed()) setOverlayConfig(kind, { bounds: w.getBounds() })
+    if (w.isDestroyed()) return
+    const b = w.getBounds()
+    const applied = appliedBounds.get(kind)
+    if (applied && sameSpot(applied, b)) return
+    appliedBounds.delete(kind)
+    setOverlayConfig(kind, { bounds: b })
   }
   w.on('moved', saveOverlayBounds)
   w.on('resized', saveOverlayBounds)
@@ -604,8 +780,14 @@ export function overlayStateMap(): Record<OverlayKind, boolean> {
  * `showInactive`, not `show`: the same reason the first open uses it. An overlay must never
  * steal focus from the game, and coming back from auto-hide is exactly the moment it would —
  * the user just alt-tabbed INTO EverQuest, and a window that grabs focus on the way would undo
- * the thing that triggered it. Always-on-top and the locked/click-through mode are re-asserted
- * on the way back, because a hidden window can lose both on Windows.
+ * the thing that triggered it. Always-on-top and the click-through mode are re-asserted on the
+ * way back, because a hidden window can lose both on Windows.
+ *
+ * AND NOTHING HERE TOUCHES FOCUSABILITY, in either direction (JOS-199). It is a window style that
+ * survives hide/show, so there is nothing to re-assert — and re-asserting it anyway is what made
+ * this function grab the foreground on every alt-tab. `applyOverlayLocked` still carries the whole
+ * locked mode; its focus half is now a no-op unless the value really changed. See
+ * `setOverlayFocusable`.
  *
  * E2E never shows a window (src/main/e2e.ts is the whole test mode), so a re-show is skipped
  * there; hiding stays live, since hiding an already-hidden window is a no-op. A historical replay
@@ -662,6 +844,17 @@ export function setOverlaysHidden(hidden: boolean): void {
 //     has nothing to click, so pass-through is unconditional and permanent.
 //   * NO `-webkit-app-region` anywhere in its page — it is not draggable, and cannot become a
 //     window the user accidentally picks up while playing.
+//
+// AND ONE PROPERTY THIS FILE DELIBERATELY DOES NOT SET: ITS ZOOM (JOS-154). The ring's CSS pixels
+// have to be DIPs, because main sends it a DIP offset from this window's own origin to use as a
+// CSS translation — so the app's text size (`uiScale`, JOS-123) must not reach it. It used to,
+// and not through anything written here: `setZoomFactor` stores a zoom PER HOST, every page is
+// served from one host in development, and the ring inherited the main window's (measured on
+// Electron 43.2.0 — 1.0 to 1.25 on a main-window setZoomFactor). The pin is
+// `webFrame.setZoomLevel(0)` in `src/preload/cursor.ts`, which is a per-view TEMPORARY zoom and
+// therefore the only one that can hold this window still without moving the main window with it —
+// the full argument, and the two alternatives that were measured and rejected, are in that file's
+// header. Nothing to add to the BrowserWindow options below; the absence is the point.
 
 let cursorRingWindow: BrowserWindow | null = null
 
@@ -752,16 +945,7 @@ export function createCursorRingWindow(bounds: ScreenRect): void {
  *  changed — a setBounds per cursor sample would be a window-manager round trip at 125 Hz. */
 export function setCursorRingBounds(bounds: ScreenRect): void {
   const w = cursorRingWindow
-  if (!w || w.isDestroyed()) return
-  const cur = w.getBounds()
-  if (
-    cur.x === bounds.x &&
-    cur.y === bounds.y &&
-    cur.width === bounds.width &&
-    cur.height === bounds.height
-  ) {
-    return
-  }
+  if (!w || w.isDestroyed() || sameRect(w.getBounds(), bounds)) return
   w.setBounds(bounds)
 }
 

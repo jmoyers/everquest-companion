@@ -88,7 +88,8 @@ function trackPet(keys: PetKeys, ev: LogEvent): void {
 /** (1) No active older than its hygiene cap — no "287h" rows, ever. */
 function assertNoStaleActives(active: ActiveBuff[], lastTs: number): void {
   for (const a of active) {
-    if (a.provisional) continue
+    // Every active is a confirmed landing since JOS-118 (the optimistic provisional row is gone),
+    // so there is no longer a class of row exempt from the hygiene cap.
     const cap = Math.max(a.p75 != null && a.n >= 2 ? 2 * a.p75 : 0, HYGIENE_ABSOLUTE_MS)
     const elapsed = lastTs - a.startedTs
     assert.ok(elapsed <= cap, `active "${a.spell}" is ${Math.round(elapsed / 60_000)}m old (> cap ${Math.round(cap / 60_000)}m)`)

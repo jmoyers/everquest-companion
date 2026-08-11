@@ -276,7 +276,7 @@ function registerUpdaterEvents(currentVersion: string, { push, checkDone }: Stat
       push({
         state: 'error',
         version,
-        message: `Download of v${key} failed ${attempts} times — paused. Use "Check for updates" to retry.`
+        message: `Download of v${key} failed ${attempts} times - paused. Use "Check for updates" to retry.`
       })
       return
     }

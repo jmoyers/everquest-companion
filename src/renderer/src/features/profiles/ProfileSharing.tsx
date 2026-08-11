@@ -42,7 +42,7 @@ export function ExportSettingsSetting(): JSX.Element {
       const ok = await copyText(text)
       setToast(
         ok
-          ? { severity: 'success', text: `Copied — ${text.length} characters. Paste it anywhere.` }
+          ? { severity: 'success', text: `Copied - ${text.length} characters. Paste it anywhere.` }
           : { severity: 'warning', text: 'Could not reach the clipboard. Save to a file instead.' }
       )
     } finally {
@@ -123,7 +123,7 @@ export function ImportSettingsSetting(): JSX.Element {
     if (r.rekeyed) bits.push(`${r.rekeyed} kept alongside an existing id`)
     if (r.scalarsApplied) bits.push(`${r.scalarsApplied} setting${r.scalarsApplied === 1 ? '' : 's'}`)
     if (r.skipped) bits.push(`${r.skipped} skipped`)
-    return bits.length ? `Imported — ${bits.join(', ')}.` : 'Nothing to add — you already have it all.'
+    return bits.length ? `Imported - ${bits.join(', ')}.` : 'Nothing to add - you already have it all.'
   }
 
   return (

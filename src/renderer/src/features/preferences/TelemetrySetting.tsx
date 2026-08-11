@@ -111,7 +111,7 @@ function LastSentPanel({ payload }: { payload: TelemetryPayloadView }): JSX.Elem
       <Typography variant="caption" color="text.secondary" data-testid="telemetry-last-batch-empty">
         {payload.endpointConfigured
           ? 'Nothing has been sent yet.'
-          : 'Nothing, and nothing ever will be from this build — it has no analytics endpoint compiled in, and there is no code in it that could send one. This panel exists so that when that changes, you can read exactly what left.'}
+          : 'Nothing, and nothing ever will be from this build - it has no analytics endpoint compiled in, and there is no code in it that could send one. This panel exists so that when that changes, you can read exactly what left.'}
       </Typography>
     </Stack>
   )
@@ -136,7 +136,7 @@ function IdentityRow({
         </Button>
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        A random id made on your machine, and deliberately not the one a bug report uses — the
+        A random id made on your machine, and deliberately not the one a bug report uses - the
         two can’t be joined. Replacing it also throws away everything buffered, and looks like a
         brand-new install from then on.
       </Typography>
@@ -178,8 +178,8 @@ export function TelemetrySetting(): JSX.Element {
         />
         <Typography variant="caption" color="text.secondary">
           {enabled
-            ? 'Counts only, from a fixed list of events — never your character names, zones, chat, searches or log lines. There is no field in what’s sent that could hold them.'
-            : 'Off. Nothing is collected. Everything that had been buffered — and the random id itself — was thrown away the moment you switched it off; turning it back on starts from empty with a new one.'}
+            ? 'Counts only, from a fixed list of events - never your character names, zones, chat, searches or log lines. There is no field in what’s sent that could hold them.'
+            : 'Off. Nothing is collected. Everything that had been buffered (and the random id itself) was thrown away the moment you switched it off; turning it back on starts from empty with a new one.'}
         </Typography>
       </Stack>
 

@@ -88,7 +88,7 @@ export function ToastSetting(): JSX.Element {
         <Typography variant="caption" color="text.secondary">
           {state.open
             ? 'A card slides in at the top of the screen when you drop a raid target or finish a Plane of Sky quest, then fades. Point at it to keep it up; a quest’s reward card opens the Plane of Sky tab.'
-            : 'Off. Boss kills and quest completions still show up in the app and in your alerts — nothing appears over the game.'}
+            : 'Off. Boss kills and quest completions still show up in the app and in your alerts - nothing appears over the game.'}
         </Typography>
       </Stack>
 
@@ -108,7 +108,7 @@ export function ToastSetting(): JSX.Element {
         <Typography variant="caption" color="text.secondary">
           {state.locked
             ? 'The strip sits where you left it and clicks pass straight through to the game.'
-            : 'The strip is showing its outline — drag it anywhere, and size its text with A− / A+ on the frame. Turn this off (or press Done) when it sits where you want it.'}
+            : 'The strip is showing its outline - drag it anywhere, and size its text with A− / A+ on the frame. Turn this off (or press Done) when it sits where you want it.'}
         </Typography>
       </Stack>
     </Stack>

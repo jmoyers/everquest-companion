@@ -2,6 +2,7 @@ import type { LootDisposition, LootEvent } from '@shared/types'
 import type { InventoryRow } from '../inventory/reconcile'
 import { questItemNames } from './lootItemData'
 import { DEFAULT_LOOT_SORT, sortLootRows, type LootSortKey } from './lootSort'
+import { buildOwnedRows } from './ownedItems'
 
 // A loot event with two precomputed keys — computed ONCE per history change so the
 // per-keystroke filter is a plain substring test (never re-lowercasing thousands of rows
@@ -25,6 +26,9 @@ export interface GroupRow {
   disposition?: LootDisposition
   /** Held per the inventory export but never looted this epoch — no loot columns. */
   invOnly?: boolean
+  /** What the EXPORT vouches for on this key. Set on inventory-only rows, which have no loot
+   *  history to count and whose reconciled `net` is 0 under the `log` count source (JOS-160). */
+  owned?: number
 }
 
 /** The active filters, most recent first. */
@@ -115,9 +119,13 @@ export function groupLootRows(
 }
 
 /**
- * The opt-in tail of items the inventory export knows about but that were never looted this
- * epoch (bank stock, pre-epoch gear). Kept OUT of the default view so the Loot table stays a
- * loot table. Already net-desc from reconcile, so only the favorites pin re-sorts it.
+ * The tail of items the inventory export knows about but that were never looted this epoch (bank
+ * stock, pre-epoch gear, anything acquired before this log started). Shown when the chip is lit or
+ * whenever a search is running — `showsInvOnly`.
+ *
+ * The RULE is `ownedItems.ts` (JOS-160); this is the binding that hands it the Sky quest-item set.
+ * The split is not decoration: this module cannot be loaded by node (`lootItemData` → `data/index`
+ * → a `@shared/profiles` value import the bundler alone resolves), and the rule needed a unit test.
  */
 export function buildInvOnlyRows({
   source,
@@ -130,17 +138,5 @@ export function buildInvOnlyRows({
   q: string
   isFavorite: (name: string) => boolean
 }): GroupRow[] {
-  let list = source
-  if (questOnly) list = list.filter((r) => questItemNames.has(r.key))
-  if (q) list = list.filter((r) => r.name.toLowerCase().includes(q))
-  const rows: GroupRow[] = list.map((r) => ({
-    key: `inv:${r.key}`,
-    countKey: r.key,
-    item: r.name,
-    count: 0,
-    last: 0,
-    zoneCount: 0,
-    invOnly: true
-  }))
-  return rows.sort((a, b) => Number(isFavorite(b.item)) - Number(isFavorite(a.item)))
+  return buildOwnedRows({ source, questOnly, q, isFavorite, isQuestItem: (k) => questItemNames.has(k) })
 }

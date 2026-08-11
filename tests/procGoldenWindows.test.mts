@@ -135,9 +135,9 @@ test('W38: three cast-less lanes, exact counts and damage', { skip: missing(W38)
   // Hand-counted off the fixture (grep, no engine). None of the three has a `You begin casting`
   // line anywhere in the window — its only casts are Greater Healing ×13, Reckless Strength and
   // Lay on Hands VIII — so all three are PURE procs and the detector must score cast = 0.
-  assert.deepEqual(laneOf(z, 'Smiting Strike'), { hits: 27, total: 2796 })
-  assert.deepEqual(laneOf(z, 'Condemnation of Nife'), { hits: 5, total: 1165 })
-  assert.deepEqual(laneOf(z, 'Dismiss Undead'), { hits: 5, total: 683 })
+  assert.deepEqual(laneOf(z, 'Smiting Strike · proc'), { hits: 27, total: 2796 })
+  assert.deepEqual(laneOf(z, 'Condemnation of Nife · proc'), { hits: 5, total: 1165 })
+  assert.deepEqual(laneOf(z, 'Dismiss Undead · proc'), { hits: 5, total: 683 })
 
   // THE TRIPWIRE (law 8). Proc lanes are an index over damage already counted, so the spell
   // category must equal the three lanes exactly and the body totals must not move.
@@ -216,7 +216,7 @@ test('W39: the gem-1 lane fires 14 times, all of them cast-less', { skip: missin
   const { eng, lastTs } = replay(W39)
   const z = you(segment(eng, lastTs, 'zone'))
 
-  assert.deepEqual(laneOf(z, 'Discordant Mind'), { hits: 14, total: 5482 })
+  assert.deepEqual(laneOf(z, 'Discordant Mind · proc'), { hits: 14, total: 5482 })
   // Not one `You begin casting Discordant Mind.` in the window (its casts are Pillage
   // Enchantment ×4, Superior Healing II ×3, Pacify ×2, Dazzle ×2, Swift Like the Wind,
   // Shiftless Deeds IV, Boon of the Garou II). Every firing is therefore outside
@@ -226,9 +226,9 @@ test('W39: the gem-1 lane fires 14 times, all of them cast-less', { skip: missin
   // Two `Cleric of Innoruuk resisted your Discordant Mind!` lines. A resist is damage-free and
   // first-class (law 8): it must not inflate the lane's 14 hits.
   assert.equal(you(segment(eng, lastTs, 'zone')).resists, 2)
-  assert.deepEqual(laneOf(z, 'Smiting Strike'), { hits: 20, total: 4283 })
-  assert.deepEqual(laneOf(z, 'Condemnation of Nife'), { hits: 6, total: 1978 })
-  assert.deepEqual(laneOf(z, 'Lifetap Strike'), { hits: 12, total: 458 })
+  assert.deepEqual(laneOf(z, 'Smiting Strike · proc'), { hits: 20, total: 4283 })
+  assert.deepEqual(laneOf(z, 'Condemnation of Nife · proc'), { hits: 6, total: 1978 })
+  assert.deepEqual(laneOf(z, 'Lifetap Strike · proc'), { hits: 12, total: 458 })
 })
 
 test('W39: EXCLUSIVE is earned by the inactive arm, not by the ratio', { skip: missing(W39) }, () => {
@@ -285,7 +285,7 @@ test('W39: five invocation commits, and the tap that heals more than it deals', 
   assert.equal(heals.length, 12)
   const healed = heals.reduce((n, l) => n + Number(/for (\d+) hit points/.exec(l)![1]), 0)
   assert.equal(healed, 474)
-  assert.equal(laneOf(you(segment(eng, lastTs, 'zone')), 'Lifetap Strike').total, 458)
+  assert.equal(laneOf(you(segment(eng, lastTs, 'zone')), 'Lifetap Strike · proc').total, 458)
   assert.ok(healed > 458)
 })
 
@@ -319,7 +319,7 @@ test('W40: 904 swings with the aura up, 36 without — and that is the whole fin
   const inactiveSwings = 36
 
   // TIER A is EXACT and needs no comparison: 4 procs, 1,326 damage, flat 221 per non-crit.
-  assert.deepEqual(laneOf(z, 'Condemnation of Nife'), { hits: 4, total: 1326 })
+  assert.deepEqual(laneOf(z, 'Condemnation of Nife · proc'), { hits: 4, total: 1326 })
   assert.ok(zone.outTotal > 0 && (1326 / zone.outTotal) * 100 < 4) // 3.34% of outgoing
 
   // TIER B IS IMPOSSIBLE, and the model must say so rather than report a big number. All four
@@ -339,7 +339,7 @@ test('W40: 904 swings with the aura up, 36 without — and that is the whole fin
   // number the RATE-AWARE gate exposes and a flat swing floor could not: 27/904 predicts 1.075
   // firings in 36 inactive swings, and exactly ONE was seen. That is the null hypothesis
   // matching itself to two decimal places, dressed up as a 0.96 concentration.
-  assert.deepEqual(laneOf(z, 'Smiting Strike'), { hits: 28, total: 2464 })
+  assert.deepEqual(laneOf(z, 'Smiting Strike · proc'), { hits: 28, total: 2464 })
   const smite = { withCount: 27, withoutCount: 1, activeSwings, inactiveSwings }
   assert.ok(Math.abs(expectedInactiveProcs(smite) - 1.075) < 0.01)
   assert.ok(concentrationOf(27, 1) > 0.96)
@@ -468,7 +468,7 @@ test('W41: three different counts of the same proc, each correct for its own que
   // ASP VENOM STRIKE — a poison DAMAGE lane: `You hit an elemental crusader for 53 points of
   // poison damage by Asp Venom Strike.` ×2. Two hits, 106 damage, and it must equal the You
   // row's own skill lane or the Procs tab has started inventing damage.
-  assert.deepEqual(laneOf(z, 'Asp Venom Strike'), { hits: 2, total: 106 })
+  assert.deepEqual(laneOf(z, 'Asp Venom Strike · proc'), { hits: 2, total: 106 })
   assert.deepEqual(zone.procs.poisonDamage, [{ name: 'Asp Venom Strike', count: 2, total: 106 }])
   assert.equal(zone.procs.poisonDamageTotal, 106)
 

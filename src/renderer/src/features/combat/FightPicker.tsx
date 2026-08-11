@@ -166,7 +166,7 @@ function PickerSearchBar({ p, scope }: { p: PickerState; scope: CombatScope }): 
         fullWidth
         value={p.query}
         onChange={(e) => p.setQuery(e.target.value)}
-        placeholder={scope === 'fight' ? 'Search fights — mob or zone…' : 'Filter zone sessions…'}
+        placeholder={scope === 'fight' ? 'Search fights - mob or zone…' : 'Filter zone sessions…'}
         inputProps={{
           'data-testid': 'fight-search',
           role: 'combobox',

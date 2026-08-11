@@ -33,12 +33,12 @@ export function pctLabel(v: number): string {
 
 /** A rate that may be unknown. THE DASH IS LOAD-BEARING — see the header. */
 export function rateLabel(v: number | null): string {
-  return v === null ? '—' : pctLabel(v)
+  return v === null ? '-' : pctLabel(v)
 }
 
 /** Durations in this panel are session-scale: minutes, or hours once past one. */
 export function durationLabel(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms) || ms <= 0) return '—'
+  if (ms === null || !Number.isFinite(ms) || ms <= 0) return '-'
   return ms >= 3_600_000
     ? `${(ms / 3_600_000).toFixed(1)} h`
     : `${Math.max(1, Math.round(ms / 60_000)).toString()} min`
@@ -71,7 +71,7 @@ export function pulseTiles(d: TriageAnalyticsData): StatTile[] {
     { label: 'Sessions', value: formatNum(p.sessions), note: `${p.sessionsPerDay.toFixed(1)} per active day` },
     {
       label: 'Session length',
-      value: p.medianSessionLabel ?? '—',
+      value: p.medianSessionLabel ?? '-',
       note: p.meanSessionMs === null ? 'no session has ended yet' : `median · mean ${durationLabel(p.meanSessionMs)}`
     },
     { label: 'Lines parsed', value: formatNum(p.linesParsed), note: 'in this window, re-reads included' }
@@ -94,7 +94,7 @@ export function pulseTiles(d: TriageAnalyticsData): StatTile[] {
 export function liveTiles(live: TriageLiveSessions | undefined): StatTile[] {
   if (live === undefined) return []
   if (!live.available) {
-    return [{ label: 'Live now', value: '—', note: live.reason }]
+    return [{ label: 'Live now', value: '-', note: live.reason }]
   }
   const tiles: StatTile[] = [
     { label: 'Live now', value: formatNum(live.activeNow), note: 'sessions in the last 5 min' }
@@ -140,7 +140,7 @@ export function funnelBars(steps: readonly TriageFunnelStepRow[]): FunnelBar[] {
 
 /** `12 (48%)`, or `—` for a cohort that has not reached the horizon yet. */
 export function cohortCell(survivors: number | null, cohortSize: number): string {
-  if (survivors === null) return '—'
+  if (survivors === null) return '-'
   return `${formatNum(survivors)} (${pctLabel(cohortSize > 0 ? survivors / cohortSize : 0)})`
 }
 

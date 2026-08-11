@@ -5,7 +5,7 @@
  * hour, h:mm above. Null/≤0 renders as an em-dash.
  */
 export function fmtDuration(ms: number | null | undefined): string {
-  if (ms == null || ms <= 0) return '—'
+  if (ms == null || ms <= 0) return '-'
   const totalSec = Math.round(ms / 1000)
   if (totalSec < 60) return `${totalSec}s`
   const totalMin = Math.floor(totalSec / 60)

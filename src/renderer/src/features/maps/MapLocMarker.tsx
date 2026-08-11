@@ -64,7 +64,7 @@ export function MapLocMarker({ at, loc, vp }: MapLocMarkerProps): JSX.Element {
       }}
     >
       <span
-        title={`The location you entered — /loc ${formatLoc(loc)}`}
+        title={`The location you entered - /loc ${formatLoc(loc)}`}
         style={{
           position: 'absolute',
           left: -half,

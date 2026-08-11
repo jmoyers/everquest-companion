@@ -16,6 +16,16 @@
 // All 41 were `{kind:'unknown'}` before this module existed (full-log kind histogram diffed
 // before/after: `unknown` 219305 → 219264, every other kind byte-identical).
 //
+// JOS-128 added a fourth, and it is here for the same reason the other three are: it is the
+// FRAME around the world model rather than a fact inside it — the player operating the client.
+//
+//   `Outputfile Complete: <file>`                                 2 lines → outputFile
+//
+// Measured against the real 116 MB log on 2026-08-09, full-log kind histogram diffed with the
+// cascade entry off and on: `unknown` 270631 → 270629, `outputFile` 0 → 2, every other kind
+// byte-identical. So both lines were `{kind:'unknown'}` before this classifier existed and it
+// takes nothing from anybody.
+//
 // WHAT IS DELIBERATELY LEFT UNKNOWN, and why:
 //
 //   • THE COUNTDOWN TICKS — `It will take about {25,20,15,10,5} more seconds to prepare your
@@ -56,6 +66,12 @@ const CAMP_START_LINE = 'It will take you about 30 seconds to prepare your camp.
 const CAMP_ABORT_LINE = 'You abandon your preparations to camp.'
 
 /**
+ * A `/outputfile` dump finished writing. The prefix is exact and the file name is the rest of
+ * the line, because `/outputfile inventory [optional filename]` lets the player name it.
+ */
+const OUTPUT_FILE_PREFIX = 'Outputfile Complete: '
+
+/**
  * `Welcome to EverQuest Legends!` — the character is in the world (see SessionStartEvent).
  *
  * Gated on the leading `W` before the string compare so the hot path (combat lines) pays a
@@ -76,4 +92,25 @@ export function classifyCamp({ text, ts, seq, raw }: ClassifyCtx): LogEvent | nu
   if (text === CAMP_START_LINE) return { kind: 'campStart', seq, ts, raw }
   if (text === CAMP_ABORT_LINE) return { kind: 'campAbort', seq, ts, raw }
   return null
+}
+
+/**
+ * `Outputfile Complete: <file>` — the player exported something (JOS-128; see
+ * {@link OutputFileEvent} for why the app needs the instant).
+ *
+ * ANCHORED AT THE START OF THE MESSAGE, which is what makes it safe: the classifier sees the
+ * line with its `[timestamp] ` prefix already stripped, so a chat line quoting the sentence
+ * (`Bob tells you, 'Outputfile Complete: …'`) begins with the speaker's name and can never
+ * reach it. Gated on the leading `O` before the prefix compare, matching the cheap-
+ * discriminator-first convention of the cascade.
+ *
+ * A dump with an EMPTY name is not a dump we could ever join to a file, so it declines rather
+ * than emitting an event carrying nothing (the line has never been observed; this is refusal,
+ * not a handled case).
+ */
+export function classifyOutputFile({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+  if (text.charCodeAt(0) !== 79 /* 'O' */ || !text.startsWith(OUTPUT_FILE_PREFIX)) return null
+  const file = text.slice(OUTPUT_FILE_PREFIX.length).trim()
+  if (file === '') return null
+  return { kind: 'outputFile', seq, ts, raw, file }
 }

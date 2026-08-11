@@ -200,7 +200,7 @@ export function introToastPayload(): ToastPayload {
   return {
     id: TOAST_INTRO_ID,
     kind: 'intro',
-    title: 'EQ Legends Companion — celebration overlay',
+    title: 'EQ Legends Companion - celebration overlay',
     subtitle: 'Boss kills, Sky quest completions and level-ups will appear here.',
     durationMs: TOAST_INTRO_MS
   }

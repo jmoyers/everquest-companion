@@ -1,56 +1,79 @@
 // The buff-INSTANCE store of the buffs model (see buffs.ts for the model's contract).
 //
-// A buff INSTANCE is a pair (spell, targetEntity) keyed by (spellKey, entityKey). This
+// A buff INSTANCE is a pair (spell LINE, targetEntity) keyed by (spellKey, entityKey). This
 // module owns the three live collections — the single pending cast, the landed-and-open
 // casts awaiting their fade, and the currently-active instances — plus every mutation of
 // them: landing, message-driven application, fade pairing (the duration sample), and the
-// CENSORING paths (death / zone / session gap / hygiene / entity retirement).
+// CENSORING paths (death / zone / log hole / hygiene / entity retirement) and the offline
+// PAUSE — which is not a censor at all but the one place a live clock is rewound (JOS-134).
 //
 // It knows nothing about log events: BuffsModule translates events into these calls. It
 // reads learned per-spell knowledge from SpellStats and the pet bindings from PetEntities,
 // and reports a RESOLVED expiry back through the `onExpired` callback it is constructed
 // with (Task #47's derived buffExpired) — the module stamps and emits that.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// AN INSTANCE IS A MULTISET OF LANDINGS (JOS-140 ruling 7). What used to be one `landedTs` per
+// (spell, entity) is now a {@link HoldGroup}: one landing per entity of that display name we
+// believe is holding the spell, oldest first, with the clean-cycle bookkeeping that decides
+// whether a span may be learned from. The same object serves the crowd-control holds, which is
+// what makes "one instance model" true rather than aspirational — buffRounds.ts states the round
+// rule, the refresh-newest rule and the close-oldest rule once, and both halves obey it.
+//
+// WHOSE CAST IT IS rides on the record too (`caster`), because the learner is keyed on
+// (line, caster): a duration is a fact about the caster's AAs, focus items and rank.
 
 import type { ActiveBuff } from '../../shared/types'
-import { isLeftBehindOnZone, type EntityDisposition } from '../combat/entityRules'
+import type { EntityDisposition } from '../combat/entityRules'
 import { idKey } from '../log/parser'
+import { SELF_CASTER } from '../../shared/buffTrust'
+import { HoldGroup } from './buffRounds'
 import {
-  hygieneCapMs,
   instanceEntityKey,
   instanceKey,
+  instanceSpellKey,
   LAND_TIMEOUT_MS,
   MAX_SAMPLE_MS,
   SELF_KEY,
   spellKey,
+  type DurationSample,
   type OpenCast,
   type Pending
 } from './buffsShapes'
 import type { PetEntities } from './buffsEntities'
 import type { SpellStats } from './buffsStats'
 import { buildActive, type ActiveSpec } from './buffsView'
+import {
+  deathCensorsActive,
+  deathCensorsOpen,
+  hygieneCap,
+  isPermanentIllusion,
+  landingSpec,
+  openLeftBehindOnZone,
+  unwitnessedCullCap
+} from './buffsInstanceRules'
 
-/** Does this open cast belong to the entity being retired? (`hostileOnly` = a plain mob death.) */
-function openMatches(o: OpenCast, entityKey: string, hostileOnly: boolean): boolean {
-  if (!hostileOnly) return o.entityKey === entityKey
-  return o.disp === 'hostile' && (o.entityKey === entityKey || o.entityKey === 'unknown-hostile')
-}
-
-/** Does this active instance belong to the entity being retired? */
-function activeMatches(a: ActiveBuff, aKey: string, entityKey: string, hostileOnly: boolean): boolean {
-  if (!hostileOnly) return aKey === entityKey
-  return a.cls === 'debuff' && (aKey === entityKey || aKey === 'unknown-hostile' || a.inferredTarget === true)
-}
-
-/**
- * ZONE (the user's rule): the player keeps self buffs; a SUMMONED pet follows and keeps
- * its buffs; a CHARMED pet is LEFT BEHIND (retire + censor); hostile mobs are left behind
- * (censor open debuffs). Uses the SHARED isLeftBehindOnZone rule.
- */
-function openLeftBehindOnZone(o: OpenCast): boolean {
-  if (o.disp === 'self') return false
-  if (o.disp === 'summoned') return isLeftBehindOnZone('summoned') // false
-  if (o.disp === 'charmed') return isLeftBehindOnZone('charmed') // true
-  return true // hostile → left behind
+/** Everything a LANDING states about itself, as one argument (max-params is 4 in this repo). */
+export interface LandingSpec {
+  target: string
+  ts: number
+  illusion: boolean
+  durationMs: number | null
+  /** 'self' or an allowlisted external — the learner's second key (JOS-140 ruling 4). */
+  caster?: string
+  /**
+   * The spell LINE key this instance is identified by, when it differs from what the row is
+   * NAMED. A family row is named for every candidate and keyed on one of them — see
+   * `instanceSpellKey`.
+   */
+  lineKey?: string
+  /**
+   * The spells this landing sentence could be, when it is a FAMILY the anchor could not narrow
+   * (a Quick Buff burst names no spell). Present ⇒ the row shows the ~ chip and mints nothing.
+   */
+  candidates?: string[]
+  /** ts from which the Permanent Illusion AA is owned, when it is. */
+  permanentIllusionOwnedTs?: number
 }
 
 export class BuffInstances {
@@ -79,7 +102,7 @@ export class BuffInstances {
 
   /** True when any active instance is of this spell key (the ambiguous-apply tiebreak). */
   hasActiveSpell(key: string): boolean {
-    for (const a of this.active.values()) if (spellKey(a.spell) === key) return true
+    for (const ik of this.active.keys()) if (instanceSpellKey(ik) === key) return true
     return false
   }
 
@@ -91,10 +114,10 @@ export class BuffInstances {
    * to self AND pet (a pet illusion like Boon-on-pet replaces a prior pet illusion).
    */
   clearIllusionsOn(entityKey: string, keepKey: string): void {
-    for (const [ik, a] of [...this.active]) {
+    for (const ik of [...this.active.keys()]) {
       if (ik === keepKey) continue
       if (instanceEntityKey(ik) !== entityKey) continue
-      if (this.stats.isIllusion(spellKey(a.spell))) {
+      if (this.stats.isIllusion(instanceSpellKey(ik))) {
         this.active.delete(ik)
         this.open.delete(ik)
         this.dirty = true
@@ -106,7 +129,7 @@ export class BuffInstances {
   clearSelfIllusion(): void {
     for (const [ik, a] of [...this.active]) {
       if (!a.self) continue
-      if (this.stats.isIllusion(spellKey(a.spell))) {
+      if (this.stats.isIllusion(instanceSpellKey(ik))) {
         this.active.delete(ik)
         this.open.delete(ik)
         this.dirty = true
@@ -118,71 +141,48 @@ export class BuffInstances {
     }
   }
 
-  maybeLandPendingByTime(now: number): void {
-    if (this.pending && now - this.pending.beganTs >= LAND_TIMEOUT_MS) {
-      this.landPending(now)
-    }
-  }
-
   /**
-   * Promote the pending cast to a landed/active INSTANCE (Task #35). Binds it to a TARGET
-   * ENTITY so a later zone/death censors it. Self/pet mining is byte-identical to Task #30.
+   * A cast nothing confirmed within the landing window never landed, so its record is DROPPED
+   * (JOS-118). It opens nothing on the way out — see `beginCast` for why a cast is not evidence.
    */
-  landPending(_now: number): void {
-    const p = this.pending
-    if (!p) return
-    this.pending = null
-    const landedTs = p.beganTs
-
-    const disp = this.inferCastDisposition(p.key, p.emoteSubjectKey)
-    const eKey = this.pets.entityKeyFor(disp)
-    const iKey = instanceKey(p.key, eKey)
-    // Refresh censoring: replacing the same instance discards a prior open cast's pairing.
-    this.open.set(iKey, { spell: p.spell, spellKey: p.key, entityKey: eKey, landedTs, disp })
-
-    if (this.stats.everFaded.has(p.key)) {
-      this.active.set(iKey, this.build({ spell: p.spell, key: p.key, entityKey: eKey, startedTs: landedTs, provisional: false, dispOverride: disp }))
-      // ILLUSION EXCLUSIVITY (Task #36): landing an illusion cast replaces any prior
-      // illusion on the same entity.
-      if (this.stats.isIllusion(p.key)) this.clearIllusionsOn(eKey, iKey)
+  dropUnconfirmedPending(now: number): void {
+    if (this.pending && now - this.pending.beganTs >= LAND_TIMEOUT_MS) {
+      this.pending = null
     }
-    this.dirty = true
   }
 
   /**
-   * Stage a new cast in flight, and show it OPTIMISTICALLY right away (provisional) when the
-   * spell is a known buff/debuff — bound to the entity this cast most likely targets NOW
-   * (self, live pet, or the inferred hostile target for a debuff).
+   * Stage a new cast in flight. A CAST OPENS NOTHING — no instance, no open cast, no row
+   * (JOS-118, owner: "we should drop provisional all together. i dont want to complicate the
+   * model").
+   *
+   * This used to show the cast OPTIMISTICALLY the instant it began: a `provisional` ActiveBuff
+   * bound to `inferCastDisposition`'s guess at the target — for a debuff, `entityKeyFor('hostile')`,
+   * i.e. the pet's last CC'd mob or an `unknown-hostile` bucket. It was retracted only by a fizzle
+   * or an interrupt. A RESIST is neither, so a resisted debuff left a bar on screen naming a mob
+   * the log never said it landed on — the JOS-118 defect. Fifteen seconds later
+   * `maybeLandPendingByTime` PROMOTED that same guess to a solid row and an `open` cast that could
+   * pair with an unrelated later fade into a duration sample, so the cast path could also poison
+   * the mined statistics the JOS-114/117 clean-sample rule exists to protect.
+   *
+   * The rule is now uniform across buffs, debuffs and CC alike: an instance opens ONLY from a line
+   * that CONFIRMS the landing, keyed to the entity that line NAMES (`applyMessageBuff`, or the CC
+   * half's `cc` broadcast in modules/buffTimers.ts). No landing line ⇒ no row and no sample, which
+   * makes a resist correct by construction: there was never anything to retract.
+   *
+   * The pending record itself STAYS. It is the cast-in-flight bookkeeping the landing side hangs
+   * off — `applyMessageBuff` consumes it, a fizzle/interrupt clears it — and the ANCHOR the
+   * attribution gate reads lives beside it in `modules/buffAnchors.ts`. What went is the DISPLAY,
+   * not the attribution machinery.
    */
   beginCast(spell: string, key: string, ts: number): void {
-    const disp = this.inferCastDisposition(key, undefined)
-    const eKey = this.pets.entityKeyFor(disp)
-    const iKey = instanceKey(key, eKey)
-    const existing = this.active.get(iKey)
-    const stagedRefresh = !!existing && !existing.provisional
-    this.pending = { spell, key, beganTs: ts, stagedRefresh }
-    if (!existing && this.stats.everFaded.has(key)) {
-      this.active.set(iKey, this.build({ spell, key, entityKey: eKey, startedTs: ts, provisional: true, dispOverride: disp }))
-      // ILLUSION EXCLUSIVITY (Task #36): an optimistic illusion cast also replaces any
-      // prior illusion on the same entity (a message apply confirms it later).
-      if (this.stats.isIllusion(key)) this.clearIllusionsOn(eKey, iKey)
-      this.dirty = true
-    }
+    this.pending = { spell, key, beganTs: ts }
   }
 
-  /** A fizzle/interrupt of `key` clears the pending cast and retracts its optimistic instance. */
+  /** A fizzle/interrupt of `key` clears the pending cast. It never opened anything to retract. */
   clearPendingCast(key: string): void {
-    const p = this.pending
-    if (p?.key !== key) return
+    if (this.pending?.key !== key) return
     this.pending = null
-    if (p.stagedRefresh) return
-    // Retract the optimistic provisional instance this cast created.
-    for (const [ik, a] of [...this.active]) {
-      if (a.provisional && spellKey(a.spell) === key) {
-        this.active.delete(ik)
-        this.dirty = true
-      }
-    }
   }
 
   /**
@@ -206,74 +206,82 @@ export class BuffInstances {
   }
 
   /**
-   * The message is GROUND TRUTH for this cast's target. Drop any cast-timing-inferred
-   * instance of the SAME spell (a provisional / unknown-hostile guess from the castBegin)
-   * so we don't double-list the spell as both an inferred and a message-bound instance.
-   */
-  private dropInferredDuplicates(key: string, keepKey: string): void {
-    for (const [ik, a] of [...this.active]) {
-      if (ik === keepKey) continue
-      if (spellKey(a.spell) === key && (a.provisional || a.inferredTarget)) {
-        this.active.delete(ik)
-        this.open.delete(ik)
-      }
-    }
-  }
-
-  /**
    * Apply a buff from an EXACT chat MESSAGE match (Task #34/#35). Confident, immediate,
    * non-provisional, messageDriven. `target` is 'self' for a cast-on-you / self-heal line,
    * else the named target (pet/player/mob) — bound to THAT entity's key.
+   *
+   * A REPEAT LANDING IS A ROUND, NOT AN OVERWRITE (JOS-140). It goes to the instance's
+   * {@link HoldGroup}, which decides whether it refreshes the newest landing or opens another —
+   * so two mobs of one name slowed in the same second are a count of two, and a re-slow of one
+   * of them is a refresh rather than a third row.
    */
-  applyMessageBuff(
-    spell: string,
-    spec: {
-      target: string
-      ts: number
-      illusion: boolean
-      durationMs: number | null
-      /** ts from which the Permanent Illusion AA is owned, when it is. */
-      permanentIllusionOwnedTs?: number
-    }
-  ): void {
+  applyMessageBuff(spell: string, spec: LandingSpec): void {
     const { target, ts, illusion, durationMs } = spec
     if (durationMs == null && !illusion) return
-    const key = spellKey(spell)
+    const key = spec.lineKey ?? spellKey(spell)
     // A SELF apply of a DETRIMENTAL spell is an incoming debuff a MOB cast on the player —
     // not the player's own buff. Skip it (the bar shows only the player's beneficial buffs).
-    if (target === 'self' && this.stats.classOf(key) === 'debuff') return
+    const self = target === 'self'
+    if (self && this.stats.classOf(key) === 'debuff') return
     this.stats.everFaded.add(key)
     this.stats.touchLastSeen(key, ts)
     if (this.pending?.key === key) this.pending = null
 
-    const self = target === 'self'
-    const disp: EntityDisposition = self ? 'self' : this.pets.dispForNamedTarget(target)
-    const eKey = self ? SELF_KEY : idKey(target)
+    const { disp, eKey, caster, permanent } = this.bindTo(key, spec)
     const iKey = instanceKey(key, eKey)
-    // Remember the target's display casing so the row's target chip reads "Cazic-Thule",
-    // not the lowercased key (Task #35).
-    if (!self) this.pets.namedEntityDisplay.set(eKey, target)
-    const permanent = isPermanentIllusion(self, illusion, ts, spec.permanentIllusionOwnedTs)
-
-    this.dropInferredDuplicates(key, iKey)
-
-    if (!permanent) {
-      this.open.set(iKey, { spell, spellKey: key, entityKey: eKey, landedTs: ts, disp })
-    } else {
-      this.open.delete(iKey)
-    }
-
-    this.active.set(
-      iKey,
-      this.build({
-        spell, key, entityKey: eKey, startedTs: ts, provisional: false, dispOverride: disp,
-        opts: { messageDriven: true, permanent }
-      })
-    )
+    const record = this.openRecord(iKey, { spell, spellKey: key, entityKey: eKey, caster, disp })
+    // A FAMILY never mints (we do not know which spell it was), so its landings open contaminated.
+    record.group.land(ts, spec.candidates !== undefined)
+    // A permanent self illusion has no expiry to pair with, so it keeps no open record at all.
+    if (permanent) this.open.delete(iKey)
+    this.active.set(iKey, this.build(landingSpec(spec.candidates, { key, eKey, disp, caster, permanent, record, ts })))
     // ILLUSION EXCLUSIVITY (Task #36): a new illusion apply on this entity replaces any
     // prior illusion active on it (self OR pet). Only one illusion per entity at a time.
     if (illusion) this.clearIllusionsOn(eKey, iKey)
     this.dirty = true
+  }
+
+  /**
+   * WHERE a landing binds: the entity it names, that entity's disposition, whose cast it is, and
+   * whether it is a permanent self illusion. Also the one side effect worth naming — the target's
+   * display CASING is remembered here, so the row's chip reads "Cazic-Thule" and not the
+   * lowercased key (Task #35).
+   */
+  private bindTo(
+    key: string,
+    spec: LandingSpec
+  ): { self: boolean; disp: EntityDisposition; eKey: string; caster: string; permanent: boolean } {
+    const { target, ts, illusion } = spec
+    const self = target === 'self'
+    const eKey = self ? SELF_KEY : idKey(target)
+    if (!self) this.pets.namedEntityDisplay.set(eKey, target)
+    return {
+      self,
+      disp: self ? 'self' : this.pets.dispForNamedTarget(target),
+      eKey,
+      caster: spec.caster ?? SELF_CASTER,
+      permanent: isPermanentIllusion(self, illusion, ts, spec.permanentIllusionOwnedTs)
+    }
+  }
+
+  /**
+   * The open record this landing belongs to, created on first sight — or recreated when the CASTER
+   * changed, because a different caster's durations are a different learner key and pooling one
+   * cycle across the two would be the thing ruling 4 forbids.
+   */
+  private openRecord(iKey: string, id: Omit<OpenCast, 'group'>): OpenCast {
+    const existing = this.open.get(iKey)
+    if (existing?.caster === id.caster) {
+      existing.spell = id.spell
+      existing.disp = id.disp
+      return existing
+    }
+    // SINGLETON unless the entity is a plain HOSTILE: you, your summoned pet and your charmed pet
+    // are identities this model tracks (law 4), so a re-cast on one of them is unambiguously a
+    // refresh. A mob is only ever a NAME, and the world hands out that name more than once.
+    const record: OpenCast = { ...id, group: new HoldGroup(id.disp !== 'hostile') }
+    this.open.set(iKey, record)
+    return record
   }
 
   /**
@@ -282,7 +290,8 @@ export class BuffInstances {
    */
   private removeAuthoritative(key: string, entityKey: string, ts: number): void {
     const iKey = instanceKey(key, entityKey)
-    const spell = this.active.get(iKey)?.spell ?? this.stats.samples.get(key)?.spell ?? key
+    const spell =
+      this.active.get(iKey)?.spell ?? this.stats.sampleSpellName(key, this.open.get(iKey)?.caster) ?? key
     this.stats.everFaded.add(key)
     this.recordFade(key, entityKey, spell, ts)
     // DERIVED buffExpired (Task #47): the wear-off is now RESOLVED to `spell` on `entityKey`.
@@ -304,9 +313,9 @@ export class BuffInstances {
     const cands = new Set(candidateNames.map(spellKey))
     // Find the candidates that actually have an ACTIVE instance on this entity.
     const matched: string[] = []
-    for (const [ik, a] of this.active) {
+    for (const ik of this.active.keys()) {
       if (instanceEntityKey(ik) !== entityKey) continue
-      const k = spellKey(a.spell)
+      const k = instanceSpellKey(ik)
       if (cands.has(k) && !matched.includes(k)) matched.push(k)
     }
     for (const k of matched) this.removeAuthoritative(k, entityKey, ts)
@@ -315,79 +324,103 @@ export class BuffInstances {
   }
 
   /**
-   * Pair a fade with its open landed instance (a duration sample) and clear the active.
+   * Pair a fade with its own open landed instance (a duration sample) and clear the active.
    *
-   * The fade names the REAL target entity; a cast-timing open cast, though, may have bound
-   * to an INFERRED entity (self / the-live-pet / an inferred hostile) that differs from the
-   * fade's named target — the model can't always predict the exact target at cast time
-   * (castBegin carries none). So we pair the exact (spell,entity) instance when present,
-   * else fall back to ANY open cast of the same spell — preserving per-spell duration mining
-   * (unchanged from the pre-#35 per-spell samples) while keeping per-instance DISPLAY. We
-   * prefer the SAME-entity instance, then the oldest matching open cast.
+   * A SAMPLE IS MINTED ONLY FROM AN EXACT (spell, entity, CASTER) CHAIN (JOS-118, extended by
+   * JOS-140 ruling 4): our own cast (or an allowlisted external's), landing on THAT entity,
+   * wearing off THAT entity. Only ONE caster's modifiers — AAs, focus effects — shape a duration
+   * anyone is entitled to learn from, and another caster's identical spell carries completely
+   * different ones. A fade that cannot be matched to its own exact instance mints NOTHING.
+   *
+   * WHICH LANDING DOES IT CLOSE? The OLDEST (ruling 7). `Your <S> spell has worn off of <mob>.`
+   * names the mob but not which mob of that name, so under a fixed duration the oldest landing is
+   * the maximum-likelihood one to have just ended — and pairing newest-first instead produced, on
+   * the reporter's own bytes, spans from 42 s to 119 s out of the same lines. The row survives
+   * with one fewer on its count chip; only an empty group clears it.
+   *
+   * CLOSURE stays honest in the other direction too: the fade proves THIS entity's copy is gone,
+   * so nothing on any other entity is touched — a still-live slow on mob A survives mob B's
+   * wear-off.
    */
   recordFade(key: string, entityKey: string, spell: string, fadeTs: number): void {
     this.stats.touchLastSeen(key, fadeTs)
     const iKey = instanceKey(key, entityKey)
-    let openKey: string | undefined
-    let open: OpenCast | undefined
-    const exact = this.open.get(iKey)
-    if (exact) {
-      openKey = iKey
-      open = exact
-    } else {
-      let oldest = Infinity
-      for (const [ok, o] of this.open) {
-        if (o.spellKey === key && o.landedTs < oldest) {
-          oldest = o.landedTs
-          openKey = ok
-          open = o
-        }
-      }
-    }
-    if (openKey !== undefined && open !== undefined) {
-      const dur = fadeTs - open.landedTs
+    const open: OpenCast | undefined = this.open.get(iKey)
+    if (open !== undefined) {
+      const closed = open.group.closeOldest(fadeTs)
       // CENSOR a sample whose land→fade window crossed an offline gap (world-model law 5).
       // The fade itself is still authoritative — the instance clears exactly as it always
       // did — but the SPAN is not a duration: it contains an absence whose length we know
       // only to within the reconnect window. Contributing it would poison the per-spell
       // recency-weighted MAX with a value that is guaranteed too large.
-      if (open.spannedGap !== true && dur > 0 && dur <= MAX_SAMPLE_MS) this.addSample(key, spell, dur)
-      this.open.delete(openKey)
-      this.active.delete(openKey)
+      const sample = closed?.sampleMs
+      if (open.spannedGap !== true && sample != null && sample > 0 && sample <= MAX_SAMPLE_MS) {
+        // NEVER CENSORED on this path (JOS-180): the wake line is a CROWD-CONTROL annotation and
+        // there is no sentence in the log that says a beneficial buff or a debuff ended early.
+        this.addSample(key, open.caster, spell, { ms: sample, ts: fadeTs })
+      }
+      if (open.group.empty) this.open.delete(iKey)
+      else {
+        this.restat(iKey, open)
+        this.dirty = true
+        return
+      }
     }
-    // Also clear the exact-target instance's active (the fade proves THAT entity's copy is
-    // gone), even if the paired open cast was a different-entity instance.
     this.active.delete(iKey)
     this.dirty = true
   }
 
-  private addSample(key: string, spell: string, durMs: number): void {
-    this.stats.pushSample(key, spell, durMs)
-    // Restat every live instance of this spell (they share the per-spell stats).
+  /** Re-project one live instance after its group changed (count / oldest clock moved). */
+  private restat(iKey: string, open: OpenCast): void {
+    const prev = this.active.get(iKey)
+    if (!prev) return
+    this.active.set(
+      iKey,
+      this.build({
+        spell: prev.spell,
+        key: open.spellKey,
+        entityKey: open.entityKey,
+        startedTs: open.group.oldestTs,
+        dispOverride: prev.disposition,
+        caster: open.caster,
+        count: open.group.count,
+        ...(prev.candidates ? { candidates: prev.candidates } : {}),
+        opts: { messageDriven: prev.messageDriven, permanent: prev.permanent }
+      })
+    )
+  }
+
+  private addSample(key: string, caster: string, spell: string, sample: DurationSample): void {
+    this.stats.pushSample(key, caster, spell, sample)
+    // Restat every live instance of this spell (they share the per-(line, caster) stats).
     for (const [ik, a] of [...this.active]) {
-      if (spellKey(a.spell) === key) {
-        this.active.set(
-          ik,
-          this.build({
-            spell: a.spell,
-            key,
-            entityKey: instanceEntityKey(ik),
-            startedTs: a.startedTs,
-            provisional: a.provisional,
-            dispOverride: a.disposition,
-            opts: { messageDriven: a.messageDriven, permanent: a.permanent }
-          })
-        )
-      }
+      if (instanceSpellKey(ik) !== key) continue
+      const open = this.open.get(ik)
+      this.active.set(
+        ik,
+        this.build({
+          spell: a.spell,
+          key,
+          entityKey: instanceEntityKey(ik),
+          startedTs: a.startedTs,
+          dispOverride: a.disposition,
+          caster: a.caster ?? SELF_CASTER,
+          count: open?.group.count ?? a.count ?? 1,
+          ...(a.candidates ? { candidates: a.candidates } : {}),
+          opts: { messageDriven: a.messageDriven, permanent: a.permanent }
+        })
+      )
     }
     this.dirty = true
   }
 
   /**
-   * OFFLINE GAP — the buff-timer PAUSE. Buff timers do NOT run while the character is out of
-   * the world; the game saves each buff's REMAINING duration and resumes it at login. So an
-   * instance that survives a gap must have its clock shifted forward by the absence, or every
-   * countdown reads as long-expired and the hygiene sweep retires a buff that is still up.
+   * OFFLINE GAP — the buff-timer PAUSE, and the asymmetry that is the whole of JOS-134.
+   *
+   * YOUR BUFFS PAUSE. Buff timers do NOT run while the character is out of the world; the game
+   * saves each buff's REMAINING duration and resumes it at login. So a beneficial instance that
+   * survives a gap has its clock shifted forward by the absence, or every countdown reads as
+   * long-expired and the hygiene sweep retires a buff that is still up.
    *
    * MEASURED, not assumed (world-model law 1 — the game's semantics were verified before
    * being encoded). Real log, Swift Like the Wind (DB duration 16 min):
@@ -402,25 +435,37 @@ export class BuffInstances {
    * online time. If timers RAN while offline the buff would have expired unobserved around
    * 01:08 and that wears-off line could never have printed at all.
    *
-   * This is DISPLAY ONLY. `startedTs` feeds the countdown and the sort order and nothing else
-   * (it is never rendered as a wall clock), the wears-off line stays the authority on when a
-   * buff actually ended, and the shifted open cast is flagged so its span never becomes a
-   * mined duration sample.
+   * DEBUFFS DO NOT PAUSE, AND THAT IS DELIBERATE (owner's design, 2026-08-09; JOS-140 leaves it
+   * standing as the one sanctioned divergence between the two halves of one model). What EQ
+   * pauses is your CHARACTER; the world it stands in keeps running. A slow you landed on a mob is
+   * a timer in the world, not a timer on you, so it keeps burning down while you are gone and its
+   * `startedTs` is left exactly where it was. A debuff that outlives the absence therefore reads
+   * correctly the moment you are back, and one that did not is swept by the ordinary hygiene
+   * pass on its own unshifted clock — no special case, no second opinion. (Nothing else is
+   * needed at the boundary either: the `You have entered <zone>.` line lands 0-1 lines after
+   * every Welcome in the real log and runs the existing law-4 censor, which is what leaves
+   * hostiles and charmed pets behind on a login exactly as on any other zone.)
    *
-   * Note the interaction with SESSION_GAP_MS: an absence of 30 minutes or more has already
-   * wiped every live instance via clearForGap() by the time the gap event arrives (the
-   * reconnect preamble trips it before the Welcome line does), so in practice this shift
-   * applies to the 1-to-30-minute absences — a crash-and-relog, not an overnight camp.
+   * `fromTs` is the last instant the character is KNOWN to have been in the world. Only
+   * instances that predate it are shifted: anything raised after it was raised on THIS side of
+   * the absence and has nothing to be compensated for.
+   *
+   * This is DISPLAY ONLY. `startedTs` feeds the countdown and the sort order and nothing else
+   * (it is never rendered as a wall clock), and the wears-off line stays the authority on when a
+   * buff actually ended. EVERY open cast the gap passes over — buff and debuff alike — is
+   * flagged `spannedGap` so its span never becomes a mined duration sample; see the field's own
+   * doc in buffsShapes.ts for the two separate reasons the two halves are both refused.
    */
-  onOfflineGap(offlineMs: number): void {
+  onOfflinePause(fromTs: number, offlineMs: number): void {
     if (offlineMs <= 0) return
     let changed = false
-    for (const o of this.open.values()) {
-      o.landedTs += offlineMs
-      o.spannedGap = true
-      changed = true
+    for (const [ik, o] of this.open) {
+      if (o.group.oldestTs > fromTs) continue
+      if (this.pauseOne(ik, o, fromTs, offlineMs)) changed = true
     }
     for (const [ik, a] of this.active) {
+      // An active with no open record behind it (a permanent illusion) has no group to shift.
+      if (a.cls === 'debuff' || a.startedTs > fromTs || this.open.has(ik)) continue
       this.active.set(ik, { ...a, startedTs: a.startedTs + offlineMs })
       changed = true
     }
@@ -433,6 +478,25 @@ export class BuffInstances {
     if (changed) this.dirty = true
   }
 
+  /**
+   * One open record across an absence: ALWAYS censored as a sample (both halves, for the two
+   * separate reasons buffsShapes.ts states), and shifted ONLY if it is a buff. Returns whether
+   * anything changed.
+   */
+  private pauseOne(ik: string, o: OpenCast, fromTs: number, offlineMs: number): boolean {
+    let changed = false
+    if (o.spannedGap !== true) {
+      o.spannedGap = true
+      changed = true
+    }
+    // The learner is censored either way; only the CLOCK is asymmetric.
+    if (this.stats.classOf(o.spellKey) !== 'debuff' && o.group.shiftBy(offlineMs, fromTs)) {
+      this.restat(ik, o)
+      changed = true
+    }
+    return changed
+  }
+
   /** Session-gap clear (Task #33, finding #5): wipe live actives/opens/pending. */
   clearForGap(): void {
     const changed = this.active.size > 0 || this.open.size > 0 || this.pending != null
@@ -442,8 +506,51 @@ export class BuffInstances {
     if (changed) this.dirty = true
   }
 
-  /** Hygiene sweep (Task #33, finding #6): retire any active past its per-spell cap. */
-  sweepHygiene(now: number): void {
+  /**
+   * Drop every instance whose clock predates `ts` — the UNEXPLAINED-hole resolution (JOS-134).
+   *
+   * A log hole that no login ever explains means we lost the thread rather than that the
+   * character left, and the old blanket wipe is still the honest answer for what was standing
+   * when it opened. It is SCOPED rather than blanket only because the ruling arrives up to
+   * {@link LOGIN_CONFIRM_MS} after the hole did, and anything cast inside that window is
+   * evidence from this side of it — the hole says nothing about a buff raised after it.
+   */
+  dropPredating(ts: number): void {
+    let changed = false
+    for (const [ik, a] of [...this.active]) {
+      if (a.startedTs > ts) continue
+      this.active.delete(ik)
+      changed = true
+    }
+    for (const [ik, o] of [...this.open]) {
+      if (o.group.oldestTs > ts) continue
+      this.open.delete(ik)
+      changed = true
+    }
+    if (this.pending != null && this.pending.beganTs <= ts) {
+      this.pending = null
+      changed = true
+    }
+    if (changed) this.dirty = true
+  }
+
+  /**
+   * Hygiene sweep (Task #33, finding #6): retire any active past its per-spell cap.
+   *
+   * `heldBeforeTs` is the last-known-online instant of a log hole whose explanation has not
+   * arrived yet (0 when there is none). A BUFF older than it is exempt for the length of that
+   * wait, and the exemption is the point of it: if the hole turns out to be a logout, that
+   * buff's clock is about to be rewound by the absence, and judging it against a `now` from the
+   * far side would retire — a beat before the pause lands — exactly the buff the pause exists to
+   * keep. DEBUFFS get no exemption; their clocks never stop, so the cap means what it always did.
+   *
+   * THE HOLD IS A BUFF RULE, NOT A SELF-BUFF RULE, and JOS-149 leaves it that way on purpose.
+   * The unwitnessed-expiry cull now reaches NON-SELF buff rows (see `unwitnessedCullCap`), and
+   * those clocks are shifted by the pause exactly as a self buff's are — so the cull that judges
+   * them has to wait for the same answer the countdown is waiting for, or it would cull across an
+   * absence the pause was about to undo.
+   */
+  sweepHygiene(now: number, heldBeforeTs = 0): void {
     // CALLED ONCE PER EVENT (buffs.ts onEvent), so its cost is paid 1.4M times on a full replay.
     // It used to SPREAD the active map into a fresh array first — 1.4M throwaway arrays, and the
     // copy bought nothing: deleting the entry a Map iteration is currently standing on is
@@ -451,18 +558,63 @@ export class BuffInstances {
     // unchanged (JOS-59).
     let changed = false
     for (const [ik, a] of this.active) {
-      if (a.provisional) continue
       if (a.permanent) continue
-      const sKey = spellKey(a.spell)
-      const dbMs = this.stats.dbDurationFor(sKey)
-      const cap = Math.max(hygieneCapMs(a.p75, a.n), dbMs != null ? 2 * dbMs : 0)
-      if (now - a.startedTs > cap) {
-        this.active.delete(ik)
-        this.open.delete(ik)
-        changed = true
+      if (heldBeforeTs > 0 && a.cls !== 'debuff' && a.startedTs <= heldBeforeTs) continue
+      const dbMs = this.stats.dbDurationFor(instanceSpellKey(ik))
+      // THE LONG STOP goes first, because it is the one that means "we lost the thread" — and it
+      // is the only one that takes the PAIRING RECORD with it.
+      //
+      // A MULTISET RETIRES ONE LANDING AT A TIME (JOS-140): five mobs mezzed in one round age out
+      // one after another, and the row keeps whichever landings are still inside the cap.
+      const longCap = hygieneCap(a, dbMs)
+      if (now - a.startedTs > longCap) {
+        if (this.retireExpired(ik, now - longCap)) changed = true
+        continue
       }
+      // THE UNWITNESSED-EXPIRY CULL TAKES THE ROW AND LEAVES THE PAIRING RECORD (JOS-156).
+      //
+      // The owner's ruling is about a BAR SQUATTING AT 0s: a Tashania cast eleven seconds before
+      // he died must not sit there for the eleven minutes its DB row states. That is what this
+      // line does — the row is gone at `unwitnessedCullCap`, 15 s past a learned duration or 60 s
+      // past a DB floor.
+      //
+      // IT DOES NOT DELETE THE OPEN CAST, and that half is deliberate. MEASURED before it was
+      // written: with the record deleted too, twenty consecutive real-length Shiftless Deeds IV
+      // cycles (234 s each, against a 150 s DB row) mint ZERO samples and the estimate stays
+      // pinned to the DB floor forever — because the first cycle that would teach the true
+      // duration is the first one culled, and the learner can never ratchet past DB + 60 s. The
+      // bar would then draw 150 s for a 237 s slow, go overdue at 150 s, and be culled on every
+      // cast, permanently. THE ONE-LINE REVERT if the owner overrules the refinement is
+      // `this.open.delete(ik)` beside the delete below; four tests fail when you add it, three of
+      // them cut from the owner's own bytes.
+      //
+      // It costs nothing where the ruling actually bites: when the line is never coming — you
+      // died, the pet despawned — nothing ever pairs with the surviving record and the long stop
+      // above collects it minting nothing, exactly as before. `unwitnessedCullCap` governs what is
+      // SHOWN; `hygieneCap` governs what is REMEMBERED.
+      //
+      // The one thing given up against the old tight-cap path: a row whose landings straddle the
+      // timeout leaves whole rather than shedding the overdue ones and staying up on a smaller
+      // count. The long stop still sheds one at a time, and a group's landings are same-second
+      // rounds or refreshes of one another, so straddling the timeout is not a shape the round
+      // rule produces.
+      if (now - a.startedTs > unwitnessedCullCap(a) && this.active.delete(ik)) changed = true
     }
     if (changed) this.dirty = true
+  }
+
+  /** The long-stop path: shed the landings older than `cutoffTs`, and drop the record when empty. */
+  private retireExpired(ik: string, cutoffTs: number): boolean {
+    const open = this.open.get(ik)
+    if (open) {
+      open.group.dropExpired(cutoffTs)
+      if (!open.group.empty) {
+        this.restat(ik, open)
+        return true
+      }
+      this.open.delete(ik)
+    }
+    return this.active.delete(ik)
   }
 
   /** playerDeath strips SELF buffs: censor open SELF casts + clear their actives. */
@@ -492,26 +644,68 @@ export class BuffInstances {
   }
 
   /**
-   * Retire an ENTITY (Task #35, generalized — NO pet-specific branches). Censors every open
-   * cast + active instance bound to `entityKey`. Used on uncharm / summoned-pet death /
-   * hostile death / zone-left-behind / single-pet succession — the pet is just the entity
-   * currently claimed. Buffs on other players / arbitrary entities are censored the same way.
+   * A MOB OF THIS NAME DIED — the death censor, and since JOS-156 the ONE path every death
+   * SHAPE reaches. `modules/buffs.ts onDeath` calls it for `You have slain <X>!`, for
+   * `<X> has been slain by <Y>!` whoever Y is, and for the killerless `<X> died.` alike; the
+   * separate question of whether the ENTITY behind the name is retired stays there.
    *
-   * `hostileOnly` guards a plain-mob death: only DEBUFF instances on that mob are censored
-   * (a friendly buff can't be on a hostile), and an unknown-hostile debuff bucket is swept
-   * too (its inferred target just died).
+   * IT CLOSES ONE LANDING, NOT THE ROW (JOS-140 ruling 7). A group is a multiset of same-named
+   * mobs we believe are holding the spell, and one death is evidence about ONE of them. The
+   * OLDEST is closed for the identical reason a wear-off closes the oldest — the line names the
+   * mob but not WHICH mob of that name, so under a fixed duration the oldest is the
+   * maximum-likelihood one to have just ended. The row survives with one fewer on its count chip;
+   * only an empty group removes it. This used to be `retireEntity(key, {hostileOnly:true})`,
+   * which deleted the whole row, so killing one of four slowed mobs cleared all four.
+   *
+   * AND IT MINTS NOTHING. A land-to-death span is not a duration — the spell was cut short by the
+   * corpse, not observed running out. That refusal is STRUCTURAL: unlike `recordFade`, this method
+   * discards what `closeOldest` hands back and never reaches `addSample` at all, exactly as
+   * `sweepHygiene` never has. `contaminateAll` is the separate half — it is about the landings
+   * that SURVIVE the close, which are now landings of a group that has lost track of which mob is
+   * which, and it is buffRounds.ts ruling 5's own sentence (a death contaminates) written where
+   * the death happens rather than left as an accident of how rounds are counted.
+   *
+   * An ACTIVE with no open record behind it has no group to count down and no landing to close,
+   * so it clears outright.
    */
-  retireEntity(entityKey: string, opts?: { hostileOnly?: boolean }): void {
-    const hostileOnly = opts?.hostileOnly === true
+  onEntityDeath(entityKey: string, ts: number): void {
     let changed = false
     for (const [ik, o] of [...this.open]) {
-      if (openMatches(o, entityKey, hostileOnly)) {
+      if (!deathCensorsOpen(o, entityKey, this.stats.classOf(o.spellKey) === 'debuff')) continue
+      o.group.contaminateAll()
+      o.group.closeOldest(ts)
+      if (!o.group.empty) this.restat(ik, o)
+      else if (this.open.delete(ik)) this.active.delete(ik)
+      changed = true
+    }
+    for (const [ik, a] of [...this.active]) {
+      if (this.open.has(ik) || !deathCensorsActive(a, instanceEntityKey(ik), entityKey)) continue
+      this.active.delete(ik)
+      changed = true
+    }
+    if (changed) this.dirty = true
+  }
+
+  /**
+   * Retire an ENTITY (Task #35, generalized — NO pet-specific branches). Censors every open
+   * cast + active instance bound to `entityKey`, buff and debuff alike. Used on uncharm /
+   * summoned-pet death / broken-charm death / zone-left-behind / single-pet succession — the pet
+   * is just the entity currently claimed. Buffs on other players / arbitrary entities are
+   * censored the same way.
+   *
+   * The plain-mob death no longer comes here (JOS-156): a death is about one mob of a name, not
+   * about an identity, so it goes to `onEntityDeath` above.
+   */
+  retireEntity(entityKey: string): void {
+    let changed = false
+    for (const [ik, o] of [...this.open]) {
+      if (o.entityKey === entityKey) {
         this.open.delete(ik)
         changed = true
       }
     }
-    for (const [ik, a] of [...this.active]) {
-      if (activeMatches(a, instanceEntityKey(ik), entityKey, hostileOnly)) {
+    for (const ik of [...this.active.keys()]) {
+      if (instanceEntityKey(ik) === entityKey) {
         this.active.delete(ik)
         changed = true
       }
@@ -557,17 +751,4 @@ export class BuffInstances {
   private build(spec: ActiveSpec): ActiveBuff {
     return buildActive(spec, this.stats, this.pets)
   }
-}
-
-/**
- * Permanent Illusion AA (Task #34): a SELF illusion cast at or after the AA was owned never
- * expires, so it is shown with no countdown and pairs no duration sample.
- */
-function isPermanentIllusion(
-  self: boolean,
-  illusion: boolean,
-  ts: number,
-  ownedTs: number | undefined
-): boolean {
-  return self && illusion && ownedTs != null && ts >= ownedTs
 }

@@ -223,7 +223,7 @@ function DestructiveActions({
         title="Forget this report's log slice?"
         body={
           `The log slice object is deleted from the bucket.\n\n` +
-          `The report itself STAYS — the description is the bug report, and keeping it is why ` +
+          `The report itself STAYS - the description is the bug report, and keeping it is why ` +
           `"we deleted your log" is not a claim about the rest. A redaction timestamp is ` +
           `recorded. This cannot be undone. To remove everything from one install, use wipe.`
         }
@@ -250,7 +250,7 @@ function DestructiveActions({
       >
         <TextField
           size="small"
-          label="Reason (required — the profile records why)"
+          label="Reason (required - the profile records why)"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           fullWidth

@@ -25,6 +25,7 @@
 //      anything else. There is no timer in this file at all — no rAF is scheduled while the
 //      mouse is still, because main sends nothing while the point is unchanged.
 
+import { ringStrokeColor } from '@shared/presencePrefs'
 import type { CursorPoint, CursorRingPrefs } from '@shared/presencePrefs'
 
 /** The bridge `preload/cursor.ts` installs. Narrow on purpose — this window can receive its
@@ -54,6 +55,10 @@ function applyConfig(cfg: CursorRingPrefs): void {
   ring.style.width = `${cfg.sizePx}px`
   ring.style.height = `${cfg.sizePx}px`
   ring.style.borderWidth = `${cfg.thicknessPx}px`
+  // The colour is a STYLE assignment, so only a `#rrggbb` may reach it — `ringStrokeColor` takes
+  // the value through the same normalizer main stored it through, and answers with an rgba()
+  // built from three numbers. Nothing a store file could carry becomes a CSS declaration here.
+  ring.style.borderColor = ringStrokeColor(cfg.colorHex)
   // Re-centre on the last known point. Without this a size change while the mouse is STILL
   // would leave the ring off-centre by the radius delta until the pointer next moved — and a
   // Preferences slider is exactly the moment the pointer is somewhere else entirely.

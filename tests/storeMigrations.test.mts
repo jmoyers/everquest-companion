@@ -190,7 +190,9 @@ test('an EMPTY pre-framework store migrates to a valid current store, not to jun
     // No `enabled` on the voice blob: schema v8 retired the master switch (an alert's own
     // `audio` is the whole switch), so a fresh store carries configuration and no permission.
     voice: { engine: 'system', voiceId: null, rate: 1, volume: 1 },
-    cursorRing: { enabled: false, sizePx: 44, thicknessPx: 4 },
+    // `colorHex` joined the ring blob in JOS-125 with NO schema bump — one more field the
+    // step-5 normalizer defaults, and white is the colour the ring already had.
+    cursorRing: { enabled: false, sizePx: 44, thicknessPx: 4, colorHex: '#ffffff' },
     overlayAutoHide: { hideWhenNotRunning: true, hideWhenUnfocused: false },
     // `funnelsDone` is the once-ever funnel ledger (src/main/telemetry/funnels.ts): empty here,
     // which is what makes a fresh install able to report `installed` exactly once.

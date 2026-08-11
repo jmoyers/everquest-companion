@@ -19,6 +19,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'rea
 import type { MapData, MapPackPrefs, MapPoint, MapSearchHit, ZoneShort } from '@shared/maps'
 import type { MobEntry } from '@shared/types'
 import { MOB_CATALOG } from '../mobs/mobSearch'
+import { CROSS_ZONE_LIMIT, crossZoneRows, type CrossZoneRow } from './crossZone'
 import { loadPaneOpen, savePaneOpen } from './useMapData'
 import type { MapViewport } from './useMapViewport'
 import {
@@ -112,37 +113,31 @@ export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPa
   }
 }
 
-// ---- the OTHER ZONES half -----------------------------------------------------------------
-
-/** Hits fetched per query. Main clamps this again; a longer list is scrolled, not fetched. */
-const HIT_LIMIT = 60
+// ---- the SOMEWHERE ELSE half ---------------------------------------------------------------
 
 /** Module-level empty so a query that asks nothing hands the pane a STABLE reference. */
 const NO_HITS: MapSearchHit[] = []
 
+/** Module-level empty for the same reason, on the merged side. */
+const NO_ROWS: CrossZoneRow[] = []
+
 /**
- * THE THIRD SECTION: labels in every OTHER installed zone.
+ * The MAP CORPUS half of the third section: label text in every installed pack.
  *
  * This is the capability the toolbar's `All zones` scope carried, moved into the one filter box —
  * "which zone is Ambassador D`Vinn in?" is a question the corpus makes answerable and nothing
  * else in the app answers. It is a SECTION rather than a mode because the two other sections are
  * scoped to the map on screen: one query, three answers, each labelled with where it came from.
  *
- * The zone ON SCREEN is filtered out here rather than in main: those labels are already the
- * pane's own "Map labels" section, and listing them twice under two headings would make the
- * sections' authorities meaningless.
- *
  * It carries the viewer's pack prefs for the same reason the old in-zone search did — the corpus
  * index is built once under DEFAULT prefs and ignores them, but `maps:search` takes one field and
  * the caller has no business deciding which half reads it.
+ *
+ * The zone ON SCREEN is NOT filtered here: `crossZoneRows` drops it from both halves at once, so
+ * the exclusion is stated in one place and a zone change re-derives rather than re-fetching.
  */
-export function useCorpusHits(args: {
-  query: string
-  /** The zone actually ON SCREEN, whose hits belong to the map-labels section instead. */
-  zone: ZoneShort | undefined
-  prefs: MapPackPrefs
-}): MapSearchHit[] {
-  const { query, zone } = args
+export function useCorpusHits(args: { query: string; prefs: MapPackPrefs }): MapSearchHit[] {
+  const { query } = args
   const [hits, setHits] = useState<MapSearchHit[]>(NO_HITS)
   // The pref FIELDS, not the object — useMapData.ts's rule: a caller that rebuilds `prefs` every
   // render must not be able to re-query on every render.
@@ -156,14 +151,14 @@ export function useCorpusHits(args: {
     let cancelled = false
     void window.eq
       .searchMapPoints(query, {
-        limit: HIT_LIMIT,
+        limit: CROSS_ZONE_LIMIT,
         prefs: {
           ...(geometry == null ? {} : { geometry }),
           ...(labels == null ? {} : { labels })
         }
       })
       .then((res) => {
-        if (!cancelled) setHits(res.filter((h) => h.zone !== zone))
+        if (!cancelled) setHits(res)
       })
       .catch(() => {
         if (!cancelled) setHits(NO_HITS)
@@ -171,9 +166,31 @@ export function useCorpusHits(args: {
     return () => {
       cancelled = true
     }
-  }, [query, zone, geometry, labels])
+  }, [query, geometry, labels])
 
   return hits
+}
+
+/**
+ * THE THIRD SECTION, whole: the map corpus and the wiki's bestiary, ranked into one list (JOS-135).
+ *
+ * The bestiary half is a FLAT SCAN in the renderer over the committed catalog (crossZone.ts carries
+ * the measurement), so it costs no IPC and answers while the map-corpus promise is still in flight;
+ * the merge simply re-runs when it lands. The installed stems come from the pack listing so a row
+ * can say "no map installed for this zone" instead of taking you to an empty picker.
+ */
+export function useCrossZoneRows(args: {
+  query: string
+  hits: readonly MapSearchHit[]
+  here: ZoneShort | null
+  zones: readonly ZoneShort[]
+}): CrossZoneRow[] {
+  const { query, hits, here, zones } = args
+  const installed = useMemo(() => new Set(zones), [zones])
+  return useMemo(() => {
+    if (query.length === 0) return NO_ROWS
+    return crossZoneRows({ query, catalog: MOB_CATALOG, hits, here, installed })
+  }, [query, hits, here, installed])
 }
 
 // ---- the view's whole pane wiring, in one call ------------------------------------------
@@ -189,8 +206,8 @@ export interface ZonePaneState extends MapPaneState {
   /** Is the sidebar on screen? ON by default, remembered in `eq.maps.pane`. */
   open: boolean
   setOpen: (open: boolean) => void
-  /** Matching labels in every OTHER installed zone. Empty until the box has something in it. */
-  hits: MapSearchHit[]
+  /** Matches in every OTHER zone - map labels and wiki mobs alike. Empty until the box has text. */
+  hits: CrossZoneRow[]
 }
 
 /**
@@ -209,8 +226,10 @@ export function useZonePane(args: {
   zoneName: string | null
   /** The viewer's per-layer pack preference, carried into the cross-zone search. */
   prefs: MapPackPrefs
+  /** Every stem an installed pack provides — so a cross-zone row knows whether it has a map. */
+  zones: readonly ZoneShort[]
 }): ZonePaneState {
-  const { vp, data, zoneName, prefs } = args
+  const { vp, data, zoneName, prefs, zones } = args
   const [open, setOpenState] = useState<boolean>(loadPaneOpen)
   const setOpen = useCallback((next: boolean) => {
     setOpenState(next)
@@ -234,8 +253,15 @@ export function useZonePane(args: {
     mapId: data?.zone ?? '',
     onCenter
   })
-  // The box echoes every keystroke; only what reaches the IPC waits for the paint to settle.
-  const hits = useCorpusHits({ query: useDeferredValue(pane.query).trim(), zone: data?.zone, prefs })
+  // The box echoes every keystroke; only what reaches the IPC and the catalog scan waits for the
+  // paint to settle.
+  const query = useDeferredValue(pane.query).trim()
+  const hits = useCrossZoneRows({
+    query,
+    hits: useCorpusHits({ query, prefs }),
+    here: data?.zone ?? null,
+    zones
+  })
   return { ...pane, open, setOpen, hits }
 }
 

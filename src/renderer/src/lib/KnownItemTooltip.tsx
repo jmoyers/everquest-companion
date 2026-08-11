@@ -25,17 +25,39 @@
 // because every other item surface in the app is hover-first and a pin would need a dismiss
 // affordance on a surface that has none.
 //
+// CLICK-THROUGH MODE (`clickThrough`, JOS-181) — how this card is allowed BACK onto a surface
+// that has a dropdown toolbar over it. Twice now (JOS-127 on the Loot ledger, JOS-143 on the Sky
+// tab) the owner has been unable to work a `Select` because a card belonging to a row UNDER the
+// toolbar opened upward across it and held the pointer; both times the answer was to delete the
+// card, and on the Sky tab the owner has now ruled the trade the other way — the card comes back,
+// the defect does not. So the mode fixes the three things that made the card a click-eater, and
+// each of them is stated here rather than inherited:
+//   1. it opens DOWNWARD (`bottom-start`) and CANNOT go up — `flip` is disabled, and so is
+//      `preventOverflow`'s main axis, which is the other modifier that can slide a card back
+//      across the row it belongs to. A card whose top edge is always below its anchor's top edge
+//      can never be on a toolbar its anchor is below. (The price is honest: a card anchored on
+//      the very last visible row is clipped by the window bottom rather than flipping above it.)
+//   2. it holds NO pointer events. `disableInteractive` already gets MUI's popper there, but the
+//      guarantee is written out as `pointerEvents: 'none'` as well — a default is someone else's
+//      decision, and this one is the whole defect.
+//   3. it CLOSES ON POINTERDOWN, anywhere, in the capture phase — so the card is gone before the
+//      control the user just aimed at opens its own list, rather than floating over the options.
+// The mode is opt-in per call site because the interactive outer card is a real feature elsewhere
+// (it is how you hover a quest REWARD name inside the card); what makes it structural is that a
+// surface under a toolbar mounts the card through one wrapper that always passes it, and
+// tests/tooltipCursor.test.mts derives that from the tree.
+//
 // MAIN WINDOW ONLY: it draws ObservedItemWindow, which subscribes to the itemTiers module over
 // `window.eq`. The overlay bundle has no such bridge (and stays MUI-free) — the overlay gets
 // the tradeskill FILTER, not this card.
 
-import { type JSX, useEffect, useState, type ReactElement } from 'react'
+import { type JSX, type ReactNode, useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Box, CircularProgress, Stack, Typography } from '@mui/material'
 import type { ItemKnowledge } from '@shared/types'
 import { EQ_ITEM_COLORS } from './ItemWindow'
 import { ObservedItemWindow } from './ObservedItemWindow'
 import { questUseOutcomes, questUseWhere } from './itemKnowledgeView'
-import { Tooltip } from './Tooltip'
+import { Tooltip, type TooltipProps } from './Tooltip'
 
 /** How many quest uses / recipes the card lists before collapsing to "+N more". */
 const MAX_LISTED = 4
@@ -204,11 +226,23 @@ function WhatItsFor({ data, depth }: { data: ItemKnowledge; depth: number }): JS
 function KnownItemCard({
   name,
   knowledge,
-  depth
+  outcomeDepth,
+  stats,
+  extra
 }: {
   name: string
   knowledge?: ItemKnowledge
-  depth: number
+  /**
+   * The nesting level the outcome names inside this body are drawn at — the ONLY thing depth
+   * decides here. `MAX_HOVER_DEPTH` or shallower and they are hoverable; deeper and they are plain
+   * text, which is how both a depth-1 card and a click-through card (whose popper takes no pointer
+   * events, so nothing inside it could be hovered anyway) end up saying the same thing.
+   */
+  outcomeDepth: number
+  /** a stat block the CALLER already holds — used only when the lookup has none of its own */
+  stats?: string
+  /** a caller's own knowledge block, drawn under the item window (see the props doc) */
+  extra?: ReactNode
 }): JSX.Element {
   const { data, loading } = useKnowledgeOnOpen(name, knowledge)
   return (
@@ -218,7 +252,9 @@ function KnownItemCard({
       <ObservedItemWindow
         name={name}
         stats={data?.stats}
-        rawStats={data?.statsBlock}
+        // The lookup wins when it has a block; the caller's is the FALLBACK, never an override —
+        // a Sky quest's scraped stat text is one wiki table's copy of what the item DB states.
+        rawStats={data?.statsBlock ?? stats}
         iconId={data?.iconId}
         flavor={data?.summary}
         compact
@@ -229,15 +265,31 @@ function KnownItemCard({
           <Typography sx={{ color: EQ_ITEM_COLORS.label, fontSize: 11 }}>Looking up…</Typography>
         </Stack>
       )}
-      {data && <WhatItsFor data={data} depth={depth} />}
+      {/* The caller's block sits ABOVE "what it's for": on the surface that passes one, where the
+          item comes from is the question the tab exists to answer, and the quest/recipe uses are
+          the generic afterword. It never waits on the lookup — it is knowledge we already hold. */}
+      {extra}
+      {data && <WhatItsFor data={data} depth={outcomeDepth} />}
       {data?.offline && (
         <Typography sx={{ color: EQ_ITEM_COLORS.label, fontSize: 10, mt: 0.4 }}>
-          offline — showing what&apos;s known locally
+          offline - showing what&apos;s known locally
         </Typography>
       )}
     </Box>
   )
 }
+
+/**
+ * The popper modifiers that make a click-through card unable to reach the toolbar above it
+ * (header, point 1). Both are DISABLED modifiers: `flip` is what would move a bottom-placed card
+ * to the top when it runs out of room, and `preventOverflow`'s main axis is what would slide it up
+ * when the window's bottom edge is close. With neither, the card's top edge is always its anchor's
+ * bottom edge, and the anchor is always below the toolbar.
+ */
+const NEVER_UPWARD = [
+  { name: 'flip', enabled: false },
+  { name: 'preventOverflow', options: { mainAxis: false, altAxis: true } }
+]
 
 export interface KnownItemTooltipProps {
   /** item name exactly as displayed (keeps its ` +N`) */
@@ -246,24 +298,95 @@ export interface KnownItemTooltipProps {
   knowledge?: ItemKnowledge
   /** nesting level; 0 = the card you hovered. Callers never pass this. */
   depth?: number
+  /** a raw EQ stat-block string the caller holds, shown only when the lookup has none */
+  stats?: string
+  /**
+   * A block of the CALLER's own knowledge about this item, drawn under the item window — the Sky
+   * tracker's "where, and who drops it" is the one that exists (features/posky/SkyItemCard.tsx).
+   * It is a node rather than a shape because what a surface knows is that surface's business; the
+   * card only owns where it goes.
+   */
+  extra?: ReactNode
+  /**
+   * Open DOWNWARD, never flip up, take no pointer events, and close on any pointerdown — the mode
+   * that makes this card safe above a dropdown toolbar (JOS-181; the header states all three and
+   * why). Costs the interactive outer card, so an outcome name inside is plain text here.
+   */
+  clickThrough?: boolean
   /** the anchor: any single element that can hold a ref */
   children: ReactElement
 }
 
+/**
+ * The click-through card's open state, which it has to hold itself for one reason: it CLOSES ON
+ * POINTERDOWN, anywhere. Capture phase, so nothing downstream can swallow the event first, and
+ * `pointerdown` rather than `click` so the card is gone before the control the user just aimed at
+ * opens its own option list over the same band.
+ *
+ * Returns nothing at all when inactive — an ordinary card stays UNCONTROLLED, which is MUI's own
+ * hover/focus/touch behaviour and not something worth reimplementing to share one code path.
+ */
+function useClickThroughControl(active: boolean): Partial<Pick<TooltipProps, 'open' | 'onOpen' | 'onClose'>> {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => {
+    setOpen(false)
+  }, [])
+  const show = useCallback(() => {
+    setOpen(true)
+  }, [])
+  useEffect(() => {
+    if (!active || !open) return
+    window.addEventListener('pointerdown', close, true)
+    return () => {
+      window.removeEventListener('pointerdown', close, true)
+    }
+  }, [active, open, close])
+  return active ? { open, onOpen: show, onClose: close } : {}
+}
+
 /** Hover an item name → its EQ-style window plus what it's for. See the header for nesting. */
-export function KnownItemTooltip({ name, knowledge, depth = 0, children }: KnownItemTooltipProps): JSX.Element {
+export function KnownItemTooltip({
+  name,
+  knowledge,
+  depth = 0,
+  stats,
+  extra,
+  clickThrough = false,
+  children
+}: KnownItemTooltipProps): JSX.Element {
   const nested = depth > 0
+  const controlled = useClickThroughControl(clickThrough)
   return (
     <Tooltip
-      title={<KnownItemCard name={name} knowledge={knowledge} depth={depth} />}
+      {...controlled}
+      title={
+        <KnownItemCard
+          name={name}
+          knowledge={knowledge}
+          // A click-through card's popper takes no pointer events, so an outcome name inside it
+          // could never be hovered — it is drawn past the cap as plain text rather than offered
+          // with a dotted underline that nothing answers.
+          outcomeDepth={clickThrough ? MAX_HOVER_DEPTH + 1 : depth}
+          stats={stats}
+          extra={extra}
+        />
+      }
       arrow
       // The nested card opens to the SIDE and is NON-interactive: you read it in place, so the
-      // outer card never has to surrender the pointer to keep it on screen.
-      placement={nested ? 'right' : 'top'}
-      disableInteractive={nested}
+      // outer card never has to surrender the pointer to keep it on screen. A click-through card
+      // opens DOWNWARD, which is the placement that cannot land on the toolbar above its anchor.
+      placement={nested ? 'right' : clickThrough ? 'bottom-start' : 'top'}
+      disableInteractive={nested || clickThrough}
       enterDelay={nested ? 120 : 250}
       leaveDelay={nested ? 0 : 80}
       slotProps={{
+        popper: clickThrough
+          ? // Both halves of the guarantee, said out loud: the card cannot be moved above its
+            // anchor, and it cannot be hit. `disableInteractive` already leaves MUI's popper at
+            // `pointer-events: none`; this repeats it because that is a library default and this
+            // is the defect the whole mode exists for.
+            { modifiers: NEVER_UPWARD, sx: { pointerEvents: 'none' } }
+          : undefined,
         tooltip: {
           sx: {
             bgcolor: EQ_ITEM_COLORS.bg,

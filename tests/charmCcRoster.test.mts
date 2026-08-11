@@ -18,15 +18,27 @@
 // guess — and it is re-derived here on every run. A future scrape that adds a member fails this
 // suite instead of going quietly mute in somebody's ears.
 //
-// AND THE BARD'S SONG IS A MEZ, NOT A CHARM — stated because the report says charm and the
-// distinction decides which alert fires. Evidence from the reporter's own slice (feedback report
-// 01KZAG2QAW885YJNRTDDND8BF2, read-only, NEVER committed — AGENTS.md's reporter-slice rule):
-// each of their five `You begin singing Solon's Bewitching Bravura IX.` lines is followed ~2 s
-// later by `a fire giant warrior's eyes glaze over.`, which spells.json records as Bravura's own
-// landing message; meanwhile EVERY `<mob> has been charmed.` line in that slice trails another
-// player's `Aevus begins casting Allure X.` by one second. So the bard mezzes, an enchanter
-// beside them charms, and `Your Solon's Bewitching Bravura spell has worn off of <mob>.` is a MEZ
-// break. It now fires the "Mez / root broke" group — the honest alert — instead of nothing.
+// AND THE ORACLE HAS ONE EXCEPTION, BECAUSE IT PRODUCED ONE WRONG ANSWER (JOS-200).
+//
+// JOS-84 concluded from the landing-message family that `Solon's Bewitching Bravura` is a mez, and
+// it is not: it is the bard's level-39 CHARM. The oracle is still right about what it can see —
+// the four songs really do share `Someone 's eyes glaze over.` — but spells.json HAS NO EFFECT
+// COLUMN (`spellType` is only Beneficial/Detrimental), so a shared sentence is evidence of a
+// shared sentence and nothing more. A message family is not an effect family. That is the whole
+// bug, and `FAMILY_EXCEPTIONS` below is where the oracle now admits it, with the evidence
+// attached, rather than being quietly widened until it stops complaining.
+//
+// THE EVIDENCE, from the very slice JOS-84 cited (feedback report 01KZAG2QAW885YJNRTDDND8BF2,
+// read-only, NEVER committed — AGENTS.md's reporter-slice rule) and from the half of it JOS-84
+// did not read: fire giants sing the song AT that reporter three times, and every episode runs
+// `<mob> begins singing Solon's Bewitching Bravura.` → 3 s later `You lose control of yourself!`
+// → 21-32 s later `You are no longer captivated.` together with `You have control of yourself
+// again.` in the same second. 3 s is the song's own `castTimeMs`, the captivate line is its own
+// `msgWearsOff`, and lose/regain-control is EverQuest's charm-on-a-player pair — the same slice
+// separately carries nine `You are stunned!` / `You are no longer stunned.` episodes, so the
+// client prints different words for the two effects and this is not the mez one. The reporter's
+// own casts hold a mob 51-117 s before the break line against a listed duration of 18 s, and three
+// reporters on three versions (0.14.0, 0.16.0, 0.18.0) each called it the bard charm unprompted.
 //
 // The one sentence the owner's log lacks is INJECTED as a line here, quoted verbatim from the
 // slice with the mob's name swapped for one the owner's own log prints, exactly as the
@@ -94,9 +106,16 @@ function castableSharing(message: string): string[] {
 // THE MEZ / ROOT FAMILIES the parser routes to `cc`. Each key is a landing message spells.json
 // records verbatim; the comment names the ladder it is.
 const CC_FAMILIES: Record<string, string> = {
-  // The bard mez ladder — three messages, six songs, and before JOS-84 `ccSpell` held one of them.
-  "Someone 's eyes glaze over.": 'bard mez (Song of the Sirens 27, Pixie Strike 28, Bravura 39)',
-  "Target's eyes glaze over.": "bard mez (Sionachie's Dreams 40)",
+  // The bard mez ladder — TWO messages now, six songs, and before JOS-84 `ccSpell` held one of
+  // them. It was three messages until JOS-161: `Sionachie's Dreams` used to sit alone under
+  // `Target's eyes glaze over.`, which is the SAME sentence with the wrong subject placeholder,
+  // and the corrections overlay folds it into the family the other three already shared. That is
+  // exactly what the R1 assertion below is for — the family is read off the LOADED db, so a
+  // correction that moved a song shows up here as the family it moved into.
+  // …and since JOS-200 it is THREE songs, not four: `Solon's Bewitching Bravura` prints the same
+  // sentence and is a charm (FAMILY_EXCEPTIONS, below).
+  "Someone 's eyes glaze over.":
+    "bard mez (Song of the Sirens 27, Pixie Strike 28, Sionachie's Dreams 40)",
   "Someone 's head nods.": "bard mez (Kelin's Lucid Lullaby 15)",
   // The bard root pair — Melodic Binding 20 and its DIRECT UPGRADE, Assonant Binding 51, one
   // word apart. The upgrade was the one missing, which is the level-up failure exactly.
@@ -112,11 +131,31 @@ const CHARM_FAMILIES: Record<string, string> = {
   'Someone moans.': 'the Necromancer charm-undead ladder (Dominate Undead 18 → Enslave Death 60)'
 }
 
+/**
+ * THE ONE SPELL THE MESSAGE ORACLE GETS WRONG (JOS-200), and the shape of the admission.
+ *
+ * Keyed by spell name → the roster it ACTUALLY belongs to, so the exception is a claim about one
+ * named song rather than a hole punched in a family. R1 skips these when walking a CC family and
+ * R1b then asserts each one is classified the way this table says — so an exception cannot rot
+ * into "unclassified": it still has to be in a roster, just the other one.
+ *
+ * Adding a row here is not a way to make a red test green. It is a statement that the DB's message
+ * grouping and the GAME disagree about a specific spell, and it needs the same kind of evidence the
+ * header carries for this one: log lines showing the effect, not an intuition about the name.
+ */
+const FAMILY_EXCEPTIONS: Record<string, 'charm'> = {
+  // Bard 39. Charms — `You lose control of yourself!` 3 s after the sung line, three for three in
+  // slice 01KZAG2QAW885YJNRTDDND8BF2; see the header. Shares the mez ladder's landing sentence and
+  // nothing else.
+  "Solon's Bewitching Bravura": 'charm'
+}
+
 test('JOS-84 R1: ccSpell classifies every castable member of every mez/root family it claims', () => {
   for (const [message, ladder] of Object.entries(CC_FAMILIES)) {
     const members = castableSharing(message)
     assert.ok(members.length > 0, `spells.json must still carry ${ladder}`)
     for (const name of members) {
+      if (name in FAMILY_EXCEPTIONS) continue
       assert.ok(
         cfg.ccSpell.test(name),
         `ccSpell misses "${name}" — ${ladder}. A ${name} break would parse as a plain buffFade ` +
@@ -126,6 +165,22 @@ test('JOS-84 R1: ccSpell classifies every castable member of every mez/root fami
       // would retire a pet the player never had.
       assert.ok(!cfg.charmSpell.test(name), `"${name}" is a hold, not a charm`)
     }
+  }
+})
+
+test('JOS-200 R1b: every family exception is still classified — into the OTHER roster', () => {
+  // The exception buys a skip from R1, never a pass out of the rosters altogether. A spell that
+  // fell out of both would parse its break to `buffFade` and fire nothing at all, which is the
+  // original JOS-84 defect wearing a different hat.
+  for (const [name, roster] of Object.entries(FAMILY_EXCEPTIONS)) {
+    assert.ok(
+      db.byKey.has(name.toLowerCase()),
+      `spells.json (as corrected) must still carry "${name}" — an exception naming a spell that ` +
+        'no longer exists is a stale claim, not a passing test'
+    )
+    assert.equal(roster, 'charm', 'only the charm direction is described here')
+    assert.ok(cfg.charmSpell.test(name), `charmSpell must claim "${name}"`)
+    assert.ok(!cfg.ccSpell.test(name), `ccSpell must NOT also claim "${name}" — one roster each`)
   }
 })
 
@@ -141,28 +196,33 @@ test('JOS-84 R2: charmSpell classifies every castable member of every charm fami
 
 // ── R3: the reporter's own sentence, end to end ──────────────────────────────────────────────
 
-test("JOS-84 R3: the bard's Bravura break parses as a cc refresh and fires the group alert", () => {
+test("JOS-200 R3: the bard's Bravura break parses as an uncharm and fires the charm-break alert", () => {
   // The injected sentence — verbatim from slice 01KZAG2QAW885YJNRTDDND8BF2 with the mob swapped
   // for one the owner's log prints (the slice's was `a fire giant warrior`).
+  //
+  // THIS ASSERTION USED TO SAY THE OPPOSITE, and the reversal is the ticket. JOS-84 pinned
+  // `group:cc:broke` here and explicitly pinned the ABSENCE of `charm-break`, on the strength of
+  // the landing-message family; three reporters (01KZM7F36JD12WYF15DHCCWNEE 0.14.0,
+  // 01KZMPYP1QA3N02FE42T473TZM 0.16.0, 01KZPJZSTYPSKGR3GRP3FVW8RQ 0.18.0) each said charm and each
+  // was right. The header carries the log evidence. What they asked for is the line below.
   const line = wornOff("Solon's Bewitching Bravura", 'a froglok ton knight')
   const ev = parseEvent(line, 0)
-  assert.equal(ev?.kind, 'cc', 'a bard mez break is a cc refresh, not a buffFade')
-  if (ev?.kind !== 'cc') return
-  assert.equal(ev.refresh, true)
+  assert.equal(ev?.kind, 'uncharm', 'a bard charm break is an uncharm, not a cc refresh')
+  if (ev?.kind !== 'uncharm') return
   assert.equal(ev.mob, 'a froglok ton knight')
   assert.equal(ev.spell, "Solon's Bewitching Bravura")
 
-  assert.deepEqual(fire(GROUP_DEFS, [line]), ['group:cc:broke'])
+  assert.deepEqual(fire(GROUP_DEFS, [line]), ['charm-break'])
 })
 
 test('JOS-84 R4: the whole bard crowd-control ladder fires the mez/root group', () => {
   // Every song at its own timestamp so the group's 3 s cooldown does not collapse them.
+  // Bravura is NOT in this list since JOS-200 — it is a charm, and R3 above is its assertion.
   const songs = [
     "Kelin's Lucid Lullaby",
     "Largo's Melodic Binding",
     "Solon's Song of the Sirens",
     "Crission's Pixie Strike",
-    "Solon's Bewitching Bravura",
     "Sionachie's Dreams",
     "Largo's Assonant Binding"
   ]
@@ -194,4 +254,30 @@ test('JOS-84 R6: the regression gate — the enchanter shapes are untouched', ()
   assert.equal(slow?.kind, 'buffFade', 'a slow is an ordinary named-target fade — the slow group ' +
     'matches it by SPELL, so misfiling it as cc would silence that alert too')
   assert.deepEqual(fire(GROUP_DEFS, [wornOff('Shiftless Deeds', 'King Tranix')]), ['group:slow:mob'])
+})
+
+test('JOS-200 R7: the exception is one song, not its landing family', () => {
+  // The guard the FAMILY_EXCEPTIONS table needs to be worth writing down: `Solon's Song of the
+  // Sirens` prints the SAME landing sentence as Bravura and is still a mez, so a stem that reached
+  // too far — matching `solon.s` rather than `solon.s (bewitching )?bravura`, say — would silently
+  // convert the level-27 song's mez break into a charm break and announce a pet that never existed.
+  assert.equal(parseEvent(wornOff("Solon's Song of the Sirens", 'a froglok ton knight'), 0)?.kind, 'cc')
+  assert.equal(parseEvent(wornOff("Crission's Pixie Strike", 'a froglok ton knight'), 1)?.kind, 'cc')
+  assert.equal(parseEvent(wornOff("Sionachie's Dreams", 'a froglok ton knight'), 2)?.kind, 'cc')
+  assert.equal(parseEvent(wornOff("Solon's Bewitching Bravura", 'a froglok ton knight'), 3)?.kind, 'uncharm')
+
+  // …and end to end through the real groups, at spaced timestamps so no cooldown collapses them:
+  // one charm break, three mez breaks, from four sentences a message oracle cannot tell apart.
+  const lines = [
+    `[Wed Aug 05 22:30:00 2026] Your Solon's Bewitching Bravura spell has worn off of a froglok ton knight.`,
+    `[Wed Aug 05 22:31:00 2026] Your Solon's Song of the Sirens spell has worn off of a froglok ton knight.`,
+    `[Wed Aug 05 22:32:00 2026] Your Crission's Pixie Strike spell has worn off of a froglok ton knight.`,
+    `[Wed Aug 05 22:33:00 2026] Your Sionachie's Dreams spell has worn off of a froglok ton knight.`
+  ]
+  assert.deepEqual(fire(GROUP_DEFS, lines), [
+    'charm-break',
+    'group:cc:broke',
+    'group:cc:broke',
+    'group:cc:broke'
+  ])
 })

@@ -172,6 +172,15 @@ export function ensureAnalyticsId(): string | null {
  * Record one ALREADY-VALIDATED event. The IPC handler validates renderer input at the boundary
  * and main-side callers construct typed values, so this function's job is the gate and the ring,
  * not the shape.
+ *
+ * THERE IS EXACTLY ONE CARVE-OUT FROM THIS GATE IN THE WHOLE FEATURE, and it is named here so a
+ * reader auditing "nothing is collected when the switch is off" finds it at the gate rather than
+ * by accident: the OPT-OUT NOTICE (JOS-109, `./optOut.ts`). It is authored AT the flip and sent
+ * as its own single-event batch, so it never enters this ring and never passes through this
+ * function — which is why the gate below needs no exception written into it. The carve-out is
+ * real all the same: one fieldless event leaves the machine after the switch reads false, it is
+ * disclosed in TELEMETRY.md, and `./optOut.ts` argues every term of it. Nothing else may ever
+ * take that route; everything else in this app goes through the line below.
  */
 export function recordEvent(ev: TelemetryEvent): void {
   if (!telemetryCollectEnabled(getTelemetryPrefs())) return

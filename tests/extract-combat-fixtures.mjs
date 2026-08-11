@@ -429,3 +429,46 @@ slice(1142851, 1142980, 'w57-ranged-lane.log')
 // throughout, slaying one at 16:09:42 and another at 16:09:57, so the span is a clean fight of
 // his own with a real critical bow shot landing beside it.
 slice(1438572, 1438700, 'w58-ranged-critical.log')
+
+// ---------------------------------------------------------------------------
+// W61 A CC HOLD SPEAKS FOR AN ENGAGED HOSTILE — NOT FOR YOUR OWN PET (JOS-176). The owner's
+// Fused Hate run, Sun Aug 09: the Grandmaster R`tal encounter OPENED at 20:10:02, seventy-eight
+// seconds before the pull, so the boss fight's meter carried the whole preceding twin skirmish.
+//
+// The shape only exists because in the Plane of Hate the owner's CHARMED PET and the mobs he is
+// killing share one name — `Innoruuk`s Chosen` — so the world model holds a charmed instance and
+// hostile twins under one nameKey, and a CC line naming that name resolves to whichever instance
+// is live. Two spans, because the pet is bound six minutes before the window and a combat-only
+// cut cannot establish it (the same prime-then-window arrangement W35 → W36 uses).
+// ---------------------------------------------------------------------------
+
+// W61 PRIME (Sun Aug 09 20:02:45 → 20:03:17, raw 1502972..1503072) — the charm bind, nothing
+// else. `You begin casting Allure VI.` at 20:02:58, `Innoruuk`s Chosen has been charmed.` at
+// 20:03:02 (inside the arm, so the ownership gate BINDS it), and the pet's own claim tell
+// `Innoruuk`s Chosen told you, 'Attacking Coercer T`vala Master.'` at 20:03:17 confirming it.
+// The span opens on the zone line, so the replay starts from an empty world model.
+slice(1502972, 1503072, 'w61-twin-mez-prime.log')
+
+// W61 THE WINDOW (Sun Aug 09 20:08:50 → 20:11:59, raw 1505971..1507053). Hand-read beats:
+//   20:08:50  `Master of Spite has been slain by Innoruuk`s Chosen!` — a clean start: the
+//             previous pull is over and 15s of quiet follow, so the skirmish below provably
+//             opens its own encounter.
+//   20:09:05  the twin skirmish opens (`You bash Innoruuk`s Chosen for 4 points of damage.`) —
+//             a HOSTILE `Innoruuk`s Chosen`, spawned as gen 2 beside the charmed gen 1.
+//   20:09:18  `Innoruuk`s Chosen has been mesmerized.` — the owner's own mez, which correctly
+//             resolves to the HOSTILE twin (gen 2) and opens a 120s hold on it.
+//   20:09:50  `Innoruuk`s Chosen has been slain by Innoruuk`s Chosen!` — gen 2 dies, and its
+//             hold is cleared by the death path (88s of it still unexpired).
+//   20:10:02  `Your Dazzle spell has worn off of Innoruuk`s Chosen.` — a CC REFRESH (JOS-161:
+//             the caster-only wear-off line parses as `cc {refresh:true}`), and by now NO
+//             hostile twin is live, so it resolves to the only remaining instance of that
+//             name: THE OWNER'S OWN PET. It opens an encounter and stamps a hold on the pet
+//             until 20:12:02.
+//   20:10:38  the second twin (gen 3, spawned right after) is slain. Every engaged hostile is
+//             now gone and the fight should close five seconds later.
+//   20:10:43→ 46 SECONDS OF SILENCE. The pet's hold vetoed the death-close for all of it.
+//   20:11:20  the pet re-tells (`Attacking Grandmaster R`tal Master.`) and at 20:11:24 R`tal
+//             lands the pull's first blows — which, pre-fix, joined the 20:10:02 encounter.
+// The window stops at 20:11:59, six seconds before the charm breaks and the pet turns on the
+// owner: everything after that is a different story and none of it is load-bearing here.
+slice(1505971, 1507053, 'w61-twin-mez-skirmish.log')

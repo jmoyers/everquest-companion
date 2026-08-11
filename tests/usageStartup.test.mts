@@ -69,7 +69,7 @@ function startupRows(version: string, r: {
 }
 
 test('startup percentiles are BUCKET RANGES per build, and the sums are means over launches', () => {
-  // 0.6.0: eighteen ordinary launches in the 1–2.5 s bucket and two miserable ones at 10–30 s.
+  // 0.6.0: eighteen ordinary launches in the 1-2.5 s bucket and two miserable ones at 10-30 s.
   // That is exactly the shape a p95 exists for — a mean would hide it entirely. TWO rather than
   // one because the percentile is NEAREST-BUCKET over 20 samples: one slow launch in twenty is
   // the 20th value and sits ABOVE the 95th, so a p95 that reported it would be the wrong answer,
@@ -90,10 +90,10 @@ test('startup percentiles are BUCKET RANGES per build, and the sums are means ov
   assert.deepEqual(d.byVersion.map((r) => r.version), ['0.6.0', '0.5.0'])
   const [now, before] = d.byVersion
   assert.equal(now.launches, 20)
-  assert.equal(now.p50ReplayLabel, '1 s–2.5 s')
-  assert.equal(now.p95ReplayLabel, '10 s–30 s')
-  assert.equal(now.p50BlockLabel, '25 ms–50 ms')
-  assert.equal(now.p95BlockLabel, '250 ms–500 ms')
+  assert.equal(now.p50ReplayLabel, '1 s-2.5 s')
+  assert.equal(now.p95ReplayLabel, '10 s-30 s')
+  assert.equal(now.p50BlockLabel, '25 ms-50 ms')
+  assert.equal(now.p95BlockLabel, '250 ms-500 ms')
   // (18 × 70 + 2 × 90) / 20 = 72%, as a FRACTION here — the counter sums whole percents.
   assert.equal(now.dutyAchieved, 0.72)
   assert.equal(now.meanEventsReplayed, (18 * 400_000 + 2 * 900_000) / 20)
@@ -101,13 +101,13 @@ test('startup percentiles are BUCKET RANGES per build, and the sums are means ov
 
   // THE COMPARISON IS THE POINT: the older build's launches were slower and blocked harder, and
   // the two rows say so side by side without anything ever being averaged across builds.
-  assert.equal(before.p95ReplayLabel, '30 s–60 s')
+  assert.equal(before.p95ReplayLabel, '30 s-60 s')
   assert.equal(before.blocksOver50, 240)
 
   // Log size is fleet-wide and rendered as a RANGE, never a byte count.
   assert.deepEqual(d.logSizes, [
-    { id: '10 MB–100 MB', n: 22 },
-    { id: '100 MB–512 MB', n: 2 }
+    { id: '10 MB-100 MB', n: 22 },
+    { id: '100 MB-512 MB', n: 2 }
   ])
 })
 
@@ -144,7 +144,7 @@ test('the digest prints the SAME reading as the tab — one computation, two ren
       })
     )
   )
-  assert.match(text, /0\.6\.0\s+4 launches · replay p50\s+1 s–2\.5 s/)
+  assert.match(text, /0\.6\.0\s+4 launches · replay p50\s+1 s-2\.5 s/)
   assert.match(text, /duty 70\.0% · 400000 events\/launch · 4 stalls >50ms/)
   assert.match(text, /log size of measured launches/)
 })
@@ -160,8 +160,8 @@ test('one build’s histogram never leaks into another’s — the dim is split 
   ]).startup
   const beta = d.byVersion.find((r) => r.version === '0.6.0-beta.1')
   const stable = d.byVersion.find((r) => r.version === '0.6.0')
-  assert.equal(stable?.p95ReplayLabel, '250 ms–1 s')
-  assert.equal(beta?.p95ReplayLabel, '30 s–60 s')
+  assert.equal(stable?.p95ReplayLabel, '250 ms-1 s')
+  assert.equal(beta?.p95ReplayLabel, '30 s-60 s')
   assert.equal(stable?.blocksOver50, 0)
   assert.equal(beta?.blocksOver50, 9)
 })

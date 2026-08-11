@@ -220,7 +220,7 @@ test('S1: the Fight scope lists only fights and labels a finished head row hones
   const doneSnap = eng.snapshot(lastTs + 120_000, {})
   const done = scopeOptions('fight', doneSnap.segments, doneSnap.zoneSessions)
   assert.equal(done.head!.live, false)
-  assert.match(done.head!.label, /^Last fight — /)
+  assert.match(done.head!.label, /^Last fight - /)
   assert.equal(done.head!.name, 'a skeleton')
   // …and it is not duplicated below itself.
   assert.equal(done.rest.length, 0)
@@ -243,7 +243,7 @@ test('S2: the Overall scope lists only zone sessions', () => {
   const overall = scopeOptions('overall', snap.segments, snap.zoneSessions)
   assert.equal(overall.head!.value, 'zone', 'the live zone session heads the list')
   assert.equal(overall.head!.live, true)
-  assert.match(overall.head!.label, /East Commonlands — overall/)
+  assert.match(overall.head!.label, /East Commonlands - overall/)
   assert.ok(overall.rest.length >= 1, 'the finalized Befallen session is selectable')
   // A fight id ('e<n>') must never leak into the Overall scope.
   const ids = [overall.head!.value, ...overall.rest.map((r) => r.value)]

@@ -1,4 +1,5 @@
-// THE CHARM / CROWD-CONTROL OWNERSHIP MODEL (Task #65).
+// THE CHARM / CROWD-CONTROL OWNERSHIP MODEL (Task #65) — and, since JOS-188, the one place
+// that answers "did this caster-less line resolve one of MY casts?" for a third family too.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // WHY THIS EXISTS: the two lines that bound a pet name a caster to nobody.
@@ -52,6 +53,10 @@
 //  —            own castBegin of a charm spell                     armed:charm   window =
 //                                                                                castTime+slack
 //  —            own castBegin of a CC spell                        armed:cc      same
+//  —            own castBegin of a PET-ONLY spell (JOS-188)        armed:petBuff same
+//  armed:petBuff a named landing of THAT spell inside the window   (bind)        CONSUMES the arm;
+//                                                                                the caller binds
+//                                                                                the target as a pet
 //  armed        own castBegin of ANY other spell                   —             one cast at a time
 //  armed        own fizzle / interrupt / resist OF THE SAME spell  —             the cast failed
 //  armed:charm  `<mob> has been charmed.` inside the window        provisional   CONSUMES the arm
@@ -180,6 +185,27 @@ export function isCcSpell(spell: string): boolean {
   return !charmSpell.test(key) && ccSpell.test(key)
 }
 
+/**
+ * THE PET-ONLY SPELLS (JOS-188), read straight off the DB's `targetType` rather than a name
+ * list: the game refuses one of these on anything but YOUR OWN pet, which is the whole content
+ * of the inference below. 40 spells across seven classes — Burnout, the necromancer's
+ * Focus/Intensify/Augment Death line, Renew Elements, Sight/Voice Graft, the beastlord spirits,
+ * Tiny Companion, Ward of Calliav, Reclaim Energy.
+ *
+ * `targetType` is the WIKI's word for a different server and AGENTS.md already records one case
+ * where it disagrees with this log (`Skin Like Nature` is listed Single and lands on three
+ * entities at once). That is a reason to measure rather than to trust, and this rule was:
+ * whole-log, 19 binds / 14 names, every one of the 14 also bound by a `… Master.'` tell, none
+ * bound by this rule alone. The table is not the gate anyway — the OWN CAST is.
+ */
+export const PET_TARGET_SPELLS: ReadonlySet<string> = new Set(
+  (spellsJson as SpellDbFile).spells.filter((s) => s.targetType === 'Pet').map((s) => spellCanonKey(s.name))
+)
+
+export function isPetOnlySpell(spell: string): boolean {
+  return PET_TARGET_SPELLS.has(spellCanonKey(spell))
+}
+
 /** The arm window for one own cast of `spell`, in ms after the `You begin casting` line. */
 export function armWindowMs(spell: string): number {
   return (CAST_MS_BY_SPELL.get(spellCanonKey(spell)) ?? DEFAULT_CAST_MS) + CAST_SLACK_MS
@@ -212,7 +238,7 @@ export interface CharmDemotion {
 }
 
 interface Arm {
-  kind: 'charm' | 'cc'
+  kind: 'charm' | 'cc' | 'petBuff'
   spellKey: string
   ts: number
   until: number
@@ -249,7 +275,13 @@ export class CharmModel {
   /** `You begin casting <Spell>.` — arms the model, or clears a stale arm when the player
    *  moves on to an unrelated spell. */
   noteCastBegin(spell: string, ts: number): void {
-    const kind = isCharmSpell(spell) ? 'charm' : isCcSpell(spell) ? 'cc' : null
+    const kind = isCharmSpell(spell)
+      ? 'charm'
+      : isCcSpell(spell)
+        ? 'cc'
+        : isPetOnlySpell(spell)
+          ? 'petBuff'
+          : null
     if (!kind) {
       this.arm = null
       return
@@ -290,6 +322,28 @@ export class CharmModel {
   ccBroadcast(ts: number): boolean {
     const a = this.arm
     return a?.kind === 'cc' && ts >= a.ts && ts <= a.until
+  }
+
+  /**
+   * A NAMED buff landing (`<Name> goes berserk.`) — was it YOUR pet-only spell resolving?
+   * (JOS-188.) The third thing in the log that can bind a summoned pet, and the first one that
+   * does not require the player to have ORDERED it.
+   *
+   * `spellKeys` are the landing message's candidates. The message alone proves nothing —
+   * `goes berserk.` resolves to Burnout / Fury / Rage / Voice of the Berserker and three of
+   * those four are ordinary buffs — so the armed cast must be AMONG them, which is the same
+   * "did this line resolve MY cast" test `charmBroadcast` runs, one field stricter.
+   *
+   * CONSUMES the arm on a hit, for charm's reason: a pet spell is single-target, so a second
+   * landing inside the same window is a different spell's business (a Quick Buff burst prints
+   * eleven landings in one second — one cast, one bind).
+   */
+  petBuffLanding(spellKeys: readonly string[], ts: number): boolean {
+    const a = this.arm
+    if (a?.kind !== 'petBuff' || ts < a.ts || ts > a.until) return false
+    if (!spellKeys.some((k) => spellCanonKey(k) === a.spellKey)) return false
+    this.arm = null
+    return true
   }
 
   /** Pet-shaped evidence for `nameKey`: its own outgoing damage, its `… Master.` tell, or

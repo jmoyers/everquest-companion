@@ -44,6 +44,9 @@
 import type { LootEvent } from './types'
 import type { ZoneRangeRow } from './progressionStats'
 import { zoneIdKey } from './progressionStats'
+// The slice's MEMBERSHIP fold — coarser than the join's on purpose (see `WindowItemArgs.zoneKey`
+// and `RangeStatsArgs.zoneKey`). The JOIN below still runs on `zoneIdKey`, which is rule 2.
+import { zoneKey } from './zones'
 
 const MS_PER_HOUR = 3_600_000
 
@@ -173,6 +176,16 @@ export interface WindowItemArgs {
    * derivation is precisely what windowScope.ts exists to prevent.
    */
   activeMs: number
+  /**
+   * The slice's zone restriction (JOS-130) — a `shared/zones.zoneKey` fold (the MEMBERSHIP fold,
+   * which strips instance noise), or null/absent for every zone.
+   *
+   * It must be applied HERE and not by the caller, because `activeMs` above already is the zone's
+   * own active time when the slice carries one: counting every zone's drops against one zone's
+   * hours is the exact mismatch rule 2 exists to prevent. A row with NO zone belongs to the
+   * `unknown` stretch and so matches only a filter for `unknown`.
+   */
+  zoneKey?: string | null
 }
 
 /**
@@ -192,6 +205,7 @@ export function windowItemRows(args: WindowItemArgs): WindowItemRow[] {
   const rows = new Map<string, WindowItemRow>()
   for (const e of events) {
     if (e.ts < t0 || e.ts >= t1) continue
+    if (args.zoneKey != null && zoneKey(e.zone ?? UNKNOWN_ZONE) !== args.zoneKey) continue
     const key = e.item.toLowerCase()
     let row = rows.get(key)
     if (!row) {

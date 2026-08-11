@@ -19,7 +19,10 @@ import {
   allowedExternalUrl,
   isInsideDir,
   isInternalPageUrl,
-  isSafePackId
+  isSafePackId,
+  isSafeSourcePath,
+  isSafeSourceRef,
+  isSafeSourceRepo
 } from '../src/main/security'
 
 const WIN = process.platform === 'win32'
@@ -203,4 +206,116 @@ test('isSafePackId accepts real pack ids and rejects anything path-shaped', () =
   assert.equal(isSafePackId(undefined), false)
   assert.equal(isSafePackId(null), false)
   assert.equal(isSafePackId(7), false)
+})
+
+// ---- registry source_* validators: what may reach a URL / an archive path -------------
+
+test('isSafeSourceRepo accepts owner/repo and rejects traversal, extra path, junk', () => {
+  // The honest registry's own shape (the shipped default pack + typical rows).
+  for (const ok of [
+    'utensils/openpeon-alan-rickman-soundpack',
+    'PeonPing/og-packs',
+    'a/b',
+    'user123/pack.v2',
+    'x-y/z_1',
+    // JOS-162: GitHub's REAL namespace, which predates today's signup form. `heron--` is a live
+    // account and owns 45 of the live registry's rows; forbidding its trailing hyphen made all
+    // 45 unreachable. Consecutive and trailing hyphens are legal owner spellings.
+    'heron--/openpeon-mercy-soundpack',
+    'a--b/repo', // consecutive hyphens mid-owner
+    'x-/repo', // trailing hyphen, minimal
+    `${'a'.repeat(38)}-/repo` // trailing hyphen at the 39-char cap
+  ]) {
+    assert.equal(isSafeSourceRepo(ok), true, ok)
+  }
+  for (const bad of [
+    '../../evil', // traversal
+    'owner/repo/../../evil', // extra segments + traversal
+    'owner/repo/extra', // more than one slash
+    'owner//repo', // empty segment
+    '/repo', // missing owner
+    'owner/', // missing repo
+    'owner', // no slash at all
+    'own er/repo', // space
+    '-owner/repo', // leading-hyphen owner: the anchor the loosening KEPT
+    '--/repo', // an all-punctuation owner is never a namespace
+    'ow.ner/repo', // a dot in the owner — the charset is what forbids `..`
+    'ow..ner/repo', // traversal spelled inside the owner
+    './repo', // owner is `.`
+    '../repo', // owner is `..`
+    '%2e%2e/repo', // percent-encoded traversal (never decoded here, and `%` is out of charset)
+    'ow/ner/repo', // a slash smuggled through the owner
+    `${'a'.repeat(39)}-/repo`, // 40-char owner: the length cap survives the looser charset
+    'owner/..', // repo is ..
+    'owner/.', // repo is .
+    'owner/re po', // space in repo
+    'owner/re:po', // colon (ADS-ish)
+    'owner\\repo', // backslash separator
+    `${'a'.repeat(40)}/repo`, // over-long owner
+    ''
+  ]) {
+    assert.equal(isSafeSourceRepo(bad), false, JSON.stringify(bad))
+  }
+  assert.equal(isSafeSourceRepo(undefined), false)
+  assert.equal(isSafeSourceRepo(null), false)
+  assert.equal(isSafeSourceRepo(42), false)
+})
+
+test('isSafeSourceRef accepts a tag and rejects separators/traversal/leading dot', () => {
+  for (const ok of ['v1.1.2', 'v1', '1.0.0', 'release-2', 'RC_3']) {
+    assert.equal(isSafeSourceRef(ok), true, ok)
+  }
+  for (const bad of [
+    '..', // traversal
+    'v1/../../x', // slash + traversal
+    'refs/tags/v1', // slash walks the URL path
+    '.hidden', // leading dot
+    '-flag', // leading dash
+    'v1 2', // space
+    'v1:2', // colon
+    'v1\\2', // backslash
+    'a..b', // embedded ..
+    ''
+  ]) {
+    assert.equal(isSafeSourceRef(bad), false, JSON.stringify(bad))
+  }
+  assert.equal(isSafeSourceRef(undefined), false)
+  assert.equal(isSafeSourceRef(7), false)
+})
+
+test('isSafeSourcePath accepts `.`/relative subpaths and rejects escape shapes', () => {
+  for (const ok of [
+    '.',
+    // JOS-162: `''` is the empty-string alias of `.` — the archive root. Two live registry rows
+    // spell it this way, and every consumer already collapses `''` and `.` to the same prefix.
+    '',
+    'sounds',
+    'sounds/foo',
+    'a/b/c',
+    'pack.v2',
+    'sounds/'
+  ]) {
+    assert.equal(isSafeSourcePath(ok), true, JSON.stringify(ok))
+  }
+  for (const bad of [
+    '..',
+    '../x',
+    'a/../b',
+    'a/..',
+    '/abs/path', // absolute
+    'C:\\Windows', // drive + backslash
+    'C:/Windows', // drive
+    'a\\b', // backslash separator
+    '\\\\server\\share', // UNC
+    'a//b', // empty segment
+    'sounds/\0', // NUL
+    '/', // a bare separator is NOT the empty alias
+    '//',
+    ' ' // whitespace is a path segment, not "no path"
+  ]) {
+    assert.equal(isSafeSourcePath(bad), false, JSON.stringify(bad))
+  }
+  assert.equal(isSafeSourcePath(undefined), false)
+  assert.equal(isSafeSourcePath(null), false)
+  assert.equal(isSafeSourcePath(1), false)
 })

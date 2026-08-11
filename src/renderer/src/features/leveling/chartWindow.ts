@@ -127,6 +127,22 @@ export function bucketMsFor(spanMs: number): number {
   return Math.ceil(span / TARGET_BUCKETS / DAY) * DAY
 }
 
+/**
+ * The window drawn over an ARBITRARY pair of instants — the `full` rule, generalized (JOS-130).
+ *
+ * `windowFor(lo, hi, 'full')` is exactly this call, so the whole-history domain is byte-identical
+ * to what it has always been. It is what every SEMANTIC slice draws with (this session, this
+ * zone, a custom pair): those are anchored on the DATA at both ends, like `full` and unlike a
+ * fixed-length rung, so they take the trailing pad and NOT the outward bucket snap — a snap is
+ * what makes a sliding window advance in whole buckets, and a slice with two stated ends is not
+ * sliding.
+ */
+export function windowOver(t0: number, t1: number): TimeWindow {
+  const span = Math.max(1, t1 - t0)
+  const end = t1 + span * TRAILING_FRAC
+  return { t0, t1: end, bucketMs: bucketMsFor(end - t0) }
+}
+
 /** The one time base a chart draws on: the window and the grid it is quantized to. */
 export interface TimeWindow {
   t0: number
@@ -148,11 +164,7 @@ export interface TimeWindow {
  */
 export function windowFor(lo: number, hi: number, id: TimescaleId): TimeWindow {
   const scale = TIMESCALES.find((s) => s.id === id) ?? TIMESCALES[0]
-  if (scale.ms === 0) {
-    const span = Math.max(1, hi - lo)
-    const t1 = hi + span * TRAILING_FRAC
-    return { t0: lo, t1, bucketMs: bucketMsFor(t1 - lo) }
-  }
+  if (scale.ms === 0) return windowOver(lo, hi)
   const bucketMs = bucketMsFor(scale.ms * (1 + TRAILING_FRAC))
   return {
     t0: Math.floor((hi - scale.ms) / bucketMs) * bucketMs,

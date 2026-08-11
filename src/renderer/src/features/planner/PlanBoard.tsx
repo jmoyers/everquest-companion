@@ -63,7 +63,7 @@ function InstructionsCard(): JSX.Element {
         <Typography variant="subtitle2">Fill this in from the game</Typography>
         <Typography variant="body2" color="text.secondary">
           Type <b>{INVENTORY.command}</b> in EverQuest. Every slot below fills with what you are
-          wearing, straight away — leave this tab open and watch it happen.
+          wearing, straight away - leave this tab open and watch it happen.
         </Typography>
         <Typography variant="caption" color="text.disabled">
           Anything you pick by hand stays picked.
@@ -126,6 +126,7 @@ export default function PlanBoard({
           command={INVENTORY.command}
           why={INVENTORY.why}
           updatedAt={inventory.loadedAt}
+          steps={INVENTORY.steps}
           testId="planner-inventory-fresh"
         />
       )}

@@ -103,10 +103,10 @@ test('an empty owner cohort is honest zeros, exactly like an empty window — ne
 
 test('every digest NAMES its cohort, and says the split is from-marking-onward', () => {
   const user = renderAnalyticsDigest(build(), 'user')
-  assert.match(user, /COHORT: user — your own use is EXCLUDED/)
+  assert.match(user, /COHORT: user - your own use is EXCLUDED/)
   assert.match(user, /from-marking-onward/i)
   const owner = renderAnalyticsDigest(build(), 'owner')
-  assert.match(owner, /COHORT: owner — YOUR OWN USE/)
+  assert.match(owner, /COHORT: owner - YOUR OWN USE/)
   assert.match(owner, /never added/)
   // The DEFAULT is the population question: a bare call must not silently include the owner.
   assert.equal(renderAnalyticsDigest(build()), user)

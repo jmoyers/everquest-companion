@@ -201,7 +201,7 @@ function Spark({ spark }: { spark: LevelingSpark }): JSX.Element {
   if (spark.stated === 0 && spark.unstated > 0) {
     return (
       <Typography variant="caption" color="text.disabled" data-testid="overview-leveling-spark-none" sx={{ mt: 0.5 }}>
-        No level-bar percentage stated this hour — progress unknown, not zero.
+        No level-bar percentage stated this hour - progress unknown, not zero.
       </Typography>
     )
   }
@@ -269,7 +269,7 @@ function LevelingLines({ state }: { state: OverviewLevelingState }): JSX.Element
             data-testid="overview-leveling-eta"
             sx={{ mt: 0.5, minWidth: 0 }}
           >
-            — no next-level estimate
+            - no next-level estimate
           </Typography>
         </Tooltip>
       )}
@@ -321,7 +321,7 @@ export function LevelingCard({ state, onOpenLeveling }: LevelingCardProps): JSX.
     <DashCard title="Leveling" testId="overview-leveling" right={<OpenLeveling onOpenLeveling={onOpenLeveling} />}>
       {state.empty ? (
         <QuietNote>
-          No progress recorded yet — levels of progress and credited kills appear here as you play.
+          No progress recorded yet - levels of progress and credited kills appear here as you play.
         </QuietNote>
       ) : (
         <>

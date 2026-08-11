@@ -50,7 +50,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logError } from './errorLog'
 import { MobLootIndex, mobKey, parseMobWikitext } from './mobLookupParse'
-import { knowledgeFromCatalog, localMobEntry, localMobQuests } from './mobLookupLocal'
+import { knowledgeFromCatalog, localMobEntry, mergeLocalKnowledge } from './mobLookupLocal'
+import { type MobIdentity, poisonedAliasKeys, resolveMobIdentity } from './mobAliases'
 import type { MobKnowledge } from '../shared/types'
 
 export { MobLootIndex, mobKey, parseMobWikitext }
@@ -140,20 +141,27 @@ type ResolveResult =
   | { status: 'ok'; title: string; exact: boolean }
   | { status: 'none' }
   | { status: 'offline' }
-async function resolvePage(name: string): Promise<ResolveResult> {
+async function resolvePage(id: MobIdentity): Promise<ResolveResult> {
   const j = (await apiFetch({
     action: 'query',
     list: 'search',
-    srsearch: name,
+    srsearch: id.canonical,
     srlimit: '8'
   })) as { query?: { search?: { title: string }[] } } | null
   if (j === null) return { status: 'offline' }
   const hits = j.query?.search ?? []
   if (hits.length === 0) return { status: 'none' }
-  const key = mobKey(name)
-  const exact = hits.find((h) => mobKey(h.title) === key)
+  // "Exact" means ANY spelling the roster states for this creature (JOS-142) — for the 7.9k
+  // catalog mobs and the 30 name-identical roster targets that key list is one key, so this is
+  // the same test it has always been.
+  const exact = hits.find((h) => identityMatches(id, h.title))
   if (exact) return { status: 'ok', title: exact.title, exact: true }
   return { status: 'ok', title: hits[0].title, exact: false }
+}
+
+/** True when `name` is one of the spellings this identity answers to. */
+function identityMatches(id: MobIdentity, name: string): boolean {
+  return id.keys.includes(mobKey(name))
 }
 
 // ---- persistent cache (userData, versioned) -----------------------------------
@@ -224,27 +232,28 @@ function cacheHit(entry: CacheEntry): boolean {
 
 // ---- merge + public API -------------------------------------------------------
 
+/** The LOCAL merge, bound to this process's shared own-loot index. The logic itself lives in
+ *  mobLookupLocal.ts so the node test runner can drive it (see `mergeLocalKnowledge`). */
+function mergeLocal(base: MobKnowledge, id: MobIdentity): MobKnowledge {
+  return mergeLocalKnowledge(base, id, ownLoot)
+}
+
 /**
- * Attach the two LOCAL sources to a (possibly cached) wiki record. Done on EVERY read, never
- * baked into the cache: your own loot history changes with every corpse, and the quest catalog
- * ships with the app, so caching either would immediately be stale.
+ * REPAIR THE POISONED NEGATIVES (JOS-142). Which entries qualify — and why the rule is exactly
+ * "non-canonical keys, negatives only" — is `poisonedAliasKeys` in mobAliases.ts, which is pure
+ * so it can be tested; this is the deletion.
+ *
+ * Runs once per resolution of an aliased identity, ahead of the catalog read, so a page the old
+ * build cached as `notFound` under the log spelling stops being a wrong answer rather than
+ * merely stopping being consulted. No CACHE_VERSION bump: the cache SHAPE is unchanged, and a
+ * version bump would throw away every user's whole mob cache to repair at most two entries.
  */
-function mergeLocal(base: MobKnowledge, name: string): MobKnowledge {
-  const out: MobKnowledge = { ...base }
-  const seen = ownLoot.drops(name)
-  if (seen.length) out.dropsSeen = seen
-  else delete out.dropsSeen
-  const quests = localMobQuests(name)
-  // The wiki page's own `|related_quests` links and the catalog's `relatedNpcs` are two views of
-  // the same relation, so de-dupe by quest name; local wins (it carries the giver + zone).
-  if (quests) {
-    const merged = [...quests]
-    for (const u of base.quests ?? []) {
-      if (!merged.some((x) => x.quest.toLowerCase() === u.quest.toLowerCase())) merged.push(u)
-    }
-    out.quests = merged
-  }
-  return out
+function repairAliasCache(id: MobIdentity): void {
+  const cache = loadCache()
+  const poisoned = poisonedAliasKeys(id, cache)
+  if (poisoned.length === 0) return
+  for (const key of poisoned) cache.delete(key)
+  scheduleSave()
 }
 
 let queue: Promise<unknown> = Promise.resolve()
@@ -253,30 +262,43 @@ let queue: Promise<unknown> = Promise.resolve()
  * Look up a mob's drop knowledge. Local-first, then cache, then a serialized, politely-spaced
  * wiki lookup. NEVER throws — failures degrade to a cached-negative / offline record that still
  * carries whatever the local sources knew.
+ *
+ * THE ALIAS BOUNDARY IS HERE AND NOWHERE ELSE (JOS-142). Every surface that shows mob knowledge
+ * — the boss card, the mob page, the Overview current-mob card, the overlay hover card, the
+ * consider ring's enrichment — arrives through this one function, so resolving the identity on
+ * the way in fixes both halves of the divergence at once: the ROSTER spelling now finds loot
+ * filed under the LOG spelling, and the LOG spelling now finds the catalog page filed under the
+ * ROSTER spelling. `display` is untouched throughout and is what the record reports as its
+ * `name`, so the page still reads back exactly what the log said (world-model law 2).
  */
 export async function lookupMob(name: string): Promise<MobKnowledge> {
   const display = name.trim()
-  const key = mobKey(display)
+  const id = resolveMobIdentity(display)
+  if (id.aliased) repairAliasCache(id)
+  // What the CATALOG, the CACHE and the WIKI are asked. Identical to `display` for every mob the
+  // roster does not spell two ways, which is all of them but two.
+  const ask = id.canonical
+  const key = mobKey(ask)
 
   // LOCAL 1 FIRST: the committed catalog is the definitive drop table and needs no network, no
   // cache and no queue. This is the normal path — the fallback below exists for the tail.
-  const entry = localMobEntry(display)
-  if (entry) return mergeLocal(knowledgeFromCatalog(display, entry), display)
+  const entry = localMobEntry(ask)
+  if (entry) return mergeLocal(knowledgeFromCatalog(display, entry), id)
 
   const cache = loadCache()
   const cached = cache.get(key)
-  if (cached && cacheHit(cached)) return mergeLocal({ ...cached.data, cached: true }, display)
+  if (cached && cacheHit(cached)) return mergeLocal({ ...cached.data, cached: true }, id)
 
   /** Build + persist the WIKI half, then merge the (never-cached) local half on top. */
   const finish = (extra: Partial<MobKnowledge>): MobKnowledge => {
     const data: MobKnowledge = { name: display, cached: false, ...extra }
     cache.set(key, { at: Date.now(), data })
     scheduleSave()
-    return mergeLocal(data, display)
+    return mergeLocal(data, id)
   }
 
   const run = queue.then(async (): Promise<MobKnowledge> => {
-    const res = await resolvePage(display)
+    const res = await resolvePage(id)
     if (res.status === 'offline') return finish({ offline: true })
     if (res.status === 'none') return finish({ notFound: true })
     const wt = await fetchWikitext(res.title)
@@ -285,8 +307,9 @@ export async function lookupMob(name: string): Promise<MobKnowledge> {
     const facts = parseMobWikitext(wt)
     // IDENTITY GATE for a non-exact search hit: accept it only when the page says it IS this
     // mob. Search happily returns a cousin for a name it doesn't have, and hanging that
-    // cousin's drop table off this mob would be inventing loot (law 1).
-    if (!res.exact && mobKey(facts.pageName ?? res.title) !== key) return finish({ notFound: true })
+    // cousin's drop table off this mob would be inventing loot (law 1). "Is this mob" now spans
+    // the roster's stated spellings, which for an unaliased name is the one key it always was.
+    if (!res.exact && !identityMatches(id, facts.pageName ?? res.title)) return finish({ notFound: true })
     return finish({ page: res.title, ...facts })
   })
 
@@ -302,6 +325,6 @@ export async function lookupMob(name: string): Promise<MobKnowledge> {
     logError('main:mobLookup', { message: `lookup failed for ${display}`, err })
     // A thrown error is transient — degrade to offline WITHOUT persisting a negative, so the
     // next call retries the network (same rule itemLookup follows).
-    return mergeLocal({ name: display, cached: false, offline: true }, display)
+    return mergeLocal({ name: display, cached: false, offline: true }, id)
   }
 }

@@ -48,7 +48,7 @@ test('the LIVE tiles are the only ones that say "now", and they degrade to a rea
   // Unavailable is a TILE, not an omission: "CloudWatch did not answer" and "nobody is in the
   // app" are opposite facts and an absent tile would let them share a rendering.
   const dark = liveTiles({ available: false, reason: 'no credentials' })
-  assert.deepEqual(dark.map((t) => [t.label, t.value]), [['Live now', '—']])
+  assert.deepEqual(dark.map((t) => [t.label, t.value]), [['Live now', '-']])
   assert.match(dark[0].note, /no credentials/)
 
   // Nobody alive: a zero and NO age tile. An empty fleet has no age, and a 0 there would read as

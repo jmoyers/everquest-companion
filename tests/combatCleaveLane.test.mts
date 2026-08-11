@@ -108,9 +108,13 @@ test('C3: the split is a NAMED-SKILL table, not a matcher over verb spelling', (
   // `smite` (PAL) joined them in JOS-81 — cleave's twin, and the gap this test used to pin as
   // deliberate. tests/combatSmiteLane.test.mts carries its evidence.
   assert.equal(meleeSkill('smite'), 'Smite')
+  // `strike` joined them in JOS-163 on a DIFFERENT argument — it is not a class skill, it is the
+  // generic verb every monk special prints as, so the row it earns is the anonymous "Strike"
+  // rather than a name from the chain. tests/specialAttackWindows.test.mts carries its evidence.
+  assert.equal(meleeSkill('strike'), 'Strike')
   // …and everything a WEAPON prints stays in the one auto-attack lane. `slice` is the trap a
   // "big damage message" heuristic would fall into.
-  for (const v of ['slash', 'pierce', 'crush', 'hit', 'slice', 'claw', 'punch', 'strike', 'reave', 'gore']) {
+  for (const v of ['slash', 'pierce', 'crush', 'hit', 'slice', 'claw', 'punch', 'reave', 'gore']) {
     assert.equal(meleeSkill(v), 'Melee', v)
   }
 })
@@ -226,11 +230,13 @@ test('W52: THE REPORTED BUG — a pet cleave and an incoming cleave each get the
   lane(skills, 'pet|Melee', 11885, 77)
   lane(skills, 'pet|Bash', 414, 9)
   lane(skills, 'pet|Kick', 322, 6)
-  // Yours: slash 2,316 + claw 1,817 + strike 340 = 4,473. `strike` is the monk special lane and
-  // this window carries no state line, so it stays generic (W46's rule) and is inside this
-  // number on purpose. The 150 points of smite that used to sit here left for their own lane
-  // when JOS-81 landed — the melee CATEGORY total below is unchanged, which is the whole claim.
-  lane(skills, 'you|Melee', 4473, 76)
+  // Yours: slash 2,316 + claw 1,817 = 4,133. The 340 points of `strike` that used to be inside
+  // this number left for the neutral "Strike" lane when JOS-163 landed (16 hits, hand-tallied off
+  // the fixture) — this window carries no state line, so the verb earns the row and nothing names
+  // it. The 150 points of smite left the same way when JOS-81 landed. The melee CATEGORY total
+  // below is unchanged through all of it, which is the whole claim.
+  lane(skills, 'you|Melee', 4133, 60)
+  lane(skills, 'you|Strike', 340, 16)
   lane(skills, 'you|Smite', 150, 8)
   lane(skills, 'you|Bash', 375, 9)
   lane(skills, 'you|Kick', 602, 9)
@@ -243,9 +249,9 @@ test('W52: THE REPORTED BUG — a pet cleave and an incoming cleave each get the
   assert.equal(categories.get('enemy|melee'), 2149)
   const sum = (prefix: string, names: string[]): number =>
     names.reduce((n, k) => n + (skills.get(`${prefix}|${k}`)?.total ?? 0), 0)
-  assert.equal(sum('you', ['Melee', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('you|melee'))
-  assert.equal(sum('pet', ['Melee', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('pet|melee'))
-  assert.equal(sum('enemy', ['Melee', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('enemy|melee'))
+  assert.equal(sum('you', ['Melee', 'Strike', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('you|melee'))
+  assert.equal(sum('pet', ['Melee', 'Strike', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('pet|melee'))
+  assert.equal(sum('enemy', ['Melee', 'Strike', 'Cleave', 'Smite', 'Bash', 'Kick']), categories.get('enemy|melee'))
 })
 
 test('W52 + THE INJECTED SELF ARM: your own cleave gets the row, and moves no other number', { skip: SKIP52 }, () => {

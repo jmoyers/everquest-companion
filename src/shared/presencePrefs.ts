@@ -35,8 +35,8 @@ export interface ScreenRect {
  */
 export interface PresenceState {
   /**
-   * Has the watcher reported ANYTHING yet? False for the first second or two of a launch (the
-   * child pays a one-time compile before its first line) and again if it ever dies.
+   * Has the watcher reported ANYTHING yet? False for the first moments of a launch (the watcher
+   * thread has three system libraries to open before its first line) and again if it ever dies.
    *
    * This exists so the app never acts on a GUESS. `eqRunning:false` before the first report
    * means "we have not looked", not "the game is closed" — and auto-hide would otherwise blink
@@ -46,7 +46,13 @@ export interface PresenceState {
   observed: boolean
   /** Is an EverQuest process running at all? (5 s cadence — a coarse, cheap fact.) */
   eqRunning: boolean
-  /** Is the EQ window the FOREGROUND window? (App-owned windows count as EQ-side — presence.ts.) */
+  /**
+   * Is the EQ window the FOREGROUND window?
+   *
+   * This app's ACCESSORY windows count as EQ-side (an overlay you are dragging, the cursor ring);
+   * the COMPANION window does not, so bringing the app to the front reads as "not in EverQuest"
+   * (JOS-199 — the whole matrix is `foregroundSide` in main/presenceProtocol.ts).
+   */
   eqFocused: boolean
   /** Last known EQ window rectangle, or null if we have never seen it foreground. */
   eqBounds: ScreenRect | null
@@ -83,7 +89,8 @@ export interface CursorPoint {
 
 /**
  * The "ultimate mouse cursor" ring (owner request: "I lose my mouse on EQ screens"). A thick
- * white circle that follows the pointer, drawn ONLY over the EverQuest window.
+ * circle that follows the pointer, drawn ONLY over the EverQuest window — white, until the
+ * player picks another colour (JOS-125).
  *
  * OFF BY DEFAULT and it stays that way: it costs a window, a watcher and an 8 ms poll, and a
  * user who has never lost their cursor should pay none of it.
@@ -91,10 +98,18 @@ export interface CursorPoint {
 export interface CursorRingPrefs {
   /** Master switch. False ⇒ no ring window, no cursor poll, no presence watcher on its behalf. */
   enabled: boolean
-  /** Outer diameter of the ring, in CSS px (= DIP; the page and the window share one scale). */
+  /** Outer diameter of the ring, in CSS px (= DIP — the ring window is pinned at zoom 1 so that
+   *  identity holds; src/preload/cursor.ts, JOS-154). */
   sizePx: number
-  /** Stroke width of the white ring, in CSS px. Drawn INSIDE the diameter (border-box). */
+  /** Stroke width of the ring, in CSS px. Drawn INSIDE the diameter (border-box). */
   thicknessPx: number
+  /**
+   * The stroke's colour, as the `#rrggbb` an `<input type="color">` speaks (JOS-125).
+   *
+   * WHITE by default, which is the colour the ring has always been drawn in — so an upgrade
+   * moves nobody's ring. `ringStrokeColor()` is the ONE place it becomes a CSS value.
+   */
+  colorHex: string
 }
 
 /**
@@ -121,10 +136,64 @@ export const MIN_RING_THICKNESS_PX = 1
 export const MAX_RING_THICKNESS_PX = 12
 export const DEFAULT_RING_THICKNESS_PX = 4
 
+/**
+ * The default stroke colour: WHITE, because that is the colour every ring drawn before JOS-125
+ * was. The picker exists so somebody who plays in a snowy zone can move off it, not to change
+ * what anybody already has — an upgrading user must see exactly the ring they saw yesterday, and
+ * `tests/cursorRingColor.test.mts` pins that against the CSS in cursor.html.
+ */
+export const DEFAULT_RING_COLOR = '#ffffff'
+
+/**
+ * The alpha the stroke has ALWAYS been drawn at, and it is not a setting.
+ *
+ * Readability comes from three shadows around ONE slightly-transparent stroke (cursor.html says
+ * why): a dark contour outside, a dark contour inside, and a wide soft glow. Those are tuned
+ * against 0.9, so the colour picker changes the hue and leaves the tuning alone. A user asking
+ * for a colour is not asking for a different amount of contrast.
+ */
+export const RING_STROKE_ALPHA = 0.9
+
+/** `#rgb` or `#rrggbb`, and nothing else. */
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+
+/**
+ * A ring colour, as a lower-case `#rrggbb`, or `fallback` if the value is not a hex colour.
+ *
+ * STRICT ON PURPOSE, and it is the only reason this value may be assigned to a style property.
+ * The string arrives from a renderer, from the store file, or from a share import, and it ends
+ * up in `element.style.borderColor` in the ring window; a normalizer that passed CSS through
+ * would make that a place where somebody else's text becomes a declaration. Named colours
+ * (`red`), `rgb()` and `var(--x)` are all refused for that reason, not for a spelling one —
+ * `<input type="color">` cannot produce any of them.
+ *
+ * The short form is expanded here so every consumer sees ONE shape: the picker only ever emits
+ * six digits, but a hand-edited store file may carry three.
+ */
+export function normalizeRingColor(value: unknown, fallback = DEFAULT_RING_COLOR): string {
+  if (typeof value !== 'string') return fallback
+  const hex = value.trim().toLowerCase()
+  if (!HEX_COLOR.test(hex)) return fallback
+  return hex.length === 7 ? hex : `#${hex.slice(1).replace(/./g, (d) => d + d)}`
+}
+
+/**
+ * The ring's stroke as a CSS colour: the chosen hue at the fixed stroke alpha.
+ *
+ * ONE seam, three drawings — the ring window (renderer/src/overlay/cursorRing.ts), the live
+ * sample in Preferences, and the static rule cursor.html paints with before its config arrives.
+ * Two copies of this arithmetic is how the preview and the real ring come to disagree.
+ */
+export function ringStrokeColor(colorHex: string): string {
+  const n = parseInt(normalizeRingColor(colorHex).slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${RING_STROKE_ALPHA})`
+}
+
 export const DEFAULT_CURSOR_RING: CursorRingPrefs = {
   enabled: false,
   sizePx: DEFAULT_RING_SIZE_PX,
-  thicknessPx: DEFAULT_RING_THICKNESS_PX
+  thicknessPx: DEFAULT_RING_THICKNESS_PX,
+  colorHex: DEFAULT_RING_COLOR
 }
 
 export const DEFAULT_OVERLAY_AUTO_HIDE: OverlayAutoHidePrefs = {
@@ -163,7 +232,8 @@ export function normalizeCursorRing(value: unknown): CursorRingPrefs {
   return {
     enabled: bool(v.enabled, DEFAULT_CURSOR_RING.enabled),
     sizePx,
-    thicknessPx: Math.max(MIN_RING_THICKNESS_PX, Math.min(thickness, Math.floor(sizePx / 2)))
+    thicknessPx: Math.max(MIN_RING_THICKNESS_PX, Math.min(thickness, Math.floor(sizePx / 2))),
+    colorHex: normalizeRingColor(v.colorHex)
   }
 }
 
@@ -177,7 +247,7 @@ export function normalizeOverlayAutoHide(value: unknown): OverlayAutoHidePrefs {
 }
 
 /**
- * Does anything need the presence watcher running? The watcher is a child process; it starts
+ * Does anything need the presence watcher running? The watcher is a worker thread; it starts
  * ONLY when a feature is switched on and stops the moment the last one goes off.
  *
  * Pure + exported because it is the exact predicate the gating tests pin: a user with every
@@ -185,4 +255,28 @@ export function normalizeOverlayAutoHide(value: unknown): OverlayAutoHidePrefs {
  */
 export function presenceNeeded(ring: CursorRingPrefs, autoHide: OverlayAutoHidePrefs): boolean {
   return ring.enabled || autoHide.hideWhenNotRunning || autoHide.hideWhenUnfocused
+}
+
+/**
+ * Does anything need the CURSOR looked at? (JOS-193 — owner ruling 2026-08-10.)
+ *
+ * `presenceNeeded` is about the watcher's existence; this is about ONE of the four facts it can
+ * report. The distinction exists because they are not the same question and the app was answering
+ * as though they were: overlay auto-hide ships ON, so the DEFAULT install starts the watcher — and
+ * the watcher then read `GetCursorInfo` ~69 times a second for `cursorVisible`, whose only
+ * consumer in the entire app is `cursorRingActive`, for a ring that is OFF by default. A user who
+ * never asked for a ring got a cursor polled 250,000 times an hour and nothing that read the
+ * answer.
+ *
+ * The rule the owner asked for is the plain one: WITH THE RING OFF, THE APP DOES NOT TOUCH THE
+ * CURSOR. Not the watcher's `GetCursorInfo`, not main's `screen.getCursorScreenPoint()`, and not a
+ * ring window that exists to be sampled into — so a cursor tool like Yolomouse is working against
+ * an app that is not in the room. The reason it is a named predicate rather than an inlined
+ * `ring.enabled` is that it is a CLAIM about the rest of the tree — that `cursorVisible` has
+ * exactly one consumer — and a claim wants somewhere to be written down and tested.
+ *
+ * Pure + exported for `tests/presence.test.mts`, like `presenceNeeded` beside it.
+ */
+export function cursorWatchNeeded(ring: CursorRingPrefs): boolean {
+  return ring.enabled
 }

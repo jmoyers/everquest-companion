@@ -318,6 +318,41 @@ export class MobLootIndex {
     return [...items.values()].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs)
   }
 
+  /**
+   * The union of what we've looted off EVERY spelling of ONE creature (JOS-142).
+   *
+   * The index files loot under the raw LOG name, and a raid god the log spells `Cazic-Thule` is
+   * the same creature the roster and the wiki call `Cazic Thule`. `main/mobAliases.ts` is the one
+   * place that statement lives; this method just reads the key list it produces. `mobKey` is
+   * idempotent, so the caller may pass either display names or already-canonical keys.
+   *
+   * Counts ADD and `lastTs` takes the later — two spellings of one corpse's owner are one mob's
+   * history, and reporting them separately would be the same lie as dropping one of them. The
+   * display spelling kept is the first one the index recorded for that item, exactly as `note()`
+   * already decides it within a single key.
+   *
+   * ONE spelling short-circuits to `drops()` unchanged — the byte-identical path for the 30
+   * roster targets and every one of the 7.9k catalog mobs (JOS-137 constraint 4).
+   */
+  dropsAcross(spellings: readonly string[]): MobSeenDrop[] {
+    if (spellings.length <= 1) return this.drops(spellings[0] ?? '')
+    const merged = new Map<string, MobSeenDrop>()
+    for (const spelling of spellings) {
+      const items = this.byMob.get(mobKey(spelling))
+      if (!items) continue
+      for (const [ik, row] of items) {
+        const prev = merged.get(ik)
+        if (!prev) {
+          merged.set(ik, { ...row })
+          continue
+        }
+        prev.count += row.count
+        if (row.lastTs > prev.lastTs) prev.lastTs = row.lastTs
+      }
+    }
+    return [...merged.values()].sort((a, b) => b.count - a.count || b.lastTs - a.lastTs)
+  }
+
   /** How many distinct mobs we have loot for (test/diagnostic handle). */
   get size(): number {
     return this.byMob.size

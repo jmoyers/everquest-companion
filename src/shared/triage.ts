@@ -567,6 +567,13 @@ export interface TriageErrorExemplar {
   code?: string
   redactedMessage: string
   frames: { file: string; line: number; col: number; func: string }[]
+  /** `capture` when `frames` names the site that CAUGHT the error rather than the site that threw
+   *  it (JOS-111). Absent on a row stored before the field existed, which means `thrown`. */
+  frameOrigin?: string
+  /** Node/Electron/dependency frames the throw passed through, when it had any (JOS-111). */
+  externalFrames?: { file: string; line: number; col: number; func: string }[]
+  /** The React components the error came through, innermost first (JOS-111). */
+  componentPath?: string
   breadcrumbs: { kind: string; offsetMs: number }[]
   view: string
   sessionAgeBucket: number
@@ -603,6 +610,49 @@ export interface TriageAnalyticsReleaseHealth {
   anyReporting: boolean
 }
 
+/** One build's switch flips. Absent from the list entirely when that build reported none. */
+export interface TriageCoverageVersion {
+  version: string
+  /** Installs on this build that turned analytics OFF, in the window. */
+  optOuts: number
+  /** …and back on. NEVER netted against `optOuts`: two actions, not a balance. */
+  optIns: number
+}
+
+/**
+ * HOW MUCH OF THE FLEET THIS PIPELINE CAN SEE (JOS-109) — the one section whose subject is the
+ * limits of every other section.
+ *
+ * TWO MEASUREMENTS, NEVER CONFLATED, and `src/main/triage/coverage.ts` carries the full argument:
+ *
+ *   * the FLIP counts are EXACT over installs that ever reported, and are a FLOOR on opt-outs
+ *     (an install that went dark before its first batch is invisible by definition, and a flip
+ *     made offline is never retried);
+ *   * the DARK COHORT is an ESTIMATE and lives outside this shape entirely — it is the
+ *     comparison between `reportingInstalls` here and `TriageDownloads` merged at the IPC edge.
+ *     The two are printed side by side and NEVER subtracted: a download is not an install.
+ */
+export interface TriageAnalyticsCoverage {
+  /** Distinct installs that have EVER sent a batch (`analytics_install` rows). ALL-TIME, not
+   *  windowed — unlike every count beside it, which is why the panel labels both spans. */
+  reportingInstalls: number
+  /** Flips to OFF in the window, all builds. */
+  optOuts: number
+  /** Flips back ON in the window, all builds. */
+  optIns: number
+  /** Per build, newest first. Capped, and lists ONLY builds that reported a flip. */
+  byVersion: TriageCoverageVersion[]
+  /**
+   * Has ANY build reported a flip in this window?
+   *
+   * FALSE IS AMBIGUOUS AND THE PANEL SAYS SO. There is no per-version "this build can report a
+   * flip" denominator (nothing emits one unless somebody flips), so "no flips" and "no client old
+   * enough to tell us" are the same absence here. It is the most misreadable state this section
+   * has, and it is rendered as a sentence rather than as a zero.
+   */
+  anyFlips: boolean
+}
+
 export interface TriageAnalyticsData {
   windowDays: number
   /** The day keys the window covers, ascending — the x-axis every series is aligned to. */
@@ -617,6 +667,8 @@ export interface TriageAnalyticsData {
   startup: TriageAnalyticsStartup
   /** Error rate per build over time, against adoption and release dates (JOS-96). */
   releaseHealth: TriageAnalyticsReleaseHealth
+  /** What this pipeline can and cannot see: opt-out flips, and the reporting base (JOS-109). */
+  coverage: TriageAnalyticsCoverage
   versions: TriageVersionRow[]
   retention: TriageCohortRow[]
 }

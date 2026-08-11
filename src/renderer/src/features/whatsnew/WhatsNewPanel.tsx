@@ -201,7 +201,7 @@ export function WhatsNewPanel(): JSX.Element {
           sx={{ fontStyle: 'italic' }}
           data-testid="whats-new-thanks"
         >
-          Thanks to everyone who filed reports — many of these came from you.
+          Thanks to everyone who filed reports - many of these came from you.
         </Typography>
       )}
       <Box

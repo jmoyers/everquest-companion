@@ -30,12 +30,29 @@
 //        `Kick while auto attacking.` RESETS the kick lane off Flying Kick and
 //        `Slam instead of Bash` is the one the evidence refuses.
 //
-// WHY "BEFORE THE STATE LINE" IS "Melee" AND NOT "Tiger Claw". None of these windows contains
-// the state line that established its lane (Tiger Claw's grant is 6 hours before w46), and the
-// model never seeds a lane from the table. That is the honest answer: replayed in isolation the
-// log has not said what those strikes were, so they keep the generic name. A full replay from
-// the top of the log DOES see the grant, so nothing is lost in the real app — this is exactly
-// the property that makes hydration and the live tail agree.
+// WHY "BEFORE THE STATE LINE" IS "Strike" — AND WHY IT IS NEITHER "Melee" NOR "Tiger Claw"
+// (JOS-163; this comment used to say "Melee" and the assertions used to pin it).
+//
+// None of these windows contains the state line that established its lane (Tiger Claw's grant is
+// 6 hours before w46), and the model still never seeds a lane from the table — so "Tiger Claw" is
+// as wrong as it ever was. What CHANGED is the floor those unnamed strikes fall to. `meleeSkill()`
+// now has a `strike` branch, so an unclaimed strike lands in its own neutral "Strike" lane instead
+// of being poured into the anonymous weapon pool beside slash/crush/hit.
+//
+// THE OLD ANSWER WAS HONEST BUT IT WAS ALSO WRONG, and a monk on 0.16.0 is what proved it. Saying
+// "Melee" claims a strike is an ordinary weapon swing, and this file's own header says it is not:
+// `strike` is EXCLUSIVE to the special-attack chain (the owner's first-ever `You strike` is three
+// seconds after his Tiger Claw grant; unarmed autos print hit/claw/punch). Worse, the omission was
+// not temporary for everyone. The state line prints ONCE, at the level-up, so a player whose log
+// file BEGINS after it — fresh install, log rotation, `/log on` switched on later — never has it,
+// and every strike he ever throws read "Melee" forever while his kicks read "Kick". "A full replay
+// from the top of the log sees the grant" is true of the owner's log and false of that monk's.
+//
+// SO THE TWO FACTS ARE NOW SEPARATE, which is the whole shape of the fix: the VERB earns the row
+// (Strike), and the STATE LINE earns the name (Eagle Strike / Dragon Punch / Tail Rake). W46 and
+// W47 below assert both halves in one window each — the strikes before the line are "Strike", the
+// strikes after it are the named special — and the category tripwires prove not one point moved
+// between them.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -111,9 +128,12 @@ test('parser: melee damage now carries its un-conjugated verb; nothing else does
   assert.equal(dmg('A zol ghoul knight gores YOU for 5 points of damage.').verb, 'gore')
   assert.equal(dmg('A zol ghoul knight bashes YOU for 5 points of damage.').verb, 'bash')
   assert.equal(dmg('You frenzy on a rambunctious pet for 6 points of damage.').verb, 'frenzy')
-  // …and the skill name it derives is UNCHANGED by any of this.
-  assert.equal(dmg('You strike a frenzied ghoul for 32 points of damage.').skill, 'Melee')
+  // …and the skill name it derives is the VERB's own lane, with no state line anywhere in sight.
+  // "Strike" rather than "Melee" since JOS-163 (see the header); "Kick" as it always was.
+  assert.equal(dmg('You strike a frenzied ghoul for 32 points of damage.').skill, 'Strike')
   assert.equal(dmg('You kick a frenzied ghoul for 13 points of damage.').skill, 'Kick')
+  // Person-agnostic, exactly like the kick lane beside it: this function has never known who swung.
+  assert.equal(dmg('A wan ghoul knight strikes a frenzied ghoul for 56 points of damage.').skill, 'Strike')
   // Non-melee families carry no verb — the field is melee-only by construction.
   assert.equal(dmg('You hit a zol ghoul knight for 88 points of magic damage by Smiting Strike.').verb, undefined)
   assert.equal(dmg('A zol ghoul knight is burned by YOUR flames for 11 points of non-melee damage.').verb, undefined)
@@ -239,15 +259,19 @@ function lane(skills: Map<string, Lane>, name: string, total: number, hits: numb
   assert.deepEqual(skills.get(name), { total, hits }, `lane "${name}"`)
 }
 
-test('W46: the Eagle Strike era — strikes before the state line stay generic, after it are named', { skip: SKIP46 }, () => {
+test('W46: the Eagle Strike era — strikes before the state line lane as Strike, after it are named', { skip: SKIP46 }, () => {
   const { skills, categories } = laneRollup(W46)
   // HAND-TALLIED off the fixture: 7 `You strike … for N` lines after 22:07:16, summing to 89.
   lane(skills, 'Eagle Strike', 89, 7)
-  // The 10 strike hits BEFORE the state line (102 damage) are inside the generic Melee lane —
-  // together with every crush/slash/hit swing in the window. The window's Melee total is
-  // therefore strictly greater than the pre-state strikes alone.
+  // …and the 10 BEFORE it (102 damage) now have a row of their own rather than disappearing into
+  // the weapon pool (JOS-163). Hand-tallied the same way: the fixture's 17 self strikes total 191,
+  // which is exactly 102 + 89, so the state line splits the verb's swings and creates none.
+  lane(skills, 'Strike', 102, 10)
+  assert.equal((skills.get('Strike')?.total ?? 0) + 89, 191, 'every self strike in the window is in one of the two rows')
+  // The generic lane is now ONLY what a weapon in a hand printed — crush/slash/hit — and it no
+  // longer carries a single strike.
   const melee = skills.get('Melee')
-  assert.ok(melee && melee.total > 102, 'the pre-state strikes fall in the generic Melee lane')
+  assert.ok(melee && melee.total > 0, 'the weapon swings still have their generic lane')
   // Smite left that lane in JOS-81: 9 swings for 157, hand-tallied off the fixture.
   lane(skills, 'Smite', 157, 9)
   // THE KICK LANE IS UNTOUCHED. Round Kick was live for the whole window but its state line is
@@ -257,7 +281,7 @@ test('W46: the Eagle Strike era — strikes before the state line stay generic, 
   assert.equal(skills.has('Tiger Claw'), false, 'the displaced special is never resurrected')
   lane(skills, 'Bash', 36, 18)
   // LAW 8 TRIPWIRE: the category totals are what must not move. Σ melee skills == melee total.
-  const meleeSkills = ['Melee', 'Eagle Strike', 'Kick', 'Bash', 'Smite']
+  const meleeSkills = ['Melee', 'Strike', 'Eagle Strike', 'Kick', 'Bash', 'Smite']
     .reduce((n, k) => n + (skills.get(k)?.total ?? 0), 0)
   assert.equal(meleeSkills, categories.get('melee'), 'Σ melee lanes == the melee category total')
   assert.equal(categories.get('melee'), 2105)
@@ -269,11 +293,15 @@ test('W47: THE REPORTED BUG — Dragon Punch gets its own row, and moves not one
   // HAND-TALLIED off the fixture: the 6 `You strike …` lines after 14:54:14 are
   // 1 + 30 (Critical) + 20 + 1 + 28 + 48 = 128. This row did not exist before this feature.
   lane(skills, 'Dragon Punch', 128, 6)
-  // The 6 Eagle-Strike-era hits before the line (14+14+15+10+12+12 = 77) stay in Melee, because
-  // this window never heard the Eagle Strike statement.
+  // The 6 Eagle-Strike-era hits before the line (14+14+15+10+12+12 = 77) are NOT called Eagle
+  // Strike — this window never heard that statement, and the model is never seeded from the table.
+  // They land in the neutral "Strike" row instead of the weapon pool (JOS-163): the verb is what
+  // earns the row, the state line is what puts a name on it, and 77 + 128 = 205 is every self
+  // strike in the fixture.
   assert.equal(skills.has('Eagle Strike'), false)
+  lane(skills, 'Strike', 77, 6)
   const melee = skills.get('Melee')
-  assert.ok(melee && melee.total > 77)
+  assert.ok(melee && melee.total > 0, 'the weapon swings still have their generic lane')
   lane(skills, 'Kick', 122, 11)
   lane(skills, 'Bash', 26, 14)
   // LAW 8: the melee + slay category totals are exactly what the pre-change engine produced.

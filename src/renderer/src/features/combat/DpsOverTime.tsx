@@ -299,7 +299,7 @@ export function DpsOverTime({
       {!tl ? (
         <QuietNote>{noRing}</QuietNote>
       ) : !chart || !series ? (
-        <QuietNote>No damage recorded yet — the curve starts with the first hit.</QuietNote>
+        <QuietNote>No damage recorded yet - the curve starts with the first hit.</QuietNote>
       ) : (
         <>
           <DpsCurve chart={chart} series={series} markers={markers} startTs={tl.startTs} a={a} />

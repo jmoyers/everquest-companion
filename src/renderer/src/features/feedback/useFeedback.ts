@@ -158,12 +158,12 @@ export function toOutcome(res: SubmitResult): FeedbackOutcome {
       kind: 'sent',
       reportId: res.reportId,
       message: res.logUploaded
-        ? 'Thanks — your report and its log slice are in.'
-        : 'Thanks — your report is in.'
+        ? 'Thanks - your report and its log slice are in.'
+        : 'Thanks - your report is in.'
     }
   }
   if (res.queued) {
-    return { kind: 'queued', message: "Saved — we'll send it next time you're online." }
+    return { kind: 'queued', message: "Saved - we'll send it next time you're online." }
   }
   return { kind: res.error === 'closed' ? 'closed' : 'error', message: res.message }
 }

@@ -174,7 +174,7 @@ export async function fetchLiveSessions(
   if (region === null || region === undefined) {
     return {
       available: false,
-      reason: 'no cached terraform outputs — run any triage command once to write .triage/stack.json'
+      reason: 'no cached terraform outputs - run any triage command once to write .triage/stack.json'
     }
   }
   const endMs = lastCompleteBucketEnd(nowMs)

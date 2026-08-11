@@ -17,14 +17,15 @@
 // this row can be in, including the one where no map is drawn and there is no surface to float
 // over.
 //
-// THE SIDEBAR RENDERS WITHOUT A MAP. Its "Other zones" section searches every installed map, so
-// "which zone is Ambassador D`Vinn in?" is answerable from the state where nothing is open —
-// which is exactly the state that question gets asked in.
+// THE SIDEBAR RENDERS WITHOUT A MAP. Its "Other zones" section searches every installed map AND
+// the whole wiki bestiary (crossZone.ts), so "which zone is Ambassador D`Vinn in?" is answerable
+// from the state where nothing is open — which is exactly the state that question gets asked in.
 
 import { useCallback, useEffect, useMemo, useState, type JSX, type ReactNode, type RefObject } from 'react'
 import { Box, IconButton, Stack } from '@mui/material'
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebar'
-import type { MapData, MapSearchHit, ZoneShort } from '@shared/maps'
+import type { MapData, ZoneShort } from '@shared/maps'
+import type { JumpTarget } from './crossZone'
 import { MapCanvas } from './MapCanvas'
 import { MapPointsLayer, labelPosition } from './MapPointsLayer'
 import { MapMobPins } from './MapMobPins'
@@ -60,17 +61,22 @@ export interface Marker {
  * be fetched and the pane re-measured first, so the hit is PARKED and the jump fires from an
  * effect once `data.zone` matches and the host has a real size. Jumping into a zero-size pane
  * would clamp against a fit scale of 1 and land nowhere near the point.
+ *
+ * A TARGET MAY CARRY NO POSITION (JOS-135). The bestiary answers "which zone" far more often than
+ * "where in it" — a wiki page may state no coordinate, or state one while naming several zones —
+ * so a jump with `at: null` changes the map and stops there rather than flashing a mark at a
+ * position nothing stated. The zone change is still the answer the user asked for.
  */
 export function useSearchJump(args: {
   vp: MapViewport
   /** The zone actually ON SCREEN (`data.zone`), never the one being fetched. */
   zone: ZoneShort | undefined
   pick: (zone: ZoneShort) => void
-}): { marker: Marker | null; onJump: (hit: MapSearchHit) => void } {
+}): { marker: Marker | null; onJump: (to: JumpTarget) => void } {
   const { vp, zone, pick } = args
   const { centerOn, zoomedIn, view, size } = vp
   const [marker, setMarker] = useState<Marker | null>(null)
-  const [pending, setPending] = useState<MapSearchHit | null>(null)
+  const [pending, setPending] = useState<JumpTarget | null>(null)
 
   const jump = useCallback(
     (x: number, y: number) => {
@@ -83,19 +89,21 @@ export function useSearchJump(args: {
   )
 
   const onJump = useCallback(
-    (hit: MapSearchHit) => {
-      if (hit.zone === zone) jump(hit.point.x, hit.point.y)
-      else {
-        pick(hit.zone)
-        setPending(hit)
+    (to: JumpTarget) => {
+      if (to.zone === zone) {
+        if (to.at) jump(to.at.x, to.at.y)
+        return
       }
+      pick(to.zone)
+      // Nothing to park when the row states no position: the zone change IS the whole jump.
+      setPending(to.at ? to : null)
     },
     [zone, jump, pick]
   )
 
   useEffect(() => {
-    if (pending == null || zone !== pending.zone || size.w <= 0) return
-    jump(pending.point.x, pending.point.y)
+    if (pending?.at == null || zone !== pending.zone || size.w <= 0) return
+    jump(pending.at.x, pending.at.y)
     setPending(null)
   }, [pending, zone, size.w, jump])
 
@@ -249,7 +257,7 @@ export interface MapBodyProps {
   /** This zone's typed-/loc marker, or null. Persistent, unlike `marker` above it. */
   locMarker: EqLoc | null
   /** A cross-zone hit was clicked — `useSearchJump`'s handler, which changes zone first. */
-  onJump: (hit: MapSearchHit) => void
+  onJump: (to: JumpTarget) => void
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {

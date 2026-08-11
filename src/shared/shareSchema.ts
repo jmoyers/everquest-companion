@@ -201,11 +201,11 @@ export type ShareDecodeError =
 
 /** User-facing text for each failure. The UI reports these — it never throws at the user. */
 export const SHARE_ERROR_TEXT: Record<ShareDecodeError, string> = {
-  empty: 'Nothing to import — paste a share string first.',
+  empty: 'Nothing to import - paste a share string first.',
   'not-a-share-string': `That doesn't look like a share string. It should start with "${SHARE_PREFIX}".`,
   'too-long': 'That share string is too large to be genuine.',
-  corrupt: 'That share string is damaged — it may have been cut off when it was copied.',
-  checksum: 'That share string failed its integrity check — copy it again, in full.',
+  corrupt: 'That share string is damaged - it may have been cut off when it was copied.',
+  checksum: 'That share string failed its integrity check - copy it again, in full.',
   'newer-version': 'That share string was made by a newer version of the app. Update, then import.',
   'unknown-kind': "That share string carries something this version doesn't understand.",
   'empty-payload': 'That share string is valid but contains nothing to import.'

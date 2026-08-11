@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'fs'
 import { basename, join } from 'path'
 import type { CharacterRef } from '../../shared/types'
-import { getEqInstallDir } from '../store'
+import { clearEqDiscoveredRoot, getEqDiscoveredRoot, getEqInstallDir, setEqDiscoveredRoot } from '../store'
 import {
   EQ_ROOT,
   countCharacterLogs,
@@ -13,6 +13,7 @@ import {
   readLogsDir,
   realOverrideProbes,
   registryInstallCandidates,
+  resolveDiscoveredRoot,
   rootHasLogs,
   tailSurvivesRootChange,
   type DiscoveryProbes,
@@ -72,12 +73,25 @@ function envCandidates(): string[] {
   return out
 }
 
-/** The real-environment discovery probes (env → registry → drive sweep). */
+/**
+ * The wall-clock CEILING on one discovery sweep (JOS-112). Measured normal cost is ~150 ms; this
+ * bounds the config-dependent pathological case (a huge Uninstall hive, an offline mapped network
+ * drive) so a miss falls back to "user picks manually" instead of hanging boot. Generous on
+ * purpose — it is a hang guard, not a latency target, and a real slow-but-present install must
+ * still be found. The registry phase carries the same deadline so it stops reading more keys.
+ */
+const DISCOVERY_BUDGET_MS = 6000
+
+/** The real-environment discovery probes (env → registry → drive sweep), ceiling-bounded. */
 function realProbes(): DiscoveryProbes {
   return {
     hasLogs: rootHasLogs,
-    extraCandidates: () => [...envCandidates(), ...registryInstallCandidates()],
-    fixedDrives
+    extraCandidates: () => [
+      ...envCandidates(),
+      ...registryInstallCandidates(Date.now() + DISCOVERY_BUDGET_MS)
+    ],
+    fixedDrives,
+    budgetMs: DISCOVERY_BUDGET_MS
   }
 }
 
@@ -85,22 +99,30 @@ function realProbes(): DiscoveryProbes {
  * MEMOIZED DISCOVERY — measured, not a micro-optimization (docs/plans/chunked-replay.md's
  * blocked-main directive; the evidence is in `.bench/replay.jsonl` and the diagnosis below).
  *
- * `discoverEqRoot(realProbes())` spawns EIGHT synchronous `reg query … /s` subprocesses over the
- * whole Uninstall hive and then stats six candidate paths on every fixed drive. MEASURED at
- * ~150 ms, synchronously, on the main process — and `resolveEqDir()` is not a startup-only call:
- * the `character:list` IPC runs it while the renderer is hydrating (it was the ONE main-loop stall
- * left in an otherwise chunked replay — 77/90/106/160 ms across four boots, always at ~1.1 s,
- * always inside `character:list`), the Settings pane runs it, and `presence.ts` runs it on every
- * watcher tick.
+ * `discoverEqRoot(realProbes())` reads eight registry trees and then stats six candidate paths on
+ * every fixed drive. It used to SPAWN those eight reads as `reg query … /s` subprocesses over the
+ * whole Uninstall hive, MEASURED at ~150 ms, synchronously, on the main process — and it SCALED
+ * with the machine: a large Uninstall hive made the reg queries slow, and an offline mapped
+ * network drive makes the drive walk block on the SMB timeout (the config-dependent 30 s boot
+ * hang a user reported). The registry half is now an in-process read (~6 ms, JOS-184), so what
+ * is left to memoize is mostly the disk half — the caching below is unchanged either way, since
+ * the drive walk was always the part that could stall for tens of seconds. `resolveEqDir()` is
+ * not a startup-only call either: `character:list` runs it while the renderer hydrates (the ONE
+ * main-loop stall left in an otherwise chunked replay), the Settings pane runs it, and
+ * `presence.ts` runs it on every watcher tick.
  *
- * So the ANSWER is cached for the process, with the two escape hatches that keep it honest:
- *   * a cached hit is RE-VALIDATED with `rootHasLogs` — one readdir — so an install that moves or
- *     is uninstalled under us re-probes immediately rather than serving a dead path forever;
- *   * `invalidateEqDiscovery()` drops it outright, and is called when the user changes the manual
- *     override (session.ts's `applyEqDirChange`) — the one moment a person can tell us that where
- *     EQ lives has changed.
- * Nothing else is cached: `countCharacterLogs` still reads the directory on every call, because
- * "how many characters are there" changes while the app runs and is one cheap readdir.
+ * TWO CACHE LAYERS (JOS-112), each with a self-heal:
+ *   * IN-PROCESS: `discoveredRoot` memoizes the answer for this process. A cached hit is
+ *     RE-VALIDATED with `rootHasLogs` — one readdir — so an install that moves or is uninstalled
+ *     under us re-probes immediately rather than serving a dead path forever.
+ *   * ACROSS LAUNCHES: a POSITIVE result is persisted (`eqDiscoveredRoot` in the store) so the very
+ *     next launch skips the whole sweep — `resolveDiscoveredRoot` (discovery.ts) revalidates it
+ *     with the same one readdir, drops it if it no longer holds, and NEVER persists a null.
+ *
+ * `invalidateEqDiscovery()` drops BOTH layers, and is called when the user changes the manual
+ * override (session.ts's `applyEqDirChange`) — the one moment a person can tell us that where EQ
+ * lives has changed. Nothing else is cached: `countCharacterLogs` still reads the directory on
+ * every call, because "how many characters are there" changes while the app runs.
  */
 let discoveredRoot: string | null | undefined
 
@@ -109,23 +131,33 @@ function discoverOnce(): string | null {
     if (discoveredRoot === null) return null
     if (rootHasLogs(discoveredRoot)) return discoveredRoot
   }
-  discoveredRoot = discoverEqRoot(realProbes())
+  // Cross-launch layer: prefer a persisted positive hit that still validates (skips the sweep);
+  // else run the ceiling-bounded sweep and persist only a positive result.
+  discoveredRoot = resolveDiscoveredRoot({
+    persisted: getEqDiscoveredRoot() ?? null,
+    hasLogs: rootHasLogs,
+    sweep: () => discoverEqRoot(realProbes()),
+    persist: setEqDiscoveredRoot,
+    dropPersisted: clearEqDiscoveredRoot
+  })
   return discoveredRoot
 }
 
-/** Forget the discovered root, so the next resolution probes the machine again. */
+/** Forget the discovered root — BOTH the in-process memo and the persisted value — so the next
+ *  resolution probes the machine again. Called when the manual override changes. */
 export function invalidateEqDiscovery(): void {
   discoveredRoot = undefined
+  clearEqDiscoveredRoot()
 }
 
 /**
  * CHEAP re-discovery, for the idle rescan only (session.ts `watchForFirstLog`).
  *
- * `discoverOnce` memoizes a NULL result too, which is right for the 150 ms registry sweep but
+ * `discoverOnce` memoizes a NULL result too, which is right for the full sweep but
  * wrong for a machine that simply had no `eqlog_*.txt` yet: the player types `/log on`, the log
  * appears, and discovery's own predicate ("a Logs dir with a character log in it") would now
  * succeed — except nothing re-probes. So the idle path re-runs discovery with the FS half only:
- * env candidates + the drive sweep, no `reg query` subprocesses. That is a dozen `existsSync`
+ * env candidates + the drive sweep, no registry reads at all. That is a dozen `existsSync`
  * calls, affordable every couple of seconds, and it covers the install that discovery could
  * always have found and simply looked for too early. A manual override needs no discovery at
  * all and returns immediately; a memoized root that still has logs is left alone.
@@ -133,8 +165,18 @@ export function invalidateEqDiscovery(): void {
 export function refreshEqDiscoveryCheaply(): void {
   if (getEqInstallDir()?.trim()) return
   if (discoveredRoot && rootHasLogs(discoveredRoot)) return
-  const found = discoverEqRoot({ hasLogs: rootHasLogs, extraCandidates: envCandidates, fixedDrives })
-  if (found) discoveredRoot = found
+  const found = discoverEqRoot({
+    hasLogs: rootHasLogs,
+    extraCandidates: envCandidates,
+    fixedDrives,
+    budgetMs: DISCOVERY_BUDGET_MS
+  })
+  // A positive find is persisted too (JOS-112), so the install this rescan finally caught is
+  // skipped-to directly on the next launch rather than re-swept.
+  if (found) {
+    discoveredRoot = found
+    setEqDiscoveredRoot(found)
+  }
 }
 
 // ---------------------------------------------------------------------------

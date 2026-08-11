@@ -23,7 +23,10 @@
  * position — a real transform change) and rings it; closing it gives the width back to the map
  * and leaves a way back in; and one query reaches the corpus — a label prefix taken from the map
  * on screen lists matches in OTHER zones, and clicking one loads that zone and flashes the
- * transient marker. And there are no renderer console errors.
+ * transient marker. THE SAME BOX ALSO REACHES THE WIKI'S BESTIARY IN EVERY OTHER ZONE (JOS-135):
+ * a High Keep NPC no map pack labels anywhere is found from wherever you happen to be standing,
+ * the row names the zone it will take you to, and clicking it opens that zone's map and marks the
+ * spot his page stated. And there are no renderer console errors.
  *
  * FRESH-MACHINE HONESTY, twice over. A machine with no EQ install has no logs (so the app shows
  * its no-logs empty state and no feature view mounts at all) and no `maps\` directory (so the
@@ -70,7 +73,21 @@ const PANE_MOB = '[data-testid="maps-pane-mob"]'
 const PANE_MOB_PINNED = '[data-testid="maps-pane-mob"]:has([data-testid="maps-pane-pin"])'
 const PANE_LABEL = '[data-testid="maps-pane-label"]'
 const PANE_HIT = '[data-testid="maps-pane-hit"]'
+/** A cross-zone row the WIKI answered with, as opposed to another map's label text (JOS-135). */
+const PANE_HIT_MOB = '[data-testid="maps-pane-hit"][data-kind="mob"]'
 const PANE_MARKER = '[data-testid="maps-pane-marker"]'
+const ZONE_CHIP = '[data-testid="maps-zone-chip"]'
+
+/**
+ * The owner's own report, made into a fixture: a High Keep NPC, searched from anywhere else.
+ *
+ * A REAL NAME FROM THE COMMITTED CATALOG, not an invented one — `Tarn Visilin` is a level-45 High
+ * Keep NPC whose page states one zone and one position, which is exactly the shape this path has
+ * to carry end to end. No map pack labels that name, so before JOS-135 this query answered nothing
+ * at all.
+ */
+const CROSS_ZONE_MOB = 'Tarn Visilin'
+const CROSS_ZONE_STEM = 'highkeep'
 
 /** Rendered text of the first match; '' when the node isn't mounted. */
 function textOf(page: Page, sel: string): Promise<string> {
@@ -288,6 +305,50 @@ async function stepCrossZone(page: Page): Promise<void> {
   check('clicking one loads that zone and flashes the marker where the label is', marked)
 }
 
+/** An attribute off the first match; '' when the node isn't mounted or carries no such attribute. */
+function attrOf(page: Page, sel: string, name: string): Promise<string> {
+  return page.evaluate(
+    ([s, a]) => document.querySelector(s)?.getAttribute(a) ?? '',
+    [sel, name] as const
+  )
+}
+
+/**
+ * 6b. THE OWNER'S REPORT (JOS-135): a name the WIKI knows, in a zone you are not standing in.
+ *
+ * This is the half no map pack can answer — `Tarn Visilin` appears in no label file anywhere, so
+ * the cross-zone section had to gain a second authority to say "High Keep" at all. Asserted end to
+ * end: the row exists, it names its zone, and clicking it actually opens that zone's map and marks
+ * the spot the wiki stated.
+ *
+ * Runs LAST because, like the label jump above it, it leaves you somewhere else.
+ */
+async function stepCrossZoneMob(page: Page): Promise<void> {
+  if ((await textOf(page, ZONE_CHIP)).trim() === CROSS_ZONE_STEM) {
+    note(`already on the ${CROSS_ZONE_STEM} map — the cross-zone MOB jump needs a different zone and is skipped`)
+    return
+  }
+  await page.fill(PANE_SEARCH, CROSS_ZONE_MOB, { timeout: 15_000 })
+  const found = await until(async () => (await countOf(page, PANE_HIT_MOB)) > 0, 15_000)
+  if (!check(`one box also finds a mob the WIKI places elsewhere ("${CROSS_ZONE_MOB}")`, found)) return
+
+  const zone = await attrOf(page, PANE_HIT_MOB, 'data-zone')
+  if (zone === '') {
+    note(`no ${CROSS_ZONE_STEM} map is installed on this machine — the row correctly states the zone without offering to open it`)
+    return
+  }
+  check(
+    '…and the row names the zone it will take you to',
+    zone === CROSS_ZONE_STEM,
+    `row points at "${zone}", expected "${CROSS_ZONE_STEM}"`
+  )
+  await page.click(PANE_HIT_MOB, { timeout: 15_000 })
+  const arrived = await until(async () => (await textOf(page, ZONE_CHIP)).trim() === zone, 25_000)
+  check('clicking it opens THAT zone’s map', arrived, `zone chip reads "${(await textOf(page, ZONE_CHIP)).trim()}"`)
+  const marked = await until(async () => (await countOf(page, '[data-testid="maps-marker"]')) > 0, 20_000)
+  check('…and marks the spot the wiki stated for him', marked)
+}
+
 /** The viewport transform, as the surface itself reports it. Proves the view actually MOVED. */
 function viewOf(page: Page): Promise<{ w: number } | null> {
   return page.evaluate((s) => {
@@ -416,6 +477,7 @@ async function stepPane(page: Page): Promise<void> {
   await stepPaneSelect(page)
   await stepPaneClose(page)
   await stepCrossZone(page)
+  await stepCrossZoneMob(page)
 }
 
 async function main(): Promise<void> {

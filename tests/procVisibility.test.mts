@@ -246,12 +246,17 @@ test('W36: the header, the list and the drill rows all light from the same ledge
   // the six now learns the lane's rate. The five weapon lanes and the one spell the player
   // actually CAST (Wrath — it has a cast line, so procDetect scores it no proc) stay
   // unannotated.
+  // The two lanes carrying `· proc` are the two the CAST-LESS detector judged (JOS-167 names
+  // the lane after its origin): Asp Venom Strike and Smiting Strike both arrive as
+  // `dtype: 'spell'` damage with no cast line. Blood Siphon Strike parses as a DoT (ineligible,
+  // see the w41 header) and the three damage-less Strikes have no damage row at all — they are
+  // grafted from the emote ledger — so none of the four is renamed.
   const rows = annotatedRows(zone)
   assert.deepEqual(sortedKeys(rows), [
-    'Asp Venom Strike',
+    'Asp Venom Strike · proc',
     'Befuddling Strike',
     'Blood Siphon Strike',
-    'Smiting Strike',
+    'Smiting Strike · proc',
     'Stunning Strike',
     'Weakening Strike'
   ])
@@ -311,14 +316,14 @@ test('W41: the venom row learns its rate; the slow lane has no row to learn one'
   // Asp Venom Strike deals damage (2 hits, 106) so the meter has a row for it, and the row now
   // carries the LANE's rate — the ambiguous `Asp Venom Strike / Cobra Venom Strike` lane, whose
   // count is exact and whose name is not.
-  const asp = procAnnotationFor(procTagIndex(zone.procs.procSkills), 'Asp Venom Strike')
+  const asp = procAnnotationFor(procTagIndex(zone.procs.procSkills), 'Asp Venom Strike · proc')
   assert.match(asp?.text ?? '', /^proc · /)
   assert.match(asp?.hint ?? '', /Asp Venom Strike \/ Cobra Venom Strike/)
   assert.deepEqual(sortedKeys(rows), [
-    'Asp Venom Strike',
+    'Asp Venom Strike · proc',
     'Befuddling Strike',
     'Blood Siphon Strike',
-    'Smiting Strike',
+    'Smiting Strike · proc',
     'Stunning Strike',
     'Weakening Strike'
   ])
@@ -356,7 +361,12 @@ test('W38: the merged Slay Undead row learns the slay lane rate; no poison anywh
   // the drill merges them into ONE row named after the lane. That merged row is what carries
   // the rate — the weapon rows underneath it are mostly ordinary swings and must not.
   const rows = annotatedRows(zone)
-  assert.deepEqual(sortedKeys(rows), ['Condemnation of Nife', 'Dismiss Undead', 'Slay Undead', 'Smiting Strike'])
+  assert.deepEqual(sortedKeys(rows), [
+    'Condemnation of Nife · proc',
+    'Dismiss Undead · proc',
+    'Slay Undead',
+    'Smiting Strike · proc'
+  ])
   assert.equal(rows.get('Melee'), undefined)
   assert.equal(rows.get('Backstab'), undefined)
 

@@ -270,6 +270,11 @@ export function ownBreakdown(entities: SourceView[], combine: boolean): OwnBreak
  * A drill id that resolves to nothing (a `pet:<instanceId>` from a past session, a fight that
  * moved on, a 'you' that blinks out between fights) yields LEVEL 1 for this render — the caller's
  * stored value is never touched, so the drill re-applies the moment the entity is back.
+ *
+ * TWO LEVELS ONLY (JOS-113). JOS-105 added a third — one damage TYPE of a source, reached from a
+ * category chip. The owner rejected the grouping: one bar per ability, flat, and a stat-bearing
+ * ability's crit/double/triple/miss expand INLINE within this level-2 list (abilityStats.ts /
+ * combatShared.SkillBar), never as a level of their own.
  */
 export type MeterPanel =
   | { level: 1; sources: SourceView[] }
@@ -284,18 +289,73 @@ export type MeterPanel =
     }
 
 /**
- * THE ROW BUILDER. Both damage meters call exactly this, with exactly their own drill id: the
- * Combat tab passes `drill.kind === 'entity' ? drill.entityId : null`, the overlay passes its
- * persisted `drill?.entityId ?? null`. `null` means LEVEL 1 on both — one spelling, one level, so
- * the two surfaces cannot open on different things. Everything downstream — nesting, ranking,
- * bar widths, the pet's real name, the parent for the crumb — is decided here, once.
+ * A drill as the builder takes it: a source. It is exactly the shape the overlay persists
+ * (`OverlayDrill`), so that surface hands its stored value straight in; the Combat tab and the
+ * Overview card translate their richer union with `dashboardData.meterDrill`.
+ */
+export interface MeterDrill {
+  entityId: string
+}
+
+/**
+ * THE ROW BUILDER. Every damage meter calls exactly this, with exactly its own drill token — the
+ * Combat tab and the Overview card through `dashboardData.meterDrill`, the overlay by handing
+ * over the value it persisted. `null` means LEVEL 1 on all three: one spelling, one level, so no
+ * two surfaces can open on different things. Everything downstream — nesting, ranking, bar
+ * widths, the pet's real name, the parent for the crumb, and the category detail — is decided
+ * here, once.
  *
  * The drill is resolved against the RAW entity list, never the folded one: a pet that has no
  * level-1 bar of its own while combine is on is still a perfectly good drill subject (it is a
  * line item inside your breakdown, and a persisted drill straight into it must still resolve).
+ *
+ * A STALE DRILL DEGRADES TO LEVEL 1, never to a blank list: an entity id that resolves to nothing
+ * renders the source list. The caller's stored value is untouched, so the drill re-applies the
+ * moment the data is back.
  */
-export function meterPanel(entities: SourceView[], combine: boolean, entityId: string | null): MeterPanel {
-  const subject = entityId === null ? undefined : entities.find((e) => e.id === entityId)
+/**
+ * WHAT THE HEADLINE OVER *THIS* PANEL COVERS — the one derivation every UNLABELLED damage
+ * headline in the app reads (JOS-170).
+ *
+ * THE DEFECT IT FIXES, in the owner's words: "with a fight drilled into the You row, changing the
+ * pet preference does not recalculate the You line - the pet was moved out, and the title line for
+ * the You drill kept the old combined total (321 in the observed case)."
+ *
+ * Nothing was memoized wrong and nothing was snapshotted at drill time. The headline was simply
+ * the SEGMENT's aggregate at every level — you + your pets + whoever else swung — and while the
+ * pet was folded INTO your row that aggregate happened to be exactly what the You drill was
+ * showing (`total` there is self + nested pets, which IS `outTotal` for a solo fight; see the
+ * header of this file). Turn the preference off and the pet's damage leaves the drill while the
+ * headline stays where it was: a number no visible row accounts for, which is the "aggregates
+ * lie" failure (world-model law 5) and the exact reason `meterScope.scopeTotals` exists one axis
+ * over. The preference did not fail to apply — the rows moved and the headline was never asked to.
+ *
+ * SO IT IS DERIVED FROM WHAT THE PANEL IS SHOWING, at whichever level it resolved:
+ *   level 1 ⇒ the caller's already-scoped pair, unchanged (the ranked list IS the segment, minus
+ *             whatever the meter scope filtered — which `scopeTotals` has already accounted for).
+ *   level 2 ⇒ the drilled subject plus the pets nested INTO it, which is exactly what
+ *             `MeterPanel.rows` sums to. Flip the preference and `pets` empties, so the number
+ *             follows in the same render — in both directions and without re-selecting anything.
+ *
+ * `dps` is SCALED rather than re-derived, for `scopeTotals`' reason: every source's rate divides
+ * by the same segment elapsed time (`main/combat/sourceViews.ts` — `s.total / durationSec`), so
+ * the ratio is exact arithmetic rather than a second opinion. That also makes it the right call
+ * for the ACTIVE-time rate, which no source carries at all: one function, either rate.
+ *
+ * WHAT IT DELIBERATELY DOES NOT TOUCH: the overlay meters' crumb figure, which is LABELLED `all`
+ * and states the whole segment on purpose (JOS-158, owner direction with a screenshot —
+ * overlay/meterCrumb.tsx says so at length). That is the rule this ticket makes explicit: a
+ * headline that SAYS what it covers may cover the segment; an unlabelled one sitting above the
+ * rows must describe the rows.
+ */
+export function panelTotals(panel: MeterPanel, total: number, dps: number): { total: number; dps: number } {
+  if (panel.level === 1) return { total, dps }
+  const shown = [panel.subject, ...panel.pets].reduce((n, s) => n + s.total, 0)
+  return { total: shown, dps: total > 0 ? (dps * shown) / total : 0 }
+}
+
+export function meterPanel(entities: SourceView[], combine: boolean, drill: MeterDrill | null): MeterPanel {
+  const subject = drill ? entities.find((e) => e.id === drill.entityId) : undefined
   if (!subject) return { level: 1, sources: meterSources(entities, combine) }
   // Pets nest into YOUR row only: a pet inside a pet would be a fiction, and an enemy's row in
   // the Incoming direction has no pets of yours in it at all.

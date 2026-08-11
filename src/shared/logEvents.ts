@@ -7,6 +7,34 @@
 
 import type { DamageType, DamageCategory } from './combat'
 import type { PoisonEffect, PoisonGroup } from './poisons'
+// The /consider LADDER (rungs, chip labels, the app's faction palette, the difficulty
+// shorthand) moved to ./considerFaction in JOS-128, when this file hit its 400-line factoring
+// ceiling. Three of the four are presentation and the fourth is the parser's phrase table, so
+// none of them was an event shape. RE-EXPORTED verbatim below: every existing import site still
+// reads them from `@shared/logEvents`, exactly as it always has.
+import type { ConsiderFaction } from './considerFaction'
+
+// The ACQUISITION event shapes (coin / itemReceived / purchase — JOS-144) live in
+// ./acquireEvents for the same reason the consider ladder moved out: this file is long past its
+// factoring ceiling. RE-EXPORTED verbatim, so every consumer still reads them from
+// `@shared/logEvents`, and the union below carries the three new members.
+import type { CoinEvent, ItemReceivedEvent, PurchaseEvent } from './acquireEvents'
+
+export type { ConsiderFaction }
+export type {
+  Coins,
+  CoinEvent,
+  CoinSource,
+  ItemReceivedEvent,
+  ItemReceivedVia,
+  PurchaseEvent
+} from './acquireEvents'
+export {
+  CONSIDER_FACTION_COLOR,
+  CONSIDER_FACTION_LABEL,
+  CONSIDER_FACTION_RUNGS,
+  considerDifficultyShort
+} from './considerFaction'
 
 /** Fields present on every event: a monotonic sequence, timestamp, and the raw line. */
 export interface LogEventBase {
@@ -367,12 +395,31 @@ export interface ResistEvent extends LogEventBase {
 export interface CharmEvent extends LogEventBase {
   kind: 'charm'
   mob: string
+  /**
+   * Every charm spell `<mob> has been charmed.` could be, from the DB's cast-on-other suffix
+   * table — the same list `cc` carries, and for the same reason (JOS-84's law: the parser hands
+   * over candidates, the MODEL resolves them against the player's own casts).
+   *
+   * ADDED BY JOS-140, because charm is a DETRIMENTAL HOLD like any other and the owner wants its
+   * countdown: charm-break timing is the whole game for an enchanter, and the sentence is seven
+   * spells in the committed DB with durations from 48 s to 19 minutes, so a bar cannot be drawn
+   * from it without knowing which one you cast. Absent when no spell DB is installed, which
+   * leaves the event byte-identical to what it was.
+   */
+  candidates?: { name: string; durationMs: number | null }[]
 }
 
 /** `Your <charm spell> spell has worn off of <mob>.` — pet off (charm spells only). */
 export interface UncharmEvent extends LogEventBase {
   kind: 'uncharm'
   mob: string
+  /**
+   * The charm spell the line NAMED. The regex has always captured it and the event used to throw
+   * it away; JOS-140 carries it so the break closes the charm hold by LINE rather than closing
+   * every hold on that mob anonymously — which is also what makes the span a clean cycle the
+   * learner may mint from.
+   */
+  spell?: string
 }
 
 /**
@@ -416,6 +463,33 @@ export interface CcEvent extends LogEventBase {
    * The REFRESH shape never carries it: that line names its spell outright in `spell`.
    */
   candidates?: { name: string; durationMs: number | null }[]
+}
+
+/**
+ * `<Mob> has been awakened by <Name>.` — a crowd-control hold that somebody BROKE (JOS-180).
+ *
+ * It is the log naming the cause of an ending the wear-off sentence describes without explaining.
+ * `Your <S> spell has worn off of <mob>.` is printed identically whether a mez ran its full course
+ * or a nuke ended it at two seconds (world-model law 3's censoring, stated in buffsStats.ts), and
+ * that ambiguity is what made JOS-180: a learner fed break spans as if they were durations settles
+ * BELOW the real one and can never climb back. This line is the missing half of the pair.
+ *
+ * IT IS AN ANNOTATION, NEVER AN ENDING. The hold is already closed by the wear-off line that
+ * precedes it — MEASURED over the owner's whole log (1,518 wakes): 1,472 of them share the exact
+ * second of that mob's wear-off, the wear-off line comes FIRST in every single one (1,462 of them
+ * immediately adjacent), one sits 27 s from an unrelated cycle, and 45 have no wear-off within
+ * 30 s at all. So a consumer must not close anything on it; `modules/buffTimers.ts` uses it only
+ * to mark the sample the wear-off just minted as CENSORED.
+ *
+ * `by` is whoever the line names — the player, a group member, or a mob that hit it. It is carried
+ * because it is stated, not because anything reads it yet: the censoring rule cares only that the
+ * hold was broken, and by-whom is the same fact regardless of the answer.
+ */
+export interface CcWakeEvent extends LogEventBase {
+  kind: 'ccWake'
+  mob: string
+  /** The name the line states as having broken the hold. Raw (world-model law 2: display raw). */
+  by: string
 }
 
 /**
@@ -506,6 +580,30 @@ export interface CastBeginEvent extends LogEventBase {
 }
 
 /**
+ * `<Name> begins casting <Spell>.` — SOMEBODY ELSE's cast, named (JOS-140).
+ *
+ * The third-person twin of `castBegin`, and the only line in the log that says who else is
+ * casting what. It exists because the buffs model's attribution is CAST-ANCHORED: a landing
+ * sentence is a broadcast that names no caster, so a buff another player put on your group can
+ * only be admitted if something anchors it — and this is the something.
+ *
+ * IT IS NOT A LICENCE. Emitting the event says the line was printed, nothing more; the buffs model
+ * records it as an anchor ONLY for a caster on the user's externals allowlist, which ships EMPTY
+ * (shared/buffTrust.ts). The subject may equally be a MOB — `Lord Nagafen begins casting
+ * Immobilize.` is 583 lines of the committed fixtures — so a rule that trusted the shape would
+ * hand a raid boss's debuffs to your own bars.
+ *
+ * Matched AFTER the first-person cast lifecycle, so `You begin casting …` can never reach it.
+ */
+export interface OtherCastBeginEvent extends LogEventBase {
+  kind: 'otherCastBegin'
+  /** The caster's raw display name, exactly as the line spelled it. */
+  caster: string
+  /** The spell name, rank suffix intact — the only line family that carries one. */
+  spell: string
+}
+
+/**
  * `Your <Spell> spell fizzles!` — the player's cast failed (no effect). Clears the
  * pending cast. Spell is captured (the real log always names it; targetless
  * `spell fizzles!` was never observed).
@@ -520,11 +618,26 @@ export interface CastFizzleEvent extends LogEventBase {
  * stunned, etc.). Clears the pending cast. NOTE (log evidence, 2026-08-01): the
  * real log has NO bare `Your spell is interrupted.` line — the shape always names
  * the spell. `You regain your concentration and continue your casting.` is the
- * OPPOSITE (a recovered cast) and is deliberately NOT parsed as an interrupt.
+ * OPPOSITE (a recovered cast) and is never parsed as an interrupt — it is its own
+ * kind, `castResumed` below.
  */
 export interface CastInterruptedEvent extends LogEventBase {
   kind: 'castInterrupted'
   spell: string
+}
+
+/**
+ * `You regain your concentration and continue your casting.` — the interrupted cast is BACK ON
+ * and will land (JOS-167). Parsed because the interrupt line alone is not evidence a cast
+ * failed: measured over the whole log, every one of the nine interrupts followed by a landing of
+ * the same spell has this line between them, so a model that drops the cast on the interrupt has
+ * to be told when to put it back.
+ *
+ * It names NO spell, and does not need to: casting is serial, so the only cast it can be about
+ * is the one that was just interrupted.
+ */
+export interface CastResumedEvent extends LogEventBase {
+  kind: 'castResumed'
 }
 
 /**
@@ -782,6 +895,34 @@ export interface CampStartEvent extends LogEventBase {
 }
 
 /**
+ * A `/outputfile` DUMP FINISHED WRITING — `Outputfile Complete: Primitive_freeport-Inventory.txt`
+ * (JOS-128). The ONE line that says WHEN the player produced an export, in EQ's own clock.
+ *
+ * This is the whole reason the event exists. An inventory dump is the BASELINE of the inventory
+ * model (owner, 2026-08-09): loading one RESETS what we think you hold, and log-derived loot
+ * accumulates from that instant forward. Deciding "forward" needs the generation instant, and
+ * comparing it against a loot event's `ts` is only sound inside ONE time base — this line's
+ * timestamp is parsed by the same `parseTs` every loot row's is, so the comparison never crosses
+ * a clock. The file's mtime is the fallback (`shared/outputs/baseline.ts` states its failure
+ * modes); the dump's CONTENT carries no date at all, verified against the real 295-row dump.
+ *
+ * MEASURED against the real 116 MB log (2026-08-09): `^\[…\] Outputfile Complete: ` matches
+ * exactly 2 lines (Sat Aug 01 13:33:43 and Thu Aug 06 15:39:12), both this shape. Full-log kind
+ * histogram diffed with the classifier off and on: `unknown` 270631 → 270629, `outputFile`
+ * 0 → 2, every other kind byte-identical. The `usage: /outputfile […]` line the game prints for
+ * a malformed command is NOT this shape and stays unknown — it wrote no file.
+ *
+ * `file` is the name EQ printed, with no directory: EQ writes dumps into the install root. It is
+ * carried verbatim rather than matched against a kind, because `/outputfile inventory <name>`
+ * lets the player choose the name and the only honest join is against the file we actually read.
+ */
+export interface OutputFileEvent extends LogEventBase {
+  kind: 'outputFile'
+  /** The dump's file name, exactly as the game printed it. */
+  file: string
+}
+
+/**
  * The camp was CANCELLED — `You abandon your preparations to camp.` (2× in the real log,
  * Aug 02 01:34:09 and 01:34:14, each in the SAME second as its own campStart).
  *
@@ -965,6 +1106,50 @@ export interface SpecialAttackEvent extends LogEventBase {
 }
 
 /**
+ * A CLASS BECAME AVAILABLE AS A PRIMARY — `You have completed achievement: Primary Class Unlock
+ * - Paladin` (JOS-148). The one line the game prints that states an unlock outright, and
+ * therefore the only thing in this repo that can OBSERVE one rather than derive it.
+ *
+ * WHY IT EXISTS AT ALL, measured rather than assumed. The Sky class tests are supposed to unlock
+ * their class (external claim, eqlwiki Plane_of_Sky), so the obvious model is "all M turn-ins
+ * therefore unlocked". That model is INCOMPLETE, and the owner's own log is the counterexample:
+ * a full Sky turn-in circuit on 2026-08-09 (26 completed trades across 14 of the 16 givers)
+ * printed NOTHING but `You gain experience!` — no achievement, no reward line — while the ONE
+ * first-person unlock line in all 1,461,881 lines fired at `Welcome to level 11!` in a dungeon,
+ * for Paladin, on a character that had never handed a Sky giver anything. A class unlocks from
+ * the level-11 primary pick, from the free level-50 token and from a bought token, and none of
+ * those leaves a turn-in behind. So turn-ins are evidence of PROGRESS and this line is evidence
+ * of the ANSWER, and a tab that had only the first would call an unlocked class locked.
+ *
+ * SELF ONLY, and that is a choice rather than a limitation of the grammar. The third-person
+ * `<Name> has completed achievement: Primary Class Unlock - <Class>` does exist (3 lines,
+ * strangers) and stays `{kind:'unknown'}` deliberately: a stranger's unlock is not a fact about
+ * this character, and the only consumer asks what THIS character can play. Anchoring on
+ * `You have completed achievement: ` is also what makes the rule safe, because the classifier
+ * sees the message with its `[timestamp] ` prefix already stripped, so a chat line quoting the
+ * sentence begins with the speaker's name and can never reach it.
+ *
+ * THE CLASS NAME IS CARRIED VERBATIM (law 2: canonicalize at boundaries, display raw). Matching
+ * it to the bundled Sky data's spelling is the RENDERER's job, case-insensitively, because the
+ * parser has no business importing a quest catalog and a pre-translated name would put the
+ * alias in two places.
+ *
+ * MEASURED before it existed: all 155 lines of the achievement family (113 `You have completed
+ * achievement:` plus the reward/token siblings) parsed as `{kind:'unknown'}`, so this rule can
+ * neither shadow nor be shadowed by anything already in the cascade.
+ *
+ * WHAT THIS LINE CANNOT SAY, stated rather than papered over: no class in the owner's log is
+ * anywhere near a complete Sky set (best is 3 of 7), so nothing here witnesses a Sky-DRIVEN
+ * unlock. That the last turn-in prints this same line is a wiki claim, and the tab is written
+ * so it never has to be true.
+ */
+export interface ClassUnlockEvent extends LogEventBase {
+  kind: 'classUnlock'
+  /** the class as the client spelled it ('Paladin', 'Shadow Knight'), untranslated. */
+  className: string
+}
+
+/**
  * A WORN ITEM EFFECT ANNOUNCED ITSELF. TWO verified shapes, and a full-log sweep found no third
  * `Your <item> …` activation family:
  *
@@ -1094,113 +1279,6 @@ export interface ConsiderEvent extends LogEventBase {
   difficulty: string
 }
 
-/**
- * The faction (con-message) ladder, friendliest → most hostile. These are the rungs EQ prints
- * between the mob name and the ` -- `; the key is a 1:1 rename of the phrase, not an inference.
- *
- * FULL-LOG SWEEP (2026-08-03, 357 consider lines — every line accounted for, no residue):
- *   regards you indifferently        128
- *   scowls at you, ready to attack   102
- *   judges you amiably                60
- *   glowers at you dubiously          34
- *   glares at you threateningly       17
- *   looks your way apprehensively     14
- *   looks upon you warmly              2
- * The two remaining rungs of the classic ladder — `regards you as an ally` and `kindly considers
- * you` — do NOT occur in this log (this character has no maxed faction). They are matched anyway,
- * for the same reason the stance regex is name-permissive: covering a rung we haven't stood on
- * costs nothing and refusing it would silently drop the whole line. Nothing infers a rung that
- * wasn't printed.
- */
-export type ConsiderFaction =
-  | 'ally'
-  | 'warmly'
-  | 'kindly'
-  | 'amiably'
-  | 'indifferent'
-  | 'apprehensive'
-  | 'dubious'
-  | 'threatening'
-  | 'scowls'
-
-/** phrase → rung, friendliest first. The parser builds its alternation from this list. */
-export const CONSIDER_FACTION_RUNGS: readonly { phrase: string; faction: ConsiderFaction }[] = [
-  { phrase: 'regards you as an ally', faction: 'ally' },
-  { phrase: 'looks upon you warmly', faction: 'warmly' },
-  { phrase: 'kindly considers you', faction: 'kindly' },
-  { phrase: 'judges you amiably', faction: 'amiably' },
-  { phrase: 'regards you indifferently', faction: 'indifferent' },
-  { phrase: 'looks your way apprehensively', faction: 'apprehensive' },
-  { phrase: 'glowers at you dubiously', faction: 'dubious' },
-  { phrase: 'glares at you threateningly', faction: 'threatening' },
-  { phrase: 'scowls at you, ready to attack', faction: 'scowls' }
-]
-
-/** Short, glanceable rung label for a chip/badge. */
-export const CONSIDER_FACTION_LABEL: Record<ConsiderFaction, string> = {
-  ally: 'ally',
-  warmly: 'warmly',
-  kindly: 'kindly',
-  amiably: 'amiable',
-  indifferent: 'indifferent',
-  apprehensive: 'apprehensive',
-  dubious: 'dubious',
-  threatening: 'threatening',
-  scowls: 'KOS'
-}
-
-/**
- * The APP's faction palette (friendly cool → hostile warm). This is our presentation choice,
- * not a color the game states — EQ's own con COLOR encodes relative LEVEL, not faction, and the
- * log never carries a color at all. Kept beside the ladder so the overlay and the main window
- * can't drift apart.
- */
-export const CONSIDER_FACTION_COLOR: Record<ConsiderFaction, string> = {
-  ally: '#5fe08a',
-  warmly: '#7fd8a0',
-  kindly: '#6fa8f0',
-  amiably: '#7fc4e8',
-  indifferent: '#c8ccd8',
-  apprehensive: '#c9c65a',
-  dubious: '#d6a94a',
-  threatening: '#e08b45',
-  scowls: '#e05c5c'
-}
-
-/**
- * The difficulty clause → a short label for a dense row. Keys are the VERBATIM phrases observed
- * in the full-log sweep, with the gendered pronoun folded to a regex-free `he|she|it` lookup
- * below; a phrase we've never seen returns undefined and the caller shows the verbatim clause
- * (never a guessed tier — and deliberately NO numeric ordering, which the log does not state).
- */
-const CONSIDER_DIFFICULTY_SHORT: Record<string, string> = {
-  'what would you like your tombstone to say?': 'suicide',
-  'looks like it would wipe the floor with you!': 'wipes the floor',
-  'it appears to be quite formidable.': 'formidable',
-  'looks like quite a gamble.': 'a gamble',
-  'looks kind of dangerous.': 'dangerous',
-  "you would probably win this fight... it's not certain though.": 'probably win',
-  'looks quite risky, but might be worth a try.': 'worth a try',
-  'looks kind of risky, but you might win.': 'might win',
-  'looks kind of risky... you might win.': 'might win',
-  'you could probably win this fight.': 'likely win',
-  'looks like a reasonably safe opponent.': 'safe'
-}
-
-/**
- * Short label for a difficulty clause, or undefined when we've never seen the phrase.
- * Folds the gendered variants EQ emits for two of the clauses ("looks like HE/SHE/IT would wipe
- * the floor with you!", "HE/SHE/IT appears to be quite formidable.") onto the neuter key.
- */
-export function considerDifficultyShort(difficulty: string): string | undefined {
-  const key = difficulty
-    .trim()
-    .toLowerCase()
-    .replace(/\b(?:he|she)\b/g, 'it')
-    .replace(/\s+/g, ' ')
-  return CONSIDER_DIFFICULTY_SHORT[key]
-}
-
 // ---------------------------------------------------------------------------
 // ROGUE POISON events (Task #64). The catalog these describe — the roster, the coat/dry
 // message tables, the Strike proc emotes and the dispel family — lives in shared/poisons.ts;
@@ -1266,6 +1344,12 @@ export interface UnknownEvent extends LogEventBase {
 export type LogEvent =
   | ZoneEvent
   | LootEventE
+  // The three acquisition families that carry no corpse (JOS-144, ./acquireEvents). They sit
+  // beside loot because they answer the same question — how did this reach me — and every line
+  // any of them claims was MEASURED `{kind:'unknown'}` before they existed.
+  | CoinEvent
+  | ItemReceivedEvent
+  | PurchaseEvent
   | OfferEvent
   | TradeEvent
   | LevelEventE
@@ -1283,11 +1367,18 @@ export type LogEvent =
   | CharmEvent
   | UncharmEvent
   | CcEvent
+  // Beside `cc` because it annotates one: the line that says a hold was BROKEN rather than that it
+  // ended (JOS-180). Deliberately NOT in `shared/alertTypes.ts`'s curated `LogEventKind` — it is
+  // parser-internal evidence for the duration learner, and JOS-161's per-song break alerts already
+  // cover "my mez ended" from the `cc {refresh:true}` side.
+  | CcWakeEvent
   | PetClaimEvent
   | PetSayEvent
   | CastBeginEvent
+  | OtherCastBeginEvent
   | CastFizzleEvent
   | CastInterruptedEvent
+  | CastResumedEvent
   | BuffFadeEvent
   | PlayerDeathEvent
   | SpellEmoteEvent
@@ -1300,6 +1391,7 @@ export type LogEvent =
   | SessionStartEvent
   | CampStartEvent
   | CampAbortEvent
+  | OutputFileEvent
   | GroupEvent
   | OfflineGapEvent
   | StanceChangeEvent
@@ -1307,6 +1399,9 @@ export type LogEvent =
   | SelfWhoEvent
   | SkillUpEvent
   | SpecialAttackEvent
+  // Beside the three statements-about-the-character above, because it is a fourth one: what
+  // this character is allowed to BE (JOS-148). Measured `{kind:'unknown'}` before it existed.
+  | ClassUnlockEvent
   | ItemActivateEvent
   | ItemMergeEvent
   | ItemMergeFailedEvent

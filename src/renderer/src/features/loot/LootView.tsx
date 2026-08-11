@@ -16,221 +16,46 @@
 // `openLoot` (the Overview's drop rows). Keyed on the NONCE, exactly like the Mobs tab's target:
 // this view is remounted per character rebuild and unmounted whenever you leave the tab, so the
 // effect runs on arrival, and asking for the same item twice must open it twice.
+//
+// THIS LEDGER MOUNTS NO TOOLTIP POPPER (JOS-127, owner direction 2026-08-09). A 0.14.0 user could
+// not change the sort off "Last looted": the Sort select sits in the toolbar, and the surfaces
+// stacked directly under it — the notable-pickups chips and the first table rows — wore
+// `placement="top"`, INTERACTIVE hover cards (`lib/KnownItemTooltip`, up to 380px wide) that open
+// upward across the toolbar and, being interactive, hold `pointer-events: auto` while they are up.
+// The card was over the control and ate the click aimed at it. The fix is REMOVAL, not a timeout
+// or a placement flip: the app wants fewer tooltips, and none that can sit over an interactive
+// control. Same precedent, same reasoning as the nav's UpdateChip; `tests/tooltipCursor.test.mts`
+// pins both structurally, because "the popper cannot mount" is what "it cannot eat the click"
+// means. What the hover used to say is not lost — clicking a row (or a pickup chip) opens the
+// drill-down, which is where the item window and its quest/recipe knowledge live anyway.
 
-import { type JSX, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  Alert,
-  Box,
-  Chip,
-  FormControlLabel,
-  IconButton,
-  MenuItem,
-  Snackbar,
-  Stack,
-  Switch,
-  TextField,
-  Typography
-} from '@mui/material'
-import RefreshIcon from '@mui/icons-material/Refresh'
-import type { CountSource } from '@shared/types'
+import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Box, Snackbar, Stack } from '@mui/material'
+import type { LootEvent } from '@shared/types'
 import type { NavBack } from '../../appRouting'
+import { useBackTarget } from '../../appBack'
 import { useWindowedRows } from '../../lib/useWindowedRows'
 import { itemCountKey } from '../../lib/itemName'
-import { formatDateTime, formatTime } from '../../lib/formatDate'
+import type { InventoryRow } from '../inventory/reconcile'
 import { useFavorites } from '../favorites/useFavorites'
 import { useProgress } from '../posky/useProgress'
 import { ItemDetailPane } from './ItemDetailPane'
 import { itemStats, questItemNames } from './lootItemData'
 import { ROW_HEIGHT } from './lootRows'
 import { LootTable } from './LootTables'
-import {
-  DEFAULT_LOOT_SORT,
-  isLootSortKey,
-  LOOT_SORT_OPTIONS,
-  type LootSortKey
-} from './lootSort'
+// The chrome around the table — the toolbar, the caption and the notices — plus the two pieces of
+// view state that belong to them. JOS-160 moved it out when this file crossed its measured line
+// ceiling; nothing changed in the move.
+import { LootNotices, LootSummary, LootToolbar, useLootSort } from './LootChrome'
 import { NotablePickupsStrip, useNotableStrip } from './NotablePickupsStrip'
 import { useLootRows } from './useLootRows'
-import { Tooltip } from '../../lib/Tooltip'
-
-// The grouped table's order picker (JOS-91). Its own component so LootToolbar stays inside the
-// measured lines-per-function ceiling.
-//
-// It is rendered ONLY when grouping is on, and that is a claim about honesty rather than about
-// clutter: ungrouped, the ledger is already a chronological one — newest first — so an order
-// picker there would be a control that either does nothing or lies about what it changed.
-function LootSortSelect({
-  sort,
-  setSort
-}: {
-  sort: LootSortKey
-  setSort: (v: LootSortKey) => void
-}): JSX.Element {
-  return (
-    <Tooltip title="How the grouped rows are ordered. Favorites stay pinned on top.">
-      <TextField
-        select
-        size="small"
-        label="Sort"
-        value={sort}
-        onChange={(e) => setSort(e.target.value as LootSortKey)}
-        sx={{ minWidth: 160 }}
-        data-testid="loot-sort"
-      >
-        {LOOT_SORT_OPTIONS.map((o) => (
-          <MenuItem key={o.value} value={o.value}>
-            {o.label}
-          </MenuItem>
-        ))}
-      </TextField>
-    </Tooltip>
-  )
-}
-
-// The filter bar: search, the two view switches, the grouped table's sort, the opt-in
-// inventory-only chip, and the count-source select that decides what "In inventory" is counting.
-function LootToolbar({
-  query,
-  setQuery,
-  groupByItem,
-  setGroupByItem,
-  questOnly,
-  setQuestOnly,
-  sort,
-  setSort,
-  invOnlyCount,
-  showInventoryOnly,
-  onToggleInventoryOnly,
-  countSource,
-  setCountSource,
-  onReload
-}: {
-  query: string
-  setQuery: (v: string) => void
-  groupByItem: boolean
-  setGroupByItem: (v: boolean) => void
-  questOnly: boolean
-  setQuestOnly: (v: boolean) => void
-  sort: LootSortKey
-  setSort: (v: LootSortKey) => void
-  invOnlyCount: number
-  showInventoryOnly: boolean
-  onToggleInventoryOnly: () => void
-  countSource: CountSource
-  setCountSource: (s: CountSource) => void
-  onReload: () => void
-}): JSX.Element {
-  return (
-    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-      <TextField
-        size="small"
-        label="Search looted item"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        sx={{ minWidth: 260 }}
-      />
-      <FormControlLabel
-        control={<Switch checked={groupByItem} onChange={(e) => setGroupByItem(e.target.checked)} />}
-        label="Group by item"
-      />
-      <FormControlLabel
-        control={<Switch checked={questOnly} onChange={(e) => setQuestOnly(e.target.checked)} />}
-        label="Only Plane of Sky items"
-      />
-      {groupByItem && <LootSortSelect sort={sort} setSort={setSort} />}
-      {groupByItem && invOnlyCount > 0 && (
-        <Tooltip title="Items your inventory export holds that you haven’t looted this epoch.">
-          <Chip
-            size="small"
-            variant={showInventoryOnly ? 'filled' : 'outlined'}
-            color={showInventoryOnly ? 'primary' : 'default'}
-            label={`+${invOnlyCount.toLocaleString()} in inventory only`}
-            onClick={onToggleInventoryOnly}
-          />
-        </Tooltip>
-      )}
-      <Box sx={{ flexGrow: 1 }} />
-      <Tooltip title="Which source feeds the ‘In inventory’ estimate.">
-        <TextField
-          select
-          size="small"
-          label="Count from"
-          value={countSource}
-          onChange={(e) => setCountSource(e.target.value as CountSource)}
-          sx={{ minWidth: 150 }}
-        >
-          <MenuItem value="log">Log (looted)</MenuItem>
-          <MenuItem value="inventory">Inventory export</MenuItem>
-          <MenuItem value="both">Both (max)</MenuItem>
-        </TextField>
-      </Tooltip>
-      <Tooltip title="Run /outputfile inventory in-game, then reload">
-        <IconButton size="small" onClick={onReload}>
-          <RefreshIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    </Stack>
-  )
-}
-
-// The one-line ledger caption. `autoUpdatedAt` is set when main's chokidar watch re-read the
-// *-Inventory.txt underneath us — surfaced quietly, in success-green, rather than as a toast.
-function LootSummary({
-  eventCount,
-  uniqueCount,
-  inventoryInfo,
-  autoUpdatedAt
-}: {
-  eventCount: number
-  uniqueCount: number
-  inventoryInfo?: { path: string; loadedAt: string }
-  autoUpdatedAt: number | null
-}): JSX.Element {
-  return (
-    <Typography variant="body2" color="text.secondary">
-      {eventCount.toLocaleString()} loot events · {uniqueCount.toLocaleString()} unique items · click a
-      row for mob/zone/drop-rate breakdown ·{' '}
-      {inventoryInfo
-        ? `inventory export ${formatDateTime(new Date(inventoryInfo.loadedAt).getTime())}`
-        : 'no inventory export loaded'}
-      {autoUpdatedAt && (
-        <Typography component="span" variant="body2" sx={{ color: 'success.main' }}>
-          {' '}· auto-updated {formatTime(autoUpdatedAt)}
-        </Typography>
-      )}
-    </Typography>
-  )
-}
-
-// The grouped table's order survives restarts, the way the Quests tab's does (useQuestList's
-// `eq.questSort`). An order retired from LOOT_SORT_OPTIONS falls back to the default rather than
-// sorting by nothing.
-const SORT_KEY = 'eq.lootSort'
-
-function loadLootSort(): LootSortKey {
-  const v = localStorage.getItem(SORT_KEY)
-  return isLootSortKey(v) ? v : DEFAULT_LOOT_SORT
-}
-
-/** The grouped order and its persistence, in one line of the view. */
-function useLootSort(): [LootSortKey, (v: LootSortKey) => void] {
-  const [sort, setSort] = useState<LootSortKey>(loadLootSort)
-  useEffect(() => {
-    localStorage.setItem(SORT_KEY, sort)
-  }, [sort])
-  return [sort, setSort]
-}
-
-// Nothing parsed yet is a STATE, not an error: say where the rows will come from.
-function NoLootYet(): JSX.Element {
-  return (
-    <Alert severity="info">
-      No loot parsed yet. Loot something in-game (or check your log path) — every{' '}
-      <code>--You have looted …--</code> line shows up here in real time, and the full history is read
-      from your log on launch.
-    </Alert>
-  )
-}
+// THE TIMESLICE (JOS-130): the app's one "which stretch of play is this about" control. The ledger
+// is where it was asked for — "what did I gain in totality vs this session" — and it is the SAME
+// control and the SAME pick the Leveling tab reads, so the drops and the xp behind them can never
+// describe different stretches.
+import { SliceBar } from '../timeslice/SliceBar'
+import { useTimeslice } from '../timeslice/useTimeslice'
+import { inSlice, type Timeslice } from '@shared/timeslice'
 
 export interface LootViewProps {
   /** An item to open on arrival — the Overview's drop rows deep-linking in. Re-applied whenever
@@ -301,6 +126,56 @@ function useLootDetail(
   }
 }
 
+/**
+ * THE TAKEOVER, as one element. Its own component so the swap reads as a single line where it
+ * happens and the view stays inside its measured line budget — the same reason `useLootDetail`
+ * lives beside it rather than inline.
+ */
+interface TakeoverProps {
+  item: string
+  events: LootEvent[]
+  slice: Timeslice
+  detail: LootDetail
+  nav?: NavBack
+  /** countKey → reconciled inventory row, so the pane can state what the export vouches for. */
+  invByKey: Map<string, InventoryRow>
+}
+
+function LootDetailTakeover(p: TakeoverProps): JSX.Element {
+  const { item, events, slice, detail, nav, invByKey } = p
+  // Back consults the origin stack FIRST and falls back to closing the pane — the whole JOS-43
+  // contract in one line. `nav.back()` reports whether it navigated, so a natively opened drill
+  // (nothing parked) behaves exactly as it did before.
+  //
+  // ONE expression, read by TWO things (JOS-201): the arrow below, and the mouse's Back button,
+  // which registers it for as long as this pane is on screen. Never a second opinion about what
+  // Back means here. The ledger behind it registers nothing — it has no Back affordance — so a
+  // press there falls through to the app-level origin walk.
+  const back = (): boolean => {
+    if (!nav?.back()) detail.close()
+    return true
+  }
+  useBackTarget(back)
+  return (
+    <ItemDetailPane
+      item={item}
+      // NOT sliced, unlike `events` below, and deliberately: an inventory export is a single
+      // observation of what you hold NOW and carries no timestamps at all (JOS-160). Cutting it to
+      // a window would be inventing dates the file does not have.
+      owned={invByKey.get(itemCountKey(item))?.inv}
+      // SLICED, like the ledger it came from: the drill-down's counts, its mob table and its
+      // per-zone rates all describe the stretch the control says they do.
+      events={events.filter((e) => e.item.toLowerCase() === item.toLowerCase())}
+      slice={slice}
+      stats={itemStats[itemCountKey(item)]}
+      isQuestItem={questItemNames.has(itemCountKey(item))}
+      onBack={back}
+      onList={detail.close}
+      origin={nav?.origin?.label ?? null}
+    />
+  )
+}
+
 export default function LootView(props: LootViewProps = {}): JSX.Element {
   const { isFavorite, toggle: toggleFavorite } = useFavorites()
   // ONE subscription to the loot module: useProgress already owns it (and needs it for the
@@ -320,11 +195,16 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
   const [sort, setSort] = useLootSort()
   const [showInventoryOnly, setShowInventoryOnly] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  // When main auto-reloads the *-Inventory.txt (chokidar watch), surface it quietly.
-  const [autoUpdatedAt, setAutoUpdatedAt] = useState<number | null>(null)
-  const { knowledgeByKey, strip } = useNotableStrip(history)
-  const { events, grouped, groupRows, invOnlySource, invByKey } = useLootRows({
-    history,
+  const { available, slice, setId, setCustom } = useTimeslice()
+  // THE SLICE IS APPLIED ONCE, HERE, and everything below reads the result — the ledger, the
+  // grouped counts, the notable strip and the drill-down's events. `inSlice` is the shared
+  // membership test (`shared/timeslice.ts`), half-open exactly like `rangeStats`, so a row is in
+  // this table if and only if the same instant is inside the range the xp numbers were measured
+  // over. Under `All` it keeps every row, so this costs one pass and changes nothing.
+  const sliced = useMemo(() => history.filter((e) => inSlice(slice, e.ts, e.zone)), [history, slice])
+  const { knowledgeByKey, strip } = useNotableStrip(sliced)
+  const rows = useLootRows({
+    history: sliced,
     inventoryRows,
     query,
     questOnly,
@@ -332,43 +212,30 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
     sort,
     isFavorite
   })
-
-  useEffect(() => {
-    const off = window.eq.onInventoryReload(() => setAutoUpdatedAt(Date.now()))
-    return off
-  }, [])
+  const { events, grouped, groupRows, invOnlySource, invOnlyRows, invByKey } = rows
 
   const onReload = async (): Promise<void> => setToast(await reloadInventory())
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Window whichever list is active — only the rows intersecting the viewport are
   // mounted, so a filter keystroke never mounts hundreds of MUI rows synchronously.
-  const rowCount = groupByItem ? groupRows.length : events.length
-  const win = useWindowedRows({ count: rowCount, rowHeight: ROW_HEIGHT, scrollRef })
+  const count = groupByItem ? groupRows.length : events.length
+  const win = useWindowedRows({ count, rowHeight: ROW_HEIGHT, scrollRef })
   const detail = useLootDetail(props, scrollRef)
 
   const selected = detail.selected
   if (selected !== null) {
-    return (
-      <ItemDetailPane
-        item={selected}
-        events={history.filter((e) => e.item.toLowerCase() === selected.toLowerCase())}
-        stats={itemStats[itemCountKey(selected)]}
-        isQuestItem={questItemNames.has(itemCountKey(selected))}
-        // Back consults the origin stack FIRST and falls back to closing the pane — the whole
-        // JOS-43 contract in one line. `back()` reports whether it navigated, so a natively
-        // opened drill (nothing parked) behaves exactly as it did before.
-        onBack={() => {
-          if (!props.nav?.back()) detail.close()
-        }}
-        onList={detail.close}
-        origin={props.nav?.origin?.label ?? null}
-      />
-    )
+    const p = { item: selected, events: sliced, slice, detail, nav: props.nav, invByKey }
+    return <LootDetailTakeover {...p} />
   }
 
   return (
     <Stack spacing={2} data-testid="loot-list" sx={{ height: '100%' }}>
+      {/* ABOVE the toolbar and on its own row: it governs everything below it, including the
+          filters, and it must never be crowded into the same line as the search box (the
+          compact-bar contract — controls never shrink). */}
+      <SliceBar available={available} slice={slice} onPick={setId} onCustom={setCustom} testId="loot-slice" />
+
       <LootToolbar
         query={query}
         setQuery={setQuery}
@@ -387,15 +254,25 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
       />
 
       <LootSummary
-        eventCount={history.length}
+        eventCount={sliced.length}
+        totalCount={history.length}
+        slice={slice}
         uniqueCount={grouped.length}
         inventoryInfo={inventoryInfo}
-        autoUpdatedAt={autoUpdatedAt}
       />
 
       <NotablePickupsStrip {...strip} onSelect={detail.open} />
 
-      {history.length === 0 && <NoLootYet />}
+      {/* The states-not-errors. `owned` is only ever non-empty in the UNGROUPED ledger under a
+          search: grouped, those rows are IN the table, and with an empty box the set is the
+          player's whole bank — a table's job, not a sentence's (JOS-160). */}
+      <LootNotices
+        historyCount={history.length}
+        slicedCount={sliced.length}
+        slice={slice}
+        owned={!groupByItem && query.trim() !== '' ? invOnlyRows : []}
+        onSelect={detail.open}
+      />
 
       {/* The scroll container owns the ref the windowing hook reads. Spacer rows
           (top/bottom) reserve the full scroll height so only the visible slice of

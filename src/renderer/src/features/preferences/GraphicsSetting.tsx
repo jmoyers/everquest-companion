@@ -133,16 +133,16 @@ export function graphicsSection(): PrefSection {
 const SAFE_MODE_COPY: GraphicsCopy = {
   on: 'On from the next launch. Try this first if the app itself flickers, goes black, or will not paint.',
   off: 'Off. The app draws with your graphics card, which is what you want unless it is misbehaving.',
-  auto: 'Wine detected — the app draws without the graphics card. Under Wine that path is what leaves windows blank. Turn this off to use the graphics card anyway, from the next launch.',
+  auto: 'Wine detected - the app draws without the graphics card. Under Wine that path is what leaves windows blank. Turn this off to use the graphics card anyway, from the next launch.',
   overridden:
     'Off, because you turned it off. Wine was detected, where drawing with the graphics card can leave windows blank.'
 }
 
 /** The opaque-overlay caption in all four states — the one JOS-31 exists for. */
 const OPAQUE_COPY: GraphicsCopy = {
-  on: 'On for overlays you open from now on. Same meters, same colours, no see-through — reopen an overlay to apply it.',
+  on: 'On for overlays you open from now on. Same meters, same colours, no see-through - reopen an overlay to apply it.',
   off: 'Off. Overlays float see-through over the game. Turn this on if they go black or leave marks on screen.',
-  auto: 'Wine detected — overlays run opaque. Same meters, same colours, no see-through: under Wine a see-through overlay can stick on screen as a black box. Turn this off to keep them see-through.',
+  auto: 'Wine detected - overlays run opaque. Same meters, same colours, no see-through: under Wine a see-through overlay can stick on screen as a black box. Turn this off to keep them see-through.',
   overridden:
     'Off, because you turned it off. Wine was detected, where a see-through overlay can stick on screen as a black box.'
 }

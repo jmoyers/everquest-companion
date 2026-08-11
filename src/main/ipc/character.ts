@@ -13,9 +13,10 @@ import {
   applyEqDirChange,
   buildEqConfig,
   getActiveCharacter,
+  inventoryWrittenAt,
   tailCharacter
 } from '../session'
-import { getProgress, setEqInstallDir, setInventory, setQuestComplete } from '../store'
+import { getProgress, setEqInstallDir, setInventory, setQuestTurnIns } from '../store'
 import { getMainWindow, sendToMain } from '../windows'
 
 export function registerCharacterIpc(): void {
@@ -101,18 +102,18 @@ export function registerCharacterIpc(): void {
   ipcMain.handle(IPC.getProgress, () => getProgress(activeCharId()))
   ipcMain.handle(IPC.reloadInventory, () => {
     const active = getActiveCharacter()
-    const res = loadInventory(active?.name, active?.server)
+    const res = loadInventory(active?.name, active?.server, inventoryWrittenAt)
     if (!res) return { ok: false as const, error: 'No *-Inventory.txt found in the EQ folder.' }
-    setInventory(activeCharId(), res.counts, { path: res.path, loadedAt: res.loadedAt })
+    setInventory(activeCharId(), res.counts, res.source)
     const progress = getProgress(activeCharId())
     // Keep other views consistent (Plane of Sky derives held-item counts too).
     sendToMain(IPC.onProgress, progress)
     return { ok: true as const, path: res.path, loadedAt: res.loadedAt, progress }
   })
-  ipcMain.handle(IPC.setQuestComplete, (_e, questKey: string, complete: boolean) => {
-    const progress = setQuestComplete(activeCharId(), questKey, complete)
-    // Push so a completion made in one view (or auto-completed from a turn-in)
-    // reaches every other view without a refetch race.
+  ipcMain.handle(IPC.setQuestTurnIns, (_e, questKey: string, instants: number[]) => {
+    const progress = setQuestTurnIns(activeCharId(), questKey, instants)
+    // Push so a turn-in recorded in one view (or detected from the log) reaches every other
+    // view without a refetch race.
     sendToMain(IPC.onProgress, progress)
     return progress
   })

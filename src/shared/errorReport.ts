@@ -277,22 +277,32 @@ export function normalizeFrameFile(raw: string): string | null {
 export const BUNDLE_FILE_PATTERN = BUNDLE_FILE_RE.source
 
 /**
- * Parse a stack into at most `max` APP frames, newest first.
+ * Parse a stack into at most `max` frames, newest first, keeping whatever `normalize` recognises.
  *
- * Non-app frames are SKIPPED, not counted — a stack whose top three frames are Node internals
- * still yields the app frames beneath them, which is exactly the stack a reader wants. A frame
- * whose function name is not identifier-shaped (an engine can put almost anything in there)
- * degrades to `<anonymous>` rather than being dropped: the LOCATION is the diagnostic half and
- * losing a whole frame over its label would be the wrong trade.
+ * THE CLASSIFIER IS AN ARGUMENT because there are now two of them and they must read the same
+ * stack the same way (JOS-111): `normalizeFrameFile` keeps the bundle, and
+ * `classifyExternalFrameFile` in `./errorReportLocation.ts` keeps Node, Electron and our own
+ * dependencies. Everything else about a frame — the position cap, the function-name rule, the
+ * newest-first order — is one implementation rather than two that could drift.
+ *
+ * Frames the classifier refuses are SKIPPED, not counted — a stack whose top three frames are
+ * Node internals still yields the app frames beneath them, which is exactly the stack a reader
+ * wants. A frame whose function name is not identifier-shaped (an engine can put almost anything
+ * in there) degrades to `<anonymous>` rather than being dropped: the LOCATION is the diagnostic
+ * half and losing a whole frame over its label would be the wrong trade.
  */
-export function parseStackFrames(stack: unknown, max = MAX_ERROR_FRAMES): ErrorFrame[] {
+export function framesFrom(
+  stack: unknown,
+  normalize: (raw: string) => string | null,
+  max: number
+): ErrorFrame[] {
   if (typeof stack !== 'string') return []
   const out: ErrorFrame[] = []
   for (const raw of stack.split('\n')) {
     if (out.length >= max) break
     const m = STACK_LINE_RE.exec(raw)
     if (m === null) continue
-    const file = normalizeFrameFile(m[2])
+    const file = normalize(m[2])
     if (file === null) continue
     const func = m[1] ?? ''
     out.push({
@@ -303,6 +313,11 @@ export function parseStackFrames(stack: unknown, max = MAX_ERROR_FRAMES): ErrorF
     })
   }
   return out
+}
+
+/** Parse a stack into at most `max` APP frames — `framesFrom` with the bundle classifier. */
+export function parseStackFrames(stack: unknown, max = MAX_ERROR_FRAMES): ErrorFrame[] {
+  return framesFrom(stack, normalizeFrameFile, max)
 }
 
 // ---------------------------------------------------------------- the fingerprint
@@ -340,10 +355,23 @@ const hex8 = (n: number): string => n.toString(16).padStart(8, '0')
  * COLUMNS ARE NOT IN IT either: a minifier moves columns between builds far more readily than
  * it moves lines, and an issue that re-fingerprints on every release cannot be tracked across
  * one.
+ *
+ * `fallback` IS READ ONLY WHEN THERE ARE NO FRAMES (JOS-111), and that condition is the whole
+ * design of it. A report WITH frames hashes exactly what it hashed before this ticket existed, so
+ * every issue already being tracked in the store keeps its identity across the release — a
+ * fingerprint change is indistinguishable, from the outside, from an old bug ending and a new one
+ * starting on the same day. What changes is only the case that was broken: a FRAMELESS report used
+ * to hash the name alone, so every unnamed throw in the app collapsed into one row.
+ * `fingerprintFallback` (./errorReportLocation.ts) is what fills it, and it is never transmitted.
  */
-export function errorFingerprint(errorName: string, frames: readonly ErrorFrame[]): string {
+export function errorFingerprint(
+  errorName: string,
+  frames: readonly ErrorFrame[],
+  fallback = ''
+): string {
   const parts = [errorName]
   for (const f of frames.slice(0, FINGERPRINT_FRAMES)) parts.push(`${f.file}:${String(f.line)}:${f.func}`)
+  if (frames.length === 0 && fallback !== '') parts.push(fallback)
   const text = parts.join('|')
   return `${hex8(fnv1a(text, 0x811c9dc5))}${hex8(fnv1a(text, 0x01000193))}`
 }

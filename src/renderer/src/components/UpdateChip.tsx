@@ -226,7 +226,7 @@ function quietLine(
             : `${vPrefix}not checked yet`
   const tip =
     ui.kind === 'quiet' && ui.failed
-      ? `Last check didn't complete${ui.message ? ` — ${ui.message}` : ''}. Click to try again.`
+      ? `Last check didn't complete${ui.message ? ` - ${ui.message}` : ''}. Click to try again.`
       : 'Click to check for updates'
   return { label, tip }
 }

@@ -46,8 +46,8 @@ function variantNote(variant: WhatsNewVariant | 'real'): string {
   }
   const seen = variantLastSeen(variant, RELEASE_NOTES)
   return seen === null
-    ? 'No release seen — no teaser, nothing marked new. This is what a brand-new install does.'
-    : `Last seen v${seen} — every release above it is marked new, and the teaser names the newest.`
+    ? 'No release seen - no teaser, nothing marked new. This is what a brand-new install does.'
+    : `Last seen v${seen} - every release above it is marked new, and the teaser names the newest.`
 }
 
 export function WhatsNewDevRow(): JSX.Element {
@@ -97,7 +97,7 @@ export function WhatsNewDevRow(): JSX.Element {
       </Stack>
       <Typography variant="caption" color="text.secondary" data-testid="whats-new-dev-note">
         {applied === null
-          ? 'Simulate arriving from an older build — the notes above and the strip along the bottom follow immediately.'
+          ? 'Simulate arriving from an older build - the notes above and the strip along the bottom follow immediately.'
           : variantNote(applied)}
       </Typography>
     </Stack>

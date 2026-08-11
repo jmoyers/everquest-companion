@@ -69,7 +69,7 @@ function sourceText(donor: DonorRow): SourceText {
   const first = sources[0]
   if (first) {
     const zone = first.zones[0] ?? 'zone unstated'
-    return { text: `${first.mob} — ${zone}`, more: sources.length > 1 ? `+${String(sources.length - 1)} more` : '' }
+    return { text: `${first.mob} - ${zone}`, more: sources.length > 1 ? `+${String(sources.length - 1)} more` : '' }
   }
   if (donor.quest) return { text: 'quest reward', more: '' }
   if (donor.playerCrafted) return { text: 'player crafted', more: '' }
@@ -235,7 +235,7 @@ export function DonorLine({
       <Tooltip title={`This effect only extracts once the donor is merged to +${String(donor.tierRequired)}.`}>
         <Chip size="small" color="secondary" variant="outlined" label={`+${String(donor.tierRequired)} to extract`} sx={{ height: 18, fontSize: 10 }} />
       </Tooltip>
-      {donor.hasteLocked && <Chip size="small" color="warning" label="haste — can't move" sx={{ height: 18, fontSize: 10 }} />}
+      {donor.hasteLocked && <Chip size="small" color="warning" label="haste - can't move" sx={{ height: 18, fontSize: 10 }} />}
       <EraChip subject={donor} />
       <Box sx={{ flexGrow: 1, minWidth: 8 }} />
       <Typography
@@ -323,7 +323,7 @@ export function GroupLine({
         label={`+${String(extractionTier(group.socket))} to extract`}
         sx={{ height: 18, fontSize: 10, flexShrink: 0 }}
       />
-      {group.hasteLocked && <Chip size="small" color="warning" label="haste — can't move" sx={{ height: 18, fontSize: 10, flexShrink: 0 }} />}
+      {group.hasteLocked && <Chip size="small" color="warning" label="haste - can't move" sx={{ height: 18, fontSize: 10, flexShrink: 0 }} />}
       <Box sx={{ flexGrow: 1 }} />
       <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
         {group.donors.length} {group.donors.length === 1 ? 'donor' : 'donors'}

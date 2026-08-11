@@ -15,9 +15,12 @@
 
 import {
   MAX_BREADCRUMBS,
+  MAX_COMPONENT_DEPTH_WIRE,
   MAX_ERROR_FRAMES_WIRE,
+  MAX_EXTERNAL_FRAMES_WIRE,
   MAX_REDACTED_MESSAGE_WIRE,
   TELEMETRY_ERROR_MODES,
+  TELEMETRY_FRAME_ORIGINS,
   TELEMETRY_ERROR_VIEWS,
   TELEMETRY_FAILURE_CLASSES,
   TELEMETRY_FEATURES,
@@ -231,7 +234,20 @@ export const TELEMETRY_DOC_EVENTS: readonly DocEvent[] = [
       // stalls would be a promise the code does not keep.
       { name: 'parserStalls', type: COUNT, note: 'Times log reading stalled. Not currently measured — always 0.' },
       { name: 'presenceRestarts', type: COUNT, note: 'Times the game-window watcher restarted.' },
-      { name: 'speechFailures', type: COUNT, note: 'Times an utterance failed to speak. Downloaded voices only.' }
+      { name: 'speechFailures', type: COUNT, note: 'Times an utterance failed to speak. Downloaded voices only.' },
+      // JOS-133. SAID AS A CONDITION, NOT AS A FAULT, because that is what it is: the picture is
+      // simply not shown and the app carries on. The note names the wiki rather than the app so a
+      // reader is not left thinking their install is broken.
+      {
+        name: 'imageFetchFailures',
+        type: `${COUNT} (optional)`,
+        note: 'Times an item icon or portrait could not be downloaded, usually because the wiki was unreachable. The picture is hidden and the app carries on. Never which picture.'
+      },
+      {
+        name: 'suppressedErrorLines',
+        type: `${COUNT} (optional)`,
+        note: 'The same error line repeating: after the first few, further copies are counted here instead of being written to the local error log again. A count only.'
+      }
     ]
   },
   {
@@ -280,6 +296,29 @@ export const TELEMETRY_DOC_EVENTS: readonly DocEvent[] = [
           'files (they always begin `out/`) — the folder the app is installed in, and therefore ' +
           'your account name, is cut off before the value exists.'
       },
+      {
+        name: 'frameOrigin',
+        type: values(TELEMETRY_FRAME_ORIGINS),
+        note:
+          'Whether the places listed above are where the error was thrown, or where the app ' +
+          'noticed it. Some failures arrive with no trace of their own, and the app records ' +
+          'its own position instead so two different failures do not look like one.'
+      },
+      {
+        name: 'externalFrames',
+        type: `at most ${String(MAX_EXTERNAL_FRAMES_WIRE)} × (module, line, column, function)`,
+        note:
+          'The same thing for code that is not ours: the name of the Node built-in, the Electron ' +
+          'script, or the open-source package involved — `node:fs`, `node_modules/chokidar`. ' +
+          'The name only, cut at the package: the folder it is installed in never survives.'
+      },
+      {
+        name: 'componentPath',
+        type: `at most ${String(MAX_COMPONENT_DEPTH_WIRE)} names joined with >`,
+        note:
+          'For an error in the app’s own interface, which of the app’s screen components it ' +
+          'came through — the names in this app’s source code, and nothing from the game.'
+      },
       { name: 'fingerprint', type: '16 hex characters', note: 'A hash used to group identical errors together.' },
       {
         name: 'breadcrumbs',
@@ -292,8 +331,28 @@ export const TELEMETRY_DOC_EVENTS: readonly DocEvent[] = [
       { name: 'view', type: values(TELEMETRY_ERROR_VIEWS), note: 'Which tab was open. A fixed list.' },
       { name: 'sessionAgeBucket', type: BUCKET, note: 'How long the app had been running.' },
       { name: 'mode', type: values(TELEMETRY_ERROR_MODES), note: 'Was it reading your log history, or following it live.' },
-      { name: 'count', type: COUNT, note: 'How many times this same error happened since the last report.' }
+      { name: 'count', type: COUNT, note: 'How many times this same error happened since the last report. It stops at a hundred per error per run of the app: something that goes wrong over and over reports itself a hundred times and then goes quiet, so one repeating fault cannot bury everything else.' }
     ]
+  },
+  {
+    t: 'optOut',
+    // THE ONE EVENT THAT IS SENT AFTER YOU SAID STOP, and the row says so in its first clause
+    // rather than leaving a reader to infer it from the "Turning it off" section below. The
+    // empty field list is not an omission — `telemetryDoc.ts` prints a sentence for it — and it
+    // is the strongest form of the promise: there is no slot on this event for anything to ride.
+    when:
+      'Once, when you turn usage analytics off. It is the last thing this app ever sends, and it ' +
+      'exists so opt-outs can be counted rather than guessed at. Everything else waiting to be ' +
+      'sent is thrown away rather than sent with it, it is never retried if you are offline, and ' +
+      'nothing further is ever sent.',
+    fields: []
+  },
+  {
+    t: 'optIn',
+    when:
+      'Once, when you turn usage analytics back on. The counterpart to the notice above, under ' +
+      'the new random id. It carries nothing either.',
+    fields: []
   }
 ]
 

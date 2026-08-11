@@ -15,6 +15,10 @@
 //     column names the section (`Location`, then `KeyRing`). That is the only section
 //     signal in the file, and it is why the KeyRing header (4 columns, trailing empty) is
 //     not mistaken for a keyring row.
+//   * …and the header's REMAINING columns say how to READ that section, which is the whole of
+//     JOS-185: `Name ID Count Slots` is an item table whatever it is called, `Name ID` is a
+//     keyring table whatever it is called, and anything else is still refused. The argument for
+//     the change (and for why it is not the guess JOS-44 banned) is in the shared header.
 //   * `-Slot<n>` — NOT a bare `-` — is the path separator. `Personal-Depot1` is one base
 //     token; splitting on `-` invents a sub-slot that does not exist.
 //   * A row attaches to the MOST RECENTLY SEEN row bearing its parent path, because base
@@ -28,24 +32,27 @@ import type {
   InventoryDump,
   InventoryEntry,
   KeyRingEntry,
-  RawOutputRow
+  RawOutputRow,
+  SectionShape
 } from '../../shared/outputs/inventory'
 import {
   heldCountsFromDump,
   parseItemName,
   parentLocation,
   parsePlace,
+  PRIMARY_ITEM_SECTION,
   splitLocationPath
 } from '../../shared/outputs/inventory'
 import type { HeldCounts } from '../../shared/types'
 
-/** The item table's section name (its header's first column). */
-const ITEM_SECTION = 'Location'
-/** The keyring table's section name. */
-const KEYRING_SECTION = 'KeyRing'
+/** The columns an ITEM table's header spells after its section name. */
+const ITEM_COLUMNS = ['Name', 'ID', 'Count', 'Slots'] as const
+/** The columns a KEYRING table's header spells after its section name. */
+const KEYRING_COLUMNS = ['Name', 'ID'] as const
 
 interface ParseState {
   section: string
+  shape: SectionShape
   dump: InventoryDump
   /** Location string → the most recent row bearing it (see the duplicate-token note). */
   byPath: Map<string, InventoryEntry>
@@ -60,6 +67,29 @@ function int(col: string | undefined): number {
 /** A section header is any row whose second column is literally `Name`. */
 function isSectionHeader(cols: readonly string[]): boolean {
   return cols.length >= 2 && cols[1].trim() === 'Name'
+}
+
+/** Do the header's columns from index 1 spell exactly `want`, ignoring trailing empty columns? */
+function headerSpells(cols: readonly string[], want: readonly string[]): boolean {
+  const declared = cols.slice(1).map((c) => c.trim())
+  // The real `KeyRing` header is `KeyRing \t Name \t ID \t` — four columns, the last one empty.
+  // A trailing empty column is the client's tab, not a column, so it is dropped before comparing.
+  while (declared.length > 0 && declared[declared.length - 1] === '') declared.pop()
+  return declared.length === want.length && declared.every((c, i) => c === want[i])
+}
+
+/**
+ * How to read the section this header opens — by its COLUMNS, never by its name (JOS-185).
+ *
+ * A header that spells neither shape is `unknown`, and its rows are retained verbatim and never
+ * interpreted. That is the JOS-44 refusal, unchanged: `Mercenary / Name / ID / Rank / Tier` has
+ * five columns and still means nothing to us, because `Rank` and `Tier` are not `Count` and
+ * `Slots` and no sample has ever said what they are.
+ */
+function sectionShape(cols: readonly string[]): SectionShape {
+  if (headerSpells(cols, ITEM_COLUMNS)) return 'items'
+  if (headerSpells(cols, KEYRING_COLUMNS)) return 'keyRing'
+  return 'unknown'
 }
 
 function raw(section: string, cols: readonly string[], line: number): RawOutputRow {
@@ -94,6 +124,7 @@ function addItemRow(state: ParseState, cols: readonly string[], line: number): v
   const name = cols[1].trim()
   const { base, path } = splitLocationPath(location)
   const entry: InventoryEntry = {
+    section: state.section,
     location,
     place: parsePlace(base),
     path,
@@ -110,7 +141,7 @@ function addItemRow(state: ParseState, cols: readonly string[], line: number): v
   attach(state, entry)
 }
 
-/** One row of the `KeyRing` table: 3 columns (category, Name, ID) — no Count, no Slots. */
+/** One row of a keyring-shaped table: 3 columns (category, Name, ID) — no Count, no Slots. */
 function addKeyRingRow(state: ParseState, cols: readonly string[], line: number): void {
   if (cols.length < 3) {
     state.dump.malformed.push(raw(state.section, cols, line))
@@ -118,6 +149,7 @@ function addKeyRingRow(state: ParseState, cols: readonly string[], line: number)
   }
   const name = cols[1].trim()
   const entry: KeyRingEntry = {
+    section: state.section,
     category: cols[0].trim(),
     name,
     parsedName: parseItemName(name),
@@ -133,17 +165,27 @@ function addKeyRingRow(state: ParseState, cols: readonly string[], line: number)
  * Rows before any header read as the item table — that is both the old parser's behavior
  * and the only sane default for a file whose first line IS the item header.
  *
- * Rows under a section header we do not recognize go to `unknownSections` VERBATIM and are
- * never interpreted (and so never reach `heldCountsFromDump`). This is the one deliberate
- * behavior difference from the old parser, which would have counted any ≥4-column row of a
- * future third table into held item counts as though it were inventory. That was never a
- * contract — it was the absence of a section concept — and counting rows of a table whose
- * shape we have never seen is exactly the guess this engine exists to refuse.
+ * Rows under a section whose header SHAPE we do not recognize go to `unknownSections` VERBATIM
+ * and are never interpreted (and so never reach `heldCountsFromDump`). That refusal is JOS-44's
+ * and it is unchanged in substance: what JOS-185 changed is that "recognized" is now a question
+ * about the header's COLUMNS rather than about its NAME, so a table the client spells with the
+ * item header's own five columns is read as items whatever it is called. The old rule could only
+ * read a table it could name, and the one table nobody can name — the Dragon's Hoard, which no
+ * source on the internet publishes a sample of — is precisely the one a player's Sky weapons were
+ * sitting in.
  */
 export function parseInventoryDump(text: string): InventoryDump {
   const state: ParseState = {
-    section: ITEM_SECTION,
-    dump: { items: [], keyRing: [], unknownSections: [], malformed: [], sections: [] },
+    section: PRIMARY_ITEM_SECTION,
+    shape: 'items',
+    dump: {
+      items: [],
+      keyRing: [],
+      unknownSections: [],
+      malformed: [],
+      sections: [],
+      sectionShapes: {}
+    },
     byPath: new Map()
   }
   const lines = text.split(/\r?\n/)
@@ -153,13 +195,15 @@ export function parseInventoryDump(text: string): InventoryDump {
     const cols = line.split('\t')
     if (isSectionHeader(cols)) {
       state.section = cols[0].trim()
+      state.shape = sectionShape(cols)
       state.dump.sections.push(state.section)
+      state.dump.sectionShapes[state.section] = state.shape
       // A new section starts a new path space; nothing nests across tables.
       state.byPath.clear()
       continue
     }
-    if (state.section === ITEM_SECTION) addItemRow(state, cols, i + 1)
-    else if (state.section === KEYRING_SECTION) addKeyRingRow(state, cols, i + 1)
+    if (state.shape === 'items') addItemRow(state, cols, i + 1)
+    else if (state.shape === 'keyRing') addKeyRingRow(state, cols, i + 1)
     else state.dump.unknownSections.push(raw(state.section, cols, i + 1))
   }
   return state.dump

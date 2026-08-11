@@ -113,7 +113,7 @@ export function ClassComboSetting(): JSX.Element {
         )}
       </Box>
       <Typography variant="caption" color="text.secondary">
-        Edit any past range you know better — your correction wins over autodetection until a
+        Edit any past range you know better - your correction wins over autodetection until a
         /who row says otherwise, and the panel tells you when one does.
       </Typography>
       <ClassComboEditor interval={editing} onClose={() => setEditing(null)} />

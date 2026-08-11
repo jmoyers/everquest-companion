@@ -43,6 +43,10 @@
 // Imported from the transport module directly (types.ts re-exports the same names) — a shared
 // file importing the barrel it is part of would be a needless cycle.
 import type { ProgressionSnap } from './progressionTypes'
+// The MEMBERSHIP fold for the optional zone filter (JOS-130) — instance noise stripped, leading
+// article folded, separators normalized. It is NOT the row-grouping fold; see `RangeStatsArgs.
+// zoneKey` for why this file deliberately carries both.
+import { zoneKey } from './zones'
 
 /**
  * No exp / credited-kill / loot event for LONGER than this ⇒ idle.
@@ -229,6 +233,32 @@ export interface RangeStatsArgs {
   range: { t0: number; t1: number }
   /** OPTIONAL seam. Absent ⇒ `combos: []`. */
   combo?: ComboSource
+  /**
+   * RESTRICT EVERY NUMBER TO ONE ZONE (JOS-130) — a `shared/zones.zoneKey` fold, or null/absent
+   * for every zone, which is byte-identical to what this function has always done.
+   *
+   * TWO FOLDS, ON PURPOSE, AND THEY DO DIFFERENT JOBS. The `zones` ROWS are still grouped by
+   * `zoneIdKey` (trim + lowercase), because that is the identity `lootRates.ts` joins drops onto
+   * and a second answer there would orphan rows (rule 2). MEMBERSHIP is the coarser
+   * `zones.zoneKey`, which additionally strips the instance noise EQ Legends spells into the zone
+   * name (`Najena 4 (Refined)`, `The Ruins of Old Paineel - Solo 4`). That is not a loosening: a
+   * player asking for "this zone" means the PLACE, and a re-entry that changes the instance
+   * ordinal is the same camp — the leveling tab's band strip has merged exactly those bounces
+   * since JOS-71 for the same reason. So a filtered range can still hand back MORE THAN ONE row
+   * when the log spelled the place two ways, and each of those rows still joins by its own
+   * spelling, which is what keeps both contracts true at once.
+   *
+   * It is a filter on the range's zone SEGMENTS, applied before anything is folded, so the answer
+   * is the same shape of answer over a smaller, non-contiguous stretch of the same instants:
+   * `durationMs` becomes Σ of the visits inside `[t0,t1)`, idle and offline are clipped to them,
+   * and a sample outside them is not counted at all (never clamped into the nearest visit, which
+   * is what the unfiltered `segAt` used to do at the edges).
+   *
+   * THE Σ IDENTITY SURVIVES: `activeMs + idleMs + offlineMs === durationMs` still holds, over the
+   * visits rather than over the wall clock. `t0`/`t1` keep reporting the ENVELOPE the caller
+   * asked for — the slice's own range — because that is what the surface's caption says.
+   */
+  zoneKey?: string | null
 }
 
 /** One clipped zone visit inside the range. Contiguous and gapless by construction. */
@@ -253,8 +283,10 @@ interface Span {
  * them: `lootRates.ts` matches this character's loot events to the zone row whose ACTIVE TIME is
  * their rate's denominator, and a second "same zone?" answer there would silently orphan every
  * drop whose spelling the two folds disagreed about (world-model law 12's drift, in miniature).
- * Deliberately NOT the renderer's `mobZone.zoneKey`, which additionally strips instance noise:
- * these rows are keyed with THIS fold, so the join must use THIS fold.
+ * Deliberately NOT `zones.zoneKey`, which additionally strips instance noise: these rows are keyed
+ * with THIS fold, so the join must use THIS fold. That other fold is not absent from this file —
+ * since JOS-130 it decides MEMBERSHIP for the optional zone filter, which is a different question
+ * asked at a different moment (`RangeStatsArgs.zoneKey` states the whole argument).
  */
 export function zoneIdKey(name: string): string {
   return name.trim().toLowerCase()
@@ -302,24 +334,36 @@ function nextFrom(arr: readonly number[], t: number): number | null {
  * (you never left it) — together those two rules are what make `Σ zones[].spanMs ==
  * durationMs` an identity rather than an approximation.
  */
-function zoneSegments(snap: ProgressionSnap, t0: number, t1: number): ZoneSeg[] {
+function zoneSegments(snap: ProgressionSnap, t0: number, t1: number, only?: string | null): ZoneSeg[] {
   const segs: ZoneSeg[] = []
   const n = snap.zoneName.length
   const headEnd = Math.min(n > 0 ? snap.zoneStart[0] : t1, t1)
-  if (headEnd > t0) segs.push({ key: UNKNOWN_ZONE, name: UNKNOWN_ZONE, start: t0, end: headEnd })
+  // The pre-first-zone remainder is a NAMED row (`unknown`) and a zone filter judges it like any
+  // other: asking for one zone never quietly re-admits the stretch the log could not place.
+  if (headEnd > t0 && (only == null || only === zoneKey(UNKNOWN_ZONE))) {
+    segs.push({ key: UNKNOWN_ZONE, name: UNKNOWN_ZONE, start: t0, end: headEnd })
+  }
   // The last interval starting at/before t0 is the one we are inside when the range opens.
   for (let i = Math.max(0, upperBound(snap.zoneStart, t0) - 1); i < n && snap.zoneStart[i] < t1; i++) {
     const start = Math.max(snap.zoneStart[i], t0)
     const end = Math.min(snap.zoneEnd[i] === 0 ? t1 : snap.zoneEnd[i], t1)
-    if (end > start) segs.push({ key: zoneIdKey(snap.zoneName[i]), name: snap.zoneName[i], start, end })
+    const name = snap.zoneName[i]
+    // Grouped by the ROW fold, admitted by the MEMBERSHIP fold — see `RangeStatsArgs.zoneKey`.
+    if (end > start && (only == null || only === zoneKey(name))) {
+      segs.push({ key: zoneIdKey(name), name, start, end })
+    }
   }
   return segs
 }
 
 /**
- * Index of the segment containing `ts`, or -1 when the range has no segments. A `ts` past the
- * last segment clamps to it, so every in-range sample is attributed exactly once and the
- * `Σ zones[].kills == kills` identity holds by construction.
+ * Index of the segment containing `ts`, or -1 when no segment does.
+ *
+ * EXACT CONTAINMENT, never a clamp. Unfiltered the two are the same test — `zoneSegments` covers
+ * `[t0,t1)` contiguously and gaplessly, so every in-range sample lands inside a segment and the
+ * `Σ zones[].kills == kills` identity holds exactly as before. Under a zone filter the segments
+ * are disjoint but NOT contiguous, and a clamp would file a kill from the zone next door into the
+ * nearest visit of the zone you asked about.
  */
 function segAt(segs: readonly ZoneSeg[], ts: number): number {
   let lo = 0
@@ -329,7 +373,24 @@ function segAt(segs: readonly ZoneSeg[], ts: number): number {
     if (segs[mid].end <= ts) lo = mid + 1
     else hi = mid
   }
-  return lo < segs.length ? lo : segs.length - 1
+  return lo < segs.length && segs[lo].start <= ts ? lo : -1
+}
+
+/**
+ * `spans` ∩ `segs` — both ascending and disjoint. This is what keeps a zone-filtered range's idle
+ * and offline inside the visits they are being attributed to, so the Σ identity still holds when
+ * the range is full of holes.
+ */
+function intersectSpans(spans: readonly Span[], segs: readonly ZoneSeg[]): Span[] {
+  const out: Span[] = []
+  for (const s of spans) {
+    for (const g of segs) {
+      const start = Math.max(s.start, g.start)
+      const end = Math.min(s.end, g.end)
+      if (end > start) out.push({ start, end })
+    }
+  }
+  return out.sort((a, b) => a.start - b.start)
 }
 
 /**
@@ -493,10 +554,46 @@ interface FoldCtx {
   t1: number
 }
 
-/** The row a sample at `ts` belongs to. Total whenever the range has any span at all. */
+/** The row a sample at `ts` belongs to, or null when no segment holds that instant. */
 function rowAt(ctx: FoldCtx, ts: number): ZoneRangeRow | null {
   const at = segAt(ctx.segs, ts)
   return at < 0 ? null : ctx.rows[ctx.of[at]]
+}
+
+/**
+ * Third-party kills inside the range. Unfiltered this is the O(1) index subtraction it always
+ * was; a zone filter costs a walk, because a witnessed kill carries only a timestamp and the
+ * segments it must be tested against are no longer contiguous.
+ */
+function witnessedIn(snap: ProgressionSnap, ctx: FoldCtx, filtered: boolean): number {
+  const lo = lowerBound(snap.witnessTs, ctx.t0)
+  const hi = lowerBound(snap.witnessTs, ctx.t1)
+  if (!filtered) return hi - lo
+  let n = 0
+  for (let i = lo; i < hi; i++) if (segAt(ctx.segs, snap.witnessTs[i]) >= 0) n++
+  return n
+}
+
+/**
+ * The range's silence and its logouts — both already clipped to `segs` when a zone filter is in
+ * force. Bundled because `max-params` is 4 and because the two are derived TOGETHER: offline is
+ * carved out of the silence it sits in (see `subtractSpans`) before either is clipped, so a zone
+ * row's idle and its offline can never claim the same instant.
+ */
+function rangeSpans(o: {
+  snap: ProgressionSnap
+  segs: readonly ZoneSeg[]
+  t0: number
+  t1: number
+  filtered: boolean
+}): { idle: Span[]; offline: Span[] } {
+  const { snap, segs, t0, t1, filtered } = o
+  if (t1 <= t0) return { idle: [], offline: [] }
+  const offline = offlineSpansIn(snap, t0, t1)
+  const idle = subtractSpans(idleSpans(snap, t0, t1), offline)
+  return filtered
+    ? { idle: intersectSpans(idle, segs), offline: intersectSpans(offline, segs) }
+    : { idle, offline }
 }
 
 /** Fold the credited kills of [t0,t1) into the range totals and their zone rows. */
@@ -505,12 +602,15 @@ function foldKills(snap: ProgressionSnap, ctx: FoldCtx): Pick<RangeStats, 'kills
   let killsSelf = 0
   let killsPet = 0
   for (let i = lowerBound(snap.killTs, ctx.t0); i < lowerBound(snap.killTs, ctx.t1); i++) {
+    // The ROW decides membership, not the range: unfiltered every in-range sample has one (the
+    // segments are contiguous), and under a zone filter a sample with no row happened somewhere
+    // this slice is not about, so it enters neither the row nor the total.
+    const row = rowAt(ctx, snap.killTs[i])
+    if (!row) continue
     const pet = snap.killCredit[i] === 1
     kills++
     if (pet) killsPet++
     else killsSelf++
-    const row = rowAt(ctx, snap.killTs[i])
-    if (!row) continue
     row.kills++
     if (pet) row.killsPet++
     else row.killsSelf++
@@ -528,14 +628,15 @@ function foldExp(
   let expUnstated = 0
   let levelEquiv = 0
   for (let i = lowerBound(snap.expTs, ctx.t0); i < lowerBound(snap.expTs, ctx.t1); i++) {
+    // Membership is the row's, exactly as in `foldKills` — see the note there.
+    const row = rowAt(ctx, snap.expTs[i])
+    if (!row) continue
     const unstated = (snap.expFlag[i] & 1) !== 0
     const equiv = unstated ? 0 : snap.expPct[i] / 100
     expSamples++
     if ((snap.expFlag[i] & 2) !== 0) expParty++
     if (unstated) expUnstated++
     levelEquiv += equiv
-    const row = rowAt(ctx, snap.expTs[i])
-    if (!row) continue
     row.expSamples++
     row.levelEquiv += equiv
     if (unstated) row.expUnstated++
@@ -543,13 +644,16 @@ function foldExp(
   return { expSamples, expParty, expUnstated, levelEquiv }
 }
 
-/** Dings in range, plus the disjoint runs a loadout swap splits them into. */
-function levelSeriesIn(snap: ProgressionSnap, t0: number, t1: number): Pick<RangeStats, 'levelUps' | 'levelRuns'> {
+/** Dings in range (and inside the range's segments, which is the same set unless a zone filter
+ *  is in force), plus the disjoint runs a loadout swap splits them into. */
+function levelSeriesIn(snap: ProgressionSnap, ctx: FoldCtx): Pick<RangeStats, 'levelUps' | 'levelRuns'> {
+  const { t0, t1, segs } = ctx
   const levelUps: RangeStats['levelUps'] = []
   const levelRuns: RangeStats['levelRuns'] = []
   for (let i = lowerBound(snap.levelTs, t0); i < lowerBound(snap.levelTs, t1); i++) {
-    const level = snap.levelValue[i]
     const ts = snap.levelTs[i]
+    if (segAt(segs, ts) < 0) continue
+    const level = snap.levelValue[i]
     levelUps.push({ ts, level })
     const run = levelRuns[levelRuns.length - 1]
     if (!run || level < run.toLevel) levelRuns.push({ fromLevel: level, toLevel: level, startTs: ts, endTs: ts })
@@ -579,15 +683,16 @@ function finishRows(rows: ZoneRangeRow[]): void {
  * repo's ESLint `max-params` is 4 and this would otherwise be at the ceiling.
  */
 export function rangeStats(args: RangeStatsArgs): RangeStats {
-  const { snap, range, combo } = args
+  const { snap, range, combo, zoneKey } = args
   const t0 = range.t0
   const t1 = Math.max(range.t0, range.t1)
-  const durationMs = t1 - t0
-  const segs = zoneSegments(snap, t0, t1)
-  const offline = durationMs > 0 ? offlineSpansIn(snap, t0, t1) : []
-  // Offline is carved OUT of the silence it sits in — see `subtractSpans`. Do it before the
-  // rows are built so a zone row's idle and its offline can never claim the same instant.
-  const spans = subtractSpans(durationMs > 0 ? idleSpans(snap, t0, t1) : [], offline)
+  const filtered = zoneKey != null
+  const segs = zoneSegments(snap, t0, t1, zoneKey)
+  // WHAT THE RANGE IS WORTH IN TIME. Unfiltered the segments tile `[t0,t1)` exactly, so this is
+  // the wall clock it has always been; under a zone filter it is Σ of the visits, which is the
+  // only denominator a per-zone rate may divide by.
+  const durationMs = filtered ? segs.reduce((n, s) => n + (s.end - s.start), 0) : t1 - t0
+  const { idle: spans, offline } = rangeSpans({ snap, segs, t0, t1, filtered })
   const { rows, of } = buildRows(segs, spans, offline)
   const idleMs = spans.reduce((n, s) => n + (s.end - s.start), 0)
   const offlineMs = offline.reduce((n, s) => n + (s.end - s.start), 0)
@@ -598,9 +703,12 @@ export function rangeStats(args: RangeStatsArgs): RangeStats {
   finishRows(rows)
   const unknown = levelsUnknown(exp.expSamples, exp.expUnstated)
   let aaGained = 0
-  const aaLo = lowerBound(snap.aaGainTs, t0)
-  const aaHi = lowerBound(snap.aaGainTs, t1)
-  for (let i = aaLo; i < aaHi; i++) aaGained += snap.aaGainAmount[i]
+  let aaEvents = 0
+  for (let i = lowerBound(snap.aaGainTs, t0); i < lowerBound(snap.aaGainTs, t1); i++) {
+    if (segAt(segs, snap.aaGainTs[i]) < 0) continue
+    aaGained += snap.aaGainAmount[i]
+    aaEvents++
+  }
   return {
     t0,
     t1,
@@ -612,17 +720,17 @@ export function rangeStats(args: RangeStatsArgs): RangeStats {
     offlineMs,
     offlineGaps: offline.length,
     ...kills,
-    killsWitnessed: lowerBound(snap.witnessTs, t1) - lowerBound(snap.witnessTs, t0),
+    killsWitnessed: witnessedIn(snap, ctx, filtered),
     ...exp,
     levelsPerHourActive: unknown ? null : perHour(exp.levelEquiv, activeMs),
     // ONLINE wall (duration - offline): a rate whose denominator counted a logout is a
     // statement about an empty chair. See the field's doc.
     levelsPerHourWall: unknown ? null : perHour(exp.levelEquiv, durationMs - offlineMs),
     killsPerHourActive: perHour(kills.kills, activeMs),
-    ...levelSeriesIn(snap, t0, t1),
+    ...levelSeriesIn(snap, ctx),
     aaGained,
-    aaGainEvents: aaHi - aaLo,
-    aaPerHourActive: perHour(aaHi - aaLo, activeMs),
+    aaGainEvents: aaEvents,
+    aaPerHourActive: perHour(aaEvents, activeMs),
     aaPointsPerHourActive: perHour(aaGained, activeMs),
     zones: rows,
     combos: combo ? combo.intervalsIn(t0, t1) : [],

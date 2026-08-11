@@ -40,7 +40,44 @@ import type { CaptureReason, OverlayChrome } from './useOverlayChrome'
  *
  * DRAG: this row is the window's ONLY drag handle, and a `-webkit-app-region: drag` element
  * swallows clicks entirely — so the trigger carries `no-drag` and the LEFT cluster (live dot +
- * kind tag) plus the padding around the controls stays the drag surface.
+ * kind tag), the GUTTER before the controls, and the padding around them stay the drag surface.
+ *
+ * WHAT JOS-121 TOOK OUT, AND WHERE THE ROOM WENT. This row used to carry a third fixed item: the
+ * read-only scope word ('Group', or the long 'Group (no roster yet)') that JOS-115 kept when it
+ * retired the inline scope control. It is gone from here — it says the same sentence from the
+ * panel floor now (overlay/scopeFloor.tsx) — and the width it was holding was split two ways:
+ *
+ *   - the SELECTOR takes most of it, because it is the item that was actually starved. Its title
+ *     is a mob name under `textOverflow: ellipsis`, so every pixel is a character.
+ *   - a DRAG GUTTER (`GUTTER_W`) takes a fixed slice at the right end, where before there was
+ *     only the 6px flex gap between a full-width no-drag trigger and the controls. That sliver
+ *     was the whole reachable drag target on the right half of the bar.
+ *
+ * Those two are zero-sum against each other — one row, one width — so THE ROW GOT TALLER: 4px of
+ * vertical padding per edge became 7. That is the only lever that is not a swap. Full-row-width
+ * drag surface, and the trigger's height is content-driven so none of it goes back to the no-drag
+ * half.
+ *
+ * IT IS ALSO THE HONEST READING OF THE ASK ("more title-bar room for the fight selector and for
+ * dragging"): a title bar you drag a window by should be tall enough to aim at. MEASURED
+ * (tests/e2e/overlayScopeSteps.mts, which rebuilds the JOS-115 row in place to have a before):
+ * at the LONG scope word — `Group (no roster yet)`, 87px of it — the selector's trigger went
+ * 155.3→242.1px and the fight name inside it 89.1→175.9px, which cost 1,649px² of drag area; the
+ * three extra padding pixels put 2,268px² back, so the drag surface still finished up at
+ * 7,171→7,790px² on a 378px-wide window. The short word (`Group`) is the easy case: it frees less
+ * width, so it takes less drag area with it. The price is 6px of the bars pane, stated not hidden.
+ *
+ * WHAT JOS-158 TOOK OUT, AND WHERE THAT ROOM WENT TOO. The row's third fixed item is now gone as
+ * well: the METERS' numeric tail, the aggregate `21.7k dps` / `1.2k hps` that sat hard right of the
+ * fight name. The owner's ruling (2026-08-09, with a screenshot) is that the aggregate belongs in
+ * the panel content, on the header row above the bars, where it can be LABELED for what it covers
+ * instead of floating unlabelled beside a mob name (overlay/meterCrumb.tsx). So `tail` is OPTIONAL
+ * here now, and a header given none draws no tail span at all - the title's `flexGrow` swallows
+ * every pixel it was holding, which is the whole point: a long mob name truncates later.
+ *
+ * The tail did NOT go away for every kind. The buffs/debuffs and event-log headers still pass one,
+ * and theirs is a COUNT of what the list below holds rather than an aggregate of it - there is no
+ * second place in those windows for it to live, and nothing about them is crowding a mob name.
  *
  * MUI-FREE ON PURPOSE: plain React + inline styles, like every file in this bundle.
  */
@@ -97,7 +134,8 @@ function HeaderControls({
   )
 }
 
-/** Name + (interactive) chevron + the numeric tail. Identical content in both modes. */
+/** Name + (interactive) chevron + the numeric tail, when the kind still has one. Identical
+ *  content in both modes. */
 function HeaderBody({
   title,
   titleColor,
@@ -108,7 +146,8 @@ function HeaderBody({
 }: {
   title: string
   titleColor: string
-  tail: string
+  /** absent on the METERS since JOS-158 — their aggregate is on the panel's own header row. */
+  tail?: string
   tailTitle?: string
   tailColor: string
   /** null when this header has nothing to open — then no chevron is drawn at all. */
@@ -133,12 +172,17 @@ function HeaderBody({
           {open ? '▲' : '▼'}
         </span>
       )}
-      <span
-        title={tailTitle}
-        style={{ color: tailColor, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
-      >
-        {tail}
-      </span>
+      {/* A kind that passes no tail draws NO span here — not an empty one. An empty flex child
+          still costs the row its `gap`, and this row's whole business is the pixels a mob name
+          gets to use (JOS-158). */}
+      {tail !== undefined && tail !== '' && (
+        <span
+          title={tailTitle}
+          style={{ color: tailColor, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
+        >
+          {tail}
+        </span>
+      )}
     </>
   )
 }
@@ -182,68 +226,26 @@ function HeaderTag({ tag, last }: { tag: string; last: boolean }): JSX.Element {
 }
 
 /**
- * WHOSE DAMAGE — the overlay's whole scope control, and deliberately a CYCLE rather than a menu.
+ * THE DRAG GUTTER (JOS-121) — a reachable strip of drag surface at the right end of the row.
  *
- * The Combat tab gets the roster popover with its provenance list and its add/remove; the
- * overlay gets one word you can click. That is a scoping decision, not an omission: an overlay
- * is two inches of transparent, click-through chrome pinned over a running game, and a text
- * entry box in it would be a place to lose keystrokes. Editing the roster is a considered act
- * and it belongs on the surface with room to explain itself. Both surfaces read and filter by
- * the SAME roster off the same snapshot, so what the chip says here is what the tab would say.
+ * The trigger is `no-drag` and spans everything the fixed items leave, so before this the only
+ * drag surface on the right half of a meter's title bar was the 6px flex gap in front of the
+ * controls (and, on a LOCKED meter, whose controls are not rendered until it captures the mouse,
+ * the row's 8px of padding). A window whose one drag handle is 6px wide is a window you miss.
+ *
+ * It carries no `no-drag`, so it inherits the row's `-webkit-app-region: drag` — the same way the
+ * live dot, the kind tag and the padding always have. `alignSelf: stretch` makes it the full
+ * height of the row's content box rather than a zero-height flex item.
  */
-export interface OverlayHeaderScope {
-  /** Already through `chipLabel`, so the "(no roster yet)" fallback reads the same in both
-   *  windows — one phrasing, two renderers (the healRows.ts rule). */
-  label: string
-  /** The tooltip: what this scope means, and what one click switches to. */
-  title: string
-  onCycle: () => void
-}
+const GUTTER_W = 20
 
-/**
- * Renders NOTHING for a meter with no source list to scope, and nothing while the overlay is
- * LOCKED — a click-through window must not show an affordance it cannot deliver.
- *
- * Both refusals live here rather than at the call site because they are this control's own
- * rules, and because OverlayHeader is at its measured complexity ceiling: a component that can
- * decide not to exist keeps that decision out of its parent's branch count.
- */
-function ScopeTag({
-  scope,
-  locked,
-  noDrag
-}: {
-  scope: OverlayHeaderScope | undefined
-  locked: boolean
-  noDrag: React.CSSProperties
-}): JSX.Element | null {
-  const [hot, setHot] = useState(false)
-  if (!scope || locked) return null
+function DragGutter(): JSX.Element {
   return (
-    <span
-      role="button"
-      data-testid="overlay-scope-chip"
-      title={scope.title}
-      onClick={scope.onCycle}
-      onMouseEnter={() => setHot(true)}
-      onMouseLeave={() => setHot(false)}
-      style={{
-        ...noDrag,
-        fontSize: 8,
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
-        color: hot ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
-        background: hot ? HOVER : 'transparent',
-        borderRadius: 3,
-        padding: '1px 3px',
-        cursor: 'pointer',
-        userSelect: 'none',
-        flexShrink: 0,
-        whiteSpace: 'nowrap'
-      }}
-    >
-      {scope.label}
-    </span>
+    <div
+      data-testid="overlay-drag-gutter"
+      title="Drag to move this overlay"
+      style={{ width: GUTTER_W, flexShrink: 0, alignSelf: 'stretch' }}
+    />
   )
 }
 
@@ -348,7 +350,6 @@ export function OverlayHeader({
   tailColor = TAIL_COLOR,
   iconAccentBg = ICON_ACCENT_GOLD,
   select,
-  scope,
   chrome
 }: {
   /** omit entirely for a kind with no combat state (the event log draws no dot). */
@@ -358,14 +359,12 @@ export function OverlayHeader({
   last?: boolean
   title: string
   titleColor: string
-  tail: string
+  /** OPTIONAL since JOS-158: the meters draw no tail, and the width goes to the title. */
+  tail?: string
   tailTitle?: string
   tailColor?: string
   iconAccentBg?: string
   select?: OverlayHeaderSelect
-  /** WHOSE damage this meter is showing (docs/plans/group-model.md §3) — a one-click cycle,
-   *  You → Group → Everyone. Absent for the kinds that have no source list to scope. */
-  scope?: OverlayHeaderScope
   chrome: Pick<OverlayChrome, 'locked' | 'hovering' | 'dragRegion' | 'noDrag' | 'toggleLock'> & {
     /** P3: opt in to a WORKING selector while locked. Absent ⇒ the old plain locked header. */
     capture?: HeaderCapture
@@ -404,7 +403,10 @@ export function OverlayHeader({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        padding: '4px 8px',
+        // 7px, not 4 (JOS-121). See the file header: this is the one lever that is not a swap
+        // against the selector, and it is what makes the drag hit-area grow at the LONG scope
+        // word rather than only at the short one.
+        padding: '7px 8px',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
         fontSize: 11,
         flexShrink: 0
@@ -412,10 +414,6 @@ export function OverlayHeader({
     >
       {live !== undefined && <LiveDot live={live} />}
       <HeaderTag tag={tag} last={last} />
-      {/* Beside the FIGHT/ZONE tag because they answer the same shape of question — that one
-          says WHICH segment, this one says WHOSE damage in it. It draws itself only when there
-          is a source list to scope and the overlay is unlocked (see ScopeTag). */}
-      <ScopeTag scope={scope} locked={locked} noDrag={noDrag} />
 
       {selectable ? (
         <HeaderTrigger select={selectable} rowRef={rowRef} noDrag={noDrag} capture={capture}>
@@ -425,6 +423,10 @@ export function OverlayHeader({
         body(null)
       )}
 
+      {/* The scope word used to sit above, between the kind tag and the trigger. It says the same
+          sentence from the panel floor now (overlay/scopeFloor.tsx); this is where a slice of the
+          width it was holding went. */}
+      <DragGutter />
       <HeaderControls chrome={chrome} iconAccentBg={iconAccentBg} />
     </div>
   )

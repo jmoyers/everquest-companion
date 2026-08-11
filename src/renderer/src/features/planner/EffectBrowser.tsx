@@ -217,7 +217,7 @@ function emptyText(ready: boolean, hidden: HiddenByView): string {
   if (hidden.era > 0) parts.push(`${String(hidden.era)} outside ${CURRENT_ERA_LABEL}`)
   if (hidden.nonEquip > 0) parts.push(`${String(hidden.nonEquip)} with no equipment slot`)
   if (parts.length === 0) return 'No effects match these filters.'
-  return `No effects match these filters — but ${parts.join(' and ')} are hidden by the toggles above.`
+  return `No effects match these filters - but ${parts.join(' and ')} are hidden by the toggles above.`
 }
 
 /** The bounded scroll box (AGENTS.md UI conventions) and the window of rows inside it. */

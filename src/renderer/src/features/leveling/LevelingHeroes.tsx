@@ -75,7 +75,7 @@ export function LevelingHeroes({
     <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
       <HeroCard
         icon={<MilitaryTechIcon fontSize="large" />}
-        value={currentLevel != null ? String(currentLevel) : '—'}
+        value={currentLevel != null ? String(currentLevel) : '-'}
         label="Character level"
         sub={
           levelCount
@@ -87,7 +87,7 @@ export function LevelingHeroes({
       />
       <HeroCard
         icon={<AutoAwesomeIcon fontSize="large" />}
-        value={aaEarned ? aaEarned.toLocaleString() : '—'}
+        value={aaEarned ? aaEarned.toLocaleString() : '-'}
         label="AA points earned"
         sub="spent + unspent"
         accent="#6fb3d2"
@@ -97,7 +97,7 @@ export function LevelingHeroes({
           grouped the ranks into ladders and made the two visibly different numbers. */}
       <HeroCard
         icon={<AutoAwesomeIcon fontSize="large" />}
-        value={aaSpent ? aaSpent.toLocaleString() : '—'}
+        value={aaSpent ? aaSpent.toLocaleString() : '-'}
         label="AA points spent"
         sub={`${boughtCount} ranks allocated`}
         testId="leveling-hero-aa-spent"
@@ -105,7 +105,7 @@ export function LevelingHeroes({
       />
       <HeroCard
         icon={<BoltIcon fontSize="large" />}
-        value={aaUnspent != null ? aaUnspent.toLocaleString() : '—'}
+        value={aaUnspent != null ? aaUnspent.toLocaleString() : '-'}
         label="AA unspent"
         sub="last reported balance"
         accent="#5fbf72"

@@ -293,6 +293,49 @@ export function meleeVerbBase(verb: string): string {
  * The distinction this function draws is between a WEAPON verb and a SKILL verb. The one above
  * is prior to it: a skill that prints no verb of its own is not this function's business, however
  * plainly it is a skill.
+ *
+ * ── STRIKE (JOS-163), THE FLOOR UNDER THAT LANE — A VERB'S ROW, NOT A SPECIAL'S NAME ─────────
+ *
+ * A monk on 0.16.0: strikes lumped into Melee while his kicks show up fine. Confirmed, and it is
+ * the OTHER HALF of the Dragon Punch fix rather than a regression of it. `strike` had no branch
+ * here, so the ONLY thing that could ever name a strike was the stateful rename in
+ * src/main/combat/specialAttacks.ts — and that state has exactly one source, the
+ * `You will now use <X> …` line the game prints ONCE, at the level-up. A player whose current log
+ * file postdates that level-up (fresh install, log rotation, `/log on` switched on later) never
+ * has the line: 100% of his strikes read "Melee", permanently, with no way to earn the row back.
+ * The loadout-swap re-announce burst does not include the strike lane (see
+ * tests/fixtures/w48-special-lane-reset.log — six state lines, none of them a strike), and an
+ * epoch reset wipes the lane with nothing to re-seed it from. v0.5.0 fixed the case where the
+ * state line EXISTS; this branch is every other case.
+ *
+ * WHAT IT CLAIMS IS EXACTLY WHAT THE VERB PROVES, AND NOT ONE WORD MORE. It labels the lane
+ * "Strike" — the verb, neutrally — and never a name from the chain. Seeding the row with
+ * `Tiger Claw` is the guess specialAttacks.ts refuses by design (its header, "PRE-STATE IS HONEST
+ * BY OMISSION"), because a strike is a Tiger Claw, an Eagle Strike, a Dragon Punch or an Iksar's
+ * Tail Rake and the log has not said which. "Strike" asserts only what the damage line itself
+ * printed, which is the same standing every other row in this table has.
+ *
+ * THE EVIDENCE IS ALREADY WRITTEN DOWN, and it is the exclusivity proof specialAttacks.ts won on
+ * the owner's own bytes: `strike` is EXCLUSIVE to the special-attack chain. His first-ever
+ * `You strike …` is three seconds after `You will now use Tiger Claw while auto attacking.`, after
+ * nine days and hundreds of thousands of swings without one; a base unarmed attack prints
+ * `hit`/`claw`/`punch` instead (Hand to Hand skill-ups sit on those three). So an unnamed strike
+ * is not an ordinary weapon swing that wandered in — it is a special whose NAME is unknown, and
+ * pooling it with slash/crush/hit was the miscategorization. That also makes this the one lane in
+ * this table justified by neither JOS-77's class-skill test nor JOS-92's equipment-slot test: the
+ * verb earns its row because it is a special-attack verb, and the row it earns is anonymous
+ * precisely because the special is.
+ *
+ * THE STATE LINE STILL WINS WHEN IT EXISTS. `nameSpecialLane` (combat/ingest.ts) and `missFold`
+ * (combat/routing.ts) both consult `specials.laneSkill(verb)` FIRST and fall through to this
+ * function, so a log that carries the grant reads "Dragon Punch" exactly as it did before — this
+ * branch only changes what an UNCLAIMED lane is called. Nothing is seeded from the table and no
+ * skill-up is read (specialAttacks.ts's stated law): "Strike" is the floor, the state line is the
+ * upgrade.
+ *
+ * AND IT IS PERSON-AGNOSTIC, like every other branch here. A mob's `strikes` reads "Strike" too,
+ * for the same reason its `kicks` has always read "Kick": the verb is the whole discriminator and
+ * this function has never known who swung. The stateful rename above it stays first-person-only.
  */
 export function meleeSkill(verb: string): string {
   const v = verb.toLowerCase()
@@ -302,6 +345,7 @@ export function meleeSkill(verb: string): string {
   if (v.startsWith('cleav')) return 'Cleave'
   if (v.startsWith('smite')) return 'Smite'
   if (v.startsWith('shoot')) return 'Ranged'
+  if (v.startsWith('strike')) return 'Strike'
   if (v.startsWith('frenz')) return 'Frenzy'
   if (v.startsWith('flurr')) return 'Flurry'
   return 'Melee'

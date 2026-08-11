@@ -67,7 +67,7 @@ export default function CharacterIdentity(): JSX.Element {
         </Stack>
       ) : (
         <Typography variant="caption" color="text.disabled">
-          No loadout read yet — one appears as soon as the log names classes you played.
+          No loadout read yet - one appears as soon as the log names classes you played.
         </Typography>
       )}
     </Stack>

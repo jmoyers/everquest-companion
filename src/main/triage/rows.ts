@@ -225,7 +225,7 @@ export function rescrubNotes(re: SliceRescrub): string[] {
     notes.push(
       `WARNING: re-scrub removed ${String(re.dropped)} line(s) of third-party chat from this ` +
         'slice. Our own client removes them BEFORE uploading, so an honest upload has a delta ' +
-        'of zero — this one was not scrubbed by our client. The S3 object is untouched (it is ' +
+        'of zero - this one was not scrubbed by our client. The S3 object is untouched (it is ' +
         'the evidence); only the local copy was cleaned.'
     )
   }

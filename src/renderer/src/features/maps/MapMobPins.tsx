@@ -62,7 +62,7 @@ export function MapMobPins({ pins, vp, selectedId }: MapMobPinsProps): JSX.Eleme
               pin.pct === undefined
                 ? row.name
                 : // The page's OWN number, verbatim — never rounded into "likely" or "rare".
-                  `${row.name} — ${String(pin.pct)}% of spawns`
+                  `${row.name} - ${String(pin.pct)}% of spawns`
             }
             style={{
               position: 'absolute',

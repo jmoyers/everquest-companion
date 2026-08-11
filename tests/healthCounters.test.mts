@@ -31,10 +31,12 @@ import { validateTelemetryEvent } from '../src/shared/telemetryValidate'
 import { rollupBatch, USAGE_METRICS } from '../src/shared/telemetryRollup'
 import {
   noteErrorLogLine,
+  noteImageFetchFailure,
   noteParserStall,
   notePresenceRestart,
   noteRendererCrash,
   noteSpeechFailure,
+  noteSuppressedErrorLine,
   peekHealth,
   resetHealth,
   takeHealth
@@ -54,7 +56,12 @@ const NO_HEALTH = {
   mainErrorLogLines: 0,
   parserStalls: 0,
   presenceRestarts: 0,
-  speechFailures: 0
+  speechFailures: 0,
+  // JOS-133's two. They are OPTIONAL on the wire and always present in the DELTA, and this literal
+  // is the delta's shape — a `deepEqual` against it is what fails the day a field is added without
+  // being thought about.
+  imageFetchFailures: 0,
+  suppressedErrorLines: 0
 }
 
 test('the health drain is a DELTA — a drain zeroes what it took, so nothing counts twice', () => {
@@ -204,4 +211,64 @@ test('THE FOUR WIRED SOURCES are wired where the report says, and the fifth is n
   for (const file of ['src/main/log/Tailer.ts', 'src/main/session.ts']) {
     assert.ok(!read(file).includes('noteParserStall'), `${file} has no stall detector to wire`)
   }
+})
+
+test('JOS-133 wired two more, and BOTH are counts on paths that used to log an error', () => {
+  const read = (p: string): string => readFileSync(join(TEST_ROOT, p), 'utf8')
+  // 6. image fetch — the NETWORK catch, which no longer reaches `onError` at all. The whole point
+  //    of the ticket is that this branch and the HTTP-status branch stopped being one decision.
+  const img = read('src/main/imageCache.ts')
+  const netCatch = img.slice(img.indexOf('} catch (err) {', img.indexOf('res = await doFetch')), img.indexOf('if (!res.ok)'))
+  assert.match(netCatch, /noteImageFetchFailure\(\)/, 'the network leg counts')
+  assert.doesNotMatch(netCatch, /onError\(/, 'and it no longer files an error')
+  // …while the branch beside it, where a host ANSWERED, still does.
+  const statusBranch = img.slice(img.indexOf('if (!res.ok)'), img.indexOf('const bytes = new Uint8Array'))
+  assert.match(statusBranch, /onError\(/, 'an HTTP status is still ours to fix, and still an error')
+
+  // 7. suppressed lines — bumped in `logError` from a leaf rule's verdict, and from NOWHERE ELSE
+  //    in the tree: a caller outside this funnel is how the honest total quietly stops adding up.
+  const errorLog = read('src/main/errorLog.ts')
+  assert.match(errorLog, /const repeat = errorRepeat\(source, body\)/)
+  assert.match(errorLog, /if \(repeat\.suppressed\) noteSuppressedErrorLine\(\)/)
+  // TWO call sites since JOS-197, one per cap, and that is the whole point of the counter: an
+  // occurrence the per-fingerprint BUDGET silenced is withheld exactly as an occurrence the
+  // identical-line cap withheld, so `mainErrorLogLines + suppressedErrorLines` still adds up to
+  // what really happened whichever rule stopped it.
+  assert.equal(errorLog.match(/noteSuppressedErrorLine\(\)/g)?.length, 2)
+  assert.match(errorLog, /if \(!budget\.report\) \{\s+noteSuppressedErrorLine\(\)/)
+  // …and still only from here. The counter has one funnel, in src/main and in the tests alike.
+  // A CALL, not a mention: both cap modules NAME the counter in their headers (that is where the
+  // argument for it lives) and neither may reach it — the funnel bumps it, from the verdict.
+  const callers = ['src/main/crashGuards.ts', 'src/main/errorBudget.ts', 'src/main/errorRepeat.ts']
+  for (const f of callers) assert.ok(!read(f).includes('noteSuppressedErrorLine('), `${f} does not count`)
+  // The report is taken BEFORE both caps, so suppressing a LINE never suppresses an observation.
+  assert.ok(errorLog.indexOf('noteError(source, payload,') < errorLog.indexOf('const repeat ='))
+  assert.ok(errorLog.indexOf('noteError(source, payload,') < errorLog.indexOf('if (!budget.report)'))
+})
+
+test('the two new fields are OPTIONAL on the wire — an old client must not fail a batch', () => {
+  // THE DEPLOY-SKEW HALF (the additive-field rule, shared/telemetry.ts). This validator also runs
+  // in the ingest Lambda, which reads events from clients both newer and older than itself. If the
+  // fields were required, a client predating them would be told 400 for the whole batch, and
+  // `telemetryPermanentRefusal` would class that as permanent and DROP every counter it holds.
+  const old = { t: 'healthCounters', ...NO_HEALTH } as Record<string, unknown>
+  delete old.imageFetchFailures
+  delete old.suppressedErrorLines
+  const v = validateTelemetryEvent(old)
+  assert.ok(v.ok && v.value.t === 'healthCounters')
+  // Absent means ABSENT, not zero: the value is constructed field by field, so an older client's
+  // event round-trips to exactly itself (which is what tests/telemetryContract.test.mts pins).
+  assert.deepEqual(v.value, old)
+  // …and a NEW client's event carries them through, still counted per build by the rollup.
+  const fresh = takeHealth()
+  noteImageFetchFailure(3)
+  noteSuppressedErrorLine(9)
+  const now = { t: 'healthCounters', ...takeHealth() } as const
+  const rolled = rollupBatch(batchOf([now]), { firstOfDay: false, newInstall: false, upgraded: false })
+  const row = (dim: string): number =>
+    rolled.counters.find((c) => c.metric === USAGE_METRICS.health && c.dim === dim)?.n ?? 0
+  assert.equal(row('0.6.0:imageFetchFailures'), 3)
+  assert.equal(row('0.6.0:suppressedErrorLines'), 9)
+  assert.deepEqual(fresh, NO_HEALTH, 'the drain before them was clean')
+  resetHealth()
 })

@@ -31,13 +31,13 @@ export const PROFILES: GameProfile[] = [
   {
     id: 'eqlegends',
     label: 'EverQuest Legends',
-    description: 'Daybreak EverQuest Legends server — quest data from eqlwiki.com',
+    description: 'Daybreak EverQuest Legends server - quest data from eqlwiki.com',
     available: true
   },
   {
     id: 'p99',
     label: 'Project 1999',
-    description: 'Classic EQ emulator (wiki.project1999.com) — not yet imported',
+    description: 'Classic EQ emulator (wiki.project1999.com) - not yet imported',
     available: false
   }
 ]

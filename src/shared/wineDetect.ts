@@ -22,13 +22,18 @@
 //     Wine", and unreachable from here: it needs GetProcAddress, i.e. a native addon or FFI. This
 //     app ships no native module and adding one to decide a background colour would be absurd. It
 //     stays the gold standard we are approximating.
-//   the registry — REAL, and refused on cost. `HKCU\Software\Wine\Debug` and
-//     `HKLM\Software\Wine\LicenseInformation` are both in wine.inf's base install, so they are in
-//     every stock prefix. But Node has no registry API, so reading one means spawning `reg.exe` —
-//     and the answer is needed SYNCHRONOUSLY at module scope before Electron is ready (safe mode
-//     is a before-`ready` flag). That is a blocking child process on the startup path of every
-//     launch on every machine, to answer a question that is 'no' for almost all of them. (The
-//     `SOFTWARE\Wine\Wine\Config` key every blog post names has not existed since Wine 0.9.)
+//   the registry — REAL, refused on cost, AND THE COST HAS SINCE CHANGED. `HKCU\Software\Wine\Debug`
+//     and `HKLM\Software\Wine\LicenseInformation` are both in wine.inf's base install, so they are
+//     in every stock prefix. The refusal was that Node had no registry API, so reading one meant
+//     spawning `reg.exe` — a blocking child process on the startup path of every launch on every
+//     machine, to answer a question that is 'no' for almost all of them, and the answer is needed
+//     SYNCHRONOUSLY at module scope before Electron is ready (safe mode is a before-`ready` flag).
+//     THAT PREMISE EXPIRED WITH JOS-184: `native-reg` is in the tree now and log/discovery.ts reads
+//     HKLM in-process in well under a millisecond, so this signal is available for the price of a
+//     probe in main/wine.ts (this module stays pure and is fed by it). It is not here because the
+//     two signals below already answer every prefix anyone has reported, not because it cannot be
+//     done — it is the next rung if one ever defeats them, alongside the DOS-stub magic below.
+//     (The `SOFTWARE\Wine\Wine\Config` key every blog post names has not existed since Wine 0.9.)
 //   the "Wine builtin DLL" DOS-stub magic at offset 0x40 of any system32 module — REAL, and not
 //     needed. Wine's own `read_file` in setupapi/fakedll.c requires that ASCII marker, so it is as
 //     definitive as detection gets without FFI, and it would answer even in a prefix where the

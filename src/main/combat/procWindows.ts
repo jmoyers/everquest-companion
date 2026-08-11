@@ -423,14 +423,14 @@ export const CO_STATE_GAP = 0.2
  *  for a stance is still an estimate ABOUT something the log never marks. */
 export const NO_PER_HIT_MARKER_NOTE =
   'A stance that boosts base melee has no per-hit marker in the log. Nothing distinguishes a ' +
-  'swing under Offensive from a swing under Balanced except the swing’s number — and ' +
+  'swing under Offensive from a swing under Balanced except the swing’s number - and ' +
   'the mob, your level and your gear all changed too. The window comparison is the closest ' +
   'honest answer, and it is an estimate.'
 
 /** Neither is recorded in the minute ledger, so neither can be tested. DECLARED, because a
  *  confound list that silently omits the checks it could not run reads as a clean bill. */
 export const UNTESTED_CONFOUNDS =
-  'not tested — level drift and mob mix are not carried in the minute ledger'
+  'not tested - level drift and mob mix are not carried in the minute ledger'
 
 /** The exclusivity group a projected `StateSpan` commits under. Coats collapse to the family
  *  prefix: the shared span shape cannot say utility from combat (see partitionWindows). */
@@ -524,7 +524,7 @@ function coStateConfounds(arms: WindowArms, selfKey: string): string[] {
     const fa = fractionActive(arms.active, k)
     const fi = fractionActive(arms.inactive, k)
     if (Math.abs(fa - fi) <= CO_STATE_GAP) continue
-    out.push(`co-state — ${k} was active in ${pct(fa)} of active windows but ${pct(fi)} of inactive ones`)
+    out.push(`co-state - ${k} was active in ${pct(fa)} of active windows but ${pct(fi)} of inactive ones`)
   }
   return out
 }
@@ -552,7 +552,7 @@ function separated(a: readonly ProcWindow[], b: readonly ProcWindow[]): boolean 
 export function declareConfounds(arms: WindowArms, selfKey: string): string[] {
   const out = coStateConfounds(arms, selfKey)
   if (separated(arms.active, arms.inactive)) {
-    out.push('not-interleaved — the two arms do not overlap in time; gear, level and content all drift with it')
+    out.push('not-interleaved - the two arms do not overlap in time; gear, level and content all drift with it')
   }
   out.push(UNTESTED_CONFOUNDS)
   return out
@@ -583,7 +583,7 @@ export interface DirectRollup {
  *  body of evidence twice. */
 function sharedConfound(shared: readonly string[]): string {
   return (
-    `co-exclusive — ${shared.join(', ')} ${shared.length > 1 ? 'were' : 'was'} active for exactly ` +
+    `co-exclusive - ${shared.join(', ')} ${shared.length > 1 ? 'were' : 'was'} active for exactly ` +
     'the same firings; the log cannot say which state the proc belongs to'
   )
 }
@@ -647,7 +647,7 @@ const DIRECT_NOTE = 'No lane is attributed to this state; the exact per-lane num
 function measuredNote(d: EffectAttribution['direct']): string {
   return (
     `${d.hits} firings of ${d.lanes.join(', ')} landed only while this state was active, ` +
-    `for ${d.damage} damage and ${d.heal} healing — counted, not estimated. A co-occurrence: ` +
+    `for ${d.damage} damage and ${d.heal} healing - counted, not estimated. A co-occurrence: ` +
     'the log never names what fired a proc.'
   )
 }
@@ -706,7 +706,7 @@ function shortVerdict(nA: number, nI: number): EffectAttribution['verdict'] {
 function shortNote(nA: number, nI: number): string {
   if (nA === 0 && nI === 0) return 'No minute of this session cleared the volume gates, so no comparison was attempted.'
   if (nA === 0) return `This state was never active in an eligible minute (${nI} inactive windows). No comparison is possible.`
-  if (nI === 0) return `This state was active in every one of the ${nA} eligible minutes. No comparison is possible — there is no control group.`
+  if (nI === 0) return `This state was active in every one of the ${nA} eligible minutes. No comparison is possible - there is no control group.`
   const shortArm = nA < nI ? 'active' : 'inactive'
   const have = Math.min(nA, nI)
   return `The ${shortArm} arm has ${have} eligible 60-second windows; ${MIN_ARM_WINDOWS} are needed (${nA} active / ${nI} inactive).`

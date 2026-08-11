@@ -21,6 +21,9 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import type { SpellDbFile, SpellEntry } from '../src/shared/types'
+// The one reader of the wiki's duration strings, shared with the LOADER (JOS-189) so a form this
+// script cannot read at scrape time is still understood when the committed file is loaded.
+import { parseDurationMs } from '../src/shared/spellDuration'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal buff tracker)'
@@ -169,50 +172,10 @@ function clean(v: string | undefined): string | undefined {
   return s || undefined
 }
 
-/** ms for one "<num> <unit>" component. Unit forms: sec/second(s), min/minute(s),
- *  hr/hour(s), tick(s). Returns null for an unknown unit. */
-function unitMs(n: number, unitRaw: string): number | null {
-  const u = unitRaw.toLowerCase()
-  if (/^h(ou)?rs?$|^hr$/.test(u)) return Math.round(n * 3_600_000)
-  if (/^m(in(ute)?s?)?$/.test(u)) return Math.round(n * 60_000)
-  if (/^s(ec(ond)?s?)?$/.test(u)) return Math.round(n * 1000)
-  if (/^ticks?$/.test(u)) return Math.round(n * 6000) // EQ tick = 6s
-  return null
-}
-
-/**
- * Parse an EQ Legends duration string to ms, or null when unparseable/instant. The wiki
- * uses several forms (validated against real pages):
- *   "27 minutes"                          → 1_620_000
- *   "16 Min" / "11 Min"                   → abbreviated unit
- *   "2 Min 30 Sec"                        → COMPOUND (summed)
- *   "1.5 hours"                           → 5_400_000
- *   "4.4 minutes @L44 to 6.0 minutes @L60"→ a LEVEL FORMULA: take the MAX component
- *      (per the user directive — DB duration is the prior, "more or less the max seen").
- *   "instant" / "permanent" / "" / a pure per-tick effect → null (retain the text).
- * A per-tick regen line ("4 per tick") is NOT a duration and yields null.
- */
-export function parseDurationMs(text: string | undefined): number | null {
-  if (!text) return null
-  const t = text.toLowerCase().trim()
-  if (!t || /instant|permanent|until\b|special|varies|n\/a|per tick|per level/.test(t)) return null
-
-  // Collect every "<num> <unit>" component. A plain compound ("2 Min 30 Sec") sums; a
-  // level formula ("4.4 minutes … to 6.0 minutes …") takes the max — we distinguish by
-  // the presence of a range separator ("to"/"@L"/"@ L").
-  const comps: number[] = []
-  const re = /(\d+(?:\.\d+)?)\s*(hours?|hrs?|hr|minutes?|mins?|min|seconds?|secs?|sec|ticks?)\b/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(t)) !== null) {
-    const ms = unitMs(parseFloat(m[1]), m[2])
-    if (ms != null) comps.push(ms)
-  }
-  if (comps.length === 0) return null
-  const isFormula = /\bto\b|@\s*l\d|@l\d/.test(t)
-  if (isFormula) return Math.max(...comps)
-  // Compound sum (e.g. "2 Min 30 Sec") — but a single component is just itself.
-  return comps.reduce((a, b) => a + b, 0)
-}
+// THE DURATION READER LIVES IN src/shared/spellDuration.ts (JOS-189). It used to live here, and
+// that is why a form it could not read became a permanent null in the committed catalog: its only
+// caller ran at SCRAPE time. The loader now fills those nulls through the SAME function, so the two
+// can never disagree about what a wiki duration string means.
 
 function parseSpell(title: string, fields: Record<string, string>): SpellEntry {
   const name = clean(fields.spellname) ?? title

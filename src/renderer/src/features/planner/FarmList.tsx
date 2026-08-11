@@ -113,7 +113,7 @@ function Row({
 
       <Box sx={{ minWidth: 0, flexShrink: 1, width: 240 }}>
         <Typography variant="caption" noWrap sx={{ display: 'block' }}>
-          {camp === '' ? '—' : camp}
+          {camp === '' ? '-' : camp}
         </Typography>
         {row.also.length > 0 && <AlsoZones zones={row.also} />}
       </Box>
@@ -248,7 +248,7 @@ export default function FarmList({ plan, progress, onOpenLoot }: FarmListProps):
             {!ready
               ? 'Reading the item database…'
               : outstanding === 0
-                ? 'Nothing left to farm in this set — every planned donor is merged to its extraction tier, or nothing is planned yet.'
+                ? 'Nothing left to farm in this set - every planned donor is merged to its extraction tier, or nothing is planned yet.'
                 : `Every planned donor in this set is out of ${CURRENT_ERA_LABEL}.`}
           </Typography>
         )}

@@ -156,7 +156,7 @@ export function loadStack(refresh = false): Stack {
   for (const key of STACK_KEYS) {
     const value = outputs[key]?.value
     if (typeof value !== 'string') {
-      throw new Error(`terraform output is missing "${key}" — has the stack been applied?`)
+      throw new Error(`terraform output is missing "${key}" - has the stack been applied?`)
     }
     stack[key] = value
   }

@@ -5,7 +5,8 @@
 //     (opens the openpeon.com registry browser — Task #29), "Add alert", and a
 //     "Reset to defaults" button (restores the seeded built-in set, confirmed)
 //     — AlertsToolbar.tsx,
-//   - a list of alerts, each with an enable switch, per-alert volume, a
+//   - a list of alerts in the stored order, narrowed by the toolbar's search box (JOS-178),
+//     each with an enable switch, per-alert volume, a
 //     pack→sound picker, a compact trigger chip, Test / Edit / Delete, and an
 //     expandable "recent fires" panel (time + the actual matched log line)
 //     — AlertList.tsx,
@@ -42,6 +43,7 @@ import AlertsToolbar from './AlertsToolbar'
 import UpgradeOffers from './UpgradeOffers'
 import { useUpgradeOffers } from './lineIntel'
 import { useAlertsStore, type AlertsStore } from './useAlertsStore'
+import { useAlertFilter } from './useAlertFilter'
 import type { VoiceSetupNotice } from './VoiceSetupLink'
 import ShareImportDialog from '../profiles/ShareImportDialog'
 import { copyText } from '../../lib/clipboard'
@@ -56,7 +58,7 @@ interface Toast {
 function shareToast(ok: boolean, ids: string[] | undefined, len: number): Toast {
   const what = ids?.length === 1 ? 'Alert' : 'All alerts'
   return ok
-    ? { severity: 'success', text: `${what} copied — paste it to share (${len} chars).` }
+    ? { severity: 'success', text: `${what} copied - paste it to share (${len} chars).` }
     : { severity: 'warning', text: 'Could not reach the clipboard.' }
 }
 
@@ -67,7 +69,7 @@ function importToast(res: ShareApplyResult): Toast {
     text: res.ok
       ? res.added
         ? `Added ${res.added} alert${res.added === 1 ? '' : 's'}${res.skipped ? `, skipped ${res.skipped} you already had` : ''}.`
-        : 'Nothing to add — you already have every alert in that string.'
+        : 'Nothing to add - you already have every alert in that string.'
       : res.error ?? 'Import failed.'
   }
 }
@@ -128,7 +130,7 @@ function ConfirmResetDialog({
       <DialogTitle>Reset alerts to defaults?</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary">
-          This replaces all alerts — including any you added or edited — with the
+          This replaces all alerts, including any you added or edited, with the
           seeded built-in set (Charm break + Raid target defeated). This can&apos;t be undone.
         </Typography>
       </DialogContent>
@@ -270,6 +272,9 @@ export default function AlertsView({
   const store = useAlertsStore()
   const { alerts, prefs, sortedPacks, history, persistAlerts, removeAlert } = store
   const voiceSetup = useVoiceSetupNotice(onOpenVoicePrefs)
+  // Local search over every facet an alert carries (JOS-178). It narrows the LIST and nothing
+  // else: every alert still fires, whatever the box says.
+  const filter = useAlertFilter(alerts, sortedPacks)
 
   const edit = useEditDialog()
   const reset = useResetConfirm(store)
@@ -287,6 +292,7 @@ export default function AlertsView({
         prefs={prefs}
         onPrefsDrag={store.setPrefs}
         onPrefsCommit={(next) => void store.persistPrefs(next)}
+        search={filter}
         hasAlerts={alerts.length > 0}
         onOpenPacks={() => setSoundSurface('packs')}
         onOpenMySounds={() => setSoundSurface('mine')}
@@ -300,10 +306,11 @@ export default function AlertsView({
 
       {/* Alert list */}
       <AlertList
-        alerts={alerts}
+        alerts={filter.visible}
         history={history}
         packs={sortedPacks}
         voiceSetup={voiceSetup}
+        filtering={filter.filtering}
         onAddSuggestion={() => setSuggestOpen(true)}
         handlers={{
           onPersist: (def) => void persistAlerts(def),

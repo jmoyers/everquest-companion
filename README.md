@@ -147,6 +147,19 @@ Contributions welcome. Everything about building, testing, and the architecture 
 FSL-1.1-MIT (Functional Source License, converting to MIT after two years) — see
 [`LICENSE`](LICENSE). Copyright (c) 2026 Josh Moyers.
 
+## Thanks
+
+The item icons and raid-boss portraits this app draws come from two volunteer-run
+EverQuest wikis — [**wiki.project1999.com**](https://wiki.project1999.com/) (boss
+portraits) and [**eqlwiki.com**](https://eqlwiki.com/) (item icons, and the item, spell
+and quest knowledge behind them). Those images are **copied into the app at build time**
+(`resources/wiki-images/`, ~3.75 MB, regenerated with `npm run fetch:images`), so the
+running app never asks either site for a picture, and
+[`resources/wiki-images/manifest.json`](resources/wiki-images/manifest.json) records the
+exact source URL, byte length and SHA-256 of every file it ships. Neither wiki is
+affiliated with this app. The same credit is in the app itself, under
+**Preferences → Thanks**.
+
 The bundled **Alan Rickman** voice pack comes from
 [utensils/openpeon-alan-rickman-soundpack](https://github.com/utensils/openpeon-alan-rickman-soundpack)
 and is licensed CC-BY-4.0. Packs you install from the in-app browser carry their own

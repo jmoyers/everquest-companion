@@ -84,7 +84,7 @@ export function WhatsNewTeaser({ onOpen }: { onOpen: () => void }): JSX.Element 
 
         <IconButton
           size="small"
-          aria-label="Dismiss — you can read the notes any time in Preferences"
+          aria-label="Dismiss - you can read the notes any time in Preferences"
           data-testid="whats-new-teaser-dismiss"
           onClick={() => {
             setDismissed(true)

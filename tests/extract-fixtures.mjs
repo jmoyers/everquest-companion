@@ -215,6 +215,37 @@ slice(45810, 45835, 'w17-own-cast-gating.log')
 // outside the landing window — proving the gate is recency-based, not "ever cast it once").
 slice(962955, 963020, 'w17-priming.log')
 
+// ── JOS-156 ──
+// W18 THE CHARM PET'S KILLS (Sun Aug 09 15:20:15 → 15:22:50, raw 1462128..1463500). The owner's
+// own live-testing window, cut whole: a Plane of Sky bee pull where EVERY kill is landed by the
+// charmed pet, so not one death in it takes the first-person `You have slain <X>!` shape.
+//
+// Hand-read, in order:
+//   15:20:40  Bzzazzt has been charmed.              ← the pet. Its NAME is Bzzazzt.
+//   15:20:43  You begin casting Shiftless Deeds IV.
+//   15:20:47  Bzzazzt slows down.                    ← a slow on a bee named Bzzazzt
+//   15:21:11  Bzzazzt has been slain by Bzzazzt!     ← a bee named Bzzazzt, killed by the pet
+//   15:21:12  You begin casting Shiftless Deeds IV.
+//   15:21:16  Bazzzazzt slows down.
+//   15:21:37  Bazzzazzt has been slain by Bzzazzt!
+//   15:21:40  You begin casting Shiftless Deeds IV.
+//   15:21:45  Bzzzt slows down.
+//   15:22:08  Bzzzt has been slain by Bzzazzt!
+//   15:22:25  You begin casting Shiftless Deeds IV.
+//   15:22:26  Bazzt Zzzt slows down.
+//   15:22:48  Bazzt Zzzt has been slain by Bzzazzt!
+//
+// FOUR slows, FOUR deaths, all four third-person. The first pair is the whole ticket: the mob
+// that died SHARES ITS NAME WITH THE PET that killed it, so the buffs model's charmed-pet branch
+// claimed the death and the conservative "never censor a live pet on an ambiguous death" ruling
+// swallowed it whole — including the debuff row on the thing that demonstrably just died. The
+// other three are the control: same shape, different name, and they cleared before JOS-156 too.
+//
+// The window opens 25 s before the charm (on a `Your target is out of range` line) so the pull is
+// already running, and closes two lines after the fourth death, well before the 15:23 sphinx adds
+// arrive and change the subject.
+slice(1462128, 1463500, 'w18-charm-pet-kills.log')
+
 // ── Priming fixtures (Task #33): a real earlier excerpt that establishes learned state
 // (everFaded / spell class / recognized landing emotes) BEFORE a golden window, mirroring
 // what the full-log replay does in production ahead of the live tail. These are the

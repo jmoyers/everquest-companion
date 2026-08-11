@@ -8,12 +8,12 @@ import { useGlobalFight } from '../features/combat/useGlobalFight'
 import { type OverlaySelectRow } from './OverlaySelect'
 import { OverlayHeader } from './OverlayHeader'
 import { MeterBars } from './meterBars'
-import { OverlayContent } from './overlayScale'
+import { MeterPane } from './scopeFloor'
 import { TextScaleStepper } from './TextScaleStepper'
 import { useOverlayChrome, type OverlayChrome } from './useOverlayChrome'
 import { useOverlayCombat } from './useOverlayCombat'
 import { useMeterScope } from '../features/combat/useCombatPrefs'
-import { EMPTY_ROSTER, SCOPE_HINT, SCOPE_LABEL, chipLabel, nextScope } from '@shared/roster'
+import { EMPTY_ROSTER, SCOPE_HINT, chipLabel } from '@shared/roster'
 
 // Palette (matches the app's combat colors; the overlay has no MUI theme).
 const GOLD = '#d9b25f'
@@ -48,7 +48,7 @@ function overlayTiming(o: ScopeOption, now: number): string {
   if (o.startTs) bits.push(formatTime(o.startTs))
   const age = relativeAge(o.startTs, now)
   if (age) bits.push(age)
-  bits.push(o.durationSec > 0 ? fmtDur(o.durationSec) : o.live ? 'live' : '—')
+  bits.push(o.durationSec > 0 ? fmtDur(o.durationSec) : o.live ? 'live' : '-')
   return bits.join(' · ')
 }
 
@@ -68,23 +68,23 @@ interface MeterView {
   seg: SegmentView | undefined
   live: boolean
   headerName: string
-  totalDps: number
   rows: OverlaySelectRow[]
   /** on the head row, but the head row is the LAST (finished) fight — never dress it up as live */
   headIsLast: boolean
 }
 
-/** Header title + live dot + rate/duration for the selected segment. */
+/** Header title + live dot for the selected segment. The RATE is not here any more — since
+ *  JOS-158 the aggregate is stated, labelled, on the panel's own header row (overlay/meterCrumb).
+ */
 function headerFor(
   snap: CombatSnapshot | null,
   seg: SegmentView | undefined,
   isFight: boolean,
   hydrating: boolean
-): Pick<MeterView, 'live' | 'headerName' | 'totalDps'> {
+): Pick<MeterView, 'live' | 'headerName'> {
   return {
     live: !hydrating && !!snap?.inCombat,
-    headerName: hydrating ? 'Reading log…' : seg?.name ?? (isFight ? 'No fight' : 'No zone'),
-    totalDps: seg?.outDps ?? 0
+    headerName: hydrating ? 'Reading log…' : seg?.name ?? (isFight ? 'No fight' : 'No zone')
   }
 }
 
@@ -146,14 +146,14 @@ export default function OverlayMeter(): JSX.Element {
   const snap = useOverlayCombat(selection === LIVE ? undefined : selection)
   const { locked, bgAlpha, textScale, drill, hovering, patch, setDrill, toggleLock, capture, dragRegion, noDrag } =
     useOverlayChrome()
-  // WHOSE damage (docs/plans/group-model.md §2). Persisted PER OVERLAY KIND — a pinned fight
-  // meter and the docked Combat tab are often asked different questions, and one shared key
-  // would make them fight over one value. The roster itself is the snapshot's, so this window
-  // and the tab always filter by the same five names.
-  const [meterScope, setMeterScope] = useMeterScope(`overlay.${kind}`)
+  // WHOSE damage (docs/plans/group-model.md §2). ONE app-wide preference since JOS-115: the
+  // Combat tab, the Overview card and every floating meter read this key, and only
+  // Preferences > Combat writes it. The roster itself is the snapshot's, so this window and the
+  // tab always filter the same names by the same rule.
+  const [meterScope] = useMeterScope()
   const roster = snap?.roster ?? EMPTY_ROSTER
 
-  const { seg, live, headerName, totalDps, rows, headIsLast } = meterView(
+  const { seg, live, headerName, rows, headIsLast } = meterView(
     snap,
     isFight,
     selection,
@@ -207,17 +207,12 @@ export default function OverlayMeter(): JSX.Element {
         last={headIsLast}
         title={headerName}
         titleColor={GOLD}
-        // THE SEGMENT'S RATE, AND NOTHING ELSE (owner ruling 2026-08-05 — JOS-35). The header is
-        // the selector: it states which fight you are watching and how hard it is going. The
-        // fight CLOCK moved down to the crumb row above the bars (overlay/meterCrumb.tsx), which
-        // is what gives a long mob name room to be read at 380px.
-        tail={formatRate(totalDps)}
+        // THE FIGHT'S NAME, AND NOTHING ELSE (owner direction 2026-08-09 — JOS-158). JOS-35 had
+        // already sent the fight CLOCK down to the crumb row above the bars; the RATE has now
+        // followed it (overlay/meterCrumb.tsx), where it can be labelled for what it covers
+        // instead of floating unlabelled beside a mob name. So this header passes NO tail at all,
+        // and every pixel it was holding is width a long mob name gets to use at 380px.
         select={{ rows, value: selection, onChange: selectSegment, accent: GOLD }}
-        scope={{
-          label: chipLabel(meterScope, roster),
-          title: `${SCOPE_HINT[meterScope]}. Click for ${SCOPE_LABEL[nextScope(meterScope)]}.`,
-          onCycle: () => setMeterScope(nextScope(meterScope))
-        }}
         chrome={{ locked, hovering, dragRegion, noDrag, toggleLock, capture }}
       />
 
@@ -229,7 +224,21 @@ export default function OverlayMeter(): JSX.Element {
           this box to say so. */}
       {/* EVERY source, not a top-5: the pane scrolls (owner feedback 2026-08-05), and it is also
           the one place the text scale is applied — chrome above and below stays at 1. */}
-      <OverlayContent textScale={textScale} testId="overlay-bars">
+      {/* …and since JOS-121 the pane's FLOOR carries the scope word that used to sit in the title
+          bar: a low-contrast, click-through watermark in a band the bars are padded out of, still
+          able to say the long 'Group (no roster yet)' that explains a widened meter. */}
+      {/* …and since JOS-138 the pane also carries the SCROLL GRIP: pinned, the strip along its
+          right edge takes the mouse while the rows overflow, so the wheel and the scrollbar both
+          work there and the rest of the body stays click-through (overlayScale.tsx). */}
+      <MeterPane
+        textScale={textScale}
+        locked={locked}
+        capture={capture}
+        scope={{
+          label: chipLabel(meterScope, roster),
+          title: `${SCOPE_HINT[meterScope]}. Change it in Preferences > Combat.`
+        }}
+      >
         <MeterBars
           seg={seg}
           scope={meterScope}
@@ -238,7 +247,7 @@ export default function OverlayMeter(): JSX.Element {
           setDrill={locked ? null : setDrill}
           live={live}
         />
-      </OverlayContent>
+      </MeterPane>
 
       {!locked && <MeterFooter bgAlpha={bgAlpha} textScale={textScale} patch={patch} noDrag={noDrag} />}
     </div>

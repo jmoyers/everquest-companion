@@ -162,7 +162,7 @@ export function cumulativeAt(points: readonly { ts: number; y: number }[], ts: n
  * for the same span; there is no fourth elapsed formatter in this feature.
  */
 export function fmtDelta(ms: number): string {
-  if (ms <= 0) return '—'
+  if (ms <= 0) return '-'
   const mins = ms / 60000
   if (mins < 60) return `${Math.round(mins)}m`
   const hrs = mins / 60

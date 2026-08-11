@@ -21,12 +21,14 @@ import assert from 'node:assert/strict'
 import {
   TARGET_BUCKETS,
   TIMESCALES,
+  TRAILING_FRAC,
   availableTimescales,
   bucketMsFor,
   resolveTimescale,
   visibleFrom,
   visibleSegments,
-  windowFor
+  windowFor,
+  windowOver
 } from '../src/renderer/src/features/leveling/chartWindow'
 import { buildLevelSegments } from '../src/renderer/src/features/leveling/levelSeries'
 import { levelAt, stepIndexAt } from '../src/renderer/src/features/leveling/levelChartGeometry'
@@ -202,4 +204,35 @@ test('the clipped series still answers the same questions the full one did, insi
   }
   const va = visibleFrom(pts, t0)
   assert.equal(va[stepIndexAt(va, t0 + 30 * MIN)].y, pts[stepIndexAt(pts, t0 + 30 * MIN)].y, 'and so does the AA step lookup')
+})
+
+// ── 5. the generalized domain (JOS-130) ───────────────────────────────────────────────
+//
+// The app-wide timeslice draws SEMANTIC slices — this session, this zone, a custom pair — and
+// those are anchored on stated instants at both ends, exactly like `full` and unlike a sliding
+// rung. `windowOver` is that rule, factored out of `windowFor`, and the pin that matters is that
+// `full` still goes through it: a user who never touches the control must see the same chart.
+
+test('windowOver IS the `full` rule — the whole-history domain is unchanged, byte for byte', () => {
+  for (const [lo, hi] of [
+    [T0, T0 + 3 * H],
+    [T0, T0 + 40 * DAY],
+    [T0, T0]
+  ] as const) {
+    assert.deepEqual(windowOver(lo, hi), windowFor(lo, hi, 'full'), `${String(hi - lo)}ms of history`)
+  }
+})
+
+test('windowOver pads a narrower slice by the same 4%, and buckets it for its OWN span', () => {
+  const win = windowOver(T0 + 2 * H, T0 + 3 * H)
+  assert.equal(win.t0, T0 + 2 * H, 'the near end is the instant asked for — no outward snap')
+  assert.equal(win.t1, T0 + 3 * H + H * TRAILING_FRAC, 'and the far end carries the trailing gutter')
+  assert.equal(win.bucketMs, bucketMsFor(win.t1 - win.t0), 'the grid is derived from the drawn span')
+  assert.ok(win.bucketMs < windowOver(T0, T0 + 40 * DAY).bucketMs, 'a narrower slice draws on a finer grid')
+})
+
+test('windowOver never produces a zero-width or inverted domain', () => {
+  const win = windowOver(T0, T0)
+  assert.ok(win.t1 > win.t0, 'one instant of history still spans something to divide by')
+  assert.ok(Number.isFinite(win.bucketMs) && win.bucketMs > 0)
 })

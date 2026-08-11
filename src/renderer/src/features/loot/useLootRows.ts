@@ -4,6 +4,7 @@ import { itemCountKey } from '../../lib/itemName'
 import { normalizeQuery } from '../../lib/search'
 import type { InventoryRow } from '../inventory/reconcile'
 import { buildInvOnlyRows, filterLootEvents, groupLootRows, type GroupRow, type KeyedLoot } from './lootGrouping'
+import { selectInvOnly, showsInvOnly } from './ownedItems'
 import type { LootSortKey } from './lootSort'
 
 export interface LootRowsInput {
@@ -28,6 +29,10 @@ export interface LootRows {
   groupRows: GroupRow[]
   /** Held per the export but never looted this epoch — the toolbar chip counts these. */
   invOnlySource: InventoryRow[]
+  /** Those of them the current filters admit. Already inside `groupRows`; surfaced separately so
+   *  the UNGROUPED ledger — which renders loot events and so can never hold one — can still say
+   *  that a search matched something the app owns (JOS-160). */
+  invOnlyRows: GroupRow[]
   /** countKey → reconciled inventory row, for the O(1) per-row "In inventory" estimate. */
   invByKey: Map<string, InventoryRow>
 }
@@ -70,7 +75,7 @@ export function useLootRows({
   const lootCountKeys = useMemo(() => new Set(keyed.map((e) => e.countKey)), [keyed])
 
   const invOnlySource = useMemo(
-    () => inventoryRows.filter((r) => r.net > 0 && !lootCountKeys.has(r.key)),
+    () => selectInvOnly(inventoryRows, lootCountKeys),
     [inventoryRows, lootCountKeys]
   )
 
@@ -79,10 +84,14 @@ export function useLootRows({
   // query, so switching to "last looted" never re-runs the per-keystroke work.
   const grouped = useMemo(() => groupLootRows(events, isFavorite, sort), [events, isFavorite, sort])
 
-  // The opt-in inventory-only tail is kept OUT of the default view so the Loot table stays a
-  // loot table; the toolbar chip says how many are hiding.
+  // The inventory-only tail is kept OUT of the default BROWSE so the Loot table stays a loot
+  // table (the toolbar chip says how many are hiding) — but a SEARCH always reaches it, because a
+  // search asks whether the app knows this item at all (JOS-160, `showsInvOnly`).
   const invOnlyRows = useMemo<GroupRow[]>(
-    () => (showInventoryOnly ? buildInvOnlyRows({ source: invOnlySource, questOnly, q, isFavorite }) : []),
+    () =>
+      showsInvOnly(showInventoryOnly, q)
+        ? buildInvOnlyRows({ source: invOnlySource, questOnly, q, isFavorite })
+        : [],
     [showInventoryOnly, invOnlySource, questOnly, q, isFavorite]
   )
 
@@ -91,5 +100,5 @@ export function useLootRows({
     [grouped, invOnlyRows]
   )
 
-  return { events, grouped, groupRows, invOnlySource, invByKey }
+  return { events, grouped, groupRows, invOnlySource, invOnlyRows, invByKey }
 }

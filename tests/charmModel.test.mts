@@ -36,6 +36,12 @@ test('the charm family is DERIVED from the spell DB, not hand-listed', () => {
   // …and the membership test is WIDER than that table on purpose: `Allure` is a real charm
   // the owner cast 159 times (its `Your Allure VII spell has worn off of …` lines already
   // drive the un-charm path) but the scraped DB carries no cast-on-other message for it.
+  //
+  // STILL TRUE OF THE SCRAPE, AND NO LONGER TRUE OF THE LOADED DB (JOS-159). This table is built
+  // from the raw `spells.json` import, which is why it still excludes Allure; the corrections
+  // overlay in `src/main/data/spellCorrections.ts` supplies the missing message at
+  // `loadSpellDb()` time, so the charm COUNTDOWN does now see Allure as a candidate. The two
+  // facts live at different layers on purpose and the assertion below is about the lower one.
   assert.ok(!CHARM_SPELLS_BY_MESSAGE.has('allure'), 'the DB has no charm message for Allure')
   assert.ok(isCharmSpell('Allure VII'), 'but it IS a charm spell')
 })

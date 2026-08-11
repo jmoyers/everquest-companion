@@ -54,7 +54,7 @@ function KillSwitch({ ops, onChanged }: { ops: TriageOpsState; onChanged: () => 
           size="small"
           color={ops.accepting ? 'success' : 'error'}
           variant="outlined"
-          label={ops.accepting ? 'open' : 'closed — every submit gets 503'}
+          label={ops.accepting ? 'open' : 'closed - every submit gets 503'}
         />
         <Box sx={{ flexGrow: 1 }} />
         <Typography variant="caption" color="text.secondary">

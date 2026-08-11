@@ -77,17 +77,47 @@ export interface ParserConfig {
  * Largo's Assonant Binding is the tell: it is the DIRECT UPGRADE of the one song the list had,
  * one word apart, and it was missing — the level-up failure the roster law exists to prevent.
  *
- * AND THE BARD'S SONG IS A MEZ, NOT A CHARM — stated because the report calls it charm and the
- * distinction changes which alert fires. Evidence from the reporter's own slice (feedback report
- * 01KZAG2QAW885YJNRTDDND8BF2, read-only, never committed): each of their five
- * `You begin singing Solon's Bewitching Bravura IX.` lines is followed ~2 s later by
- * `a fire giant warrior's eyes glaze over.` — Bravura's own landing message per the DB — while
- * EVERY `<mob> has been charmed.` line in that slice trails another player's
- * `Aevus begins casting Allure X.` / `Heinz begins casting Allure VI.` by one second. So the
- * bard mezzes, an enchanter beside them charms, and `Your Solon's Bewitching Bravura spell has
- * worn off of a fire giant warrior.` (5 occurrences) is a MEZ break. It now routes to `cc
- * {refresh:true}` and fires the "Mez / root broke" group — the honest alert — rather than being
- * miscast as an uncharm that would retire a pet the player never had.
+ * AND THE BARD'S SONG IS A CHARM AFTER ALL (JOS-200) — the one call JOS-84 got wrong, corrected
+ * here rather than quietly patched, because the WAY it was wrong is the reusable lesson.
+ *
+ * JOS-84 read `Solon's Bewitching Bravura` as a mez off the LANDING-MESSAGE FAMILY: spells.json
+ * files it under `Someone 's eyes glaze over.` beside Solon's Song of the Sirens, Crission's Pixie
+ * Strike and Sionachie's Dreams, which are genuine mezzes, so the roster oracle below put it in
+ * `ccSpell`. But **spells.json has no effect column** — `spellType` is only Beneficial/Detrimental
+ * — and the game reuses one sentence for two effects. A message family is not an effect family.
+ * That substitution is the whole of the error, and the oracle in tests/charmCcRoster.test.mts now
+ * says so out loud.
+ *
+ * THE OVERTURNING EVIDENCE is in the very slice JOS-84 cited (feedback report
+ * 01KZAG2QAW885YJNRTDDND8BF2, read-only, never committed) — in the half it did not read. That
+ * reporter is not only singing the song; fire giants sing it AT them, three times, and each
+ * episode has the same shape to the second:
+ *
+ *   `A fire giant warrior begins singing Solon's Bewitching Bravura.`   T
+ *   `You lose control of yourself!`                                     T + 3 s
+ *   `You are no longer captivated.` + `You have control of yourself again.`   T + 21..32 s
+ *
+ * T+3 s is this song's OWN cast time (`castTimeMs: 3000` in the DB), `You are no longer
+ * captivated.` is its own `msgWearsOff`, and lose/regain-control is EverQuest's charm-on-a-player
+ * pair. The same slice separately carries nine `You are stunned!` / `You are no longer stunned.`
+ * episodes, so the client is plainly printing different words for the two effects and this is not
+ * the mez one. Corroborating from the same slice: the shortest gap between one of the reporter's
+ * own casts and the next break line is 51 s and the longest is 117 s, against a listed duration of
+ * 18 s (60 s for the retired April-2000 row) — no 18-second mez holds a mob through two minutes of
+ * raid AE. And three reporters on three versions (0.14.0, 0.16.0, 0.18.0) each named it the bard
+ * charm, unprompted, which is the kind of testimony JOS-84 argued away and should not have.
+ *
+ * SO THE BREAK IS AN `uncharm` NOW, and the seeded + grouped charm-break alert — the alert all
+ * three of them went looking for and could not make fire — fires for it.
+ *
+ * THE LANDING DELIBERATELY STAYS `cc`. `<mob>'s eyes glaze over.` is shared VERBATIM with three
+ * real mez songs and nothing in that line separates them, so routing the sentence to `charm` would
+ * misfile the mezzes to buy a pet binding nobody asked for. The asymmetry is the honest state of
+ * the evidence (awaiting-sample law), not an oversight, and it has a stated cost: the break alert
+ * fires, but a bard's charmed pet is still not modelled as a pet. Every `uncharm` consumer is a
+ * guarded no-op when no charm was recorded (`WorldModel.uncharm` returns undefined for an unknown
+ * name, `buffs.onUncharm` is keyed on the charmed slot, `ingest`'s release path is idempotent), so
+ * an `uncharm` with no preceding `charm` costs nothing beyond the alert it exists to fire.
  *
  * THE CHARM SIDE gets the same completion, from the DB's other roster: five Necromancer
  * charm-undead spells share the landing message "Someone moans." — Dominate Undead 18, Beguile
@@ -107,14 +137,34 @@ export interface ParserConfig {
  *
  * `(bewitching )?` is NOT decoration — the roster oracle found it. The committed spells.json
  * records the level-39 song as **"Solon's Bravura"** while the LOG prints **"Solon's Bewitching
- * Bravura"** (the wiki scrape lost the middle word). The parser only ever sees the log's
- * spelling, but the roster is CHECKED against the DB's, so the stem has to answer to both or the
- * oracle and the game disagree about the same song. Nothing else in the DB is named Bravura.
+ * Bravura"** (the wiki page's own `spellname` is the short form). The parser only ever sees the
+ * log's spelling, but the roster is CHECKED against the DB's, so the stem has to answer to both or
+ * the oracle and the game disagree about the same song. Nothing else in the DB is named Bravura.
+ * SINCE JOS-161 the LOADED db says `Solon's Bewitching Bravura` too — the corrections overlay
+ * renames both level-39 rows, because the name is the join key `byKey`, the alert catalog and
+ * every `where.spell` are compared on. The optional group stays: this regex is also run against
+ * the RAW `spells.json` (tests/charmCcRoster.test.mts, combat/charmModel.ts), which is pristine
+ * by design, so both spellings are still live in the tree and both must classify. It rode from
+ * `CC_STEMS` to `CHARM_STEMS` intact in JOS-200 for the same reason.
+ *
+ * THE STEMS ARE EXPORTED (JOS-161, widened JOS-200) for one reader beyond this file: `spellDb.ts`
+ * gates the catalog's `breaks` template on `CC_STEMS` and its `charmBreaks` twin on `CHARM_STEMS`,
+ * because a suggestion offered for a spell the parser would file as a plain `buffFade` is a
+ * suggestion that cannot fire — and the two rosters answer to two different EVENTS (`cc` vs
+ * `uncharm`), which is why they are two templates rather than one. Importing them is the same
+ * "one source of truth per question" move `combat/charmModel.ts` already makes by reading them
+ * back off `getParserConfig()`; there is no cycle, because rulesets.ts's only reference to
+ * spellDb.ts is a `import type`.
+ *
+ * A WEAR-OFF LINE IS RANK-LESS, MEASURED (JOS-200), which is what lets either per-spell template
+ * pin a bare name: over the owner's whole log, 3,382 of 3,383 `Your <X> spell has worn off of
+ * <mob>.` lines carry no roman-numeral suffix (the single exception is a `Rune IV`), so a def
+ * built from the catalog's display name matches the sentence the game actually prints.
  */
-const CHARM_STEMS =
-  /\bcharm\b|beguile|allure|cajol|dictate|besiege|agacerie|beckon|command of druzzil|dominate|boltran|thrall of bones|enslave death/i
-const CC_STEMS =
-  /mesmeriz|enthrall|entranc|dazzle|largo.s (melodic|assonant) binding|screaming terror|ensnar|immobiliz|suffocat|kelin.s lucid lullaby|song of the sirens|pixie strike|solon.s (bewitching )?bravura|sionachie.s dreams/i
+export const CHARM_STEMS =
+  /\bcharm\b|beguile|allure|cajol|dictate|besiege|agacerie|beckon|command of druzzil|dominate|boltran|thrall of bones|enslave death|solon.s (bewitching )?bravura/i
+export const CC_STEMS =
+  /mesmeriz|enthrall|entranc|dazzle|largo.s (melodic|assonant) binding|screaming terror|ensnar|immobiliz|suffocat|kelin.s lucid lullaby|song of the sirens|pixie strike|sionachie.s dreams/i
 
 const classic: ParserConfig = {
   id: 'classic',

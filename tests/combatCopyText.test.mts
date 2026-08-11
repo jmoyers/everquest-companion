@@ -281,7 +281,7 @@ test('formatEntityText is the flat skill list, slay grouped, with the rounds foo
   assert.equal(
     text,
     [
-      'You — a deadly black widow +2 · 1:23',
+      'You - a deadly black widow +2 · 1:23',
       '31.2k · 375 dps · 260 hits · 12% crit · 82% hit · 29% resist',
       '',
       'Skill          Total  Hits  Avg  Max  Crit  Miss  Resist',
@@ -307,7 +307,7 @@ test('formatEntityText NESTS the pet as a line item when the preference passes i
   assert.equal(
     text,
     [
-      'You — a deadly black widow +2 · 1:23',
+      'You - a deadly black widow +2 · 1:23',
       // The header stats stay YOURS — nesting is a layout of the rows, never a fold of the
       // numbers: not one point of pet damage joins a lane of yours.
       '31.2k · 375 dps · 260 hits · 12% crit · 82% hit · 29% resist',
@@ -334,7 +334,7 @@ test('formatEntityText omits every column the source has no data for', () => {
   assert.equal(
     text,
     [
-      'Grinn Frostbeard — a deadly black widow +2 · 1:23',
+      'Grinn Frostbeard - a deadly black widow +2 · 1:23',
       '5.0k · 60 dps · 40 hits',
       '',
       // No Crit / Miss / Resist columns exist at all here — an absent dimension is absent,
@@ -353,7 +353,7 @@ test('formatTargetText carries the ~ estimate prefix on every derived number but
   assert.equal(
     text,
     [
-      'Damage to a deadly black widow (7) — a deadly black widow +2 · 1:23',
+      'Damage to a deadly black widow (7) - a deadly black widow +2 · 1:23',
       // The stat run wraps on a separator rather than running past the paste width.
       '~12.0k · 27% of outgoing · ~118 hits · ~13 crit · ~27 avoided',
       '~1 resisted',
@@ -385,7 +385,7 @@ test('formatMobsText copies the rows the card LISTS and says what it left off', 
   assert.equal(
     text,
     [
-      'Damage by mob — a deadly black widow +2 · 1:23',
+      'Damage by mob - a deadly black widow +2 · 1:23',
       // The count is of ALL mobs (4) while the table shows the card's cap (3) — so the header
       // can never disagree with the '+N more' line below it.
       '4 mobs · 45.2k',
@@ -427,7 +427,7 @@ test('a long fight name is clipped to the paste width — never the clock, never
   const drill = formatTargetText(long, 'a deadly black widow (7)', TARGET)
   assert.ok(fits(drill), first(drill))
   assert.ok(first(drill).endsWith(' · 1:23'))
-  assert.ok(first(drill).startsWith('Damage to a deadly black widow (7) — '))
+  assert.ok(first(drill).startsWith('Damage to a deadly black widow (7) - '))
 })
 
 test('nothing anywhere is markdown — a paste must not be re-rendered by its destination', () => {

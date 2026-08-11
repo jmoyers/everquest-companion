@@ -17,12 +17,14 @@ import type { OverlayDrill } from '@shared/types'
 import type { HealSourceView, HealSpellView, MitigationView, SegmentView } from '@shared/combat'
 import type { MeterScope, RosterSnap } from '@shared/roster'
 import { scopeHealing } from '../features/combat/meterScope'
-import { MeterCrumb } from './meterCrumb'
+import { MeterCrumb, type CrumbTotal } from './meterCrumb'
 // The app's ONE `m:ss` spelling — see meterBars.tsx for why it comes from here.
 import { fmtDur } from '../features/combat/copyTable'
-import { formatNum as fmt } from '../lib/formatRate'
+import { formatNum as fmt, formatHealRate } from '../lib/formatRate'
 import {
   ABSORB_NOTE,
+  healTotalTitle,
+  UNSTATED_AMOUNT,
   hasAbsorbCounts,
   healPanel,
   healerAmount,
@@ -42,6 +44,14 @@ export { ABSORB_NOTE }
 /** Absorption is a different KIND of number, so it gets a deliberately different, cooler hue —
  *  a rune bar can never be mistaken for a green "hit points restored" bar at a glance. */
 export const MIT_COLOR = '#8fb8d8'
+
+/**
+ * The healing meter's accent — the green its window border and header title wear, and since
+ * JOS-158 the colour of the aggregate on the crumb row. Spelled out rather than borrowed from
+ * `KIND_COLOR.you`: the aggregate is the one number here that is emphatically NOT yours.
+ */
+const ACCENT = '#7fd1a0'
+
 const KIND_COLOR: Record<string, string> = {
   you: '#7fd1a0',
   pet: '#6fb3d2',
@@ -150,6 +160,22 @@ function NothingToRank({ live, mit }: { live: boolean; mit: MitigationView | nul
 }
 
 /**
+ * THE AGGREGATE THE TITLE BAR USED TO CARRY (JOS-158) — the SEGMENT's own `HealingView.hps`,
+ * moved and not recomputed, so the number a pinned meter shows did not change on the day its
+ * label appeared. It carries the restored/absorbed sentence that used to hang off the header tail
+ * (`healTotalTitle` — the one phrasing both healing surfaces print), because a layout move is no
+ * reason for an honesty note to go missing. What the number COVERS is said by the crumb row's own
+ * label; see overlay/meterCrumb.tsx.
+ */
+function healTotal(seg: SegmentView | undefined): CrumbTotal {
+  return {
+    text: formatHealRate(seg?.healing.hps ?? 0),
+    accent: ACCENT,
+    title: healTotalTitle(seg?.healing)
+  }
+}
+
+/**
  * The bar body: healers → that healer's spell list. Every decision below — which level, which
  * rows, the stale-drill fallback, what rides under level 1 — comes from `healPanel`, the SAME
  * call the Combat tab's Healing dimension makes. This function is the chrome around it.
@@ -177,12 +203,18 @@ export function HealBars({
   // and one builder, so the pinned overlay and the docked tab can never rank a fight differently.
   const panel = healPanel(scopeHealing(seg?.healing, scope, roster), drill?.entityId ?? null)
   const dur = fmtDur(seg?.durationSec ?? 0)
+  const total = healTotal(seg)
 
   // Level 2: the healer's spells. Back is offered here and on every other meter kind now — the
   // SAME component, so the four kinds cannot drift into four opinions again (JOS-35).
   if (panel.level === 2) {
     return (
-      <MeterCrumb name={panel.subject.name} dur={dur} onBack={setDrill ? () => setDrill(null) : null}>
+      <MeterCrumb
+        name={panel.subject.name}
+        dur={dur}
+        total={total}
+        onBack={setDrill ? () => setDrill(null) : null}
+      >
         {/* ONE flat ranked list: heal spells and the absorption lane together, biggest first.
             No grouping level — that is what hid the flat breakdown in the damage drill-down.
             The absorption lane is told apart by COLOR + chip, never by where it sits. */}
@@ -197,7 +229,7 @@ export function HealBars({
 
   // Level 1: healers, then the absorption section.
   return (
-    <MeterCrumb name={null} dur={dur} onBack={null}>
+    <MeterCrumb name={null} dur={dur} total={total} onBack={null}>
       {panel.healers.map((h, i) => (
         <HealerBar
           key={h.id}
@@ -237,7 +269,7 @@ function SpellBar({ s, healerKind }: { s: HealSpellView; healerKind: string }): 
               The suffix is what stops the zero-length bar beside it reading as a heal that did
               nothing. */}
           {isUnstatedLane(s) && (
-            <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 400 }}> ·unvalued</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 400 }}> ·{UNSTATED_AMOUNT}</span>
           )}
           <span style={{ marginLeft: 6, color: 'rgba(255,255,255,0.62)', fontWeight: 400 }}>
             {spellStat(s)}

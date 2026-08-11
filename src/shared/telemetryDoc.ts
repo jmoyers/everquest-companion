@@ -121,8 +121,19 @@ function bucketLabels(b: DocBucket): string[] {
   return out
 }
 
+/**
+ * ONE EVENT'S SECTION. An event with NO fields prints a sentence instead of an empty table
+ * (JOS-109's `optOut` / `optIn`): a table with a header row and nothing under it looks like a
+ * rendering bug, and "there is nothing in it" is the single most reassuring thing this page can
+ * say about those two events, so it is said in words.
+ */
 function eventSection(e: DocEvent): string[] {
-  const lines = [`### \`${e.t}\``, '', e.when, '', '| Field | Values | What it means |', '| --- | --- | --- |']
+  const lines = [`### \`${e.t}\``, '', e.when, '']
+  if (e.fields.length === 0) {
+    lines.push('**This event has no fields at all.** It says only that it happened, alongside the', 'five facts every send carries (above).', '')
+    return lines
+  }
+  lines.push('| Field | Values | What it means |', '| --- | --- | --- |')
   for (const f of e.fields) lines.push(`| \`${f.name}\` | ${f.type} | ${f.note} |`)
   lines.push('')
   return lines
@@ -235,6 +246,18 @@ function footerSection(): string[] {
     'away everything currently held on your machine, and discards the random id — all',
     'immediately. Nothing is kept to be sent later. Turning it back on starts from empty, with a',
     'new id, which counts as a brand-new install.',
+    '',
+    // THE DISCLOSURE, and it is the point of putting it here rather than in a release note: the
+    // one thing this page could not previously be read to allow is a send that happens AFTER you
+    // said stop. There is now exactly one, it carries nothing, and it is described before a user
+    // could be surprised by it.
+    '**One last thing is sent when you turn it off, and this is it:** a single notice saying the',
+    'switch was turned off, so opt-outs can be counted rather than guessed at. It carries no',
+    'measurements at all, only the five facts at the top of this page that every send carries.',
+    'Everything else waiting to be sent is thrown away rather than sent with it, and nothing',
+    'further is ever sent. If your machine is offline at that moment the notice is simply lost;',
+    'it is never retried, because keeping something to send later is exactly what turning this',
+    'off is supposed to stop. Turning it back on sends the matching notice under the new id.',
     ''
   ]
 }

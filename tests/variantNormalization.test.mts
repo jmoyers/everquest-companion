@@ -143,7 +143,7 @@ test('allocation (a): 2 held, both claw quests need 1 → both 1/1; complete one
 
   // Nothing completed: both quests display 1/1 (need=1, have=min(1, 2)=1).
   {
-    const { net } = reconcile({ log, inv: {}, lootNames, countSource: 'log', completedKeys: [], quests })
+    const { net } = reconcile({ log, inv: {}, lootNames, countSource: 'log', turnIns: {}, quests })
     assert.equal(net['sphinx claw'], 2, 'no consumption yet → 2 available')
     for (const q of CLAW_QUESTS) {
       const claw = questItemHave(q, 'Sphinx Claw', net)
@@ -157,7 +157,7 @@ test('allocation (a): 2 held, both claw quests need 1 → both 1/1; complete one
     const a = CLAW_QUESTS.find((q) => q.name === 'Beastlord Test of Claw')!
     const b = CLAW_QUESTS.find((q) => q.name === 'Paladin Test of Love')!
     const { net, rows } = reconcile({
-      log, inv: {}, lootNames, countSource: 'log', completedKeys: [questKey(a)], quests
+      log, inv: {}, lootNames, countSource: 'log', turnIns: { [questKey(a)]: 1 }, quests
     })
     const row = rows.find((r) => r.key === 'sphinx claw')!
     assert.equal(row.consumed, 1, 'completing one claw quest consumes exactly one claw')
@@ -176,7 +176,7 @@ test('allocation (b): 1 held, 2 quests → both display 1/1; completing A leaves
 
   // Known overstatement, left as-is: both quests display 1/1 off a single shared claw.
   {
-    const { net } = reconcile({ log, inv: {}, lootNames, countSource: 'log', completedKeys: [], quests })
+    const { net } = reconcile({ log, inv: {}, lootNames, countSource: 'log', turnIns: {}, quests })
     for (const q of [a, b]) {
       assert.equal(questItemHave(q, 'Sphinx Claw', net).have, 1)
     }
@@ -185,7 +185,7 @@ test('allocation (b): 1 held, 2 quests → both display 1/1; completing A leaves
   // Complete A → consumption never drives net negative; B drops to 0/1.
   {
     const { net, rows } = reconcile({
-      log, inv: {}, lootNames, countSource: 'log', completedKeys: [questKey(a)], quests
+      log, inv: {}, lootNames, countSource: 'log', turnIns: { [questKey(a)]: 1 }, quests
     })
     const row = rows.find((r) => r.key === 'sphinx claw')!
     assert.equal(row.net, 0, 'net floors at 0 (never negative)')
@@ -202,7 +202,7 @@ test('allocation (c): variant mixing — 1 base loot + 1 +1 loot → held pool o
     const k = itemCountKey(r.item)
     lootNames[k] ??= normalizeItemName(r.item)
   }
-  const { net } = reconcile({ log: held, inv: {}, lootNames, countSource: 'log', completedKeys: [], quests })
+  const { net } = reconcile({ log: held, inv: {}, lootNames, countSource: 'log', turnIns: {}, quests })
   assert.equal(net['sphinx claw'], 2, 'base + variant → 2 held claws, both quests satisfiable')
 })
 
@@ -213,7 +213,7 @@ test('reconcile folds a +N inventory-export entry onto its base (inv source)', (
     inv: { 'sphinx claw': 1, 'sphinx claw +1': 1 },
     lootNames: {},
     countSource: 'inventory',
-    completedKeys: [],
+    turnIns: {},
     quests
   })
   assert.equal(net['sphinx claw'], 2, 'inventory +1 variant folds onto base under normalization')

@@ -124,7 +124,7 @@ export function FreezeNote({ frozen, live }: { frozen: FrozenList | null; live: 
   return (
     <Box sx={{ px: 1.25, pt: 0.75, pb: 0.25 }}>
       <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10.5 }}>
-        {fresh} new fight{fresh === 1 ? '' : 's'} — they appear when you close this list.
+        {fresh} new fight{fresh === 1 ? '' : 's'} - they appear when you close this list.
       </Typography>
     </Box>
   )
@@ -185,7 +185,7 @@ export function SearchMoreNote({
     <Box data-testid="fight-search-more" sx={{ px: 1.25, py: 0.75 }}>
       <Typography variant="caption" sx={{ color: 'text.disabled' }}>
         +{results.hits.length - RENDER_CAP}
-        {results.hits.length >= SEARCH_LIMIT ? '+' : ''} more — refine your search
+        {results.hits.length >= SEARCH_LIMIT ? '+' : ''} more - refine your search
       </Typography>
     </Box>
   )

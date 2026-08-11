@@ -8,9 +8,17 @@
 // reads it.
 //
 // ONE LINE, always. Up to DROPPER_DISPLAY_CAP names inline, the rest folded into "+N more"; the
-// hover carries the full roster with level and zone. Sky quest items really do drop from several
-// bosses (every Efreeti weapon is Noble Dojorn AND Overseer of Air AND the Hand of Veeshan), so
-// the overflow is the normal case, not an edge one.
+// full roster with level and zone rides a native `title`. Sky quest items really do drop from
+// several bosses (every Efreeti weapon is Noble Dojorn AND Overseer of Air AND the Hand of
+// Veeshan), so the overflow is the normal case, not an edge one.
+//
+// NO POPPER (JOS-143). Both surfaces here used to anchor `placement="top"` MUI tooltips, which is
+// the direction that lands on the Sky toolbar: the "Kill:" caption sits in the collapsed summary
+// row, so for the first quest in the list its card opened straight across the five dropdowns in
+// QuestFilterBar and ate their clicks (MUI tooltips are interactive by default — the popper takes
+// pointer events). The roster is now a `title` string: an OS tooltip, not in the DOM, no hit area,
+// so it cannot block anything. One line per mob becomes one newline-joined string, which is what
+// a native title can carry.
 //
 // Nothing resolved ⇒ fall back to what the scrape literally said (`who`, e.g. "random drop — any
 // Plane of Sky mob" on the wind runes, which is the honest answer: there is no kill target).
@@ -35,19 +43,10 @@ import {
   type KillTarget
 } from './poskyDroppers'
 import type { MobTarget } from '../mobs/mobTarget'
-import { Tooltip } from '../../lib/Tooltip'
 
 /** The hover roster both surfaces share: every fact the catalog states, one mob per line. */
-function DropperRoster({ droppers }: { droppers: readonly DropperMob[] }): JSX.Element {
-  return (
-    <Box>
-      {droppers.map((m) => (
-        <Typography key={m.page} variant="caption" display="block">
-          {dropperFacts(m)}
-        </Typography>
-      ))}
-    </Box>
-  )
+function dropperRoster(droppers: readonly DropperMob[]): string {
+  return droppers.map((m) => dropperFacts(m)).join('\n')
 }
 
 /** One clickable mob name. `stopPropagation` matters where this sits inside a row that has its
@@ -117,18 +116,21 @@ export function DropperCell({ droppers, who, where, onOpenMob }: DropperCellProp
   // overflow stays plain text (there is no single mob for "+2 more" to open).
   const { shown, more } = dropperDisplay(droppers)
   return (
-    <Tooltip arrow placement="top" title={<DropperRoster droppers={droppers} />}>
-      <Typography variant="caption" color="text.secondary" data-testid="posky-dropper">
-        {shown.map((m, i) => (
-          <Box component="span" key={m.page}>
-            {i > 0 && ', '}
-            <DropperName mob={m} onOpenMob={onOpenMob} />
-          </Box>
-        ))}
-        {more > 0 && ` +${more} more`}
-        {island && ` · ${island}`}
-      </Typography>
-    </Tooltip>
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      data-testid="posky-dropper"
+      title={dropperRoster(droppers)}
+    >
+      {shown.map((m, i) => (
+        <Box component="span" key={m.page}>
+          {i > 0 && ', '}
+          <DropperName mob={m} onOpenMob={onOpenMob} />
+        </Box>
+      ))}
+      {more > 0 && ` +${more} more`}
+      {island && ` · ${island}`}
+    </Typography>
   )
 }
 
@@ -137,33 +139,20 @@ export function DropperCell({ droppers, who, where, onOpenMob }: DropperCellProp
  * you and the items this quest STILL needs, and where those drops are
  * (poskyDroppers.questKillTargets). Nothing to say ⇒ nothing rendered, so a wind-rune quest —
  * whose items are honestly a random drop — stays silent here and lets the item rows carry posky's
- * own wording. The hover carries the full roster, each with its own island.
+ * own wording. The native title carries the full roster, each with its own island.
  */
 export function KillTargetCaption({ targets }: { targets: readonly KillTarget[] }): JSX.Element | null {
   const label = killTargetLabel(targets)
   if (label === '') return null
   return (
-    <Tooltip
-      arrow
-      placement="top"
-      title={
-        <Box>
-          {targets.map((t) => (
-            <Typography key={t.mob.page} variant="caption" display="block">
-              {killTargetFacts(t)}
-            </Typography>
-          ))}
-        </Box>
-      }
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      display="block"
+      data-testid="posky-kill-target"
+      title={targets.map((t) => killTargetFacts(t)).join('\n')}
     >
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        display="block"
-        data-testid="posky-kill-target"
-      >
-        {label}
-      </Typography>
-    </Tooltip>
+      {label}
+    </Typography>
   )
 }

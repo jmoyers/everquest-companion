@@ -143,7 +143,7 @@ function AlertsSection({
   return (
     <Box>
       <Typography variant="overline" color="text.secondary">
-        Alerts — {importable} to add
+        Alerts - {importable} to add
         {alreadyHave > 0 ? `, ${alreadyHave} you already have` : ''}
       </Typography>
       <Stack spacing={0.25} sx={{ maxHeight: 260, overflow: 'auto', mt: 0.5 }}>
@@ -175,7 +175,7 @@ function ScalarsSection({
     <Box>
       <Divider sx={{ mb: 1 }} />
       <Typography variant="overline" color="text.secondary">
-        Settings — these REPLACE your value, so they&apos;re opt-in
+        Settings - these REPLACE your value, so they&apos;re opt-in
       </Typography>
       <Stack spacing={0.25} sx={{ maxHeight: 200, overflow: 'auto', mt: 0.5 }}>
         {scalars.map((s) => (
@@ -203,7 +203,7 @@ function ScalarsSection({
                   color="text.secondary"
                   sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
                 >
-                  {s.current || '—'} → {s.incoming}
+                  {s.current || '-'} → {s.incoming}
                 </Typography>
               </Box>
             }
@@ -232,7 +232,7 @@ function MissingPacksNotice({ packs }: { packs: string[] }): JSX.Element | null 
   return (
     <Alert severity="info" variant="outlined">
       {one ? 'A sound pack' : 'Some sound packs'} used by these alerts {one ? 'is' : 'are'} not
-      installed here: <b>{packs.join(', ')}</b>. The alerts still import — install the pack from
+      installed here: <b>{packs.join(', ')}</b>. The alerts still import - install the pack from
       Alerts → “Sound packs…” and they&apos;ll play.
     </Alert>
   )

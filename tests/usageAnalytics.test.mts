@@ -180,7 +180,7 @@ test('session length is a mean AND a bucket median, and neither is invented from
     u(TODAY, USAGE_METRICS.sessionLenBucket, '5', 1)
   ]).pulse
   assert.equal(d.meanSessionMs, 10 * 60_000)
-  assert.equal(d.medianSessionLabel, '15 min–30 min')
+  assert.equal(d.medianSessionLabel, '15 min-30 min')
 })
 
 test('sessions per day divides by days WITH DATA, not by the window the caller asked for', () => {
@@ -397,7 +397,7 @@ test('`empty` is about the TABLES; the panel’s own note is about the WINDOW', 
 // ---- the panel's pure helpers --------------------------------------------------------------------------
 
 test('THE DASH IS LOAD-BEARING: unknown renders as —, measured zero renders as 0%', () => {
-  assert.equal(rateLabel(null), '—')
+  assert.equal(rateLabel(null), '-')
   assert.equal(rateLabel(0), '0%')
   assert.equal(rateLabel(1), '100%')
   assert.equal(pctLabel(0.055), '5.5%', 'small shares keep a decimal so they are not all "6%"')
@@ -407,15 +407,15 @@ test('THE DASH IS LOAD-BEARING: unknown renders as —, measured zero renders as
 })
 
 test('durations read as minutes, then hours, and an unknown one is a dash', () => {
-  assert.equal(durationLabel(null), '—')
-  assert.equal(durationLabel(0), '—')
+  assert.equal(durationLabel(null), '-')
+  assert.equal(durationLabel(0), '-')
   assert.equal(durationLabel(90_000), '2 min')
   assert.equal(durationLabel(30_000), '1 min', 'never "0 min" for a session that happened')
   assert.equal(durationLabel(5_400_000), '1.5 h')
 })
 
 test('a cohort cell shows the count AND its share, or a dash when the horizon is unreached', () => {
-  assert.equal(cohortCell(null, 10), '—')
+  assert.equal(cohortCell(null, 10), '-')
   assert.equal(cohortCell(4, 10), '4 (40%)')
   assert.equal(cohortCell(0, 10), '0 (0%)')
   assert.equal(cohortCell(3, 0), '3 (0%)')
@@ -441,7 +441,7 @@ test('the pulse tiles say what they are counting, and never claim "right now"', 
   // the CloudWatch one — which is a different function and a different source.
   assert.match(tiles[4].note, /UTC day/)
   assert.match(tiles[8].note, /window/)
-  assert.equal(tiles[7].value, '—', 'no session ended: the tile does not invent a length')
+  assert.equal(tiles[7].value, '-', 'no session ended: the tile does not invent a length')
 })
 
 
@@ -463,7 +463,7 @@ test('funnel bars are relative to STEP ONE, so the curve reads as a shape', () =
 
 test('the digest prints the SAME numbers, and says so when the tables are empty', () => {
   const text = renderAnalyticsDigest(build())
-  assert.match(text, /usage analytics — last 30 days/)
+  assert.match(text, /usage analytics - last 30 days/)
   assert.match(text, /NO DATA YET/)
   assert.match(
     text,

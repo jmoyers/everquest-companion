@@ -72,10 +72,10 @@ test('the gate flips and restores, leaving every kind exactly as it found it', (
 })
 
 test('ringDisposition: the 8 ms sampler gate, including the replay window', () => {
-  const on = { enabled: true, hasBounds: true, active: true, replayRunning: false }
+  const on = { enabled: true, hasBounds: true, active: true, focused: true, replayRunning: false }
   // The steady states this predicate already had.
   assert.equal(ringDisposition(on), 'run')
-  assert.equal(ringDisposition({ ...on, active: false }), 'idle')
+  assert.equal(ringDisposition({ ...on, active: false, focused: false }), 'idle')
   assert.equal(ringDisposition({ ...on, hasBounds: false }), 'suspended')
   assert.equal(ringDisposition({ ...on, enabled: false }), 'off')
 
@@ -86,4 +86,40 @@ test('ringDisposition: the 8 ms sampler gate, including the replay window', () =
   // …but the user's own switch still outranks it: off is off, and the window is destroyed rather
   // than parked, replay or no replay.
   assert.equal(ringDisposition({ ...on, enabled: false, replayRunning: true }), 'off')
+})
+
+test('THE RING DOES NOT TWITCH ON CLICK: a hidden pointer parks, it does not hide (JOS-120)', () => {
+  // The reported defect, as a truth table. Both rows below are "the ring is not active"; they
+  // used to be the SAME state, and expressing both by hiding the window is what made the ring
+  // jump on every click.
+  //
+  // A hidden window produces no frames, so the park that empties the halo is never composited —
+  // MEASURED in Electron 43: the park's rAF did not run for the whole 600 ms the window was
+  // hidden, and fired 1 ms AFTER showInactive(), by which point Windows had already re-presented
+  // the last composited surface: the halo, at the pre-suppression point. Hence the split.
+  const on = { enabled: true, hasBounds: true, active: true, focused: true, replayRunning: false }
+
+  // Mouselook / any mouse button held in the world view. EverQuest still owns the screen, there
+  // is simply no pointer to ring. The window MUST stay put so the park can actually be painted.
+  assert.equal(
+    ringDisposition({ ...on, active: false, focused: true }),
+    'parked',
+    'no pointer but the game still has the foreground ⇒ park in place, never hide'
+  )
+
+  // Alt-tabbed away / the game is gone. Now the window really does have to come off screen: a
+  // halo over the user's browser was the bug that put the focus term in this predicate at all.
+  assert.equal(
+    ringDisposition({ ...on, active: false, focused: false }),
+    'idle',
+    'the game no longer owns the screen ⇒ the window comes off it'
+  )
+
+  // …and the two facts are asked SEPARATELY on purpose. A pointer hidden by some other app while
+  // EverQuest sits in the background must still take the ring off screen — inferring the reason
+  // from `active` alone would leave a transparent always-on-top window over that other app.
+  assert.equal(ringDisposition({ ...on, active: false, focused: false }), 'idle')
+
+  // A replay still outranks both: no window, no stream, whatever the pointer is doing.
+  assert.equal(ringDisposition({ ...on, active: false, focused: true, replayRunning: true }), 'suspended')
 })

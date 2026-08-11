@@ -522,7 +522,7 @@ export function addRankAlongsideDef(def: AlertDef, from: string, to: string): Al
   return {
     ...replaceRankInDef(def, from, to),
     id: `${def.id}::rank:${spellIdFragment(to)}`,
-    note: `Added alongside ${def.name} — same alert for ${to}.`
+    note: `Added alongside ${def.name} - same alert for ${to}.`
   }
 }
 

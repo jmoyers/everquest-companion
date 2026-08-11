@@ -65,7 +65,7 @@ export function VersionSetting({
   return (
     <Stack direction="row" alignItems="baseline" spacing={1.5}>
       <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-        {version ? `v${version}` : '—'}
+        {version ? `v${version}` : '-'}
       </Typography>
       <Link component="button" type="button" variant="caption" data-testid="pref-version-whats-new" onClick={onWhatsNew}>
         What&rsquo;s new
@@ -82,7 +82,7 @@ export function VersionSetting({
  */
 function chipLook(status: UpdateStatus, ui: UpdateChipState): ChipLook {
   // Dev build: the updater is off, so "up to date" would be a claim no check ever made.
-  if (status.disabled) return { label: 'dev build — updates off', color: 'default' }
+  if (status.disabled) return { label: 'dev build - updates off', color: 'default' }
   if (ui.kind === 'quiet' && status.state === 'ready') return STATE_CHIP.idle
   return STATE_CHIP[status.state]
 }
@@ -129,7 +129,7 @@ function UpdateProgress({
         sx={{ borderRadius: 1 }}
       />
       <Typography variant="caption" color="text.secondary">
-        {status.version ? `v${status.version} — ` : ''}
+        {status.version ? `v${status.version} - ` : ''}
         {status.percent ?? 0}%
       </Typography>
     </Box>
@@ -172,7 +172,7 @@ function UpdateActions({
           startIcon={<RestartAltIcon />}
           onClick={() => void window.eq.installUpdate()}
         >
-          Restart to update{ui.kind === 'ready' && ui.version ? ` — v${ui.version}` : ''}
+          Restart to update{ui.kind === 'ready' && ui.version ? ` - v${ui.version}` : ''}
         </Button>
       ) : (
         <Button

@@ -24,14 +24,16 @@ import { loadSpellDb } from '../src/main/data/spellDb'
 import { CombatEngine } from '../src/main/combat/engine'
 import {
   PROC_CAST_WINDOW_MS,
+  RECENT_CAST_CAP,
+  RecentCasts,
   addSpellProc,
-  isCastless,
+  baseLaneName,
+  isProcLaneName,
+  laneCanonKey,
   laneCount,
-  noteCast,
+  laneNameFor,
   procEligibleDamage,
-  pruneCasts,
   sidesCount,
-  type RecentCasts,
   type SpellProcLane
 } from '../src/main/combat/procDetect'
 import { StateTimeline, coversWholly, overlapMs, stateKeyOf } from '../src/main/combat/stateTimeline'
@@ -44,31 +46,108 @@ import type { StateSpan } from '../src/shared/procAnalytics'
 // ---------------------------------------------------------------------------------------
 
 test('a spell with no own cast behind it is a proc; one just cast is not', () => {
-  const recent: RecentCasts = new Map()
-  assert.equal(isCastless(recent, 'Smiting Strike', 1_000_000), true)
-  noteCast(recent, 'Discordant Mind', 1_000_000)
-  assert.equal(isCastless(recent, 'Discordant Mind', 1_000_000), false)
-  assert.equal(isCastless(recent, 'Discordant Mind', 1_000_000 + PROC_CAST_WINDOW_MS), false)
+  const recent = new RecentCasts()
+  assert.equal(recent.origin('Smiting Strike', 1_000_000), 'proc')
+  recent.note('Discordant Mind', 1_000_000)
+  assert.equal(recent.origin('Discordant Mind', 1_000_000), 'cast')
+  // …and the SAME cast cannot also explain one twelve seconds later (JOS-167).
+  recent.note('Discordant Mind', 1_000_000)
+  assert.equal(recent.origin('Discordant Mind', 1_000_000 + PROC_CAST_WINDOW_MS), 'cast')
 })
 
 test('the window is a boundary, not a suggestion — one ms past it, the effect is a proc', () => {
-  const recent: RecentCasts = new Map()
-  noteCast(recent, 'Siphon Life', 5_000)
-  assert.equal(isCastless(recent, 'Siphon Life', 5_000 + PROC_CAST_WINDOW_MS), false)
-  assert.equal(isCastless(recent, 'Siphon Life', 5_000 + PROC_CAST_WINDOW_MS + 1), true)
+  const a = new RecentCasts()
+  a.note('Siphon Life', 5_000)
+  assert.equal(a.origin('Siphon Life', 5_000 + PROC_CAST_WINDOW_MS), 'cast')
+  const b = new RecentCasts()
+  b.note('Siphon Life', 5_000)
+  assert.equal(b.origin('Siphon Life', 5_000 + PROC_CAST_WINDOW_MS + 1), 'proc')
 })
 
-test('a cast in the FUTURE never suppresses a proc (out-of-order replay safety)', () => {
-  const recent: RecentCasts = new Map()
-  noteCast(recent, 'Anarchy', 9_000)
-  assert.equal(isCastless(recent, 'Anarchy', 8_000), true)
+test('a cast in the FUTURE never explains a landing (out-of-order replay safety)', () => {
+  const recent = new RecentCasts()
+  recent.note('Anarchy', 9_000)
+  assert.equal(recent.origin('Anarchy', 8_000), 'proc')
 })
 
-test('casts are rank-normalized — `Discordant Mind II` suppresses `Discordant Mind`', () => {
+test('casts are rank-normalized — `Discordant Mind II` explains `Discordant Mind`', () => {
   // Law 2 at the COUNTING boundary: casts print a Roman rank, effect lines are rank-less.
-  const recent: RecentCasts = new Map()
-  noteCast(recent, 'Discordant Mind II', 1_000)
-  assert.equal(isCastless(recent, 'Discordant Mind', 2_000), false)
+  const recent = new RecentCasts()
+  recent.note('Discordant Mind II', 1_000)
+  assert.equal(recent.origin('Discordant Mind', 2_000), 'cast')
+})
+
+// ---------------------------------------------------------------------------------------
+// 1b. ONE CAST LINE EXPLAINS ONE FIRING (JOS-167)
+// ---------------------------------------------------------------------------------------
+
+test('THE SPAM CASE — a second landing inside the same window is a PROC, not a second cast', () => {
+  // The reported defect: a cleric spamming a spell keeps the 12s window permanently open, so a
+  // weapon proc of the same name used to score as a cast and the proc rate read zero.
+  const recent = new RecentCasts()
+  recent.note('Banish Undead', 0)
+  // `peek` answers without consuming — twice over, which `origin` could not do.
+  assert.equal(recent.peek('Banish Undead', 2_000), 'cast')
+  assert.equal(recent.peek('Banish Undead', 2_000), 'cast')
+  assert.equal(recent.origin('Banish Undead', 2_000), 'cast')
+  assert.equal(recent.origin('Banish Undead', 5_000), 'proc')
+  assert.equal(recent.origin('Banish Undead', 9_000), 'proc')
+  // The next cast line re-arms it, and explains exactly one more.
+  recent.note('Banish Undead', 10_000)
+  assert.equal(recent.origin('Banish Undead', 12_000), 'cast')
+  assert.equal(recent.origin('Banish Undead', 13_000), 'proc')
+})
+
+test('ONE FIRING IS ONE INSTANT — an AoE and a lifetap keep every line of the same second', () => {
+  // w43's Earthquake prints four damage lines in ONE second for one firing; a tap prints a
+  // damage line and a heal line in one second. Both must stay CASTS when a cast explains them.
+  const recent = new RecentCasts()
+  recent.note('Anarchy', 0)
+  for (const _ of [1, 2, 3, 4]) assert.equal(recent.origin('Anarchy', 3_000), 'cast')
+  // A different second is a different firing.
+  assert.equal(recent.origin('Anarchy', 4_000), 'proc')
+})
+
+test('an INTERRUPTED cast claims nothing — until the log says it recovered', () => {
+  const dead = new RecentCasts()
+  dead.note('Siphon Life', 0)
+  dead.forget('Siphon Life')
+  assert.equal(dead.origin('Siphon Life', 3_000), 'proc', 'a cast that never resolved explains nothing')
+
+  // …but EQ prints `Your <Spell> spell is interrupted.` and then recovers: measured over the
+  // whole log, every interrupt followed by a landing has the recovery line between them.
+  const back = new RecentCasts()
+  back.note('Siphon Life', 0)
+  back.forget('Siphon Life')
+  back.resume()
+  assert.equal(back.origin('Siphon Life', 3_000), 'cast')
+
+  // The recovery restores the ORIGINAL cast ts — the window is measured from when it began.
+  const late = new RecentCasts()
+  late.note('Siphon Life', 0)
+  late.forget('Siphon Life')
+  late.resume()
+  assert.equal(late.origin('Siphon Life', PROC_CAST_WINDOW_MS + 1), 'proc')
+})
+
+test('a SPENT cast is not forgotten — the rest of its own instant still joins', () => {
+  // A partially-resisted AoE: one target's damage line lands, the next target's resist line
+  // arrives, and the remaining targets are still the SAME firing.
+  const recent = new RecentCasts()
+  recent.note('Anarchy', 0)
+  assert.equal(recent.origin('Anarchy', 1_000), 'cast')
+  recent.forget('Anarchy')
+  assert.equal(recent.origin('Anarchy', 1_000), 'cast', 'same instant, same firing')
+  assert.equal(recent.origin('Anarchy', 2_000), 'proc')
+})
+
+test('a new cast line drops any pending suspension — casting is serial', () => {
+  const recent = new RecentCasts()
+  recent.note('Siphon Life', 0)
+  recent.forget('Siphon Life')
+  recent.note('Superior Healing', 1_000)
+  recent.resume()
+  assert.equal(recent.origin('Siphon Life', 2_000), 'proc', 'the recovery belonged to the newer cast')
 })
 
 test('THE DoT GATE — only `spell` damage is eligible for cast-less detection', () => {
@@ -80,12 +159,25 @@ test('THE DoT GATE — only `spell` damage is eligible for cast-less detection',
   assert.equal(procEligibleDamage('ds'), false)
 })
 
-test('pruning drops only casts that can no longer suppress anything', () => {
-  const recent: RecentCasts = new Map()
-  noteCast(recent, 'Old Spell', 0)
-  noteCast(recent, 'Fresh Spell', PROC_CAST_WINDOW_MS)
-  pruneCasts(recent, PROC_CAST_WINDOW_MS + 1)
-  assert.deepEqual([...recent.keys()], ['fresh spell'])
+test('pruning drops only casts that can no longer explain anything', () => {
+  // The prune runs on WRITE, past the cap — so fill it and then write one more.
+  const recent = new RecentCasts()
+  recent.note('Old Spell', 0)
+  for (let i = 0; i < RECENT_CAST_CAP; i++) recent.note(`Filler ${i}`, PROC_CAST_WINDOW_MS + 2)
+  assert.equal(recent.keys().includes('old spell'), false)
+  assert.equal(recent.keys().length, RECENT_CAST_CAP)
+})
+
+test('THE LANE NAMES: the marker is a decoration, and the canon key strips it', () => {
+  assert.equal(laneNameFor('Banish Undead', 'cast'), 'Banish Undead')
+  assert.equal(laneNameFor('Banish Undead', 'proc'), 'Banish Undead · proc')
+  assert.equal(isProcLaneName('Banish Undead · proc'), true)
+  assert.equal(isProcLaneName('Banish Undead'), false)
+  assert.equal(baseLaneName('Banish Undead · proc'), 'Banish Undead')
+  assert.equal(baseLaneName('Banish Undead'), 'Banish Undead')
+  // Both halves of a split key to the ONE spell they are both firings of — rank stripped too.
+  assert.equal(laneCanonKey('Discordant Mind · proc'), 'discordant mind')
+  assert.equal(laneCanonKey('Discordant Mind II'), 'discordant mind')
 })
 
 const NONE: ReadonlySet<string> = new Set()

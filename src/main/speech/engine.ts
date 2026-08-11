@@ -158,7 +158,7 @@ export function createSpeechEngine(opts: SpeechEngineOptions): SpeechEngine {
     const id = nextJobId++
     return new Promise<boolean>((resolve) => {
       pending.set(id, (reply) => {
-        if (!reply.ok) onError(`speech: synthesis failed — ${reply.error}`, null)
+        if (!reply.ok) onError(`speech: synthesis failed - ${reply.error}`, null)
         resolve(reply.ok)
       })
       w.postMessage({ id, hash, text, voiceId } satisfies SpeechWorkerJob)

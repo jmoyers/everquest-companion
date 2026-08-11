@@ -36,7 +36,7 @@ import { fmtDuration } from './levelChartGeometry'
 import { zoneColor } from './zoneBands'
 
 /** Every unknown prints as this. Rule 1: an em-dash, never a zero. */
-export const NONE = '—'
+export const NONE = '-'
 
 /** Which column the per-zone table is ordered by. */
 export type ZoneSort = 'levels' | 'time'

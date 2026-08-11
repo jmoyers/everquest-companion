@@ -48,7 +48,7 @@ function RescrubNotice({ slice }: { slice: TriageSlice }): JSX.Element | null {
       {slice.rescrubDropped > 0 && (
         <>
           Re-scrub removed <strong>{slice.rescrubDropped.toLocaleString()}</strong> line(s) of
-          third-party chat that our own client would have removed before uploading — this slice
+          third-party chat that our own client would have removed before uploading - this slice
           was not scrubbed by our client.{' '}
         </>
       )}
@@ -58,7 +58,7 @@ function RescrubNotice({ slice }: { slice: TriageSlice }): JSX.Element | null {
           escapes and were sanitized.{' '}
         </>
       )}
-      The object in the bucket is untouched — it is the evidence; only this local copy was
+      The object in the bucket is untouched - it is the evidence; only this local copy was
       cleaned.
     </Alert>
   )
@@ -107,7 +107,7 @@ export default function SliceBox({ slice }: { slice: TriageSlice }): JSX.Element
             ? `${lines.length.toLocaleString()} of ${slice.lines.length.toLocaleString()} lines match`
             : `${slice.lines.length.toLocaleString()} lines shown`}
           {slice.truncated
-            ? ` · capped from ${slice.totalLines.toLocaleString()} — the full slice is cached at ${slice.path}`
+            ? ` · capped from ${slice.totalLines.toLocaleString()} - the full slice is cached at ${slice.path}`
             : ''}
         </Typography>
       </Stack>

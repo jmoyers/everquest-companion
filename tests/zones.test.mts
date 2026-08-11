@@ -24,7 +24,14 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ZONES, catalogZonesFor, zoneEntryFor, zoneKey, zoneShortName } from '../src/shared/zones'
+import {
+  ZONES,
+  catalogZonesFor,
+  zoneEntryFor,
+  zoneKey,
+  zoneShortName,
+  zoneShortNameFromCatalog
+} from '../src/shared/zones'
 // Tests may cross layers; the shipped modules may not. This is the ONLY place the two folds meet.
 import { zoneKey as mobZoneKey } from '../src/renderer/src/features/mobs/mobZone'
 
@@ -293,4 +300,61 @@ test('catalogZonesFor is empty when there is nothing to add, and never leaks the
   const first = catalogZonesFor('The City of Guk')
   first.push('Nowhere')
   assert.deepEqual(catalogZonesFor('The City of Guk'), ['Upper Guk'])
+})
+
+// ---- the join, read BACKWARDS (JOS-135) --------------------------------------------------------
+
+test('zoneShortNameFromCatalog turns a catalog zone spelling into the map to open', () => {
+  // The nine spellings the fold cannot reach — the same knowledge `catalogZonesFor` publishes
+  // forwards, read the other way so "which zone is this mob in?" becomes "which map do I open".
+  assert.equal(zoneShortNameFromCatalog('Upper Guk'), zoneShortName('The City of Guk'))
+  assert.equal(zoneShortNameFromCatalog('Lower Guk'), zoneShortName('The Ruins of Old Guk'))
+  assert.equal(zoneShortNameFromCatalog('The Hole'), zoneShortName('The Ruins of Old Paineel'))
+  assert.equal(zoneShortNameFromCatalog('EC'), zoneShortName('East Commonlands'))
+  // And every ordinary name/alias still resolves, because the catalog index is seeded from the
+  // log-side one rather than replacing it.
+  for (const e of ZONES) assert.equal(zoneShortNameFromCatalog(e.name), e.short, e.name)
+})
+
+test('…and it refuses exactly what the log-side lookup refuses', () => {
+  // Ambiguous city names, placeholders, and wiki table cells whose links ran together. A nearest
+  // guess here would open one city's map for another city's mob (world-model law 1).
+  for (const raw of [
+    'Freeport',
+    'Qeynos',
+    'Neriak',
+    'Kaladim',
+    'Felwithe',
+    'Various',
+    'Most starting zones',
+    'Everfrost PeaksLake Rathetear',
+    'West Freeport OR East Freeport',
+    ''
+  ]) {
+    assert.equal(zoneShortNameFromCatalog(raw), null, raw)
+  }
+  assert.equal(zoneShortNameFromCatalog(null), null)
+  assert.equal(zoneShortNameFromCatalog(undefined), null)
+})
+
+test('no mobCatalogName can hijack another zone’s own name — the two indexes never contest', () => {
+  // The catalog index is name/alias FIRST, catalog spellings second, so a contest would resolve
+  // silently in favour of the first writer. MEASURED 2026-08-09: there is no contest to resolve,
+  // and this is what keeps it that way if a row is ever added.
+  const byName = new Map<string, string>()
+  for (const e of ZONES) {
+    for (const long of [e.name, ...(e.aliases ?? [])]) {
+      const key = zoneKey(long)
+      if (key !== '' && !byName.has(key)) byName.set(key, e.short)
+    }
+  }
+  for (const e of ZONES) {
+    for (const cat of e.mobCatalogNames ?? []) {
+      const owner = byName.get(zoneKey(cat))
+      assert.ok(
+        owner === undefined || owner === e.short,
+        `${e.short}: catalog name "${cat}" is already ${String(owner)}'s own name`
+      )
+    }
+  }
 })

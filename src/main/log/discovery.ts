@@ -16,9 +16,16 @@
 //   2. `<drive>\<Daybreak subpath>` across every fixed drive.
 // On THIS machine (2026-08) there are no Daybreak/EverQuest registry keys — the
 // game lives at the public path — so discovery resolves via the drive sweep.
+//
+// NOTHING HERE SPAWNS A SUBPROCESS (JOS-184). The registry and drive-topology questions
+// are asked through `native-reg`, an in-process N-API binding to the Win32 registry API.
+// They used to be `reg.exe query … /s` and `wmic logicaldisk`, and an unsigned app that
+// shells out to `reg`/`wmic` seconds after install is the exact behavioural signature AV
+// heuristics score on — discovery is what a friend's Defender/Norton sees this app do
+// FIRST. See the block comments on `registryInstallCandidates` and `fixedDrives`.
 
-import { execFileSync } from 'child_process'
 import { existsSync, readdirSync, statSync } from 'fs'
+import type * as NativeReg from 'native-reg'
 import { join } from 'path'
 
 /** The canonical Daybreak install root on a default EQ Legends install. */
@@ -48,6 +55,18 @@ export interface DiscoveryProbes {
   extraCandidates: () => string[]
   /** Fixed-drive letters to sweep, e.g. ['C:', 'D:']. */
   fixedDrives: () => string[]
+  /**
+   * Wall-clock CEILING for the whole sweep, in ms (JOS-112). Omitted ⇒ unbounded (the unit
+   * tests, whose probes never block). When set, `discoverEqRoot` stops probing candidates once
+   * the budget is spent and returns null — a BOUNDED MISS (fall back to "user picks manually")
+   * beats an UNBOUNDED HANG. The individual blocking calls are bounded elsewhere (per-`reg`
+   * timeouts; `fixedDrives` skips the offline mapped drives that block on the SMB timeout), so
+   * this is the backstop that caps the CUMULATIVE cost, not a per-call interrupt: a single
+   * synchronous `readdir` cannot be aborted mid-flight, but the ones AFTER the deadline never run.
+   */
+  budgetMs?: number
+  /** Injectable clock for the ceiling (tests advance it deterministically). Defaults to `Date.now`. */
+  now?: () => number
 }
 
 /** The character-log filename the game writes: `eqlog_<Char>_<server>.txt`. */
@@ -279,6 +298,13 @@ export function tailSurvivesRootChange(
  * Duplicates are collapsed so a candidate is probed at most once.
  */
 export function discoverEqRoot(probes: DiscoveryProbes): string | null {
+  const now = probes.now ?? Date.now
+  // The ceiling is an absolute instant computed once, at entry. `extraCandidates()` (env +
+  // registry) runs first and carries its OWN per-`reg` timeout, so by the time we reach the
+  // probe loop the clock already reflects whatever that phase cost.
+  const deadline = probes.budgetMs === undefined ? Infinity : now() + probes.budgetMs
+  const overBudget = (): boolean => now() >= deadline
+
   const seen = new Set<string>()
   const candidates: string[] = []
   const push = (c: string | undefined | null): void => {
@@ -290,13 +316,64 @@ export function discoverEqRoot(probes: DiscoveryProbes): string | null {
   }
 
   for (const c of probes.extraCandidates()) push(c)
-  for (const drive of probes.fixedDrives()) {
-    const d = drive.replace(/[\\/]+$/, '')
-    for (const sub of DAYBREAK_SUBPATHS) push(`${d}\\${sub}`)
+  // Skip generating (and thus probing) the drive-sweep candidates once we are already over
+  // budget — the env/registry phase alone can spend it on a pathological Uninstall hive.
+  if (!overBudget()) {
+    for (const drive of probes.fixedDrives()) {
+      const d = drive.replace(/[\\/]+$/, '')
+      for (const sub of DAYBREAK_SUBPATHS) push(`${d}\\${sub}`)
+    }
   }
 
-  for (const c of candidates) if (probes.hasLogs(c)) return c
+  for (const c of candidates) {
+    // Check BEFORE each probe: a `readdir` on an offline share can take tens of seconds, so the
+    // guarantee is "no further probes after the deadline", which bounds the total to one such
+    // stall plus the budget. `fixedDrives` keeps those shares out of the list in the first place.
+    if (overBudget()) return null
+    if (probes.hasLogs(c)) return c
+  }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// PERSISTED-ACROSS-LAUNCHES discovery (JOS-112). The pure precedence logic, injected so it is
+// unit-testable without a store or a disk — config.ts binds it to electron-store + the real sweep.
+// ---------------------------------------------------------------------------
+
+/** What `resolveDiscoveredRoot` needs, all injected → testable without electron-store or fs. */
+export interface CachedRootDeps {
+  /** The root a PREVIOUS launch persisted, or null if none is stored. */
+  persisted: string | null
+  /** Revalidate a candidate root — the one `readdir` `rootHasLogs` already does. */
+  hasLogs: (root: string) => boolean
+  /** Run the full (expensive) discovery sweep — registry subprocesses + the drive walk. */
+  sweep: () => string | null
+  /** Persist a POSITIVE discovery so the next launch can skip the sweep entirely. */
+  persist: (root: string) => void
+  /** Drop a persisted root that no longer validates — SELF-HEAL across sessions. */
+  dropPersisted: () => void
+}
+
+/**
+ * Resolve the discovered root with cross-launch persistence, first launch and every re-discovery:
+ *
+ *   1. a persisted root that STILL passes `hasLogs` (one readdir) wins — the sweep never runs;
+ *   2. a persisted root that FAILS revalidation is dropped (self-heal: the install moved or was
+ *      uninstalled under us) and we fall through to the sweep;
+ *   3. the sweep runs, and ONLY a positive hit is persisted — a null "not found" is NEVER cached,
+ *      so a brand-new user who has not run `/log on` yet keeps getting the cheap idle rescan
+ *      rather than a sticky negative.
+ *
+ * This is the ACROSS-SESSIONS extension of config.ts's in-memory invalidate/revalidate pattern.
+ */
+export function resolveDiscoveredRoot(deps: CachedRootDeps): string | null {
+  if (deps.persisted !== null) {
+    if (deps.hasLogs(deps.persisted)) return deps.persisted
+    deps.dropPersisted()
+  }
+  const found = deps.sweep()
+  if (found !== null) deps.persist(found)
+  return found
 }
 
 // ---------------------------------------------------------------------------
@@ -304,67 +381,321 @@ export function discoverEqRoot(probes: DiscoveryProbes): string | null {
 // fine and never throw.
 // ---------------------------------------------------------------------------
 
-/** Enumerate fixed-drive roots (e.g. ['C:', 'D:']). Falls back to ['C:']. */
+/**
+ * THE REGISTRY BINDING, LOADED LAZILY AND ALLOWED TO BE ABSENT (JOS-184).
+ *
+ * `native-reg` is an N-API binding to the Win32 registry API — ABI-stable across Node and
+ * Electron (so `npmRebuild` stays false, see electron-builder.yml) and shipped as a prebuilt
+ * `.node` INSIDE the npm tarball, which is what makes it work under `.npmrc`'s
+ * `ignore-scripts=true`. That last point is why it is this package and not the more obvious
+ * `registry-js`: registry-js downloads its prebuild from an `install` script, which this repo
+ * never runs.
+ *
+ * `require` at first use rather than a top-level `import`, and a swallowed failure, because
+ * this module sits on the STARTUP path: config.ts imports it, and an import-time throw from a
+ * missing or unloadable `.node` would stop the app from launching at all rather than costing us
+ * one of three ways to find the install. With the binding absent, `registryInstallCandidates`
+ * returns nothing and `fixedDrives` falls back to the A-Z sweep — the same degradation as a
+ * machine with no Daybreak keys, which is most machines.
+ */
+let registryModule: typeof NativeReg | null | undefined
+
+function registry(): typeof NativeReg | null {
+  if (registryModule === undefined) {
+    try {
+      // Deferring the native load past module evaluation, and being able to CATCH it failing, is
+      // the whole point of this function; a static `import` can do neither. The main bundle is
+      // CJS (electron-vite), so this is the real require, not a shim.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- see above
+      registryModule = require('native-reg') as typeof NativeReg
+    } catch {
+      registryModule = null
+    }
+  }
+  return registryModule
+}
+
+/**
+ * The LOCAL (non-network) drive letters, read out of the mount table (JOS-112, JOS-184).
+ *
+ * WHY A DRIVE FILTER AT ALL, NOT A PER-LETTER TIMEOUT: the hang this bounds is a
+ * `readdir`/`existsSync` on an OFFLINE MAPPED NETWORK DRIVE blocking on the SMB timeout (tens of
+ * seconds). A synchronous fs call cannot be aborted once started, so a "per-letter timeout" would
+ * need a subprocess per letter — 26 of them — and the offline share would still be TOUCHED. The
+ * fix is to never put those letters in the candidate list.
+ *
+ * WHY THE REGISTRY AND NOT `wmic` (JOS-184): this used to shell out to
+ * `wmic logicaldisk get DeviceID,DriveType` and keep DriveType 3. It worked, and it is also
+ * exactly what AV heuristics score: `wmic` is deprecated, is on its way out of Windows entirely,
+ * and a freshly-installed unsigned exe spawning it to enumerate the machine's disks reads as
+ * reconnaissance. `HKLM\SYSTEM\MountedDevices` answers the same question in-process, from a key
+ * every user can read (verified on a non-elevated 10.0.22631 session), by reading the mount table
+ * as DATA — no drive is opened, so an offline share stays untouched exactly as before.
+ *
+ * WHAT CHANGED IN THE ANSWER, precisely: MountedDevices names LOCAL volumes only —
+ * `\DosDevices\C:` and friends. A mapped network drive is NEVER in it, which is the property that
+ * replaces the DriveType-4 filter and the whole reason this substitution is safe. Removable local
+ * volumes (a USB stick) ARE in it, where DriveType 3 excluded them, so the sweep may now also
+ * probe an external drive. That is a superset of the old candidate list, it costs a handful of
+ * INSTANT `existsSync` calls on a local device, and it finds a game installed on an external disk
+ * that we used to walk straight past. Stale entries for long-removed devices are filtered by the
+ * one `existsSync` on the drive root below — safe precisely because every letter here is local.
+ *
+ * MEMOIZED for the process (drive topology barely changes and the idle rescan calls this every
+ * couple of seconds — see refreshEqDiscoveryCheaply). Null means "could not read the mount table",
+ * and the caller falls back.
+ */
+function queryLocalDriveLetters(): string[] | null {
+  const reg = registry()
+  if (!reg) return null
+  const names = enumValueNames(reg, reg.HKLM, 'SYSTEM\\MountedDevices')
+  if (names === null) return null
+  const letters = driveLettersFromMountedDevices(names).filter((d) => existsSync(`${d}\\`))
+  return letters.length > 0 ? letters : null
+}
+
+/**
+ * Pull drive roots (`['C:', 'D:']`) out of `HKLM\SYSTEM\MountedDevices` value names. Pure, so the
+ * shape of that key is a unit test rather than a claim.
+ *
+ * The key holds two kinds of value name: `\DosDevices\<letter>:` (a mounted drive letter) and
+ * `\??\Volume{<guid>}` (the same volume by GUID, no letter). Only the first kind is a candidate.
+ * Sorted so the sweep order is deterministic across machines — and so C: is probed first.
+ */
+export function driveLettersFromMountedDevices(valueNames: readonly string[]): string[] {
+  const seen = new Set<string>()
+  for (const name of valueNames) {
+    const m = /^\\DosDevices\\([A-Za-z]):$/.exec(name)
+    if (m) seen.add(m[1].toUpperCase())
+  }
+  return [...seen].sort().map((letter) => `${letter}:`)
+}
+
+/**
+ * The drive letters currently taken by a PERSISTENT mapped network drive, from the subkey names of
+ * `HKCU\Network` (`HKCU\Network\Z` = `Z:` is mapped). Pure over the enumerated names.
+ *
+ * Only used by the FALLBACK sweep below, as the "do not touch these" list — these are the letters
+ * that block on the SMB timeout when the share is offline.
+ */
+export function networkDriveLetters(subKeyNames: readonly string[]): Set<string> {
+  const out = new Set<string>()
+  for (const name of subKeyNames) {
+    if (/^[A-Za-z]$/.test(name)) out.add(name.toUpperCase())
+  }
+  return out
+}
+
+/** Process-lifetime memo for the mount-table read (undefined = not yet asked, null = read failed). */
+let cachedFixedLetters: string[] | null | undefined
+
+/**
+ * Enumerate LOCAL drive roots (e.g. ['C:', 'D:']), skipping network drives so an offline mapped
+ * share can never wedge the sweep (JOS-112). Falls back to the legacy A–Z existence sweep — minus
+ * any letter `HKCU\Network` says is a mapped share — and then to ['C:'].
+ *
+ * The name is historical (the probe interface field is `fixedDrives`); "local" is the honest word
+ * for what it now returns. See `queryLocalDriveLetters` for what changed and why.
+ */
 export function fixedDrives(): string[] {
+  if (cachedFixedLetters === undefined) cachedFixedLetters = queryLocalDriveLetters()
+  if (cachedFixedLetters) return cachedFixedLetters
+  // The mount table was unreadable. Probe A–Z, but never touch a letter we KNOW is a mapped share:
+  // the old wmic fallback had no such list and could block for tens of seconds on an offline one.
+  const reg = registry()
+  const mapped = networkDriveLetters(reg ? (enumKeyNames(reg, reg.HKCU, 'Network') ?? []) : [])
   const found: string[] = []
   for (let code = 'A'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
     const letter = String.fromCharCode(code)
+    if (mapped.has(letter)) continue
     if (existsSync(`${letter}:\\`)) found.push(`${letter}:`)
   }
   return found.length > 0 ? found : ['C:']
 }
 
+// ---------------------------------------------------------------------------
+// REGISTRY INSTALL CANDIDATES — in-process, scoped reads (JOS-184).
+// ---------------------------------------------------------------------------
+
+/** The value names that hold an install path in the Uninstall/launcher keys, in no order. */
+const INSTALL_PATH_VALUES = ['InstallLocation', 'InstallPath', 'InstallDir'] as const
+
 /**
- * Pull an install path out of ONE `reg query /s` output line: we grep the
- * "InstallLocation"/"InstallPath"/"InstallDir" REG_SZ lines. Returns null when the
- * line isn't one of those (or carries an empty value).
+ * The game's name has to appear in the path itself for it to be a candidate. This is the
+ * `reg query … /f EverQuest` filter, preserved EXACTLY — see `registryInstallCandidates`.
  */
-function installPathFromRegLine(line: string): string | null {
-  const m = /\b(?:InstallLocation|InstallPath|InstallDir)\b\s+REG_SZ\s+(.+?)\s*$/i.exec(line)
-  if (!m) return null
-  const p = m[1].trim()
-  return p ? p : null
+const EQ_PATH_RE = /everquest/i
+
+/**
+ * The roots probed for an install path, in the order they are asked — the same eight the eight
+ * `reg query` subprocesses covered, spelled the same way. The hive is a TAG rather than a
+ * `native-reg` constant so this table can exist without the binding being loaded.
+ */
+const INSTALL_PATH_KEYS: readonly { hive: 'HKLM' | 'HKCU'; path: string }[] = [
+  { hive: 'HKLM', path: 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall' },
+  { hive: 'HKLM', path: 'SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' },
+  { hive: 'HKCU', path: 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall' },
+  { hive: 'HKLM', path: 'SOFTWARE\\Daybreak Game Company' },
+  { hive: 'HKLM', path: 'SOFTWARE\\WOW6432Node\\Daybreak Game Company' },
+  { hive: 'HKCU', path: 'SOFTWARE\\Daybreak Game Company' },
+  { hive: 'HKLM', path: 'SOFTWARE\\WOW6432Node\\Sony Online Entertainment' },
+  { hive: 'HKCU', path: 'SOFTWARE\\Sony Online Entertainment' }
+]
+
+/**
+ * How deep below each root an install path is looked for. The Uninstall hives are FLAT (one subkey
+ * per installed product), and the Daybreak/SOE launcher keys nest one or two deep
+ * (`…\Daybreak Game Company\Installed Games\EverQuest`). Three levels covers both with room to
+ * spare; `reg query /s` was unbounded, which is only a difference for a shape nobody ships.
+ */
+const MAX_KEY_DEPTH = 3
+
+/** Hard ceiling on keys opened per sweep, so a pathological hive cannot turn this into a walk. */
+const MAX_KEYS_VISITED = 8000
+
+/**
+ * Keep a registry value only if it is a non-empty install path that names the game.
+ *
+ * PURE, and the exact contract the `reg.exe` command it replaces had — which was verified against
+ * the real tool rather than read off the docs (2026-08-10, Windows 11 10.0.22631):
+ *   * `reg query <key> /s /f EverQuest /t REG_SZ` prints one line per REG_SZ value whose NAME or
+ *     DATA contains "everquest", case-insensitively, plus the key header;
+ *   * with `/t` present a KEY-NAME match prints NOTHING AT ALL (`…\CurrentVersion /s /f RunMRU
+ *     /t REG_SZ` finds 0 matches although the RunMRU key exists; without `/t` it finds 1, the key
+ *     line alone and none of its values);
+ *   * so the old `installPathFromRegLine` regex — an InstallLocation/InstallPath/InstallDir line,
+ *     whose own NAME never contains "everquest" — could only ever fire on a DATA match.
+ * Hence: value name in `INSTALL_PATH_VALUES`, data a string containing "everquest". Same installs
+ * discovered, and a key named `EverQuest` whose InstallLocation does not say so is still skipped,
+ * exactly as it was.
+ */
+export function eqInstallPathValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const p = value.trim()
+  return p && EQ_PATH_RE.test(p) ? p : null
+}
+
+/** Open a key defensively — a missing key, a denied ACL and a malformed path are all `null`. */
+function openKey(reg: typeof NativeReg, parent: NativeReg.HKEY, path: string): NativeReg.HKEY | null {
+  try {
+    // KEY_READ plus the 64-bit view: every path above spells out WOW6432Node when it wants the
+    // 32-bit one, which is what `reg.exe` from this (x64) process resolved to as well.
+    return reg.openKey(parent, path, reg.Access.READ | reg.Access.WOW64_64KEY)
+  } catch {
+    return null
+  }
+}
+
+/** Enumerate a key's value names, or null if the key cannot be opened/read. */
+function enumValueNames(
+  reg: typeof NativeReg,
+  parent: NativeReg.HKEY,
+  path: string
+): string[] | null {
+  const key = openKey(reg, parent, path)
+  if (!key) return null
+  try {
+    return reg.enumValueNames(key)
+  } catch {
+    return null
+  } finally {
+    reg.closeKey(key)
+  }
+}
+
+/** Enumerate a key's subkey names, or null if the key cannot be opened/read. */
+function enumKeyNames(reg: typeof NativeReg, parent: NativeReg.HKEY, path: string): string[] | null {
+  const key = openKey(reg, parent, path)
+  if (!key) return null
+  try {
+    return reg.enumKeyNames(key)
+  } catch {
+    return null
+  } finally {
+    reg.closeKey(key)
+  }
+}
+
+/** Shared state for one `registryInstallCandidates` sweep. */
+interface RegistrySweep {
+  reg: typeof NativeReg
+  out: string[]
+  visited: number
+  deadline: number
 }
 
 /**
- * Probe the Windows registry (defensively) for an EverQuest / Daybreak install
- * location. Checks the standard Uninstall hives (both HKLM 64/32-bit views and
- * HKCU) plus Daybreak/SOE launcher keys. Returns any `InstallLocation` /
- * `InstallPath` string values found — most machines have none (the game is a
- * public-folder install), which is fine.
+ * Collect install paths from `key` and (to `MAX_KEY_DEPTH`) its subkeys. Every registry call is
+ * wrapped: a key we cannot read is simply not a source of candidates.
  */
-export function registryInstallCandidates(): string[] {
-  const keys = [
-    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-    'HKLM\\SOFTWARE\\Daybreak Game Company',
-    'HKLM\\SOFTWARE\\WOW6432Node\\Daybreak Game Company',
-    'HKCU\\SOFTWARE\\Daybreak Game Company',
-    'HKLM\\SOFTWARE\\WOW6432Node\\Sony Online Entertainment',
-    'HKCU\\SOFTWARE\\Sony Online Entertainment'
-  ]
-  const out: string[] = []
-  for (const key of keys) {
-    // Search the subtree for value names holding an install path. `reg query /s`
-    // walks recursively; we grep the "InstallLocation"/"InstallPath" REG_SZ lines
-    // (see installPathFromRegLine).
-    let stdout = ''
+function collectInstallPaths(key: NativeReg.HKEY, depth: number, sweep: RegistrySweep): void {
+  const reg = sweep.reg
+  if (sweep.visited++ >= MAX_KEYS_VISITED || Date.now() >= sweep.deadline) return
+  for (const name of INSTALL_PATH_VALUES) {
+    let raw: unknown
     try {
-      stdout = execFileSync('reg', ['query', key, '/s', '/f', 'EverQuest', '/t', 'REG_SZ'], {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 4000,
-        stdio: ['ignore', 'pipe', 'ignore']
-      })
+      raw = reg.getValue(key, null, name)
     } catch {
-      // Absent key or no match → reg exits non-zero. Fine; try the next.
       continue
     }
-    for (const line of stdout.split(/\r?\n/)) {
-      const p = installPathFromRegLine(line)
-      if (p) out.push(p)
+    const path = eqInstallPathValue(raw)
+    if (path) sweep.out.push(path)
+  }
+  if (depth >= MAX_KEY_DEPTH) return
+  let subKeys: string[]
+  try {
+    subKeys = reg.enumKeyNames(key)
+  } catch {
+    return
+  }
+  for (const name of subKeys) {
+    if (sweep.visited >= MAX_KEYS_VISITED || Date.now() >= sweep.deadline) return
+    const child = openKey(reg, key, name)
+    if (!child) continue
+    try {
+      collectInstallPaths(child, depth + 1, sweep)
+    } finally {
+      reg.closeKey(child)
     }
   }
-  return out
+}
+
+/**
+ * Probe the Windows registry (defensively) for an EverQuest / Daybreak install location. Checks the
+ * standard Uninstall hives (both HKLM 64/32-bit views and HKCU) plus Daybreak/SOE launcher keys.
+ * Returns any `InstallLocation` / `InstallPath` / `InstallDir` value that names EverQuest — most
+ * machines have none (the game is a public-folder install), which is fine.
+ *
+ * IN-PROCESS AND SCOPED SINCE JOS-184. This was EIGHT synchronous `reg.exe query … /s /f EverQuest`
+ * subprocesses: a recursive TEXT SEARCH of the whole Uninstall hive whose stdout we then grepped
+ * with a regex. Two things were wrong with that beyond taste. It cost ~150 ms of blocked main
+ * thread and scaled with the size of the user's Uninstall hive — the JOS-112 deadline exists
+ * because of it. And spawning `reg.exe` to sweep the uninstall registry is, to a heuristic AV
+ * engine, indistinguishable from what an infostealer does in its first seconds; a friend's Norton
+ * sees this happen moments after the install it already distrusts.
+ *
+ * Now it asks the registry directly, and asks a NARROW question: for each root, the three named
+ * install-path values, down `MAX_KEY_DEPTH` levels, with the same result filter as before
+ * (`eqInstallPathValue`). MEASURED on a 119-subkey Uninstall hive: 4 ms for the 64-bit view and
+ * 2 ms for the 32-bit one, against ~150 ms for the eight subprocesses — the same Steam
+ * "EverQuest Free-to-Play" install found by both.
+ *
+ * `deadline` is kept: it is the JOS-112 discovery ceiling and it now bounds a loop rather than a
+ * queue of subprocesses. It is checked per key, not per root, which is strictly tighter.
+ */
+export function registryInstallCandidates(deadline = Infinity): string[] {
+  const reg = registry()
+  if (!reg) return []
+  const sweep: RegistrySweep = { reg, out: [], visited: 0, deadline }
+  for (const { hive, path } of INSTALL_PATH_KEYS) {
+    if (Date.now() >= sweep.deadline) break
+    const key = openKey(reg, hive === 'HKLM' ? reg.HKLM : reg.HKCU, path)
+    if (!key) continue
+    try {
+      collectInstallPaths(key, 1, sweep)
+    } finally {
+      reg.closeKey(key)
+    }
+  }
+  return sweep.out
 }

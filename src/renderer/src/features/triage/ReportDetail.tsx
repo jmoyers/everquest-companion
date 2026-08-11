@@ -97,7 +97,7 @@ function SliceSection({ detail }: { detail: TriageDetail }): JSX.Element | null 
       <Alert severity="warning" data-testid="triage-slice-missing">
         This report declared a log slice
         {detail.logLines === undefined ? '' : ` (${detail.logLines.toLocaleString()} lines)`} but the
-        object is not in the bucket — the upload failed or the presigned POST expired.
+        object is not in the bucket - the upload failed or the presigned POST expired.
       </Alert>
     )
   }
@@ -111,7 +111,7 @@ function SliceSection({ detail }: { detail: TriageDetail }): JSX.Element | null 
         data-testid="triage-load-slice"
       >
         Load log slice
-        {detail.logLines === undefined ? '' : ` — ${detail.logLines.toLocaleString()} lines`}
+        {detail.logLines === undefined ? '' : ` - ${detail.logLines.toLocaleString()} lines`}
       </Button>
     )
   }

@@ -6,23 +6,66 @@
 import type { ConsiderFaction, LogEvent, LootDisposition } from '../../shared/logEvents'
 import { CONSIDER_FACTION_RUNGS } from '../../shared/logEvents'
 import { itemTierFromName } from '../../shared/itemStats'
+import { TIER_OPEN_WORLD, TIER_UNKNOWN } from '../../shared/kills'
 import { cleanMob, norm, type ClassifyCtx } from './parseCommon'
 
-// EQ Legends encodes instance difficulty in the zone name:
-//   base (no suffix) = d0, "(Awakened)" = d1, "(Adaptive)" = d2,
-//   "(Fused)" = d3, "(Refined)" = d4. Also strips "- Solo"/"- Group N".
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ZONE NAME IS THE ONLY THING THAT STATES A DIFFICULTY (JOS-166)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// EQ Legends encodes instance difficulty in the zone name, and nowhere else: no kill line, no
+// lockout line and no instance-creation notice carries one (the sweep is quoted in the header of
+// renderer/features/bosses/lockout.ts). So `zoneTier` is where the app decides what a kill's
+// difficulty was, and everything downstream inherits whatever it decides here.
+//
+// THE THREE WORLDS. A full-log sweep of every `You have entered <X>.` in the owner's 1.4M-line
+// log (2026-08-09, read-only) yields exactly these shapes, and they fall into three kinds:
+//
+//   INSTANCED, DIFFICULTY NAMED — the adjective is the whole rule (d1..d4):
+//     You have entered The Plane of Hate - Solo 4 (Refined).
+//     You have entered Nagafen's Lair - Group 3 (Fused).
+//     You have entered Najena 4 (Refined).                  ← no Solo/Group word, still instanced
+//     You have entered The Plane of Sky 1 (Awakened).
+//
+//   INSTANCED, NO ADJECTIVE — the BASE difficulty, d0, and a real one (7 in the log):
+//     You have entered The Plane of Hate - Solo.
+//     You have entered Nagafen's Lair - Solo.
+//     You have entered The Permafrost Caverns - Solo.
+//
+//   NOT INSTANCED — the open world, which carries no lockout of any kind:
+//     You have entered The Plane of Hate.
+//     You have entered Innothule Swamp.
+//
+// WHY d0 IS NOW ITS OWN ANSWER (owner decision, 2026-08-09, corroborated by the community wiki):
+// a raid target has FIVE weekly lockouts, d0 through d4, and the owner clears all five most
+// weeks. The base instance is a difficulty like any other; what it is NOT is the open world, and
+// the suffix is what tells them apart. Until this ticket all three kinds decoded to 0, so an
+// open-world kill and a base-instance clear were the same fact to every consumer.
+//
+// FOUR ANSWERS, NOT FIVE. `TIER_UNKNOWN` covers both "no zone line has been seen yet" (an empty
+// string — the kills module's state before the scan reaches one) and "an instance whose
+// adjective this app has never decoded". The second used to fall through to 0; a parenthetical
+// the table does not know is still unmistakably an INSTANCE (the base difficulty never prints
+// one), so calling it d0 would be inventing the one fact the line failed to state (law 1).
 const TIER_ADJ: Record<string, number> = { awakened: 1, adaptive: 2, fused: 3, refined: 4 }
+
+/** Difficulty names, indexed by the five DIFFICULTY tier keys; the two non-difficulties have
+ *  no entry here (the renderer spells them in lib/tierChip.ts, where the chips live). */
 export const TIER_LABELS = ['d0', 'd1 · Awakened', 'd2 · Adaptive', 'd3 · Fused', 'd4 · Refined']
 
+/** A `- Solo` / `- Group N` suffix: the word that makes a zone an INSTANCE of itself. */
+const INSTANCE_SUFFIX_RE = /\s-\s*(Solo|Group)\b/i
+
 export function zoneTier(zone: string): { base: string; tier: number } {
-  const adj = /\(([A-Za-z]+)\)\s*$/.exec(zone)
-  const tier = adj ? TIER_ADJ[adj[1].toLowerCase()] ?? 0 : 0
   const base = zone
     .replace(/\s*-\s*(Solo|Group)\b.*$/i, '')
     .replace(/\s+\d+\s*\([^)]*\)\s*$/, '')
     .replace(/\s+\([^)]*\)\s*$/, '')
     .trim()
-  return { base, tier }
+  const adj = /\(([A-Za-z]+)\)\s*$/.exec(zone)
+  if (adj) return { base, tier: TIER_ADJ[adj[1].toLowerCase()] ?? TIER_UNKNOWN }
+  if (INSTANCE_SUFFIX_RE.test(zone)) return { base, tier: 0 }
+  return { base, tier: base ? TIER_OPEN_WORLD : TIER_UNKNOWN }
 }
 
 // ----- content matchers (verbatim regexes from the two old parsers) -----

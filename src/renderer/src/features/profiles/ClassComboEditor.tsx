@@ -72,7 +72,7 @@ function EditorBody({ interval, onClose }: { interval: ComboInterval; onClose: (
           <Typography variant="caption" color="text.secondary">
             {picked.length === 0
               ? 'Pick 1 to 3 classes.'
-              : `${picked.join(' / ')} — ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
+              : `${picked.join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
           </Typography>
           {error && <Alert severity="warning">{error}</Alert>}
         </Stack>
@@ -97,7 +97,7 @@ function EditorBody({ interval, onClose }: { interval: ComboInterval; onClose: (
           data-testid="combo-editor-save"
           onClick={() => void write(() => window.eq.setComboCorrection({ ...range, classes: picked }))}
         >
-          Save — applies to this time range
+          Save - applies to this time range
         </Button>
       </DialogActions>
     </>

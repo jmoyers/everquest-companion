@@ -183,21 +183,23 @@ Var pid
   ${EndIf}
 !macroend
 
-# Belt and braces for a bottle whose registry has been scrubbed: ntdll!wine_get_version is
-# Wine's own advertised "am I Wine" export and exists in every bottle, CrossOver included.
-# GetProcAddress rather than System::Call on the function itself, because a missing export
-# through System::Call has a fuzzier failure mode than a NULL pointer.
-!macro eqProbeWineNtdll
-  ${If} $R9 == 0
-    System::Call 'kernel32::GetModuleHandleW(w "ntdll.dll") i .R8'
-    ${If} $R8 != 0
-      System::Call 'kernel32::GetProcAddress(i R8, m "wine_get_version") i .R7'
-      ${If} $R7 != 0
-        StrCpy $R9 1
-      ${EndIf}
-    ${EndIf}
-  ${EndIf}
-!macroend
+# THE ntdll PROBE IS GONE ON PURPOSE (JOS-184) - it is not dead code that was tidied away.
+#
+# It used to be belt and braces for a bottle whose registry had been scrubbed:
+# `GetModuleHandleW("ntdll.dll")` then `GetProcAddress(..., "wine_get_version")`, Wine's own
+# advertised "am I Wine" export. Correct, and a textbook malware signature. Resolving an
+# unexported-by-name API out of ntdll by string, from an unsigned installer, is one of the
+# oldest heuristics every AV engine carries - it is how shellcode and packers find their
+# syscalls - and this installer is already fighting a reputation problem it cannot answer
+# with a signature yet. A second, redundant Wine check is not worth the detection it buys.
+#
+# WHAT MUST NOT REGRESS: the JOS-31/32 behaviour is pinned to the REGISTRY probes below,
+# which stay. Every stock Wine prefix has `Software\Wine` under HKCU (wine.inf writes it),
+# and the three eqProbeWineRegKey inserts cover HKCU, HKLM and HKLM's 64-bit view. The only
+# case the ntdll probe covered alone was a bottle whose registry had been deliberately
+# stripped of that key, which is a hand-modified prefix, not a shape any user arrives at.
+# In that case the installer falls back to the stock running-app check - the pre-JOS-31
+# behaviour - rather than doing anything new or worse.
 
 !macro customCheckAppRunning
   # Build-time proof the hook fired, same trick as customUnInstall below. Prints once per
@@ -216,7 +218,6 @@ Var pid
   # HKLM\Software is WOW64-redirected for this 32-bit installer; ask for the 64-bit view too
   # (KEY_WOW64_64KEY, ignored on a 32-bit prefix).
   !insertmacro eqProbeWineRegKey 0x80000002 0x00020119
-  !insertmacro eqProbeWineNtdll
 
   ${If} $R9 == 1
     # No Quit, no MessageBox, no kill: just fall through to the install/uninstall.

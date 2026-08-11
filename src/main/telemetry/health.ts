@@ -1,6 +1,11 @@
 // ============================================================================
-// telemetry/health.ts — the five health counters, as pending deltas (JOS-96).
+// telemetry/health.ts — the health counters, as pending deltas (JOS-96, JOS-133).
 // ============================================================================
+//
+// SEVEN FIELDS NOW. Five shipped with JOS-96; JOS-133 added two, and both were added for the same
+// reason rather than because more numbers are better: something that was being reported as an
+// ERROR was not one, and demoting it needed somewhere honest for the count to land. See
+// `noteImageFetchFailure` and `noteSuppressedErrorLine` for each argument.
 //
 // `EvHealthCounters` has been in the contract since wave A2 and NO CLIENT HAS EVER EMITTED IT.
 // This file is the missing producer half: the places in main that already KNOW something went
@@ -40,13 +45,15 @@
  *  itself, and the validator would reject the event anyway. */
 const MAX_HEALTH_COUNT = 1_000_000
 
-/** The five fields, spelled once. Mirrors `HEALTH_FIELDS` in shared/telemetryValidate.ts. */
+/** The seven fields, spelled once. Mirrors `HEALTH_FIELDS` in shared/telemetryValidate.ts. */
 export interface HealthDelta {
   rendererCrashes: number
   mainErrorLogLines: number
   parserStalls: number
   presenceRestarts: number
   speechFailures: number
+  imageFetchFailures: number
+  suppressedErrorLines: number
 }
 
 const zero = (): HealthDelta => ({
@@ -54,7 +61,9 @@ const zero = (): HealthDelta => ({
   mainErrorLogLines: 0,
   parserStalls: 0,
   presenceRestarts: 0,
-  speechFailures: 0
+  speechFailures: 0,
+  imageFetchFailures: 0,
+  suppressedErrorLines: 0
 })
 
 let pending: HealthDelta = zero()
@@ -97,12 +106,17 @@ export function noteRendererCrash(n = 1): void {
 
 /**
  * The game-window presence watcher restarted (`scheduleRestart`, src/main/presence.ts) — the one
- * funnel all three restart causes reach (the stale-child watchdog, the child-gone handler, and a
- * failed spawn).
+ * funnel all three restart causes reach (the staleness watchdog, the watcher-gone handler, and a
+ * start that threw).
  *
  * It is a SEPARATE counter from `restartFailures` in that module on purpose: that one is a
- * backoff index which resets to 0 on a healthy child, so it answers "how bad is it right now"
+ * backoff index which resets to 0 on a healthy watcher, so it answers "how bad is it right now"
  * and can never answer "how many times did this happen this session".
+ *
+ * IT IS ALSO THE FIELD THAT SHOULD FALL OFF A CLIFF (JOS-182). Every restart it counted used to
+ * be a `powershell.exe` spawn, and on the machines where that binary is missing or blocked it
+ * counted one every thirty seconds for the life of the session. The watcher is a worker thread
+ * now; a fleet where this number stays high is a fleet where something ELSE is wrong.
  */
 export function notePresenceRestart(n = 1): void {
   bump('presenceRestarts', n)
@@ -132,6 +146,49 @@ export function noteSpeechFailure(n = 1): void {
  */
 export function noteParserStall(n = 1): void {
   bump('parserStalls', n)
+}
+
+/**
+ * An image the app wanted could not be FETCHED — the network leg failed outright (offline, DNS,
+ * TLS, the 8 s timeout), before any HTTP status existed (`fetchAndStore`, src/main/imageCache.ts).
+ *
+ * IT IS A COUNTER BECAUSE IT IS NOT AN ERROR (JOS-133). The condition is fully handled at every
+ * layer: nothing is cached (negatives never are), the handler answers 404, the renderer's existing
+ * `onError` hides the image, and the next request retries. It used to reach `logError`, and the
+ * fleet read the consequence back to us — one fingerprint, 17,632 occurrences over 14 days across
+ * 0.13.0/0.14.0, roughly two thirds of every `mainErrorLogLines` this app has ever counted. A
+ * number that large made of one handled condition does not describe the app's health, it hides it.
+ *
+ * SO THE MEASUREMENT SURVIVES AND THE ALARM DOES NOT. "How often is the wiki unreachable for the
+ * fleet" is a real question and this is its answer; it is deliberately NOT summed into the release
+ * health error rate (`HEALTH_NON_ERROR_FIELDS`, shared/telemetryRollup.ts), because a build cannot
+ * be blamed for somebody else's server. The HTTP-status branch beside it (a 404/500 from a host
+ * that DID answer) stays an error: that one says the app asked for the wrong thing, which is ours.
+ *
+ * Live debugging keeps one WARN line per host per session (imageCache.ts) — console only, never
+ * errors.log, so it costs the counter nothing.
+ */
+export function noteImageFetchFailure(n = 1): void {
+  bump('imageFetchFailures', n)
+}
+
+/**
+ * An error line that was NOT written to `<userData>/errors.log` because the identical line had
+ * already been written `MAX_IDENTICAL_ERROR_LINES` times this session (src/main/errorRepeat.ts).
+ *
+ * THIS COUNTER IS WHAT MAKES THE CAP HONEST, and it is the reason the cap was allowed to exist at
+ * all. `mainErrorLogLines` means "lines in this fleet's error logs" — a promise kept by counting
+ * AFTER the append — so a cap that silently stopped appending would silently deflate it, and a
+ * build that started looping would look like a build that got better. The two fields add up to
+ * what really happened: `mainErrorLogLines + suppressedErrorLines` is the occurrence count, and
+ * both are summed into the release health error rate for exactly that reason.
+ *
+ * It is NOT the errorReport dedupe. That one is per FINGERPRINT and already reports its own
+ * `count` (telemetry/errorReports.ts); this one is per identical LINE and is about the local file
+ * a human greps. The two run independently on purpose — a suppressed line still produces a report.
+ */
+export function noteSuppressedErrorLine(n = 1): void {
+  bump('suppressedErrorLines', n)
 }
 
 /**

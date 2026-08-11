@@ -149,8 +149,8 @@ function ConfirmRemoveDialog({
       <DialogContent>
         <Typography variant="body2" color="text.secondary">
           {users.length === 1 ? 'One alert plays it' : `${users.length} alerts play it`}:{' '}
-          {users.map((a) => a.name).join(', ')}. They keep firing — on the default alert
-          line — until you point them at another sound. Import the file again to get it back.
+          {users.map((a) => a.name).join(', ')}. They keep firing on the default alert line
+          until you point them at another sound. Import the file again to get it back.
         </Typography>
       </DialogContent>
       <DialogActions>
@@ -221,7 +221,7 @@ export default function MySoundsDialog({
 
           {rejected.map((r) => (
             <Alert key={r.file} severity="warning" variant="outlined">
-              {r.file} — {r.reason}
+              {r.file} - {r.reason}
             </Alert>
           ))}
 

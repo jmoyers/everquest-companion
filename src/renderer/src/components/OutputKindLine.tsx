@@ -79,6 +79,7 @@ export default function OutputKindLine({ kind, why, testId }: OutputKindLineProp
       command={status.command}
       why={why ?? status.why}
       updatedAt={status.updatedAt ?? undefined}
+      steps={status.steps}
       testId={testId}
     />
   )

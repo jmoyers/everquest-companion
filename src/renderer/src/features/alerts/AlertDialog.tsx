@@ -3,14 +3,14 @@
 //
 // `initial` is null for "add", or an existing def for "edit" (including a seeded
 // built-in — no special casing beyond keeping its id stable).
+//
+// THIS FILE IS THE RENDERING. The form model it drives — which fields exist, how they are
+// hydrated from `initial`, and how they turn back into an `AlertDef` — lives in alertForm.ts,
+// which is where JOS-122's hydration rule is stated: hydration answers an OPENING, never a prop
+// identity, because `packs` is re-listed on every window focus and re-hydrating on it wiped
+// whatever the user had typed. Read that header before touching either half.
 
-import {
-  type Dispatch,
-  type JSX,
-  type SetStateAction,
-  useEffect,
-  useState
-} from 'react'
+import { type Dispatch, type JSX, type SetStateAction } from 'react'
 import {
   Box,
   Button,
@@ -30,169 +30,21 @@ import {
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import type { AlertDef, AlertTrigger, SoundPack } from '@shared/types'
+import type { AlertDef, SoundPack } from '@shared/types'
 import { captureNamesIn } from '@shared/alertCaptures'
+import { blankCondition, type CombineMode, type ConditionDraft } from './conditionDraft'
 import {
-  blankCondition,
-  type CombineMode,
-  type ConditionDraft,
-  conditionFieldValErr,
-  conditionRawErr,
-  draftFromPrimitive,
-  primitiveFromDraft
-} from './conditionDraft'
+  type AlertForm,
+  type CooldownScope,
+  defFromForm,
+  formCanSave,
+  triggerFromForm,
+  useAlertForm
+} from './alertForm'
 import ConditionEditor from './ConditionEditor'
-import SoundPicker, { fallbackPack, firstSoundId } from './SoundPicker'
-import SpeechBlock, { type SpeechForm, speechFieldsFor, useSpeechForm } from './SpeechBlock'
+import SoundPicker from './SoundPicker'
+import SpeechBlock from './SpeechBlock'
 import type { VoiceSetupNotice } from './VoiceSetupLink'
-import { DEFAULT_PACK_ID } from './suggestions'
-import { Tooltip } from '../../lib/Tooltip'
-
-const DEFAULT_COOLDOWN_MS = 2000
-
-function newId(name: string): string {
-  const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'alert'
-  return `${base}-${Math.random().toString(36).slice(2, 6)}`
-}
-
-/** Everything the dialog's form owns; `useAlertForm` hydrates it from `initial`. */
-interface AlertForm {
-  name: string
-  setName: (v: string) => void
-  mode: CombineMode
-  changeMode: (next: CombineMode) => void
-  conditions: ConditionDraft[]
-  setConditions: Dispatch<SetStateAction<ConditionDraft[]>>
-  packId: string
-  soundId: string
-  setSound: (packId: string, soundId: string) => void
-  volume: number
-  setVolume: (v: number) => void
-  cooldownMs: number
-  setCooldownMs: (v: number) => void
-  /** What the cooldown is measured per — one clock for the alert, or one per mob. */
-  cooldownScope: CooldownScope
-  setCooldownScope: (v: CooldownScope) => void
-  /** The Speech block's own sub-form (voice-alerts §4) — see SpeechBlock.tsx. */
-  speech: SpeechForm
-}
-
-/** Local alias for the def field, so the form and the def can never drift apart. */
-type CooldownScope = NonNullable<AlertDef['cooldownScope']>
-
-function useAlertForm(open: boolean, initial: AlertDef | null, packs: SoundPack[]): AlertForm {
-  const [name, setName] = useState('')
-  const [mode, setMode] = useState<CombineMode>('single')
-  const [conditions, setConditions] = useState<ConditionDraft[]>([blankCondition()])
-  const [packId, setPackId] = useState(fallbackPack(packs)?.id ?? DEFAULT_PACK_ID)
-  const [soundId, setSoundId] = useState(firstSoundId(fallbackPack(packs)))
-  const [volume, setVolume] = useState(1)
-  const [cooldownMs, setCooldownMs] = useState(DEFAULT_COOLDOWN_MS)
-  const [cooldownScope, setCooldownScope] = useState<CooldownScope>('alert')
-  // The Speech block hydrates itself from the same `open`/`initial` pair.
-  const speech = useSpeechForm(open, initial)
-
-  // Hydrate the form from `initial` (edit) or blanks (add) whenever it opens.
-  useEffect(() => {
-    if (!open) return
-    if (initial) {
-      setName(initial.name)
-      const t = initial.trigger
-      if ('conditions' in t) {
-        setMode(t.type)
-        setConditions(t.conditions.length ? t.conditions.map(draftFromPrimitive) : [blankCondition()])
-      } else {
-        setMode('single')
-        setConditions([draftFromPrimitive(t)])
-      }
-      setPackId(initial.sound.packId)
-      setSoundId(initial.sound.soundId)
-      setVolume(initial.volume ?? 1)
-      setCooldownMs(initial.cooldownMs ?? DEFAULT_COOLDOWN_MS)
-      setCooldownScope(initial.cooldownScope ?? 'alert')
-    } else {
-      setName('')
-      setMode('single')
-      setConditions([blankCondition()])
-      const preset = fallbackPack(packs)
-      setPackId(preset?.id ?? DEFAULT_PACK_ID)
-      setSoundId(firstSoundId(preset))
-      setVolume(1)
-      setCooldownMs(DEFAULT_COOLDOWN_MS)
-      setCooldownScope('alert')
-    }
-  }, [open, initial, packs])
-
-  // Switching INTO a composite from single keeps the existing condition and adds a second so
-  // the OR/AND is meaningful; switching back to single collapses to the first condition.
-  const changeMode = (next: CombineMode): void => {
-    setMode(next)
-    if (next === 'single') setConditions((prev) => prev.slice(0, 1))
-    else setConditions((prev) => (prev.length >= 2 ? prev : [...prev, blankCondition()]))
-  }
-
-  const setSound = (p: string, s: string): void => {
-    setPackId(p)
-    setSoundId(s)
-  }
-
-  return {
-    name,
-    setName,
-    mode,
-    changeMode,
-    conditions,
-    setConditions,
-    packId,
-    soundId,
-    setSound,
-    volume,
-    setVolume,
-    cooldownMs,
-    setCooldownMs,
-    cooldownScope,
-    setCooldownScope,
-    speech
-  }
-}
-
-function triggerFromForm(mode: CombineMode, conditions: ConditionDraft[]): AlertTrigger {
-  if (mode === 'single') return primitiveFromDraft(conditions[0])
-  return { type: mode, conditions: conditions.map(primitiveFromDraft) }
-}
-
-function formCanSave(f: AlertForm): boolean {
-  const conditionsValid = f.conditions.every(
-    (c) => conditionRawErr(c) == null && conditionFieldValErr(c) == null
-  )
-  return (
-    f.name.trim().length > 0 &&
-    f.conditions.length > 0 &&
-    conditionsValid &&
-    f.packId.length > 0 &&
-    f.soundId.length > 0
-  )
-}
-
-function defFromForm(f: AlertForm, initial: AlertDef | null): AlertDef {
-  return {
-    // Preserve id + note on edit (stable ids for built-ins); mint on add.
-    id: initial?.id ?? newId(f.name),
-    name: f.name.trim(),
-    enabled: initial?.enabled ?? true,
-    trigger: triggerFromForm(f.mode, f.conditions),
-    sound: { packId: f.packId, soundId: f.soundId },
-    volume: f.volume,
-    cooldownMs: f.cooldownMs,
-    // Omitted at its default, like the speech fields below: a def that never asked for per-mob
-    // scope saves byte-identically to how it always did, so import dedupe keeps matching it.
-    ...(f.cooldownScope === 'target' ? { cooldownScope: 'target' as const } : {}),
-    note: initial?.note,
-    // audio / speech / alwaysPlay, each omitted at its default so a sound-only alert saves
-    // byte-identically to how it always did (SpeechBlock.speechFieldsFor).
-    ...speechFieldsFor(f.speech)
-  }
-}
 
 /** "Fire when…" — the single/any/all combine-mode picker plus the same-event caveat. */
 function CombineModeSection({
@@ -210,6 +62,7 @@ function CombineModeSection({
       <Select
         size="small"
         fullWidth
+        data-testid="alert-combine-mode"
         value={mode}
         onChange={(e) => onChange(e.target.value as CombineMode)}
       >
@@ -248,13 +101,20 @@ function ConditionRow({
           Condition {index + 1}
         </Typography>
         <Box sx={{ flexGrow: 1 }} />
-        <Tooltip title="Remove condition">
-          <span>
-            <IconButton size="small" color="error" disabled={!canRemove} onClick={onRemove}>
-              <DeleteOutlineIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* No popper (JOS-143): this button sits on the card's header line, directly above the
+            ConditionEditor's three Selects, and a default-placement tooltip opens DOWNWARD — onto
+            them. The span outlives it because a disabled button swallows mouse events. */}
+        <span title="Remove condition">
+          <IconButton
+            size="small"
+            aria-label="Remove condition"
+            color="error"
+            disabled={!canRemove}
+            onClick={onRemove}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </span>
       </Stack>
       <ConditionEditor draft={draft} onChange={onChange} />
     </Paper>
@@ -321,6 +181,7 @@ function VolumeCooldownSection({ f }: { f: AlertForm }): JSX.Element {
         size="small"
         type="number"
         label="Cooldown (ms)"
+        data-testid="alert-cooldown"
         value={f.cooldownMs}
         onChange={(e) => f.setCooldownMs(Math.max(0, Number(e.target.value) || 0))}
         sx={{ width: 140 }}
@@ -372,12 +233,13 @@ export default function AlertDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid="alert-dialog">
-      <DialogTitle>{editing ? `Edit alert — ${initial?.name}` : 'Add alert'}</DialogTitle>
+      <DialogTitle>{editing ? `Edit alert - ${initial?.name}` : 'Add alert'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField
             size="small"
             label="Name"
+            data-testid="alert-name"
             value={f.name}
             onChange={(e) => f.setName(e.target.value)}
             autoFocus

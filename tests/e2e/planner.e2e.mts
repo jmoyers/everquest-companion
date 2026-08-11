@@ -358,6 +358,7 @@ async function stepInventoryFill(page: Page): Promise<void> {
       line.includes('/outputfile inventory') && /updated (just now|\d+[mhd] ago)/.test(line),
       line.slice(0, 120)
     )
+
   }
 
   // …and the same facts, live over the registry's own channel (JOS-44). Next door, with the rest
@@ -506,8 +507,8 @@ async function stepFarm(page: Page): Promise<void> {
     )
   }
   check(
-    'every farm row states the merge cost in the shared vocabulary ("needs +N — ≈X D0 merges")',
-    /needs \+\d+ — ≈\d+ D0 merges/.test(text),
+    'every farm row states the merge cost in the shared vocabulary ("needs +N - ≈X D0 merges")',
+    /needs \+\d+ - ≈\d+ D0 merges/.test(text),
     text.slice(0, 140)
   )
 }
@@ -594,7 +595,10 @@ async function main(): Promise<void> {
   // vacuous — this launch's userData dir has never held either.
 
   console.log('launch: hidden Electron (EQ_E2E=1) against tests/fixtures/e2e-planner.log…')
-  const { app, close } = await launchOnFixture('e2e-planner.log')
+  // …and a real `/outputfile inventory` dump in the install root beside it (JOS-185). Without one,
+  // every dump-fed surface takes its never-run branch, which is how the freshness line, the filled
+  // hosts and the capture steps went unmeasured for the whole life of this suite.
+  const { app, close } = await launchOnFixture('e2e-planner.log', { inventory: 'Primitive_freeport-Inventory.txt' })
 
   let page: Page | null = null
   try {

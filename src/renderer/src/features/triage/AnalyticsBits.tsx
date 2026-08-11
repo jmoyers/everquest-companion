@@ -151,11 +151,11 @@ export function HealthSection({ data }: { data: TriageAnalyticsData }): JSX.Elem
 export function StartupSection({ data }: { data: TriageAnalyticsData }): JSX.Element {
   const s = data.startup
   return (
-    <Section title="Startup replay — per build">
+    <Section title="Startup replay - per build">
       <Typography variant="caption" color="text.secondary">
         One reading per launch, from the machines that run it: how long reading the log history
         took, the worst single main-loop block while it did, and the duty the fold actually
-        achieved (measured, never the setting). Percentiles are bucket ranges — the counters keep a
+        achieved (measured, never the setting). Percentiles are bucket ranges - the counters keep a
         histogram, so an exact figure would be invented. Character-switch replays are not measured.
       </Typography>
       {s.byVersion.length === 0 ? (
@@ -174,10 +174,10 @@ export function StartupSection({ data }: { data: TriageAnalyticsData }): JSX.Ele
               <Box component="span" sx={{ fontFamily: 'monospace' }}>
                 {r.version}
               </Box>{' '}
-              {formatNum(r.launches)} launches · replay p50 {r.p50ReplayLabel ?? '—'} · p95{' '}
-              {r.p95ReplayLabel ?? '—'} · worst block p50 {r.p50BlockLabel ?? '—'} · p95{' '}
-              {r.p95BlockLabel ?? '—'} · duty {pctLabel(r.dutyAchieved ?? 0)} ·{' '}
-              {r.meanEventsReplayed === null ? '—' : formatNum(Math.round(r.meanEventsReplayed))}{' '}
+              {formatNum(r.launches)} launches · replay p50 {r.p50ReplayLabel ?? '-'} · p95{' '}
+              {r.p95ReplayLabel ?? '-'} · worst block p50 {r.p50BlockLabel ?? '-'} · p95{' '}
+              {r.p95BlockLabel ?? '-'} · duty {pctLabel(r.dutyAchieved ?? 0)} ·{' '}
+              {r.meanEventsReplayed === null ? '-' : formatNum(Math.round(r.meanEventsReplayed))}{' '}
               events/launch · {formatNum(r.blocksOver50)} stalls over 50 ms
             </Typography>
           ))}
@@ -185,7 +185,7 @@ export function StartupSection({ data }: { data: TriageAnalyticsData }): JSX.Ele
       )}
       <Stack spacing={0.5}>
         <Typography variant="caption" color="text.secondary">
-          Log size of the measured launches (all builds — a log&apos;s size is a fact about the
+          Log size of the measured launches (all builds - a log&apos;s size is a fact about the
           player, and the context every row above is read in)
         </Typography>
         <MixList rows={s.logSizes} empty="No launch has reported a log size yet." />
@@ -215,10 +215,10 @@ export function VersionsSection({ data }: { data: TriageAnalyticsData }): JSX.El
                 peak {pctLabel(v.peakShare)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                first seen {v.firstSeenDay ?? '—'} ·{' '}
+                first seen {v.firstSeenDay ?? '-'} ·{' '}
                 {v.daysToAdopt === null
                   ? 'never reached a majority'
-                  : `${String(v.daysToAdopt)} days to majority (${v.majorityDay ?? '—'})`}
+                  : `${String(v.daysToAdopt)} days to majority (${v.majorityDay ?? '-'})`}
               </Typography>
             </Box>
           ))}
@@ -258,7 +258,7 @@ function DownloadRows({ rows }: { rows: TriageDownloads }): JSX.Element {
             {formatNum(r.totalDownloads)} all assets
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            published {r.publishedAt?.slice(0, 10) ?? '—'}
+            published {r.publishedAt?.slice(0, 10) ?? '-'}
           </Typography>
         </Box>
       ))}
@@ -280,11 +280,11 @@ function DownloadRows({ rows }: { rows: TriageDownloads }): JSX.Element {
 export function DownloadsSection({ downloads }: { downloads?: TriageDownloads }): JSX.Element | null {
   if (downloads === undefined) return null
   return (
-    <Section title="GitHub downloads — updater-inflated, NOT installs">
+    <Section title="GitHub downloads - updater-inflated, NOT installs">
       <Typography variant="caption" color="text.secondary">
         Release asset fetches, per tag, from the public GitHub API. The auto-updater downloads the
-        installer again on every install it updates — v0.5.0 took 61 downloads within hours of
-        publication — so read this as fetches, not as new users. The install answer is the
+        installer again on every install it updates - v0.5.0 took 61 downloads within hours of
+        publication - so read this as fetches, not as new users. The install answer is the
         Versions table above, off <code>analytics_install</code>. Global: never split by cohort.
       </Typography>
       <DownloadRows rows={downloads} />

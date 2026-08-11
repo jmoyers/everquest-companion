@@ -120,19 +120,50 @@ export function overlayMouseForward(kind: OverlayKind): boolean {
  *                 NOTHING. A replay deliberately does not even create the window — a page load
  *                 for a hidden window is main-process work at the one moment main has none to
  *                 spare, and the fold's end re-evaluates all of this anyway.
- *   'idle'      — the window exists and is positioned, but the ring is not active right now
- *                 (alt-tabbed away, mouselook hiding the cursor). Warm, hidden, not sampling.
+ *   'idle'      — the game does not own the screen (alt-tabbed away, game closed). The ring
+ *                 window comes OFF SCREEN: it must not sit over whatever the user switched to.
+ *   'parked'    — the game still owns the screen but there is no pointer to ring (mouselook, or
+ *                 any mouse button held in the world view). Stop sampling and park the halo, but
+ *                 LEAVE THE WINDOW WHERE IT IS. See below — this distinction is JOS-120's fix.
  *   'run'       — visible and streaming.
+ *
+ * ============================ WHY 'parked' IS NOT 'idle' (JOS-120) ============================
+ * These two used to be one state, and hiding the window was how both were expressed. That is the
+ * reported twitch: the ring visibly jumped on every click and then snapped back.
+ *
+ * A HIDDEN WINDOW PRODUCES NO FRAMES, so the park that is supposed to take the halo off screen is
+ * never composited. MEASURED (Electron 43, a transparent frameless window driven by the shipping
+ * renderer logic): with `hide()` first and the park second, the park's `requestAnimationFrame`
+ * did not run for the entire 600 ms the window was hidden — the pending-frame flag stayed set and
+ * the element kept the transform it had before the hide. It ran 1 ms AFTER `showInactive()`, by
+ * which point Windows had already re-presented the window's last composited surface: the halo,
+ * drawn where the pointer used to be. So every mouselook/click ended in a frame or two of ring at
+ * the stale position, then a snap to the fresh sample.
+ *
+ * The cure is to not hide at all for the case that happens on every click. When EverQuest still
+ * has the foreground, the ring window is exactly where it belongs and is about to be needed
+ * again in a few hundred ms; parking it while it is VISIBLE composites normally, on the next
+ * frame, and the halo simply disappears and reappears in the right place. Hiding stays for the
+ * case it was actually written for — the game no longer owning the screen — where a stale frame
+ * costs an alt-tab, not a click.
+ *
+ * `focused` is therefore load-bearing on its own and not merely `active`'s cause: a pointer
+ * hidden by some OTHER app while EverQuest is in the background must still take the window off
+ * screen, so the two facts are asked separately rather than inferred from one another.
  */
-export type RingDisposition = 'off' | 'suspended' | 'idle' | 'run'
+export type RingDisposition = 'off' | 'suspended' | 'idle' | 'parked' | 'run'
 
 export function ringDisposition(o: {
   enabled: boolean
   hasBounds: boolean
   active: boolean
+  /** Does the game (or one of our own windows — presence.ts's own-windows rule) hold the
+   *  foreground? Decides HIDE vs PARK once the ring is not active. */
+  focused: boolean
   replayRunning: boolean
 }): RingDisposition {
   if (!o.enabled) return 'off'
   if (o.replayRunning || !o.hasBounds) return 'suspended'
-  return o.active ? 'run' : 'idle'
+  if (o.active) return 'run'
+  return o.focused ? 'parked' : 'idle'
 }

@@ -50,6 +50,7 @@ import { parseEvent } from '../src/main/log/parser'
 import { installSpellDb } from '../src/main/log/rulesets'
 import { loadSpellDb } from '../src/main/data/spellDb'
 import { CombatEngine } from '../src/main/combat/engine'
+import { baseLaneName } from '../src/main/combat/procDetect'
 import {
   COMBAT_POISON_LINES,
   MAX_COMBAT_COATS,
@@ -300,10 +301,22 @@ test('W36 engine: proc counts are IDENTITIES over the zone, and poison damage is
     const you = seg.entities.find((e) => e.id === 'you')
     assert.ok(you, `${id} has a You row`)
     for (const lane of seg.procs.poisonDamage) {
-      const skill = you.skills.find((s) => s.name === lane.name)
-      assert.ok(skill, `${id}: poison lane ${lane.name} exists on the You row`)
-      assert.equal(lane.total, skill.total, `${id}: ${lane.name} total matches the meter`)
-      assert.equal(lane.count, skill.hits, `${id}: ${lane.name} hits match the meter`)
+      // The ledger names the VENOM; the meter names the LANE, which since JOS-167 carries a
+      // `· proc` marker on the cast-less half. `baseLaneName` is the one seam that maps one to
+      // the other, and the identity is over every row the venom occupies — which is what keeps
+      // it an identity if a venom's effect is ever also hand-cast.
+      const rows = you.skills.filter((s) => baseLaneName(s.name) === lane.name)
+      assert.ok(rows.length > 0, `${id}: poison lane ${lane.name} exists on the You row`)
+      assert.equal(
+        lane.total,
+        rows.reduce((n, r) => n + r.total, 0),
+        `${id}: ${lane.name} total matches the meter`
+      )
+      assert.equal(
+        lane.count,
+        rows.reduce((n, r) => n + r.hits, 0),
+        `${id}: ${lane.name} hits match the meter`
+      )
     }
     assert.ok(seg.procs.poisonDamageTotal <= seg.outTotal)
   }

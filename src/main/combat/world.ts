@@ -90,6 +90,11 @@
 //                   damage (see noteSeen + EngineState.notePresence), so the world model
 //                   ages an instance out on exactly the evidence evalClosure() calls
 //                   presence.
+//
+//  retirement       EVERY rule above funnels through one private `retire()`, and it announces
+//                   itself on `onRetire` (JOS-176). Retirement is FINAL — a later sighting of
+//                   the name mints a fresh gen — so anything holding state keyed by instanceId
+//                   has to be told, not just the path that happened to remember.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { idKey } from '../log/parser'
@@ -181,6 +186,18 @@ export class WorldModel {
    * than per line and are charged to `dispatch`, which the table's header says out loud.
    */
   probe?: EngineFoldProbe
+  /**
+   * RETIREMENT IS FINAL, AND THE ENCOUNTER LAYER HAS TO HEAR ABOUT IT (JOS-176). Installed by
+   * `EngineState` and called from `retire()` — the ONE place retirement is recorded — so every
+   * path that ends an instance (death, staleness, zone, pet succession, the foreign-killer ghost)
+   * tells the same story. Before this, only `ingestDeath` cleaned up after itself, so a mez'd mob
+   * retired by STALENESS left its CC hold behind in `Encounter.ccActiveUntil` vetoing the
+   * death-close on behalf of an entity that could never rejoin the fight: a later sighting of that
+   * name mints a fresh `nameKey#gen` (see `spawn`), so the hold was unredeemable by construction.
+   * The world model deliberately knows nothing about encounters — it reports the fact and the
+   * listener decides what it costs.
+   */
+  onRetire?: (inst: Instance, ts: number) => void
 
   reset(): void {
     this.activeByName.clear()
@@ -622,6 +639,8 @@ export class WorldModel {
       const at = live.indexOf(inst)
       if (at >= 0) live.splice(at, 1)
     }
+    // …and say so, once, from the one place that records it (see onRetire).
+    this.onRetire?.(inst, ts)
   }
 
   /**

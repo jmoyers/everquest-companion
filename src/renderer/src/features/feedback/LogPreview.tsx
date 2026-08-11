@@ -49,7 +49,7 @@ function count(n: number): string {
  */
 export function sliceMetaText(slice: FeedbackSlicePreview, requestedMinutes: number): string {
   const hm: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
-  const span = `${formatTime(slice.fromMs, hm)}–${formatTime(slice.toMs, hm)}`
+  const span = `${formatTime(slice.fromMs, hm)}-${formatTime(slice.toMs, hm)}`
   const parts = [
     `${count(slice.lines)} lines`,
     span,
@@ -125,7 +125,7 @@ export default function LogPreview({
   if (!slice) {
     return (
       <Typography variant="caption" color="text.secondary" data-testid="feedback-preview-empty">
-        No log lines in this window — nothing would be attached.
+        No log lines in this window - nothing would be attached.
       </Typography>
     )
   }

@@ -34,6 +34,10 @@
  *   6. the "New at this level" panel is mounted with its stepper — and, once the combo module
  *      has resolved a loadout, draws real unlock rows for it (floors, never today's counts);
  *   7. the tab never scrolls the page, and there are no renderer console errors;
+ *   7b. (JOS-151) and at the narrowest window the app allows, the two columns STACK instead of
+ *      sharing one height: no panel draws over another, the stack absorbs the overflow rather
+ *      than the page, and both the timeslice control and the unlock stepper are still the thing
+ *      at their own centre. Steps 7/7b live in `levelingLayoutSteps.mts`;
  *   8. (JOS-78) the IN-WINDOW DROPS panel is mounted with the tab, states its empty window rather
  *      than drawing a blank box, and fills from loot the harness plays into the tailed file —
  *      ordered by observed drops, each row stating a count and a rate over a STATED active span;
@@ -62,7 +66,6 @@ import {
   failures,
   hoverAt,
   note,
-  pageOverflow,
   rectOf,
   reportRun,
   settle,
@@ -76,6 +79,10 @@ import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
 // The in-window drops panel and its round trip into the item drill-down (JOS-78) — next door
 // because this spec sits AT the repo max-lines budget; see that file's header.
 import { stepDrops } from './dropSteps.mjs'
+import { stepZoneSlice } from './sliceSteps.mjs'
+// The layout contract and the narrow window (JOS-151) — next door for the same reason, and see
+// that file's header for what the reporter's 1073x937 actually did to this tab.
+import { stepNarrowLayout, stepOverflow } from './levelingLayoutSteps.mjs'
 
 const NAV = '[data-testid="nav-leveling"]'
 const VIEW = '[data-testid="leveling-view"]'
@@ -95,8 +102,19 @@ const LEVEL_NEXT = '[data-testid="new-at-level-next"]'
 const UNLOCK_ROW = '[data-testid="unlock-row"]'
 const COMBO_CHIP = '[data-testid="new-at-level-combo-chip"]'
 const UNKNOWN_COMBO = '[data-testid="new-at-level-unknown"]'
-const TIMESCALE = '[data-testid="leveling-timescale"]'
-const TS_WINDOW = '[data-testid="leveling-timescale-window"]'
+// The app-wide TIMESLICE control (JOS-130) — it absorbed the tab's own timescale, so the duration
+// rungs are four ids among nine and the testid prefix names the surface rather than the feature.
+const TIMESCALE = '[data-testid="leveling-slice"]'
+const TS_WINDOW = '[data-testid="leveling-slice-window"]'
+/**
+ * The narrowest slice that REPLACES THE DRAWN WINDOW, most-narrow first — which is what step 5b
+ * is about (a new time base: the strip re-cuts, a stale selection is dropped, the hover re-maps).
+ *
+ * `Zone` is deliberately not a candidate: it narrows the NUMBERS and leaves the window alone by
+ * design, so it would fail assertions that are correct about every other slice. It gets its own
+ * step (`stepZoneSlice`) that asserts exactly the opposite pair.
+ */
+const NARROW_ORDER = ['h1', 'h6', 'h24', 'd7', 'session'] as const
 const TOOLTIP = '[data-testid="chart-tooltip"]'
 const HERO = '[data-testid="leveling-range-hero"]'
 const ZONE_ROW = '[data-testid="leveling-range-zone-row"]'
@@ -161,12 +179,15 @@ async function dragRange(page: Page, sel: string): Promise<boolean> {
   return true
 }
 
-/** The scale ids the control is offering — `full` plus whatever this character's span can fill. */
+/** The slice ids the control is offering — `all` and `custom` always, plus whatever this
+ *  character's log can define. The caption (`-window`) and the custom range's two inputs
+ *  (`-custom-from` / `-custom-to`) share the prefix and are not ids; no SliceId carries a hyphen,
+ *  which is what that filter is reading. */
 function offeredScales(page: Page): Promise<string[]> {
   return page.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-testid^="leveling-timescale-"]'))
-      .map((e) => (e.getAttribute('data-testid') ?? '').replace('leveling-timescale-', ''))
-      .filter((id) => id.length > 0 && id !== 'window')
+    Array.from(document.querySelectorAll('[data-testid^="leveling-slice-"]'))
+      .map((e) => (e.getAttribute('data-testid') ?? '').replace('leveling-slice-', ''))
+      .filter((id) => id.length > 0 && id !== 'window' && !id.includes('-'))
   )
 }
 
@@ -461,13 +482,15 @@ async function stepTimescale(page: Page, chart: string): Promise<void> {
   check('…and it states the window on screen', before.includes('→'), before.replace(/\s+/g, ' '))
 
   const offered = await offeredScales(page)
-  if (offered.length < 2) {
-    note(
-      `this log spans too little to fill a second scale — the control offers only [${offered.join(', ')}] and states the window instead of drawing a one-button choice, which is the honest surface`
-    )
+  check('the slices offered are the ones this log can define', offered[0] === 'all', `[${offered.join(', ')}]`)
+  // The narrowest slice this log can actually offer. `custom` is always in the list and is not a
+  // change of base until somebody types two instants into it, so it is deliberately not a
+  // candidate here — this step is about the control replacing the time base in one click.
+  const narrow = NARROW_ORDER.find((id) => offered.includes(id))
+  if (!narrow) {
+    note(`this log defines no slice narrower than All — it offers only [${offered.join(', ')}] and states the slice`)
     return
   }
-  check('the scales offered are the ones this history can fill', offered[0] === 'full', `[${offered.join(', ')}]`)
 
   // The full-history dashboard, read BEFORE anything is touched — the state `All` must restore.
   const allReadout = await dashboardReadout(page)
@@ -479,9 +502,7 @@ async function stepTimescale(page: Page, chart: string): Promise<void> {
   await settleCount(page, PANEL, 1, { timeoutMs: 8000 })
   const bandsBefore = await bandSignature(page)
 
-  // The narrowest offered scale — the strongest zoom this data supports.
-  const narrow = offered[offered.length - 1]
-  await page.click(`[data-testid="leveling-timescale-${narrow}"]`, { timeout: 10_000 })
+  await page.click(`[data-testid="leveling-slice-${narrow}"]`, { timeout: 10_000 })
   const after = await settle(() => textOf(page, TS_WINDOW), (t) => t !== before, { timeoutMs: 8000 })
   check(`picking "${narrow}" replaces the window wholesale`, after !== before, `${before} → ${after}`.replace(/\s+/g, ' '))
   check(
@@ -523,7 +544,7 @@ async function stepTimescale(page: Page, chart: string): Promise<void> {
   }
 
   // Back to the default: the control is a view, not a trapdoor.
-  await page.click('[data-testid="leveling-timescale-full"]', { timeout: 10_000 })
+  await page.click('[data-testid="leveling-slice-all"]', { timeout: 10_000 })
   const back = await settle(() => textOf(page, TS_WINDOW), (t) => t === before, { timeoutMs: 8000 })
   check('returning to All restores the full-history window exactly', back === before, `${back}`.replace(/\s+/g, ' '))
   // THE PROMISE, IN PIXELS: not just the drawn window but every number under it. A user who
@@ -628,16 +649,6 @@ async function stepAaLedger(page: Page): Promise<void> {
   check('…and clicking it opens its rungs', rungs > 0, `${String(rungs)} rungs`)
 }
 
-/** 7. THE LAYOUT CONTRACT: the app's content area owns the scroll; a view never grows the page. */
-async function stepOverflow(page: Page): Promise<void> {
-  const over = await pageOverflow(page)
-  check(
-    'the Leveling tab never scrolls the page (its panels scroll inside themselves)',
-    over.doc === 0 && over.content === 0,
-    `document +${String(over.doc)}px · content area +${String(over.content)}px`
-  )
-}
-
 async function main(): Promise<void> {
   buildIfStale()
 
@@ -667,6 +678,10 @@ async function main(): Promise<void> {
         // AFTER the selection step, which proves the panel works on the default (full-history)
         // window — this one then proves the same gestures survive a wholesale window change.
         await stepTimescale(page, chart)
+        // The other half of the same control (JOS-130, sliceSteps.mts): the preset that moves the
+        // arithmetic and not the window. It runs AFTER stepTimescale, which leaves the tab on
+        // `All`, and takes the spec's own dashboard readout so "byte for byte" means one thing.
+        await stepZoneSlice(page, () => dashboardReadout(page))
         // LAST among the chart steps (JOS-78): it APPENDS loot, and loot is one of the three
         // columns the idle classifier walks — so every byte-identical reading above must already
         // be behind us. See dropSteps.mts.
@@ -681,6 +696,9 @@ async function main(): Promise<void> {
       // DBs, so it must be there whether or not this log has enough dings to draw a chart.
       await stepNewAtLevel(page, log)
       await stepOverflow(page)
+      // LAST, because it moves the window: it puts the size and the minimum back before it
+      // returns, but nothing after it should have to trust that.
+      await stepNarrowLayout(app, page)
     }
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))

@@ -33,7 +33,7 @@ function KnowledgeHeader({ offline }: { offline?: boolean }): JSX.Element {
       <Typography variant="subtitle2">What it&apos;s for</Typography>
       {offline && (
         <Typography variant="caption" color="text.disabled">
-          (offline — showing what&apos;s known locally)
+          (offline - showing what&apos;s known locally)
         </Typography>
       )}
     </Stack>

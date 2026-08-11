@@ -61,7 +61,9 @@ export interface LocStore {
 export type LocParse = { ok: true; loc: EqLoc } | { ok: false; reason: string }
 
 /** What to paste, said once, and reused by every refusal so the guidance never drifts between them. */
-const EXAMPLE = 'Paste the line the game printed — “Your Location is 1414.20, -735.55, 12.19” — or just the numbers.'
+// A dash pair would sit right beside the example's own negative number, so this one reads with
+// parentheses instead (JOS-106: normal dashes, or no dash where a dash reads worse).
+const EXAMPLE = 'Paste the line the game printed (“Your Location is 1414.20, -735.55, 12.19”) or just the numbers.'
 
 /** The log's own stamp, in case the paste came from the log file rather than the game window. */
 const TIMESTAMP = /^\[[^\]]*\]\s*/
@@ -100,7 +102,7 @@ export function parseLoc(text: string): LocParse {
   const nums = tokens.map(Number)
   if (!nums.every((n) => Number.isFinite(n))) return { ok: false, reason: `That reads as no position at all. ${EXAMPLE}` }
   if (nums.length !== 2 && nums.length !== 3) {
-    return { ok: false, reason: `${String(nums.length)} numbers — a /loc is three (north/south, west/east, elevation). ${EXAMPLE}` }
+    return { ok: false, reason: `${String(nums.length)} numbers - a /loc is three (north/south, west/east, elevation). ${EXAMPLE}` }
   }
   // ORDER IS THE WHOLE POINT: /loc prints north/south first, then west/east, then elevation.
   return { ok: true, loc: { ns: nums[0], ew: nums[1], z: nums[2] ?? 0 } }

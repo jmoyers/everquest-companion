@@ -87,7 +87,7 @@ test('a session end is kept THREE ways: a count, a total, and a histogram bucket
   const c = counters(batchOf([{ t: 'sessionEnd', durationMs: 20 * 60_000, viewsVisited: 3 }]))
   assert.equal(c.get(`${USAGE_METRICS.sessionEnds} ${DIM_NONE}`), 1)
   assert.equal(c.get(`${USAGE_METRICS.sessionMsTotal} ${DIM_NONE}`), 20 * 60_000)
-  // 20 min lands in the 15–30 bucket, which is index 3 over the edges.
+  // 20 min lands in the 15-30 bucket, which is index 3 over the edges.
   assert.equal(c.get(`${USAGE_METRICS.sessionLenBucket} 3`), 1)
 })
 
@@ -330,12 +330,12 @@ test('the median is a BUCKET, and an empty histogram has no median at all', () =
 })
 
 test('a session bucket renders as a RANGE, and the top bucket is open-ended', () => {
-  assert.equal(sessionBucketLabel(0), '0–1 min')
-  assert.equal(sessionBucketLabel(3), '15 min–30 min')
+  assert.equal(sessionBucketLabel(0), '0-1 min')
+  assert.equal(sessionBucketLabel(3), '15 min-30 min')
   assert.equal(sessionBucketLabel(SESSION_MS_EDGES.length), '4 h+')
-  // Out of range clamps rather than producing `undefined–undefined`.
+  // Out of range clamps rather than producing `undefined-undefined`.
   assert.equal(sessionBucketLabel(99), '4 h+')
-  assert.equal(sessionBucketLabel(-1), '0–1 min')
+  assert.equal(sessionBucketLabel(-1), '0-1 min')
 })
 
 test('the day key is the ARRIVAL day in UTC — never the client clock', () => {

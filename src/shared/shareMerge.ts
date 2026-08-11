@@ -109,7 +109,7 @@ export function planAlertMerge(
         action: 'skip',
         finalId: twin.id,
         finalName: twin.name,
-        reason: `Already have this — “${twin.name}”`,
+        reason: `Already have this - “${twin.name}”`,
         missingPackId,
         behaviorKey
       })
@@ -122,7 +122,7 @@ export function planAlertMerge(
     if (byId.has(finalId)) {
       finalId = `${def.id}~${behaviorKey.slice(0, 4)}`
       action = 'rekey'
-      reason = `Id “${def.id}” is taken by a different alert — imported alongside it`
+      reason = `Id “${def.id}” is taken by a different alert - imported alongside it`
     }
 
     let finalName = def.name
@@ -206,7 +206,20 @@ const OVERLAY_KIND_LABEL: Record<OverlayKind, string> = {
   // `src/main/share.ts`'s KINDS list does not include it — but the map is keyed by the whole
   // union on purpose, so it is named here rather than letting a future shared field render as
   // a raw kind id.
-  buffs: 'Buff timers'
+  buffs: 'Buff timers',
+  // The debuff/CC half of the JOS-119 split. Same story as the two rows above: no shared field
+  // today, named here because the map is keyed by the whole union on purpose.
+  debuffs: 'Debuff timers',
+  // And the XP window (JOS-195). Same story a third time: no shared field today — `src/main/
+  // share.ts`'s KINDS list does not include it — but the map is keyed by the whole union on
+  // purpose, so it is named here rather than letting a future shared field render as a raw id.
+  xp: 'XP and motes',
+  // And the respawn clocks (JOS-194). Same story a fourth time: no shared field today —
+  // `src/main/share.ts`'s KINDS list does not include it — but the map is keyed by the whole
+  // union on purpose, so it is named here rather than letting a future shared field render as a
+  // raw kind id. The WATCH LIST is deliberately not shareable either: it names the mobs somebody
+  // camps, which is a fact about their play, not a setting.
+  respawn: 'Respawn clocks'
 }
 
 /**
@@ -258,7 +271,7 @@ function pushOverlayRows(out: ScalarChange[], body: SettingsBundleBody, ctx: Sca
     const cur = ctx.overlays?.[kind]
     pushScalar(out, {
       id: `overlay.${kind}.bgAlpha`,
-      label: `${OVERLAY_KIND_LABEL[kind]} — background opacity`,
+      label: `${OVERLAY_KIND_LABEL[kind]} - background opacity`,
       current: cur?.bgAlpha,
       incoming: inc.bgAlpha,
       merge: 'replace'

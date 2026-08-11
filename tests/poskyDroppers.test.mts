@@ -32,6 +32,7 @@ import {
   islandLabel,
   islandOf,
   isSkyMob,
+  itemDropFacts,
   killTargetFacts,
   killTargetLabel,
   mergeDroppers,
@@ -39,6 +40,7 @@ import {
   skyDroppersFor,
   statedDroppers,
   type DropperMob,
+  type ItemDropRow,
   type KillTargetItem
 } from '../src/renderer/src/features/posky/poskyDroppers'
 import mobsRaw from '../src/renderer/src/data/eqlegends/mobs.json' with { type: 'json' }
@@ -70,6 +72,13 @@ const questRows = (q: PoskyQuest, have: Record<string, number> = {}): KillTarget
     where: it.where,
     droppers: skyDroppersFor(it.name, it.who)
   }))
+
+/** One item row exactly as the tracker hands it to the hover roster, read off the real scrape. */
+const itemFromScrape = (name: string): ItemDropRow => {
+  const it = QUESTS.flatMap((q) => q.items).find((x) => x.name === name)
+  assert.ok(it, `item not found in the committed scrape: ${name}`)
+  return { who: it.who, where: it.where, droppers: skyDroppersFor(it.name, it.who) }
+}
 
 const questByName = (className: string, name: string): PoskyQuest => {
   const q = QUESTS.find((x) => x.className === className && x.name === name)
@@ -430,4 +439,96 @@ test('the caption covers nearly every quest, and states an island for most', () 
     for (const t of questKillTargets(questRows(q)))
       for (const i of t.islands) assert.ok(stated.has(i), `${q.name}: ${i} is not stated by any item`)
   }
+})
+
+// =============================================================================
+// 10. The item hover's drop roster (JOS-173, re-shaped by JOS-181) — the WHO, not just the where
+// =============================================================================
+//
+// THE REGRESSION THIS SECTION EXISTS FOR, in the reporter's own words: "The tooltip for Sky drops is
+// no longer showing me who drops it on what island as it did in previous versions" — on 0.16.0 it
+// said "Island 5" and nothing more. Traced to 8e05a20 (JOS-143, shipped in v0.15.0), which deleted
+// every popper on the Sky tab and carried each roster over to a native `title`, except on the
+// required-item chip: there `ItemTooltip`'s lower block (posky's `where` AND a "Drops: <mobs>" line)
+// became `title={it.where}` — the where alone.
+//
+// WHAT MOVED IN JOS-181, AND WHAT DID NOT. The owner ruled the rich hover card back onto this tab
+// (the click-eating is now fixed in the popper — downward-only, no pointer events, closes on
+// pointerdown), so the roster is a rendered BLOCK again instead of a flattened one-string title:
+// `itemDropTitle` became `itemDropFacts`, which hands back the two parts the card draws. The
+// derivation is byte-for-byte the same and so are the goldens below — each one is the old string
+// split at the newlines it used to carry. The rule these pin is unchanged and is the whole point of
+// the section: an island is never the whole answer.
+//
+// "Island 5" is not a paraphrase of the report: Ceremonial Belt IS an Island 5 row, so the first
+// case below is the exact hover the player was looking at.
+
+test('the item hover names the mob AND the island — not the island alone (JOS-173)', () => {
+  const facts = itemDropFacts(itemFromScrape('Ceremonial Belt'))
+  // The 0.16.0 shape, pinned as what this must never be again: the where WITH nothing beside it.
+  assert.notEqual(facts.droppers.length, 0)
+  assert.deepEqual(facts, {
+    where: 'Island 5',
+    droppers: ['The Spiroc Lord · level 63 · Plane of Sky']
+  })
+})
+
+test('the item hover lists EVERY dropper, uncapped — the card has no line to blow out', () => {
+  // The efreeti case the inline cell's DROPPER_DISPLAY_CAP exists for: three mobs, all three here.
+  // This row states no `where` at all, so there is no island clause to invent (law 1).
+  assert.deepEqual(itemDropFacts(itemFromScrape('Efreeti Mace')), {
+    where: '',
+    droppers: [
+      'Noble Dojorn · level 63+ · Plane of Sky',
+      'Overseer of Air · level 63 · Plane of Sky',
+      'the Hand of Veeshan · level 63 · Plane of Sky'
+    ]
+  })
+})
+
+test("an item no mob resolves falls back to posky's own words, verbatim", () => {
+  // A wind rune: the honest "anywhere". `where` is carried as the scrape wrote it rather than
+  // through islandOf — "Plane of Sky" is a true answer that the island matcher deliberately drops.
+  assert.deepEqual(itemDropFacts(itemFromScrape('Wind Rune Meda')), {
+    where: 'Plane of Sky',
+    droppers: ['random drop — any Plane of Sky mob']
+  })
+})
+
+test('nothing known at all degrades to an empty block — never a guess', () => {
+  // Both parts empty is the caller's signal to draw no block at all (SkyItemCard.tsx).
+  assert.deepEqual(itemDropFacts({ droppers: [] }), { where: '', droppers: [] })
+  assert.deepEqual(itemDropFacts({ where: '  ', who: [' '], droppers: [] }), { where: '', droppers: [] })
+  // A stated `where` with no dropper still answers half the question.
+  assert.deepEqual(itemDropFacts({ where: 'Island 8', droppers: [] }), { where: 'Island 8', droppers: [] })
+})
+
+test('EVERY committed item row says who drops it, and none of them says only an island', () => {
+  // Over the real scrape: 222 rows, 128 distinct items. A floor plus a universal — the floor moves
+  // with a re-scrape, the universal IS the defect and must hold for every row.
+  let rows = 0
+  let named = 0
+  for (const q of QUESTS) {
+    for (const it of q.items) {
+      rows += 1
+      // Built from THIS row, not looked up by name: the same item can appear on several quests
+      // with its own stated `where`, and the row the player hovered is the one that must be right.
+      const droppers = skyDroppersFor(it.name, it.who)
+      const facts = itemDropFacts({ who: it.who, where: it.where, droppers })
+      // The regression, generalized: an island may never be the whole answer.
+      assert.ok(facts.droppers.length > 0, `${it.name}: no dropper line at all`)
+      if (droppers.length > 0) {
+        named += 1
+        assert.ok(
+          facts.droppers.every((d) => d.includes(' · Plane of Sky')),
+          `${it.name}: a resolved mob states no zone`
+        )
+      }
+      // …and the island, when posky states one, is still there beside them.
+      const island = islandOf(it.where)
+      if (island) assert.ok(facts.where.includes(island), `${it.name}: stated island lost`)
+    }
+  }
+  assert.ok(rows >= 222, `rows: ${rows}`)
+  assert.ok(named >= 123, `rows naming a catalog mob: ${named}`)
 })

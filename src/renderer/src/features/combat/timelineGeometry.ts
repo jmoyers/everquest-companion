@@ -178,13 +178,13 @@ function whoWord(kind: TimelineEvent['kind']): string {
 function resistTip(e: TimelineEvent, who: string, p: TipPalette): TipContent {
   const whose = who === 'You' ? 'your' : who === 'Pet' ? "pet's" : 'the'
   return {
-    title: `${e.lane} — RESISTED`,
+    title: `${e.lane} - RESISTED`,
     subtitle: `${who} · ${fmtClock(e.t)}`,
     // NO amount, ever (world-model law 8: a resist is damage-free) — and it says so in words,
     // because a bare `0` here would read as "hit for zero".
     rows: [
       { value: `${e.target ?? '?'} resisted ${whose} spell` },
-      { value: 'no damage — a fully-resisted cast', color: p.resist }
+      { value: 'no damage - a fully-resisted cast', color: p.resist }
     ]
   }
 }
@@ -192,11 +192,11 @@ function resistTip(e: TimelineEvent, who: string, p: TipPalette): TipContent {
 /** An avoided swing — `detail` names which of the miss family it was. */
 function missTip(e: TimelineEvent, who: string, p: TipPalette): TipContent {
   return {
-    title: `${e.lane} — ${(e.detail ?? 'miss').toUpperCase()}`,
+    title: `${e.lane} - ${(e.detail ?? 'miss').toUpperCase()}`,
     subtitle: `${who} · ${fmtClock(e.t)}`,
     rows: [
       { value: `${who} vs ${e.target ?? '?'}` },
-      { value: 'no damage — an avoided swing', color: p.resist }
+      { value: 'no damage - an avoided swing', color: p.resist }
     ]
   }
 }
@@ -227,14 +227,14 @@ export function markerTooltip(m: TimelineMarker): TipContent {
     { value: `${MARKER_VERB[m.kind]} ${fmtClock(m.t)}`, color: MARKER_COLOR[m.kind] }
   ]
   if (m.detail) rows.push({ value: m.detail })
-  return { title: `${m.label} — ${MARKER_WORD[m.kind]}`, rows }
+  return { title: `${m.label} - ${MARKER_WORD[m.kind]}`, rows }
 }
 
 /** Hover model for a pinned stance / invocation SPAN. */
 export function spanTooltip(s: StanceSpan): TipContent {
   return {
     title: `${s.group}: ${s.name}`,
-    rows: [{ value: `${fmtDur(s.start)} – ${fmtDur(s.end)}` }, { value: `${fmtDur(s.end - s.start)} active` }]
+    rows: [{ value: `${fmtDur(s.start)} - ${fmtDur(s.end)}` }, { value: `${fmtDur(s.end - s.start)} active` }]
   }
 }
 

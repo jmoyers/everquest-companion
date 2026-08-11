@@ -27,7 +27,7 @@ function createdCount(group: AlertGroup, existingIds: ReadonlySet<string>): numb
 
 /** The chip's tooltip: what the set is for, then every alert it would author. */
 function groupTooltip(group: AlertGroup): string {
-  return [group.subtitle, ...group.defs.map((d) => `${d.name} — ${d.line}`)].join('\n')
+  return [group.subtitle, ...group.defs.map((d) => `${d.name} - ${d.line}`)].join('\n')
 }
 
 function GroupChip({

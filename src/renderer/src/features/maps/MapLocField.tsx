@@ -18,6 +18,13 @@
 //
 // CLEARING IS ON THE CHIP, NOT ON THE MAP. The marker persists across restarts; a stray click on a
 // map surface must never be able to delete something the user typed and expects to find again.
+//
+// NO POPPER (JOS-143). This group sits at the wrapping end of the maps toolbar, so on a narrow
+// window it lands on the row BELOW the two pack selects and the zone combobox — a card opened from
+// here covers them. The field's own tooltip was the worse offender for a second reason the planner
+// already wrote down (`ClassFilter`, owner 2026-08-05): a hover box over an input the user types
+// into floats exactly where its own affordances are and reads as the UI blocking itself. All three
+// strings survive as native `title`s.
 
 import { useState, type JSX, type KeyboardEvent } from 'react'
 import { Chip, IconButton, Stack, TextField, Typography } from '@mui/material'
@@ -26,7 +33,6 @@ import CancelIcon from '@mui/icons-material/Cancel'
 import PlaceIcon from '@mui/icons-material/Place'
 import type { EqLoc } from './mapGeometry'
 import { formatLoc, parseLoc } from './locMarker'
-import { Tooltip } from '../../lib/Tooltip'
 
 export interface MapLocFieldProps {
   /** This zone's remembered marker, or null when it has none. */
@@ -62,51 +68,55 @@ export default function MapLocField({ marker, onPlace, onShow, onClear }: MapLoc
 
   return (
     <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap data-testid="maps-loc">
-      <Tooltip title="Type /loc in game and paste the line here — north/south, west/east, elevation.">
-        <TextField
+      <TextField
+        size="small"
+        label="/loc marker"
+        placeholder="1414.20, -735.55, 12.19"
+        value={text}
+        error={error != null}
+        data-testid="maps-loc-field"
+        title="Type /loc in game and paste the line here - north/south, west/east, elevation."
+        slotProps={{
+          htmlInput: { 'data-testid': 'maps-loc-input', 'aria-label': 'Place a marker from a /loc' }
+        }}
+        onChange={(e) => {
+          setText(e.target.value)
+          setError(null)
+        }}
+        onKeyDown={onKeyDown}
+        sx={{ minWidth: 210 }}
+      />
+      {/* The span outlives its tooltip: the button is disabled until something is typed, and a
+          disabled button swallows no mouse events. */}
+      <span title="Place the marker">
+        <IconButton
           size="small"
-          label="/loc marker"
-          placeholder="1414.20, -735.55, 12.19"
-          value={text}
-          error={error != null}
-          data-testid="maps-loc-field"
-          slotProps={{
-            htmlInput: { 'data-testid': 'maps-loc-input', 'aria-label': 'Place a marker from a /loc' }
-          }}
-          onChange={(e) => {
-            setText(e.target.value)
-            setError(null)
-          }}
-          onKeyDown={onKeyDown}
-          sx={{ minWidth: 210 }}
-        />
-      </Tooltip>
-      <Tooltip title="Place the marker">
-        <span>
-          <IconButton size="small" data-testid="maps-loc-place" disabled={text.trim() === ''} onClick={commit}>
-            <AddLocationAltIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+          aria-label="Place the marker"
+          data-testid="maps-loc-place"
+          disabled={text.trim() === ''}
+          onClick={commit}
+        >
+          <AddLocationAltIcon fontSize="small" />
+        </IconButton>
+      </span>
       {marker != null && (
-        <Tooltip title="The location you entered. Click to centre on it; ✕ to remove it.">
-          <Chip
-            size="small"
-            color="info"
-            variant="outlined"
-            icon={<PlaceIcon />}
-            data-testid="maps-loc-chip"
-            label={formatLoc(marker)}
-            onClick={onShow}
-            onDelete={onClear}
-            // NAMED, because the chip carries TWO icons and they do OPPOSITE things: the leading
-            // Place icon is part of the click target that centres on the marker, and this one
-            // deletes it. MUI's own class names distinguish them, but a spec that clicks
-            // `[chip] svg` gets the first — which is how the clear affordance was first asserted
-            // green while doing nothing at all.
-            deleteIcon={<CancelIcon data-testid="maps-loc-clear" titleAccess="Remove this marker" />}
-          />
-        </Tooltip>
+        <Chip
+          size="small"
+          color="info"
+          variant="outlined"
+          icon={<PlaceIcon />}
+          data-testid="maps-loc-chip"
+          title="The location you entered. Click to centre on it; ✕ to remove it."
+          label={formatLoc(marker)}
+          onClick={onShow}
+          onDelete={onClear}
+          // NAMED, because the chip carries TWO icons and they do OPPOSITE things: the leading
+          // Place icon is part of the click target that centres on the marker, and this one
+          // deletes it. MUI's own class names distinguish them, but a spec that clicks
+          // `[chip] svg` gets the first — which is how the clear affordance was first asserted
+          // green while doing nothing at all.
+          deleteIcon={<CancelIcon data-testid="maps-loc-clear" titleAccess="Remove this marker" />}
+        />
       )}
       {error != null && (
         <Typography variant="caption" color="error" data-testid="maps-loc-error" sx={{ maxWidth: 420 }}>

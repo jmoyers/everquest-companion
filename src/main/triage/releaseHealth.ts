@@ -49,7 +49,7 @@
 //     curve at 20% coverage is a rumour, and the reader can see that it is.
 
 import { compareVersions, RELEASE_NOTES } from '../../shared/releaseNotes'
-import { DIM_NONE, USAGE_METRICS } from '../../shared/telemetryRollup'
+import { DIM_NONE, isErrorHealthField, USAGE_METRICS } from '../../shared/telemetryRollup'
 import { MAX_TOP_ISSUES } from '../../shared/triage'
 import type {
   TriageAnalyticsReleaseHealth,
@@ -114,13 +114,24 @@ function byDay(rows: readonly UsageRow[], metric: string, dim?: string): Map<str
   return out
 }
 
-/** `day -> summed error count`, for one version, across all five fields. */
+/**
+ * `day -> summed error count`, for one version, across the health fields that MEAN AN ERROR.
+ *
+ * NOT every field (JOS-133). `imageFetchFailures` counts a handled condition owned by somebody
+ * else's server — 17,632 of them in 14 days, more than every real error the fleet has ever
+ * reported put together — and summed in here it would drown the signal this whole section exists
+ * to show, while moving with a wiki's uptime rather than with anything a release changed. The list
+ * is `HEALTH_NON_ERROR_FIELDS` (shared/telemetryRollup.ts), which is a DENY list so that a field
+ * added later and forgotten shows up as noise rather than disappearing. The excluded fields are
+ * still counted, still stored and still rendered in `byField` below and in the fleet Health
+ * section — they are excluded from a RATE, not from the readout.
+ */
 function errorsByDay(rows: readonly UsageRow[], version: string): Map<string, number> {
   const out = new Map<string, number>()
   for (const r of rows) {
     if (r.metric !== USAGE_METRICS.health) continue
     const split = splitHealthDim(r.dim)
-    if (split?.version !== version) continue
+    if (split?.version !== version || !isErrorHealthField(split.field)) continue
     out.set(r.day, (out.get(r.day) ?? 0) + r.n)
   }
   return out
@@ -251,17 +262,23 @@ function parseExemplar(raw: string): TriageErrorExemplar | null {
     const parsed: unknown = JSON.parse(raw)
     const v = validateTelemetryEvent(parsed)
     if (!v.ok || v.value.t !== 'errorReport') return null
-    const { errorName, code, redactedMessage, frames, breadcrumbs, view, sessionAgeBucket, mode } = v.value
+    const e = v.value
     const out: TriageErrorExemplar = {
-      errorName,
-      redactedMessage,
-      frames,
-      breadcrumbs,
-      view,
-      sessionAgeBucket,
-      mode
+      errorName: e.errorName,
+      redactedMessage: e.redactedMessage,
+      frames: e.frames,
+      breadcrumbs: e.breadcrumbs,
+      view: e.view,
+      sessionAgeBucket: e.sessionAgeBucket,
+      mode: e.mode
     }
-    if (code !== undefined) out.code = code
+    // The optional four are copied only when the validated event HAS them, so the panel can read
+    // "absent" as the fact it is (an older client, or nothing to say) rather than as a default
+    // somebody chose here.
+    if (e.code !== undefined) out.code = e.code
+    if (e.frameOrigin !== undefined) out.frameOrigin = e.frameOrigin
+    if (e.externalFrames !== undefined) out.externalFrames = e.externalFrames
+    if (e.componentPath !== undefined) out.componentPath = e.componentPath
     return out
   } catch {
     return null
@@ -280,8 +297,12 @@ function versionRow(
   }
 ): TriageReleaseHealthVersion {
   const reports = ctx.reports.get(version) ?? 0
+  // `byField` KEEPS every field (the mix is the readout, and hiding a counted thing from it would
+  // be the opposite of honest); the `errors` total takes only the ones that mean a fault. The two
+  // therefore no longer add up, which is exactly the distinction JOS-133 introduced — see
+  // `errorsByDay` above and `HEALTH_NON_ERROR_FIELDS` for why.
   const byField = fieldsOf(rows, version)
-  const errors = byField.reduce((sum, f) => sum + f.n, 0)
+  const errors = byField.filter((f) => isErrorHealthField(f.id)).reduce((sum, f) => sum + f.n, 0)
   const perDay = daysOf(version, rows, ctx.days, ctx.activeByDay)
   return {
     version,

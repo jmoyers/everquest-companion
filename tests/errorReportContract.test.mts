@@ -16,6 +16,12 @@
 //      bounds in `errorReport.ts`, and the breadcrumb vocabulary duplicated out of
 //      `logEventKinds.ts`.
 //
+// ITS SIBLING IS `tests/errorReportLocation.test.mts`, which holds the same three questions asked
+// of everything JOS-111 added — the external frames, the component path, the message skeleton and
+// their own duplicated patterns. That is a SPLIT rather than a second opinion: this file had
+// reached the repo's 400-code-line ceiling and the repo's answer to that is a cut on the file's
+// own seam, not a widened threshold.
+//
 // No Electron, no AWS, no network, no fixtures: this suite NEVER SKIPS.
 
 import { test } from 'node:test'

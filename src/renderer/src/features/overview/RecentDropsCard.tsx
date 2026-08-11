@@ -146,7 +146,7 @@ export function RecentDropsCard({ rows, onOpenLoot }: RecentDropsCardProps): JSX
     >
       <Box data-testid="overview-drops" sx={{ height: FEED_HEIGHT, overflow: 'auto', minWidth: 0 }}>
         {rows.length === 0 ? (
-          <QuietNote>Nothing looted yet — drops land here as you pick them up.</QuietNote>
+          <QuietNote>Nothing looted yet - drops land here as you pick them up.</QuietNote>
         ) : (
           rows.map((row) =>
             row.highlighted ? (

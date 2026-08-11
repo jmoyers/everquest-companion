@@ -5,7 +5,6 @@ import type { WindowedRows } from '../../lib/useWindowedRows'
 import type { InventoryRow } from '../inventory/reconcile'
 import type { GroupRow, KeyedLoot } from './lootGrouping'
 import { FlatRow, GroupedRow } from './lootRows'
-import { Tooltip } from '../../lib/Tooltip'
 
 // The spacer rows (top/bottom) that reserve the full scroll height so only the visible
 // slice of MUI rows is ever mounted — see useWindowedRows.
@@ -92,9 +91,9 @@ export function GroupedLootTable({
           <TableCell padding="checkbox" />
           <TableCell>Item</TableCell>
           <TableCell align="right">Times looted</TableCell>
-          <Tooltip title="Estimated count still on you.">
-            <TableCell align="right">In inventory</TableCell>
-          </Tooltip>
+          {/* The header carries the caveat as ONE WORD (JOS-127 + the house tooltip diet): a
+              popper on a sticky header hangs over the first rows, and every row is a control. */}
+          <TableCell align="right">In inventory (est.)</TableCell>
           <TableCell>Top source</TableCell>
           <TableCell align="right">Zones</TableCell>
           <TableCell>Last looted</TableCell>

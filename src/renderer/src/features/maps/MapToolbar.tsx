@@ -11,6 +11,14 @@
 // STATE, NEVER PROCESS (AGENTS.md UI conventions). Every control here states a fact — which
 // layers are drawn, which pack each half came from, which zone is open. Nothing narrates.
 //
+// AND NOTHING ON THIS ROW MOUNTS A POPPER (JOS-143). It is a WRAPPING row of controls, three of
+// which are dropdowns — the zone combobox and the two pack selects — and every popper on it was a
+// hit target sitting in the space where a neighbour's option list opens. The zone-mode chip is the
+// clearest case: it sits immediately right of the zone selector, so its card and that selector's
+// dropdown claim the same rectangle, and MUI tooltips take pointer events. Hover text that is
+// load-bearing survives as a native `title`: not in the DOM, no hit area, cannot eat a click. The
+// icon-only buttons keep an `aria-label` too, because a title is decoration and a name is not.
+//
 // THE ONE BOX THAT IS NOT A CONTROL OVER THE MAP FILE is the `/loc` field (JOS-98,
 // MapLocField.tsx): it states, and lets you set, the single position the app has been TOLD. It
 // earns its place on a row about the drawing because that is exactly what it is — the marker is
@@ -60,7 +68,6 @@ import type { EqLoc, LayerMask } from './mapGeometry'
 import ZoneSelect from './MapZoneSelect'
 import MapLocField from './MapLocField'
 import type { ZoneMode } from './zoneFollow'
-import { Tooltip } from '../../lib/Tooltip'
 
 /** The three optional layers, in file order. Layer 0 (the zone's geometry) is always drawn. */
 const TOGGLEABLE: { layer: MapLayer; label: string }[] = [
@@ -108,39 +115,39 @@ function FloorStepper({
   const band = floor == null ? null : bands[floor]
   return (
     <Stack direction="row" spacing={0.25} alignItems="center" data-testid="maps-floors" onKeyDown={onKeyDown}>
-      <Tooltip title="Lower level">
-        <span>
-          <IconButton size="small" data-testid="maps-floor-down" disabled={at <= -1} onClick={() => { step(-1) }}>
-            <KeyboardArrowDownIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip
-        title={
-          band ? `Elevation ${bandLabel(band)}` : 'Every elevation'
-        }
-      >
-        <Chip
+      {/* The spans stay: a DISABLED button swallows no mouse events, so the hover text has to
+          hang on the wrapper to be readable at the top and bottom of the stack. */}
+      <span title="Lower level">
+        <IconButton
           size="small"
-          variant={floor == null ? 'outlined' : 'filled'}
-          data-testid="maps-floor-label"
-          onClick={() => { onFloor(null) }}
-          label={floor == null ? 'All levels' : `Level ${String(floor + 1)} of ${String(bands.length)}`}
-          sx={{ minWidth: 104 }}
-        />
-      </Tooltip>
-      <Tooltip title="Higher level">
-        <span>
-          <IconButton
-            size="small"
-            data-testid="maps-floor-up"
-            disabled={at >= bands.length - 1}
-            onClick={() => { step(1) }}
-          >
-            <KeyboardArrowUpIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+          aria-label="Lower level"
+          data-testid="maps-floor-down"
+          disabled={at <= -1}
+          onClick={() => { step(-1) }}
+        >
+          <KeyboardArrowDownIcon fontSize="small" />
+        </IconButton>
+      </span>
+      <Chip
+        size="small"
+        variant={floor == null ? 'outlined' : 'filled'}
+        data-testid="maps-floor-label"
+        title={band ? `Elevation ${bandLabel(band)}` : 'Every elevation'}
+        onClick={() => { onFloor(null) }}
+        label={floor == null ? 'All levels' : `Level ${String(floor + 1)} of ${String(bands.length)}`}
+        sx={{ minWidth: 104 }}
+      />
+      <span title="Higher level">
+        <IconButton
+          size="small"
+          aria-label="Higher level"
+          data-testid="maps-floor-up"
+          disabled={at >= bands.length - 1}
+          onClick={() => { step(1) }}
+        >
+          <KeyboardArrowUpIcon fontSize="small" />
+        </IconButton>
+      </span>
     </Stack>
   )
 }
@@ -167,33 +174,31 @@ function ZoneModeControls({
   const pinned = mode === 'pinned'
   return (
     <>
-      <Tooltip
+      {/* THE popper that had to go first (JOS-143): this chip is the control immediately right of
+          the zone combobox, so its card opened into the space that combobox's option list uses. */}
+      <Chip
+        size="small"
+        data-testid="maps-zone-mode"
+        data-mode={mode}
+        variant={pinned ? 'filled' : 'outlined'}
+        icon={pinned ? <PushPinIcon /> : <ExploreIcon />}
         title={
           pinned
             ? 'This map is the one you picked. Zoning will not change it.'
             : 'This map follows the zone your character is in.'
         }
-      >
-        <Chip
-          size="small"
-          data-testid="maps-zone-mode"
-          data-mode={mode}
-          variant={pinned ? 'filled' : 'outlined'}
-          icon={pinned ? <PushPinIcon /> : <ExploreIcon />}
-          label={pinned ? 'Pinned' : 'Following you'}
-        />
-      </Tooltip>
+        label={pinned ? 'Pinned' : 'Following you'}
+      />
       {pinned && (
-        <Tooltip title="Show the zone your character is in — and follow it again from now on.">
-          <Button
-            size="small"
-            data-testid="maps-zone-current"
-            startIcon={<MyLocationIcon />}
-            onClick={onFollowCurrent}
-          >
-            Current zone
-          </Button>
-        </Tooltip>
+        <Button
+          size="small"
+          data-testid="maps-zone-current"
+          startIcon={<MyLocationIcon />}
+          title="Show the zone your character is in - and follow it again from now on."
+          onClick={onFollowCurrent}
+        >
+          Current zone
+        </Button>
       )}
     </>
   )
@@ -293,23 +298,35 @@ function DrawnControls(props: MapToolbarProps): JSX.Element {
   return (
     <>
       <Box>
-        <Tooltip title="Zoom in">
-          <IconButton size="small" data-testid="maps-zoom-in" onClick={() => { onZoom(1.35) }}>
-            <ZoomInIcon fontSize="small" />
+        <IconButton
+          size="small"
+          aria-label="Zoom in"
+          title="Zoom in"
+          data-testid="maps-zoom-in"
+          onClick={() => { onZoom(1.35) }}
+        >
+          <ZoomInIcon fontSize="small" />
+        </IconButton>
+        <IconButton
+          size="small"
+          aria-label="Zoom out"
+          title="Zoom out"
+          data-testid="maps-zoom-out"
+          onClick={() => { onZoom(1 / 1.35) }}
+        >
+          <ZoomOutIcon fontSize="small" />
+        </IconButton>
+        <span title="Fit the whole zone">
+          <IconButton
+            size="small"
+            aria-label="Fit the whole zone"
+            data-testid="maps-fit"
+            disabled={!zoomedIn}
+            onClick={onFit}
+          >
+            <CenterFocusStrongIcon fontSize="small" />
           </IconButton>
-        </Tooltip>
-        <Tooltip title="Zoom out">
-          <IconButton size="small" data-testid="maps-zoom-out" onClick={() => { onZoom(1 / 1.35) }}>
-            <ZoomOutIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Fit the whole zone">
-          <span>
-            <IconButton size="small" data-testid="maps-fit" disabled={!zoomedIn} onClick={onFit}>
-              <CenterFocusStrongIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        </span>
       </Box>
 
       <ToggleButtonGroup

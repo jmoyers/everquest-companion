@@ -17,11 +17,16 @@
 // GROUP BY offers only the axes its socket tab can serve (`plannerGroups.axesFor` — "Focus family"
 // exists on the Focus tab and nowhere else), so the control can never ask for a fold the model
 // would answer with one header.
+//
+// AND NO POPPER (JOS-143). The three toggle chips sit immediately right of the Slot and Group by
+// selects on a NOWRAP row, and their hints are sentences — a popper is centred on its anchor, so a
+// card wide enough to hold "Hide donors from outside <era>" reaches back across the select beside
+// it and, being interactive by default, eats the click aimed at that select. The hints are native
+// `title`s now: same words, no DOM node, no hit area.
 
 import type { JSX } from 'react'
 import { Chip, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material'
 import { EQUIP_SLOTS, planSlotLabel, type EquipSlot, type SocketType } from '@shared/planner/types'
-import { Tooltip } from '../../lib/Tooltip'
 import { CURRENT_ERA_LABEL, type DonorFilters } from './plannerData'
 import { AXIS_LABEL, SOCKET_LABEL, axesFor, type GroupAxis } from './plannerGroups'
 import type { BrowsePreset } from './plannerPreset'
@@ -30,7 +35,7 @@ import type { BrowsePreset } from './plannerPreset'
 const SOCKETS: SocketType[] = ['proc', 'worn', 'focus', 'click']
 
 /**
- * The bar's ON/OFF idiom: one chip, lit when the filter is on, and a tooltip that says what it
+ * The bar's ON/OFF idiom: one chip, lit when the filter is on, and hover text that says what it
  * hides and what it deliberately keeps. Three of them read identically because they ARE identical
  * — the differences worth seeing are in the words, not in the markup.
  */
@@ -48,17 +53,16 @@ function ToggleChip({
   testId?: string
 }): JSX.Element {
   return (
-    <Tooltip title={hint}>
-      <Chip
-        size="small"
-        label={label}
-        data-testid={testId}
-        color={on ? 'primary' : 'default'}
-        variant={on ? 'filled' : 'outlined'}
-        onClick={onToggle}
-        sx={{ flexShrink: 0 }}
-      />
-    </Tooltip>
+    <Chip
+      size="small"
+      label={label}
+      data-testid={testId}
+      title={hint}
+      color={on ? 'primary' : 'default'}
+      variant={on ? 'filled' : 'outlined'}
+      onClick={onToggle}
+      sx={{ flexShrink: 0 }}
+    />
   )
 }
 

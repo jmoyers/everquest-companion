@@ -176,14 +176,14 @@ export function releaseChart(
  */
 export function coverageNote(health: TriageAnalyticsReleaseHealth): string {
   if (!health.anyReporting) {
-    return 'No build in this window has reported health yet. The error curve is MISSING, not flat — nothing here says the fleet is healthy.'
+    return 'No build in this window has reported health yet. The error curve is MISSING, not flat - nothing here says the fleet is healthy.'
   }
   const share = health.coverageShare
-  const pct = share === null ? '—' : `${Math.round(share * 100).toString()}%`
+  const pct = share === null ? '-' : `${Math.round(share * 100).toString()}%`
   const quiet = health.versions.filter((v) => !v.reporting).length
   const tail =
     quiet === 0
       ? 'Every build shown reports.'
-      : `${quiet.toString()} build${quiet === 1 ? '' : 's'} shown cannot report — their rows read "not reporting", never zero.`
+      : `${quiet.toString()} build${quiet === 1 ? '' : 's'} shown cannot report - their rows read "not reporting", never zero.`
   return `${pct} of install-days in this window ran a build that can report errors. ${tail}`
 }

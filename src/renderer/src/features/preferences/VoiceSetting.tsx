@@ -184,7 +184,7 @@ function useKokoroInstall(): KokoroInstallState {
 function VoiceIntro(): JSX.Element {
   return (
     <Typography variant="caption" color="text.secondary" data-testid="pref-voice-intro">
-      Alerts speak when you set their output to Voice, in the Alerts tab — there is no switch here.
+      Alerts speak when you set their output to Voice, in the Alerts tab - there is no switch here.
       This is the voice they use. Muting alerts silences speech too.
     </Typography>
   )
@@ -219,7 +219,7 @@ function InstallProgress({ prog }: { prog: SpeechInstallProgress }): JSX.Element
         sx={{ mt: 0.5 }}
         data-testid="pref-voice-install-error"
       >
-        Download failed — {prog.message ?? 'no detail given'}. Nothing was installed.
+        Download failed - {prog.message ?? 'no detail given'}. Nothing was installed.
       </Typography>
     )
   }
@@ -249,7 +249,7 @@ function KokoroInstall({ install }: { install: KokoroInstallState }): JSX.Elemen
   return (
     <Box sx={{ mt: 0.5 }}>
       <Typography variant="caption" color="warning.main" display="block" data-testid="pref-voice-not-installed">
-        Not installed yet — alerts speak with a Windows voice until it is.
+        Not installed yet - alerts speak with a Windows voice until it is.
       </Typography>
       {progress && <InstallProgress prog={progress} />}
       {!running && (
@@ -295,7 +295,7 @@ function EngineRow({
         {SPEECH_ENGINES.map((engine) => (
           <MenuItem key={engine} value={engine}>
             {ENGINE_LABELS[engine]}
-            {engine === 'kokoro' && !installed ? ' — not installed' : ''}
+            {engine === 'kokoro' && !installed ? ' - not installed' : ''}
           </MenuItem>
         ))}
       </Select>

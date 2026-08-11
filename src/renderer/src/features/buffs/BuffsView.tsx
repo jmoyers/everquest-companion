@@ -65,8 +65,8 @@ function StatsTable({ stats, cls }: { stats: Record<string, BuffStat>; cls: Buff
           <TableCell align="right">estimate</TableCell>
           <TableCell align="right">n</TableCell>
           <TableCell align="right">median</TableCell>
-          <TableCell align="right">IQR (p25–p75)</TableCell>
-          <TableCell align="right">min–max</TableCell>
+          <TableCell align="right">IQR (p25-p75)</TableCell>
+          <TableCell align="right">min-max</TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -79,9 +79,10 @@ function StatsTable({ stats, cls }: { stats: Record<string, BuffStat>; cls: Buff
 }
 
 /**
- * The estimate the app uses (Task #34): DB duration when known ("db"), else the
- * recency-weighted max of samples ("observed"). Falls back to median for older deltas
- * without the field.
+ * The estimate the app uses (JOS-117): max(DB floor, recent observed max). The source names which
+ * WON — 'db' when the DB floor held, 'observed' when a logged cast beat it (shown as a "log" chip:
+ * the DB is the baseline, the log is what makes it accurate). Falls back to median for older
+ * deltas without the field.
  */
 function rowEstimate(s: BuffStat): { ms?: number | null; src?: string } {
   const ms = s.estimateMs ?? s.dbDurationMs ?? s.medianMs
@@ -92,17 +93,17 @@ function rowEstimate(s: BuffStat): { ms?: number | null; src?: string } {
 
 /** The estimate cell: the figure plus a chip naming where it came from. */
 function EstimateCell({ ms, src }: { ms?: number | null; src?: string }): JSX.Element {
-  if (ms == null) return <>—</>
+  if (ms == null) return <>-</>
   return (
     <Tooltip
-      title={src === 'db' ? 'From the spell database' : 'From your observed casts'}
+      title={src === 'db' ? 'The spell-database baseline' : 'From your logged casts - longer than the baseline'}
     >
       <span>
         {fmtDuration(ms)}
         {src ? (
           <Chip
             size="small"
-            label={src === 'db' ? 'db' : 'obs'}
+            label={src === 'db' ? 'db' : 'log'}
             variant="outlined"
             sx={{ ml: 0.5, height: 15, fontSize: 9, '& .MuiChip-label': { px: 0.4 } }}
           />
@@ -132,10 +133,10 @@ function StatsRow({ s }: { s: BuffStat }): JSX.Element {
       </TableCell>
       <TableCell align="right">{fmtDuration(s.medianMs)}</TableCell>
       <TableCell align="right" style={{ opacity: 0.8 }}>
-        {s.p25 != null && s.p75 != null ? `${fmtDuration(s.p25)} – ${fmtDuration(s.p75)}` : '—'}
+        {s.p25 != null && s.p75 != null ? `${fmtDuration(s.p25)} - ${fmtDuration(s.p75)}` : '-'}
       </TableCell>
       <TableCell align="right" style={{ opacity: 0.65 }}>
-        {s.minMs != null && s.maxMs != null ? `${fmtDuration(s.minMs)} – ${fmtDuration(s.maxMs)}` : '—'}
+        {s.minMs != null && s.maxMs != null ? `${fmtDuration(s.minMs)} - ${fmtDuration(s.maxMs)}` : '-'}
       </TableCell>
     </TableRow>
   )

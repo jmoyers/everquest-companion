@@ -100,7 +100,7 @@ function hostilePresence(st: EngineState, enc: Encounter, now: number): { hostil
  * `now`, so startTs/lastTs/duration reflect the real fight, not the eval moment.
  *
  * Rules:
- *  - CC-hold: if any engaged instance is still CC-held (ccActiveUntil > now), veto the
+ *  - CC-hold: if any engaged HOSTILE instance is still CC-held (ccActiveUntil > now), veto the
  *    DEATH-CLOSE (a mez'd mob is alive, and the mez-and-wait gap is not the end of a pull).
  *  - Death-close: once every engaged hostile instance is GONE — retired (dead/zoned),
  *    or alive but unseen for PRESENCE_GONE_MS — and LINGER_MS has passed since the last
@@ -117,6 +117,24 @@ function hostilePresence(st: EngineState, enc: Encounter, now: number): { hostil
  * stamps `lastActivityTs`, so an ACTIVELY refreshed mez still holds the fight open exactly as
  * before (its own refreshes keep `sinceActivity` small). What can no longer happen is a single
  * unrefreshed hold outliving a minute of total silence.
+ *
+ * AND THE HOLD ONLY EVER SPEAKS FOR AN ENGAGED HOSTILE (JOS-176). It answers exactly one
+ * question — "is this engaged instance still alive and still in the fight?" — so the two
+ * entities that can never be an answer to it are excluded, both for reasons this file already
+ * states about `hostilePresence`:
+ *   RETIRED — the hold is unredeemable the instant the world model retires the instance, because
+ *     a later sighting of that name mints a fresh `nameKey#gen` and can never re-enter this
+ *     stamp. Handled at the RETIREMENT SITE (`WorldModel.onRetire`, wired in EngineState) rather
+ *     than by a check here, so the stamp is simply gone and every retirement path agrees. It used
+ *     to be a delete inside ingestDeath, which meant a mob aged out by STALENESS went on vetoing
+ *     for the rest of its 120 seconds (measured: 614 such retirements in the owner's whole log).
+ *   A LIVE PET — never something we are killing, so a hold on one must not pin a fight open any
+ *     more than its presence may. This is the case the owner actually hit: in the Plane of Hate
+ *     his charmed pet and the mobs he is killing share ONE name, so when the last hostile twin
+ *     died, `Your Dazzle spell has worn off of <name>` (a CC refresh, JOS-161) resolved to the
+ *     only instance of that name still live — the pet — and stamped a 120s hold on it. The
+ *     skirmish could not close, and the Grandmaster R`tal pull 78 seconds later joined it
+ *     (tests/combatCcHoldWindows.test.mts replays that window).
  */
 export function evalClosure(st: EngineState, now: number): void {
   if (!st.current) return
@@ -144,9 +162,11 @@ function evalClosureInner(st: EngineState, now: number): void {
     return
   }
 
-  // CC-hold: any engaged instance still under an unexpired CC hold vetoes the death-close.
-  for (const until of enc.ccActiveUntil.values()) {
-    if (until > now) return
+  // CC-hold: any engaged instance still under an unexpired CC hold vetoes the death-close —
+  // EXCEPT one of your own live pets, for the reason hostilePresence() states three lines up
+  // about the very same judgement (JOS-176).
+  for (const [id, until] of enc.ccActiveUntil) {
+    if (until > now && !st.world.isLivePet(id)) return
   }
 
   const { hostiles, allGone } = hostilePresence(st, enc, now)
@@ -288,7 +308,7 @@ export function zoneSummary(st: EngineState): SegmentSummary {
   return {
     id: 'zone',
     kind: 'zone',
-    name: `${st.zone ?? 'Session'} — overall`,
+    name: `${st.zone ?? 'Session'} - overall`,
     zone: st.zone,
     durationSec: dur,
     total,

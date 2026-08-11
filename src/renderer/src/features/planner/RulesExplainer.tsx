@@ -90,10 +90,10 @@ export default function RulesExplainer({ onDismiss }: { onDismiss: () => void })
           {`Every item can carry one socket of each kind, and each kind opens at its own merge tier: ${unlockLine()}. The same tier is what a DONOR must reach before you can pull that effect out of it.`}
         </Rule>
         <Rule title="An effect only moves between items that match">
-          {`The donor and the destination must share an equipment slot and a class. Socketing then narrows the destination to the overlap — plan a Ranger-only proc into a six-class sword and it becomes a Ranger sword. Wide-class donors are the valuable ones, and the classes on this set are a FILTER on what you are shown, never a rule about what you may keep.`}
+          {`The donor and the destination must share an equipment slot and a class. Socketing then narrows the destination to the overlap - plan a Ranger-only proc into a six-class sword and it becomes a Ranger sword. Wide-class donors are the valuable ones, and the classes on this set are a FILTER on what you are shown, never a rule about what you may keep.`}
         </Rule>
         <Rule title="Haste never travels">
-          {'A haste effect cannot be moved. Haste gear is still worth wearing — it is just worth wearing as itself.'}
+          {'A haste effect cannot be moved. Haste gear is still worth wearing - it is just worth wearing as itself.'}
         </Rule>
         <Rule title="What it costs is merges, not money">{costLine()}</Rule>
         <Rule title="What you are being shown">
