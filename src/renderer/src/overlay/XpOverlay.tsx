@@ -4,8 +4,10 @@
 // Two reports converged on it from opposite ends — "xp/hr + eta overlay" and "a session widget:
 // dps, motes gathered, xp, money, configurable" — and the owner's scope is the narrow half of
 // that: the numbers a leveller glances at, NUMBERS FIRST AND SMALL, with a ROW CHECKLIST and no
-// widget builder. So there are three rows, they can each be switched off, and that is the whole of
-// the configurability.
+// widget builder. So there are three checklist entries, they can each be switched off, and that is
+// the whole of the configurability. An ENTRY IS NOT A LINE COUNT: 'motes' draws one line per tier
+// seen, and since JOS-202 'xp' draws one line per pace the log is stating — levels per hour and AA
+// per hour, because both bars fill while you level (shared/xpOverlay.ts states the rule).
 //
 // IT DERIVES NOTHING. Every number is the Leveling tab's own — `rangeStats`, `levelEta`, `aaEta`,
 // `windowItemRows` — composed by `overlay/xpRows.ts`, which is pure and node-tested. This file
@@ -57,7 +59,8 @@ const NO_EXTRA: readonly number[] = []
 /** How often the numbers are re-folded while the log is silent — see the file header. */
 const TICK_MS = 30_000
 
-/** The row checklist's button labels. The ids are `XpRowId`; these are what a user reads. */
+/** The row checklist's button labels. The ids are `XpRowId`; these are what a user reads. 'xp' is
+ *  the PACE entry — one button over however many pace lines the log can currently state. */
 const ROW_LABEL: Record<XpRowId, string> = { xp: 'xp', eta: 'next', motes: 'motes' }
 
 /** A slow local clock, so a slice that ends at the live edge keeps re-reading while nothing

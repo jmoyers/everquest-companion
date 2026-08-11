@@ -41,6 +41,28 @@
 // this app did not see cannot be reported, a placeholder cycle can put the trash mob there
 // instead, and none of that is in the log. `due` means "the estimate elapsed" and every label
 // says so (world-model law 1, and law 6's "say what the log cannot say").
+//
+// TRACKING IS OPT-IN, PER MOB (owner ruling, 2026-08-10, prototype round 1). There is no rule
+// that clocks a mob you did not ask about — not even "anything the wiki states a duration for",
+// which is what the first prototype shipped and what the owner threw out after using it. The
+// argument is the game's, not the UI's: EQ names are massively DUPLICATED (`a froglok guk
+// shaman` is dozens of unrelated spawn points across four zones, and a name that means one mob
+// in Befallen means trash in Guk), so a clock the player did not choose is a clock about a mob
+// the app cannot identify. Clocking everything the wiki knows therefore produces confident
+// countdowns for things nobody is camping. So: the Recently-killed panel is the DISCOVERY
+// surface — it lists what has died, which costs nothing and claims nothing — and a clock exists
+// only once the player clicks Watch or types a number. The wiki keeps both of its remaining
+// jobs (the default estimate for a watched mob you have no gap for yet, and the floor under the
+// gaps you do have); what it lost is the power to ADMIT a mob on its own.
+//
+// THE DISPLAY IS ZONE-SCOPED, THE DATA IS NOT (owner ruling, same round). The fold keeps every
+// (zone, mob) it has seen — walking away from Guk must not throw away what Guk taught — but a
+// respawn clock is only actionable where you are standing, and the overlay showing a mob due in
+// a zone three loading screens away is noise on top of the game. So the surfaces FILTER by the
+// zone the fold is currently in (`RespawnSnap.zone`, which is the module's own zone-stay state —
+// the same field that decides whether a gap counts, never a second tracker): the floating window
+// shows that zone and nothing else, and the Timers tab defaults to it with an explicit all-zones
+// view for editing. `respawnInZone` below is the ONE comparison both surfaces call.
 
 /** Which rung of the ladder produced the estimate on a row. `'none'` = no rung had anything. */
 export type RespawnSource = 'custom' | 'observed' | 'wiki' | 'none'
@@ -77,16 +99,14 @@ export interface RespawnWatchPref {
 
 export interface RespawnPrefs {
   /**
-   * Also watch, without being asked, any mob the committed wiki floor states a DURATION for.
-   * Default on: it is what makes the feature do something on the first kill of a fresh install,
-   * and it can only ever add mobs you actually killed.
+   * The mobs the player asked for, and the ONLY mobs that get a clock. An empty list means no
+   * clocks at all, which is what a fresh install has and what it keeps until somebody clicks
+   * Watch — see the opt-in paragraph in the header for why there is no rule that fills this in.
    */
-  autoWiki: boolean
-  /** Mobs the user explicitly watches. These are pinned above the auto ones. */
   watches: RespawnWatchPref[]
 }
 
-export const DEFAULT_RESPAWN_PREFS: RespawnPrefs = { autoWiki: true, watches: [] }
+export const DEFAULT_RESPAWN_PREFS: RespawnPrefs = { watches: [] }
 
 /** Longest custom respawn the editor accepts (a week), and the shortest (one second). */
 export const RESPAWN_CUSTOM_MIN_SEC = 1
@@ -98,7 +118,10 @@ export const RESPAWN_MAX_WATCHES = 200
 /**
  * Normalize whatever came out of the store or in over IPC. Runs at BOTH ends — the store reader
  * and the IPC handler — so a renderer can never write a shape the module then has to defend
- * against. Unknown fields are dropped rather than carried.
+ * against. Unknown fields are dropped rather than carried, which is also how the retired
+ * `autoWiki` flag leaves: a store written by the prototype build loads here as its watch list and
+ * nothing else, so the ruling that removed auto-watch takes effect on the next read with no
+ * migration to write.
  */
 export function normalizeRespawnPrefs(raw: unknown): RespawnPrefs {
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_RESPAWN_PREFS, watches: [] }
@@ -112,7 +135,7 @@ export function normalizeRespawnPrefs(raw: unknown): RespawnPrefs {
     watches.push(clean)
     if (watches.length >= RESPAWN_MAX_WATCHES) break
   }
-  return { autoWiki: obj.autoWiki !== false, watches }
+  return { watches }
 }
 
 function normalizeWatch(raw: unknown): RespawnWatchPref | null {
@@ -190,8 +213,6 @@ export interface RespawnRow {
   wikiMs?: number
   /** How many deaths of this mob this fold has counted in this zone. */
   kills: number
-  /** True when the user watches this mob explicitly (rather than the auto-wiki rule). */
-  pinned: boolean
 }
 
 /** A mob you recently killed, offered in the view as a one-click watch. */
@@ -238,6 +259,40 @@ export function mergeRespawnDelta(_state: RespawnSnap, delta: RespawnDelta): Res
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SCOPING THE DISPLAY TO ONE ZONE (owner ruling — see the header)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The zone comparison key: trimmed and lowercased, the same canonicalization `idKey` applies to
+ * every other dirty name in this app (world-model law 2 — canonicalize at boundaries, display
+ * raw). Spelled here rather than imported because this file is pure and `idKey` lives in the
+ * main-process parser; the two agree by rule, and a row's `id` is built from `idKey(zone)` on the
+ * far side of that rule.
+ */
+export function respawnZoneKey(zone: string): string {
+  return zone.trim().toLowerCase()
+}
+
+/**
+ * Everything from one zone, in order, out of a list of rows or candidates.
+ *
+ * THE EMPTY ZONE IS A ZONE — its own bucket, not a wildcard. Before the fold has seen any
+ * `You have entered` line the snapshot's zone is `''` and so is every row's, so an unplaced kill
+ * shows while the app is still unplaced and vanishes the moment a zone line says where you are.
+ * The alternative (treat unknown as "show everything") would put the exact cross-zone list the
+ * owner rejected on screen for the first seconds of every launch, and the opposite (show nothing)
+ * would hide rows that are, as far as anything knows, right here.
+ *
+ * A DUE CLOCK IN ANOTHER ZONE IS STILL ANOTHER ZONE'S. Nothing about `due` widens this filter: a
+ * mob that came up in Guk while you are in Befallen is not something you can act on, and the row
+ * is waiting in the tab's all-zones view (and in the fold) for when you go back.
+ */
+export function respawnInZone<T extends { zone: string }>(items: readonly T[], zone: string): T[] {
+  const want = respawnZoneKey(zone)
+  return items.filter((i) => respawnZoneKey(i.zone) === want)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // READING A ROW AGAINST THE CLOCK
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -280,12 +335,15 @@ export function respawnRowExpired(row: RespawnRow, nowMs: number): boolean {
 }
 
 /**
- * Display order: pinned mobs first (you asked for those), then soonest due, then the ones with
- * no estimate. Ties break on name so the list never shuffles under a re-render.
+ * Display order: soonest due first, then the ones with no estimate. Ties break on name so the
+ * list never shuffles under a re-render.
+ *
+ * There is no "pinned first" tier any more, and there is nothing to be pinned ABOVE: every row on
+ * screen is a mob the player asked for by name (the opt-in ruling in the header), so a rank that
+ * says "this one was your idea" would sort every row into the same bucket.
  */
 export function orderRespawnRows(rows: readonly RespawnRow[], nowMs: number): RespawnRow[] {
   return [...rows].sort((a, b) => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
     const ra = respawnReading(a, nowMs)
     const rb = respawnReading(b, nowMs)
     const ka = ra.remainingMs ?? Number.POSITIVE_INFINITY

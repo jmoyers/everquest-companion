@@ -20,14 +20,34 @@
 // "fed from the same selectors the Leveling tab uses".
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────
-// THE WINDOW CHANGES WHAT IT IS TALKING ABOUT AT THE CAP, AND SAYS SO.
+// AA IS A SECOND PACE, NOT A CONSOLATION PRIZE FOR THE CAP (JOS-202).
 //
-// Every levels number is built on stated level-bar percentages, and at max level the game stops
-// stating them (`atCap`). A window whose two headline rows were permanently em-dashed would be a
-// window a capped character closes — so both rows switch to the AA read together: the rate becomes
-// AA/hr and the projection becomes the inferred wait for the next completion. The row LABELS
-// change with them ('XP' → 'AA', 'Next level' → 'Next AA'), because a number that quietly means
-// something else is worse than no number.
+// The first cut swapped the pace row's SUBJECT at the cap: levels while the bar was stated, AA once
+// it was not. That is the wrong shape, because the two are not alternatives — a character in their
+// forties is filling a level bar and an AA bar at the same time, and the owner wants both read at a
+// glance. So the pace checklist entry draws ONE ROW PER MEASURE THE LOG STATES, exactly as the
+// motes entry draws one row per tier observed:
+//
+//   'xp'  levels of progress per hour — while the game is still stating a level-bar percentage.
+//   'aa'  AA completions per hour, with the ability points they paid riding as the row's detail.
+//
+// WHEN EACH ONE IS THERE, and why:
+//   · the levels row goes away AT THE CAP (`atCap`) and only there — every levels number is built
+//     on stated percentages, and at max level the game stops stating them. A permanent em-dash is
+//     a row a capped character closes the window over.
+//   · the AA row appears whenever the SLICE HOLDS A COMPLETION — which is `aaRateText`'s own rule
+//     on the Leveling tab ("a character earning no AA is told nothing about AA", law 1), quoted
+//     rather than re-decided here — and unconditionally at the cap, where it is the only pace read
+//     left and a window with no pace row at all would be worse than one reading 0.00.
+//
+// The two rates are the same denominator (active time, stated once under the rows), so they read
+// against each other, and the AA pair (completions · points) is printed together for the reason the
+// Leveling tab prints it together: they are equal until an item-shop bottle is running and diverge
+// while one is, and that divergence is the whole reading.
+//
+// The PROJECTION row still switches: 'Next level' while there is a bar to finish, 'Next AA' once
+// there is not. It is one row and one question ("what lands next"), and at the cap the level half
+// of it has no answer at all.
 //
 // THE AA WAIT IS INFERRED AND WEARS THE WORD (`AA_EST`). The log carries no AA-experience line
 // anywhere — there is no bar position to sum — so it is projected from the rhythm of recent
@@ -44,7 +64,7 @@ import { moteRates, xpRowVisible, type XpRowId } from '../../../shared/xpOverlay
 import { AA_EST, AA_ETA_BLOCKED_TITLE, aaEtaValue } from '../features/leveling/aaPaceRows'
 import { NONE, activeSpanText } from '../features/leveling/rangeStatsRows'
 import { fmtDuration } from '../features/leveling/levelChartGeometry'
-import { formatAaRate, formatDropRate, formatLevelRate } from '../lib/formatRate'
+import { formatAaRate, formatDropRate, formatLevelRate, formatPointRate } from '../lib/formatRate'
 
 /** One printed row: a label, a number, its unit, and a dim trailing detail. */
 export interface XpOverlayRow {
@@ -93,21 +113,59 @@ function rate(n: number | null, fmt: (v: number) => string): string {
 
 const XP_TITLE =
   'Levels of progress per hour of active time. The log states a percentage of the current level bar, never experience points.'
-const AA_RATE_TITLE = 'AA completions per hour of active time - the read that keeps working at the cap.'
+const AA_RATE_TITLE =
+  'AA completions per hour of active time, and the ability points they paid - the read that keeps working at the cap.'
 
-/** The PACE row: levels per hour, or AA per hour once the level bar stops being stated. */
-function paceRow(stats: RangeStats, capped: boolean): XpOverlayRow {
-  const r = split(capped ? rate(stats.aaPerHourActive, formatAaRate) : rate(stats.levelsPerHourActive, formatLevelRate))
+/** The LEVELS pace. Drawn while the game is still stating a level-bar percentage; see the header
+ *  for why it is absent at the cap rather than an em-dash. */
+function levelsRow(stats: RangeStats): XpOverlayRow {
+  const r = split(rate(stats.levelsPerHourActive, formatLevelRate))
   return {
     id: 'xp',
     row: 'xp',
-    label: capped ? 'AA' : 'XP',
+    label: 'XP',
     value: r.value,
-    unit: r.unit || (capped ? 'AA/hr' : 'lvl/hr'),
+    unit: r.unit || 'lvl/hr',
     detail: '',
-    title: capped ? AA_RATE_TITLE : XP_TITLE,
+    title: XP_TITLE,
     inferred: false
   }
+}
+
+/**
+ * The AA pace — completions per hour, with the points those completions paid as the row's detail.
+ *
+ * BOTH NUMBERS ARE THE LEVELING TAB'S (`aaPerHourActive` / `aaPointsPerHourActive`, the pair
+ * `aaRateText` prints in one chip), in the tab's own spellings. Nothing is divided here.
+ * The detail is empty rather than an em-dash when the slice has no active time to divide by: a
+ * dim trailing '-' beside a value that is already an em-dash says the same nothing twice.
+ */
+function aaRow(stats: RangeStats): XpOverlayRow {
+  const r = split(rate(stats.aaPerHourActive, formatAaRate))
+  return {
+    id: 'aa',
+    row: 'xp',
+    label: 'AA',
+    value: r.value,
+    unit: r.unit || 'AA/hr',
+    detail: stats.aaPointsPerHourActive == null ? '' : formatPointRate(stats.aaPointsPerHourActive),
+    title: AA_RATE_TITLE,
+    inferred: false
+  }
+}
+
+/**
+ * The PACE rows — one per measure the log is stating (JOS-202). The order is levels then AA: the
+ * bar you are watching first, the bar you are also filling second, and at the cap only the second
+ * one exists.
+ */
+function paceRows(stats: RangeStats, capped: boolean): XpOverlayRow[] {
+  const rows: XpOverlayRow[] = []
+  if (!capped) rows.push(levelsRow(stats))
+  // The Leveling tab's rule (`aaRateText`) for a window holding no completion at all: say nothing
+  // about AA rather than print a row of em-dashes. At the cap it is the only pace read there is.
+  if (capped || stats.aaGainEvents > 0) rows.push(aaRow(stats))
+  return rows
 }
 
 /** The AA half of the projection row — inferred, and labelled so (see the header). */
@@ -240,7 +298,7 @@ export function xpOverlayView(args: XpRowsArgs): XpOverlayView {
   const stats = rangeStats({ snap, range: slice.range, zoneKey: slice.zoneKey })
   const capped = atCap(stats)
   const rows: XpOverlayRow[] = []
-  if (xpRowVisible('xp', visible)) rows.push(paceRow(stats, capped))
+  if (xpRowVisible('xp', visible)) rows.push(...paceRows(stats, capped))
   if (xpRowVisible('eta', visible)) rows.push(etaRow(snap, stats, capped))
   if (xpRowVisible('motes', visible)) rows.push(...moteRows(loot, slice, stats))
   return { rows, span: activeSpanText(stats.activeMs), level: currentLevel(snap), atCap: capped }

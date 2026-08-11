@@ -71,9 +71,9 @@ export interface ModuleWiringDeps extends ConsiderDeps, EventFeedDeps {
    */
   buffTrust?: BuffTrustPrefs
   /**
-   * The user's respawn watch list (JOS-194). The store owns it; absent ⇒ the shipped default
-   * (auto-watch anything the committed wiki floor states a duration for, no explicit watches),
-   * which is what the bench and every non-Electron caller wants.
+   * The user's respawn watch list (JOS-194). The store owns it; absent ⇒ the shipped default,
+   * which is an EMPTY list — tracking is opt-in per mob, so a caller that passes nothing gets a
+   * module that clocks nothing. That is what the bench and every non-Electron caller wants.
    */
   respawnPrefs?: RespawnPrefs
 }

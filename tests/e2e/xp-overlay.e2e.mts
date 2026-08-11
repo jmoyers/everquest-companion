@@ -160,17 +160,35 @@ async function stepOpenAndChrome(page: Page, app: ElectronApplication): Promise<
  * that only rode `module:delta` would sit at an empty snapshot forever on an idle log. The fixture
  * carries 341 experience lines and a ding, so a REAL pace and a REAL level are what a wired window
  * shows — an em-dash on both would be exactly the JOS-172 bug in a new window.
+ *
+ * IT ALSO CARRIES AA GAIN LINES while the character is still levelling (the log states a level-bar
+ * percentage on every one of those 341), which is JOS-202's whole case: both bars are filling, so
+ * the window draws BOTH paces. This is the only test that can show the two arriving together out of
+ * one real fold.
  */
 async function stepHydratesFromTheFold(overlay: Page): Promise<void> {
-  // THREE rows exactly, and the count is an assertion in its own right: the query below selects
-  // rows and nothing else (see `rows`), so a fourth would mean something is being drawn twice.
-  const seen = await settle(() => rows(overlay), (r) => r.length >= 3, { timeoutMs: 30_000 })
-  check('the window draws one row per checklist entry', seen.length === 3, JSON.stringify(seen))
-  const xp = seen.find((r) => r.row === 'xp')
+  // FOUR rows exactly, and the count is an assertion in its own right: the query below selects rows
+  // and nothing else (see `rows`), so a fifth would mean something is being drawn twice.
+  const seen = await settle(() => rows(overlay), (r) => r.length >= 4, { timeoutMs: 30_000 })
+  check(
+    'the window draws both paces, the projection and the motes line',
+    JSON.stringify(seen.map((r) => r.id)) === '["xp","aa","eta","motes-none"]',
+    JSON.stringify(seen)
+  )
+  const xp = seen.find((r) => r.id === 'xp')
   check(
     'the pace row carries a number folded out of the log, not an em-dash',
     xp !== undefined && /^\d/.test(xp.value),
     JSON.stringify(xp)
+  )
+  // JOS-202: the AA read is not reserved for the cap. This character is levelling — the levels row
+  // above proves the log is still stating a bar — and the AA row is beside it, on the same
+  // checklist entry, with a number out of the same fold.
+  const aa = seen.find((r) => r.id === 'aa')
+  check(
+    'AA per hour is drawn WHILE LEVELING, beside the levels pace',
+    aa !== undefined && aa.row === 'xp' && aa.label === 'AA' && /^\d/.test(aa.value),
+    JSON.stringify(aa)
   )
   const header = await overlay.evaluate(() => document.body.innerText)
   check('…and the header states the level the log last reported', /lvl \d+/.test(header), header.slice(0, 160))
@@ -213,7 +231,9 @@ async function stepLiveMote(overlay: Page, log: FixtureLog): Promise<void> {
  * DOM, AND the choice lands in `overlays.xp` where the next launch will read it.
  */
 async function stepRowChecklist(overlay: Page): Promise<void> {
-  check('the checklist offers one toggle per row', (await countOf(overlay, '[data-testid^="xp-toggle-"]')) === 3)
+  // One toggle per CHECKLIST ENTRY, which is not one per drawn line: 'xp' covers both paces and
+  // 'motes' covers however many tiers dropped (shared/xpOverlay.ts states the rule).
+  check('the checklist offers one toggle per entry', (await countOf(overlay, '[data-testid^="xp-toggle-"]')) === 3)
 
   await setConfig(overlay, { xpRows: ['xp', 'eta'] })
   const hidden = await settle(() => rows(overlay), (r) => !r.some((x) => x.row === 'motes'), { timeoutMs: 15_000 })

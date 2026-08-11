@@ -10,6 +10,15 @@
 // a second opinion about which mob is due soonest, one process away from the first, is exactly the
 // drift the shared/ split exists to prevent.
 //
+// IT SHOWS THE ZONE YOU ARE IN, AND NOTHING ELSE (owner ruling after the first hands-on round,
+// 2026-08-10). The fold keeps every zone it has walked through, and this window used to draw all of
+// them — so a Befallen camp put four Guk clocks over the game, none of which anybody could act on.
+// The filter is `respawnInZone(snap.rows, snap.zone)`: the module's OWN zone-stay state, published
+// in the snapshot, applied by the shared helper the Timers tab also calls. Nothing is derived here
+// and no second zone is tracked. A clock in another zone is not hidden data — it is still in the
+// fold and still on the tab's all-zones view — it is just not something this window can help with,
+// and that includes one that has come DUE (see the helper's header).
+//
 // IT TICKS ITSELF, at 1 Hz, because a countdown is the one thing in this app that must keep moving
 // while the log is silent — and a row carries its own `diedTs`, so ticking costs no IPC at all.
 // (The XP window's clock is 30 s for the opposite reason: nothing in it is a countdown.)
@@ -22,6 +31,7 @@ import {
   mergeRespawnDelta,
   orderRespawnRows,
   respawnClockLabel,
+  respawnInZone,
   respawnReading,
   respawnSourceLabel,
   type RespawnDelta,
@@ -169,10 +179,13 @@ export default function RespawnOverlay(): JSX.Element {
   const { locked, bgAlpha, textScale, hovering, patch, toggleLock, capture, dragRegion, noDrag } =
     useOverlayChrome()
   const nowMs = useSecondsClock()
-  // Re-ordered against the LOCAL clock, not the one the fold last published: "soonest due" moves
-  // every second whether or not the log does, and a list that only re-sorts on a death line would
-  // put a mob that came due a minute ago below one that has ten minutes to run.
-  const rows = orderRespawnRows(snap.rows, nowMs)
+  // Scoped to the zone the fold says you are in FIRST, then re-ordered against the LOCAL clock —
+  // not the one the fold last published: "soonest due" moves every second whether or not the log
+  // does, and a list that only re-sorts on a death line would put a mob that came due a minute ago
+  // below one that has ten minutes to run.
+  const rows = orderRespawnRows(respawnInZone(snap.rows, snap.zone), nowMs)
+  /** Clocks the fold is holding for somewhere else. Counted so the empty state can say so. */
+  const elsewhere = snap.rows.length - rows.length
 
   return (
     <div
@@ -203,11 +216,13 @@ export default function RespawnOverlay(): JSX.Element {
 
       <OverlayContent textScale={textScale} testId="respawn-overlay-rows" locked={locked} capture={capture}>
         {rows.length === 0 ? (
-          // An empty window is a STATE, and it says which one — this is the single most likely
-          // thing a first-time user sees, and "nothing watched yet" is the answer that tells them
-          // where to go.
+          // An empty window is a STATE, and it says WHICH one — this is the single most likely
+          // thing a first-time user sees. Two different empties: nothing watched anywhere (go to
+          // the tab), or clocks running somewhere you are not (they are safe, they are not here).
           <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', padding: '8px 2px' }}>
-            No clocks running - kill something, then Watch it on the Timers tab.
+            {elsewhere > 0
+              ? `No clocks in this zone - ${String(elsewhere)} running elsewhere.`
+              : 'No clocks running - kill something, then Watch it on the Timers tab.'}
           </div>
         ) : (
           rows.map((row) => <RespawnLine key={row.id} row={row} nowMs={nowMs} />)

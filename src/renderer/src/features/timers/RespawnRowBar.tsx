@@ -49,10 +49,10 @@ export function respawnProvenance(row: RespawnRow): string {
   return parts.filter((p) => p.length > 0).join(' ')
 }
 
-/** The left accent: green once due, gold for a mob you asked for by name, blue for an auto row. */
-function accent(due: boolean, pinned: boolean): string {
-  if (due) return 'success.main'
-  return pinned ? 'warning.main' : 'info.main'
+/** The left accent: green once the clock ran out, blue while it runs. Every row on screen is a mob
+ *  the user asked for (tracking is opt-in), so there is no second class of row to colour apart. */
+function accent(due: boolean): string {
+  return due ? 'success.main' : 'info.main'
 }
 
 export function RespawnRowBar({ row, nowMs }: { row: RespawnRow; nowMs: number }): JSX.Element {
@@ -69,7 +69,7 @@ export function RespawnRowBar({ row, nowMs }: { row: RespawnRow; nowMs: number }
           px: 1,
           py: 0.75,
           borderLeft: 3,
-          borderColor: accent(r.due, row.pinned),
+          borderColor: accent(r.due),
           bgcolor: 'action.hover',
           borderRadius: 0.5
         }}

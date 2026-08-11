@@ -23,11 +23,19 @@ import { windowItemRows } from './lootRates'
 /**
  * The rows this window can draw, in the order it draws them.
  *
- *   'xp'    — the progress rate. Levels of progress per hour of active time, or — once the level
- *             bar stops being stated — AA per hour, which is the read that survives the cap
+ *   'xp'    — the progress rate(s). ONE ROW PER MEASURE THE LOG IS STATING (JOS-202), like the
+ *             motes entry below: levels of progress per hour while the game still states a level-bar
+ *             percentage, AND AA per hour whenever the slice holds a completion — the two bars fill
+ *             at the same time and a leveller wants both. At the cap only the AA row survives
  *             (JOS-36/11; shared/aaPace.ts states why those are two different measurements).
  *   'eta'   — what is next: time to the level, or (at cap) the inferred wait for the next AA.
  *   'motes' — motes per hour, one line per mote type seen in the slice.
+ *
+ * SO A CHECKLIST ENTRY IS NOT A ROW COUNT. `XpRowId` is what a user switches off; how many lines
+ * that draws is the window's business (`overlay/xpRows.ts`), and it changes with what the log has
+ * said. That is why the persisted union could stay closed and unchanged through JOS-202: a stored
+ * ['xp','eta'] from a build before it still means "the pace and what is next", and picks up the AA
+ * row without the user re-visiting the checklist.
  *
  * A CLOSED UNION, because it is persisted: a stored id this build does not know is dropped rather
  * than rendered, and a future row cannot be turned on by a hand-edited store.

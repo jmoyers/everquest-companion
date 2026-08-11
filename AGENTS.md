@@ -24,7 +24,8 @@ docs/plans/exaltation-planner.md; era = zone provenance ∪ page dropsfrom,
 page-top era banner resolves unknowns, shared/planner/*), celebration
 toasts (docs/plans/celebration-toasts.md), and a TIMERS tab + overlay
 (JOS-194: respawn clocks started by death messages, numbered from your own
-kills — law 13 below). Committed knowledge DBs: mobs
+kills, opt-in per mob and scoped to the zone you are in — law 13 below).
+Committed knowledge DBs: mobs
 (7.9k), items (11.2k incl. dropsfrom + eraTag), spells (1.9k), classes,
 zones (era-annotated), wiki respawn floors (507 rows, 394 readable). First stable release v0.2.0 (2026-08-03); latest
 release v0.8.0 (2026-08-07: maps N-S fix, Sky keyring counting, planner
@@ -866,6 +867,24 @@ minimal `eqOverlay` bridge (transparent alwaysOnTop, click-through pin).
    seconds, so a grammar fix re-derives the file with NO network
    (`npm run scrape:respawns -- --reparse`) and the UI can quote what the wiki
    said instead of inventing a number.
+   **TRACKING IS OPT-IN PER MOB, AND THE DISPLAY IS ZONE-SCOPED** (owner, after
+   using the prototype, 2026-08-10). The first cut also auto-watched the 394
+   mobs the floor gives a duration for; the owner threw that out, because EQ
+   names are massively DUPLICATED across zones and spawn points, so a clock
+   nobody asked for is a clock about a mob the app cannot identify. The
+   Recently-killed panel is the discovery surface (seeing a death costs nothing
+   and claims nothing); a clock exists only once the player clicks Watch or
+   types a number. The wiki keeps the two jobs above and loses the power to
+   ADMIT a row. Separately, the fold keeps every zone it has walked through but
+   the SURFACES show only the zone you are in — the overlay always, the Timers
+   tab by default with an explicit all-zones view — filtered by the module's
+   OWN zone-stay state (`RespawnSnap.zone`, the same field that decides whether
+   a gap counts) through one shared helper. Two edges are decided: the empty
+   zone is its own BUCKET rather than a wildcard, and `due` never widens the
+   filter. **And that made the zone part of what the screen shows, which
+   promoted it to a revision-bearing change** — the module now bumps `rev` on a
+   zone line, or `useModule`'s seq dedupe swallows the one push that says you
+   left (JOS-87's rule, re-learned in the real app).
 
 ## Log-format quick reference (all validated against the real log)
 

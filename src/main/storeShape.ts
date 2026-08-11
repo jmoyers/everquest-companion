@@ -125,8 +125,8 @@ export interface StoreShape {
   buffTrust?: BuffTrustPrefs
   /**
    * Which mobs get a respawn clock, and the numbers the user typed for them (JOS-194;
-   * shared/respawn.ts). ABSENT MEANS THE SHIPPED DEFAULT — auto-watch anything the committed wiki
-   * floor states a duration for, with no explicit watches — so it is another additive optional key
+   * shared/respawn.ts). ABSENT MEANS THE SHIPPED DEFAULT — no watches at all, because tracking is
+   * opt-in per mob and nothing clocks a mob you did not ask for — so it is another additive key
    * on the carve-out above: no schema bump, no migration, and `normalizeRespawnPrefs` defaults
    * every field, so an older build reading a store written here is unaffected and vice versa.
    */

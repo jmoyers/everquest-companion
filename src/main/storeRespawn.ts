@@ -8,10 +8,13 @@
 // only thing that could not move: `respawn`'s place in `StoreShape`, and the `settingsStore` handle
 // this file reads it through — see the banner on that export.
 //
-// NO SCHEMA BUMP. The key is additive and optional, and an absent one reads as the shipped default
-// (auto-watch anything the committed wiki floor states a duration for, no explicit watches). So a
-// store written by an older build loads here unchanged, and one written here still opens in a build
-// that predates the feature. The `lastSeenNotesVersion` / `uiScale` precedent, stated in StoreShape.
+// NO SCHEMA BUMP, AND NONE FOR THE RETIRED FLAG EITHER. The key is additive and optional, and an
+// absent one reads as the shipped default: NO watches, because tracking is opt-in per mob (owner
+// ruling — shared/respawn.ts). So a store written by an older build loads here unchanged, and one
+// written here still opens in a build that predates the feature. The prototype's `autoWiki` flag
+// needs no migration to disappear: `normalizeRespawnPrefs` drops unknown fields, so a store that
+// still carries it reads as its watch list and is rewritten without it on the next set.
+// The `lastSeenNotesVersion` / `uiScale` precedent, stated in StoreShape.
 //
 // TWO CALLERS, AND THEY WANT DIFFERENT MOMENTS. `src/main/pipeline.ts` reads it while CONSTRUCTING
 // the module graph, so the first fold already knows what you watch; `src/main/ipc/respawn.ts`

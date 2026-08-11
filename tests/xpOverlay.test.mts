@@ -7,7 +7,9 @@
 // `windowItemRows` in tests/lootRates.test.mts, and the slice definitions in
 // tests/timeslice.test.mts. So nothing here re-checks an arithmetic. What it checks is the part
 // that is NEW — which rows exist, which are switched off, what a mote is, and the one thing the
-// window does that no other surface does: SWITCH WHAT IT IS TALKING ABOUT AT THE CAP.
+// window does that no other surface does: DECIDE WHICH PACES THE LOG CAN CURRENTLY STATE (levels
+// and AA while both bars are moving; AA alone at the cap — JOS-202) and change its vocabulary with
+// them.
 //
 // SNAPSHOTS ARE HAND-BUILT AND ANCHORED IN THE PAST, like every other test over this model: the
 // derivations read `snap.lastTs` and never `Date.now()`, and a fixture near the wall clock would
@@ -199,7 +201,7 @@ test('the ZONE half of a slice reaches the motes too — instance noise and all'
 })
 
 // ---------------------------------------------------------------------------------------
-// THE TWO HEADLINE ROWS, AND THE CAP
+// THE HEADLINE ROWS, AND THE CAP
 // ---------------------------------------------------------------------------------------
 
 test('below the cap the window speaks LEVELS: a pace and the level it is heading for', () => {
@@ -216,19 +218,84 @@ test('below the cap the window speaks LEVELS: a pace and the level it is heading
   assert.equal(v.level, 43, 'the header chip is the level the log last reported')
 })
 
-test('AT THE CAP both rows change vocabulary together, and the wait says it is inferred', () => {
+// ---------------------------------------------------------------------------------------
+// AA WHILE LEVELING (JOS-202) — the pace entry draws one row per measure the log is stating
+// ---------------------------------------------------------------------------------------
+
+test('AA/hr rides BESIDE the levels pace while leveling, points and all', () => {
+  const snap = farming({ pct: 1 })
+  ding(snap, 55 * MIN, 43)
+  aa(snap, 40 * MIN, 2)
+  aa(snap, 20 * MIN, 1)
+  const v = view(snap, [])
+  assert.equal(v.atCap, false, 'the log is still stating a level bar')
+  // Both paces, in this order, under the ONE checklist entry a user switches off.
+  assert.deepEqual(
+    v.rows.filter((r) => r.row === 'xp').map((r) => r.id),
+    ['xp', 'aa']
+  )
+  assert.equal(labelOf(v, 'aa'), 'AA')
+  assert.equal(valueOf(v, 'aa'), '2.00', 'two completions over one fully-active hour')
+  assert.equal(v.rows.find((r) => r.id === 'aa')?.unit, 'AA/hr')
+  // The points the completions PAID ride as the detail — the pair the Leveling tab prints
+  // together, because they diverge exactly while an item-shop bottle is running.
+  assert.equal(v.rows.find((r) => r.id === 'aa')?.detail, '3.00 pts/hr')
+  assert.equal(v.rows.find((r) => r.id === 'aa')?.inferred, false, 'both halves are counted lines')
+  // The projection is untouched: below the cap it is still the LEVEL that is next.
+  assert.equal(labelOf(v, 'eta'), 'Next level')
+})
+
+test('a slice holding no AA completion is told nothing about AA — never a row of em-dashes', () => {
+  const snap = farming({ pct: 1 })
+  ding(snap, 30 * MIN, 43)
+  aa(snap, 90 * MIN) // an hour before this slice's window even opens
+  const hour = view(snap, [], 'h1')
+  assert.deepEqual(
+    hour.rows.filter((r) => r.row === 'xp').map((r) => r.id),
+    ['xp'],
+    'the tab’s own rule (aaRateText): no completion in range, no AA read'
+  )
+  // …and the same record over the whole log, where the completion IS in range, does draw it.
+  assert.ok(view(snap, [], 'all').rows.some((r) => r.id === 'aa'))
+})
+
+test('the AA row is the pace entry, so hiding that entry hides BOTH paces', () => {
+  const snap = farming({ pct: 1 })
+  aa(snap, 20 * MIN)
+  const v = view(snap, [], 'all', ['eta', 'motes'])
+  assert.equal(v.rows.some((r) => r.row === 'xp'), false)
+  assert.deepEqual(v.rows.map((r) => r.row), ['eta', 'motes'])
+})
+
+test('AT THE CAP the levels row goes away, and the wait says it is inferred', () => {
   const snap = farming({ pct: 0, unstated: true })
   ding(snap, 50 * MIN, 50)
   aa(snap, 40 * MIN)
   aa(snap, 20 * MIN)
   const v = view(snap, [])
   assert.equal(v.atCap, true)
-  assert.equal(labelOf(v, 'xp'), 'AA', 'the read that survives the cap')
-  assert.equal(v.rows.find((r) => r.id === 'xp')?.unit, 'AA/hr')
+  // The AA row keeps the id it has below the cap — one measure, one row id, whatever the level is.
+  assert.deepEqual(
+    v.rows.filter((r) => r.row === 'xp').map((r) => r.id),
+    ['aa'],
+    'no level bar is stated, so no levels row is drawn'
+  )
+  assert.equal(labelOf(v, 'aa'), 'AA', 'the read that survives the cap')
+  assert.equal(v.rows.find((r) => r.id === 'aa')?.unit, 'AA/hr')
   assert.equal(labelOf(v, 'eta'), 'Next AA')
   const eta = v.rows.find((r) => r.id === 'eta')
   assert.equal(eta?.inferred, true)
   assert.equal(eta?.detail, 'est.', 'the log states no AA bar position anywhere - one word says so')
+})
+
+test('at the cap the AA row is drawn even when the slice holds no completion at all', () => {
+  const snap = farming({ pct: 0, unstated: true })
+  const v = view(snap, [])
+  assert.equal(v.atCap, true)
+  // 0.00 over an hour of real active time is a measurement, not an unknown (progressionStats says
+  // so: a gain line always states its amount, so this rate has no unstated-sample failure mode) —
+  // and a capped window with no pace row at all would be the worse answer.
+  assert.equal(valueOf(v, 'aa'), '0.00')
 })
 
 test('a refused projection is an em-dash WITH ITS REASON, never a number', () => {

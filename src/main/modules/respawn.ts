@@ -8,6 +8,13 @@
 //      between the two deaths, and only the fold knows where you have been. `zoneSince` is the
 //      timestamp of the `You have entered` line that started the current stay; a gap qualifies
 //      when the EARLIER death also falls inside it.
+//      That same `zone` is ALSO what the display scopes to (owner ruling, 2026-08-10: the overlay
+//      shows the zone you are in, the tab defaults to it). It is published as `RespawnSnap.zone`
+//      and the surfaces filter against it with `respawnInZone` — deliberately ONE piece of zone
+//      state serving both jobs, because a second tracker would be free to disagree with the one
+//      that decides whether a gap counts. The ROWS are not filtered here: cross-zone data is kept
+//      and published (bounded, most-recent-death first), so the tab's all-zones view and the
+//      history behind it cost no second channel.
 //   2. THE LRU. A months-long replay walks past thousands of distinct mob names and every one of
 //      them is a potential watch candidate, so the history is capped and evicted by last-death.
 //   3. ITS OWN REVISION NUMBER. This module has a SECOND INPUT — the user's watch list, edited
@@ -140,6 +147,13 @@ export class RespawnModule implements EqModule<RespawnSnap, RespawnDelta> {
       // spawn point. Same-name re-entry is the case this would get wrong if it compared names.
       this.zone = ev.zone
       this.zoneSince = ev.ts
+      // AND THE REVISION MOVES, because the zone is now part of what the screen shows (the display
+      // is zone-scoped). `dirty` alone only decides whether a delta is BUILT; `useModule` then
+      // drops it with `d.seq <= knownSeq`, and a zone line moves no other state in this module —
+      // no death, no watch edit — so the push carrying "you are somewhere else now" was the one
+      // push the dedupe was guaranteed to swallow. MEASURED in the e2e before this line existed:
+      // both surfaces kept drawing the old zone's clocks for as long as the log stayed quiet.
+      this.rev++
       this.dirty = true
       return
     }
@@ -195,20 +209,20 @@ export class RespawnModule implements EqModule<RespawnSnap, RespawnDelta> {
   }
 
   /**
-   * Is this mob watched, and did the user ask for it by name? Returns null when it is not watched
-   * at all. The auto rule admits exactly the mobs the committed floor states a DURATION for —
-   * never the 113 whose field says "Triggered" or "?", which would put a permanent estimate-less
-   * row on screen for every skeleton in the zone.
+   * Is this mob watched? Returns null when it is not — which is every mob, until the player says
+   * otherwise.
+   *
+   * THE ONLY ADMISSION RULE IS THE WATCH LIST (owner ruling, 2026-08-10 — the opt-in paragraph in
+   * shared/respawn.ts carries the argument). The prototype also admitted the 394 mobs the
+   * committed floor gives a duration for, and that is gone: EQ's names are duplicated across
+   * zones and spawn points, so a clock nobody asked for is a clock about a mob the app cannot
+   * identify. The wiki still NUMBERS a watched row (`rowFor`) and still floors it; it no longer
+   * decides that a row exists.
    */
-  private watchOf(key: string): { pinned: boolean; customMs?: number } | null {
+  private watchOf(key: string): { customMs?: number } | null {
     const explicit = this.prefs.watches.find((w) => w.key === key)
-    if (explicit) {
-      const out: { pinned: boolean; customMs?: number } = { pinned: true }
-      if (explicit.customSec !== undefined) out.customMs = explicit.customSec * 1000
-      return out
-    }
-    if (this.prefs.autoWiki && WIKI.get(key)?.seconds !== undefined) return { pinned: false }
-    return null
+    if (!explicit) return null
+    return explicit.customSec === undefined ? {} : { customMs: explicit.customSec * 1000 }
   }
 
   private rowFor(h: MobHistory, nowMs: number): RespawnRow | null {
@@ -230,8 +244,7 @@ export class RespawnModule implements EqModule<RespawnSnap, RespawnDelta> {
       diedTs: h.lastTs,
       source: est.source,
       samples: h.samples,
-      kills: h.kills,
-      pinned: watch.pinned
+      kills: h.kills
     }
     if (est.estimateMs !== undefined) row.estimateMs = est.estimateMs
     if (h.minGapMs !== undefined) row.observedMs = h.minGapMs
