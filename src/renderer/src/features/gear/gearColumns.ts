@@ -120,6 +120,35 @@ export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH
  */
 const PX = { name: 280, wish: 90, slot: 110, classes: 100, zone: 130, zoneLevel: 90, mob: 180, numeric: 78, owned: 150 } as const
 
+/**
+ * The numeric cells' shared padding — the other half of `MAX_NUMERIC_WIDTH`'s bargain above. The
+ * ceiling only holds if a sortable header (label + arrow, ~60px for `Ratio`) fits the cell it
+ * states: a label wider than its sticky cell slides under the NEXT header, which then intercepts
+ * the click aimed at it — gear.e2e.mts measured exactly that. MUI's default 16px a side spends
+ * 32px of a ~60px cell on air; 8px keeps the header its own. It lives HERE, the layout-constants
+ * module, because the header (GearTableHead) and the body cells (GearTable) must state ONE padding
+ * or the columns shear — neither component may own the number the other must match.
+ */
+export const NUMERIC_PAD = { px: 1 } as const
+
+/**
+ * EVERY COLUMN THE TABLE DRAWS, IN DRAW ORDER — the one statement of the roster, so the header's
+ * render order, the body's colspan, the pixel-mode width sum and the width sanitizer's allowlist
+ * cannot drift apart (the same quiet-drift class the `NUMERIC_BUDGET` re-budget was bitten by).
+ * The identity trio's presence follows the same two flags the layout reads.
+ */
+export function gearColumnIds(columns: readonly GearColumn[], showDrops: boolean, hasOwned: boolean): string[] {
+  return [
+    'name',
+    'wish',
+    'slot',
+    'classes',
+    ...(showDrops ? ['zone', 'zoneLevel', 'mob'] : []),
+    ...columns.map((c) => c.key),
+    ...(hasOwned ? ['owned'] : [])
+  ]
+}
+
 /** The wish column (2026-08-15): the control left the Item cell so the name keeps its room. 6% is
  *  what keeps the compact "Remove" clickable at the 900px window minimum — a button clipped past
  *  its cell edge hit-tests as the NEIGHBOUR cell (caught by gearCompareSteps' reachability pass). */
@@ -268,15 +297,10 @@ export function sortWithin(sort: GearSort, columns: readonly GearColumn[]): Gear
  * shape. Numeric columns share one default; identity columns each state their own.
  */
 export function defaultColumnPx(id: string): number {
-  if (id === 'name') return PX.name
-  if (id === 'wish') return PX.wish
-  if (id === 'slot') return PX.slot
-  if (id === 'classes') return PX.classes
-  if (id === 'zone') return PX.zone
-  if (id === 'zoneLevel') return PX.zoneLevel
-  if (id === 'mob') return PX.mob
-  if (id === 'owned') return PX.owned
-  return PX.numeric
+  // The `PX` table answers by key — an identity column states its own width, every numeric column
+  // (whose id is its `GearSortKey`, never a `PX` key) shares one. Indexing the table instead of
+  // enumerating its keys again is what keeps this and `PX` one statement.
+  return id in PX ? PX[id as keyof typeof PX] : PX.numeric
 }
 
 /** One numeric column's width, as the percentage string the header cell states. */

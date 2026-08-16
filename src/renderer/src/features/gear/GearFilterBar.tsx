@@ -51,19 +51,16 @@ import { Chip, MenuItem, Stack, TextField } from '@mui/material'
 import { CLASS_ABBRS } from '@shared/classCombo'
 import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import { EQUIP_SLOTS } from '@shared/planner/types'
-import { WEAPON_PICKS, WEAPON_PICK_LABEL } from '@shared/planner/weaponType'
+import { WEAPON_PICK_LABEL } from '@shared/planner/weaponType'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
 import { SOCKET_LABEL } from '../planner/plannerGroups'
 import UpgradeSlider from './UpgradeSlider'
-import type { EffectFilter, GearFilters, GearWeaponPick } from './gearFilter'
+import { GEAR_WEAPON_PICKS, type EffectFilter, type GearFilters } from './gearFilter'
 import type { GearControl } from './gearPrefs'
 import type { GearClasses } from './gearData'
 
 /** The effect select's options, in the donor vocabulary plus the two a socket cannot express. */
-/** The Weapon type control's options: the shared vocabulary, then the shield pick (2026-08-15). */
-const GEAR_WEAPON_OPTIONS: readonly GearWeaponPick[] = [...WEAPON_PICKS, 'shield']
-
 const EFFECT_OPTIONS: { value: EffectFilter; label: string }[] = [
   { value: 'any', label: 'Any effect' },
   { value: 'has', label: 'Has an effect' },
@@ -149,7 +146,7 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
           answered by `isShieldLike` rather than the skill fold, and unioned like every other pick. */}
       {visible.has('weapon') && (
         <ChipMultiSelect
-          options={GEAR_WEAPON_OPTIONS}
+          options={GEAR_WEAPON_PICKS}
           value={filters.weaponTypes}
           onChange={(weaponTypes) => setFilters({ ...filters, weaponTypes })}
           label="Weapon type"

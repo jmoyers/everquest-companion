@@ -53,7 +53,7 @@ import {
   scaleGearRow,
   type GearDerivedOpts
 } from '../../../../shared/planner/gearScale'
-import { weaponPicksMatch, type WeaponPick } from '../../../../shared/planner/weaponType'
+import { WEAPON_PICKS, normalizeSkillToken, weaponPicksMatch, type WeaponPick } from '../../../../shared/planner/weaponType'
 import type { EquipSlot, SocketType } from '../../../../shared/planner/types'
 
 // ---- the filter model ---------------------------------------------------------------------
@@ -170,20 +170,15 @@ const SHIELD_WORDS = ['shield', 'buckler', 'aegis', 'targe', 'bulwark'] as const
  * and it says so: a SECONDARY-slot item whose name speaks one of the shield words, or whose
  * `Skill:` line reads SHIELD. The slot gate is what keeps a "Shield of…" cloak or a held tome out;
  * the word list is what a miss or a false positive gets corrected in. ONE function, exported, so
- * the precomputed `GearViewRow.shieldLike` flag (gearData.ts) and the pure filter below can never
- * disagree about what a shield is.
+ * the search word `gearData.toRow` folds into the haystack and the pure filter below can never
+ * disagree about what a shield is. The skill read goes through `normalizeSkillToken` — the same
+ * fold every other `Skill:` comparison uses — so editor residue on the page cannot slip past it.
  */
 export function isShieldLike(row: Pick<GearRow, 'slots' | 'name' | 'skill'>): boolean {
   if (!row.slots.includes('SECONDARY')) return false
   const name = row.name.toLowerCase()
   if (SHIELD_WORDS.some((w) => name.includes(w))) return true
-  return row.skill?.trim().toUpperCase() === 'SHIELD'
-}
-
-/** The view's rows carry the answer precomputed; a bare corpus row is asked directly. */
-function rowIsShield(row: GearRow): boolean {
-  if ('shieldLike' in row) return (row as { shieldLike?: boolean }).shieldLike === true
-  return isShieldLike(row)
+  return normalizeSkillToken(row.skill ?? '') === 'SHIELD'
 }
 
 /**
@@ -195,12 +190,19 @@ function rowIsShield(row: GearRow): boolean {
  */
 export type GearWeaponPick = WeaponPick | 'shield'
 
+/**
+ * The whole pick vocabulary, stated ONCE beside the type it enumerates: the dropdown's options
+ * (GearFilterBar) and the sanitizer's allowlist (areaMemory) both read this list, so a future pick
+ * cannot be offered by one and silently dropped on load by the other.
+ */
+export const GEAR_WEAPON_PICKS: readonly GearWeaponPick[] = [...WEAPON_PICKS, 'shield']
+
 /** Does the row match ANY pick — the control's union, with the shield pick answered its own way. */
 export function matchesHeldKind(row: GearRow, picks: readonly GearWeaponPick[]): boolean {
   if (picks.length === 0) return true
   const weapon = picks.filter((p): p is WeaponPick => p !== 'shield')
   if (weapon.length > 0 && weaponPicksMatch(row.skill, weapon)) return true
-  return picks.includes('shield') && rowIsShield(row)
+  return picks.includes('shield') && isShieldLike(row)
 }
 
 /** What the pure model cannot answer for itself — see the header. */
@@ -277,10 +279,11 @@ export function parseGearQuery(text: string): GearQuery {
 }
 
 // ONE-ENTRY CACHE, not a memo library: the filter asks the same question 6,814 times per keystroke
-// and the text only changes between keystrokes. Pure in effect — same text, same answer.
+// and the text only changes between keystrokes. Pure in effect — same text, same answer. Exported
+// for the view's per-render reads (the haste-chip gate), which want the cache for the same reason.
 let lastQueryText: string | null = null
 let lastQuery: GearQuery = { needle: '', thresholds: [] }
-function queryOf(text: string): GearQuery {
+export function queryOf(text: string): GearQuery {
   if (text !== lastQueryText) {
     lastQueryText = text
     lastQuery = parseGearQuery(text)
@@ -376,7 +379,8 @@ export function effectMatches(row: GearRow, effect: EffectFilter): boolean {
 function matchesIdentity(row: GearRow, filters: GearFilters): boolean {
   const query = queryOf(filters.text)
   if (query.needle !== '' && !row.searchKey.includes(query.needle)) return false
-  if (!query.thresholds.every((t) => meetsThreshold(row, t, derivedOpts(filters)))) return false
+  const opts = derivedOpts(filters)
+  if (!query.thresholds.every((t) => meetsThreshold(row, t, opts))) return false
   if (!slotMatches(row, filters.slots)) return false
   if (!matchesHeldKind(row, filters.weaponTypes)) return false
   if (!effectMatches(row, filters.effect)) return false
@@ -444,6 +448,16 @@ export function sortValue(row: GearRow, key: GearSortKey, opts: GearDerivedOpts 
 }
 
 /**
+ * Does this key READ the derived-score knobs — is it one of the two arms above that take `opts`?
+ * Exported so the view's "is anything on screen reading the scores" question (the Ignore-haste
+ * chip's honest-hide gate) states the set HERE, beside the dispatch that makes it true, instead of
+ * restating the two keys as literals a third arm would silently miss.
+ */
+export function readsDerivedOpts(key: GearSortKey): boolean {
+  return key === 'EFF_DMG' || key === 'BIS'
+}
+
+/**
  * A new, sorted array — never a mutation of the caller's, because the filtered array is a memo
  * another render still holds.
  *
@@ -451,19 +465,24 @@ export function sortValue(row: GearRow, key: GearSortKey, opts: GearDerivedOpts 
  * otherwise re-shuffle on every re-sort (`Array.prototype.sort` is stable, but the array reaching
  * it is a fresh filter each time), and a windowed list whose rows swap under the scrollbar is the
  * bug that looks like a rendering fault.
+ *
+ * THE VALUE IS COMPUTED ONCE PER ROW, NEVER PER COMPARISON. A vector key is a field read, but the
+ * derived keys are not: BIS walks the whole stat vector (gearScale.ts), and a comparator that
+ * called it n·log n times paid ~25 evaluations per row per keystroke on the 6,814-row corpus.
+ * Decorating first makes every key one evaluation per row, and the comparator a number compare.
  */
 export function sortGearRows<T extends GearRow>(rows: readonly T[], sort: GearSort, opts: GearDerivedOpts = {}): T[] {
   const sign = sort.dir === 'asc' ? 1 : -1
-  return [...rows].sort((a, b) => {
-    if (sort.key === 'name') return sign * a.name.localeCompare(b.name)
-    const av = sortValue(a, sort.key, opts)
-    const bv = sortValue(b, sort.key, opts)
+  if (sort.key === 'name') return [...rows].sort((a, b) => sign * a.name.localeCompare(b.name))
+  const decorated = rows.map((row) => ({ row, value: sortValue(row, sort.key, opts) }))
+  decorated.sort(({ row: a, value: av }, { row: b, value: bv }) => {
     if (av === undefined || bv === undefined) {
       if (av === bv) return a.name.localeCompare(b.name)
       return av === undefined ? 1 : -1
     }
     return av === bv ? a.name.localeCompare(b.name) : sign * (av - bv)
   })
+  return decorated.map(({ row }) => row)
 }
 
 // ---- the plus-state stage -------------------------------------------------------------------

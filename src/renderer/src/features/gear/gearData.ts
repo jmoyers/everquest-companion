@@ -26,7 +26,7 @@ import { GEAR_INDEX_VERSION, type GearBuildStats, type GearRow } from '@shared/p
 import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
 import { useLootHistory } from '../loot/useLootHistory'
 import { mergeItemSources, sourcesFor } from '../../lib/itemSources'
-// The ONE shield heuristic (gearFilter.ts) — precomputed here so the filter never re-reads names.
+// The ONE shield heuristic (gearFilter.ts) — asked here once per row so `shield` is a search word.
 import { isShieldLike } from './gearFilter'
 import { useComboSnap } from '../profiles/ClassComboData'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
@@ -50,7 +50,6 @@ export interface GearViewRow extends GearRow {
   dropMobs: string[]
   dropZones: string[]
   dropLevels: string[]
-  shieldLike: boolean
 }
 
 // ---- the fetch ----------------------------------------------------------------------
@@ -93,7 +92,6 @@ function statHaystack(row: GearRow): string {
 /** The index row with the table's own, wider search key. Same type — only the haystack grew. */
 function toRow(row: GearRow): GearViewRow {
   const drops = dropDetails(row)
-  const shieldLike = isShieldLike(row)
   const searchParts = [
     row.name,
     effectHaystack(row),
@@ -104,9 +102,9 @@ function toRow(row: GearRow): GearViewRow {
     drops.dropMobs.join(' '),
     drops.dropZones.join(' '),
     drops.dropLevels.join(' '),
-    shieldLike ? 'shield' : ''
+    isShieldLike(row) ? 'shield' : ''
   ]
-  return { ...row, ...drops, shieldLike, searchKey: searchParts.join(' ').toLowerCase() }
+  return { ...row, ...drops, searchKey: searchParts.join(' ').toLowerCase() }
 }
 
 export interface GearIndexState {

@@ -29,7 +29,8 @@
 // PURE AND NODE-TESTABLE (relative value imports, the house law) — `tests/gearColumnPrefs.test.mts`
 // drives every branch without a DOM, a React tree or a `localStorage`.
 
-import { PICKABLE_COLUMNS } from './gearColumns'
+import { PICKABLE_COLUMNS, gearColumnIds } from './gearColumns'
+import { sanitizeFlag } from './areaMemory'
 import { DEFAULT_GEAR_FILTERS, type GearFilters, type GearSortKey } from './gearFilter'
 
 // ---- the column choice ---------------------------------------------------------------------
@@ -72,6 +73,12 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
 export const GEAR_WIDTH_MIN = 48
 export const GEAR_WIDTH_MAX = 1200
 
+/** The ONE spelling of a legal column width — the drag, the double-click fit and the sanitizer all
+ *  answer through it, so the three paths cannot round or bound differently. */
+export function clampGearWidth(value: number): number {
+  return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, value)))
+}
+
 /**
  * The user's dragged column widths in px, keyed by column id — the identity columns and `owned` by
  * their fixed names, every numeric column by its `GearSortKey`. ABSENT (null) means never resized,
@@ -81,7 +88,9 @@ export const GEAR_WIDTH_MAX = 1200
  */
 export type GearColumnWidths = Record<string, number>
 
-const FIXED_WIDTH_IDS: ReadonlySet<string> = new Set(['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob', 'owned'])
+// The identity-column ids, DERIVED from the roster (`gearColumnIds` with no numeric columns and
+// every flag on) rather than restated — a column added to the table is accepted here by construction.
+const FIXED_WIDTH_IDS: ReadonlySet<string> = new Set(gearColumnIds([], true, true))
 
 /**
  * A stored width map, or `null` when nothing usable is stored. Unknown ids drop (a column this
@@ -94,7 +103,7 @@ export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
     if (!FIXED_WIDTH_IDS.has(key) && !PICKABLE.has(key)) continue
-    out[key] = Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, value)))
+    out[key] = clampGearWidth(value)
   }
   return Object.keys(out).length === 0 ? null : out
 }
@@ -104,11 +113,12 @@ export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
 /**
  * Are the Zone / Level / Mob columns drawn (user ask, 2026-08-15: *make zone/level/mob an optional
  * toggle*)? ON unless a stored `false` says otherwise — the columns shipped on, and an unreadable
- * store must not blank them. One flag for the trio: they are one answer ("where does it drop"),
- * and three toggles would invite a mob column with no zone to anchor it.
+ * store must come back ON (`sanitizeFlag`'s fallback, the same degradation `eraOnly` states). One
+ * flag for the trio: they are one answer ("where does it drop"), and three toggles would invite a
+ * mob column with no zone to anchor it.
  */
 export function sanitizeDropCols(raw: unknown): boolean {
-  return raw !== false
+  return sanitizeFlag(raw, true)
 }
 
 // ---- the toolbar choice --------------------------------------------------------------------

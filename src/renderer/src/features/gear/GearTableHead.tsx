@@ -2,17 +2,15 @@
 // column resize handles (user ask, 2026-08-15) and the one row that assembles them. Split from
 // GearTable.tsx when the wish column pushed that file over the repo's 400-code-line ceiling — the
 // rule is to split, never to ratchet. The body rows, the windowing and the cell text stay with the
-// table; everything about the HEADER lives here, `NUMERIC_PAD` included, because the numeric
-// header and the numeric cells must state one padding or the columns shear.
+// table; everything about the HEADER lives here. (`NUMERIC_PAD` lives in gearColumns.ts with the
+// other layout constants — the header and the body cells must state one padding or the columns
+// shear, so neither component owns the number.)
 
-import type { JSX } from 'react'
+import { memo, type JSX } from 'react'
 import { Box, TableCell, TableHead, TableRow, TableSortLabel } from '@mui/material'
-import { gearTableLayout, type GearColumn } from './gearColumns'
-import { GEAR_WIDTH_MAX, GEAR_WIDTH_MIN, type GearColumnWidths } from './gearPrefs'
+import { NUMERIC_PAD, defaultColumnPx, type GearColumn, type GearTableLayout } from './gearColumns'
+import { clampGearWidth, type GearColumnWidths } from './gearPrefs'
 import type { GearSort, GearSortKey } from './gearFilter'
-
-/** The numeric cells' shared padding — imported by GearTable's body cells so both state one value. */
-export const NUMERIC_PAD = { px: 1 } as const
 
 const RESIZE_HINT =
   'Drag to set this column width - it sticks on this machine. Double-click to fit the column to its content; Alt+double-click puts every column back on the automatic layout.'
@@ -64,7 +62,17 @@ function fitWidth(th: HTMLTableCellElement): number {
     const cell = (tr as HTMLTableRowElement).cells[idx]
     if (cell !== undefined) want = Math.max(want, contentWidth(cell))
   }
-  return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, want + 24)))
+  return clampGearWidth(want + 24)
+}
+
+/** The header cell a grip gesture belongs to — the `th`, its row and its column id, or null when
+ *  the event landed outside one. Both gestures resolve their target through this one spelling. */
+function gripTarget(e: { target: EventTarget | null }): { th: HTMLTableCellElement; headRow: HTMLElement; id: string } | null {
+  const th = (e.target as HTMLElement).closest('th')
+  const headRow = th?.parentElement
+  const id = th?.getAttribute('data-col')
+  if (!th || !headRow || id === null || id === undefined) return null
+  return { th, headRow, id }
 }
 
 /**
@@ -90,26 +98,20 @@ function ResizeHandle({ onWidths }: { onWidths: (next: GearColumnWidths | null) 
           onWidths(null)
           return
         }
-        const th = (e.target as HTMLElement).closest('th')
-        const headRow = th?.parentElement
-        const id = th?.getAttribute('data-col')
-        if (!th || !headRow || id === null || id === undefined) return
-        onWidths({ ...seedWidths(headRow), [id]: fitWidth(th) })
+        const hit = gripTarget(e)
+        if (hit === null) return
+        onWidths({ ...seedWidths(hit.headRow), [hit.id]: fitWidth(hit.th) })
       }}
       onMouseDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
-        const th = (e.target as HTMLElement).closest('th')
-        const headRow = th?.parentElement
-        if (!th || !headRow) return
-        const seed = seedWidths(headRow)
-        const dragged = th.getAttribute('data-col')
-        if (dragged === null) return
+        const hit = gripTarget(e)
+        if (hit === null) return
+        const seed = seedWidths(hit.headRow)
         const startX = e.clientX
-        const startW = seed[dragged] ?? 0
+        const startW = seed[hit.id] ?? 0
         const move = (ev: MouseEvent): void => {
-          const next = Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, startW + ev.clientX - startX)))
-          onWidths({ ...seed, [dragged]: next })
+          onWidths({ ...seed, [hit.id]: clampGearWidth(startW + ev.clientX - startX) })
         }
         const up = (): void => {
           document.removeEventListener('mousemove', move)
@@ -215,10 +217,13 @@ function PlainHeader({
 
 /**
  * The header row, split from the table when the wish column took the function over the measured
- * 100-line ceiling (the rule is to split, never to ratchet). `w` is the host's width resolver —
- * the user's dragged pixels when any are stored, the automatic layout's answer otherwise.
+ * 100-line ceiling (the rule is to split, never to ratchet). It takes the host's LAYOUT and the
+ * stored WIDTHS as plain values and resolves each column's width itself — the user's dragged
+ * pixels win whole when any are stored, the automatic layout answers otherwise. `memo` because
+ * every prop is a stable identity or a primitive, so a scroll tick — which re-renders the table
+ * for the row window — never re-renders sixteen header cells whose inputs did not move.
  */
-export function GearHead({
+export const GearHead = memo(function GearHead({
   columns,
   sort,
   hasOwned,
@@ -226,7 +231,8 @@ export function GearHead({
   ownedHint,
   onSort,
   onWidths,
-  w
+  widths,
+  layout
 }: {
   columns: readonly GearColumn[]
   sort: GearSort
@@ -236,9 +242,13 @@ export function GearHead({
   ownedHint: string
   onSort: (key: GearSortKey) => void
   onWidths: (next: GearColumnWidths | null) => void
-  w: (id: string, auto: string | undefined) => string | undefined
+  /** the dragged widths, `null` until a drag stores one — any map puts the whole table in pixels */
+  widths: GearColumnWidths | null
+  /** the automatic layout the host already computed (it reads `minWidth`/`mode` from the same one) */
+  layout: GearTableLayout
 }): JSX.Element {
-  const layout = gearTableLayout(columns.length, hasOwned, showDrops)
+  const w = (id: string, auto: string | undefined): string | undefined =>
+    widths === null ? auto : `${String(widths[id] ?? defaultColumnPx(id))}px`
   return (
     <TableHead>
       <TableRow>
@@ -308,5 +318,5 @@ export function GearHead({
       </TableRow>
     </TableHead>
   )
-}
+})
 

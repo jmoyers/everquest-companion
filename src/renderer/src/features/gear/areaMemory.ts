@@ -61,11 +61,11 @@
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
-import { WEAPON_PICKS } from '../../../../shared/planner/weaponType'
 import { PICKABLE_COLUMNS } from './gearColumns'
 import {
   DEFAULT_GEAR_FILTERS,
   DEFAULT_GEAR_SORT,
+  GEAR_WEAPON_PICKS,
   type EffectFilter,
   type GearFilters,
   type GearSort,
@@ -206,9 +206,6 @@ export const DEFAULT_GEAR_FORM: GearFormMemory = {
   ownedOnly: DEFAULT_GEAR_FILTERS.ownedOnly,
   ignoreHaste: DEFAULT_GEAR_FILTERS.ignoreHaste
 }
-
-/** The Weapon type control's whole vocabulary on this surface: the shared picks plus `'shield'`. */
-const GEAR_WEAPON_PICKS: readonly GearWeaponPick[] = [...WEAPON_PICKS, 'shield']
 
 const EFFECT_FILTERS: readonly EffectFilter[] = ['any', 'has', 'proc', 'worn', 'focus', 'click']
 

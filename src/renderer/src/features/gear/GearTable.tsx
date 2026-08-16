@@ -71,12 +71,12 @@ import { Box, Stack, Table, TableBody, TableCell, TableRow } from '@mui/material
 import type { WindowedRows } from '../../lib/useWindowedRows'
 import { itemIconUrl } from '../../lib/ItemWindow'
 import { EraChip, DonorName } from '../planner/PlannerChips'
-import { defaultColumnPx, gearTableLayout, statText, type GearColumn } from './gearColumns'
+import { NUMERIC_PAD, defaultColumnPx, gearColumnIds, gearTableLayout, statText, type GearColumn } from './gearColumns'
 import type { GearColumnWidths } from './gearPrefs'
 // JOS-338 — the ONE door a card may reach these rows through (its header states the three
 // guarantees that make it safe over this tab's dropdown toolbar).
 import { GearRowCompare } from './GearCompareCard'
-import { GearHead, NUMERIC_PAD } from './GearTableHead'
+import { GearHead } from './GearTableHead'
 import type { GearCompareData, GearViewRow } from './gearData'
 import { sortValue, type GearSort, type GearSortKey } from './gearFilter'
 import type { GearDerivedOpts } from '@shared/planner/gearScale'
@@ -100,15 +100,6 @@ const FIXED_ROW = {
   }
 } as const
 
-/**
- * The numeric columns' halved side padding — the other half of `MAX_NUMERIC_WIDTH`'s bargain
- * (gearColumns.ts). The ceiling only holds if a sortable header (label + arrow, ~60px for
- * `Ratio`) fits the cell it states: a label wider than its sticky cell slides under the NEXT
- * header, which then intercepts the click aimed at it — gear.e2e.mts measured exactly that.
- * MUI's default 16px a side spends 32px of a ~60px cell on air; 8px keeps the header its own.
- */
-
-/** Sixteen classes is `Class: ALL`, and sixteen chips would be the widest cell in the table. */
 /** The first entry, with a `+N` admitting how many more the hover title holds. Blank when none. */
 function overflowText(values: readonly string[]): string {
   const first = values[0]
@@ -116,6 +107,7 @@ function overflowText(values: readonly string[]): string {
   return values.length > 1 ? `${first} +${String(values.length - 1)}` : first
 }
 
+/** Sixteen classes is `Class: ALL`, and sixteen chips would be the widest cell in the table. */
 function classText(classes: readonly ClassAbbr[]): string {
   if (classes.length === 0) return ''
   if (classes.length >= 16) return 'ALL'
@@ -390,17 +382,19 @@ export default function GearTable({
   derived,
   showDrops
 }: GearTableProps): JSX.Element {
-  const span = columns.length + 4 + (showDrops ? 3 : 0) + (ownership === null ? 0 : 1)
-  const layout = gearTableLayout(columns.length, ownership !== null, showDrops)
+  // ONE layout per (count, owned, drops) — memoized for identity, because `GearHead` is `memo`'d
+  // and reads the same object this function takes `minWidth`/`mode` from.
+  const layout = useMemo(() => gearTableLayout(columns.length, ownership !== null, showDrops), [columns.length, ownership, showDrops])
+  // The roster in draw order (gearColumnIds — the one statement of it): the colspan the pad rows
+  // state, and the ids the pixel-mode width sum walks.
+  const allIds = gearColumnIds(columns, showDrops, ownership !== null)
+  const span = allIds.length
   // THE USER'S DRAGGED WIDTHS WIN WHOLE (user ask, 2026-08-15): any stored map puts the entire
   // table in stated pixels — a dragged column beside percentage ones would reflow on every pane
   // resize, which is the opposite of "stick". A column the map has no entry for (a numeric column
   // picked after the drag) takes the pixel-mode default, so it arrives at a legible width instead
-  // of an unstated one.
-  const px = (id: string): number => widths?.[id] ?? defaultColumnPx(id)
-  const w = (id: string, auto: string | undefined): string | undefined => (widths === null ? auto : `${String(px(id))}px`)
-  const allIds = ['name', 'wish', 'slot', 'classes', ...(showDrops ? ['zone', 'zoneLevel', 'mob'] : []), ...columns.map((c) => c.key), ...(ownership === null ? [] : ['owned'])]
-  const minWidth = widths === null ? layout.minWidth : allIds.reduce((a, id) => a + px(id), 0)
+  // of an unstated one. `GearHead` resolves the per-column widths by the same rule.
+  const minWidth = widths === null ? layout.minWidth : allIds.reduce((a, id) => a + (widths[id] ?? defaultColumnPx(id)), 0)
   // ONE object for the row's callbacks, memoized on the callbacks themselves: `GearLine` is
   // `memo`'d and a fresh literal per render would defeat it on every keystroke. It held two until
   // JOS-325 retired the `+`, and holds two again since JOS-335 — which is exactly why it stayed an
@@ -424,7 +418,8 @@ export default function GearTable({
         ownedHint={ownedHint}
         onSort={onSort}
         onWidths={onWidths}
-        w={w}
+        widths={widths}
+        layout={layout}
       />
       <TableBody>
         <PadRow height={win.topPad} colSpan={span} />

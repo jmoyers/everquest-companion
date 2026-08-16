@@ -159,7 +159,8 @@ import {
   DEFAULT_GEAR_FILTERS,
   derivedOpts,
   filterGearRows,
-  parseGearQuery,
+  queryOf,
+  readsDerivedOpts,
   scaleAll,
   sortGearRows,
   type GearFilterDeps,
@@ -425,10 +426,13 @@ function useGearWishes(): {
 /**
  * Is anything on screen reading the derived scores? Drawn columns, or a search threshold naming
  * one — the token half is what keeps hiding the chip honest (GearFilterBarProps.hasteRelevant).
+ * WHICH keys read the knobs is `gearFilter.readsDerivedOpts`'s to say, beside the dispatch that
+ * makes it true — a third opts-reading key added there is counted here without a second edit. The
+ * text goes through `queryOf`'s cache, so the per-render call never re-parses an unchanged query
+ * (the view renders on every scroll tick).
  */
 function readsDerivedScores(columns: readonly GearColumn[], text: string): boolean {
-  const derived = (key: string): boolean => key === 'EFF_DMG' || key === 'BIS'
-  return columns.some((c) => derived(c.key)) || parseGearQuery(text).thresholds.some((t) => derived(t.key))
+  return columns.some((c) => readsDerivedOpts(c.key)) || queryOf(text).thresholds.some((t) => readsDerivedOpts(t.key))
 }
 
 export interface GearViewProps {
@@ -511,6 +515,11 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
     () => ownedHint(ownership.map, uncountedNote(ownership.payload.uncounted)),
     [ownership.map, ownership.payload.uncounted]
   )
+  // STABLE while the sort is, so `GearHead`'s memo holds across scroll ticks — an inline arrow
+  // would hand the header a fresh identity every frame. The base is the sort IN FORCE, not the
+  // requested one: after a picker removed the sorted column, clicking the header that took over
+  // must FLIP it rather than re-open it.
+  const onSort = useCallback((key: GearSortKey) => setSort(nextSort(table.sort, key)), [table.sort, setSort])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }} data-testid="gear-view">
@@ -558,9 +567,7 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
           sort={table.sort}
           ownership={ownership.map}
           ownedHint={hint}
-          // The base is the sort IN FORCE, not the requested one: after a picker removed the
-          // sorted column, clicking the header that took over must FLIP it rather than re-open it.
-          onSort={(key) => setSort(nextSort(table.sort, key))}
+          onSort={onSort}
           onOpenLoot={onOpenLoot}
           // JOS-335, JOS-343 — the per-row wish gesture (add, and click again to remove) and the
           // added state it reads. UNDEFINED until the document has loaded (`useGearWishes`), which
