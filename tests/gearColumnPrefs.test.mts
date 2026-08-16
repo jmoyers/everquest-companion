@@ -311,7 +311,7 @@ test('a stored toolbar choice degrades the same way a column choice does', () =>
   // (added 2026-08-15), by exactly the same rule. The DEGRADATION claim these lines were written
   // for is untouched: unknown keys still drop out, repeats still collapse.
   assert.deepEqual(sanitizeControls(['slot', 'classOnly', 'classes']), ['slot', 'weapon', 'classes', 'haste'])
-  assert.deepEqual(sanitizeControls(['upgrade', 'ratio', 'thresholds', 'era']), ['weapon', 'era', 'upgrade', 'haste'])
+  assert.deepEqual(sanitizeControls(['upgrade', 'ratio', 'thresholds', 'era']), ['weapon', 'era', 'haste', 'upgrade'])
   assert.deepEqual(sanitizeControls(['era', 'nope', 'era', 7, 'slot']), ['slot', 'weapon', 'era', 'haste'])
   // ORDER IS THE BAR'S, not the store's — and that is not a loss. A control list is turned into a
   // Set by `controlsVisible` and `GearFilterBar` draws in its own fixed order, so unlike the COLUMN

@@ -111,8 +111,8 @@ export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
  */
 // `shield` was a control for two hours on 2026-08-15 and is NOT legacy vocabulary: it shipped in a
 // test build only, and the user ruled it into the Weapon type dropdown (`GearWeaponPick`) before a
-// release carried the toggle. `haste` (same day) is the numbers row's second control.
-export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'upgrade', 'haste'] as const
+// release carried the toggle. `haste` (same day) draws on the identity row, after the Owned chip.
+export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'haste', 'upgrade'] as const
 
 export type GearControl = (typeof GEAR_CONTROLS)[number]
 

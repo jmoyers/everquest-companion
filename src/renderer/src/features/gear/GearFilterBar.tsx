@@ -182,7 +182,7 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
 }
 
 /** WHICH ITEMS: name, slot, classes, effect kind, era. Search is always drawn — see the header. */
-function IdentityRow({ filters, setFilters, text, setText, classes, visible }: Omit<GearFilterBarProps, 'upgrade' | 'hasteRelevant'>): JSX.Element {
+function IdentityRow({ filters, setFilters, text, setText, classes, visible, hasteRelevant }: Omit<GearFilterBarProps, 'upgrade'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
       <TextField
@@ -240,6 +240,19 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
         />
       )}
 
+      {/* ON THIS ROW, NOT THE NUMBERS ROW (user ruling, 2026-08-15, second placement): the second
+          row is the upgrade simulation, and this chip is about the SCORES — it reads better beside
+          the other verdict chips. Drawn only while something on screen reads the derived scores. */}
+      {visible.has('haste') && hasteRelevant && (
+        <ToggleChip
+          label="Ignore haste"
+          testId="gear-haste-toggle"
+          on={filters.ignoreHaste}
+          onToggle={() => setFilters({ ...filters, ignoreHaste: !filters.ignoreHaste })}
+          hint="Leave worn haste out of EFF DMG and BEST. Haste items do not stack, so if you already wear one, a second adds nothing - the HASTE column still shows the stated number."
+        />
+      )}
+
       {visible.has('classes') && classes.offer !== null && (
         <Chip
           size="small"
@@ -256,35 +269,22 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
   )
 }
 
-/**
- * WHAT THEY READ: the simulated plus-state, and — since 2026-08-15 — the haste knob beside it,
- * because both change what the NUMBERS say rather than which rows are shown. Worn haste does not
- * stack in this game, so a player already wearing a haste item flips this on and EFF DMG / BIS stop
- * crediting a term that would gain them nothing; the HASTE column itself keeps showing the stated
- * number either way (law 1 — the item does state it).
- */
-function NumbersRow({ filters, setFilters, upgrade, visible, hasteRelevant }: Pick<GearFilterBarProps, 'filters' | 'setFilters' | 'upgrade' | 'visible' | 'hasteRelevant'>): JSX.Element {
+/** WHAT THEY READ: the simulated plus-state. The haste knob visited this row for an hour on
+ *  2026-08-15 and moved to the identity row the same day — the user read this row as the upgrade
+ *  estimation it is, and a chip about the SCORES sat wrong beside it. */
+function NumbersRow({ upgrade }: Pick<GearFilterBarProps, 'upgrade'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
-      {visible.has('upgrade') && <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />}
-      {visible.has('haste') && hasteRelevant && (
-        <ToggleChip
-          label="Ignore haste"
-          testId="gear-haste-toggle"
-          on={filters.ignoreHaste}
-          onToggle={() => setFilters({ ...filters, ignoreHaste: !filters.ignoreHaste })}
-          hint="Leave worn haste out of EFF DMG and BIS. Haste items do not stack, so if you already wear one, a second adds nothing - the HASTE column still shows the stated number."
-        />
-      )}
+      <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />
     </Stack>
   )
 }
 
 /**
  * Does the WHAT THEY READ row have anything left to draw? An empty row is height with no content.
- * The row is a place (JOS-302's survivor), and 2026-08-15 gave it its second control.
+ * A one-entry list again, and still a LIST — the row is a place (JOS-302's survivor).
  */
-const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade', 'haste']
+const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade']
 
 export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
   const { filters, setFilters, text, setText, classes, upgrade, visible, hasteRelevant } = props
@@ -297,10 +297,9 @@ export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
         setText={setText}
         classes={classes}
         visible={visible}
+        hasteRelevant={hasteRelevant}
       />
-      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && (
-        <NumbersRow filters={filters} setFilters={setFilters} upgrade={upgrade} visible={visible} hasteRelevant={hasteRelevant} />
-      )}
+      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && <NumbersRow upgrade={upgrade} />}
     </Stack>
   )
 }
