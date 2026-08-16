@@ -59,6 +59,11 @@
 // this file without a DOM.
 
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared/classCombo'
+// TYPE-ONLY, deliberately: `progressionPlan.ts` reaches the gear scaler and the era table, and
+// nothing here needs a line of that at runtime. The two vocabularies below are re-declared as
+// values from these types, so the words are checked against their unions without this module
+// pulling the fold in behind them.
+import type { GearRole, PlanInputs } from '../../../../shared/planner/progressionPlan'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
 import { WEAPON_PICKS, type WeaponPick } from '../../../../shared/planner/weaponType'
@@ -108,6 +113,19 @@ export const AREA_FORM_TIER = {
   'eq.planner.item': 'session',
   'eq.planner.open': 'session',
   'eq.planner.search': 'session',
+  // ---- the Plan tab ----
+  // BOTH ARE PICKS, so both are restart-scoped by THE RULE above — "what you CHOSE is
+  // restart-scoped". Neither is typed, neither is a narrowing you poke out of a list: the role is a
+  // four-option statement about what you are gearing FOR, and the reach is a two-option statement
+  // about who you fight with. They are the shape you gave the route, they are lit controls whenever
+  // the tab is up, and a player who plans as a tank plans as a tank next launch too.
+  //
+  // THE ERA TOGGLE IS NOT HERE, and its absence is the same decision the table's header records for
+  // the other nine already-persisted keys: the Plan tab shares `eq.planner.era` with the
+  // Exaltations tab ON PURPOSE (plannerData.useEraOnly), one answer to "is this server open yet",
+  // and re-homing it would give this area two.
+  'eq.plan.role': 'restart',
+  'eq.plan.reach': 'restart',
   // ---- the Wish list tab ----
   'eq.wishlist.search': 'session',
   // ---- the Character tab ----
@@ -292,6 +310,38 @@ export function sanitizeUpgrade(raw: unknown): ItemUpgradeState {
   if (o === null || typeof o.full !== 'number' || typeof o.fraction !== 'number') return ITEM_UPGRADE_BASE
   if (!Number.isFinite(o.full) || !Number.isFinite(o.fraction)) return ITEM_UPGRADE_BASE
   return normalizeUpgradeState({ full: o.full, fraction: o.fraction })
+}
+
+// ---- the Plan tab ------------------------------------------------------------------------------
+
+/** The con gate the route is read at — `PlanInputs.reach`, spelled once for the two consumers. */
+export type PlanReach = PlanInputs['reach']
+
+/**
+ * THE TWO CLOSED VOCABULARIES, AS VALUES, AND WHY THEY ARE `Record`s RATHER THAN LISTS.
+ *
+ * Both unions live in `shared/planner/progressionPlan.ts`, which exports no runtime spelling of
+ * either — so a list here would be a second copy that a fifth role added to the fold would silently
+ * leave behind, and the sanitizer would answer `balanced` for a value the plan understands
+ * perfectly. `Record<GearRole, true>` is the `VIEW_LABELS` trick from `appViews.ts`: adding a member
+ * to the union without naming it HERE is a type error, which is the one moment anyone would
+ * remember to. The picker draws these same arrays, so the control and the validator can never offer
+ * different words.
+ */
+const PLAN_ROLE_KEYS: Record<GearRole, true> = { balanced: true, tank: true, dps: true, healer: true }
+const PLAN_REACH_KEYS: Record<PlanReach, true> = { solo: true, group: true }
+
+export const PLAN_ROLES = Object.keys(PLAN_ROLE_KEYS) as GearRole[]
+export const PLAN_REACHES = Object.keys(PLAN_REACH_KEYS) as PlanReach[]
+
+/** The stored role. `balanced` is the fold's own middle, so an unreadable value costs no opinion. */
+export function sanitizePlanRole(raw: unknown): GearRole {
+  return sanitizeOne<GearRole>(raw, PLAN_ROLES, 'balanced')
+}
+
+/** The stored reach. SOLO is the default because it is the ask's own words (plan §8). */
+export function sanitizePlanReach(raw: unknown): PlanReach {
+  return sanitizeOne<PlanReach>(raw, PLAN_REACHES, 'solo')
 }
 
 // ---- the Exaltations tab -----------------------------------------------------------------------

@@ -1,0 +1,195 @@
+// plan/planData.ts — EVERYTHING THE PURE FOLD IS HANDED, AND NOTHING IT DECIDES
+// (docs/plans/gear-progression-planner.md §2.4, §4).
+//
+// `shared/planner/progressionPlan.ts` takes its whole world as a parameter — the gear rows, the
+// zone profiles, a mob-level lookup, the con function, what you own and what you have already
+// wished for — precisely so the fold can be tested against synthetic corpora with no renderer
+// anywhere near it. THIS FILE IS THE PRODUCTION WIRING OF THAT PARAMETER and it is deliberately
+// the only place the two halves meet: no component below reaches for a catalog, a store or an IPC
+// channel, and no rule about what belongs in a route lives here.
+//
+// THE TWO CATALOG FOLDS ARE BUILT ONCE PER WINDOW, LAZILY — the `lib/itemSources.ts` precedent,
+// and for the same three reasons it states. `MOB_CATALOG` is 7,872 immutable rows compiled into
+// this bundle, the Plan tab may never be opened this session, and a `useMemo` per mount would
+// re-fold the whole catalog every time a tab switch remounted the view. Module scope with a lazy
+// singleton is the shape that answers all three.
+//
+// THE MOB KEY IS THE FOLD `mergeItemSources` ALREADY USES — trim, case-fold, and nothing else. It
+// is joining two halves of one wiki that disagree about capitalisation constantly (the item page's
+// `|dropsfrom` spelling against the catalog's own page title), which is exactly the join that
+// function documents. It is NOT `zoneLevelKey`, whose name is about zones, and it is NOT
+// `sourceItemKey`, whose `+N` strip belongs to ITEMS: a mob named `Ixiblat Fer +5` is a creature
+// this catalog has no row for at all (plan §0.2), and quietly folding it onto the base mob would
+// hand back a level about a different creature — the very thing `witnessOf` refuses.
+//
+// A NAME THE CATALOG STATES TWICE KEEPS THE HIGHER LEVEL. The catalog is one row per PAGE and the
+// same creature name recurs across zones and tiers, so a name can resolve to several stated levels.
+// The route gates on "does this con inside my reach", and a higher level pushes a target LATER —
+// so taking the maximum is the CAUTIOUS read, the same direction `conBands.SEED_BANDS` rounds its
+// unsampled risky/deadly split ("a plan that calls a mob risky when it is deadly gets someone
+// killed; the reverse wastes a pull"). Taking the minimum would advertise a camp you cannot hold.
+
+import { useCallback, useMemo } from 'react'
+import type { ClassAbbr } from '@shared/classCombo'
+import { conBand } from '@shared/conBands'
+import type { GearRow } from '@shared/planner/gear'
+import type { WishList } from '@shared/planner/wishlist'
+import {
+  buildProgressionPlan,
+  type GearRole,
+  type PlanBracket,
+  type PlanCorpora
+} from '@shared/planner/progressionPlan'
+import { statedLevel, zoneLevelProfile, type ZoneLevels } from '@shared/planner/zoneLevels'
+import { MOB_CATALOG } from '../mobs/mobSearch'
+import type { PlanReach } from '../gear/areaMemory'
+import type { GearOwnershipMap } from '../gear/gearOwnership'
+import { useWishlist } from '../wishlist/useWishlist'
+import { wishFromGear } from '../wishlist/wishSearch'
+
+// ---- the two catalog folds ---------------------------------------------------------------------
+
+let PROFILES: ReadonlyMap<string, ZoneLevels> | null = null
+let MOB_LEVELS: ReadonlyMap<string, number> | null = null
+
+/** Every zone the catalog places a levelled mob in, profiled. Built on first use — see the header. */
+export function zoneProfiles(): ReadonlyMap<string, ZoneLevels> {
+  PROFILES ??= zoneLevelProfile(MOB_CATALOG)
+  return PROFILES
+}
+
+/** The join key for a mob NAME, the `mergeItemSources` fold — see the header for what it is not. */
+function mobKey(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+function mobLevels(): ReadonlyMap<string, number> {
+  if (MOB_LEVELS !== null) return MOB_LEVELS
+  const out = new Map<string, number>()
+  for (const mob of MOB_CATALOG) {
+    const level = statedLevel(mob.level)
+    if (level === null) continue
+    const key = mobKey(mob.name)
+    const held = out.get(key)
+    if (held === undefined || level > held) out.set(key, level)
+  }
+  MOB_LEVELS = out
+  return out
+}
+
+/**
+ * The level the catalog states for a mob, or `null` when it states none.
+ *
+ * `null` is an ANSWER and the fold treats it as one: a base witness whose mob has no stated level
+ * is not a target at all, because an unlevelled mob cannot be conned and will not be guessed at
+ * (`progressionPlan.qualify`). It is never 0.
+ */
+export function mobLevelOf(name: string): number | null {
+  return mobLevels().get(mobKey(name)) ?? null
+}
+
+// ---- the corpora ------------------------------------------------------------------------------
+
+/**
+ * WHAT THIS CHARACTER ALREADY HAS, as the fold's `owned` set.
+ *
+ * The predicate is `gearData.useOwnedOrLooted`'s, restated over the map rather than per row because
+ * the fold wants a SET and that hook wants a row predicate. All three arms are kept for the reason
+ * `gearOwnership.ts` gives (rule 2): an exaltation is proof a copy passed through this character's
+ * hands, and a route that offered you an item you have already melted would be answering a question
+ * nobody asked.
+ */
+function ownedKeys(map: GearOwnershipMap | null): ReadonlySet<string> {
+  const out = new Set<string>()
+  if (map === null) return out
+  for (const [key, o] of map) {
+    if (o.owned || o.looted || o.exaltations > 0) out.add(key)
+  }
+  return out
+}
+
+/**
+ * The fold's whole world, memoized on the things that actually move: the corpus (once per window),
+ * the ownership join (a dump re-read or a loot line) and the wish list document (a click).
+ *
+ * The two catalog folds and `conBand` are constants, so they are not dependencies — which is what
+ * keeps a keystroke on another tab from re-planning a route.
+ */
+export function usePlanCorpora(
+  rows: readonly GearRow[],
+  ownership: GearOwnershipMap | null,
+  list: WishList
+): PlanCorpora {
+  const owned = useMemo(() => ownedKeys(ownership), [ownership])
+  const entries = list.entries
+  const wished = useMemo(() => new Set(entries.map((e) => e.itemKey)), [entries])
+  return useMemo(
+    () => ({
+      gear: rows,
+      profiles: zoneProfiles(),
+      mobLevel: mobLevelOf,
+      con: conBand,
+      owned,
+      wished
+    }),
+    [rows, owned, wished]
+  )
+}
+
+/** What the player told the header. The level arrives separately because it can be UNSTATED. */
+export interface PlanPicks {
+  classes: readonly ClassAbbr[]
+  role: GearRole
+  reach: PlanReach
+  eraOnly: boolean
+}
+
+/**
+ * The route, or `[]` when nothing has stated a level.
+ *
+ * NO GUESSED LEVEL, EVER. `buildProgressionPlan` opens its first bracket at the character's current
+ * level, so handing it a default would print a confident six-bracket route about a character the
+ * log has never described. An empty route with the view's own empty state beside it is the honest
+ * answer, and the moment a ding or a `/who` lands it fills in with no other change.
+ */
+export function usePlanRoute(
+  level: number | null,
+  picks: PlanPicks,
+  corpora: PlanCorpora
+): PlanBracket[] {
+  const { classes, role, reach, eraOnly } = picks
+  return useMemo(() => {
+    if (level === null) return []
+    return buildProgressionPlan({ level, classes, role, reach, eraOnly }, corpora)
+  }, [level, classes, role, reach, eraOnly, corpora])
+}
+
+/**
+ * THE ONE DOOR OUT OF THIS TAB: a bracket's targets, onto the wish list.
+ *
+ * It is `useWishlist.add` per target and nothing else — the same call `wishFromGear` feeds from the
+ * Gear tab's per-row control, so a wish written by the plan and one written by hand are the same
+ * bytes, `source: 'user'` included. NOT `seed`/`applySeed`: that door is once-forever by design
+ * (the exaltation plan's one-time fill), and a bracket button is a thing you press whenever you
+ * like. Already-wished targets are a no-op, because the document dedupes by `itemKey`.
+ *
+ * IT IS UNDEFINED UNTIL THE DOCUMENT HAS LOADED — the absent-not-disabled rule, exactly as
+ * `GearView.useGearWishes` argues it: before `ready` the empty list is a default rather than an
+ * answer, and a button that wrote against it could duplicate nothing and would still be a control
+ * offered over a document nobody has read.
+ */
+export function usePlanWishes(): {
+  list: WishList
+  addBracket?: (bracket: PlanBracket) => void
+} {
+  const wishlist = useWishlist()
+  const { add, ready } = wishlist
+  const addBracket = useCallback(
+    (bracket: PlanBracket) => {
+      const now = Date.now()
+      for (const target of bracket.targets) add(wishFromGear(target, now))
+    },
+    [add]
+  )
+  return { list: wishlist.list, addBracket: ready ? addBracket : undefined }
+}

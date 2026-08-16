@@ -122,6 +122,21 @@ export const TELEMETRY_VIEWS = [
   // hard, so releasing the view without adding it here is a red build. Graduation is both halves at
   // once, which is exactly what JOS-327 did.
   'character',
+  // The gear area's PLAN tab (docs/plans/gear-progression-planner.md §4). SAME CLOSED-ENUM DEPLOY
+  // ORDER as every member added since JOS-119 — the ingest Lambda validates through this module, so
+  // the server has to learn the value before a client that can emit it ships, or one dwell on this
+  // tab 400s the whole batch and drops every counter in it.
+  //
+  // IT IS HERE RATHER THAN HELD BACK, and the rule that decides is not a preference. A view is kept
+  // out of this list only while NOBODY CAN REACH IT — the `UNRELEASED` gate, whose whole argument
+  // (`renderer/src/lib/telemetry.ts dwellView`) is that "a real cost for a view no user can reach"
+  // is not worth paying. The Plan tab is a REACHABLE tab from the day it ships, exactly as the Wish
+  // list was when it drew nothing but a placeholder, and `tests/telemetryContract.test.mts` pins the
+  // converse just as hard: with no gated views its assertion is `declared === TELEMETRY_VIEWS`, so a
+  // reachable view missing from here is a red build. Folding instead — leaving `dwellView` to answer
+  // `null` for a tab anyone can open — would silently under-count every OTHER tab's share of a
+  // session while telling the contract test a lie about what this build can render.
+  'plan',
   'preferences',
   'triage'
 ] as const

@@ -25,6 +25,7 @@ import GearView from './features/gear/GearView'
 // plainly rather than lazily: it is a heading and two sentences, which is cheaper than the code
 // that would defer it.
 import WishlistView from './features/wishlist/WishlistView'
+import PlanView from './features/plan/PlanView'
 import BossView from './features/bosses/BossView'
 import MobsView from './features/mobs/MobsView'
 import MapsView from './features/maps/MapsView'
@@ -151,6 +152,7 @@ function PlainView({
           every wish name links OUT to that item's Loot drill-down, the same contract the
           Exaltations tab's donor names use, so the drill's Back arrow comes home here. */}
       {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} />}
+      {view === 'plan' && <PlanView key={viewKey} onOpenLoot={routing.openLoot} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived

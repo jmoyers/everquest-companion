@@ -19,6 +19,14 @@ export type View =
   // It was a top-level nav row of its own until JOS-324; it is now the FIRST TAB of the gear area
   // (see `GEAR_AREA_VIEWS` below) and its view id, route and every `gear-*` testid are unchanged.
   | 'gear'
+  // The PROGRESSION PLAN (docs/plans/gear-progression-planner.md §4) — the gear area's second tab
+  // and the only one that answers a question about the FUTURE: where should I be at each level
+  // bracket, and what am I there for. Gear is the corpus, Exaltations is the socket board, the Wish
+  // list is what you decided you want; this is the route that produces the wanting. It sits beside
+  // Gear rather than beside Leveling on purpose — the Leveling tab is OBSERVED HISTORY and stays
+  // that (plan §4), and everything this surface reads (the item index, the class pin, the era
+  // toggle, the wish list it seeds) is already standing in the gear area.
+  | 'plan'
   // The WISH LIST (JOS-324 shell, JOS-326 content) — the third face of the gear area: the items
   // you have decided you want, kept as a list rather than derived from a plan. It ships this
   // ticket as an honest placeholder panel and gains its content in JOS-326.
@@ -68,6 +76,9 @@ export const VIEW_LABELS: Record<View, string> = {
   // tab is named, so the nav row and a drill's Back button rename together by construction.
   planner: 'Exaltations',
   gear: 'Gear',
+  // One word, and the noun rather than the verb: the tab holds a PLAN you can read, not a planning
+  // mode you enter. "Progression" would have been the doc's word and is three syllables of tab bar.
+  plan: 'Plan',
   // JOS-324. Two words, as a player writes it — the tab bar says it and, the day a wish-list row
   // deep-links into Loot, so will that drill's Back button.
   wishlist: 'Wish list',
@@ -92,6 +103,7 @@ const KNOWN_VIEWS: View[] = [
   'loot',
   'planner',
   'gear',
+  'plan',
   'wishlist',
   'buffs',
   'timers',
@@ -115,7 +127,7 @@ export function loadView(): View {
 }
 
 // ============================================================================
-// THE GEAR AREA — one nav row, four tabs (JOS-324)
+// THE GEAR AREA — one nav row, four tabs (JOS-324); five since the progression planner
 // ============================================================================
 //
 // THE LAW THIS REPLACES. Until JOS-324 the nav drawer's law was one row per view, full stop, and
@@ -144,17 +156,25 @@ export const GEAR_TAB_KEY = 'eq.gear.tab'
 export const DEFAULT_GEAR_TAB: View = 'gear'
 
 /**
- * The four faces, in tab order — FILTERED BY WHAT THIS BUILD CAN RENDER.
+ * The faces, in tab order — FILTERED BY WHAT THIS BUILD CAN RENDER.
  *
  * Deriving the roster from `KNOWN_VIEWS` rather than re-spelling a per-view gate is what keeps the
  * two lists from disagreeing: a tab appears exactly when the build can draw the view behind it.
  * JOS-327 is the proof it works — graduating the Character tab was one word moved in `KNOWN_VIEWS`
  * above, no edit down here, and no window in which the bar offered a tab that mounts nothing.
+ *
+ * FOUR UNTIL THE PROGRESSION PLANNER, WHICH MAKES IT FIVE and takes the second seat. `plan` sits
+ * immediately RIGHT OF `gear` because it is the same corpus asked a different question — Gear is
+ * "what is out there", Plan is "and in what order should I go and get it" — and because the two
+ * share every input the area holds (the class pin, the era toggle, the item index). Anywhere
+ * further right would have put the socket board and the character sheet between a question and its
+ * answer. The ordering rule the run already had is untouched: the shopping questions lead, and
+ * intent (Wish list) is still last with truth (Character) beside it.
  */
 export const GEAR_AREA_VIEWS: readonly View[] = (
   // Character sits LEFT of Wish list, in the run with everything else (owner ruling 2026-08-13:
   // the right-pushed placement hid the tab well enough that the owner reported it missing).
-  ['gear', 'planner', 'character', 'wishlist'] as const
+  ['gear', 'plan', 'planner', 'character', 'wishlist'] as const
 ).filter((v) => (KNOWN_VIEWS as readonly View[]).includes(v))
 
 /** Is this view drawn inside the gear area? (⇒ the nav row reads selected, the tab bar is up.) */

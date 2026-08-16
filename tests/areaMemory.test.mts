@@ -1,19 +1,20 @@
 // THE GEAR AREA'S FORM MEMORY — the restart split, and what every stored key does when the value
 // it reads back is rubbish (JOS-329).
 //
-// WHY THIS FILE EXISTS. The ticket persists eleven new fields across four tabs, and every one of
-// them reads from a store the user can edit, a previous build can have written, and a crash can
-// have truncated. `gearPrefs.ts` set the rule the whole area now follows — A STORED VALUE DEGRADES,
-// IT NEVER ERRORS (JOS-105) — and the only way that rule stays true across eleven keys is if each
-// one is driven through its garbage cases by something that runs in a millisecond.
+// WHY THIS FILE EXISTS. The ticket persists eleven new fields across four tabs — thirteen now that
+// the progression planner's Plan tab keeps a role and a reach — and every one of them reads from a
+// store the user can edit, a previous build can have written, and a crash can have truncated.
+// `gearPrefs.ts` set the rule the whole area now follows — A STORED VALUE DEGRADES, IT NEVER ERRORS
+// (JOS-105) — and the only way that rule stays true across thirteen keys is if each one is driven
+// through its garbage cases by something that runs in a millisecond.
 //
 // WHAT IS ASSERTED, in one sentence per claim:
 //
 //   1. THE SPLIT IS DATA. `AREA_FORM_TIER` is the ONE statement of which fields survive a restart,
 //      so the test reads it as a table rather than re-asserting the rule per call site: every
 //      search key is `session`, every structural key is `restart`, and there is no third tier.
-//   2. GARBAGE IN, DEFAULTS OUT — for all eleven keys, over one shared corpus of hostile values
-//      (`GARBAGE`), so a twelfth key added without a sanitizer cannot quietly pass by being
+//   2. GARBAGE IN, DEFAULTS OUT — for every stored key, over one shared corpus of hostile values
+//      (`GARBAGE`), so the NEXT key added without a sanitizer cannot quietly pass by being
 //      forgotten: it has to be added to a table here to be covered.
 //   3. A GOOD VALUE SURVIVES INTACT, which is the half a "never throws" test can accidentally
 //      satisfy by returning the default for everything.
@@ -51,9 +52,13 @@ import {
   sanitizeGearSort,
   sanitizeItemFocus,
   sanitizeOpenGroups,
+  sanitizePlanReach,
+  sanitizePlanRole,
   sanitizeSearch,
   sanitizeUpgrade,
   tierOf,
+  PLAN_REACHES,
+  PLAN_ROLES,
   type AreaFormKey,
   type BrowseFormMemory
 } from '../src/renderer/src/features/gear/areaMemory'
@@ -97,7 +102,10 @@ const BROWSE_FALLBACK: BrowseFormMemory = { socket: 'proc', slot: null, trioOnly
 
 test('the restart split is a table, and every key in it is on one of exactly two tiers', () => {
   const keys = Object.keys(AREA_FORM_TIER) as AreaFormKey[]
-  assert.equal(keys.length, 11, 'eleven fields were added by JOS-329 — update this test when a twelfth is')
+  // Eleven fields arrived with JOS-329; the progression planner's two picks (`eq.plan.role`,
+  // `eq.plan.reach`) make thirteen. The number is here so a key added without a row in `READERS`
+  // below fails TWICE — once on the count, once on the coverage sweep.
+  assert.equal(keys.length, 13, 'thirteen fields are stored — update this test when a fourteenth is')
   for (const key of keys) {
     const tier = tierOf(key)
     assert.ok(tier === 'restart' || tier === 'session', `${key} is on an unknown tier ${tier}`)
@@ -124,7 +132,12 @@ test('WHAT YOU CHOSE IS RESTART-SCOPED — including the slider, whose old law s
     'eq.gear.sort',
     'eq.gear.classes',
     'eq.gear.upgrade',
-    'eq.planner.filters'
+    'eq.planner.filters',
+    // The Plan tab's two picks. Neither is typed and neither is poked out of a list — they are the
+    // shape you gave the route, so they come back next launch like every other closed-vocabulary
+    // pick in this area.
+    'eq.plan.role',
+    'eq.plan.reach'
   ]
   for (const key of chosen) assert.equal(tierOf(key), 'restart', `${key} must survive a restart`)
 })
@@ -144,7 +157,7 @@ test('WHAT YOU CHOSE IS RESTART-SCOPED — including the slider, whose old law s
  * opaque group ids. Every OTHER reader has a closed vocabulary and no exemptions at all, which is
  * exactly the property this table makes visible.
  *
- * Driving the table rather than writing eleven near-identical tests is what makes "a new key must
+ * Driving the table rather than writing thirteen near-identical tests is what makes "a new key must
  * be covered" a mechanical requirement instead of a habit.
  */
 interface Reader {
@@ -173,7 +186,11 @@ const READERS: Reader[] = [
   { key: 'eq.planner.open', read: sanitizeOpenGroups, fallback: [], legal: anyIdList },
   { key: 'eq.planner.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.wishlist.search', read: sanitizeSearch, fallback: '', legal: anyString },
-  { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString }
+  { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString },
+  // The Plan tab's two picks. Both are closed vocabularies, so both take NO `legal` exemption:
+  // 'nonsense' is not a role, and the fallback is the fold's own default in each case.
+  { key: 'eq.plan.role', read: sanitizePlanRole, fallback: 'balanced' },
+  { key: 'eq.plan.reach', read: sanitizePlanReach, fallback: 'solo' }
 ]
 
 test('every stored key has a reader in this file — a new key cannot be covered by being forgotten', () => {
@@ -360,4 +377,23 @@ test('…and the sanitizer is `normalizeUpgradeState` rather than a second opini
       )
     }
   }
+})
+
+test('the Plan tab`s two picks round-trip, and their vocabularies come from the fold`s own unions', () => {
+  // EVERY member of each vocabulary survives, which is the half a "garbage defaults" sweep cannot
+  // see: a sanitizer that returned its fallback for everything would pass that test and silently
+  // pin every player to a balanced solo route.
+  for (const role of PLAN_ROLES) assert.equal(sanitizePlanRole(role), role)
+  for (const reach of PLAN_REACHES) assert.equal(sanitizePlanReach(reach), reach)
+
+  // The vocabularies themselves are the fold`s, not a second list: `progressionPlan.ts` exports no
+  // runtime spelling of `GearRole`, so `areaMemory.ts` derives one from a `Record` the compiler
+  // checks. Pinned here so a role added to the union and forgotten in that record goes red.
+  assert.deepEqual([...PLAN_ROLES].sort(), ['balanced', 'dps', 'healer', 'tank'])
+  assert.deepEqual([...PLAN_REACHES].sort(), ['group', 'solo'])
+
+  // A value from a build that spelled it differently DEGRADES to the shipped default rather than
+  // reaching the fold, which would read it as a role with no weights table (JOS-105).
+  assert.equal(sanitizePlanRole('TANK'), 'balanced', 'the vocabulary is case-sensitive')
+  assert.equal(sanitizePlanReach('duo'), 'solo', 'a reach nobody measured is not a reach')
 })
