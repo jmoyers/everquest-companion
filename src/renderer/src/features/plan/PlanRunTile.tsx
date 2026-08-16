@@ -1,5 +1,21 @@
-// plan/PlanRunRow.tsx — ONE TRIP, AND WHAT IS WORTH GETTING ON IT
+// plan/PlanRunTile.tsx — ONE TRIP, AND WHAT IS WORTH GETTING ON IT
 // (docs/plans/gear-progression-planner.md §1; `progressionPlan.ts GearRun`, fold rule 7).
+//
+// IT WAS `PlanRunRow.tsx` UNTIL 2026-08-15 AND THE RENAME IS THE POINT OF THE CHANGE. The owner sent
+// a screenshot of the new zone-first layout on a ~2,500px window and asked: *"can we condense this to
+// columns that auto fold and collapse so that if possible, multiple zones can be side-by-side"*. Each
+// run had been one full-width ROW, so a window three times wider than the content still showed six
+// zones stacked vertically with two thirds of the glass empty. A run is now a TILE in a responsive
+// grid (`PlanBracketCard.tsx` owns the grid; this file owns what sits in a cell), and a file called
+// `Row` that draws a tile would be the sort of stale name this tree does not keep.
+//
+// AND IT FOLDS. The tile's HEADING is a button: clicking it collapses the tile to that one line, so a
+// reader scanning eight zones can shut the ones they have already read and let the grid reflow. Two
+// deliberate limits on that: EXPANDED IS THE DEFAULT — a card whose items are hidden on arrival
+// answers nothing, and both the e2e's claims and a first read need the targets visible — and the
+// state is PLAIN COMPONENT STATE with no persistence. There is no `eq.plan.*` key for it, because a
+// fold is a glance ("I have read this one"), not a preference, and a collapsed tile restored three
+// days later would just be a zone the player cannot find.
 //
 // THE SHAPE THE ASK ACTUALLY ASKED FOR, and the reason this file exists at all. The first cut of
 // the Plan tab drew a bracket as a flat top-eight list of items, and the fold's own rule 7 records
@@ -34,12 +50,17 @@
 // card simulating a tier would contradict the ranking that put the row on screen. The card's
 // "simulated at Tier N" line correctly never appears.
 //
-// THE ROW IS `nowrap` WITH ONE SHRINKABLE GROUP (the flexWrap law): wrapping converts overflow into
-// height and these rows sit in a column of cards, so the world text (item name, mob, zone) shares
-// one `minWidth: 0` group that ellipsizes and every chip is `flexShrink: 0`.
+// EVERY ROW IS `nowrap` WITH ONE SHRINKABLE GROUP (the flexWrap law), and the tile layout is what
+// makes that rule load-bearing rather than tidy. A tile is ~320px wide instead of ~1,200, so item
+// names and mob text now genuinely run out of room — they ellipsize inside their one `minWidth: 0`
+// group while every chip stays `flexShrink: 0`, and the facts that got clipped are on the row's
+// `title` instead. A tile that widened to fit its longest item name would break the grid's columns
+// and put the page back into the sideways scroll the standing law forbids.
 
-import type { JSX } from 'react'
+import { useState, type JSX } from 'react'
 import { Box, Chip, Stack, Typography } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import type { ConBand } from '@shared/conBands'
 import type { GearRun, GearTarget } from '@shared/planner/progressionPlan'
 import { itemIconUrl } from '../../lib/ItemWindow'
@@ -119,10 +140,13 @@ function WishedChip(): JSX.Element {
  */
 function TargetRow({
   target,
+  runBand,
   compare,
   onOpenLoot
 }: {
   target: GearTarget
+  /** the band its RUN heading already printed — see the chip rule below */
+  runBand: ConBand | null
   compare?: GearCompareData
   onOpenLoot?: (item: string) => void
 }): JSX.Element {
@@ -139,8 +163,12 @@ function TargetRow({
       // THE SCORE LIVES HERE AND NOWHERE ELSE. `roleValue` is a heuristic rank with an invented
       // weights table behind it, so it is worth saying what ordered the list and it is not worth a
       // column that would read like a stat off the item page.
-      title={`Ranked ${String(target.score)} for this role - a heuristic ordering, not a game stat.`}
-      sx={{ flexWrap: 'nowrap', minWidth: 0, py: 0.25, pl: 2 }}
+      //
+      // AND SINCE THE TILE LAYOUT, THE WITNESS RIDES ALONG. In a ~320px column the mob text is the
+      // first thing to ellipsize, so the hover carries what the row had to clip — the alternative
+      // (letting the tile grow to fit) is the one thing the grid must not do.
+      title={`${target.name} - ${mobText(target)}. Ranked ${String(target.score)} for this role - a heuristic ordering, not a game stat.`}
+      sx={{ flexWrap: 'nowrap', minWidth: 0, py: 0.25, pl: 1 }}
     >
       {target.iconId !== undefined && (
         <Box
@@ -167,40 +195,121 @@ function TargetRow({
         </Typography>
       </Box>
       {target.wished && <WishedChip />}
-      <BandChip band={target.band} plus={target.plus} />
+      {/* THE BAND ONLY WHEN IT ADDS SOMETHING. A run's heading already states one band for the whole
+          trip, and inside a ~320px tile repeating it on every row costs the width the item name needs
+          — worst case a `+N` run printing "difficulty unstated" four times in a column that fits it
+          once. A target whose band DIFFERS from its run's still draws its own chip, because that is a
+          real fact about a different mob; a target that agrees says nothing twice. Nothing is hidden
+          by this rule that the tile is not already showing one line above. */}
+      {target.band !== runBand && <BandChip band={target.band} plus={target.plus} />}
     </Stack>
   )
 }
 
-export interface PlanRunRowProps {
+export interface PlanRunTileProps {
   run: GearRun
   /** the Gear tab's comparison seam; ABSENT means no card, the `GearTable` house rule */
   compare?: GearCompareData
   onOpenLoot?: (item: string) => void
 }
 
-/** One run: the place, its difficulty, and up to three things worth carrying home from it. */
-export default function PlanRunRow({ run, compare, onOpenLoot }: PlanRunRowProps): JSX.Element {
+/**
+ * ONE RUN, AS A TILE: the place, its difficulty, how many things are in it, and — until you fold it
+ * — up to three of them.
+ *
+ * THE TESTIDS ARE UNCHANGED THROUGH THE RELAYOUT (`plan-run`, `plan-run-head`, `plan-target`,
+ * `plan-band`, `plan-wished`) and so is the DOM nesting the specs read: a `plan-run` still holds one
+ * `plan-run-head` and its `plan-target`s as descendants. `tests/e2e/plan.e2e.mts` walks exactly that
+ * shape, and a layout change that renamed a hook would have made a visual tweak look like a
+ * behaviour change in the one suite that cannot be run casually.
+ *
+ * THE COUNT IS IN THE HEADING because the heading is all that survives a fold: "Befallen +4 · 3" is
+ * still an answer when the items are hidden, where a bare zone name would leave a reader unable to
+ * tell a rich trip from a thin one without opening every tile. It is rendered as its own node so the
+ * chevron and the count cannot be mistaken for part of the place's name.
+ */
+export default function PlanRunTile({ run, compare, onOpenLoot }: PlanRunTileProps): JSX.Element {
+  const [collapsed, setCollapsed] = useState(false)
   return (
-    <Box data-testid="plan-run" data-zone={run.zone} data-plus={run.plus === null ? '' : String(run.plus)} sx={{ mt: 0.75 }}>
+    <Box
+      data-testid="plan-run"
+      data-zone={run.zone}
+      data-plus={run.plus === null ? '' : String(run.plus)}
+      // THE TILE'S OWN STATE, on the tile rather than on the heading: what folds is the whole run,
+      // and a spec asserting the fold wants `[data-testid="plan-run"][data-collapsed="true"]`.
+      data-collapsed={collapsed ? 'true' : 'false'}
+      // `minWidth: 0` is what lets the grid column shrink at all — without it a grid item's automatic
+      // minimum is its content, and one long item name would widen the whole column past its track.
+      sx={{
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+        p: 0.75,
+        minWidth: 0,
+        overflow: 'hidden'
+      }}
+    >
       {/* THE HEADING IS ITS OWN NODE (`plan-run-head`) so a reader — human or spec — can take the
           place and its verdict as ONE string. The band sits on the same `nowrap` row, so reading
-          the Box's first text line would depend on where the browser chose to break it. */}
+          the Box's first text line would depend on where the browser chose to break it.
+          It is also the FOLD CONTROL: a real <button> element, so the keyboard and a screen reader
+          reach it the same way the pointer does, with the MUI button reset undone by `sx` because a
+          heading that looked like a button would shout on a page of eight of them. */}
       <Stack
+        component="button"
+        type="button"
         direction="row"
         spacing={1}
         alignItems="center"
         data-testid="plan-run-head"
-        sx={{ flexWrap: 'nowrap', minWidth: 0 }}
+        aria-expanded={!collapsed}
+        title={collapsed ? 'Show what is worth getting here' : 'Fold this trip down to its heading'}
+        onClick={() => {
+          setCollapsed((v) => !v)
+        }}
+        sx={{
+          flexWrap: 'nowrap',
+          minWidth: 0,
+          width: '100%',
+          font: 'inherit',
+          color: 'inherit',
+          textAlign: 'left',
+          background: 'none',
+          border: 0,
+          p: 0,
+          cursor: 'pointer'
+        }}
       >
+        {/* An SVG affordance rather than a text glyph, deliberately: the specs read this node's
+            `innerText` and assert the zone name is in it, so the chevron must contribute no text. */}
+        {collapsed ? (
+          <ChevronRightIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
+        ) : (
+          <ExpandMoreIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
+        )}
         <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
           {runLabel(run)}
         </Typography>
         <BandChip band={run.band} plus={run.plus} />
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ flexShrink: 0 }}
+          title={`${String(run.targets.length)} listed here - the fold caps a run at three.`}
+        >
+          {run.targets.length}
+        </Typography>
       </Stack>
-      {run.targets.map((target) => (
-        <TargetRow key={target.key} target={target} compare={compare} onOpenLoot={onOpenLoot} />
-      ))}
+      {!collapsed &&
+        run.targets.map((target) => (
+          <TargetRow
+            key={target.key}
+            target={target}
+            runBand={run.band}
+            compare={compare}
+            onOpenLoot={onOpenLoot}
+          />
+        ))}
     </Box>
   )
 }

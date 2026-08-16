@@ -9,8 +9,22 @@
 // flat top-eight list of items, and `progressionPlan.ts` rule 7 records what that cost: at level 44
 // the Refined runs the owner actually farms never cracked a bracket-wide top eight against planes
 // loot, so the feature's own subject — "it should say crushbone … mistmoore splitpaw" — never
-// rendered. The item rows moved one level down, under the place they come from (`PlanRunRow.tsx`),
+// rendered. The item rows moved one level down, under the place they come from (`PlanRunTile.tsx`),
 // and the card kept everything else.
+//
+// AND SINCE 2026-08-15 THE RUNS ARE A GRID RATHER THAN A COLUMN, on the owner's ask with a screenshot
+// of the first cut: *"can we condense this to columns that auto fold and collapse so that if possible,
+// multiple zones can be side-by-side"*. Each run had been one FULL-WIDTH row, so his ~2,500px window
+// drew six zones stacked down the left with two thirds of the glass empty. `repeat(auto-fill,
+// minmax(min(320px, 100%), 1fr))` puts as many tiles across as the width honestly fits — seven on
+// that window, one on a narrow one — and the browser reflows them with no breakpoint table for
+// anybody to maintain.
+//
+// THE `min(320px, 100%)` IS THE STANDING NO-SIDEWAYS-SCROLL LAW, spelled out. A bare `minmax(320px,
+// 1fr)` sets a floor the track cannot go under, so a window narrower than one tile plus the card's
+// padding would push the page into a horizontal scrollbar — the one thing this app never does. With
+// the `min()`, the track collapses to the container instead and the overflow becomes HEIGHT, which is
+// exactly what a wrapping grid is for.
 //
 // EVERY DERIVATION IS LABELLED, AND THAT IS STILL THE POINT. Nothing here is a number EverQuest
 // states: a zone's band is a MEDIAN over the levels its mobs state, so the chip carries `from N
@@ -34,7 +48,19 @@ import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import type { PlanBracket, ZonePick } from '@shared/planner/progressionPlan'
 import type { GearCompareData } from '../gear/gearData'
 import { bracketTargets } from './planData'
-import PlanRunRow from './PlanRunRow'
+import PlanRunTile from './PlanRunTile'
+
+/**
+ * THE NARROWEST A RUN TILE MAY BE, and therefore how many fit across.
+ *
+ * 320px is what a tile's own content needs before its item names start ellipsizing on the FIRST
+ * word rather than the last: a target row is an icon (20), the item name, the mob-and-level caption,
+ * and up to two chips that may not shrink. Below ~300 the name itself starts disappearing and the
+ * row stops answering "what is worth getting here"; much above ~340 and the owner's 2,500px window
+ * loses a whole column for no reading benefit. It is one constant because the grid and the tile have
+ * to agree about it and only one of them should own the number.
+ */
+const RUN_TILE_MIN = 320
 
 /**
  * One exp zone. The band is what the zone's MEDIAN mob cons at the bracket midpoint, and the hover
@@ -114,9 +140,26 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot }:
         )}
       </Stack>
 
-      {bracket.runs.map((run) => (
-        <PlanRunRow key={`${run.zone}#${String(run.plus ?? 0)}`} run={run} compare={compare} onOpenLoot={onOpenLoot} />
-      ))}
+      {/* THE RUNS, AS A RESPONSIVE GRID — see the header. `auto-fill` rather than `auto-fit` because
+          `auto-fit` collapses the empty tracks and lets a lone run stretch to 2,500px, which is the
+          same wasted width in a different shape. */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(auto-fill, minmax(min(${RUN_TILE_MIN}px, 100%), 1fr))`,
+          gap: 1,
+          mt: 1
+        }}
+      >
+        {bracket.runs.map((run) => (
+          <PlanRunTile
+            key={`${run.zone}#${String(run.plus ?? 0)}`}
+            run={run}
+            compare={compare}
+            onOpenLoot={onOpenLoot}
+          />
+        ))}
+      </Box>
       {bracket.runs.length === 0 && (
         <Typography variant="caption" color="text.secondary" data-testid="plan-no-targets" sx={{ display: 'block', mt: 0.5 }}>
           Nothing here beats what you are already wearing - grind it, and keep going.

@@ -19,7 +19,7 @@
 // LEARNED from one machine's consider history, and a fold that reached for it directly could not be
 // tested against a band table whose shape the test controls. The renderer passes `conBand`.
 //
-// TEN RULES THE FOLD REFUSES TO BEND:
+// ELEVEN RULES THE FOLD REFUSES TO BEND:
 //
 //   1. AN EMPTY CLASS LIST IS UNKNOWN, NEVER "NOBODY" (`GearRow.classes`, law 1). An item whose page
 //      stated no classes — or stated them unreadably — is KEPT for every trio. Excluding it would
@@ -29,8 +29,9 @@
 //      mob (plan §0.2, re-verified 2026-08-15) — so nothing on this machine states how hard a +4
 //      creature is. Printing "blue at 19" for one would be a fabricated number. `band: null` is the
 //      honest answer and the renderer draws it as "difficulty unstated".
-//   3. THE ROLE WEIGHTS ARE A HEURISTIC AND SAY SO. They live in `roleWeights.ts`, which this file
-//      re-exports (`GearRole`, `roleValue`) so no caller has to know they moved.
+//   3. THE ROLE WEIGHTS ARE A HEURISTIC AND SAY SO. They live in `roleWeights.ts` (beside the weapon
+//      policy of rule 10), which this file re-exports (`GearRole`, `roleValue`) so no caller has to
+//      know they moved.
 //   4. THE HORIZON IS DATA-DRIVEN, not a level cap this file claims to know. See
 //      `buildProgressionPlan`.
 //   5. THE TARGET GATE IS A CEILING, NOT A WINDOW. CORRECTED 2026-08-15, from the owner playing the
@@ -73,7 +74,16 @@
 //      sorts FIRST, because the user declaring they want a thing is the strongest statement about it
 //      in this whole corpus and it outranks a score rule 3 openly calls invented. Every other gate —
 //      era, reach, wearability, the +N rules — still applies to it.
-//  10. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
+//  10. A ROLE MAY CLOSE A SLOT, AND A CLOSED SLOT IS NOT A GAP (`roleWeights.ts
+//      ROLE_WEAPON_POLICY`). Owner, 2026-08-15: he wields a two-handed greataxe, so his
+//      Secondary/Held is empty ON PURPOSE — and rule 8 read that empty slot as a gap and offered him
+//      shields. An empty offhand under a two-hander is not a hole in his gear, it IS his gear, and
+//      no weights table can say so because the difference is not in any stat. So the weapon roles
+//      carry a POLICY beside their weights: `dps2h` closes the offhand and takes only two-handers in
+//      the main hand, `dualwield` takes one-handers in both, `dps1h` constrains only the main hand,
+//      `tank` takes only shield-shaped offhands. The five other roles state no policy, which is
+//      today's behaviour written down rather than a new default.
+//  11. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
 //      SEEDS the wish list; it does not become one.
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
@@ -90,7 +100,13 @@ import type { ConBand } from '../conBands'
 import type { GearRow } from './gear'
 import type { EquipSlot } from './types'
 import { layeredVerdict } from './era'
-import { roleValue, type GearRole } from './roleWeights'
+import {
+  ROLE_WEAPON_POLICY,
+  policyAdmits,
+  roleValue,
+  type GearRole,
+  type WeaponSlotPolicy
+} from './roleWeights'
 import { plusSuffix, zoneLevelKey, type PlusName, type ZoneLevels } from './zoneLevels'
 
 // The two names this file used to define and now only passes through — see `roleWeights.ts`.
@@ -604,29 +620,44 @@ function expZonesFor(
   return picks.slice(0, EXP_ZONE_CAP)
 }
 
+/** What the admission test reads, bundled: the row's score, the owned bars, the role's policy. */
+interface AdmitGate {
+  score: number
+  bars: ReadonlyMap<EquipSlot, number> | undefined
+  policy: WeaponSlotPolicy
+}
+
 /**
- * IS THIS AN UPGRADE? — the admission test (rule 8), and it is a GAP test rather than a ranking.
+ * IS THIS AN UPGRADE? — the admission test (rule 8). A GAP test rather than a ranking, now read
+ * THROUGH the role's weapon-slot policy (rule 11).
  *
- * An item is in when its role score STRICTLY beats the best owned score in AT LEAST ONE slot it
- * fits: a two-hander that beats your PRIMARY is worth the trip even if your SECONDARY is better
- * still, and a ring that beats neither of your fingers is not.
+ * An item is in when there is AT LEAST ONE slot it fits where BOTH are true: the role would take a
+ * suggestion for that slot at all (`policyAdmits`), and its score STRICTLY beats the best owned
+ * score there. A two-hander that beats your PRIMARY is worth the trip even if your SECONDARY is
+ * better still; a ring that beats neither finger is not; and under a 2H role a shield fits nowhere
+ * the role is listening, whatever it scores.
  *
  * A SLOT THE MAP DOES NOT NAME IS A GAP and admits anything wearable — see `PlanCorpora
  * .ownedBestBySlot` for why absent is read as "nothing stated there" rather than "an owned zero".
  * A row with no slots at all cannot fill a gap and is out; `gear.ts` says a row exists precisely
  * because it has one, so that arm is a guard rather than a case.
+ *
+ * THE POLICY IS CHECKED EVEN WHEN NO BARS WERE HANDED IN, which is the whole point of the empty
+ * offhand: it is closed because the ROLE says so, not because anything is known to be worn there.
  */
-function isUpgrade(row: GearRow, score: number, bars: ReadonlyMap<EquipSlot, number> | undefined): boolean {
-  if (bars === undefined) return row.slots.length > 0
+function isUpgrade(row: GearRow, gate: AdmitGate): boolean {
   return row.slots.some((slot) => {
-    const best = bars.get(slot)
-    return best === undefined || score > best
+    if (!policyAdmits(gate.policy, slot, row)) return false
+    if (gate.bars === undefined) return true
+    const best = gate.bars.get(slot)
+    return best === undefined || gate.score > best
   })
 }
 
 /** Every gear row that could ever be a target, filtered once and scored once (not per bracket). */
 function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
   const out: Candidate[] = []
+  const policy = ROLE_WEAPON_POLICY[inputs.role]
   for (const row of corpora.gear) {
     if (corpora.owned.has(row.key)) continue
     if (!wearable(row, inputs.classes)) continue
@@ -634,11 +665,14 @@ function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
     const score = roleValue(row.stats, inputs.role)
-    // A WISHED ITEM SKIPS THE GAP TEST. The user declaring they want a thing is the strongest
-    // statement about it anywhere in this corpus, and it outranks a score this file's own header
-    // calls an invented ranking. Every other gate — era, reach, wearability — still applies.
+    // A WISHED ITEM SKIPS THE GAP TEST **AND THE POLICY**. The user declaring they want a thing is
+    // the strongest statement about it anywhere in this corpus, and it outranks both a score this
+    // file's own header calls invented and a loadout shape inferred from a picker. The policy exists
+    // to stop UNSOLICITED suggestions; a wish is the opposite of unsolicited, so a 2H player who has
+    // wish-listed a shield is told where to get their shield. Every other gate — era, reach,
+    // wearability — still applies.
     const wished = corpora.wished.has(row.key)
-    if (!wished && !isUpgrade(row, score, corpora.ownedBestBySlot)) continue
+    if (!wished && !isUpgrade(row, { score, bars: corpora.ownedBestBySlot, policy })) continue
     out.push({ row, witnesses, score, wished })
   }
   return out

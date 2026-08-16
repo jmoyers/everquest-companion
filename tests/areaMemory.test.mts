@@ -389,11 +389,35 @@ test('the Plan tab`s two picks round-trip, and their vocabularies come from the 
   // The vocabularies themselves are the fold`s, not a second list: `progressionPlan.ts` exports no
   // runtime spelling of `GearRole`, so `areaMemory.ts` derives one from a `Record` the compiler
   // checks. Pinned here so a role added to the union and forgotten in that record goes red.
-  assert.deepEqual([...PLAN_ROLES].sort(), ['balanced', 'dps', 'healer', 'tank'])
+  assert.deepEqual(
+    [...PLAN_ROLES].sort(),
+    ['balanced', 'dd', 'dot', 'dps', 'dps1h', 'dps2h', 'dualwield', 'healer', 'tank']
+  )
   assert.deepEqual([...PLAN_REACHES].sort(), ['group', 'solo'])
 
   // A value from a build that spelled it differently DEGRADES to the shipped default rather than
   // reaching the fold, which would read it as a role with no weights table (JOS-105).
   assert.equal(sanitizePlanRole('TANK'), 'balanced', 'the vocabulary is case-sensitive')
   assert.equal(sanitizePlanReach('duo'), 'solo', 'a reach nobody measured is not a reach')
+})
+
+test('the 2026-08-15 role widening did not evict a pick anybody already had stored', () => {
+  // THE COMPATIBILITY CLAIM, pinned rather than asserted in a comment. `dps` was in the shipped
+  // vocabulary before the widening and is in this machine`s `eq.plan.role` right now; renaming it to
+  // something tidier (`dpsAny`) would have had the sanitizer answer `balanced` for the owner`s own
+  // stored pick the first time he opened the tab. The four pre-widening spellings still round-trip.
+  for (const stored of ['balanced', 'tank', 'dps', 'healer']) {
+    assert.equal(sanitizePlanRole(stored), stored, `a stored ${stored} still reads as itself`)
+  }
+
+  // …and every NEW spelling round-trips too, which is the half that proves the widening reached the
+  // sanitizer rather than only the union.
+  for (const added of ['dps1h', 'dps2h', 'dualwield', 'dd', 'dot']) {
+    assert.equal(sanitizePlanRole(added), added)
+  }
+
+  // Near-misses are still not roles. The vocabulary grew; it did not become fuzzy.
+  assert.equal(sanitizePlanRole('1h'), 'balanced')
+  assert.equal(sanitizePlanRole('dual-wield'), 'balanced')
+  assert.equal(sanitizePlanRole('DoT'), 'balanced')
 })

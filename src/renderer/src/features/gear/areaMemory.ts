@@ -328,7 +328,22 @@ export type PlanReach = PlanInputs['reach']
  * remember to. The picker draws these same arrays, so the control and the validator can never offer
  * different words.
  */
-const PLAN_ROLE_KEYS: Record<GearRole, true> = { balanced: true, tank: true, dps: true, healer: true }
+// ORDER IS THE PICKER'S ORDER, because `PLAN_ROLES` is what draws it: the three broad answers
+// first, then the generic DPS the stored pick already holds, then the four builds that narrow it.
+// `dps` KEEPS ITS SPELLING through the 2026-08-15 widening on purpose — it is a value already in
+// this machine's `eq.plan.role`, and dropping it from the vocabulary would have had the sanitizer
+// silently reset the owner's own pick to `balanced`.
+const PLAN_ROLE_KEYS: Record<GearRole, true> = {
+  balanced: true,
+  tank: true,
+  healer: true,
+  dps: true,
+  dps1h: true,
+  dps2h: true,
+  dualwield: true,
+  dd: true,
+  dot: true
+}
 const PLAN_REACH_KEYS: Record<PlanReach, true> = { solo: true, group: true }
 
 export const PLAN_ROLES = Object.keys(PLAN_ROLE_KEYS) as GearRole[]

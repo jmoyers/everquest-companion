@@ -8,7 +8,7 @@
 // IT IS A ROUTE, NOT AN OPTIMIZER, and the distinction is forced by the data rather than chosen: no
 // drop rates exist anywhere in this repo, so there is nothing to optimize over. A bracket ranks
 // ZONES by what their mobs' stated levels con at, and ITEMS by a role-weighted heuristic. Both
-// derivations are labelled on the cards that draw them (`PlanBracketCard.tsx`, `PlanRunRow.tsx`).
+// derivations are labelled on the cards that draw them (`PlanBracketCard.tsx`, `PlanRunTile.tsx`).
 //
 // AND IT LOOKS AT WHAT YOU HAVE (owner, 2026-08-15: *"i should be able to gear my guy up, so it
 // needs to look at what I have and the best in slot"*). The ownership join this view already read
@@ -81,8 +81,15 @@ import { usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
 const ROLE_LABEL: Record<GearRole, string> = {
   balanced: 'Balanced',
   tank: 'Tank',
-  dps: 'DPS',
-  healer: 'Healer'
+  healer: 'Healer',
+  // "(any)" rather than a bare "DPS", because four of the entries below are also DPS. This is the
+  // one that constrains no weapon slot, and the label has to say which of the five it is.
+  dps: 'DPS (any)',
+  dps1h: '1H DPS',
+  dps2h: '2H DPS',
+  dualwield: 'Dual wield',
+  dd: 'Caster DD',
+  dot: 'Caster DoT'
 }
 
 /** …and the two reaches, whose words are the gate they open (`progressionPlan` SOLO/GROUP_GATE). */
@@ -92,7 +99,7 @@ const REACH_LABEL: Record<PlanReach, string> = {
 }
 
 const ROLE_HINT =
-  'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently. The same weights score what you already own: an item is listed only if it beats your best in at least one slot it fits, and a wished item always shows.'
+  'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently. The same weights score what you already own: an item is listed only if it beats your best in at least one slot it fits, and a wished item always shows. The weapon roles also constrain the weapon slots: 2H DPS suggests two-handers and never offers an offhand, dual wield wants one-handers in both hands, 1H DPS constrains the main hand, and Tank takes only shield-shaped offhands. Caster DD and Caster DoT rank nearly alike - no stat in the corpus tells burst apart from a dot.'
 const REACH_HINT =
   'The hardest fight the route will send you to. Solo tops out at blue and white; a group raises the ceiling by one band. Anything easier always makes the list.'
 

@@ -10,15 +10,42 @@
 //
 // PURE, relative value imports (the shared/planner house rule) so the node test runner loads it.
 
-import { GEAR_STAT_KEYS, type GearStatKey, type GearStats } from './gear'
+import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
+import type { EquipSlot } from './types'
 import { gearEffectiveHp, gearRatio } from './gearScale'
+// The skill vocabulary is NOT restated here — `weaponType.ts` measured it and folded it, and one
+// fold is what keeps the Gear tab's weapon filter and this policy answering the same question.
+import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
 
 // =================================================================================================
 // ROLE WEIGHTS — one table, openly heuristic
 // =================================================================================================
 
-/** What the player is gearing FOR. `balanced` is the default and sits between the other three. */
-export type GearRole = 'balanced' | 'tank' | 'dps' | 'healer'
+/**
+ * What the player is gearing FOR — widened 2026-08-15 on the owner's ask, verbatim: *"we should
+ * probably have it be choseable also, 1h DPS, 2h DPS, dual weild, DD, DOT, Healer, Tank, etc"*.
+ *
+ * `dps` STAYS as the generic and is not renamed, because it is a value already sitting in a
+ * `localStorage` key on the owner's machine (`eq.plan.role`) and `sanitizePlanRole` would have
+ * quietly reset a stored `dps` to `balanced` the moment the union stopped naming it. A vocabulary
+ * that has shipped is a vocabulary you extend, not one you re-spell.
+ *
+ * THREE OF THE NEW MEMBERS SHARE THE DPS WEIGHTS EXACTLY (`dps1h`, `dps2h`, `dualwield`). They are
+ * not three opinions about what a stat is worth — the same 8 STR is the same 8 STR in either hand.
+ * They differ in WEAPON-SLOT POLICY (`ROLE_WEAPON_POLICY` below), which is a question about the
+ * SHAPE of a loadout rather than the value of a stat, and keeping the two questions in two tables is
+ * what stops "dual wield" from becoming a third set of coefficients nobody can justify.
+ */
+export type GearRole =
+  | 'balanced'
+  | 'tank'
+  | 'healer'
+  | 'dps'
+  | 'dps1h'
+  | 'dps2h'
+  | 'dualwield'
+  | 'dd'
+  | 'dot'
 
 /** One role's coefficients. Absent key = that stat contributes NOTHING to this role. */
 interface RoleWeights {
@@ -59,6 +86,64 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  * mana, WIS, CHA and both regens with a moderate EHP; BALANCED reads everything smally. Every role
  * reads AC, effective HP and saves at some weight, because staying alive is not a role.
  */
+/**
+ * THE MELEE DPS PROFILE, shared by `dps`, `dps1h`, `dps2h` and `dualwield` (see `GearRole`).
+ */
+const MELEE_DPS: RoleWeights = {
+  stats: {
+    AC: 0.5,
+    STR: 1.5,
+    AGI: 0.2,
+    DEX: 1.2,
+    WIS: 0.1,
+    INT: 0.8,
+    CHA: 0.1,
+    MP: 0.1,
+    HP_REGEN: 3,
+    MANA_REGEN: 3,
+    END_REGEN: 1,
+    ATTACK: 1.5,
+    HASTE: 4,
+    DMG_BONUS: 3,
+    BACKSTAB: 2
+  },
+  ehp: 0.2,
+  ratio: 20,
+  saves: 0.15
+}
+
+/**
+ * THE CASTER PROFILE the two nuker roles share, and the honesty clause that comes with it.
+ *
+ * DD AND DOT ARE VERY NEARLY THE SAME RANKING, ON PURPOSE. The corpus states AC, attributes, pools
+ * and regens; it states NOTHING about spell damage, cast time, resist rate or duration, so nothing
+ * in a stat block distinguishes a burst caster's gear from a damage-over-time caster's. Inventing a
+ * spread would be inventing a fact, so the two tables differ in exactly one axis and are otherwise
+ * identical:
+ *   * DD leans RAW POOL — INT 1.7, MP 0.45, MANA_REGEN 8. Burst is paid for up front, out of the
+ *     bar you walked in with, so what you can spend in ten seconds is what you brought.
+ *   * DOT leans REGEN — INT 1.5, MP 0.35, MANA_REGEN 14. A dot fight is long by definition, and a
+ *     bar that refills DURING it is worth more than a bar that was bigger at the start.
+ * That is the whole difference, it is a lean and not a claim, and anybody expecting two visibly
+ * different lists should expect two nearly identical ones instead.
+ */
+const CASTER_STATS: Partial<Record<GearStatKey, number>> = {
+  AC: 0.8,
+  STR: 0.1,
+  AGI: 0.1,
+  DEX: 0.1,
+  WIS: 0.9,
+  INT: 1.6,
+  CHA: 0.2,
+  MP: 0.4,
+  HP_REGEN: 3,
+  MANA_REGEN: 10,
+  END_REGEN: 0.2,
+  ATTACK: 0.1,
+  HASTE: 0.3,
+  DMG_BONUS: 0.1
+}
+
 const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
   balanced: {
     stats: {
@@ -103,28 +188,16 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
     ratio: 3,
     saves: 0.5
   },
-  dps: {
-    stats: {
-      AC: 0.5,
-      STR: 1.5,
-      AGI: 0.2,
-      DEX: 1.2,
-      WIS: 0.1,
-      INT: 0.8,
-      CHA: 0.1,
-      MP: 0.1,
-      HP_REGEN: 3,
-      MANA_REGEN: 3,
-      END_REGEN: 1,
-      ATTACK: 1.5,
-      HASTE: 4,
-      DMG_BONUS: 3,
-      BACKSTAB: 2
-    },
-    ehp: 0.2,
-    ratio: 20,
-    saves: 0.15
-  },
+  dps: MELEE_DPS,
+  // THE SAME OBJECT, not a copy — see the `GearRole` header. A 1H build, a 2H build and a dual-wield
+  // build value an identical stat identically; what differs is which SLOTS they will take a
+  // suggestion for, and that is `ROLE_WEAPON_POLICY`'s question, not this table's. Sharing the
+  // reference is the compile-time version of that claim: they cannot drift apart.
+  dps1h: MELEE_DPS,
+  dps2h: MELEE_DPS,
+  dualwield: MELEE_DPS,
+  dd: { stats: { ...CASTER_STATS, INT: 1.7, MP: 0.45, MANA_REGEN: 8 }, ehp: 0.3, ratio: 2, saves: 0.3 },
+  dot: { stats: { ...CASTER_STATS, INT: 1.5, MP: 0.35, MANA_REGEN: 14 }, ehp: 0.3, ratio: 2, saves: 0.3 },
   healer: {
     stats: {
       AC: 1,
@@ -175,4 +248,141 @@ export function roleValue(stats: GearStats, role: GearRole): number {
   const ratio = gearRatio(stats)
   if (ratio !== undefined) total += ratio * weights.ratio
   return Math.round(total * 1000) / 1000
+}
+
+// =================================================================================================
+// WEAPON-SLOT POLICY — the SHAPE of a loadout, which weights cannot express
+// =================================================================================================
+//
+// THE BUG THIS EXISTS FOR, reported 2026-08-15: the owner wields a Verishe Mal Greataxe, a TWO-
+// HANDER, so his Secondary/Held is empty ON PURPOSE. The upgrade-gap rule reads an empty slot as a
+// GAP and a gap admits anything wearable — so the route cheerfully offered him shields. An empty
+// offhand under a two-hander is not a hole in his gear; it IS his gear, and no score can say so
+// because the difference is not in any stat.
+//
+// SO POLICY IS A SECOND, SEPARATE TABLE. Weights answer "what is this item worth"; policy answers
+// "would I ever put something there at all, and what". Two questions, two tables, and a role picks
+// one of each — which is what lets `dps1h`, `dps2h` and `dualwield` share ONE weights profile
+// (`MELEE_DPS`) and still produce three different plans.
+//
+// THE KINDNESS PREDICATES ARE READ OFF THE CORPUS, NEVER INVENTED, and the skill vocabulary is not
+// restated here: `weaponType.ts` already folded the wiki's fifteen `Skill:` spellings into nine
+// types and `WEAPON_CATEGORY_MEMBERS` already says which are one-handed and which are two.
+// RE-MEASURED 2026-08-15 against the committed corpus (`src/main/data/items.json`, 6,814 equippable
+// rows), and it had not drifted from that file's 2026-08-13 census — same fifteen spellings, same
+// counts, `SHIELD` still the only one `weaponTypeOf` declines to map:
+//
+//     1H Slashing 413 · Piercing 322 · 1H Blunt 321 · 2H Slashing 223 · 2H Blunt 195 · Archery 63 ·
+//     2H Piercing 24 · Throwingv2 22 · Hand to Hand 11 · Throwingv1 8 · Throwing 7 ·
+//     1H Piercing 2 · SHIELD 1 · "1H Slashing /" 1 · 1H Slash 1        (1,614 rows state one)
+//
+// WHAT THAT CENSUS SETTLED, measured the same day:
+//   * 442 rows are two-handers and ALL 442 list PRIMARY. Three of them ALSO list SECONDARY (Rantho
+//     Rapier, Runed Velium Claidhmore, Thunder Staff) — corpus dirt rather than a rule, and it is
+//     named here rather than smoothed over, because it is why `dps2h` CLOSES the secondary outright
+//     instead of trusting the slot list to be honest.
+//   * 1,071 rows are one-handers: 1,044 list PRIMARY and 757 list SECONDARY. Dual wield has plenty
+//     to offer in both hands.
+//   * 217 PRIMARY rows state NO skill at all — brooms, torches, fishing poles, dolls. A row that
+//     states no skill is NOT A WEAPON for policy purposes (law 1: the wiki did not say, so we do
+//     not know), which means a weapon-only constraint EXCLUDES it. That is the honest direction:
+//     "1H DPS" asked for a one-hander, and a torch has not been shown to be one.
+//
+// AND THE OFFHAND PREDICATE IS CALLED `shieldLike` BECAUSE THAT IS ALL IT CAN HONESTLY CLAIM. No
+// field in the corpus says "this is a shield" — exactly ONE page states `Skill: SHIELD` (Crushbone
+// Fetish, SECONDARY, AC 8) — so the predicate is a SHAPE: a row whose only slot is SECONDARY, that
+// states no weapon skill, and that states an AC. That is 147 rows; 130 of them carry a shield word
+// in the name (Shield, Aegis, Barrier, Buckler, Bulwark, Targ…) and the other 17 are offhand curios
+// with an AC on them — a lute, a giant's sandal, a parrying dagger, a stein. Those 17 are FALSE
+// POSITIVES and are stated as such rather than filtered by a name regex, which would be exactly the
+// fuzzy join law 12 refuses. The bucket it excludes is the one that matters: the 64 SECONDARY-only
+// rows with NO AC (horns, dolls, books, candles) and the 198 multi-slot SECONDARY non-weapons
+// (140 of them PRIMARY+SECONDARY), none of which a tank wants suggested as an offhand.
+
+/** What a slot may be filled with, when a role constrains it at all. */
+export type SlotKind = 'weapon-1h' | 'weapon-2h' | 'shield-like'
+
+/** One role's answer to "where would I take a suggestion, and what". Absent field = no constraint. */
+export interface WeaponSlotPolicy {
+  /**
+   * Slots this role NEVER takes a suggestion for, even when the character sheet leaves them empty.
+   * The empty offhand of a two-hander is the only member today, and it is the whole reason the
+   * field exists: a closed slot is a STATEMENT, not a gap.
+   */
+  closed?: readonly EquipSlot[]
+  /** What may be suggested in a slot. A slot named here admits nothing else. */
+  only?: Partial<Record<EquipSlot, SlotKind>>
+}
+
+/**
+ * THE POLICY TABLE — the one place a role's loadout shape is stated.
+ *
+ * RANGE IS DELIBERATELY UNTOUCHED by every row. A bow or a thrown stack is a third weapon that
+ * neither hand competes with, and no ask has ever been about it; constraining it would be inventing
+ * a rule out of symmetry.
+ *
+ * THE FIVE ROLES WITH NO ENTRY BEHAVE EXACTLY AS THEY DID BEFORE THIS TABLE EXISTED (`balanced`,
+ * `dps`, `dd`, `dot`, `healer`) — an empty policy is not a new default, it is today's behaviour
+ * spelled out. `dps` in particular stays unconstrained ON PURPOSE: it is the generic the owner's
+ * stored pick already holds, and quietly giving it a weapon rule would change a plan he did not ask
+ * to change. The player who wants a weapon rule picks a weapon role.
+ */
+export const ROLE_WEAPON_POLICY: Readonly<Record<GearRole, WeaponSlotPolicy>> = {
+  balanced: {},
+  tank: { only: { SECONDARY: 'shield-like' } },
+  healer: {},
+  dps: {},
+  dps1h: { only: { PRIMARY: 'weapon-1h' } },
+  // CLOSED, not merely constrained: there is nothing a two-hander build wants told about its
+  // offhand, so the answer is silence rather than a narrower list.
+  dps2h: { closed: ['SECONDARY'], only: { PRIMARY: 'weapon-2h' } },
+  dualwield: { only: { PRIMARY: 'weapon-1h', SECONDARY: 'weapon-1h' } },
+  dd: {},
+  dot: {}
+}
+
+const ONE_HAND: ReadonlySet<string> = new Set<string>(WEAPON_CATEGORY_MEMBERS.ONE_HAND)
+const TWO_HAND: ReadonlySet<string> = new Set<string>(WEAPON_CATEGORY_MEMBERS.TWO_HAND)
+
+/**
+ * `'1h'` / `'2h'` / `null` — the handedness of a row, from the skill the wiki stated and the fold
+ * `weaponType.ts` already measured. `null` covers "states no skill" and "states a skill that is not
+ * a melee weapon" (Archery, Throwing, the one `SHIELD`) with the same answer, because for a
+ * weapon-slot constraint neither has been shown to be the thing that was asked for.
+ */
+export function gearHandedness(skill: string | undefined): '1h' | '2h' | null {
+  const type = weaponTypeOf(skill)
+  if (type === null) return null
+  if (ONE_HAND.has(type)) return '1h'
+  return TWO_HAND.has(type) ? '2h' : null
+}
+
+/**
+ * THE SHAPE OF A SHIELD, and no more than that — see the census above for the 147 rows it matches
+ * and the 17 of those that are honestly curios rather than shields.
+ */
+export function isShieldLike(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>): boolean {
+  if (row.slots.length !== 1 || row.slots[0] !== 'SECONDARY') return false
+  if (weaponTypeOf(row.skill) !== null) return false
+  return row.stats.AC !== undefined
+}
+
+/** Does this row satisfy a slot's stated kind? One dispatch, so the three arms cannot disagree. */
+export function rowIsKind(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>, kind: SlotKind): boolean {
+  if (kind === 'shield-like') return isShieldLike(row)
+  return gearHandedness(row.skill) === (kind === 'weapon-1h' ? '1h' : '2h')
+}
+
+/**
+ * WOULD THIS ROLE TAKE A SUGGESTION FOR THIS SLOT, FILLED WITH THIS ROW? The one predicate the
+ * admission fold asks, so the closed-list and the kind-list are never read separately.
+ */
+export function policyAdmits(
+  policy: WeaponSlotPolicy,
+  slot: EquipSlot,
+  row: Pick<GearRow, 'slots' | 'skill' | 'stats'>
+): boolean {
+  if (policy.closed?.includes(slot) === true) return false
+  const kind = policy.only?.[slot]
+  return kind === undefined || rowIsKind(row, kind)
 }
