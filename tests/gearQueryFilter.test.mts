@@ -99,6 +99,8 @@ test('parseGearQuery lifts threshold tokens out and leaves the words as ONE need
     { key: 'EFF_DMG', op: '>', value: 2 },
     { key: 'EFF_HP', op: '>=', value: 10 }
   ])
+  // The displayed word is a spelling too: the header says BEST (columnLabel), so `best` parses.
+  assert.deepEqual(parseGearQuery('best>1').thresholds, [{ key: 'BIS', op: '>', value: 1 }])
   // A token that LOOKS like a threshold but names no key stays a WORD.
   assert.deepEqual(parseGearQuery('foo>=3'), { needle: 'foo>=3', thresholds: [] })
   assert.deepEqual(parseGearQuery('weight<2.5').thresholds, [{ key: 'WEIGHT', op: '<', value: 2.5 }])

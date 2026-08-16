@@ -103,11 +103,11 @@ function pickUnowned(page: Page): Promise<Pick | null> {
 }
 
 interface CellWidths {
-  /** the Item column's own width, whatever `gearTableLayout` decided it is this run */
+  /** the WL column's own width, whatever layout decided it is this run */
   cell: number
   /** the wish control's box */
   control: number
-  /** what is left for the item name after the control and the era chip have taken theirs */
+  /** the item name's box, in ITS cell — whole again since the control moved out (2026-08-15) */
   name: number
   /** the words on it right now, so the report says which wording was measured */
   label: string
@@ -117,7 +117,7 @@ function measureWishCell(page: Page, key: string): Promise<CellWidths | null> {
   return page.evaluate((sel) => {
     const control = document.querySelector(sel)
     const cell = control?.closest('td') ?? null
-    const name = cell?.querySelector('[data-testid="planner-donor-name"]') ?? null
+    const name = cell?.parentElement?.querySelector('[data-testid="planner-donor-name"]') ?? null
     if (control === null || cell === null || name === null) return null
     return {
       cell: Math.round(cell.getBoundingClientRect().width),
@@ -129,18 +129,17 @@ function measureWishCell(page: Page, key: string): Promise<CellWidths | null> {
 }
 
 /**
- * WHAT THE WORDS COST, REPORTED AND NOT CAPPED (JOS-346 — the header says why the cap went).
- *
- * The control still has to SHARE the cell with the name for either box to exist, so that much is
- * still a check: a run where the name element vanished from the Item cell is a run where the
- * placement broke. The three numbers go in the report as a `note`, which is where an accepted cost
- * belongs — visible on every run, failing none of them.
+ * THE CONTROL HAS ITS OWN COLUMN NOW (user ruling, 2026-08-15, revising JOS-346's shared cell):
+ * the `WL` column carries the compact Add/Remove pair and the Item cell holds the name alone. So
+ * the placement check is that BOTH boxes exist in their own homes — a run where the control fell
+ * back into the Item cell, or the name lost its element, is a run where the ruling broke. The
+ * numbers still go in the report as a `note`, visible on every run and failing none.
  */
 function stepGearWishWidth(w: CellWidths | null): void {
-  if (!check('the wish control shares the Item cell with the name, so both can be measured', w !== null) || w === null) {
+  if (!check('the wish control sits in its own WL column and the name keeps its cell', w !== null) || w === null) {
     return
   }
-  note(`wish control "${w.label}" — ${String(w.control)}px of a ${String(w.cell)}px Item column · name ${String(w.name)}px`)
+  note(`wish control "${w.label}" — ${String(w.control)}px of a ${String(w.cell)}px WL column · name ${String(w.name)}px`)
 }
 
 /**

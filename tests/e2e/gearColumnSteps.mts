@@ -90,13 +90,18 @@ async function shownCount(page: Page): Promise<number> {
 /** Type into the search box and let the DEFERRED filter land — the count settling IS the condition. */
 async function typeAndSettle(page: Page, value: string): Promise<number> {
   await page.fill(SEARCH, value, { timeout: 15_000 })
+  // A THREE-POLL STREAK, not two equal samples (flake, 2026-08-15 — the AGENTS.md ledger has the
+  // row): the search is DEFERRED, so two polls can both read the count from BEFORE the fill
+  // flushed and report the old answer as "settled". Three consecutive equal reads spans the
+  // deferral in practice; the timeout stays the honest bound when it does not.
   let last = -1
+  let streak = 0
   await settle(
     async () => {
       const shown = await shownCount(page)
-      const stable = shown === last
+      streak = shown === last ? streak + 1 : 0
       last = shown
-      return stable
+      return streak >= 2
     },
     (ok) => ok,
     { timeoutMs: 15_000 }

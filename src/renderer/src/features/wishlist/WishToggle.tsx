@@ -120,8 +120,9 @@ export default function WishToggle({
       // round trip, which clicks that name). So both give: the flex line shrinks the name and this
       // control in proportion, each keeps a legible share, and the label clips with the full
       // sentence still in `title`. Same width for both states either way, so a click never resizes.
-      // 76 is the compact pair's wider word, "Remove" — the same one-width-for-both-states rule.
-      sx={{ flexShrink: 1, width: compact ? 76 : 168, minWidth: 0 }}
+      // 66 is the compact pair's wider word, "Remove" — the same one-width-for-both-states rule,
+      // and small enough to sit whole inside the WL column at the 900px window minimum.
+      sx={{ flexShrink: 1, width: compact ? 66 : 168, minWidth: 0 }}
     >
       <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {wished ? label.remove : label.add}

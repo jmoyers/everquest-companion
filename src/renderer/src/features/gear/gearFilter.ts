@@ -240,12 +240,17 @@ export interface GearQuery {
  * fold (`sv_magic` and `svmagic`), case-insensitive, plus the derived keys — a threshold may ask
  * for a ratio, an effective HP, the damage score or the BIS score exactly as it asks for a stat.
  */
-const THRESHOLD_KEYS: ReadonlyMap<string, GearSortKey> = new Map(
-  (['RATIO', 'EFF_HP', 'EFF_DMG', 'BIS', ...GEAR_STAT_KEYS] as const).flatMap((key) => [
-    [key.toLowerCase(), key],
-    [key.toLowerCase().replace(/_/g, ''), key]
-  ])
-)
+const THRESHOLD_KEYS: ReadonlyMap<string, GearSortKey> = new Map([
+  ...(['RATIO', 'EFF_HP', 'EFF_DMG', 'BIS', ...GEAR_STAT_KEYS] as const).flatMap(
+    (key): [string, GearSortKey][] => [
+      [key.toLowerCase(), key],
+      [key.toLowerCase().replace(/_/g, ''), key]
+    ]
+  ),
+  // The column's DISPLAYED word (columnLabel spells `BIS` as `BEST` — user ruling, 2026-08-15), so
+  // the token a reader types off the header they can see is a real spelling too.
+  ['best', 'BIS']
+])
 
 /** `key op number`, NO SPACES — `ac>=20`, `str>5`, `weight<2.5`. The search hint states the shape. */
 const THRESHOLD_TOKEN = /^([a-z_]+)(>=|<=|>|<|=)(-?\d+(?:\.\d+)?)$/

@@ -159,6 +159,7 @@ import {
   DEFAULT_GEAR_FILTERS,
   derivedOpts,
   filterGearRows,
+  parseGearQuery,
   scaleAll,
   sortGearRows,
   type GearFilterDeps,
@@ -409,6 +410,15 @@ function useGearWishes(): {
   return { wished, onToggleWish: wishlist.ready ? onToggleWish : undefined }
 }
 
+/**
+ * Is anything on screen reading the derived scores? Drawn columns, or a search threshold naming
+ * one — the token half is what keeps hiding the chip honest (GearFilterBarProps.hasteRelevant).
+ */
+function readsDerivedScores(columns: readonly GearColumn[], text: string): boolean {
+  const derived = (key: string): boolean => key === 'EFF_DMG' || key === 'BIS'
+  return columns.some((c) => derived(c.key)) || parseGearQuery(text).thresholds.some((t) => derived(t.key))
+}
+
 export interface GearViewProps {
   /**
    * Deep-link an item name into the Loot tab's drill-down (App's `openLoot`) — where the ItemWindow
@@ -500,6 +510,7 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
         classes={classes}
         upgrade={upgrade}
         visible={visible}
+        hasteRelevant={readsDerivedScores(table.columns, deferredText)}
       />
 
       <CountLine

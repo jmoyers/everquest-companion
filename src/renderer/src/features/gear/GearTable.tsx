@@ -317,7 +317,8 @@ const GearLine = memo(function GearLine({
           JOS-335 until today, and the name paid for it at every narrow pane. The header (`WL`)
           carries the words, so the button can be the compact pair. Empty until the document has
           loaded — the same absent-not-disabled rule the cell followed inside the Item column. */}
-      <TableCell>
+      {/* Slim padding: the column is the narrowest in the table and the button needs the room. */}
+      <TableCell sx={{ px: 0.5 }}>
         {wish !== undefined && <WishButton row={row} wished={wished} onToggleWish={wish} />}
       </TableCell>
       <TableCell title={row.slots.join(' ')}>{row.slots.join(' ')}</TableCell>

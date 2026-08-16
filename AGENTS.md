@@ -137,6 +137,13 @@ docs/agents-archive.md.
     settling") · 1 sighting (2026-08-13, JOS-294 worker six-spec sweep; green
     standalone and in the next full sweep) · NOT the resolved row's signature —
     unknown mechanism, watch for a second sighting before diagnosing.
+  - `gear.e2e` · `gearColumnSteps.typeAndSettle` raced the DEFERRED search:
+    two equal polls both read the count from before the fill flushed, so
+    clearing the box reported the previous search's count as "settled"
+    (`putting the control back restores the value…` failed with `1705 rows,
+    wanted 1` — the 1 was the prior Thelvorn search) · 1 sighting (2026-08-15,
+    gear-tab-improvements branch run) · hardened same day: stability now
+    requires a three-poll streak, timeout unchanged.
   - `combat-dashboard.e2e` · narrow-window resize never lands, settleStable
     settles on stale geometry · 5 sightings (2026-08-10/11/12 full-sweep; 4th
     in the JOS-229 sweep; 5th 2026-08-12 STANDALONE on the JOS-240 merge

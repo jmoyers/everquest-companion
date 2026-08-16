@@ -134,11 +134,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'new',
-        text: 'Two calculated columns join the Columns picker: EFF DMG, one offense number built from a weapon’s ratio and its damage stats, and BIS, one overall worth-score so an item strong on several stats can outrank one tall on a single stat. Both are ranking aids, not numbers the game states.'
+        text: 'Two calculated columns join the Columns picker: EFF DMG, one offense number built from a weapon’s ratio and its damage stats, and BEST, one overall worth-score so an item strong on several stats can outrank one tall on a single stat. Both are ranking aids, not numbers the game states.'
       },
       {
         kind: 'new',
-        text: 'An Ignore haste toggle beside the upgrade slider leaves worn haste out of EFF DMG and BIS - haste items do not stack, so once you wear one, a second deserves no credit. The HASTE column itself still shows what the item states.'
+        text: 'An Ignore haste toggle beside the upgrade slider leaves worn haste out of EFF DMG and BEST - haste items do not stack, so once you wear one, a second deserves no credit. The HASTE column itself still shows what the item states.'
       },
       {
         kind: 'new',
@@ -158,7 +158,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'changed',
-        text: 'The gear rows lead with the item’s icon, and the wish-list control moved out of the Item column into its own narrow WL column with short Add and Remove buttons - the item name has its room back.'
+        text: 'The gear rows lead with the item’s icon, and the wish-list control moved out of the Item column into its own narrow Wish list column with short Add and Remove buttons - the item name has its room back.'
       }
     ]
   },

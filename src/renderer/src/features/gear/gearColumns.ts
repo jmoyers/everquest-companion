@@ -120,13 +120,15 @@ export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH
  */
 const PX = { name: 280, wish: 90, slot: 110, classes: 100, zone: 130, zoneLevel: 90, mob: 180, numeric: 78, owned: 150 } as const
 
-/** The wish column (2026-08-15): the control left the Item cell so the name keeps its room. */
-export const WISH_COLUMN_WIDTH = '4%'
+/** The wish column (2026-08-15): the control left the Item cell so the name keeps its room. 6% is
+ *  what keeps the compact "Remove" clickable at the 900px window minimum — a button clipped past
+ *  its cell edge hit-tests as the NEIGHBOUR cell (caught by gearCompareSteps' reachability pass). */
+export const WISH_COLUMN_WIDTH = '6%'
 export const SLOT_COLUMN_WIDTH = '11%'
 export const CLASS_COLUMN_WIDTH = '9%'
 export const ZONE_COLUMN_WIDTH = '7%'
 export const ZONE_LEVEL_COLUMN_WIDTH = '5%'
-export const MOB_COLUMN_WIDTH = '10%'
+export const MOB_COLUMN_WIDTH = '9%'
 
 /**
  * THE OWNERSHIP COLUMN (JOS-285, phase 4) — appended AFTER `visibleColumns`' numerics, and only
@@ -144,7 +146,7 @@ export const MOB_COLUMN_WIDTH = '10%'
  * the difference either. So the column is absent and the `/outputfile` freshness line beside the
  * count says why (GearView). Either witness alone is enough to draw it.
  */
-export const OWNED_COLUMN_WIDTH = '12%'
+export const OWNED_COLUMN_WIDTH = '11%'
 
 export interface GearColumn {
   key: GearSortKey
@@ -168,8 +170,11 @@ const PERCENT_KEYS: ReadonlySet<string> = new Set<string>(GEAR_PERCENT_STAT_KEYS
  */
 export function columnLabel(key: GearSortKey): string {
   if (key === 'RATIO') return 'Ratio'
-  // `EFF_DMG` and `BIS` deliberately have no arm, the same argument as `EFF_HP` above: the
-  // underscore rule already spells `EFF DMG`, and `BIS` has no underscore to respell.
+  // `BEST`, not the key's own spelling (user ruling, 2026-08-15: *people won't know what BIS
+  // means*). The KEY stays `BIS` so stored column choices and search tokens survive the rename.
+  if (key === 'BIS') return 'BEST'
+  // `EFF_DMG` deliberately has no arm, the same argument as `EFF_HP` above: the underscore rule
+  // already spells `EFF DMG`.
   if (key === 'name') return 'Item'
   return key.replace(/_/g, ' ')
 }

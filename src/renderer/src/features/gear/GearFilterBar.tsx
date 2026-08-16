@@ -111,6 +111,14 @@ export interface GearFilterBarProps {
   upgrade: { state: ItemUpgradeState; set: (s: ItemUpgradeState) => void }
   /** which controls to draw (JOS-297) — `gearPrefs.controlsVisible`, the whole set by default */
   visible: ReadonlySet<GearControl>
+  /**
+   * Is anything on screen READING the derived scores (user ask, 2026-08-15)? The Ignore haste chip
+   * only draws while it is — a knob on EFF DMG and BEST is noise beside a table showing neither.
+   * The view computes it over the DRAWN columns AND the search thresholds, because a `best>40`
+   * token reads the flag with no column drawn, and a hidden control must never be quietly applying
+   * (the JOS-297 law — which also keeps this an honest hide: irrelevant means WITHOUT EFFECT).
+   */
+  hasteRelevant: boolean
 }
 
 /** The three closed-list narrowings of WHO a row is: its slots, its weapon kind, its effect kind. */
@@ -174,7 +182,7 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
 }
 
 /** WHICH ITEMS: name, slot, classes, effect kind, era. Search is always drawn — see the header. */
-function IdentityRow({ filters, setFilters, text, setText, classes, visible }: Omit<GearFilterBarProps, 'upgrade'>): JSX.Element {
+function IdentityRow({ filters, setFilters, text, setText, classes, visible }: Omit<GearFilterBarProps, 'upgrade' | 'hasteRelevant'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
       <TextField
@@ -186,7 +194,7 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
         // The one hint the numeric syntax gets (2026-08-15, gearFilter.ts header): a native title,
         // never a popper (JOS-143), and the placeholder shows the shape without costing any width.
         placeholder="name, zone, mob, ac>=20"
-        title="Words match the item's name, effects, slots, classes, zones and mobs. Add stat rules with no spaces - ac>=20 str>5 ratio>=1 bis>40 - and they filter on the scaled numbers, EFF HP, EFF DMG and BIS included."
+        title="Words match the item's name, effects, slots, classes, zones and mobs. Add stat rules with no spaces - ac>=20 str>5 ratio>=1 best>40 - and they filter on the scaled numbers, EFF HP, EFF DMG and BEST included."
         sx={{ minWidth: 150, flexShrink: 1 }}
       />
 
@@ -255,11 +263,11 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
  * crediting a term that would gain them nothing; the HASTE column itself keeps showing the stated
  * number either way (law 1 — the item does state it).
  */
-function NumbersRow({ filters, setFilters, upgrade, visible }: Pick<GearFilterBarProps, 'filters' | 'setFilters' | 'upgrade' | 'visible'>): JSX.Element {
+function NumbersRow({ filters, setFilters, upgrade, visible, hasteRelevant }: Pick<GearFilterBarProps, 'filters' | 'setFilters' | 'upgrade' | 'visible' | 'hasteRelevant'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
       {visible.has('upgrade') && <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />}
-      {visible.has('haste') && (
+      {visible.has('haste') && hasteRelevant && (
         <ToggleChip
           label="Ignore haste"
           testId="gear-haste-toggle"
@@ -279,7 +287,7 @@ function NumbersRow({ filters, setFilters, upgrade, visible }: Pick<GearFilterBa
 const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade', 'haste']
 
 export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
-  const { filters, setFilters, text, setText, classes, upgrade, visible } = props
+  const { filters, setFilters, text, setText, classes, upgrade, visible, hasteRelevant } = props
   return (
     <Stack spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
       <IdentityRow
@@ -291,7 +299,7 @@ export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
         visible={visible}
       />
       {NUMBERS_CONTROLS.some((c) => visible.has(c)) && (
-        <NumbersRow filters={filters} setFilters={setFilters} upgrade={upgrade} visible={visible} />
+        <NumbersRow filters={filters} setFilters={setFilters} upgrade={upgrade} visible={visible} hasteRelevant={hasteRelevant} />
       )}
     </Stack>
   )

@@ -28,22 +28,43 @@ function seedWidths(headRow: HTMLElement): GearColumnWidths {
 }
 
 /**
+ * One cell's CONTENT width — its child nodes measured directly, never the cell's own box. The
+ * distinction is the whole function (user report, 2026-08-15: *every double-click keeps growing
+ * the column*): a cell's `scrollWidth` is floored at its CURRENT width, so measuring the cell fed
+ * the fit its own last answer plus padding, forever. A text node is measured through a Range
+ * (which sees past the ellipsis clip); an element by its `scrollWidth` (its content when the cell
+ * clips it); the absolutely-positioned grip is skipped — it overlays padding, it does not occupy.
+ */
+function contentWidth(cell: Element): number {
+  let wide = 0
+  for (const node of Array.from(cell.childNodes)) {
+    if (node instanceof Element) {
+      if (node.getAttribute('data-testid') === 'gear-col-resize') continue
+      wide += node.scrollWidth
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      const range = document.createRange()
+      range.selectNode(node)
+      wide += Math.round(range.getBoundingClientRect().width)
+    }
+  }
+  return wide
+}
+
+/**
  * The width that FITS a column: the widest content among its header and the mounted body cells,
- * measured by `scrollWidth` (which sees past the ellipsis clip), plus room for the grip. Only the
- * windowed screenful is measured — that is what the user is looking at, and a wider row scrolled
- * far away can be fit again when it is on screen.
+ * plus the cell padding and the grip's clearance. Only the windowed screenful is measured — that
+ * is what the user is looking at, and a wider row scrolled far away can be fit again when it is
+ * on screen. Same content, same answer: a second double-click lands on the same number.
  */
 function fitWidth(th: HTMLTableCellElement): number {
-  let want = 0
-  for (const el of th.children) want = Math.max(want, (el as HTMLElement).scrollWidth)
+  let want = contentWidth(th)
   const idx = th.cellIndex
   const table = th.closest('table')
   for (const tr of table?.querySelectorAll('tbody tr') ?? []) {
     const cell = (tr as HTMLTableRowElement).cells[idx]
-    if (cell !== undefined) want = Math.max(want, cell.scrollWidth)
+    if (cell !== undefined) want = Math.max(want, contentWidth(cell))
   }
-  // 16px covers the cell padding; the grip rides the padding's clearance.
-  return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, want + 16)))
+  return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, want + 24)))
 }
 
 /**
@@ -225,10 +246,10 @@ export function GearHead({
         <PlainHeader
           id="wish"
           width={w('wish', layout.wish)}
-          title="The wish list column - Add puts the item on it, Remove takes it off. The list groups your wants by where they drop."
+          title="Add puts the item on the wish list, Remove takes it off. The list groups your wants by where they drop."
           onWidths={onWidths}
         >
-          WL
+          Wish list
         </PlainHeader>
         <PlainHeader id="slot" width={w('slot', layout.slot)} onWidths={onWidths}>
           Slot
