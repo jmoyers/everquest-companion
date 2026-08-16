@@ -11,8 +11,17 @@
 // WHY POSSESSION IS PROOF, measured against the committed data (2026-08-16): all 95 Sky quests
 // have a reward, every reward is UNIQUE to its quest, none appears as a drop anywhere in the
 // items DB, none is consumed as another Sky quest's required item, and 92 of the 94 in the DB
-// are NO DROP. The rewards cannot be obtained without doing the quest, so holding one proves at
-// least one turn-in as surely as a log line would.
+// are NO DROP or No Trade. For THOSE, holding the reward proves at least one turn-in as surely
+// as a log line would - an item that cannot move has exactly one way into a bag.
+//
+// THE TWO THAT CAN MOVE PROVE NOTHING, and the gate below is that sentence as code. Bloody
+// Griffon-Hide Wrist Guard and Sphinx Heart Amulet (both Necromancer rewards) carry no
+// NO DROP / No Trade flag: they can be bought or handed over, so possession is not evidence and
+// inferring from it would mark a quest done that never ran - with the undo control honestly
+// disabled, leaving no way to say otherwise. So the inference fires only when the reward's own
+// stat blob states it cannot be traded, in either spelling the scrape uses ("NO DROP" on the
+// classic pages, "Lore Equipped, No Trade" on the newer ones). Those two quests simply never
+// infer, which is the status quo they had before this module existed.
 //
 // WHAT THE INFERENCE IS — a DERIVED floor of one, in the classUnlocks.ts mold (observed wins,
 // derived is labelled) and on the legacy `completedQuests` precedent (a completion that is real
@@ -40,7 +49,19 @@ import { questKey } from './keys'
 import type { QuestProgress } from './useProgress'
 
 /**
- * Which quests the loaded export vouches for: every quest whose reward item the inventory holds.
+ * Does the reward's own stat blob say it cannot be traded? Both spellings the scrape carries:
+ * "NO DROP" (the classic wiki pages) and "No Trade" (the newer ones, sometimes "LORE ITEM NO
+ * TRADE"). An ABSENT or silent blob reads as tradeable - the conservative side of the gate,
+ * because the failure modes are asymmetric: not inferring costs a badge the user can still
+ * record by hand, while inferring falsely marks a quest done with the undo honestly disabled.
+ */
+function isUntradeable(rewardStats: string | undefined): boolean {
+  return /no[ -]?(drop|trade)/i.test(rewardStats ?? '')
+}
+
+/**
+ * Which quests the loaded export vouches for: every quest whose UNTRADEABLE reward item the
+ * inventory holds (the header's gate - a reward that can move proves nothing).
  *
  * `inventory` is `ProgressState.inventory` as stored — raw names lowercased, `+N` variants NOT
  * yet folded — so the fold happens here, on both sides of the match. A count of zero or less is
@@ -48,7 +69,7 @@ import type { QuestProgress } from './useProgress'
  * item you hold none of vouches for nothing.
  */
 export function rewardInferredQuests(
-  quests: readonly Pick<PoskyQuest, 'className' | 'name' | 'reward'>[],
+  quests: readonly Pick<PoskyQuest, 'className' | 'name' | 'reward' | 'rewardStats'>[],
   inventory: Record<string, number> | undefined
 ): Set<string> {
   const vouched = new Set<string>()
@@ -59,8 +80,10 @@ export function rewardInferredQuests(
   }
   for (const q of quests) {
     // A quest with no reward in the data never infers: that is missing data about a quest, not
-    // a finished one (the `hasEveryItem` refusal, law 1).
-    if (q.reward !== undefined && held.has(itemCountKey(q.reward))) vouched.add(questKey(q))
+    // a finished one (the `hasEveryItem` refusal, law 1). A tradeable reward never infers either
+    // (the header's gate).
+    if (q.reward === undefined || !isUntradeable(q.rewardStats)) continue
+    if (held.has(itemCountKey(q.reward))) vouched.add(questKey(q))
   }
   return vouched
 }
@@ -73,6 +96,15 @@ export function rewardInferredQuests(
  * hide-turned-in box, the class-unlock derivation, the Ready tab's first-time default) agrees
  * without consulting a second field. `logTurnIns` stays 0: the log's share is a fact about the
  * log, and this is not log evidence.
+ *
+ * THE COUNT IS max(ledger, 1), STATED AS WHAT IT IS: the best LOWER BOUND either witness can
+ * prove (reconcile.ts makes the same move for held counts, for the same reason). The inference
+ * and a ledger event cannot be told apart or added — the ledger's one recorded turn-in may BE
+ * the run that produced the held reward, or a different run — so a vouched quest whose ledger
+ * says 1 reads 1, not 2. The visible consequence, accepted: hand-recording "+1" on an inferred
+ * quest converts the derived floor into a stated event without moving the number (the badge's
+ * hover changes instead), and taking that statement back falls back to the floor rather than to
+ * zero — the reward is still in the bag, and the next read would honestly re-assert it.
  */
 export function withRewardInference(
   q: QuestProgress,
