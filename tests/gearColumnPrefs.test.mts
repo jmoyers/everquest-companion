@@ -139,20 +139,26 @@ test('a stored choice DEGRADES rather than erroring, whatever another build wrot
   assert.deepEqual(sanitizeColumns(['EFF_HP']), ['EFF_HP'], '…and so is the derived effective HP')
 })
 
-test('the picker offers the WHOLE vocabulary - every indexed stat, both derived keys, never the name', () => {
-  // TWO DERIVED KEYS SINCE JOS-336: `RATIO` and `EFF_HP`. Neither is a field of `GearStats`, both
-  // are computed off the SCALED vector at read time, and both are offered exactly like a stat.
-  assert.equal(PICKABLE_COLUMNS.length, GEAR_STAT_KEYS.length + 2)
+test('the picker offers the WHOLE vocabulary - every indexed stat, all four derived keys, never the name', () => {
+  // FOUR DERIVED KEYS: `RATIO`, `EFF_HP` (JOS-336), and since 2026-08-15 `EFF_DMG` and `BIS`. None
+  // is a field of `GearStats`, all are computed off the SCALED vector at read time, and all are
+  // offered exactly like a stat.
+  assert.equal(PICKABLE_COLUMNS.length, GEAR_STAT_KEYS.length + 4)
   for (const key of GEAR_STAT_KEYS) assert.ok(PICKABLE_COLUMNS.includes(key), `${key} is offered`)
   assert.ok(PICKABLE_COLUMNS.includes('RATIO'))
   assert.ok(PICKABLE_COLUMNS.includes('EFF_HP'))
+  assert.ok(PICKABLE_COLUMNS.includes('EFF_DMG'))
+  assert.ok(PICKABLE_COLUMNS.includes('BIS'))
   assert.ok(!PICKABLE_COLUMNS.includes('name' as GearSortKey), 'the item column is not optional')
   // A DERIVED KEY STANDS BESIDE THE NUMBERS IT IS MADE OF — the only documentation a flat checkbox
-  // list can carry (gearColumns.ts). Ratio follows DELAY; effective HP follows HP, one row under
-  // the STA it is summed with.
+  // list can carry (gearColumns.ts). Ratio follows DELAY, the damage score follows the ratio that
+  // is its largest input; effective HP follows HP, one row under the STA it is summed with; and
+  // BIS — made of ALL of them — closes the list, having no one neighbour that documents it.
   assert.equal(PICKABLE_COLUMNS[PICKABLE_COLUMNS.indexOf('DELAY') + 1], 'RATIO')
+  assert.equal(PICKABLE_COLUMNS[PICKABLE_COLUMNS.indexOf('RATIO') + 1], 'EFF_DMG')
   assert.equal(PICKABLE_COLUMNS[PICKABLE_COLUMNS.indexOf('HP') + 1], 'EFF_HP')
   assert.ok(PICKABLE_COLUMNS.indexOf('STA') < PICKABLE_COLUMNS.indexOf('EFF_HP'), 'both halves come first')
+  assert.equal(PICKABLE_COLUMNS[PICKABLE_COLUMNS.length - 1], 'BIS')
   // The seven attributes the owner named by hand. Since JOS-302 this list is the ONLY way to put a
   // stat on the table that the sort has not already put there - which is exactly the trade the
   // owner priced when the stat-threshold box went: the picker names it, the header ranks it.
@@ -231,18 +237,28 @@ test('NOTHING THE DERIVATION CAN PRODUCE crosses into pixel mode - over the whol
 })
 
 test('percentage mode states percentages that FIT the pane, with the item column absorbing the slack', () => {
-  for (const count of [1, 4, 7, MAX_PERCENT_COLUMNS]) {
+  // 7 left this list on 2026-08-15: the drop columns shrank the numeric budget, so seven numeric
+  // columns are past the floor now and pixel mode (the next test) is what serves them.
+  for (const count of [1, 2, 4, MAX_PERCENT_COLUMNS]) {
     const layout = gearTableLayout(count, true)
     assert.equal(layout.mode, 'percent')
     assert.equal(layout.minWidth, 0, 'nothing can overflow a table that IS the pane')
     assert.equal(layout.name, undefined, 'the item column states no width - it takes what is left')
+    // EVERY stated column is in this sum — the 2026-08-15 lesson, learned in production: this test
+    // used to omit columns it did not know about, so the drop columns overflowed the real table to
+    // 123% while it stayed green, and `tableLayout: fixed` paid for the overflow by squeezing the
+    // one UNSTATED column — the item name, its click-through and the wish control — to zero width.
     const stated =
       count * Number(layout.numeric.replace('%', '')) +
+      Number(layout.wish.replace('%', '')) +
       Number(layout.slot.replace('%', '')) +
       Number(layout.classes.replace('%', '')) +
+      Number(layout.zone.replace('%', '')) +
+      Number(layout.zoneLevel.replace('%', '')) +
+      Number(layout.mob.replace('%', '')) +
       Number(layout.owned.replace('%', ''))
     assert.ok(stated <= 100, `${String(count)} columns state ${String(stated)}% - the name column needs the rest`)
-    assert.ok(stated < 100, 'and there is always something left for the name')
+    assert.ok(stated <= 85, 'and the item column always keeps a legible share, never merely a sliver')
   }
 })
 
@@ -291,11 +307,12 @@ test('a stored toolbar choice degrades the same way a column choice does', () =>
   // they were the bug rather than the contract: `['slot','classOnly','classes']` used to resolve to
   // exactly `['slot','classes']`, and it now resolves to `['slot','weapon','classes']`. See the next
   // test and `gearPrefs.LEGACY_GEAR_CONTROLS` — a legacy list cannot have hidden a control that did
-  // not exist when it was written, so `weapon` joins every one of these. The DEGRADATION claim these
-  // lines were written for is untouched: unknown keys still drop out, repeats still collapse.
-  assert.deepEqual(sanitizeControls(['slot', 'classOnly', 'classes']), ['slot', 'weapon', 'classes'])
-  assert.deepEqual(sanitizeControls(['upgrade', 'ratio', 'thresholds', 'era']), ['weapon', 'era', 'upgrade'])
-  assert.deepEqual(sanitizeControls(['era', 'nope', 'era', 7, 'slot']), ['slot', 'weapon', 'era'])
+  // not exist when it was written, so `weapon` joins every one of these — AND SO DOES `haste`
+  // (added 2026-08-15), by exactly the same rule. The DEGRADATION claim these lines were written
+  // for is untouched: unknown keys still drop out, repeats still collapse.
+  assert.deepEqual(sanitizeControls(['slot', 'classOnly', 'classes']), ['slot', 'weapon', 'classes', 'haste'])
+  assert.deepEqual(sanitizeControls(['upgrade', 'ratio', 'thresholds', 'era']), ['weapon', 'era', 'upgrade', 'haste'])
+  assert.deepEqual(sanitizeControls(['era', 'nope', 'era', 7, 'slot']), ['slot', 'weapon', 'era', 'haste'])
   // ORDER IS THE BAR'S, not the store's — and that is not a loss. A control list is turned into a
   // Set by `controlsVisible` and `GearFilterBar` draws in its own fixed order, so unlike the COLUMN
   // list (which the user can see the order of) this one has no order anybody can observe.

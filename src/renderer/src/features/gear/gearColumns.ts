@@ -49,7 +49,7 @@
 // the table, so `tests/gearFilter.test.mts` can assert that a sort key brings its column with it
 // and `tests/gearColumnPrefs.test.mts` that a chosen set of thirty overflows on purpose.
 
-import { GEAR_PERCENT_STAT_KEYS, GEAR_STAT_KEYS, type GearStatKey } from '../../../../shared/planner/gear'
+import { GEAR_PERCENT_STAT_KEYS, GEAR_STAT_KEYS, isGearStatKey, type GearStatKey } from '../../../../shared/planner/gear'
 import type { GearSort, GearSortKey } from './gearFilter'
 
 /**
@@ -73,8 +73,20 @@ export const CORE_COLUMNS: readonly GearSortKey[] = ['AC', 'HP', 'MP', 'RATIO']
  */
 export const MAX_DERIVED_COLUMNS = 1
 
-/** Percent of the table the numeric columns share between them. */
-const NUMERIC_BUDGET = 52
+/**
+ * Percent of the table the numeric columns share between them.
+ *
+ * RE-BUDGETED 2026-08-15, when the three drop columns joined the identity set, and the arithmetic
+ * is the whole story: every stated width below plus this budget must leave the ITEM column — the
+ * one column that states NO width and absorbs the slack — a legible share. It was 52 when the
+ * identity columns cost 24% + 15% owned (leaving the name ≥ 9%); with zone/level/mob the identity
+ * set costs 44% + 13%, so 28 is what keeps the worst percent-mode case at 85% and the name at 15%.
+ * OVERFLOWING THIS SUM DOES NOT SCROLL — `tableLayout: fixed` squeezes the unstated column to
+ * ZERO, which deletes the item name, its click-through and the wish control from the screen (found
+ * the hard way, 2026-08-15). The percentage-fit test in gearColumnPrefs.test.mts now sums every
+ * stated column so it cannot happen quietly again.
+ */
+const NUMERIC_BUDGET = 26
 /** …and the floor one column may shrink to, which is what caps the derived count above. */
 const MIN_NUMERIC_WIDTH = 5
 /**
@@ -89,14 +101,14 @@ const MIN_NUMERIC_WIDTH = 5
 const MAX_NUMERIC_WIDTH = 8
 
 /**
- * The widest numeric set percentages can still serve at that floor — ten.
+ * The widest numeric set percentages can still serve at that floor — FIVE since 2026-08-15, when
+ * the drop columns shrank the numeric budget (see it, above).
  *
- * IT USED TO BE EXACTLY THE CORE PLUS `MAX_DERIVED_COLUMNS`, and that was the point: the derived
- * cap WAS this floor, so nothing the tab could derive could ever cross into pixel mode. JOS-302 cut
- * the derivation to core+1 and the two numbers stopped meeting — which is a WIDENING of the same
- * guarantee rather than a break in it: the derived set is now five at its very widest, half of what
- * percentages can serve, so it is further inside the budget than it has ever been. Only a PICKED
- * set can cross the line, exactly as before.
+ * It is exactly the core plus `MAX_DERIVED_COLUMNS` again, the way it was before JOS-302 — so
+ * nothing the tab can DERIVE ever crosses into pixel mode, and the untouched default keeps its
+ * percentage layout. A PICKED set of six or more crosses the line and the table scrolls sideways
+ * inside its own pane, which is the design absorbing a wide choice rather than starving the item
+ * column to pay for it.
  */
 export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH)
 
@@ -106,10 +118,15 @@ export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH
  * holds a name that ellipsises. Their SUM is what makes the table wider than the pane, which is
  * what makes the pane scroll it.
  */
-const PX = { name: 340, slot: 120, classes: 110, numeric: 78, owned: 150 } as const
+const PX = { name: 280, wish: 90, slot: 110, classes: 100, zone: 130, zoneLevel: 90, mob: 180, numeric: 78, owned: 150 } as const
 
-export const SLOT_COLUMN_WIDTH = '13%'
-export const CLASS_COLUMN_WIDTH = '11%'
+/** The wish column (2026-08-15): the control left the Item cell so the name keeps its room. */
+export const WISH_COLUMN_WIDTH = '4%'
+export const SLOT_COLUMN_WIDTH = '11%'
+export const CLASS_COLUMN_WIDTH = '9%'
+export const ZONE_COLUMN_WIDTH = '7%'
+export const ZONE_LEVEL_COLUMN_WIDTH = '5%'
+export const MOB_COLUMN_WIDTH = '10%'
 
 /**
  * THE OWNERSHIP COLUMN (JOS-285, phase 4) — appended AFTER `visibleColumns`' numerics, and only
@@ -127,7 +144,7 @@ export const CLASS_COLUMN_WIDTH = '11%'
  * the difference either. So the column is absent and the `/outputfile` freshness line beside the
  * count says why (GearView). Either witness alone is enough to draw it.
  */
-export const OWNED_COLUMN_WIDTH = '15%'
+export const OWNED_COLUMN_WIDTH = '12%'
 
 export interface GearColumn {
   key: GearSortKey
@@ -151,6 +168,8 @@ const PERCENT_KEYS: ReadonlySet<string> = new Set<string>(GEAR_PERCENT_STAT_KEYS
  */
 export function columnLabel(key: GearSortKey): string {
   if (key === 'RATIO') return 'Ratio'
+  // `EFF_DMG` and `BIS` deliberately have no arm, the same argument as `EFF_HP` above: the
+  // underscore rule already spells `EFF DMG`, and `BIS` has no underscore to respell.
   if (key === 'name') return 'Item'
   return key.replace(/_/g, ' ')
 }
@@ -177,11 +196,18 @@ function column(key: GearSortKey): GearColumn {
  * DERIVED FROM `GEAR_STAT_KEYS`, never re-typed. A rescrape that widens the vector widens the
  * picker in the same commit, which is the only way "all stats" can stay true.
  */
-export const PICKABLE_COLUMNS: readonly GearSortKey[] = GEAR_STAT_KEYS.flatMap<GearSortKey>((key) => {
-  if (key === 'DELAY') return [key, 'RATIO']
-  if (key === 'HP') return [key, 'EFF_HP']
-  return [key]
-})
+export const PICKABLE_COLUMNS: readonly GearSortKey[] = [
+  ...GEAR_STAT_KEYS.flatMap<GearSortKey>((key) => {
+    // EFF DMG stands after RATIO for the same placement-is-documentation reason RATIO stands after
+    // DELAY: the ratio is its largest input, so the reader meets the score beside what it is made of.
+    if (key === 'DELAY') return [key, 'RATIO', 'EFF_DMG']
+    if (key === 'HP') return [key, 'EFF_HP']
+    return [key]
+  }),
+  // BIS closes the list rather than standing anywhere inside it: it is the one key made of ALL of
+  // the others, so there is no neighbour that documents it — last is the honest placement.
+  'BIS'
+]
 
 /**
  * The numeric columns for this sort: the core, then the sort key if it is not already one of them.
@@ -231,6 +257,23 @@ export function sortWithin(sort: GearSort, columns: readonly GearColumn[]): Gear
   return first === undefined ? { key: 'name', dir: 'asc' } : { key: first.key, dir: 'desc' }
 }
 
+/**
+ * The pixel a column measures when the user resizes with nothing stored for it (user ask,
+ * 2026-08-15) — the same `PX` table pixel mode states, so the first drag starts from a familiar
+ * shape. Numeric columns share one default; identity columns each state their own.
+ */
+export function defaultColumnPx(id: string): number {
+  if (id === 'name') return PX.name
+  if (id === 'wish') return PX.wish
+  if (id === 'slot') return PX.slot
+  if (id === 'classes') return PX.classes
+  if (id === 'zone') return PX.zone
+  if (id === 'zoneLevel') return PX.zoneLevel
+  if (id === 'mob') return PX.mob
+  if (id === 'owned') return PX.owned
+  return PX.numeric
+}
+
 /** One numeric column's width, as the percentage string the header cell states. */
 export function numericWidth(count: number): string {
   const each = count > 0 ? NUMERIC_BUDGET / count : NUMERIC_BUDGET
@@ -253,8 +296,12 @@ export interface GearTableLayout {
   minWidth: number
   /** `undefined` in percentage mode: the item column takes whatever the stated ones leave */
   name: string | undefined
+  wish: string
   slot: string
   classes: string
+  zone: string
+  zoneLevel: string
+  mob: string
   numeric: string
   owned: string
 }
@@ -265,18 +312,35 @@ export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayo
       mode: 'percent',
       minWidth: 0,
       name: undefined,
+      wish: WISH_COLUMN_WIDTH,
       slot: SLOT_COLUMN_WIDTH,
       classes: CLASS_COLUMN_WIDTH,
+      zone: ZONE_COLUMN_WIDTH,
+      zoneLevel: ZONE_LEVEL_COLUMN_WIDTH,
+      mob: MOB_COLUMN_WIDTH,
       numeric: numericWidth(count),
       owned: OWNED_COLUMN_WIDTH
     }
   }
   return {
     mode: 'pixel',
-    minWidth: PX.name + PX.slot + PX.classes + count * PX.numeric + (hasOwned ? PX.owned : 0),
+    minWidth:
+      PX.name +
+      PX.wish +
+      PX.slot +
+      PX.classes +
+      PX.zone +
+      PX.zoneLevel +
+      PX.mob +
+      count * PX.numeric +
+      (hasOwned ? PX.owned : 0),
     name: `${String(PX.name)}px`,
+    wish: `${String(PX.wish)}px`,
     slot: `${String(PX.slot)}px`,
     classes: `${String(PX.classes)}px`,
+    zone: `${String(PX.zone)}px`,
+    zoneLevel: `${String(PX.zoneLevel)}px`,
+    mob: `${String(PX.mob)}px`,
     numeric: `${String(PX.numeric)}px`,
     owned: `${String(PX.owned)}px`
   }
@@ -296,6 +360,7 @@ export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayo
 export function statText(value: number | undefined, key: GearSortKey): string {
   if (value === undefined) return ''
   if (key === 'RATIO') return value.toFixed(2)
+  if (key === 'EFF_DMG' || key === 'BIS') return value.toFixed(1)
   if (key === 'WEIGHT') return value.toFixed(1)
   if (PERCENT_KEYS.has(key)) return `${String(value)}%`
   return String(value)
@@ -310,5 +375,7 @@ export function statText(value: number | undefined, key: GearSortKey): string {
  * fails to typecheck rather than quietly asking the vector for a field it does not have.
  */
 export function statKeysOf(columns: readonly GearColumn[]): GearStatKey[] {
-  return columns.flatMap((c) => (c.key === 'name' || c.key === 'RATIO' || c.key === 'EFF_HP' ? [] : [c.key]))
+  // `isGearStatKey` rather than an enumeration of the derived keys: a derived key added to the
+  // vocabulary drops out here BY CONSTRUCTION instead of by somebody remembering this line.
+  return columns.flatMap((c) => (isGearStatKey(c.key) ? [c.key] : []))
 }

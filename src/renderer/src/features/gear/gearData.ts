@@ -25,6 +25,9 @@ import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import { GEAR_INDEX_VERSION, type GearBuildStats, type GearRow } from '@shared/planner/gear'
 import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
 import { useLootHistory } from '../loot/useLootHistory'
+import { mergeItemSources, sourcesFor } from '../../lib/itemSources'
+// The ONE shield heuristic (gearFilter.ts) — precomputed here so the filter never re-reads names.
+import { isShieldLike } from './gearFilter'
 import { useComboSnap } from '../profiles/ClassComboData'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
 // see `useGearCompare` for why this channel and not the ownership payload beside it.
@@ -43,6 +46,13 @@ import { gearOwnershipMap, ownershipFor, type GearOwnershipMap } from './gearOwn
 import { sanitizeGearClasses, sanitizeUpgrade } from './areaMemory'
 import { useRemembered } from './useAreaMemory'
 
+export interface GearViewRow extends GearRow {
+  dropMobs: string[]
+  dropZones: string[]
+  dropLevels: string[]
+  shieldLike: boolean
+}
+
 // ---- the fetch ----------------------------------------------------------------------
 
 /** The effect text a search should reach: the name, and the parenthetical the wiki wrote after it. */
@@ -50,13 +60,57 @@ function effectHaystack(row: GearRow): string {
   return row.effects.map((e) => `${e.name} ${e.detail ?? ''}`).join(' ')
 }
 
+/**
+ * WHERE THIS ITEM COMES FROM, off both witnesses (`mergeItemSources` — the mob catalog and the
+ * item page's own `|dropsfrom`). `dropLevels[i]` IS `dropMobs[i]`'s stated level — the two arrays
+ * stay ALIGNED, never independently deduplicated, because a table cell that showed mob A beside
+ * mob B's level would be a fabricated claim. `''` marks a mob whose level the catalog never stated
+ * (absent is not a value). Zones dedupe across all sources — a zone is a place, not a per-mob fact.
+ */
+function dropDetails(row: GearRow): Pick<GearViewRow, 'dropMobs' | 'dropZones' | 'dropLevels'> {
+  const dropMobs: string[] = []
+  const dropLevels: string[] = []
+  const dropZones: string[] = []
+  for (const s of mergeItemSources(sourcesFor(row.key), row.wikiSources)) {
+    const mob = s.mob.trim()
+    if (mob === '' || dropMobs.includes(mob)) continue
+    dropMobs.push(mob)
+    dropLevels.push(s.levelText?.trim() ?? '')
+    for (const zone of s.zones) {
+      const z = zone.trim()
+      if (z !== '' && !dropZones.includes(z)) dropZones.push(z)
+    }
+  }
+  return { dropMobs, dropZones, dropLevels }
+}
+
+function statHaystack(row: GearRow): string {
+  return Object.entries(row.stats)
+    .map(([k, v]) => `${k} ${String(v)}`)
+    .join(' ')
+}
+
 /** The index row with the table's own, wider search key. Same type — only the haystack grew. */
-function toRow(row: GearRow): GearRow {
-  return { ...row, searchKey: `${row.name} ${effectHaystack(row)}`.toLowerCase() }
+function toRow(row: GearRow): GearViewRow {
+  const drops = dropDetails(row)
+  const shieldLike = isShieldLike(row)
+  const searchParts = [
+    row.name,
+    effectHaystack(row),
+    row.slots.join(' '),
+    row.classes.join(' '),
+    row.skill ?? '',
+    statHaystack(row),
+    drops.dropMobs.join(' '),
+    drops.dropZones.join(' '),
+    drops.dropLevels.join(' '),
+    shieldLike ? 'shield' : ''
+  ]
+  return { ...row, ...drops, shieldLike, searchKey: searchParts.join(' ').toLowerCase() }
 }
 
 export interface GearIndexState {
-  rows: GearRow[]
+  rows: GearViewRow[]
   /** false until the first fetch settles */
   ready: boolean
   /** the corpus's own `scrapedAt` — WHEN the data is from */

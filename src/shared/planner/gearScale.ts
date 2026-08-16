@@ -124,3 +124,86 @@ export function gearEffectiveHp(stats: GearStats): number | undefined {
   if (HP === undefined && STA === undefined) return undefined
   return (HP ?? 0) + (STA ?? 0)
 }
+
+/** A weighted term: the stated value times its weight, or absent when the item stated none. */
+function term(value: number | undefined, weight: number): number | undefined {
+  return value === undefined ? undefined : value * weight
+}
+
+/** Sum the stated terms, to one decimal — or ABSENT when the item stated none of them (law 1). */
+function weightedSum(components: readonly (number | undefined)[]): number | undefined {
+  const stated = components.filter((v): v is number => v !== undefined)
+  if (stated.length === 0) return undefined
+  return Math.round(stated.reduce((a, b) => a + b, 0) * 10) / 10
+}
+
+/**
+ * The knobs a derived score takes (user ask, 2026-08-15, second ruling): `ignoreHaste` drops the
+ * HASTE term from the damage score — worn haste does not STACK in this game, so a player who
+ * already wears a haste item gains nothing from a second one, and a score that kept crediting it
+ * would rank every haste weapon over genuinely stronger swaps (measured on the live table: a 41%
+ * haste sword led EFF DMG at 39.0, ~33 of it the haste term). An OPTION rather than a removal,
+ * because the FIRST haste item is a real upgrade and the score should be able to say so.
+ */
+export interface GearDerivedOpts {
+  ignoreHaste?: boolean
+}
+
+/**
+ * EFFECTIVE DAMAGE — a compact offense score over the fields the corpus states (user ask,
+ * 2026-08-15: *the combined total effective increase to damage an item would give*).
+ *
+ * DELIBERATELY HEURISTIC, and it says so rather than pretending otherwise: the game exposes no
+ * canonical offense value across melee/ranged/caster, so this is one opinionated weighting of the
+ * stated numbers, useful for RANKING and meaningless as an absolute. The weapon's own output enters
+ * ONCE, as the ratio (DMG/DELAY, the per-tick number) — never as raw DMG beside it, which would
+ * count the same swing twice. Undefined means the item states none of the contributing fields —
+ * absent is not zero, exactly as every vector key reads.
+ */
+export function gearEffectiveDamage(stats: GearStats, opts: GearDerivedOpts = {}): number | undefined {
+  return weightedSum([
+    term(gearRatio(stats), 10),
+    term(stats.DMG_BONUS, 0.6),
+    term(stats.STR, 0.35),
+    term(stats.DEX, 0.3),
+    term(stats.ATTACK, 0.45),
+    opts.ignoreHaste === true ? undefined : term(stats.HASTE, 0.8),
+    term(stats.BACKSTAB, 0.5)
+  ])
+}
+
+/**
+ * BEST-IN-SLOT VALUE — one unified worth-score, so items can be compared ACROSS stats (user ask,
+ * 2026-08-15: *2 AC 10 STR against 30 AC 2 STA 5 STA 10 MANA — figure out some way to calculate
+ * best in slot*).
+ *
+ * The intended gesture is: filter to a slot, sort BIS descending, and the top rows are the
+ * candidates worth weighing by eye. The weights mix survivability (AC leads, then effective HP),
+ * offense (the EFF-damage score above), the pools, the regens (scarce, so heavy per point) and the
+ * saves — an item strong on several axes outscores one tall on a single stat, which is the whole
+ * point. Same honesty clause as the damage score: a heuristic for ranking, not a stat the game
+ * states, and absent when the item states none of the inputs.
+ */
+export function gearBisValue(stats: GearStats, opts: GearDerivedOpts = {}): number | undefined {
+  const saves =
+    (stats.SV_FIRE ?? 0) +
+    (stats.SV_COLD ?? 0) +
+    (stats.SV_MAGIC ?? 0) +
+    (stats.SV_DISEASE ?? 0) +
+    (stats.SV_POISON ?? 0) +
+    (stats.SV_VOID ?? 0)
+  return weightedSum([
+    term(stats.AC, 1.4),
+    term(gearEffectiveHp(stats), 0.55),
+    term(gearEffectiveDamage(stats, opts), 1.2),
+    term(stats.MP, 0.18),
+    term(stats.END, 0.12),
+    term(stats.AGI, 0.2),
+    term(stats.WIS, 0.2),
+    term(stats.INT, 0.2),
+    term(stats.CHA, 0.05),
+    saves !== 0 ? saves * 0.08 : undefined,
+    term(stats.HP_REGEN, 0.9),
+    term(stats.MANA_REGEN, 0.8)
+  ])
+}

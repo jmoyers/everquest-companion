@@ -67,16 +67,18 @@
 // The control itself is `features/wishlist/WishToggle.tsx` now; nothing about it is decided here.
 
 import { type JSX, memo, useMemo } from 'react'
-import { Box, Stack, Table, TableBody, TableCell, TableHead, TableRow, TableSortLabel } from '@mui/material'
-import type { GearRow } from '@shared/planner/gear'
+import { Box, Stack, Table, TableBody, TableCell, TableRow } from '@mui/material'
 import type { WindowedRows } from '../../lib/useWindowedRows'
+import { itemIconUrl } from '../../lib/ItemWindow'
 import { EraChip, DonorName } from '../planner/PlannerChips'
-import { gearTableLayout, statText, type GearColumn } from './gearColumns'
+import { defaultColumnPx, gearTableLayout, statText, type GearColumn } from './gearColumns'
+import type { GearColumnWidths } from './gearPrefs'
 // JOS-338 — the ONE door a card may reach these rows through (its header states the three
 // guarantees that make it safe over this tab's dropdown toolbar).
 import { GearRowCompare } from './GearCompareCard'
-import type { GearCompareData } from './gearData'
-import { sortValue, type GearSort, type GearSortKey } from './gearFilter'
+import { GearHead, NUMERIC_PAD } from './GearTableHead'
+import type { GearCompareData, GearViewRow } from './gearData'
+import { derivedOpts, sortValue, type GearSort, type GearSortKey } from './gearFilter'
 import { ownedCellText, ownedCellTitle, ownershipFor, type GearOwnershipMap } from './gearOwnership'
 // JOS-343 — the ONE wish control in the app, shared with the Exaltations donor row by owner ruling.
 import WishToggle from '../wishlist/WishToggle'
@@ -104,9 +106,15 @@ const FIXED_ROW = {
  * header, which then intercepts the click aimed at it — gear.e2e.mts measured exactly that.
  * MUI's default 16px a side spends 32px of a ~60px cell on air; 8px keeps the header its own.
  */
-const NUMERIC_PAD = { px: 1 } as const
 
 /** Sixteen classes is `Class: ALL`, and sixteen chips would be the widest cell in the table. */
+/** The first entry, with a `+N` admitting how many more the hover title holds. Blank when none. */
+function overflowText(values: readonly string[]): string {
+  const first = values[0]
+  if (first === undefined) return ''
+  return values.length > 1 ? `${first} +${String(values.length - 1)}` : first
+}
+
 function classText(classes: readonly ClassAbbr[]): string {
   if (classes.length === 0) return ''
   if (classes.length >= 16) return 'ALL'
@@ -114,7 +122,7 @@ function classText(classes: readonly ClassAbbr[]): string {
 }
 
 export interface GearTableProps {
-  rows: readonly GearRow[]
+  rows: readonly GearViewRow[]
   columns: readonly GearColumn[]
   win: WindowedRows
   sort: GearSort
@@ -153,7 +161,16 @@ export interface GearTableProps {
    * list would be a lie about what is already on it. A button that appears a beat late is honest; a
    * button that says "not wished" about an item that is, is not.
    */
-  onToggleWish?: (row: GearRow, wished: boolean) => void
+  onToggleWish?: (row: GearViewRow, wished: boolean) => void
+  /**
+   * The user's dragged column widths (user ask, 2026-08-15), `null` until they have dragged one —
+   * `useGearPrefs.widths`, localStorage-backed like the other two view choices. `onWidths` receives
+   * the whole next map on every drag tick, or `null` from the double-click reset.
+   */
+  widths: GearColumnWidths | null
+  onWidths: (next: GearColumnWidths | null) => void
+  /** Leave worn haste out of EFF DMG / BIS (2026-08-15) — the same flag the sort upstream read. */
+  ignoreHaste: boolean
   /**
    * The item keys already on the wish list — the added state, and since JOS-343 the reason a second
    * click on the same row REMOVES rather than doing nothing. Keys are `itemKey(name)`, which IS
@@ -194,12 +211,13 @@ function WishButton({
   wished,
   onToggleWish
 }: {
-  row: GearRow
+  row: GearViewRow
   wished: boolean
-  onToggleWish: (row: GearRow, wished: boolean) => void
+  onToggleWish: (row: GearViewRow, wished: boolean) => void
 }): JSX.Element {
   return (
     <WishToggle
+      compact
       testId="gear-wish"
       name={row.name}
       wished={wished}
@@ -230,16 +248,19 @@ const GearLine = memo(function GearLine({
   ownership,
   wished,
   compare,
+  ignoreHaste,
   on
 }: {
-  row: GearRow
+  row: GearViewRow
   columns: readonly GearColumn[]
   ownership: GearOwnershipMap | null
   /** already on the wish list — a BOOLEAN and not the set, so `memo` can compare it (JOS-335) */
   wished: boolean
   /** the comparison seam (JOS-338); a STABLE object, or absent for a host with no dump seam */
   compare: GearCompareData | undefined
-  on: { openLoot?: (item: string) => void; wish?: (row: GearRow, wished: boolean) => void }
+  /** the haste knob, as a PRIMITIVE so `memo` can compare it (the JOS-335 `wished` argument) */
+  ignoreHaste: boolean
+  on: { openLoot?: (item: string) => void; wish?: (row: GearViewRow, wished: boolean) => void }
 }): JSX.Element {
   // ONE MAP LOOKUP PER RENDERED ROW, and only for the screenful the window mounted. `row.key` is
   // already the ownership key — phase 3's seam — so there is nothing to normalise here.
@@ -263,6 +284,21 @@ const GearLine = memo(function GearLine({
             name share this cell with the era chip, and the FIXED_ROW contract above is what keeps
             all three one clipped line rather than two. */}
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
+          {/* THE ITEM'S OWN ICON (user ask, 2026-08-15), off the PERMANENT image cache — the same
+              `eqimg://` door the ItemWindow draws through (imageCache.ts: bundled art, then disk,
+              then ONE polite fetch stored forever), so a windowed scroll costs no wiki traffic. A
+              404 hides itself; a row whose corpus page named no icon simply leads with the name. */}
+          {row.iconId !== undefined && (
+            <Box
+              component="img"
+              src={itemIconUrl(row.iconId)}
+              alt=""
+              onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                e.currentTarget.style.display = 'none'
+              }}
+              sx={{ width: 22, height: 22, imageRendering: 'pixelated', flexShrink: 0 }}
+            />
+          )}
           <DonorName name={row.name} onOpen={on.openLoot} />
           {/* THE ONE CHIP A SEARCH ROW WEARS, and it is a POINTER rather than a verdict: the era
               join's (out of era / era?), which explains a row you can SEE.
@@ -275,16 +311,26 @@ const GearLine = memo(function GearLine({
               can only ever appear on a row the filter already removed would be dead code pretending
               to be a law. */}
           <EraChip subject={row} />
-          {/* The spacer that puts the control on the right edge — DonorLine's, to the property. */}
-          <Box sx={{ flexGrow: 1, minWidth: 8 }} />
-          {wish !== undefined && <WishButton row={row} wished={wished} onToggleWish={wish} />}
         </Stack>
+      </TableCell>
+      {/* THE WISH CONTROL'S OWN COLUMN (user ruling, 2026-08-15) — it shared the Item cell from
+          JOS-335 until today, and the name paid for it at every narrow pane. The header (`WL`)
+          carries the words, so the button can be the compact pair. Empty until the document has
+          loaded — the same absent-not-disabled rule the cell followed inside the Item column. */}
+      <TableCell>
+        {wish !== undefined && <WishButton row={row} wished={wished} onToggleWish={wish} />}
       </TableCell>
       <TableCell title={row.slots.join(' ')}>{row.slots.join(' ')}</TableCell>
       <TableCell title={row.classes.join(' ')}>{classText(row.classes)}</TableCell>
+      <TableCell title={row.dropZones.join(' · ')}>{overflowText(row.dropZones)}</TableCell>
+      {/* dropLevels[i] IS dropMobs[i]'s level (gearData.dropDetails), so the title can pair them. */}
+      <TableCell title={row.dropMobs.map((m, i) => `${m}: ${row.dropLevels[i] === '' ? '?' : row.dropLevels[i]}`).join(' · ')}>
+        {row.dropLevels[0] ?? ''}
+      </TableCell>
+      <TableCell title={row.dropMobs.join(' · ')}>{overflowText(row.dropMobs)}</TableCell>
       {columns.map((c) => (
         <TableCell key={c.key} align="right" data-testid={`gear-cell-${c.key}`} sx={NUMERIC_PAD}>
-          {statText(sortValue(row, c.key), c.key)}
+          {statText(sortValue(row, c.key, derivedOpts({ ignoreHaste })), c.key)}
         </TableCell>
       ))}
       {owned !== null && (
@@ -311,35 +357,6 @@ const GearLine = memo(function GearLine({
   )
 })
 
-/** One sortable header cell — clicking it sorts by that column, clicking again flips direction. */
-function SortHeader({
-  column,
-  sort,
-  width,
-  align,
-  onSort
-}: {
-  column: { key: GearSortKey; label: string }
-  sort: GearSort
-  width?: string
-  align?: 'right'
-  onSort: (key: GearSortKey) => void
-}): JSX.Element {
-  const active = sort.key === column.key
-  return (
-    <TableCell align={align} sx={{ ...(width === undefined ? {} : { width }), ...(align === 'right' ? NUMERIC_PAD : {}) }}>
-      <TableSortLabel
-        active={active}
-        direction={active ? sort.dir : 'desc'}
-        data-testid={`gear-sort-${column.key}`}
-        onClick={() => onSort(column.key)}
-      >
-        {column.label}
-      </TableSortLabel>
-    </TableCell>
-  )
-}
-
 export default function GearTable({
   rows,
   columns,
@@ -351,10 +368,22 @@ export default function GearTable({
   onOpenLoot,
   onToggleWish,
   wished,
-  compare
+  compare,
+  widths,
+  onWidths,
+  ignoreHaste
 }: GearTableProps): JSX.Element {
-  const span = columns.length + (ownership === null ? 3 : 4)
+  const span = columns.length + (ownership === null ? 7 : 8)
   const layout = gearTableLayout(columns.length, ownership !== null)
+  // THE USER'S DRAGGED WIDTHS WIN WHOLE (user ask, 2026-08-15): any stored map puts the entire
+  // table in stated pixels — a dragged column beside percentage ones would reflow on every pane
+  // resize, which is the opposite of "stick". A column the map has no entry for (a numeric column
+  // picked after the drag) takes the pixel-mode default, so it arrives at a legible width instead
+  // of an unstated one.
+  const px = (id: string): number => widths?.[id] ?? defaultColumnPx(id)
+  const w = (id: string, auto: string | undefined): string | undefined => (widths === null ? auto : `${String(px(id))}px`)
+  const allIds = ['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob', ...columns.map((c) => c.key), ...(ownership === null ? [] : ['owned'])]
+  const minWidth = widths === null ? layout.minWidth : allIds.reduce((a, id) => a + px(id), 0)
   // ONE object for the row's callbacks, memoized on the callbacks themselves: `GearLine` is
   // `memo`'d and a fresh literal per render would defeat it on every keystroke. It held two until
   // JOS-325 retired the `+`, and holds two again since JOS-335 — which is exactly why it stayed an
@@ -365,33 +394,20 @@ export default function GearTable({
       size="small"
       stickyHeader
       data-testid="gear-table"
-      data-layout={layout.mode}
+      data-layout={widths === null ? layout.mode : 'pixel'}
       // `minWidth`, never `width`: a pane wider than the set still fills it, a narrower one scrolls
       // the table sideways inside its own box. 0 in percentage mode means the table IS the pane.
-      sx={{ tableLayout: 'fixed', minWidth: layout.minWidth === 0 ? undefined : layout.minWidth }}
+      sx={{ tableLayout: 'fixed', minWidth: minWidth === 0 ? undefined : minWidth }}
     >
-      <TableHead>
-        <TableRow>
-          {/* In percentage mode the item NAME states no width and takes whatever the stated columns
-              leave (LootTables.tsx); in pixel mode every column is stated, because the SUM is what
-              makes the table wider than the pane. */}
-          <SortHeader column={{ key: 'name', label: 'Item' }} sort={sort} width={layout.name} onSort={onSort} />
-          <TableCell sx={{ width: layout.slot }}>Slot</TableCell>
-          <TableCell sx={{ width: layout.classes }}>Classes</TableCell>
-          {columns.map((c) => (
-            <SortHeader key={c.key} column={c} sort={sort} width={layout.numeric} align="right" onSort={onSort} />
-          ))}
-          {/* The one column that is not a number and not sortable: it reports a live file, and the
-              header carries the two things a reader has to know about it — that a `+N` is its own
-              copy, and which key rings the fold left out. It stays LAST whatever the picker shows
-              (JOS-297): the numerics are what an item reads, this is what you have. */}
-          {ownership !== null && (
-            <TableCell sx={{ width: layout.owned }} title={ownedHint} data-testid="gear-owned-header">
-              Owned
-            </TableCell>
-          )}
-        </TableRow>
-      </TableHead>
+      <GearHead
+        columns={columns}
+        sort={sort}
+        hasOwned={ownership !== null}
+        ownedHint={ownedHint}
+        onSort={onSort}
+        onWidths={onWidths}
+        w={w}
+      />
       <TableBody>
         <PadRow height={win.topPad} colSpan={span} />
         {rows.slice(win.start, win.end).map((row) => (
@@ -402,6 +418,7 @@ export default function GearTable({
             ownership={ownership}
             wished={wished.has(row.key)}
             compare={compare}
+            ignoreHaste={ignoreHaste}
             on={handlers}
           />
         ))}

@@ -13,11 +13,19 @@ import {
   Typography
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import { itemBaseName } from '@shared/itemStats'
+import { hasWish } from '@shared/planner/wishlist'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
 import type { Timeslice } from '@shared/timeslice'
 import { formatDate } from '../../lib/formatDate'
+import { sourceItemKey } from '../../lib/itemSources'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
 import { ObservedItemWindow } from '../../lib/ObservedItemWindow'
+// THE ONE WISH CONTROL (JOS-343/346) and the ONE gear-wish builder (wishSearch.ts) — the drill-down
+// writes the same bytes the Gear table's row control writes, through the same shared document.
+import { useWishlist } from '../wishlist/useWishlist'
+import WishToggle from '../wishlist/WishToggle'
+import { wishFromGear } from '../wishlist/wishSearch'
 import { ItemDbSources, ObservedChip } from './ItemDbSources'
 import { ItemZoneTable } from './ItemZoneTable'
 import { KnowledgeSection } from './KnowledgeSection'
@@ -189,6 +197,38 @@ function aggregateLoot(events: LootEvent[]): LootBreakdown {
   return { sources, zones }
 }
 
+/**
+ * ADD THIS ITEM TO THE WISH LIST, from the drill-down (user ask, 2026-08-15: the gesture the Gear
+ * rows already have, on the surface where you are LOOKING at the item). Same control, same builder,
+ * same key: `sourceItemKey(name)` is `itemKey(name)` re-applied renderer-side, so a wish written
+ * here and one written from the Gear table are one wish — the document dedupes them by that key.
+ *
+ * NOTHING RENDERS UNTIL THE DOCUMENT HAS LOADED — the same absent-not-disabled rule the Gear
+ * table's control follows (GearTableProps.onToggleWish): before `ready`, "not wished" would be a
+ * default posing as an answer, and the control would offer the wrong action.
+ */
+function ItemWishRow({ item }: { item: string }): JSX.Element | null {
+  const wishlist = useWishlist()
+  if (!wishlist.ready) return null
+  const key = sourceItemKey(item)
+  const wished = hasWish(wishlist.list, key)
+  return (
+    <Box sx={{ mt: 1 }}>
+      <WishToggle
+        name={item}
+        wished={wished}
+        testId="item-detail-wish"
+        onToggle={() => {
+          // The BASE name, never the displayed one: a "+2" copy on a loot line is still one item,
+          // and the corpus key the list joins on is the `+N`-stripped spelling.
+          if (wished) wishlist.remove(key)
+          else wishlist.add(wishFromGear({ key, name: itemBaseName(item) }, Date.now()))
+        }}
+      />
+    </Box>
+  )
+}
+
 /* The item as the GAME shows it: wiki base data, drawn in the item-window language.
    `stats` (posky's scraped block) is the offline fallback when the wiki lookup hasn't
    structured one yet. */
@@ -210,6 +250,7 @@ function ItemWindowColumn({
         iconId={knowledge.data?.iconId}
         flavor={knowledge.data?.summary}
       />
+      <ItemWishRow item={item} />
       {knowledge.loading && !knowledge.data && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, color: 'text.secondary' }}>
           <CircularProgress size={14} />

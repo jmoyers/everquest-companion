@@ -56,11 +56,14 @@ import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
 import { SOCKET_LABEL } from '../planner/plannerGroups'
 import UpgradeSlider from './UpgradeSlider'
-import type { EffectFilter, GearFilters } from './gearFilter'
+import type { EffectFilter, GearFilters, GearWeaponPick } from './gearFilter'
 import type { GearControl } from './gearPrefs'
 import type { GearClasses } from './gearData'
 
 /** The effect select's options, in the donor vocabulary plus the two a socket cannot express. */
+/** The Weapon type control's options: the shared vocabulary, then the shield pick (2026-08-15). */
+const GEAR_WEAPON_OPTIONS: readonly GearWeaponPick[] = [...WEAPON_PICKS, 'shield']
+
 const EFFECT_OPTIONS: { value: EffectFilter; label: string }[] = [
   { value: 'any', label: 'Any effect' },
   { value: 'has', label: 'Has an effect' },
@@ -133,16 +136,18 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
       {/* JOS-302's third ask. The options are the CATEGORIES first and then the nine types
           (`WEAPON_PICKS`), because "the two-handers" is the common question and a category is only
           ever a union of its members — shared/planner/weaponType.ts states the whole vocabulary and
-          the corpus census it was measured from. */}
+          the corpus census it was measured from. `Shield` closes the list (user ruling, 2026-08-15:
+          a shield is a kind of held item, so it lives in this dropdown, not as its own toggle) —
+          answered by `isShieldLike` rather than the skill fold, and unioned like every other pick. */}
       {visible.has('weapon') && (
         <ChipMultiSelect
-          options={WEAPON_PICKS}
+          options={GEAR_WEAPON_OPTIONS}
           value={filters.weaponTypes}
           onChange={(weaponTypes) => setFilters({ ...filters, weaponTypes })}
           label="Weapon type"
           placeholder="every kind"
           minWidth={190}
-          optionLabel={(pick) => WEAPON_PICK_LABEL[pick]}
+          optionLabel={(pick) => (pick === 'shield' ? 'Shield' : WEAPON_PICK_LABEL[pick])}
           testId="gear-weapon"
         />
       )}
@@ -178,6 +183,10 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
         value={text}
         data-testid="gear-search"
         onChange={(e) => setText(e.target.value)}
+        // The one hint the numeric syntax gets (2026-08-15, gearFilter.ts header): a native title,
+        // never a popper (JOS-143), and the placeholder shows the shape without costing any width.
+        placeholder="name, zone, mob, ac>=20"
+        title="Words match the item's name, effects, slots, classes, zones and mobs. Add stat rules with no spaces - ac>=20 str>5 ratio>=1 bis>40 - and they filter on the scaled numbers, EFF HP, EFF DMG and BIS included."
         sx={{ minWidth: 150, flexShrink: 1 }}
       />
 
@@ -239,24 +248,35 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
   )
 }
 
-/** WHAT THEY READ: the simulated plus-state, and — since JOS-302 — nothing else. */
-function NumbersRow({ upgrade }: Pick<GearFilterBarProps, 'upgrade'>): JSX.Element {
+/**
+ * WHAT THEY READ: the simulated plus-state, and — since 2026-08-15 — the haste knob beside it,
+ * because both change what the NUMBERS say rather than which rows are shown. Worn haste does not
+ * stack in this game, so a player already wearing a haste item flips this on and EFF DMG / BIS stop
+ * crediting a term that would gain them nothing; the HASTE column itself keeps showing the stated
+ * number either way (law 1 — the item does state it).
+ */
+function NumbersRow({ filters, setFilters, upgrade, visible }: Pick<GearFilterBarProps, 'filters' | 'setFilters' | 'upgrade' | 'visible'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
-      <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />
+      {visible.has('upgrade') && <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />}
+      {visible.has('haste') && (
+        <ToggleChip
+          label="Ignore haste"
+          testId="gear-haste-toggle"
+          on={filters.ignoreHaste}
+          onToggle={() => setFilters({ ...filters, ignoreHaste: !filters.ignoreHaste })}
+          hint="Leave worn haste out of EFF DMG and BIS. Haste items do not stack, so if you already wear one, a second adds nothing - the HASTE column still shows the stated number."
+        />
+      )}
     </Stack>
   )
 }
 
 /**
  * Does the WHAT THEY READ row have anything left to draw? An empty row is height with no content.
- *
- * It is a one-entry list now that the ratio and threshold controls are gone, and it stays a LIST
- * rather than collapsing into `visible.has('upgrade')` at the call site: the row is a place, and
- * the next control that belongs to "what they read" should join a named set rather than have to
- * re-derive that a row can be empty.
+ * The row is a place (JOS-302's survivor), and 2026-08-15 gave it its second control.
  */
-const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade']
+const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade', 'haste']
 
 export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
   const { filters, setFilters, text, setText, classes, upgrade, visible } = props
@@ -270,7 +290,9 @@ export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
         classes={classes}
         visible={visible}
       />
-      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && <NumbersRow upgrade={upgrade} />}
+      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && (
+        <NumbersRow filters={filters} setFilters={setFilters} upgrade={upgrade} visible={visible} />
+      )}
     </Stack>
   )
 }

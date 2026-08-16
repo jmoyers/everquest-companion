@@ -66,6 +66,39 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
   return PICKABLE_COLUMNS.filter((k) => on.has(k))
 }
 
+// ---- the column widths (user ask, 2026-08-15: *resize and have the sizes stick*) -----------
+
+/** The drag clamp: narrower than 48 has no legible content, wider than 1200 is a typo. */
+export const GEAR_WIDTH_MIN = 48
+export const GEAR_WIDTH_MAX = 1200
+
+/**
+ * The user's dragged column widths in px, keyed by column id — the identity columns and `owned` by
+ * their fixed names, every numeric column by its `GearSortKey`. ABSENT (null) means never resized,
+ * and the automatic layout (`gearTableLayout`) answers; PRESENT switches the whole table to stated
+ * pixels, because a hand-set width beside percentage columns would reflow under every pane resize —
+ * the opposite of "stick".
+ */
+export type GearColumnWidths = Record<string, number>
+
+const FIXED_WIDTH_IDS: ReadonlySet<string> = new Set(['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob', 'owned'])
+
+/**
+ * A stored width map, or `null` when nothing usable is stored. Unknown ids drop (a column this
+ * build no longer draws is not an error), non-numbers drop, and every survivor is clamped — a
+ * corrupted store degrades to the automatic layout rather than to a broken table (JOS-105).
+ */
+export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const out: GearColumnWidths = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue
+    if (!FIXED_WIDTH_IDS.has(key) && !PICKABLE.has(key)) continue
+    out[key] = Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, value)))
+  }
+  return Object.keys(out).length === 0 ? null : out
+}
+
 // ---- the toolbar choice --------------------------------------------------------------------
 
 /**
@@ -76,7 +109,10 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
  * that shaped phase 3) — it is the one control that is not a narrowing of the corpus but the way
  * into it, and a Gear tab you cannot type into is not a configuration anyone meant to reach.
  */
-export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'upgrade'] as const
+// `shield` was a control for two hours on 2026-08-15 and is NOT legacy vocabulary: it shipped in a
+// test build only, and the user ruled it into the Weapon type dropdown (`GearWeaponPick`) before a
+// release carried the toggle. `haste` (same day) is the numbers row's second control.
+export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'upgrade', 'haste'] as const
 
 export type GearControl = (typeof GEAR_CONTROLS)[number]
 
@@ -88,7 +124,8 @@ export const GEAR_CONTROL_LABEL: Record<GearControl, string> = {
   classes: 'Classes',
   era: 'Current era',
   owned: 'Owned or looted',
-  upgrade: 'Upgrade state'
+  upgrade: 'Upgrade state',
+  haste: 'Ignore haste'
 }
 
 const CONTROLS: ReadonlySet<string> = new Set<string>(GEAR_CONTROLS)
@@ -126,6 +163,9 @@ export const LEGACY_GEAR_CONTROLS: readonly string[] = [
   'upgrade',
   'ratio',
   'thresholds'
+  // `weapon` is not here and neither is `haste` (added 2026-08-15), for the same reason: a control
+  // that did not exist when a legacy bare-array choice was written is a control that choice never
+  // ruled on, so `resolveChoice` must turn it ON — which it does exactly BECAUSE it is absent here.
 ]
 
 /**
@@ -223,6 +263,8 @@ export function inertFilters(filters: GearFilters, visible: ReadonlySet<GearCont
     classes: visible.has('classes') ? filters.classes : [],
     // NOT `d.eraOnly` — that is `true`. Inert is the value that hides nothing.
     eraOnly: visible.has('era') ? filters.eraOnly : false,
-    ownedOnly: visible.has('owned') ? filters.ownedOnly : false
+    ownedOnly: visible.has('owned') ? filters.ownedOnly : false,
+    // Inert = haste COUNTS: the score's default reading, and the one that drops no term silently.
+    ignoreHaste: visible.has('haste') ? filters.ignoreHaste : false
   }
 }

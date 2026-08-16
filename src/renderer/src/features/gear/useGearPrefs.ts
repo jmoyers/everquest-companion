@@ -19,10 +19,18 @@
 
 import { useCallback, useState } from 'react'
 import type { GearSortKey } from './gearFilter'
-import { GEAR_CONTROLS, sanitizeColumns, sanitizeControls, type GearControl } from './gearPrefs'
+import {
+  GEAR_CONTROLS,
+  sanitizeColumns,
+  sanitizeControls,
+  sanitizeWidths,
+  type GearColumnWidths,
+  type GearControl
+} from './gearPrefs'
 
 const COLUMNS_KEY = 'eq.gear.columns'
 const CONTROLS_KEY = 'eq.gear.controls'
+const WIDTHS_KEY = 'eq.gear.widths'
 
 /**
  * One stored preference as parsed JSON, or `null` for anything unusable — absent, empty, truncated,
@@ -55,15 +63,26 @@ export interface GearPrefs {
   /** the visible filter controls, or `null` for the whole toolbar */
   controls: GearControl[] | null
   setControls: (next: GearControl[] | null) => void
+  /** the dragged column widths (user ask, 2026-08-15), or `null` for the automatic layout */
+  widths: GearColumnWidths | null
+  setWidths: (next: GearColumnWidths | null) => void
 }
 
 export function useGearPrefs(): GearPrefs {
   const [columns, setColumnsState] = useState<GearSortKey[] | null>(() => sanitizeColumns(readJson(COLUMNS_KEY)))
   const [controls, setControlsState] = useState<GearControl[] | null>(() => sanitizeControls(readJson(CONTROLS_KEY)))
+  const [widths, setWidthsState] = useState<GearColumnWidths | null>(() => sanitizeWidths(readJson(WIDTHS_KEY)))
 
   const setColumns = useCallback((next: GearSortKey[] | null) => {
     setColumnsState(next)
     writeJson(COLUMNS_KEY, next)
+  }, [])
+
+  // Written on every drag tick — a tiny object, and localStorage is synchronous and sub-millisecond,
+  // so "the width you see is the width that is stored" holds without a debounce to flush.
+  const setWidths = useCallback((next: GearColumnWidths | null) => {
+    setWidthsState(next)
+    writeJson(WIDTHS_KEY, next)
   }, [])
 
   /**
@@ -85,5 +104,5 @@ export function useGearPrefs(): GearPrefs {
     writeJson(CONTROLS_KEY, next === null ? null : { shown: next, vocab: [...GEAR_CONTROLS] })
   }, [])
 
-  return { columns, setColumns, controls, setControls }
+  return { columns, setColumns, controls, setControls, widths, setWidths }
 }
