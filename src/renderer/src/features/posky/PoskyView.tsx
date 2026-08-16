@@ -340,7 +340,17 @@ function PoskyBody(x: PoskyBodyProps): JSX.Element {
     // The kill list (issue #30): derived from the same visible set as every other tab, drawn
     // by its own view file (TargetsView.tsx) because it renders mob cards, not quest rows.
     // `onOpenMob` rides in on the rows bundle — same router the quest rows' mob chips use.
-    return <TargetsView targets={list.targets} onOpenMob={rows.onOpenMob} />
+    // The count source rides along on the Ready tab's JOS-294 argument - it decides every
+    // shortfall this tab shows.
+    return (
+      <TargetsView
+        targets={list.targets}
+        onOpenMob={rows.onOpenMob}
+        countSource={countSource}
+        onCountSource={onCountSource}
+        inventoryLoadedAt={inventoryLoadedAt}
+      />
+    )
   }
   if (list.tab === 'classes') {
     // The VISIBLE quests, like every other tab: a quest the user permanently ignored is not shown

@@ -88,11 +88,7 @@ async function stepPane(page: Page): Promise<void> {
   const rows = await settle(() => countOf(page, ROW), (n) => n > 0, { timeoutMs: 30_000 })
   check('the fixture leaves mobs still worth killing', rows > 0, `rows=${String(rows)}`)
   const count = await page.evaluate((sel) => document.querySelector(sel)?.textContent ?? '', COUNT)
-  check(
-    'the pane states its order and that it is derived, never a guess',
-    count.includes('sort first') && count.includes('Derived from your quest progress'),
-    count.slice(0, 200)
-  )
+  check('the pane states its ordering rule - state, never process', count.includes('sort first'), count.slice(0, 200))
   const label = await labelCount(page)
   check(
     'THE TAB LABEL COUNTS THE MOB CARDS - the same array the pane draws',
@@ -152,9 +148,25 @@ async function stepLiveArc(page: Page, log: FixtureLog, at: Date): Promise<void>
   check('LOOTING THE LAST ITEMS TAKES THE QUEST OFF THE LIST - nothing left to grind', !looted.includes(MARKER))
 
   log.appendAt(new Date(at.getTime() + 30_000), ...TURN_IN)
-  // The turn-in spends the items AND counts the quest as run: under the first-time need set the
-  // wants must NOT come back, even though the spent items would otherwise read as needed again.
-  const settled = await settle(() => paneText(page), (t) => !t.includes(MARKER), { timeoutMs: 30_000 })
+  // The turn-in spends the items AND counts the quest as run. "Keeps it off" can only be
+  // asserted AFTER the trade has demonstrably landed - the marker is already absent from the
+  // loot step, so a poll that raced the tailer would pass vacuously. The evidence is the quest's
+  // own turned-in badge on the Quests tab; only then is the Targets pane's silence meaningful.
+  await page.click(TAB_QUESTS, { timeout: 15_000 })
+  await page.waitForSelector(COUNTS, { timeout: 15_000 })
+  await page.fill(SEARCH, 'Test of Azarack', { timeout: 15_000 })
+  const badge = await settle(
+    () => countOf(page, '[data-testid="posky-turned-in"]'),
+    (c) => c > 0,
+    { timeoutMs: 30_000 }
+  )
+  if (!check('the trade landed: the quest wears its turned-in badge', badge > 0)) return
+  await page.fill(SEARCH, '', { timeout: 15_000 })
+  await page.click(TAB_TARGETS, { timeout: 15_000 })
+  await page.waitForSelector(PANE, { timeout: 15_000 })
+  // The spent items would read as needed again under hasEveryItem - the first-time need set is
+  // what keeps a run quest out, and this is the assertion that proves it, post-evidence.
+  const settled = await paneText(page)
   check('…AND THE TURN-IN KEEPS IT OFF: a run quest never rejoins the first-time need set', !settled.includes(MARKER))
 }
 

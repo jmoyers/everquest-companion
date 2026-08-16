@@ -38,7 +38,13 @@
 
 import { itemCountKey, normalizeItemName } from '../../lib/itemName'
 import { everTurnedIn } from './questCompletion'
-import { islandNumber, islandOf, type DropperMob } from './poskyDroppers'
+import {
+  dropperNameOrder,
+  isRandomDropWho,
+  islandNumber,
+  islandOf,
+  type DropperMob
+} from './poskyDroppers'
 
 /** One quest item as the fold reads it — the `ItemProgress` fields it consumes, structural. */
 export interface TargetsQuestItem {
@@ -92,27 +98,22 @@ interface ItemAgg {
   totalNeed: number
   held: number
   droppers: readonly DropperMob[]
-  who: readonly string[]
+  /** true the moment ANY contributing quest's `who` states the random-drop sentinel — a flag
+   *  rather than a frozen `who` array, so classification can never depend on fold order. */
+  isRandom: boolean
   islands: Set<string>
   quests: { className: string; questName: string; need: number }[]
 }
 
+/** Item lines and both remainder lists read alphabetically — local to this pane, no counterpart
+ *  elsewhere to drift from. Mob order is `dropperNameOrder`, the one comparator the Quests tab's
+ *  own kill targets use, imported rather than copied so the two tabs can never disagree about
+ *  which mob leads a tie. */
 const byItemName = (a: NeededItem, b: NeededItem): number =>
   a.name.toLowerCase().localeCompare(b.name.toLowerCase())
 
-const byMobName = (a: TargetMob, b: TargetMob): number => {
-  const an = a.mob.name.toLowerCase()
-  const bn = b.mob.name.toLowerCase()
-  return an === bn ? a.mob.page.localeCompare(b.mob.page) : an.localeCompare(bn)
-}
-
 const sortIslands = (islands: Set<string>): string[] =>
   [...islands].sort((a, b) => islandNumber(a) - islandNumber(b))
-
-/** Is this `who` the scrape's random-drop statement? Prefix match — see the header. */
-function isRandomDrop(who: readonly string[]): boolean {
-  return who.some((w) => w.toLowerCase().startsWith('random drop'))
-}
 
 /** Fold one quest item into its counting key's aggregate. */
 function recordItem(byKey: Map<string, ItemAgg>, q: TargetsQuest, it: TargetsQuestItem): void {
@@ -122,11 +123,12 @@ function recordItem(byKey: Map<string, ItemAgg>, q: TargetsQuest, it: TargetsQue
     totalNeed: 0,
     held: it.held,
     droppers: it.droppers,
-    who: it.who,
+    isRandom: false,
     islands: new Set<string>(),
     quests: []
   }
   agg.totalNeed += it.need
+  agg.isRandom = agg.isRandom || isRandomDropWho(it.who)
   // Prefer the BASE display name over a `+N` variant, the deriveLootNames rule.
   if (agg.name !== normalizeItemName(agg.name) && it.name === normalizeItemName(it.name)) {
     agg.name = it.name
@@ -185,7 +187,7 @@ export function skyTargets(quests: readonly TargetsQuest[]): SkyTargetsModel {
     const needed = toNeeded(agg)
     if (needed === null) continue
     if (agg.droppers.length > 0) foldIntoMobs(mobsByPage, needed, agg.droppers)
-    else if (isRandomDrop(agg.who)) randomDrop.push(needed)
+    else if (agg.isRandom) randomDrop.push(needed)
     else unsourced.push(needed)
   }
   const mobs: TargetMob[] = [...mobsByPage.values()]
@@ -195,7 +197,7 @@ export function skyTargets(quests: readonly TargetsQuest[]): SkyTargetsModel {
       islands: sortIslands(e.islands),
       items: [...e.items].sort(byItemName)
     }))
-    .sort((a, b) => (a.covers === b.covers ? byMobName(a, b) : b.covers - a.covers))
+    .sort((a, b) => (a.covers === b.covers ? dropperNameOrder(a.mob, b.mob) : b.covers - a.covers))
   randomDrop.sort(byItemName)
   unsourced.sort(byItemName)
   return { mobs, randomDrop, unsourced }

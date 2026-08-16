@@ -14,13 +14,22 @@
 //
 // The names are the link, exactly as the Quests tab's dropper cells: `DropperName` is the same
 // component (exported from DropperCell.tsx rather than copied), so a mob card opens the same mob
-// page with the same catalog row a search hit would. No Popper anywhere (JOS-143); the only
-// hover is the native `title` a name already carries.
+// page with the same catalog row a search hit would. No Popper anywhere (JOS-143); the one hover
+// is a native `title` carrying the same `dropperFacts` roster line the Quests tab shows, so the
+// two tabs answer "who is this mob" with identical words.
+//
+// THE COUNT SOURCE RIDES THE PANE HEADER, above both states, on the Ready tab's JOS-294
+// argument: the source decides every shortfall on this tab (a rotated log under `log` reads
+// held 0 for everything and overstates the whole list), so the control that changes the
+// membership has to be visible where the membership is read - and reachable when it has
+// emptied the pane.
 
 import type { JSX } from 'react'
 import { Box, Chip, Stack, Typography } from '@mui/material'
-import { islandLabel } from './poskyDroppers'
+import type { CountSource } from '@shared/types'
+import { dropperFacts, islandLabel } from './poskyDroppers'
 import { DropperName } from './DropperCell'
+import { InventorySource } from './QuestFilterBar'
 import type { NeededItem, SkyTargetsModel, TargetMob } from './skyTargets'
 import type { MobTarget } from '../mobs/mobTarget'
 
@@ -60,7 +69,8 @@ function TargetRow({ target, onOpenMob }: { target: TargetMob; onOpenMob: (t: Mo
       sx={{ border: 1, borderColor: 'divider', borderRadius: 1, px: 2, py: 1.5 }}
     >
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-        <Typography variant="subtitle2" component="span">
+        {/* The same facts roster the Quests tab's dropper cell hovers - an OS tooltip, no DOM. */}
+        <Typography variant="subtitle2" component="span" title={dropperFacts(target.mob)}>
           <DropperName mob={target.mob} onOpenMob={onOpenMob} />
         </Typography>
         {islands !== '' && (
@@ -112,19 +122,37 @@ function RemainderSection({
 export interface TargetsViewProps {
   targets: SkyTargetsModel
   onOpenMob: (t: MobTarget) => void
+  countSource: CountSource
+  onCountSource: (s: CountSource) => void
+  inventoryLoadedAt: number | null
 }
 
 /**
  * The pane. The count line reads the same `mobs` array the tab label counts, so the number on
  * the tab, the number up here and the rows below can never disagree. The empty state names the
  * rule that emptied it ("state, never process") - a fresh character sees a full list, a finished
- * one sees why there is nothing left.
+ * one sees why there is nothing left. The header row leaves `mb: 2.5` for the same reason
+ * ReadyList's does: the source caption is an overlay hanging off the dropdown's bottom edge.
  */
-export function TargetsView({ targets, onOpenMob }: TargetsViewProps): JSX.Element {
+export function TargetsView({
+  targets,
+  onOpenMob,
+  countSource,
+  onCountSource,
+  inventoryLoadedAt
+}: TargetsViewProps): JSX.Element {
   const n = targets.mobs.length
   const empty = n === 0 && targets.randomDrop.length === 0 && targets.unsourced.length === 0
   return (
     <Box data-testid="posky-targets" sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
+      <Stack direction="row" spacing={2} alignItems="center" useFlexGap sx={{ mb: 2.5 }}>
+        <Box sx={{ flexGrow: 1 }} />
+        <InventorySource
+          countSource={countSource}
+          onCountSource={onCountSource}
+          inventoryLoadedAt={inventoryLoadedAt}
+        />
+      </Stack>
       {empty ? (
         <Typography color="text.secondary">
           Nothing left to hunt - every quest you are tracking is turned in, ignored, or already
@@ -135,8 +163,7 @@ export function TargetsView({ targets, onOpenMob }: TargetsViewProps): JSX.Eleme
           <Typography variant="body2" color="text.secondary" data-testid="posky-targets-count">
             {n === 0
               ? 'No kill targets right now - what is left is below.'
-              : `${String(n)} mob${n === 1 ? '' : 's'} still worth killing. Mobs that close the most of what is left sort first.`}
-            {' Derived from your quest progress and the committed drop data - never a guess.'}
+              : `${String(n)} mob${n === 1 ? '' : 's'} still worth killing - the ones that close the most of what is left sort first.`}
           </Typography>
           {targets.mobs.map((t) => (
             <TargetRow key={t.mob.page} target={t} onOpenMob={onOpenMob} />

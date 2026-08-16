@@ -254,6 +254,23 @@ test('items inside a card, and both special lists, read alphabetically', () => {
   assert.deepEqual(skyTargets([q]).mobs[0].items.map((i) => i.name), ['Azarack Feather', 'Sky Sapphire'])
 })
 
+test('a random-drop statement from ANY quest classifies the item - never fold-order-dependent', () => {
+  // Quest A states nothing for the item; quest B states the random-drop sentinel. The section
+  // assignment must be the same whichever quest folds first: one quest saying "random drop" is
+  // the scrape speaking, and first-seen-wins would make the pane depend on iteration order.
+  const silent = quest({ className: 'Cleric', name: 'Test Silent', items: [item({ name: 'Wind Rune Ozah', who: [] })] })
+  const stated = quest({
+    className: 'Rogue',
+    name: 'Test Stated',
+    items: [item({ name: 'Wind Rune Ozah', who: ['random drop — any Plane of Sky mob'] })]
+  })
+  for (const order of [[silent, stated], [stated, silent]]) {
+    const model = skyTargets(order)
+    assert.equal(model.randomDrop.length, 1, 'collective entry regardless of fold order')
+    assert.equal(model.unsourced.length, 0)
+  }
+})
+
 test('a mob listed on two of one item\'s droppers counts that item once', () => {
   const dup = mob('Gorgalosk')
   const q = quest({ name: 'Test of Dupes', items: [item({ name: 'Sky Pearl', droppers: [dup, dup] })] })
