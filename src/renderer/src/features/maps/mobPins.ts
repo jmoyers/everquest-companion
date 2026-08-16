@@ -38,6 +38,7 @@ import type { MobEntry } from '@shared/types'
 // RELATIVE value imports, the repo-wide rule for node-tested pure modules (mobSearch.ts:33):
 // the `@shared/*` alias exists only inside the vite build, and tests/mapMobPane.test.mts drives
 // this module — against the REAL catalog — under plain `node --import tsx --test`.
+import { sourceItemKey } from '../../lib/itemSources'
 import { mobsInZone } from '../mobs/mobZone'
 import { mapFromLoc } from './mapGeometry'
 
@@ -95,6 +96,8 @@ export interface MobPaneRow {
    * corpus, and every one of them would otherwise be a pin in the wrong zone half the time.
    */
   unattributable: boolean
+  /** The catalog row itself — pins the mob-page deep link's identity, and carries the drops. */
+  entry: MobEntry
   /** Lowercased haystack, computed once per data change (AGENTS.md "Search"). */
   searchKey: string
 }
@@ -149,9 +152,28 @@ export function mobRows(zoneRaw: string, catalog: MobEntry[]): MobPaneRow[] {
         pins: ambiguous ? [] : mobPins(m),
         zoneCount,
         unattributable: ambiguous && (m.loc?.length ?? 0) > 0,
+        entry: m,
         searchKey: `${m.name} ${m.level ?? ''}`.toLowerCase()
       }
     })
+}
+
+/**
+ * The drop names on this page that the wish list asks for. Keyed through `sourceItemKey` — the
+ * wish list stores canonical keys and ~1,900 catalog drop names carry a `+N` suffix — and deduped
+ * per key ("Ghoulbane" / "Ghoulbane +1" are one item).
+ */
+export function wishedDrops(entry: MobEntry, wished: ReadonlySet<string>): string[] {
+  if (wished.size === 0) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const drop of entry.drops ?? []) {
+    const key = sourceItemKey(drop)
+    if (!wished.has(key) || seen.has(key)) continue
+    seen.add(key)
+    out.push(drop)
+  }
+  return out
 }
 
 /**

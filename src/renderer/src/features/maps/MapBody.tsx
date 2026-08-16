@@ -31,6 +31,7 @@ import { MapPointsLayer, labelPosition } from './MapPointsLayer'
 import { MapMobPins } from './MapMobPins'
 import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
+import type { MobPaneRow } from './mobPins'
 import { paneOverlay, type PaneOverlay, type ZonePaneState } from './useMapPane'
 import { connectionTarget } from './zoneLinks'
 import { mapFromLoc, type EqLoc, type LayerMask } from './mapGeometry'
@@ -229,7 +230,13 @@ function MapSurface({
         }}
       />
       {pane != null && (
-        <MapMobPins pins={pane.pins} vp={vp} selectedId={pane.selectedId} onSelect={pane.select} />
+        <MapMobPins
+          pins={pane.pins}
+          vp={vp}
+          selectedId={pane.selectedId}
+          wishes={pane.wishes}
+          onSelect={pane.select}
+        />
       )}
       {ringAt != null && <MarkerRing at={ringAt} size={26} testId="maps-pane-marker" />}
       {at != null && <MarkerRing at={at} size={22} testId="maps-marker" />}
@@ -284,11 +291,13 @@ export interface MapBodyProps {
   onJump: (to: JumpTarget) => void
   /** Every stem an installed pack provides — gates which connection labels become links. */
   zones: readonly ZoneShort[]
+  /** Open a mob row's page on the Mobs tab. */
+  onOpenMob?: (row: MobPaneRow) => void
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
-  const { locMarker, zones } = props
+  const { locMarker, zones, onOpenMob } = props
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (
@@ -321,6 +330,8 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           selectedId={pane.selectedId}
           onSelect={pane.select}
           onHit={onJump}
+          wishes={pane.wishes}
+          onOpenMob={onOpenMob}
           pinsCapped={pane.pinsCapped}
           onClose={() => {
             pane.setOpen(false)

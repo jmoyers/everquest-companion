@@ -47,6 +47,7 @@ import {
   Chip,
   IconButton,
   List,
+  ListItem,
   ListItemButton,
   ListItemText,
   Paper,
@@ -55,6 +56,7 @@ import {
   Typography
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PlaceIcon from '@mui/icons-material/Place'
 import { jumpTarget, type CrossZoneRow, type JumpTarget } from './crossZone'
 import {
@@ -89,17 +91,25 @@ export interface MapMobPaneProps {
   onSelect: (row: MapPaneRow) => void
   /** A cross-zone hit was clicked: change zone, then centre on it when it named a spot. */
   onHit: (to: JumpTarget) => void
+  /** Row id → the wish-list drops that mob carries — the surface's pins read the SAME map. */
+  wishes: ReadonlyMap<string, readonly string[]>
+  /** Open the mob's own page (the Mobs tab drill-in). Absent ⇒ the rows carry no page button. */
+  onOpenMob?: (row: MobPaneRow) => void
   /** The drawn pin set hit its ceiling — said out loud rather than quietly trimmed. */
   pinsCapped: boolean
   onClose: () => void
 }
 
-/** The pin affordance: present exactly when the row has a real coordinate behind it. */
-function PinMark({ locatable }: { locatable: boolean }): JSX.Element {
+/** The pin affordance: present exactly when the row has a real coordinate behind it. `wished`
+ *  swaps it into the user-stated lane (`info.main`) — the same rule the surface's pins paint by. */
+function PinMark({ locatable, wished }: { locatable: boolean; wished?: boolean }): JSX.Element {
   return (
     <Box sx={{ width: 18, display: 'flex', justifyContent: 'center', flexShrink: 0, pt: 0.25 }}>
       {locatable ? (
-        <PlaceIcon data-testid="maps-pane-pin" sx={{ fontSize: 15, color: 'warning.main' }} />
+        <PlaceIcon
+          data-testid="maps-pane-pin"
+          sx={{ fontSize: 15, color: wished === true ? 'info.main' : 'warning.main' }}
+        />
       ) : (
         // Deliberately EMPTY, not a greyed pin: a dimmed marker still reads as "there is a
         // position here, somewhere", and there is not.
@@ -115,26 +125,34 @@ function PinMark({ locatable }: { locatable: boolean }): JSX.Element {
  * The two "no pin" reasons are DIFFERENT FACTS and are said differently: a page that stated
  * nothing, and a page that stated a position but named several zones so it cannot be attributed
  * to this map. Collapsing them into one message would misreport the second as missing data.
+ * The wish-list line joins whatever else the row knows — both facts fit on one caption.
  */
-function rowNote(row: MapPaneRow): string | null {
+function rowNote(row: MapPaneRow, wished?: readonly string[]): string | null {
   if (row.kind !== 'mob') return null
-  if (row.unattributable) return `position stated, but the page lists ${String(row.zoneCount)} zones`
-  if (row.pins.length === 0) return 'no location on the wiki page'
-  return row.pins.length > 1 ? `${String(row.pins.length)} spawn points` : null
+  const notes: string[] = []
+  if (row.unattributable) notes.push(`position stated, but the page lists ${String(row.zoneCount)} zones`)
+  else if (row.pins.length === 0) notes.push('no location on the wiki page')
+  else if (row.pins.length > 1) notes.push(`${String(row.pins.length)} spawn points`)
+  if (wished != null && wished.length > 0) notes.push(`drops ${wished.join(', ')} (wish list)`)
+  return notes.length === 0 ? null : notes.join(' · ')
 }
 
 function Row({
   row,
   selected,
-  onSelect
+  wished,
+  onSelect,
+  onOpenMob
 }: {
   row: MapPaneRow
   selected: boolean
+  wished?: readonly string[]
   onSelect: (row: MapPaneRow) => void
+  onOpenMob?: ((row: MobPaneRow) => void) | undefined
 }): JSX.Element {
   const locatable = isLocatable(row)
   const level = row.kind === 'mob' ? row.level : undefined
-  return (
+  const button = (
     <ListItemButton
       dense
       disabled={!locatable}
@@ -145,10 +163,10 @@ function Row({
       }}
       sx={{ gap: 0.75, alignItems: 'flex-start' }}
     >
-      <PinMark locatable={locatable} />
+      <PinMark locatable={locatable} wished={wished != null && wished.length > 0} />
       <ListItemText
         primary={row.name}
-        secondary={rowNote(row)}
+        secondary={rowNote(row, wished)}
         slotProps={{ primary: { variant: 'body2', noWrap: true }, secondary: { variant: 'caption' } }}
       />
       {level !== undefined && level !== '' && (
@@ -157,6 +175,26 @@ function Row({
         </Typography>
       )}
     </ListItemButton>
+  )
+  if (row.kind !== 'mob' || onOpenMob == null) return button
+  // Outside the row button so it still works when an unlocatable row is disabled.
+  return (
+    <ListItem disablePadding secondaryAction={
+      <Tooltip title="Open this mob's page">
+        <IconButton
+          size="small"
+          edge="end"
+          data-testid="maps-pane-open-mob"
+          onClick={() => {
+            onOpenMob(row)
+          }}
+        >
+          <OpenInNewIcon sx={{ fontSize: 15 }} />
+        </IconButton>
+      </Tooltip>
+    }>
+      {button}
+    </ListItem>
   )
 }
 
@@ -181,6 +219,8 @@ function Section({
   rows,
   selectedId,
   onSelect,
+  wishes,
+  onOpenMob,
   empty
 }: {
   title: string
@@ -188,6 +228,8 @@ function Section({
   rows: readonly MapPaneRow[]
   selectedId: string | null
   onSelect: (row: MapPaneRow) => void
+  wishes?: ReadonlyMap<string, readonly string[]>
+  onOpenMob?: ((row: MobPaneRow) => void) | undefined
   empty: string
 }): JSX.Element {
   return (
@@ -196,7 +238,14 @@ function Section({
       {rows.length > 0 ? (
         <List dense disablePadding>
           {rows.slice(0, SECTION_ROWS).map((r) => (
-            <Row key={r.id} row={r} selected={r.id === selectedId} onSelect={onSelect} />
+            <Row
+              key={r.id}
+              row={r}
+              selected={r.id === selectedId}
+              wished={wishes?.get(r.id)}
+              onSelect={onSelect}
+              onOpenMob={onOpenMob}
+            />
           ))}
         </List>
       ) : (
@@ -294,7 +343,7 @@ function HitSection({
 
 export default function MapMobPane(props: MapMobPaneProps): JSX.Element {
   const { zoneName, hasMap, mobs, labels, hits, counts, query, onQuery } = props
-  const { selectedId, onSelect, onHit, pinsCapped, onClose } = props
+  const { selectedId, onSelect, onHit, wishes, onOpenMob, pinsCapped, onClose } = props
   return (
     <Paper
       variant="outlined"
@@ -359,6 +408,8 @@ export default function MapMobPane(props: MapMobPaneProps): JSX.Element {
           rows={mobs}
           selectedId={selectedId}
           onSelect={onSelect}
+          wishes={wishes}
+          onOpenMob={onOpenMob}
           empty={
             zoneName == null
               ? 'No zone is open.'

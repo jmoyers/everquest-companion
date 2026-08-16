@@ -37,6 +37,7 @@ import {
   paneCounts,
   pinsForRows,
   rowTarget,
+  wishedDrops,
   type MobPaneRow
 } from '../src/renderer/src/features/maps/mobPins'
 import { MOB_CATALOG } from '../src/renderer/src/features/mobs/mobSearch'
@@ -135,6 +136,18 @@ test('isCommonMob is the game’s own article convention, case-insensitive, pref
   assert.equal(isCommonMob('Asaka L`Rei'), false)
   assert.equal(isCommonMob('Arisen Thaumaturgist'), false, '`a`/`an` must be whole words')
   assert.equal(isCommonMob('Anaconda'), false)
+})
+
+test('wishedDrops joins on the canonical item key and dedupes upgrade suffixes', () => {
+  const entry: MobEntry = {
+    page: 'p',
+    name: 'n',
+    drops: ['Ghoulbane', 'Ghoulbane +1', 'Rusty Sword', 'Cloak of Flames']
+  }
+  const wished = new Set(['ghoulbane', 'cloak of flames'])
+  assert.deepEqual(wishedDrops(entry, wished), ['Ghoulbane', 'Cloak of Flames'])
+  assert.deepEqual(wishedDrops(entry, new Set()), [])
+  assert.deepEqual(wishedDrops({ page: 'p', name: 'n' }, wished), [])
 })
 
 test('mobRows drops common spawns — the map pane is for the mobs worth walking to', () => {
@@ -243,6 +256,7 @@ function pinRow(id: string, n: number): MobPaneRow {
     pins: Array.from({ length: n }, (_v, i) => ({ x: i, y: i })),
     zoneCount: 1,
     unattributable: false,
+    entry: { page: id, name: id },
     searchKey: id
   }
 }

@@ -19,9 +19,13 @@
 // raised pin and the highlighted pane row cannot fall out of sync: the pin is a second way to
 // REACH the one selection, never a second copy of it. The clicked pin itself is passed as the
 // target, so a mob with eight spawn points rings the one under the cursor, not its first.
+//
+// A pin whose page drops a wish-list item paints `info.main` — the user-stated colour lane
+// (MapLocMarker.tsx) — and the pane's rows read the same `wishes` derivation, so list and map agree.
 
 import { useMemo, useState, type JSX } from 'react'
 import { useTheme } from '@mui/material'
+import { mobPortraitUrl } from './mobArt'
 import type { MobPin, MobPaneRow, PlacedPin } from './mobPins'
 import type { MapViewport } from './useMapViewport'
 
@@ -35,14 +39,12 @@ const PIN_PX = 9
 const HALO =
   '-1px 0 0 rgba(0,0,0,0.85), 1px 0 0 rgba(0,0,0,0.85), 0 -1px 0 rgba(0,0,0,0.85), 0 1px 0 rgba(0,0,0,0.85)'
 
-/**
- * What a pin says about itself: the name, the level EXACTLY as the page states it, and the
- * page's own spawn share when it stated one — never rounded into "likely" or "rare".
- */
-function pinText(row: MobPaneRow, pin: MobPin): string {
+/** Name, level and spawn share exactly as the page states them, plus any wish-list drops. */
+function pinText(row: MobPaneRow, pin: MobPin, wished?: readonly string[]): string {
   const level = row.level === undefined ? '' : ` (${row.level})`
   const share = pin.pct === undefined ? '' : ` - ${String(pin.pct)}% of spawns`
-  return `${row.name}${level}${share}`
+  const wish = wished == null || wished.length === 0 ? '' : ` - drops ${wished.join(', ')} (wish list)`
+  return `${row.name}${level}${share}${wish}`
 }
 
 export interface MapMobPinsProps {
@@ -55,11 +57,13 @@ export interface MapMobPinsProps {
    * "this is the thing you clicked" symbol on the surface.
    */
   selectedId: string | null
+  /** Row id → the wish-list drops that mob carries — useMapPane's one derivation. */
+  wishes: ReadonlyMap<string, readonly string[]>
   /** The pane's `select`, with the clicked pin as the position to centre and ring. */
   onSelect: (row: MobPaneRow, at: { x: number; y: number }) => void
 }
 
-export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps): JSX.Element {
+export function MapMobPins({ pins, vp, selectedId, wishes, onSelect }: MapMobPinsProps): JSX.Element {
   const { toScreen } = vp
   // The hovered pin's key. Its text is drawn INSTANTLY as DOM beside the pin — the same deferred
   // -text gesture the label layer's dots use, and for the same reason the surface bans poppers
@@ -68,7 +72,10 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
   const [hover, setHover] = useState<string | null>(null)
   // The SAME token the search-jump marker paints with (`warning.main`), read from the theme
   // rather than spelled as a hex literal so a theme change can never leave the two disagreeing.
-  const pinColor = useTheme().palette.warning.main
+  const { palette } = useTheme()
+  const pinColor = palette.warning.main
+  // The user-stated lane (see header): a pin the wish list lights up.
+  const wishColor = palette.info.main
   // Keyed on the pin array and the projection, exactly like the label layer's declutter memo:
   // this recomputes per view CHANGE, not per frame.
   const placed = useMemo(() => pins.map((p) => ({ ...p, at: toScreen(p.pin.x, p.pin.y) })), [pins, toScreen])
@@ -80,11 +87,13 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
     >
       {placed.map(({ row, pin, key, at }) => {
         const selected = row.id === selectedId
+        const wished = wishes.get(row.id)
         return (
           <span
             key={key}
             data-testid="maps-mob-pin"
-            title={pinText(row, pin)}
+            data-wished={wished == null ? undefined : 'true'}
+            title={pinText(row, pin, wished)}
             onMouseEnter={() => {
               setHover(key)
             }}
@@ -110,7 +119,7 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
               marginTop: -PIN_PX / 2,
               borderRadius: '50% 50% 50% 0',
               transform: 'rotate(-45deg)',
-              background: pinColor,
+              background: wished == null ? pinColor : wishColor,
               boxShadow: '0 0 0 1px rgba(0,0,0,0.85)',
               opacity: selected ? 1 : 0.85,
               pointerEvents: 'auto',
@@ -120,30 +129,67 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
           />
         )
       })}
-      {/* The hovered pin's text, raised above every pin. Drawn from the same `placed` array the
-          pins are, so the name and its pin can never disagree about where they sit. */}
+      {/* The hovered pin's card, drawn from the same `placed` array as the pins so the two can
+          never disagree about position. */}
       {placed
         .filter((pp) => pp.key === hover)
         .map(({ row, pin, key, at }) => (
-          <span
-            key={`hover-${key}`}
-            data-testid="maps-mob-pin-name"
-            style={{
-              position: 'absolute',
-              left: at.px,
-              top: at.py - PIN_PX,
-              transform: 'translate(-50%, -100%)',
-              font: '12px/1.1 inherit',
-              color: pinColor,
-              textShadow: HALO,
-              whiteSpace: 'nowrap',
-              pointerEvents: 'none',
-              zIndex: 4
-            }}
-          >
-            {pinText(row, pin)}
-          </span>
+          <PinHover key={`hover-${key}`} row={row} pin={pin} at={at} wished={wishes.get(row.id)} color={wishes.has(row.id) ? wishColor : pinColor} />
         ))}
     </div>
+  )
+}
+
+/** The hover card: bundled portrait when one exists (mobArt.ts), and the pin's text. */
+function PinHover({
+  row,
+  pin,
+  at,
+  wished,
+  color
+}: {
+  row: MobPaneRow
+  pin: MobPin
+  at: { px: number; py: number }
+  wished: readonly string[] | undefined
+  color: string
+}): JSX.Element {
+  const art = mobPortraitUrl(row.name)
+  return (
+    <span
+      data-testid="maps-mob-pin-name"
+      style={{
+        position: 'absolute',
+        left: at.px,
+        top: at.py - PIN_PX,
+        transform: 'translate(-50%, -100%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        pointerEvents: 'none',
+        zIndex: 4
+      }}
+    >
+      {art != null && (
+        <img
+          src={art}
+          alt=""
+          // A cache miss degrades to text-only (the BossImage posture).
+          onError={(ev) => {
+            ev.currentTarget.style.display = 'none'
+          }}
+          style={{
+            width: 44,
+            height: 44,
+            objectFit: 'cover',
+            borderRadius: 4,
+            boxShadow: '0 0 0 1px rgba(0,0,0,0.85)'
+          }}
+        />
+      )}
+      <span style={{ font: '12px/1.1 inherit', color, textShadow: HALO, whiteSpace: 'nowrap' }}>
+        {pinText(row, pin, wished)}
+      </span>
+    </span>
   )
 }
