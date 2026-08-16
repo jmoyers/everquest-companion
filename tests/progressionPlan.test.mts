@@ -71,6 +71,7 @@ const PROFILES = profiles(
 
 /** The catalog lookup, injected. A mob it does not name states no level — `null`, never 0. */
 const MOB_LEVELS = new Map<string, number>([
+  ['a rat', 4],
   ['a young kobold', 14],
   ['a kromrif', 14],
   ['a lurker', 16],
@@ -163,6 +164,19 @@ const HOMELESS = row({
   stats: { AC: 8 },
   wikiSources: [{ mob: 'a lurker' }]
 })
+/**
+ * A GREY DROPPER — level 4 against a level-13 character, `trivial` at every level in every bracket.
+ * The gate is a CEILING and not a window (the 2026-08-15 correction), so this is a target from the
+ * FIRST bracket: the easiest farm in the game is not a reason to hide an item.
+ */
+const GREY = row({
+  key: 'tarnished bauble',
+  name: 'Tarnished Bauble',
+  slots: ['NECK'],
+  classes: ['WAR'],
+  stats: { AC: 6 },
+  wikiSources: [{ mob: 'a rat', zone: 'Crushbone' }]
+})
 /** Level 21 dropper: RISKY at the top of 13-18 and never better — the solo/group discriminator. */
 const DEEP = row({
   key: 'deep guard shield',
@@ -191,7 +205,7 @@ const TIER_RING = row({
   wikiSources: [{ mob: 'Ixiblat Fer +5', zone: 'Najena' }]
 })
 
-const GEAR = [PLATE, BLADE, ORPHAN, WIZ_ONLY, OWNED, WISHED, KAEL, HOMELESS, DEEP, TIER_CLOAK, TIER_RING]
+const GEAR = [PLATE, BLADE, ORPHAN, WIZ_ONLY, OWNED, WISHED, KAEL, HOMELESS, GREY, DEEP, TIER_CLOAK, TIER_RING]
 
 function corpora(over: Partial<PlanCorpora> = {}): PlanCorpora {
   return {
@@ -260,7 +274,36 @@ test('a bracket carries WHERE TO GRIND, ranked by how close the zone median sits
 // 2. THE CON GATE, both ways
 // =================================================================================================
 
-test('SOLO excludes what GROUP admits — the ask’s "blue and white", loosened by one band', () => {
+test('the gate is a CEILING: a GREY drop mob is a target, from the very first bracket', () => {
+  // THE BUG THIS PINS (owner, live, 2026-08-15): the first cut read "blue and white solo" as a
+  // two-sided window and dropped every item whose dropper had been outlevelled. A grey mob is the
+  // EASIEST farm there is, and the route's answer for one is "go and grab it now".
+  assert.equal(con(13, 4), 'trivial', 'the rat really is grey at the opening level')
+
+  const solo = buildProgressionPlan(inputs(), corpora())
+  const bauble = solo[0].targets.find((t) => t.key === 'tarnished bauble')
+  assert.notEqual(bauble, undefined, 'a trivial-source item is a target under the SOLO reach')
+  assert.equal(bauble?.band, 'trivial', 'and it says so — the band is reported, not laundered')
+  assert.equal(bauble?.mobLevel, 4)
+
+  // FIRST BRACKET, not some later one: `bandInBracket` reads the lowest level in the range, and a
+  // mob already grey at the bottom qualifies there.
+  assert.equal(
+    solo.findIndex((b) => b.targets.some((t) => t.key === 'tarnished bauble')),
+    0
+  )
+  // Group reaches at least as far as solo — the ceiling only ever rises.
+  const group = buildProgressionPlan(inputs({ reach: 'group' }), corpora())
+  assert.equal(group[0].targets.some((t) => t.key === 'tarnished bauble'), true)
+
+  // AND THE EXP HALF IS UNCHANGED: a grey zone pays no experience, so `trivial` is still out THERE.
+  // Crushbone profiles at 12 and is safe (not trivial) at midpoint 15, which is why it is listed;
+  // by 31-36 it has gone grey and it is gone from the route.
+  assert.equal(zones(solo[0]).includes('Crushbone'), true)
+  assert.equal(solo.slice(1).some((b) => zones(b).includes('Crushbone')), false)
+})
+
+test('SOLO excludes what GROUP admits — the ask’s "blue and white" CEILING, raised by one band', () => {
   // `a deep guardian` is level 21. Across 13-18 the best it ever cons is RISKY (at 17), so a solo
   // plan will not send you there — it puts the shield in the bracket where the fight goes even.
   const solo = buildProgressionPlan(inputs(), corpora())
@@ -304,7 +347,12 @@ test('with eraOnly ON, only in-era targets survive — and `era?` hides exactly 
   // because a question mark under a filter called "Current era" is a leak, not a courtesy.
   assert.equal(names(on[0]).includes("Lurker's Eye"), false)
   // The in-era rows are untouched.
-  assert.deepEqual(names(on[0]), ['Plate of the Sentinel', 'Blade of Haste', 'Nameless Band'])
+  assert.deepEqual(names(on[0]), [
+    'Plate of the Sentinel',
+    'Blade of Haste',
+    'Tarnished Bauble',
+    'Nameless Band'
+  ])
 })
 
 test('the era gate on EXP ZONES drops a positive out-of-era and keeps a zone the table never named', () => {

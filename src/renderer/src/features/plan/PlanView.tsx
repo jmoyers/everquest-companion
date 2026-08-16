@@ -70,7 +70,7 @@ const REACH_LABEL: Record<PlanReach, string> = {
 const ROLE_HINT =
   'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently.'
 const REACH_HINT =
-  'Which fights the route will send you to. Solo keeps to blue and white; a group loosens the gate by exactly one band.'
+  'The hardest fight the route will send you to. Solo tops out at blue and white; a group raises the ceiling by one band. Anything easier always makes the list.'
 
 interface PicksProps {
   role: GearRole

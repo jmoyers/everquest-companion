@@ -19,7 +19,7 @@
 // LEARNED from one machine's consider history, and a fold that reached for it directly could not be
 // tested against a band table whose shape the test controls. The renderer passes `conBand`.
 //
-// FIVE RULES THE FOLD REFUSES TO BEND:
+// SIX RULES THE FOLD REFUSES TO BEND:
 //
 //   1. AN EMPTY CLASS LIST IS UNKNOWN, NEVER "NOBODY" (`GearRow.classes`, law 1). An item whose page
 //      stated no classes — or stated them unreadably — is KEPT for every trio. Excluding it would
@@ -32,7 +32,18 @@
 //   3. THE ROLE WEIGHTS ARE A HEURISTIC AND SAY SO. See `roleValue`.
 //   4. THE HORIZON IS DATA-DRIVEN, not a level cap this file claims to know. See
 //      `buildProgressionPlan`.
-//   5. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
+//   5. THE TARGET GATE IS A CEILING, NOT A WINDOW. CORRECTED 2026-08-15, from the owner playing the
+//      first cut: the plan was hiding good items because their drop mob conned GREY. "Blue and white
+//      solo" was always an upper bound on how hard a fight the route may send you to, and a trivial
+//      mob is the EASIEST farm in the game — so `trivial` is inside the gate for TARGETS (solo:
+//      trivial|safe|even, group: +risky). EXP ZONES ARE UNCHANGED and still want safe/even, because
+//      that half is about experience and a grey mob pays none.
+//      THE CONSEQUENCE, stated rather than discovered: a grey-source item now qualifies from the
+//      FIRST bracket, which is the correct advice ("go and grab this now") and does mean the opening
+//      bracket sees the most competition. Nothing else was needed to keep that bounded — the role
+//      score orders it, `TARGET_CAP` bounds it, and the consume-on-emission dedupe in `targetsFor`
+//      lets anything the cap cut resurface later.
+//   6. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
 //      SEEDS the wish list; it does not become one.
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
@@ -226,7 +237,10 @@ export interface PlanInputs {
   /** the class trio (detected or pinned). EMPTY means "no trio stated", which gates nothing. */
   classes: readonly ClassAbbr[]
   role: GearRole
-  /** the con gate: solo = safe/even ("blue and white" in the ask), group = +risky */
+  /**
+   * THE CEILING on how hard a target's fight may be: solo tops out at even ("blue and white" in the
+   * ask), group at risky. Anything EASIER always qualifies — see `SOLO_GATE`.
+   */
   reach: 'solo' | 'group'
   eraOnly: boolean
   /** plan §8 calls 6 a first guess, so it is an input and not a constant. Default 6. */
@@ -308,10 +322,16 @@ const HORIZON_LEVELS = 36
 /** How many consecutive silent brackets end the route. Two, so one gap does not truncate a plan. */
 const QUIET_BRACKETS = 2
 
-/** "Blue and white solo" — the ask's own words, folded to the two bands (plan §2.1). */
-const SOLO_GATE: readonly ConBand[] = ['safe', 'even']
-/** A group loosens the gate by exactly one band. An OPTION, not a guess (plan §8). */
-const GROUP_GATE: readonly ConBand[] = ['safe', 'even', 'risky']
+/**
+ * THE TARGET GATE IS A CEILING, NOT A WINDOW — corrected 2026-08-15 from live testing, and the
+ * correction is rule 6 in the header. "Blue and white solo" (plan §2.1) is the hardest fight the
+ * route may send you to, so `trivial` rides INSIDE the gate: a grey mob is the easiest farm there
+ * is, and a route that refused to mention the tunic off a level-4 rat because you have outlevelled
+ * the rat is answering a question nobody asked.
+ */
+const SOLO_GATE: readonly ConBand[] = ['trivial', 'safe', 'even']
+/** A group loosens the CEILING by exactly one band. An OPTION, not a guess (plan §8). */
+const GROUP_GATE: readonly ConBand[] = ['trivial', 'safe', 'even', 'risky']
 
 // =================================================================================================
 // THE FOLD
@@ -341,6 +361,7 @@ interface Candidate {
 /** What `targetsFor` needs, bundled — four positional arguments is the ceiling and this is clearer. */
 interface PlanCtx {
   corpora: PlanCorpora
+  /** the reach CEILING — every band a target's fight may read (rule 5), not a window */
   gate: readonly ConBand[]
   candidates: Candidate[]
 }
@@ -428,7 +449,8 @@ function witnessOf(
  *
  * Lowest rather than the midpoint because the bracket is advice about WHEN TO GO, and the earliest
  * level at which the fight is inside the gate is the answer to that question. A mob that only comes
- * into reach at the top of the bracket reports the band it has there.
+ * into reach at the top of the bracket reports the band it has there — and one that is already grey
+ * at the bottom reports `trivial` from the bottom, which is rule 5's whole point.
  */
 function bandInBracket(
   mobLevel: number,
@@ -447,8 +469,9 @@ function bandInBracket(
  * DOES THIS WITNESS PUT THE ITEM IN THIS BRACKET? `null` = no; `{ band }` = yes, with the band to
  * print (and `band: null` is a real answer — see rule 2 in the header).
  *
- * BASE WITNESS: the mob's stated level has to con inside the reach gate somewhere in the bracket.
- * No stated level means no target — an unlevelled mob cannot be conned and will not be guessed at.
+ * BASE WITNESS: the mob's stated level has to con at or under the reach CEILING somewhere in the
+ * bracket (rule 5 — a grey mob passes, a deadly one does not). No stated level means no target: an
+ * unlevelled mob cannot be conned and will not be guessed at.
  *
  * +N WITNESS: the con gate CANNOT be applied, so the only gate left is the one that can actually be
  * stated — the BASE zone's profile median has to sit inside the reach gate somewhere in the bracket.
@@ -515,7 +538,11 @@ function targetsFor(ctx: PlanCtx, bracket: Bracket, used: Set<string>): GearTarg
 
 /**
  * This bracket's exp zones: the ones whose profile MEDIAN cons `safe` or `even` at the bracket
- * midpoint. Ranked by how close the median sits to the midpoint, then by `sampled` descending (a
+ * midpoint. `trivial` is DELIBERATELY OUT HERE, which is the one place this fold and the target gate
+ * disagree on purpose (rule 5): a grey mob is a fine thing to farm an item off and a useless thing to
+ * grind experience on, so the ceiling that admits it for TARGETS would be a lie for EXP ZONES.
+ *
+ * Ranked by how close the median sits to the midpoint, then by `sampled` descending (a
  * profile folded from 60 stated levels is worth more than one folded from 2), then by name so the
  * order is total. Capped at `EXP_ZONE_CAP`, which the surface states.
  *
