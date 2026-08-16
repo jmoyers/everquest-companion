@@ -30,6 +30,15 @@
 // completion is real but UNDATED, so it contributes a FLOOR OF ONE to the count and nothing else.
 // `completedQuests` keeps being written as the downgrade mirror (see shared/types.ts).
 //
+// AND ONE FLOOR THIS LEDGER DOES NOT SEE (issue #27): the Sky tab's DISPLAYED count is decided in
+// two stages. This module resolves the persisted + detected evidence; the renderer then floors a
+// quest at one when its untradeable reward sits in the loaded inventory export
+// (renderer/features/posky/rewardInference.ts), derived on every read and never written back
+// here. Two stated consequences: any OTHER consumer of this ledger reads the un-floored count and
+// may say "not turned in" where the Sky tab says "Turned in"; and the downgrade mirror never
+// contains an inferred completion, so an older build shows those quests un-done — both are the
+// price of keeping derived evidence out of the persisted record, paid on purpose.
+//
 // THERE IS NO "SINCE THE DUMP" COUNT ANY MORE (JOS-141). This file used to report a second count
 // — how many turn-ins landed after the loaded dump was generated — because JOS-128 made a dump
 // load RESET the held-count model, and a base of `dump + loot since the dump` already had every

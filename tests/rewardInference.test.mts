@@ -52,13 +52,37 @@ import type { QuestProgress } from '../src/renderer/src/features/posky/useProgre
 // 1. The set: which quests the export vouches for
 // =============================================================================
 
-/** The three fields the inference reads; everything else on PoskyQuest is not its business. */
+/** The four fields the inference reads; everything else on PoskyQuest is not its business. */
 const QUESTS = [
-  { className: 'Cleric', name: 'Cleric Test of Resolution', reward: 'Necklace of Resolution' },
-  { className: 'Wizard', name: 'Wizard Test of Focus', reward: "Al`Kabor's Cap of Binding" },
-  { className: 'Rogue', name: 'Rogue Test of Thievery', reward: 'Wispy Choker of Vigor' },
+  {
+    className: 'Cleric',
+    name: 'Cleric Test of Resolution',
+    reward: 'Necklace of Resolution',
+    rewardStats: 'MAGIC ITEM LORE ITEM NO DROP\nSlot: NECK'
+  },
+  {
+    className: 'Wizard',
+    name: 'Wizard Test of Focus',
+    reward: "Al`Kabor's Cap of Binding",
+    rewardStats: 'MAGIC ITEM LORE ITEM NO DROP\nSlot: HEAD'
+  },
+  {
+    className: 'Rogue',
+    name: 'Rogue Test of Thievery',
+    reward: 'Wispy Choker of Vigor',
+    // The newer scrape shape spells it "No Trade" - both spellings are the same fact.
+    rewardStats: 'Lore Equipped, No Trade\nSlot: NECK'
+  },
+  // The two REAL tradeable rewards (the committed DB's only ones): no NO DROP, no No Trade.
+  // Holding one proves nothing - it can be bought or handed over - so it never vouches.
+  {
+    className: 'Necromancer',
+    name: 'Necromancer Test of Heart',
+    reward: 'Sphinx Heart Amulet',
+    rewardStats: 'MAGIC ITEM LORE ITEM\nSlot: NECK'
+  },
   // The data has no quest without a reward today; the type allows one, so the rule must too.
-  { className: 'Monk', name: 'Monk Test of Stone', reward: undefined }
+  { className: 'Monk', name: 'Monk Test of Stone', reward: undefined, rewardStats: undefined }
 ]
 
 test('a reward sitting in the export vouches for its quest', () => {
@@ -90,6 +114,23 @@ test('a zero or negative count is an absent item, not a held one', () => {
     'wispy choker of vigor': -1
   })
   assert.equal(keys.size, 0)
+})
+
+test('a TRADEABLE reward proves nothing: possession is only evidence when the item cannot move', () => {
+  // Sphinx Heart Amulet carries no NO DROP / No Trade - it can be bought or handed over, so
+  // holding it does not prove the quest was run. The other 92 rewards all state one of the two.
+  const keys = rewardInferredQuests(QUESTS, { 'sphinx heart amulet': 1 })
+  assert.equal(keys.size, 0)
+})
+
+test('both untradeable spellings vouch: the old scrape says NO DROP, the newer says No Trade', () => {
+  const keys = rewardInferredQuests(QUESTS, {
+    'necklace of resolution': 1,
+    'wispy choker of vigor': 1
+  })
+  assert.ok(keys.has('Cleric::Cleric Test of Resolution'))
+  assert.ok(keys.has('Rogue::Rogue Test of Thievery'))
+  assert.equal(keys.size, 2)
 })
 
 // =============================================================================
