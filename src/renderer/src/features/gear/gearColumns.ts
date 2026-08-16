@@ -311,7 +311,7 @@ export interface GearTableLayout {
   owned: string
 }
 
-export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayout {
+export function gearTableLayout(count: number, hasOwned: boolean, hasDrops = true): GearTableLayout {
   if (count <= MAX_PERCENT_COLUMNS) {
     return {
       mode: 'percent',
@@ -334,9 +334,7 @@ export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayo
       PX.wish +
       PX.slot +
       PX.classes +
-      PX.zone +
-      PX.zoneLevel +
-      PX.mob +
+      (hasDrops ? PX.zone + PX.zoneLevel + PX.mob : 0) +
       count * PX.numeric +
       (hasOwned ? PX.owned : 0),
     name: `${String(PX.name)}px`,

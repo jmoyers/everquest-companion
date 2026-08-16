@@ -130,7 +130,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     entries: [
       {
         kind: 'new',
-        text: 'Every Gear row now says where the item comes from: Zone, Level and Mob columns, with the level belonging to the mob shown and the full list of known sources on hover.'
+        text: 'Every Gear row now says where the item comes from: Zone, Level and Mob columns, with the level belonging to the mob shown and the full list of known sources on hover. A Drop columns chip beside the Columns picker turns the trio off if you would rather have the room.'
       },
       {
         kind: 'new',

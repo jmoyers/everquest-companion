@@ -99,6 +99,18 @@ export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
   return Object.keys(out).length === 0 ? null : out
 }
 
+// ---- the drop columns choice ---------------------------------------------------------------
+
+/**
+ * Are the Zone / Level / Mob columns drawn (user ask, 2026-08-15: *make zone/level/mob an optional
+ * toggle*)? ON unless a stored `false` says otherwise — the columns shipped on, and an unreadable
+ * store must not blank them. One flag for the trio: they are one answer ("where does it drop"),
+ * and three toggles would invite a mob column with no zone to anchor it.
+ */
+export function sanitizeDropCols(raw: unknown): boolean {
+  return raw !== false
+}
+
 // ---- the toolbar choice --------------------------------------------------------------------
 
 /**

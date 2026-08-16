@@ -123,7 +123,7 @@
 // third filter can now be the reason the table is empty (`emptyText`, and the pass that counts it).
 
 import { type JSX, useCallback, useDeferredValue, useMemo, useRef } from 'react'
-import { Box, Stack, Typography } from '@mui/material'
+import { Box, Chip, Stack, Typography } from '@mui/material'
 import { ITEM_UPGRADE_BASE, type ItemUpgradeState } from '@shared/itemUpgrade'
 import OutputKindLine from '../../components/OutputKindLine'
 import { useWindowedRows } from '../../lib/useWindowedRows'
@@ -316,6 +316,18 @@ function ShapePickers({ prefs, columns }: { prefs: GearPrefs; columns: readonly 
         resetLabel="Show every filter"
         toggle={toggleControl}
         onChange={prefs.setControls}
+      />
+      {/* The Zone / Level / Mob trio's switch (user ask, 2026-08-15) — beside the other two shape
+          chips because it is a shape choice too: it narrows nothing, it only draws or does not. */}
+      <Chip
+        size="small"
+        label="Drop columns"
+        data-testid="gear-drops-toggle"
+        title="Show where each item drops - the Zone, Level and Mob columns. The item's own page (click its name) always has the full story."
+        color={prefs.dropCols ? 'primary' : 'default'}
+        variant={prefs.dropCols ? 'filled' : 'outlined'}
+        onClick={() => prefs.setDropCols(!prefs.dropCols)}
+        sx={{ flexShrink: 0 }}
       />
     </>
   )
@@ -561,6 +573,7 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
           // The haste knob (2026-08-15): the drawn EFF DMG / BIS cells read the same option the
           // sort just ranked by, so the numbers on screen and the order they stand in cannot split.
           ignoreHaste={filters.ignoreHaste}
+          showDrops={prefs.dropCols}
           // JOS-338 — hovering a row opens the comparison card. Passed always: the card is useful
           // with no dump at all (the item half plus the command that fills the other half), and
           // `GearCompareData.ready` is what keeps it from claiming anything before the first read.

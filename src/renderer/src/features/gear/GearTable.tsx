@@ -171,6 +171,8 @@ export interface GearTableProps {
   onWidths: (next: GearColumnWidths | null) => void
   /** Leave worn haste out of EFF DMG / BIS (2026-08-15) — the same flag the sort upstream read. */
   ignoreHaste: boolean
+  /** Draw the Zone / Level / Mob trio (2026-08-15) — `useGearPrefs.dropCols`, on by default. */
+  showDrops: boolean
   /**
    * The item keys already on the wish list — the added state, and since JOS-343 the reason a second
    * click on the same row REMOVES rather than doing nothing. Keys are `itemKey(name)`, which IS
@@ -249,6 +251,7 @@ const GearLine = memo(function GearLine({
   wished,
   compare,
   ignoreHaste,
+  showDrops,
   on
 }: {
   row: GearViewRow
@@ -260,6 +263,8 @@ const GearLine = memo(function GearLine({
   compare: GearCompareData | undefined
   /** the haste knob, as a PRIMITIVE so `memo` can compare it (the JOS-335 `wished` argument) */
   ignoreHaste: boolean
+  /** the Zone / Level / Mob trio, toggleable since 2026-08-15 — a primitive, same argument */
+  showDrops: boolean
   on: { openLoot?: (item: string) => void; wish?: (row: GearViewRow, wished: boolean) => void }
 }): JSX.Element {
   // ONE MAP LOOKUP PER RENDERED ROW, and only for the screenful the window mounted. `row.key` is
@@ -323,12 +328,16 @@ const GearLine = memo(function GearLine({
       </TableCell>
       <TableCell title={row.slots.join(' ')}>{row.slots.join(' ')}</TableCell>
       <TableCell title={row.classes.join(' ')}>{classText(row.classes)}</TableCell>
-      <TableCell title={row.dropZones.join(' · ')}>{overflowText(row.dropZones)}</TableCell>
-      {/* dropLevels[i] IS dropMobs[i]'s level (gearData.dropDetails), so the title can pair them. */}
-      <TableCell title={row.dropMobs.map((m, i) => `${m}: ${row.dropLevels[i] === '' ? '?' : row.dropLevels[i]}`).join(' · ')}>
-        {row.dropLevels[0] ?? ''}
-      </TableCell>
-      <TableCell title={row.dropMobs.join(' · ')}>{overflowText(row.dropMobs)}</TableCell>
+      {showDrops && (
+        <>
+          <TableCell title={row.dropZones.join(' · ')}>{overflowText(row.dropZones)}</TableCell>
+          {/* dropLevels[i] IS dropMobs[i]'s level (gearData.dropDetails), so the title can pair them. */}
+          <TableCell title={row.dropMobs.map((m, i) => `${m}: ${row.dropLevels[i] === '' ? '?' : row.dropLevels[i]}`).join(' · ')}>
+            {row.dropLevels[0] ?? ''}
+          </TableCell>
+          <TableCell title={row.dropMobs.join(' · ')}>{overflowText(row.dropMobs)}</TableCell>
+        </>
+      )}
       {columns.map((c) => (
         <TableCell key={c.key} align="right" data-testid={`gear-cell-${c.key}`} sx={NUMERIC_PAD}>
           {statText(sortValue(row, c.key, derivedOpts({ ignoreHaste })), c.key)}
@@ -372,10 +381,11 @@ export default function GearTable({
   compare,
   widths,
   onWidths,
-  ignoreHaste
+  ignoreHaste,
+  showDrops
 }: GearTableProps): JSX.Element {
-  const span = columns.length + (ownership === null ? 7 : 8)
-  const layout = gearTableLayout(columns.length, ownership !== null)
+  const span = columns.length + 4 + (showDrops ? 3 : 0) + (ownership === null ? 0 : 1)
+  const layout = gearTableLayout(columns.length, ownership !== null, showDrops)
   // THE USER'S DRAGGED WIDTHS WIN WHOLE (user ask, 2026-08-15): any stored map puts the entire
   // table in stated pixels — a dragged column beside percentage ones would reflow on every pane
   // resize, which is the opposite of "stick". A column the map has no entry for (a numeric column
@@ -383,7 +393,7 @@ export default function GearTable({
   // of an unstated one.
   const px = (id: string): number => widths?.[id] ?? defaultColumnPx(id)
   const w = (id: string, auto: string | undefined): string | undefined => (widths === null ? auto : `${String(px(id))}px`)
-  const allIds = ['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob', ...columns.map((c) => c.key), ...(ownership === null ? [] : ['owned'])]
+  const allIds = ['name', 'wish', 'slot', 'classes', ...(showDrops ? ['zone', 'zoneLevel', 'mob'] : []), ...columns.map((c) => c.key), ...(ownership === null ? [] : ['owned'])]
   const minWidth = widths === null ? layout.minWidth : allIds.reduce((a, id) => a + px(id), 0)
   // ONE object for the row's callbacks, memoized on the callbacks themselves: `GearLine` is
   // `memo`'d and a fresh literal per render would defeat it on every keystroke. It held two until
@@ -404,6 +414,7 @@ export default function GearTable({
         columns={columns}
         sort={sort}
         hasOwned={ownership !== null}
+        showDrops={showDrops}
         ownedHint={ownedHint}
         onSort={onSort}
         onWidths={onWidths}
@@ -420,6 +431,7 @@ export default function GearTable({
             wished={wished.has(row.key)}
             compare={compare}
             ignoreHaste={ignoreHaste}
+            showDrops={showDrops}
             on={handlers}
           />
         ))}

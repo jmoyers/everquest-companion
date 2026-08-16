@@ -23,6 +23,7 @@ import {
   GEAR_CONTROLS,
   sanitizeColumns,
   sanitizeControls,
+  sanitizeDropCols,
   sanitizeWidths,
   type GearColumnWidths,
   type GearControl
@@ -31,6 +32,7 @@ import {
 const COLUMNS_KEY = 'eq.gear.columns'
 const CONTROLS_KEY = 'eq.gear.controls'
 const WIDTHS_KEY = 'eq.gear.widths'
+const DROPS_KEY = 'eq.gear.dropcols'
 
 /**
  * One stored preference as parsed JSON, or `null` for anything unusable — absent, empty, truncated,
@@ -66,12 +68,16 @@ export interface GearPrefs {
   /** the dragged column widths (user ask, 2026-08-15), or `null` for the automatic layout */
   widths: GearColumnWidths | null
   setWidths: (next: GearColumnWidths | null) => void
+  /** the Zone / Level / Mob columns (user ask, 2026-08-15) — on unless switched off */
+  dropCols: boolean
+  setDropCols: (next: boolean) => void
 }
 
 export function useGearPrefs(): GearPrefs {
   const [columns, setColumnsState] = useState<GearSortKey[] | null>(() => sanitizeColumns(readJson(COLUMNS_KEY)))
   const [controls, setControlsState] = useState<GearControl[] | null>(() => sanitizeControls(readJson(CONTROLS_KEY)))
   const [widths, setWidthsState] = useState<GearColumnWidths | null>(() => sanitizeWidths(readJson(WIDTHS_KEY)))
+  const [dropCols, setDropColsState] = useState<boolean>(() => sanitizeDropCols(readJson(DROPS_KEY)))
 
   const setColumns = useCallback((next: GearSortKey[] | null) => {
     setColumnsState(next)
@@ -104,5 +110,11 @@ export function useGearPrefs(): GearPrefs {
     writeJson(CONTROLS_KEY, next === null ? null : { shown: next, vocab: [...GEAR_CONTROLS] })
   }, [])
 
-  return { columns, setColumns, controls, setControls, widths, setWidths }
+  // ON is the default, so the key only needs to exist while the answer is the non-default one.
+  const setDropCols = useCallback((next: boolean) => {
+    setDropColsState(next)
+    writeJson(DROPS_KEY, next ? null : false)
+  }, [])
+
+  return { columns, setColumns, controls, setControls, widths, setWidths, dropCols, setDropCols }
 }

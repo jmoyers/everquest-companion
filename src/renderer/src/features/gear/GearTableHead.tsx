@@ -222,6 +222,7 @@ export function GearHead({
   columns,
   sort,
   hasOwned,
+  showDrops,
   ownedHint,
   onSort,
   onWidths,
@@ -230,12 +231,14 @@ export function GearHead({
   columns: readonly GearColumn[]
   sort: GearSort
   hasOwned: boolean
+  /** the Zone / Level / Mob trio, toggleable since 2026-08-15 (user ask) */
+  showDrops: boolean
   ownedHint: string
   onSort: (key: GearSortKey) => void
   onWidths: (next: GearColumnWidths | null) => void
   w: (id: string, auto: string | undefined) => string | undefined
 }): JSX.Element {
-  const layout = gearTableLayout(columns.length, hasOwned)
+  const layout = gearTableLayout(columns.length, hasOwned, showDrops)
   return (
     <TableHead>
       <TableRow>
@@ -259,31 +262,37 @@ export function GearHead({
         </PlainHeader>
         {/* The three drop columns (user ask, 2026-08-15): where it drops, from whom, and the
             MOB's stated level — the catalog states no zone-level range, so claiming one would be
-            an invented number; the mob's own level is the fact it does state (law 1). */}
-        <PlainHeader
-          id="zone"
-          width={w('zone', layout.zone)}
-          title="Where the item is known to drop - the first zone, with the rest on hover"
-          onWidths={onWidths}
-        >
-          Zone
-        </PlainHeader>
-        <PlainHeader
-          id="zoneLevel"
-          width={w('zoneLevel', layout.zoneLevel)}
-          title="The stated level of the first drop mob - a range as often as a number. Hover for every mob's level."
-          onWidths={onWidths}
-        >
-          Level
-        </PlainHeader>
-        <PlainHeader
-          id="mob"
-          width={w('mob', layout.mob)}
-          title="Who drops it - the first known mob, with the rest on hover"
-          onWidths={onWidths}
-        >
-          Mob
-        </PlainHeader>
+            an invented number; the mob's own level is the fact it does state (law 1). Toggleable
+            as one trio (the "Drop columns" chip on the count line) — the drill-down always has
+            the full story either way. */}
+        {showDrops && (
+          <>
+            <PlainHeader
+              id="zone"
+              width={w('zone', layout.zone)}
+              title="Where the item is known to drop - the first zone, with the rest on hover"
+              onWidths={onWidths}
+            >
+              Zone
+            </PlainHeader>
+            <PlainHeader
+              id="zoneLevel"
+              width={w('zoneLevel', layout.zoneLevel)}
+              title="The stated level of the first drop mob - a range as often as a number. Hover for every mob's level."
+              onWidths={onWidths}
+            >
+              Level
+            </PlainHeader>
+            <PlainHeader
+              id="mob"
+              width={w('mob', layout.mob)}
+              title="Who drops it - the first known mob, with the rest on hover"
+              onWidths={onWidths}
+            >
+              Mob
+            </PlainHeader>
+          </>
+        )}
         {columns.map((c) => (
           <SortHeader key={c.key} column={c} sort={sort} width={w(c.key, layout.numeric)} align="right" onSort={onSort} onWidths={onWidths} />
         ))}
