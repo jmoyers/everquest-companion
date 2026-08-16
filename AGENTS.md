@@ -137,6 +137,16 @@ docs/agents-archive.md.
     settling") · 1 sighting (2026-08-13, JOS-294 worker six-spec sweep; green
     standalone and in the next full sweep) · NOT the resolved row's signature —
     unknown mechanism, watch for a second sighting before diagnosing.
+  - `gear.e2e` + `plan.e2e` · EVERY live-append claim red at once: the staged
+    app never attaches its tail (`getCharacter()` null at 45 s, no error in
+    the staged errors.log, dump-join claims still green) · 1 sighting
+    (2026-08-15 evening, machine-wide across both specs on code green ~90 min
+    earlier; reverting the day's shared/renderer-only commits does not clear
+    it; the user's PACKAGED app tailed the real log fine throughout) ·
+    environment suspected, not a spec race — candidate cause offered by the
+    user himself (his packaged app was running); probe protocol: re-run one
+    spec in the next window where his app is closed, then after a reboot; a
+    sighting that survives both is a main-process ticket.
   - `combat-dashboard.e2e` · narrow-window resize never lands, settleStable
     settles on stale geometry · 5 sightings (2026-08-10/11/12 full-sweep; 4th
     in the JOS-229 sweep; 5th 2026-08-12 STANDALONE on the JOS-240 merge

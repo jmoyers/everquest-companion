@@ -15,10 +15,15 @@
 //   2. the con gate BOTH WAYS — solo excludes what group admits;
 //   3. era exclusion, including the unknown-HIDES rule the gear surfaces already follow;
 //   4. a +N target: `band: null`, gated by its BASE zone's profile and by nothing else;
-//   5. ownership / wish-list dedupe, and best-bracket dedupe;
+//   5. ownership exclusion, and best-bracket dedupe;
 //   6. role re-ranking — a tank plan and a dps plan order the same two items oppositely;
 //   7. an item whose page states NO classes is KEPT (law 1: unknown, never "nobody");
 //   8. the horizon stops itself, and trailing silence is trimmed.
+//
+// THE OTHER HALF OF THE FOLD IS `tests/progressionPlanRuns.test.mts`: which items are ADMITTED (the
+// upgrade-gap rule and the wish-list flag) and how a bracket GROUPS them into zone runs. Two files
+// because this one sits at the 400-code-line factoring ceiling and that is a subject of its own,
+// not more of this one's — the `gearEffectiveHp.test.mts` precedent.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -139,14 +144,6 @@ const OWNED = row({
   stats: { AC: 100 },
   wikiSources: [{ mob: 'a young kobold', zone: 'Crushbone' }]
 })
-const WISHED = row({
-  key: 'fine steel long sword',
-  name: 'Fine Steel Long Sword',
-  slots: ['PRIMARY'],
-  classes: ['WAR'],
-  stats: { AC: 99 },
-  wikiSources: [{ mob: 'a young kobold', zone: 'Crushbone' }]
-})
 /** Drops in Velious — a POSITIVE out-of-era verdict off its own drop zone. */
 const KAEL = row({
   key: 'ry`gorr chain',
@@ -205,7 +202,7 @@ const TIER_RING = row({
   wikiSources: [{ mob: 'Ixiblat Fer +5', zone: 'Najena' }]
 })
 
-const GEAR = [PLATE, BLADE, ORPHAN, WIZ_ONLY, OWNED, WISHED, KAEL, HOMELESS, GREY, DEEP, TIER_CLOAK, TIER_RING]
+const GEAR = [PLATE, BLADE, ORPHAN, WIZ_ONLY, OWNED, KAEL, HOMELESS, GREY, DEEP, TIER_CLOAK, TIER_RING]
 
 function corpora(over: Partial<PlanCorpora> = {}): PlanCorpora {
   return {
@@ -214,7 +211,10 @@ function corpora(over: Partial<PlanCorpora> = {}): PlanCorpora {
     mobLevel,
     con,
     owned: new Set(['rusty dagger']),
-    wished: new Set(['fine steel long sword']),
+    wished: new Set(),
+    // EVERY SLOT A GAP by default — the baseline most of this file's claims want, so an assertion
+    // about the con gate is never quietly also an assertion about the upgrade gate.
+    ownedBestBySlot: new Map(),
     ...over
   }
 }
@@ -422,19 +422,17 @@ test('a +N witness is gated by its BASE zone profile — the one gate that can b
 // 5. DEDUPE — ownership, the wish list, and one bracket per item
 // =================================================================================================
 
-test('owned and wished items never appear — the plan SEEDS the wish list, it does not restate it', () => {
+test('OWNED items never appear — you do not farm what you have', () => {
   const route = buildProgressionPlan(inputs(), corpora())
   const keys = route.flatMap((b) => b.targets.map((t) => t.key))
-  // Both would otherwise top their bracket on the role score (AC 100 and AC 99 against the Plate's
-  // 95), so their absence is not an accident of ranking.
+  // It would otherwise top its bracket on the role score (AC 100 against the Plate's 95), so its
+  // absence is not an accident of ranking.
   assert.equal(keys.includes('rusty dagger'), false)
-  assert.equal(keys.includes('fine steel long sword'), false)
 
-  // Hand back an empty ownership set and they walk straight in, which is what proves the filter is
+  // Hand back an empty ownership set and it walks straight in, which is what proves the filter is
   // the thing doing the work.
-  const open = buildProgressionPlan(inputs(), corpora({ owned: new Set(), wished: new Set() }))
+  const open = buildProgressionPlan(inputs(), corpora({ owned: new Set() }))
   assert.equal(names(open[0])[0], 'Rusty Dagger')
-  assert.equal(names(open[0])[1], 'Fine Steel Long Sword')
 })
 
 test('an item lands in ONE bracket only — the earliest one that had room for it', () => {

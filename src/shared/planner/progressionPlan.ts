@@ -19,7 +19,7 @@
 // LEARNED from one machine's consider history, and a fold that reached for it directly could not be
 // tested against a band table whose shape the test controls. The renderer passes `conBand`.
 //
-// SIX RULES THE FOLD REFUSES TO BEND:
+// TEN RULES THE FOLD REFUSES TO BEND:
 //
 //   1. AN EMPTY CLASS LIST IS UNKNOWN, NEVER "NOBODY" (`GearRow.classes`, law 1). An item whose page
 //      stated no classes — or stated them unreadably — is KEPT for every trio. Excluding it would
@@ -29,7 +29,8 @@
 //      mob (plan §0.2, re-verified 2026-08-15) — so nothing on this machine states how hard a +4
 //      creature is. Printing "blue at 19" for one would be a fabricated number. `band: null` is the
 //      honest answer and the renderer draws it as "difficulty unstated".
-//   3. THE ROLE WEIGHTS ARE A HEURISTIC AND SAY SO. See `roleValue`.
+//   3. THE ROLE WEIGHTS ARE A HEURISTIC AND SAY SO. They live in `roleWeights.ts`, which this file
+//      re-exports (`GearRole`, `roleValue`) so no caller has to know they moved.
 //   4. THE HORIZON IS DATA-DRIVEN, not a level cap this file claims to know. See
 //      `buildProgressionPlan`.
 //   5. THE TARGET GATE IS A CEILING, NOT A WINDOW. CORRECTED 2026-08-15, from the owner playing the
@@ -41,9 +42,38 @@
 //      THE CONSEQUENCE, stated rather than discovered: a grey-source item now qualifies from the
 //      FIRST bracket, which is the correct advice ("go and grab this now") and does mean the opening
 //      bracket sees the most competition. Nothing else was needed to keep that bounded — the role
-//      score orders it, `TARGET_CAP` bounds it, and the consume-on-emission dedupe in `targetsFor`
-//      lets anything the cap cut resurface later.
-//   6. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
+//      score orders it, the caps bound it, and the consume-on-emission dedupe in `bracketOf` lets
+//      anything every cap cut resurface later.
+//   6. SCORES ARE READ OFF BASE STATS, and that is a RULING rather than a shortcut. Owner, 2026-08-15:
+//      *"base stats can be used, that's fine, because we can upgrade"*. Every item in this game is
+//      upgradeable, so a plus is a STATE OF ANY ITEM and not a property of the drop — which makes
+//      base-against-base the only fair comparison, and scoring a `+4` witness at tier 4 while its
+//      base-zone sibling scores at tier 0 would rank the SLIDER rather than the loot. The tier a
+//      witness names is still carried (`GearTarget.plus`, `GearRun.plus`) because it changes WHERE
+//      you go and what the trip costs; it just does not change what the item is worth.
+//   7. THE ROUTE IS ZONE-FIRST — `PlanBracket.runs`. The ask was for places
+//      ("it should say crushbone … mistmoore splitpaw") and the plan doc §1 mockup agrees
+//      (*"**Mistmoore** — gear runs: …"*). A GLOBAL TOP-8 CANNOT ANSWER THAT, and the burial was
+//      measured rather than predicted: at level 44 the Refined-tier runs the owner actually farms —
+//      Befallen 4, Runnyeye 4, Splitpaw 4, and he is WEARING the Splitpaw axe (reported 2026-08-15)
+//      — never crack a bracket-wide top eight against planes loot, so the feature's own subject
+//      never rendered. A RUN EARNS ITS LINE BY CONTAINING AN UPGRADE FOR THIS TRIO AT ALL, never by
+//      out-scoring raid gear. The flat `targets` list is kept beside it, unchanged in rule, so the
+//      renderer can migrate without a flag day.
+//   8. ADMISSION IS A GAP TEST, NOT A RANKING (owner, 2026-08-15: *"i should be able to gear my guy
+//      up, so it needs to look at what I have and the best in slot"*). An item is a target when it
+//      STRICTLY beats the best OWNED item in at least one slot it fits (`PlanCorpora
+//      .ownedBestBySlot`, injected). A slot the map does not name is a GAP and admits anything
+//      wearable — absent is "nothing stated there", not "an owned item worth zero" (law 1).
+//      THE TWO SIDES OF `owned` INTERACT AND IT IS DELIBERATE: an owned item sets its slot's bar AND
+//      is excluded as a target, because you do not farm what you have. Raising the PLUS on something
+//      you already own is the Gear tab's business — that is what the upgrade slider is — and the
+//      route deliberately says nothing about it.
+//   9. A WISHED ITEM IS FLAGGED, NOT FILTERED (`GearTarget.wished`). It bypasses the gap test and
+//      sorts FIRST, because the user declaring they want a thing is the strongest statement about it
+//      in this whole corpus and it outranks a score rule 3 openly calls invented. Every other gate —
+//      era, reach, wearability, the +N rules — still applies to it.
+//  10. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
 //      SEEDS the wish list; it does not become one.
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
@@ -57,174 +87,14 @@
 
 import type { ClassAbbr } from '../classCombo'
 import type { ConBand } from '../conBands'
-import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
+import type { GearRow } from './gear'
+import type { EquipSlot } from './types'
 import { layeredVerdict } from './era'
-import { gearEffectiveHp, gearRatio } from './gearScale'
+import { roleValue, type GearRole } from './roleWeights'
 import { plusSuffix, zoneLevelKey, type PlusName, type ZoneLevels } from './zoneLevels'
 
-// =================================================================================================
-// ROLE WEIGHTS — one table, openly heuristic
-// =================================================================================================
-
-/** What the player is gearing FOR. `balanced` is the default and sits between the other three. */
-export type GearRole = 'balanced' | 'tank' | 'dps' | 'healer'
-
-/** One role's coefficients. Absent key = that stat contributes NOTHING to this role. */
-interface RoleWeights {
-  /** per-stat coefficients, applied to the STATED value */
-  stats: Partial<Record<GearStatKey, number>>
-  /** coefficient on `gearEffectiveHp` (HP + STA); why HP/STA are not in `stats` is below */
-  ehp: number
-  /** coefficient on `gearRatio` (weapons only — a non-weapon contributes nothing) */
-  ratio: number
-  /** coefficient applied to EVERY stated save, one number for all ten */
-  saves: number
-}
-
-/** The ten `SV_*` keys, read off the closed vocabulary rather than restated (`gear.ts`). */
-const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsWith('SV_'))
-
-/**
- * THE WEIGHTS. THESE COEFFICIENTS ARE INVENTED RANKINGS, NOT GAME FACTS — the honesty clause, and it
- * is the same one `gearEffectiveHp` carries about its missing soft cap. EverQuest states nowhere how
- * much a point of AC is worth against a point of stamina, this repo has measured no such exchange
- * rate, and no amount of table-tuning would turn one into a measurement. What the table IS: a
- * defensible, one-place, role-differentiated ORDERING so that a tank's list is not a dps's list.
- * Change a number here and every surface moves together; there is no second table.
- *
- * WHAT IS DELIBERATELY ABSENT, and why each absence is a decision:
- *   * HP and STA. They ride through `ehp` (`gearEffectiveHp`), so listing them in `stats` too would
- *     count them twice — and the derived key is the one that already answers "what if only one of
- *     them is stated".
- *   * DMG and DELAY. They ride through `ratio` (`gearRatio` → `damageRatio`), which is undefined for
- *     anything that is not a weapon. A raw DMG weight would rank 6,000 non-weapons at zero on a key
- *     they never state.
- *   * WEIGHT, CHARGES-like per-item facts, and RANGE. Weight is a COST, not worth, and this repo has
- *     no measured strength-to-encumbrance model to price it with; the other two are facts about an
- *     item, not comparisons between items (`gear.ts`'s own census reasoning).
- *
- * The role shapes, in one line each: TANK up-weights AC and effective HP and barely reads a weapon;
- * DPS reads the damage ratio big plus STR/DEX/ATTACK/HASTE and the damage bonus; HEALER reads
- * mana, WIS, CHA and both regens with a moderate EHP; BALANCED reads everything smally. Every role
- * reads AC, effective HP and saves at some weight, because staying alive is not a role.
- */
-const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
-  balanced: {
-    stats: {
-      AC: 2,
-      STR: 0.6,
-      AGI: 0.2,
-      DEX: 0.5,
-      WIS: 0.5,
-      INT: 0.5,
-      CHA: 0.2,
-      MP: 0.15,
-      HP_REGEN: 6,
-      MANA_REGEN: 6,
-      END_REGEN: 1,
-      ATTACK: 0.6,
-      HASTE: 2,
-      DMG_BONUS: 1.5,
-      BACKSTAB: 0.5
-    },
-    ehp: 0.5,
-    ratio: 8,
-    saves: 0.3
-  },
-  tank: {
-    stats: {
-      AC: 6,
-      STR: 0.5,
-      AGI: 0.4,
-      DEX: 0.2,
-      WIS: 0.1,
-      INT: 0.1,
-      CHA: 0.1,
-      MP: 0.05,
-      HP_REGEN: 10,
-      MANA_REGEN: 1,
-      END_REGEN: 1,
-      ATTACK: 0.3,
-      HASTE: 1,
-      DMG_BONUS: 0.5
-    },
-    ehp: 1.2,
-    ratio: 3,
-    saves: 0.5
-  },
-  dps: {
-    stats: {
-      AC: 0.5,
-      STR: 1.5,
-      AGI: 0.2,
-      DEX: 1.2,
-      WIS: 0.1,
-      INT: 0.8,
-      CHA: 0.1,
-      MP: 0.1,
-      HP_REGEN: 3,
-      MANA_REGEN: 3,
-      END_REGEN: 1,
-      ATTACK: 1.5,
-      HASTE: 4,
-      DMG_BONUS: 3,
-      BACKSTAB: 2
-    },
-    ehp: 0.2,
-    ratio: 20,
-    saves: 0.15
-  },
-  healer: {
-    stats: {
-      AC: 1,
-      STR: 0.2,
-      AGI: 0.1,
-      DEX: 0.1,
-      WIS: 1.5,
-      INT: 0.9,
-      CHA: 0.4,
-      MP: 0.35,
-      HP_REGEN: 6,
-      MANA_REGEN: 12,
-      END_REGEN: 0.5,
-      ATTACK: 0.1,
-      HASTE: 0.5,
-      DMG_BONUS: 0.2
-    },
-    ehp: 0.4,
-    ratio: 3,
-    saves: 0.35
-  }
-}
-
-/**
- * ONE ITEM'S WORTH TO ONE ROLE. Heuristic — see `ROLE_WEIGHTS`.
- *
- * ABSENT STATS CONTRIBUTE NOTHING (law 1, and it is what keeps the arithmetic total): an item that
- * states no relevant stat scores exactly `0`, never `NaN`, and an item that states a PENALTY
- * (`STR: -5`) scores that penalty, because a stated negative is a stated number.
- *
- * Rounded to three decimals so a score is a stable sort key and a stable test expectation rather
- * than an accumulation of float dust — the ranking, not the value, is the answer this returns.
- */
-export function roleValue(stats: GearStats, role: GearRole): number {
-  const weights = ROLE_WEIGHTS[role]
-  let total = 0
-  for (const key of Object.keys(weights.stats) as GearStatKey[]) {
-    const value = stats[key]
-    const coefficient = weights.stats[key]
-    if (value !== undefined && coefficient !== undefined) total += value * coefficient
-  }
-  for (const key of SAVE_KEYS) {
-    const value = stats[key]
-    if (value !== undefined) total += value * weights.saves
-  }
-  const ehp = gearEffectiveHp(stats)
-  if (ehp !== undefined) total += ehp * weights.ehp
-  const ratio = gearRatio(stats)
-  if (ratio !== undefined) total += ratio * weights.ratio
-  return Math.round(total * 1000) / 1000
-}
+// The two names this file used to define and now only passes through — see `roleWeights.ts`.
+export { roleValue, type GearRole }
 
 // =================================================================================================
 // THE PLAN'S SHAPE
@@ -263,8 +133,43 @@ export interface GearTarget {
   mobLevel: number | null
   /** the con verdict at the earliest level in the bracket where it qualifies — `null` for a +N */
   band: ConBand | null
-  /** `roleValue(row.stats, role)` — heuristic, and the only thing targets are ranked by */
+  /**
+   * `roleValue(row.stats, role)` at BASE stats — heuristic, and what targets are ranked by.
+   *
+   * BASE, not the witness's plus state. Owner ruling 2026-08-15: *"base stats can be used, that's
+   * fine, because we can upgrade"* — see rule 6 in the header.
+   */
   score: number
+  /**
+   * ALREADY ON THE WISH LIST. Flagged, not filtered: the user declaring they want a thing is the
+   * strongest statement about it in the whole corpus, so the route keeps ROUTING to it — it bypasses
+   * the upgrade-gap test and sorts first. See `candidatesOf`.
+   */
+  wished: boolean
+}
+
+/**
+ * ONE PLACE, ONE TIER, AND WHAT IS WORTH GETTING THERE — the ZONE-FIRST shape the ask actually
+ * asked for ("it should say crushbone … mistmoore splitpaw"), and the plan doc §1 mockup's own
+ * spelling (*"**Mistmoore** — gear runs: …"*).
+ *
+ * A BASE ZONE AND ITS REFINED TIER ARE DIFFERENT RUNS. They are different trips with different
+ * difficulty and different drops, and collapsing them would put a `+4` item under a heading whose
+ * band was measured for the `+0` zone.
+ */
+export interface GearRun {
+  /** the BASE zone spelling; `''` when the pages listed these droppers under no heading */
+  zone: string
+  /** the tier all of this run's witnesses named, or `null` for the base zone */
+  plus: number | null
+  /**
+   * What the zone's MEDIAN mob cons at the bracket midpoint — the same reading `expZones` prints.
+   * `null` for a +N run (difficulty unstated, rule 2) AND for a base zone this app has no profile
+   * for. `plus` is what tells those two silences apart.
+   */
+  band: ConBand | null
+  /** score-ordered (wished first), capped at `RUN_TARGET_CAP` */
+  targets: GearTarget[]
 }
 
 /** One zone worth grinding in, at one bracket. Every field is DERIVED — `sampled` says how much. */
@@ -282,6 +187,14 @@ export interface PlanBracket {
   from: number
   to: number
   expZones: ZonePick[]
+  /** WHERE TO GO AND WHAT FOR — the zone-first answer. See `GearRun` and rule 8. */
+  runs: GearRun[]
+  /**
+   * The same bracket's admitted items as ONE flat top-`TARGET_CAP` list.
+   *
+   * KEPT SO THE RENDERER CAN MIGRATE at its own pace: `runs` is additive, and both fields are built
+   * from the identical admitted pool, so a row here is a row there.
+   */
   targets: GearTarget[]
 }
 
@@ -294,10 +207,31 @@ export interface PlanCorpora {
   mobLevel: (mobName: string) => number | null
   /** `(myLevel, mobLevel) → band`. `conBands.conBand` in production, synthetic in the tests. */
   con: (myLevel: number, mobLevel: number) => ConBand
-  /** item keys the character already owns — deduped out of the route */
+  /** item keys the character already owns — EXCLUDED as targets (you do not farm what you have) */
   owned: ReadonlySet<string>
-  /** item keys already on the wish list — likewise; the plan SEEDS that document, never duplicates it */
+  /**
+   * item keys already on the wish list — FLAGGED, not excluded (`GearTarget.wished`). The plan seeds
+   * that document and then keeps routing to it; it never silently drops a thing the user asked for.
+   */
   wished: ReadonlySet<string>
+  /**
+   * THE BAR EACH SLOT HAS TO BEAT: the role-scored best OWNED item per equip slot, computed by the
+   * caller (the renderer folds it out of ownership + `roleValue`; the tests build it by hand).
+   *
+   * A SLOT THAT IS ABSENT FROM THIS MAP IS A GAP, and any wearable item is an upgrade for a gap.
+   * That is law 1 read carefully rather than bent: absent is not "an owned item worth 0" — it is the
+   * ownership data declining to name anything there, and the honest consequence of not knowing what
+   * you have in a slot is to keep showing you what you could put in it. The alternative (treat
+   * absent as 0 and admit anything scoring above 0) reaches the same answer for real gear and a
+   * WORSE one for a stated penalty item, so it is spelled out as a gap on purpose.
+   *
+   * OPTIONAL, and the default is the empty map — EVERY slot a gap, i.e. exactly what the fold did
+   * before this rule existed. Additive for the same reason `runs` is: a caller that has not built
+   * its ownership fold yet keeps compiling and keeps rendering, and gets the tighter answer the day
+   * it passes one. The semantics compose without a special case: an absent MAP is every slot
+   * absent, and an absent slot is a gap.
+   */
+  ownedBestBySlot?: ReadonlyMap<EquipSlot, number>
 }
 
 // ---- the constants, each with the reason it is that number ------------------------------------
@@ -310,8 +244,16 @@ const DEFAULT_BRACKET_SIZE = 6
  * reads. Four fits one card without scrolling. The cap is stated here and on the surface.
  */
 const EXP_ZONE_CAP = 4
-/** EIGHT TARGETS PER BRACKET, for the same reason and with the same disclosure. */
+/** EIGHT TARGETS PER BRACKET in the flat list, for the same reason and with the same disclosure. */
 const TARGET_CAP = 8
+/**
+ * THREE TARGETS PER RUN. A run's job is to say "this trip is worth making, and here is a taste of
+ * what is in it" — the full list is the Gear tab's, reached by drilling in. Three fits one line of a
+ * bracket card. Stated on the surface.
+ */
+const RUN_TARGET_CAP = 3
+/** SIX RUNS PER BRACKET, same disclosure. A bracket is an evening's advice, not an atlas. */
+const RUN_CAP = 6
 /**
  * THE HARD BACKSTOP: six default brackets past the current level. The horizon is meant to be
  * DATA-driven (see `buildProgressionPlan`), and this exists only so a corpus that keeps answering
@@ -324,7 +266,7 @@ const QUIET_BRACKETS = 2
 
 /**
  * THE TARGET GATE IS A CEILING, NOT A WINDOW — corrected 2026-08-15 from live testing, and the
- * correction is rule 6 in the header. "Blue and white solo" (plan §2.1) is the hardest fight the
+ * correction is rule 5 in the header. "Blue and white solo" (plan §2.1) is the hardest fight the
  * route may send you to, so `trivial` rides INSIDE the gate: a grey mob is the easiest farm there
  * is, and a route that refused to mention the tunic off a level-4 rat because you have outlevelled
  * the rat is answering a question nobody asked.
@@ -356,14 +298,27 @@ interface Candidate {
   row: GearRow
   witnesses: Witness[]
   score: number
+  wished: boolean
 }
 
-/** What `targetsFor` needs, bundled — four positional arguments is the ceiling and this is clearer. */
+/** What the bracket fold needs, bundled — four positional arguments is the ceiling. */
 interface PlanCtx {
   corpora: PlanCorpora
   /** the reach CEILING — every band a target's fight may read (rule 5), not a window */
   gate: readonly ConBand[]
+  eraOnly: boolean
   candidates: Candidate[]
+}
+
+/**
+ * THE ONE ORDER TARGETS ARE EVER PUT IN, so the flat list and a run can never disagree.
+ *
+ * WISHED FIRST — the user saying "I want this" outranks a heuristic score computed from a weights
+ * table this file openly calls invented. Then score descending, then name, so the total order is
+ * stable and a windowed list does not re-shuffle under the scrollbar.
+ */
+function byWorth(a: GearTarget, b: GearTarget): number {
+  return Number(b.wished) - Number(a.wished) || b.score - a.score || a.name.localeCompare(b.name)
 }
 
 /** The base spelling of a possibly-tiered name. */
@@ -506,34 +461,98 @@ function targetOf(candidate: Candidate, bracket: Bracket, ctx: PlanCtx): GearTar
       mob: witness.mob,
       mobLevel: witness.mobLevel,
       band: verdict.band,
-      score: candidate.score
+      score: candidate.score,
+      wished: candidate.wished
     }
   }
   return null
 }
 
 /**
- * This bracket's targets, ranked by the role score and capped.
+ * ONE TARGET PER ITEM PER BRACKET, off its FIRST qualifying witness — so `targets` and `runs` are
+ * built from an identical pool and an item can never appear under two headings at once.
  *
- * DEDUPE IS BY EMISSION, NOT BY QUALIFICATION, and the difference matters: an item is consumed
- * (`used`) when it actually LANDS in a bracket, so a row that qualified early but lost the cap-8 cut
- * can still surface later, where it has fewer competitors. Consuming on qualification would delete
- * such a row from the whole plan on the strength of a display limit — which is the one thing a cap
- * must never do. Each key still appears AT MOST ONCE, in the earliest bracket that had room for it.
- *
- * Name breaks a score tie, so a windowed list is stable under the scrollbar (the total-order law).
+ * Every admitted item of the bracket is here, uncapped: the caps are applied by the two VIEWS below,
+ * which is what lets a low-scoring run still render (rule 7) instead of being pre-truncated.
  */
-function targetsFor(ctx: PlanCtx, bracket: Bracket, used: Set<string>): GearTarget[] {
+function admittedFor(ctx: PlanCtx, bracket: Bracket, used: ReadonlySet<string>): GearTarget[] {
   const found: GearTarget[] = []
   for (const candidate of ctx.candidates) {
     if (used.has(candidate.row.key)) continue
     const target = targetOf(candidate, bracket, ctx)
     if (target !== null) found.push(target)
   }
-  found.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-  const kept = found.slice(0, TARGET_CAP)
-  for (const target of kept) used.add(target.key)
-  return kept
+  return found.sort(byWorth)
+}
+
+/** The grouping key: one run per (base zone, tier). See `GearRun`. */
+function runKey(target: GearTarget): string {
+  return `${zoneLevelKey(target.zone)} ${target.plus ?? 0}`
+}
+
+/** A base run's band is the zone-median reading `expZones` would print; a +N run has none (rule 2). */
+function runBand(head: GearTarget, ctx: PlanCtx, midpoint: number): ConBand | null {
+  if (head.plus !== null) return null
+  const profile = head.zone === '' ? undefined : ctx.corpora.profiles.get(zoneLevelKey(head.zone))
+  return profile === undefined ? null : ctx.corpora.con(midpoint, profile.median)
+}
+
+/**
+ * THE ZONE-FIRST VIEW — the bracket's admitted items, grouped into trips.
+ *
+ * RUNS ARE RANKED BY THEIR BEST MEMBER, not by a sum: a run earns its line by CONTAINING an upgrade
+ * for this trio at all (rule 7), and totalling scores would just re-create the global ranking that
+ * buried the Refined runs in the first place. Zone name then tier break a tie, so the order is total.
+ */
+function runsFrom(admitted: readonly GearTarget[], ctx: PlanCtx, midpoint: number): GearRun[] {
+  const groups = new Map<string, GearTarget[]>()
+  for (const target of admitted) {
+    const key = runKey(target)
+    const members = groups.get(key)
+    if (members) members.push(target)
+    else groups.set(key, [target])
+  }
+  const runs: GearRun[] = []
+  for (const members of groups.values()) {
+    const head = members[0]
+    runs.push({
+      zone: head.zone,
+      plus: head.plus,
+      band: runBand(head, ctx, midpoint),
+      targets: members.slice(0, RUN_TARGET_CAP)
+    })
+  }
+  runs.sort(
+    (a, b) =>
+      byWorth(a.targets[0], b.targets[0]) ||
+      a.zone.localeCompare(b.zone) ||
+      (a.plus ?? 0) - (b.plus ?? 0)
+  )
+  return runs.slice(0, RUN_CAP)
+}
+
+/**
+ * One whole bracket, and the ONE place an item is consumed.
+ *
+ * DEDUPE IS BY EMISSION, NOT BY ADMISSION: a key is consumed when it actually LANDS somewhere the
+ * reader will see it — the flat top-8 or a kept run — so anything every cap cut can still surface in
+ * a later bracket, where it has fewer competitors. Consuming on admission would delete a row from the
+ * whole plan on the strength of a display limit, which is the one thing a cap must never do.
+ */
+function bracketOf(ctx: PlanCtx, bracket: Bracket, used: Set<string>): PlanBracket {
+  const midpoint = Math.floor((bracket.from + bracket.to) / 2)
+  const admitted = admittedFor(ctx, bracket, used)
+  const targets = admitted.slice(0, TARGET_CAP)
+  const runs = runsFrom(admitted, ctx, midpoint)
+  for (const target of targets) used.add(target.key)
+  for (const run of runs) for (const target of run.targets) used.add(target.key)
+  return {
+    from: bracket.from,
+    to: bracket.to,
+    expZones: expZonesFor(ctx.corpora.profiles, midpoint, ctx.corpora.con, ctx.eraOnly),
+    runs,
+    targets
+  }
 }
 
 /**
@@ -585,21 +604,52 @@ function expZonesFor(
   return picks.slice(0, EXP_ZONE_CAP)
 }
 
+/**
+ * IS THIS AN UPGRADE? — the admission test (rule 8), and it is a GAP test rather than a ranking.
+ *
+ * An item is in when its role score STRICTLY beats the best owned score in AT LEAST ONE slot it
+ * fits: a two-hander that beats your PRIMARY is worth the trip even if your SECONDARY is better
+ * still, and a ring that beats neither of your fingers is not.
+ *
+ * A SLOT THE MAP DOES NOT NAME IS A GAP and admits anything wearable — see `PlanCorpora
+ * .ownedBestBySlot` for why absent is read as "nothing stated there" rather than "an owned zero".
+ * A row with no slots at all cannot fill a gap and is out; `gear.ts` says a row exists precisely
+ * because it has one, so that arm is a guard rather than a case.
+ */
+function isUpgrade(row: GearRow, score: number, bars: ReadonlyMap<EquipSlot, number> | undefined): boolean {
+  if (bars === undefined) return row.slots.length > 0
+  return row.slots.some((slot) => {
+    const best = bars.get(slot)
+    return best === undefined || score > best
+  })
+}
+
 /** Every gear row that could ever be a target, filtered once and scored once (not per bracket). */
 function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
   const out: Candidate[] = []
   for (const row of corpora.gear) {
-    if (corpora.owned.has(row.key) || corpora.wished.has(row.key)) continue
+    if (corpora.owned.has(row.key)) continue
     if (!wearable(row, inputs.classes)) continue
     if (!eraLegal(row, inputs.eraOnly)) continue
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
-    out.push({ row, witnesses, score: roleValue(row.stats, inputs.role) })
+    const score = roleValue(row.stats, inputs.role)
+    // A WISHED ITEM SKIPS THE GAP TEST. The user declaring they want a thing is the strongest
+    // statement about it anywhere in this corpus, and it outranks a score this file's own header
+    // calls an invented ranking. Every other gate — era, reach, wearability — still applies.
+    const wished = corpora.wished.has(row.key)
+    if (!wished && !isUpgrade(row, score, corpora.ownedBestBySlot)) continue
+    out.push({ row, witnesses, score, wished })
   }
   return out
 }
 
-/** Is this bracket silent — nowhere to grind and nothing to go and get? */
+/**
+ * Is this bracket silent — nowhere to grind and nothing to go and get?
+ *
+ * `runs` is not consulted because it cannot disagree: both views are built from the same admitted
+ * pool, so `targets` is empty exactly when `runs` is.
+ */
 function isQuiet(bracket: PlanBracket): boolean {
   return bracket.expZones.length === 0 && bracket.targets.length === 0
 }
@@ -625,20 +675,14 @@ export function buildProgressionPlan(inputs: PlanInputs, corpora: PlanCorpora): 
   const ctx: PlanCtx = {
     corpora,
     gate: inputs.reach === 'group' ? GROUP_GATE : SOLO_GATE,
+    eraOnly: inputs.eraOnly,
     candidates: candidatesOf(inputs, corpora)
   }
   const used = new Set<string>()
   const route: PlanBracket[] = []
   let quiet = 0
   for (let from = start; from <= start + HORIZON_LEVELS; from += size) {
-    const bracket: Bracket = { from, to: from + size - 1 }
-    const midpoint = Math.floor((bracket.from + bracket.to) / 2)
-    route.push({
-      from: bracket.from,
-      to: bracket.to,
-      expZones: expZonesFor(corpora.profiles, midpoint, corpora.con, inputs.eraOnly),
-      targets: targetsFor(ctx, bracket, used)
-    })
+    route.push(bracketOf(ctx, { from, to: from + size - 1 }, used))
     quiet = isQuiet(route[route.length - 1]) ? quiet + 1 : 0
     if (quiet >= QUIET_BRACKETS) break
   }

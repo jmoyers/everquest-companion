@@ -8,9 +8,15 @@
 // IT IS A ROUTE, NOT AN OPTIMIZER, and the distinction is forced by the data rather than chosen: no
 // drop rates exist anywhere in this repo, so there is nothing to optimize over. A bracket ranks
 // ZONES by what their mobs' stated levels con at, and ITEMS by a role-weighted heuristic. Both
-// derivations are labelled on the card that draws them (`PlanBracketCard.tsx`).
+// derivations are labelled on the cards that draw them (`PlanBracketCard.tsx`, `PlanRunRow.tsx`).
 //
-// FIVE INPUTS, AND NOT ONE OF THEM IS NEW STATE.
+// AND IT LOOKS AT WHAT YOU HAVE (owner, 2026-08-15: *"i should be able to gear my guy up, so it
+// needs to look at what I have and the best in slot"*). The ownership join this view already read
+// for the fold's `owned` set is folded a SECOND way in `planData.ownedBestBySlot` — the role-scored
+// best owned item per equip slot — and the fold admits an item only when it strictly beats that bar
+// somewhere it fits. Nothing new is fetched for it: same hook, same map, one more memo.
+//
+// SIX INPUTS, AND NOT ONE OF THEM IS NEW STATE.
 //   * the LEVEL is `useStatedLevel` — the later of your last ding and your own `/who` row, with the
 //     cue and the age it was stated at (JOS-192). It is the one input this view cannot ask for, and
 //     when nothing has stated it the tab says exactly that and draws no route. A default of 1 would
@@ -22,10 +28,21 @@
 //   * the ERA toggle is `useEraOnly` — the SHARED `eq.planner.era` key, on purpose (the Exaltations
 //     tab writes it too). "Is this server open yet" has one answer per machine, not one per tab;
 //   * the ROLE and the REACH are this tab's own two picks, on the restart tier
-//     (`areaMemory.AREA_FORM_TIER`, which argues why both are restart-scoped).
+//     (`areaMemory.AREA_FORM_TIER`, which argues why both are restart-scoped);
+//   * WHAT YOU OWN and WHAT YOU HAVE WISHED FOR are `useGearOwnership` and `useWishlist`, the same
+//     two documents the Gear tab joins on `row.key` — which is what lets the gap test above and the
+//     hover comparison below both answer without a single new channel.
 //
 // EVERYTHING ELSE IS DERIVED, ONCE, IN `planData.ts`. This file wires controls to a fold and draws
 // what comes back; it holds no rule about what belongs in a route and reaches for no catalog.
+//
+// THE HOVER COMPARISON IS THE GEAR TAB'S, UNCHANGED (owner ask, 2026-08-15 20:17: *"add in the
+// comparison that the main gear tab does on hover"*). `useGearCompare` here, `GearRowCompare` on the
+// item rows — the identical pair of calls `EffectBrowser` makes for the Exaltations donor names, and
+// at `ITEM_UPGRADE_BASE` for the identical reason plus one of this tab's own: the fold scores every
+// target off BASE stats (rule 6), so a card simulating a tier would contradict the ranking that put
+// the row on screen. This tab has no plus-state slider and the card's "simulated at Tier N" line
+// correctly never appears.
 //
 // THE PAGE NEVER SCROLLS SIDEWAYS AND THE LIST NEVER GROWS IT (the standing UI law): the header is
 // one `nowrap` row of controls that do not shrink, and the cards live in their own bounded
@@ -34,6 +51,7 @@
 import { type JSX, useMemo } from 'react'
 import { Box, Chip, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { CLASS_ABBRS } from '@shared/classCombo'
+import { ITEM_UPGRADE_BASE } from '@shared/itemUpgrade'
 import type { GearRole } from '@shared/planner/progressionPlan'
 import type { ProgressionDelta, ProgressionSnap } from '@shared/types'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
@@ -45,7 +63,13 @@ import {
   sanitizePlanRole,
   type PlanReach
 } from '../gear/areaMemory'
-import { useGearClasses, useGearIndex, useGearOwnership, type GearClasses } from '../gear/gearData'
+import {
+  useGearClasses,
+  useGearCompare,
+  useGearIndex,
+  useGearOwnership,
+  type GearClasses
+} from '../gear/gearData'
 import { useRemembered } from '../gear/useAreaMemory'
 import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
 import { useStatedLevel, type StatedLevel } from '../leveling/useStatedLevel'
@@ -68,7 +92,7 @@ const REACH_LABEL: Record<PlanReach, string> = {
 }
 
 const ROLE_HINT =
-  'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently.'
+  'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently. The same weights score what you already own: an item is listed only if it beats your best in at least one slot it fits, and a wished item always shows.'
 const REACH_HINT =
   'The hardest fight the route will send you to. Solo tops out at blue and white; a group raises the ceiling by one band. Anything easier always makes the list.'
 
@@ -221,7 +245,7 @@ function emptyText(level: number | null, ready: boolean): string {
     return 'No line has stated your level yet. A level-up ("Welcome to level N!") or your own /who row is what states it - the route opens at the level you are, so there is nothing honest to draw until one of them does.'
   }
   if (!ready) return 'Reading the item database…'
-  return `Nothing above level ${String(level)} to plan: no zone this era profiles at those levels, and no drop witness whose mob cons inside your reach. Widening the reach or switching the era chip off is what has more to say.`
+  return `Nothing above level ${String(level)} to plan: no zone this era profiles for experience at those levels, and nothing dropping inside your reach that beats what you already own. Widening the reach, switching the era chip off, or picking a different role is what has more to say.`
 }
 
 export interface PlanViewProps {
@@ -246,7 +270,14 @@ export default function PlanView({ onOpenLoot }: PlanViewProps = {}): JSX.Elemen
   const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta)
   const stated = useStatedLevel(prog ?? EMPTY_PROGRESSION)
 
-  const corpora = usePlanCorpora(rows, ownership.map, wishes.list)
+  // THE HOVER PAIR'S SEAM, at BASE (see the header): one `plannerInventory` read per mount and per
+  // `inventory:autoReloaded`, two memos over data that moves only when the corpus arrives or the
+  // player re-exports, and one `Map.get` per hover. `ITEM_UPGRADE_BASE` is a module constant, so the
+  // memo inside the hook is stable.
+  const compare = useGearCompare(rows, ITEM_UPGRADE_BASE)
+  // THE ROLE GOES IN TOO: it scores the OWNED side of the gap test as well as the candidate side, so
+  // switching role re-reads what you have rather than merely re-sorting what you might get.
+  const corpora = usePlanCorpora(rows, ownership.map, wishes.list, role)
   const picks = useMemo(
     () => ({ classes: classes.classes, role, reach, eraOnly }),
     [classes.classes, role, reach, eraOnly]
@@ -273,6 +304,7 @@ export default function PlanView({ onOpenLoot }: PlanViewProps = {}): JSX.Elemen
             key={bracket.from}
             bracket={bracket}
             onAdd={wishes.addBracket}
+            compare={compare}
             onOpenLoot={onOpenLoot}
           />
         ))}

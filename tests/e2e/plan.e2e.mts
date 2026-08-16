@@ -27,17 +27,31 @@
  *   3. A DING FILLS IT IN, LIVE. `appendAt` writes the exact line the parser matches
  *      (`src/main/log/parseWorld.ts LEVEL_RE`) into the very log the app is tailing, and the first
  *      bracket must then open at the level that line stated — not near it, AT it.
- *   4. THE ONE DOOR OUT WORKS. A bracket's button writes its targets to the wish list, and they are
- *      read back on the Wish list TAB, which unmounted this view to draw itself.
- *   5. …AND THE PLAN DOES NOT KEEP A SECOND COPY (plan §8). The fold dedupes against the wish list,
- *      so the rows that just left are gone from the card when the tab comes back. That is the
- *      surprising half of the design and therefore the half worth pinning.
+ *   4. THE ROUTE IS ZONE-FIRST. A bracket draws RUNS — a named place, its difficulty, and what is
+ *      worth carrying home — because that is what the ask asked for ("it should say crushbone …
+ *      mistmoore splitpaw") and because a flat top-eight measurably buried it (fold rule 7).
+ *   5. THE ONE DOOR OUT WORKS. A bracket's button writes every target under its runs to the wish
+ *      list, and they are read back on the Wish list TAB, which unmounted this view to draw itself.
+ *   6. …AND THE ROWS STAY, FLAGGED. THIS CLAIM IS THE REVERSE OF THE ONE THIS FILE SHIPPED WITH,
+ *      and the reversal is the point rather than an embarrassment: the first cut excluded wished
+ *      items from the fold, so pressing the button made the answer vanish. Fold rule 9 now FLAGS
+ *      instead — a wished item bypasses the upgrade-gap test and sorts first — so the assertion is
+ *      inverted with the rule, not softened.
+ *   7. THE GEAR TAB'S HOVER COMPARISON IS ON THESE ROWS (owner ask, 2026-08-15 20:17). Asserted as
+ *      mounting the SAME node (`gear-compare-pair`, keyed to the hovered item), because reuse is
+ *      the claim — `tests/gearCompare.test.mts` and `gear.e2e` already own what is IN it.
  *
  * NOTHING HERE IS A FROZEN NUMBER except the level this spec itself states (AGENTS.md, "frozen
- * numbers rot"). Which items a bracket holds is the corpus's business and it is rescraped; the
- * assertions are counts of at-least-one, identities, and the one number the spec wrote into the log.
+ * numbers rot"). Which items a bracket holds and which zones it names are the corpus's business and
+ * it is rescraped; the assertions are counts of at-least-one, identities, and the one number the
+ * spec wrote into the log.
  *
- * Run: `npm run test:e2e -- plan`.
+ * THE STAGED CHARACTER OWNS NOTHING — no `/outputfile` dump, an empty loot history — so the gap test
+ * runs with an empty bar map, which the fold documents as EVERY SLOT A GAP. That is the shipped
+ * default rather than a contrivance, and it is why this spec can assert that runs render at all
+ * without fabricating an inventory the harness has no honest way to stage.
+ *
+ * Run: `npm run test:e2e -- plan.e2e`.
  */
 import type { Page } from 'playwright-core'
 import {
@@ -46,6 +60,7 @@ import {
   countOf,
   dumpArtifacts,
   failures,
+  hoverAt,
   note,
   pageOverflow,
   reportRun,
@@ -62,8 +77,16 @@ const VIEW = '[data-testid="plan-view"]'
 const WISH_VIEW = '[data-testid="wishlist-view"]'
 const EMPTY = '[data-testid="plan-empty"]'
 const BRACKET = '[data-testid="plan-bracket"]'
+const TARGET = '[data-testid="plan-target"]'
 const ROLE = '[data-testid="plan-role"]'
 const REACH = '[data-testid="plan-reach"]'
+/** The comparison pair, by the testid the Gear tab's own spec reads — reuse is the claim. */
+const PAIR = '[data-testid="gear-compare-pair"]'
+const PAIR_ITEM = '[data-testid="gear-compare-card"]'
+
+/** One target row, and the name inside it that carries both affordances (Loot link, hover pair). */
+const targetOf = (key: string): string => `${TARGET}[data-item-key="${key}"]`
+const nameOf = (key: string): string => `${targetOf(key)} [data-testid="planner-donor-name"]`
 
 /**
  * THE LEVEL THIS SPEC STATES, and the line that states it — EQ's own spelling, anchored at both
@@ -155,18 +178,89 @@ async function stepDing(page: Page, log: FixtureLog): Promise<boolean> {
   return opened
 }
 
-/** The first bracket that actually has something to add, and what it is offering. */
-function firstAddable(page: Page): Promise<{ from: string; keys: string[] } | null> {
+/** One run line as plain values a check can read: the place, and what it is offering. */
+interface RunRead {
+  from: string
+  zone: string
+  plus: string
+  label: string
+  keys: string[]
+}
+
+/**
+ * Every run on screen, in draw order, each with the bracket it belongs to.
+ *
+ * `zone` comes off the data attribute (the fold's BASE spelling) and `label` off the rendered text,
+ * so the claims below can say both "the fold grouped by a real place" and "a human can read it".
+ */
+function runsOnScreen(page: Page): Promise<RunRead[]> {
   return page.evaluate(() => {
+    const out = []
     for (const card of document.querySelectorAll('[data-testid="plan-bracket"]')) {
-      if (card.querySelector('[data-testid="plan-add-bracket"]') === null) continue
-      const keys = [...card.querySelectorAll('[data-testid="plan-target"]')]
-        .map((t) => t.getAttribute('data-item-key') ?? '')
-        .filter((k) => k !== '')
-      if (keys.length > 0) return { from: card.getAttribute('data-from') ?? '', keys }
+      for (const run of card.querySelectorAll('[data-testid="plan-run"]')) {
+        const head = run.querySelector('[data-testid="plan-run-head"]')
+        out.push({
+          from: card.getAttribute('data-from') ?? '',
+          zone: run.getAttribute('data-zone') ?? '',
+          plus: run.getAttribute('data-plus') ?? '',
+          // The HEADING's own node, whitespace-collapsed — never the run box's first text LINE,
+          // which would depend on where the browser chose to break a nowrap row (see the component).
+          label: ((head as HTMLElement | null)?.innerText ?? '').replace(/\s+/g, ' ').trim(),
+          keys: [...run.querySelectorAll('[data-testid="plan-target"]')]
+            .map((t) => t.getAttribute('data-item-key') ?? '')
+            .filter((k) => k !== '')
+        })
+      }
     }
-    return null
+    return out
   })
+}
+
+/**
+ * 4. THE ROUTE IS ZONE-FIRST.
+ *
+ * The claims are shapes, never names: which zones the committed corpus puts in a level-12 bracket is
+ * the corpus's business and it is rescraped. What must hold is that runs EXIST, that at least one
+ * NAMES A PLACE (the whole point of the shape), that each carries something worth going for, and
+ * that the caps the fold states are the caps on screen — three targets a run, six runs a bracket.
+ */
+async function stepRuns(page: Page): Promise<void> {
+  const runs = await settle(() => runsOnScreen(page), (r) => r.length > 0, { timeoutMs: 30_000 })
+  if (!check('a bracket draws RUNS - the zone-first answer the ask asked for', runs.length > 0)) return
+  note(`${String(runs.length)} runs drawn · first: ${runs[0].label}`)
+
+  check(
+    'every run has a heading and something worth going there for',
+    runs.every((r) => r.label !== '' && r.keys.length > 0),
+    runs.slice(0, 3).map((r) => `${r.label} (${String(r.keys.length)})`).join(' · ')
+  )
+  // …and the heading a human reads NAMES THE PLACE the fold grouped on. Only runs that HAVE a zone
+  // are asserted: `GearRun.zone` is legitimately `''` when the item pages listed their droppers
+  // under no heading at all, and that run's line says so in words rather than naming a place.
+  const placed = runs.filter((r) => r.zone !== '')
+  check('at least one run names an actual zone - the "crushbone, mistmoore, splitpaw" answer', placed.length > 0)
+  check(
+    '…and each of those headings contains the zone the fold grouped on',
+    placed.every((r) => r.label.includes(r.zone)),
+    placed.slice(0, 3).map((r) => `"${r.label}" vs "${r.zone}"`).join(' · ')
+  )
+  // The caps the fold states, asserted as bounds rather than as counts (the corpus grows).
+  check(
+    'the run caps the fold states are the caps on screen - at most 3 items a run, 6 runs a bracket',
+    runs.every((r) => r.keys.length <= 3) &&
+      [...new Set(runs.map((r) => r.from))].every((from) => runs.filter((r) => r.from === from).length <= 6)
+  )
+  // A tiered run is a DIFFERENT trip from its base zone, and the fold refuses to con it — so if this
+  // corpus produced one, it must be saying so in words rather than printing a band it cannot know.
+  const tiered = runs.filter((r) => r.plus !== '')
+  if (tiered.length === 0) note('no tiered (+N) run in this route — nothing to assert about the tier wording')
+  else {
+    check(
+      'a +N run says its difficulty is unstated rather than borrowing the base zone`s band',
+      tiered.every((r) => r.label.includes('difficulty unstated')),
+      tiered[0].label
+    )
+  }
 }
 
 /** How many of `keys` the Wish list tab is drawing right now. */
@@ -177,46 +271,84 @@ function wishedCount(page: Page, keys: readonly string[]): Promise<number> {
   )
 }
 
+/** …and how many of them the PLAN is still drawing, flagged as wished. */
+function flaggedCount(page: Page, keys: readonly string[]): Promise<number> {
+  return page.evaluate(
+    (ks) =>
+      ks.filter(
+        (k) => document.querySelector(`[data-testid="plan-target"][data-item-key="${k}"][data-wished="true"]`) !== null
+      ).length,
+    [...keys]
+  )
+}
+
 /**
- * 4 + 5. THE DOOR OUT, AND THE PROMISE THAT THERE IS ONLY ONE DOCUMENT.
+ * 5 + 6. THE DOOR OUT, AND THE ROWS THAT STAY BEHIND IT.
  *
- * The targets are read off the CARD before the click, so what is checked on the other tab is the
- * set this button actually carried rather than whatever happens to be on the wish list. At least
- * one is the claim, not all of them: a target already fulfilled by the staged character goes to
- * that tab's done strip, which is correct behaviour and not a route row.
+ * The targets are read off the RUNS before the click, so what is checked on the other tab is the set
+ * this button actually carried rather than whatever happens to be on the wish list. At least one is
+ * the claim, not all of them: a target already fulfilled by the staged character goes to that tab's
+ * done strip, which is correct behaviour and not a route row.
+ *
+ * Then the reversal (fold rule 9): the rows come BACK, wearing the flag. Asserted on
+ * `data-wished="true"` rather than on mere presence, because a build that ignored the flag entirely
+ * would draw the same rows and mean something different — the plan would have stopped knowing.
  */
-async function stepAddBracket(page: Page): Promise<void> {
-  const addable = await firstAddable(page)
-  if (!check('a bracket has targets and a button to send them to the wish list', addable !== null) || addable === null) {
-    return
-  }
-  note(`adding ${String(addable.keys.length)} targets from bracket ${addable.from}`)
-  await page.click(`${BRACKET}[data-from="${addable.from}"] [data-testid="plan-add-bracket"]`, { timeout: 15_000 })
+async function stepAddBracket(page: Page): Promise<string[]> {
+  const runs = await runsOnScreen(page)
+  const from = runs[0]?.from ?? ''
+  const keys = [...new Set(runs.filter((r) => r.from === from).flatMap((r) => r.keys))]
+  if (!check('the first bracket has targets and a button to send them to the wish list', keys.length > 0)) return []
+  note(`adding ${String(keys.length)} targets from bracket ${from}`)
+  await page.click(`${BRACKET}[data-from="${from}"] [data-testid="plan-add-bracket"]`, { timeout: 15_000 })
 
   await page.click(WISH_TAB, { timeout: 15_000 })
-  if (!check('the Wish list tab mounts', await until(async () => (await countOf(page, WISH_VIEW)) > 0, 30_000))) return
-  const landed = await settle(() => wishedCount(page, addable.keys), (n) => n > 0, { timeoutMs: 20_000 })
+  if (!check('the Wish list tab mounts', await until(async () => (await countOf(page, WISH_VIEW)) > 0, 30_000))) return []
+  const landed = await settle(() => wishedCount(page, keys), (n) => n > 0, { timeoutMs: 20_000 })
   check(
-    "a bracket's targets arrive on the wish list, written across two views and one store",
+    "every target under a bracket's runs arrives on the wish list, across two views and one store",
     landed > 0,
-    `${String(landed)} of ${String(addable.keys.length)} on the list`
+    `${String(landed)} of ${String(keys.length)} on the list`
   )
 
-  // 5. AND THE PLAN LET GO OF THEM. The fold dedupes against the wish list document, so a target
-  //    that is now wanted is no longer a thing the route has to tell you about — the plan SEEDS
-  //    that document (plan §8) and refuses to be a second copy of it.
   await page.click(TAB, { timeout: 15_000 })
-  if (!check('the Plan tab comes back', await until(async () => (await countOf(page, VIEW)) > 0, 30_000))) return
-  const stillHere = await settle(
-    () => page.evaluate((ks) => ks.filter((k) => document.querySelector(`[data-testid="plan-target"][data-item-key="${k}"]`) !== null).length, [...addable.keys]),
-    (n) => n < addable.keys.length,
-    { timeoutMs: 20_000 }
-  )
+  if (!check('the Plan tab comes back', await until(async () => (await countOf(page, VIEW)) > 0, 30_000))) return []
+  const flagged = await settle(() => flaggedCount(page, keys), (n) => n > 0, { timeoutMs: 20_000 })
   check(
-    'the targets that went on the wish list leave the plan - it seeds that document, it does not duplicate it',
-    stillHere < addable.keys.length,
-    `${String(stillHere)} of ${String(addable.keys.length)} still drawn as targets`
+    'the rows STAY on the plan, flagged as wished - a wished item is flagged, never filtered',
+    flagged > 0,
+    `${String(flagged)} of ${String(keys.length)} still drawn, wearing the flag`
   )
+  return keys
+}
+
+/**
+ * 7. THE GEAR TAB'S HOVER COMPARISON, ON A PLAN ROW.
+ *
+ * REUSE IS THE WHOLE CLAIM, so what is asserted is the identity of the node: `gear-compare-pair`
+ * with the hovered item's own key on its left card. What is IN the pair — the stats, the equipped
+ * cells, the freshness line, the anchoring geometry — belongs to `gear.e2e`'s compare step and
+ * `tests/gearCompare.test.mts`, and restating any of it here would be a second opinion about a
+ * component this tab does not own.
+ *
+ * The pointer is parked afterwards so the pair closes and cannot sit over the overflow measurement.
+ */
+async function stepHoverCompare(page: Page, keys: readonly string[]): Promise<void> {
+  const key = keys[0]
+  if (key === undefined) return
+  if (!check('the hovered row has a name to point at', (await countOf(page, nameOf(key))) === 1)) return
+  if (!(await hoverAt(page, nameOf(key), 0.5, 0.5))) {
+    check('the plan target name is reachable by a real pointer', false, key)
+    return
+  }
+  const opened = await until(async () => (await countOf(page, `${PAIR_ITEM}[data-item-key="${key}"]`)) === 1, 20_000)
+  check(
+    'hovering a plan target opens the SAME comparison pair the Gear tab opens',
+    opened,
+    `${String(await countOf(page, PAIR))} pairs open for ${key}`
+  )
+  // Park the pointer off the row so the pair leaves before anything else is measured.
+  await page.mouse.move(2, 2)
 }
 
 /** Watch a page for the console errors this spec fails on. */
@@ -244,7 +376,13 @@ async function main(): Promise<void> {
     watch(page, consoleErrors)
     if (await stepMount(page)) {
       await stepUnstated(page)
-      if (await stepDing(page, log)) await stepAddBracket(page)
+      if (await stepDing(page, log)) {
+        await stepRuns(page)
+        // The hover claim runs on rows the add step has already written to the wish list, which
+        // costs it nothing (the pair is about the ITEM, not about its wish state) and saves a
+        // second read of the route.
+        await stepHoverCompare(page, await stepAddBracket(page))
+      }
       const over = await pageOverflow(page)
       check(
         'Plan never scrolls the page (its cards clip inside their own box)',
