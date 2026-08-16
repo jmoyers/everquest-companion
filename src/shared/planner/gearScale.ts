@@ -28,6 +28,7 @@ import {
   upgradeStatClass,
   type ItemUpgradeState
 } from '../itemUpgrade'
+import type { ClassAbbr } from '../classCombo'
 import { damageRatio } from '../itemStats'
 import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
 
@@ -138,15 +139,35 @@ function weightedSum(components: readonly (number | undefined)[]): number | unde
 }
 
 /**
- * The knobs a derived score takes (user ask, 2026-08-15, second ruling): `ignoreHaste` drops the
- * HASTE term from the damage score — worn haste does not STACK in this game, so a player who
- * already wears a haste item gains nothing from a second one, and a score that kept crediting it
- * would rank every haste weapon over genuinely stronger swaps (measured on the live table: a 41%
- * haste sword led EFF DMG at 39.0, ~33 of it the haste term). An OPTION rather than a removal,
- * because the FIRST haste item is a real upgrade and the score should be able to say so.
+ * The knobs a derived score takes (user asks, 2026-08-15): `ignoreHaste` drops the HASTE term from
+ * the damage score — worn haste does not STACK in this game, so a player who already wears a haste
+ * item gains nothing from a second one, and a score that kept crediting it would rank every haste
+ * weapon over genuinely stronger swaps (measured on the live table: a 41% haste sword led EFF DMG
+ * at 39.0, ~33 of it the haste term). An OPTION rather than a removal, because the FIRST haste
+ * item is a real upgrade and the score should be able to say so.
+ *
+ * `classes` is the table's class trio, and it is what keeps BEST honest about WHO is asking (the
+ * user's own example: *1000 INT means nothing to me as a warrior monk shaman*): a casting stat
+ * counts only when a class that USES it is in the picks. Absent means no picks — class-blind, the
+ * only honest reading when nobody has said who they are.
  */
 export interface GearDerivedOpts {
   ignoreHaste?: boolean
+  classes?: readonly ClassAbbr[]
+}
+
+// WHO USES WHAT, stated once. The vocabulary is `classCombo.ts`'s sixteen; the split is the game's
+// own: INT casters, WIS casters (hybrids included on both sides), everyone who has a mana pool at
+// all, and the two classes whose CHA is a mechanic (charm and lull) rather than a shop discount.
+const INT_USERS: readonly ClassAbbr[] = ['ENC', 'MAG', 'NEC', 'WIZ', 'SHD']
+const WIS_USERS: readonly ClassAbbr[] = ['CLR', 'DRU', 'SHM', 'PAL', 'RNG', 'BST']
+const MANA_USERS: readonly ClassAbbr[] = [...INT_USERS, ...WIS_USERS, 'BRD']
+const CHA_USERS: readonly ClassAbbr[] = ['ENC', 'BRD']
+
+/** Does anyone in the picks use this stat? No picks = everyone might — the class-blind default. */
+function anyUses(picks: readonly ClassAbbr[] | undefined, users: readonly ClassAbbr[]): boolean {
+  if (picks === undefined || picks.length === 0) return true
+  return picks.some((c) => users.includes(c))
 }
 
 /**
@@ -192,18 +213,23 @@ export function gearBisValue(stats: GearStats, opts: GearDerivedOpts = {}): numb
     (stats.SV_DISEASE ?? 0) +
     (stats.SV_POISON ?? 0) +
     (stats.SV_VOID ?? 0)
+  // THE CLASS GATE (user ask, 2026-08-15): a stat nobody in the picks can use contributes NOTHING
+  // — not a discounted something. 1000 INT on a warrior/monk/shaman trio is bank filler, and a
+  // score that gave it even a sliver would still float pure-caster gear up their list.
+  const gated = (users: readonly ClassAbbr[], value: number | undefined, weight: number): number | undefined =>
+    anyUses(opts.classes, users) ? term(value, weight) : undefined
   return weightedSum([
     term(stats.AC, 1.4),
     term(gearEffectiveHp(stats), 0.55),
     term(gearEffectiveDamage(stats, opts), 1.2),
-    term(stats.MP, 0.18),
+    gated(MANA_USERS, stats.MP, 0.18),
     term(stats.END, 0.12),
     term(stats.AGI, 0.2),
-    term(stats.WIS, 0.2),
-    term(stats.INT, 0.2),
-    term(stats.CHA, 0.05),
+    gated(WIS_USERS, stats.WIS, 0.2),
+    gated(INT_USERS, stats.INT, 0.2),
+    gated(CHA_USERS, stats.CHA, 0.05),
     saves !== 0 ? saves * 0.08 : undefined,
     term(stats.HP_REGEN, 0.9),
-    term(stats.MANA_REGEN, 0.8)
+    gated(MANA_USERS, stats.MANA_REGEN, 0.8)
   ])
 }

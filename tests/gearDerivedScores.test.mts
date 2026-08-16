@@ -71,6 +71,21 @@ test('EFF DMG counts the weapon output ONCE (the ratio), and absent is not zero'
   assert.equal(statText(undefined, 'EFF_DMG'), '')
 })
 
+test('BEST reads the class picks - a casting stat nobody picked can use scores NOTHING', () => {
+  // The user's own example, verbatim: *1000 INT means nothing to me as a warrior monk shaman.*
+  const meleeTrio = { classes: ['WAR', 'MNK', 'SHM'] as const }
+  assert.equal(gearBisValue({ INT: 1000 }, meleeTrio), undefined, 'INT-only gear is worth a blank, not a number')
+  // …but the SAME trio has a WIS caster, so WIS and mana still count.
+  const wisScore = gearBisValue({ WIS: 10 }, meleeTrio)
+  assert.ok(wisScore !== undefined && wisScore > 0, 'the shaman prays, so WIS scores')
+  const manaScore = gearBisValue({ MP: 50 }, meleeTrio)
+  assert.ok(manaScore !== undefined && manaScore > 0)
+  // No picks = class-blind, the only honest reading when nobody has said who they are.
+  assert.ok(gearBisValue({ INT: 1000 })! > 0)
+  // And the gate never touches the universal stats.
+  assert.equal(gearBisValue({ AC: 10 }, meleeTrio), gearBisValue({ AC: 10 }))
+})
+
 test('BIS ranks breadth over one tall stat - the user’s own example, verbatim', () => {
   const tall = gearBisValue({ AC: 2, STR: 10 })
   const broad = gearBisValue({ AC: 30, STR: 2, STA: 5, MP: 10 })

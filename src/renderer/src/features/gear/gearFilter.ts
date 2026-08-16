@@ -305,13 +305,23 @@ function meetsThreshold(row: GearRow, t: StatThreshold, opts: GearDerivedOpts): 
   return v === t.value
 }
 
-// The two stable shapes `derivedOpts` hands out, so per-row calls never allocate an options object.
-const IGNORE_HASTE: GearDerivedOpts = { ignoreHaste: true }
-const COUNT_HASTE: GearDerivedOpts = {}
+// ONE-ENTRY CACHE, the `queryOf` shape: the filter asks per row, the inputs change per click. The
+// IDENTITY is stable while the filters are, which is also what lets React trees depend on it.
+let lastOptsHaste: boolean | null = null
+let lastOptsClasses: readonly ClassAbbr[] | null = null
+let lastOpts: GearDerivedOpts = {}
 
-/** The derived-score knobs a filter object implies — one of two constants, never a fresh object. */
-export function derivedOpts(filters: Pick<GearFilters, 'ignoreHaste'>): GearDerivedOpts {
-  return filters.ignoreHaste ? IGNORE_HASTE : COUNT_HASTE
+/** The derived-score knobs a filter object implies: the haste knob, and WHO is asking (the class
+ *  picks — gearScale's BEST reads them so a casting stat nobody picked can use scores nothing). */
+export function derivedOpts(filters: Pick<GearFilters, 'ignoreHaste' | 'classes'>): GearDerivedOpts {
+  if (filters.ignoreHaste !== lastOptsHaste || filters.classes !== lastOptsClasses) {
+    lastOptsHaste = filters.ignoreHaste
+    lastOptsClasses = filters.classes
+    lastOpts = {}
+    if (filters.ignoreHaste) lastOpts.ignoreHaste = true
+    if (filters.classes.length > 0) lastOpts.classes = filters.classes
+  }
+  return lastOpts
 }
 
 // ---- the predicates ------------------------------------------------------------------------

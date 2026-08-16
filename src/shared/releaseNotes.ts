@@ -134,7 +134,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'new',
-        text: 'Two calculated columns join the Columns picker: EFF DMG, one offense number built from a weapon’s ratio and its damage stats, and BEST, one overall worth-score so an item strong on several stats can outrank one tall on a single stat. Both are ranking aids, not numbers the game states.'
+        text: 'Two calculated columns join the Columns picker: EFF DMG, one offense number built from a weapon’s ratio and its damage stats, and BEST, one overall worth-score so an item strong on several stats can outrank one tall on a single stat. BEST reads your Classes picks - a casting stat none of your classes can use counts for nothing. Both are ranking aids, not numbers the game states.'
       },
       {
         kind: 'new',

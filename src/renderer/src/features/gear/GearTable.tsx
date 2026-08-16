@@ -78,7 +78,8 @@ import type { GearColumnWidths } from './gearPrefs'
 import { GearRowCompare } from './GearCompareCard'
 import { GearHead, NUMERIC_PAD } from './GearTableHead'
 import type { GearCompareData, GearViewRow } from './gearData'
-import { derivedOpts, sortValue, type GearSort, type GearSortKey } from './gearFilter'
+import { sortValue, type GearSort, type GearSortKey } from './gearFilter'
+import type { GearDerivedOpts } from '@shared/planner/gearScale'
 import { ownedCellText, ownedCellTitle, ownershipFor, type GearOwnershipMap } from './gearOwnership'
 // JOS-343 — the ONE wish control in the app, shared with the Exaltations donor row by owner ruling.
 import WishToggle from '../wishlist/WishToggle'
@@ -169,8 +170,13 @@ export interface GearTableProps {
    */
   widths: GearColumnWidths | null
   onWidths: (next: GearColumnWidths | null) => void
-  /** Leave worn haste out of EFF DMG / BIS (2026-08-15) — the same flag the sort upstream read. */
-  ignoreHaste: boolean
+  /**
+   * The derived-score knobs (2026-08-15) — the haste opt-out and the class picks — as the SAME
+   * stable object the sort upstream read (`derivedOpts`' one-entry cache), so the drawn EFF DMG /
+   * BEST cells and the order the rows stand in can never disagree, and `GearLine`'s memo compares
+   * one identity instead of a fresh literal.
+   */
+  derived: GearDerivedOpts
   /** Draw the Zone / Level / Mob trio (2026-08-15) — `useGearPrefs.dropCols`, on by default. */
   showDrops: boolean
   /**
@@ -250,7 +256,7 @@ const GearLine = memo(function GearLine({
   ownership,
   wished,
   compare,
-  ignoreHaste,
+  derived,
   showDrops,
   on
 }: {
@@ -261,8 +267,8 @@ const GearLine = memo(function GearLine({
   wished: boolean
   /** the comparison seam (JOS-338); a STABLE object, or absent for a host with no dump seam */
   compare: GearCompareData | undefined
-  /** the haste knob, as a PRIMITIVE so `memo` can compare it (the JOS-335 `wished` argument) */
-  ignoreHaste: boolean
+  /** the derived-score knobs — STABLE (derivedOpts' cache), so `memo` compares one identity */
+  derived: GearDerivedOpts
   /** the Zone / Level / Mob trio, toggleable since 2026-08-15 — a primitive, same argument */
   showDrops: boolean
   on: { openLoot?: (item: string) => void; wish?: (row: GearViewRow, wished: boolean) => void }
@@ -340,7 +346,7 @@ const GearLine = memo(function GearLine({
       )}
       {columns.map((c) => (
         <TableCell key={c.key} align="right" data-testid={`gear-cell-${c.key}`} sx={NUMERIC_PAD}>
-          {statText(sortValue(row, c.key, derivedOpts({ ignoreHaste })), c.key)}
+          {statText(sortValue(row, c.key, derived), c.key)}
         </TableCell>
       ))}
       {owned !== null && (
@@ -381,7 +387,7 @@ export default function GearTable({
   compare,
   widths,
   onWidths,
-  ignoreHaste,
+  derived,
   showDrops
 }: GearTableProps): JSX.Element {
   const span = columns.length + 4 + (showDrops ? 3 : 0) + (ownership === null ? 0 : 1)
@@ -430,7 +436,7 @@ export default function GearTable({
             ownership={ownership}
             wished={wished.has(row.key)}
             compare={compare}
-            ignoreHaste={ignoreHaste}
+            derived={derived}
             showDrops={showDrops}
             on={handlers}
           />

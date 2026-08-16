@@ -570,9 +570,10 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
           // The dragged column widths (2026-08-15) — a view choice like the columns themselves.
           widths={prefs.widths}
           onWidths={prefs.setWidths}
-          // The haste knob (2026-08-15): the drawn EFF DMG / BIS cells read the same option the
-          // sort just ranked by, so the numbers on screen and the order they stand in cannot split.
-          ignoreHaste={filters.ignoreHaste}
+          // The derived-score knobs (2026-08-15): the drawn EFF DMG / BEST cells read the same
+          // options the sort just ranked by — the haste opt-out AND the class picks, so a casting
+          // stat nobody picked can use scores nothing (the 1000-INT-warrior case).
+          derived={derivedOpts(filters)}
           showDrops={prefs.dropCols}
           // JOS-338 — hovering a row opens the comparison card. Passed always: the card is useful
           // with no dump at all (the item half plus the command that fills the other half), and
