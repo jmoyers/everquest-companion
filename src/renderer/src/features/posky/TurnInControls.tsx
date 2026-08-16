@@ -26,8 +26,20 @@ import type { QuestProgress } from './useProgress'
  * so would be noise on most of the list. The count appears from the second turn-in on
  * (`turnInBadgeLabel`), so the common case stays the plain "Turned in" it has always been.
  * `data-count` states the number a test can read without parsing the label.
+ *
+ * `inferred` is the issue-#27 reading — the count exists because the quest's REWARD is in the
+ * loaded inventory export, not because a turn-in was logged or stated — and the hover says so,
+ * because a reader who cannot tell "the log said so" from "we worked it out" cannot tell which
+ * rows to trust (classUnlocks.ts). `data-inferred` states it for a test the same way
+ * `data-count` states the number.
  */
-export function TurnInBadge({ count }: { count: number }): JSX.Element | null {
+export function TurnInBadge({
+  count,
+  inferred
+}: {
+  count: number
+  inferred?: boolean
+}): JSX.Element | null {
   if (count <= 0) return null
   return (
     <Chip
@@ -36,10 +48,13 @@ export function TurnInBadge({ count }: { count: number }): JSX.Element | null {
       variant="outlined"
       data-testid="posky-turned-in"
       data-count={count}
+      data-inferred={inferred ? 'true' : undefined}
       title={
-        count > 1
-          ? `Turned in ${String(count)} times. Each turn-in spends the items it required, so the progress beside this is what you hold toward doing it again.`
-          : 'Turned in once. The items it required were spent, so the progress beside this is what you hold toward doing it again.'
+        inferred
+          ? 'Turned in at least once: the reward for this quest is in your inventory export, and it cannot be obtained any other way.'
+          : count > 1
+            ? `Turned in ${String(count)} times. Each turn-in spends the items it required, so the progress beside this is what you hold toward doing it again.`
+            : 'Turned in once. The items it required were spent, so the progress beside this is what you hold toward doing it again.'
       }
       label={turnInBadgeLabel(count)}
     />
@@ -48,7 +63,9 @@ export function TurnInBadge({ count }: { count: number }): JSX.Element | null {
 
 /** The undo button, with the one thing it has to say for itself when it cannot act. */
 function UndoTurnIn({ q, onUndo }: { q: QuestProgress; onUndo: () => void }): JSX.Element {
-  const canUndo = q.turnIns > q.logTurnIns
+  // An INFERRED count (issue #27) cannot be taken back for the same reason a log-detected one
+  // cannot: the evidence (the reward in your export) would simply re-assert it on the next read.
+  const canUndo = !q.rewardInferred && q.turnIns > q.logTurnIns
   return (
     // The span outlives the tooltip that needed it, for the same reason: a DISABLED button
     // swallows no mouse events, and "why is this dead" is exactly the question the words answer.
@@ -56,9 +73,11 @@ function UndoTurnIn({ q, onUndo }: { q: QuestProgress; onUndo: () => void }): JS
       title={
         canUndo
           ? 'Take back the most recent turn-in you recorded by hand'
-          : q.turnIns === 0
-            ? 'Nothing to take back'
-            : 'This count comes from your log, so it cannot be taken back here'
+          : q.rewardInferred
+            ? 'This count comes from the reward in your inventory export, so it cannot be taken back here'
+            : q.turnIns === 0
+              ? 'Nothing to take back'
+              : 'This count comes from your log, so it cannot be taken back here'
       }
     >
       <IconButton size="small" data-testid="posky-undo-turnin" disabled={!canUndo} onClick={onUndo}>
