@@ -63,7 +63,9 @@ export interface MapPaneState {
   selectedId: string | null
   /** Where the selected row is, in map coordinates — the ring's position. */
   selectedAt: { x: number; y: number } | null
-  select: (row: MapPaneRow) => void
+  /** `at` overrides the row's own first-pin target — the surface passes the SPECIFIC pin that
+   *  was clicked, so a row with several spawn points rings the one under the cursor. */
+  select: (row: MapPaneRow, at?: { x: number; y: number }) => void
 }
 
 export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPaneArgs): MapPaneState {
@@ -88,13 +90,13 @@ export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPa
   }, [mapId])
 
   const select = useCallback(
-    (row: MapPaneRow) => {
-      const at = rowTarget(row)
+    (row: MapPaneRow, at?: { x: number; y: number }) => {
+      const target = at ?? rowTarget(row)
       // Unlocatable rows are already disabled in the pane; this is the belt-and-braces half, so
       // no caller can ever produce a ring floating at a position nothing stated.
-      if (at == null) return
-      setSelected({ id: row.id, x: at.x, y: at.y })
-      onCenter(at.x, at.y)
+      if (target == null) return
+      setSelected({ id: row.id, x: target.x, y: target.y })
+      onCenter(target.x, target.y)
     },
     [onCenter]
   )
@@ -265,14 +267,16 @@ export function useZonePane(args: {
   return { ...pane, open, setOpen, hits }
 }
 
-/** What the surface needs from the pane: the pins and the selection. Null ⇒ draw nothing. */
+/** What the surface needs from the pane: the pins, the selection, and the one `select` a clicked
+ *  pin routes through (MapMobPins.tsx). Null ⇒ draw nothing. */
 export interface PaneOverlay {
   pins: readonly PlacedPin[]
   selectedId: string | null
   selectedAt: { x: number; y: number } | null
+  select: (row: MapPaneRow, at?: { x: number; y: number }) => void
 }
 
 export function paneOverlay(pane: ZonePaneState): PaneOverlay | null {
   if (!pane.open) return null
-  return { pins: pane.pins, selectedId: pane.selectedId, selectedAt: pane.selectedAt }
+  return { pins: pane.pins, selectedId: pane.selectedId, selectedAt: pane.selectedAt, select: pane.select }
 }

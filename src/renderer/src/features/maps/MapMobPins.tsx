@@ -13,14 +13,16 @@
 // at scale: unfiltered Kael Drakkel is 343 named mobs, several of which state eight spawn points
 // each, and `pinsForRows` caps the drawn set (reported, never silently trimmed).
 //
-// INERT, like the label layer: `pointerEvents:'none'` on the container so drag-to-pan works
-// straight through it, re-enabled on each pin so its tooltip works. Clicking a pin is
-// deliberately NOT a gesture — selection lives in the pane, where the row can also say "no
-// location on the wiki page", and two selection surfaces would be two things to keep in sync.
+// INERT TO DRAGS, like the label layer: `pointerEvents:'none'` on the container so drag-to-pan
+// works straight through it, re-enabled on each pin. Clicking a pin ROUTES THROUGH THE PANE'S
+// OWN `select` — selection still lives in exactly one place (useMapPane), so the ring, the
+// raised pin and the highlighted pane row cannot fall out of sync: the pin is a second way to
+// REACH the one selection, never a second copy of it. The clicked pin itself is passed as the
+// target, so a mob with eight spawn points rings the one under the cursor, not its first.
 
 import { useMemo, type JSX } from 'react'
 import { useTheme } from '@mui/material'
-import type { PlacedPin } from './mobPins'
+import type { MobPaneRow, PlacedPin } from './mobPins'
 import type { MapViewport } from './useMapViewport'
 
 /** Pin body size in CSS pixels. Does not scale with zoom, for the same reason label text doesn't. */
@@ -36,9 +38,11 @@ export interface MapMobPinsProps {
    * "this is the thing you clicked" symbol on the surface.
    */
   selectedId: string | null
+  /** The pane's `select`, with the clicked pin as the position to centre and ring. */
+  onSelect: (row: MobPaneRow, at: { x: number; y: number }) => void
 }
 
-export function MapMobPins({ pins, vp, selectedId }: MapMobPinsProps): JSX.Element {
+export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps): JSX.Element {
   const { toScreen } = vp
   // The SAME token the search-jump marker paints with (`warning.main`), read from the theme
   // rather than spelled as a hex literal so a theme change can never leave the two disagreeing.
@@ -64,6 +68,15 @@ export function MapMobPins({ pins, vp, selectedId }: MapMobPinsProps): JSX.Eleme
                 : // The page's OWN number, verbatim — never rounded into "likely" or "rare".
                   `${row.name} - ${String(pin.pct)}% of spawns`
             }
+            // Stop the press, not just the click — the same reason as the connection labels
+            // (MapPointsLayer.tsx): the surface's pointer-down would take pointer capture and
+            // swallow the click.
+            onPointerDown={(ev) => {
+              ev.stopPropagation()
+            }}
+            onClick={() => {
+              onSelect(row, { x: pin.x, y: pin.y })
+            }}
             style={{
               position: 'absolute',
               left: at.px,
@@ -78,6 +91,7 @@ export function MapMobPins({ pins, vp, selectedId }: MapMobPinsProps): JSX.Eleme
               boxShadow: '0 0 0 1px rgba(0,0,0,0.85)',
               opacity: selected ? 1 : 0.85,
               pointerEvents: 'auto',
+              cursor: 'pointer',
               zIndex: selected ? 3 : 1
             }}
           />

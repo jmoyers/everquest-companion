@@ -20,7 +20,10 @@
 //     label that loses becomes a DOT. The POI is still there, still hoverable, and hovering
 //     RAISES its full text above everything. Nothing is deleted; text is deferred to a gesture.
 //   * THE LAYER ITSELF IS INERT. `pointerEvents: 'none'` on the container so drag-to-pan works
-//     everywhere, re-enabled on the labels and dots alone so their tooltips still work.
+//     everywhere, re-enabled on the labels and dots alone so their tooltips still work. The one
+//     gesture on a glyph is the CONNECTION LINK: a `to_…` label the zone table resolves
+//     (zoneLinks.ts) opens that zone's map on click, and its pointer-down stops propagating so
+//     the surface can never mistake the press for the start of a pan.
 //
 // HOVER IS NOT PART OF THE LAYOUT, on purpose. Feeding the hovered point into the collision pass
 // as a top-priority symbol would re-run placement and shuffle every other label the instant the
@@ -30,7 +33,7 @@
 // the jump-to-a-hit path positions its marker with exactly the arithmetic the labels used.
 
 import { useMemo, useState, type JSX } from 'react'
-import type { MapPoint } from '@shared/maps'
+import type { MapPoint, ZoneShort } from '@shared/maps'
 import { expandRect, visiblePoints, type LayerMask, type ScreenPos } from './mapGeometry'
 import { LABEL_FONT_PX, layoutLabels, type LabelSlot } from './labelLayout'
 import { inActiveBand, type FloorBand } from './floorSlice'
@@ -89,6 +92,10 @@ export interface MapPointsLayerProps {
   bands?: readonly FloorBand[]
   /** The active floor, or null for "All levels". Out-of-band labels drop to dots. */
   floor?: number | null
+  /** Which map a connection label opens (zoneLinks.ts), or null. Absent ⇒ every label is inert. */
+  linkFor?: (display: string) => ZoneShort | null
+  /** Open another zone's map — the search jump with no position on the far side. */
+  onOpenZone?: (zone: ZoneShort) => void
 }
 
 interface GlyphProps {
@@ -96,22 +103,35 @@ interface GlyphProps {
   at: ScreenPos
   onHover: (index: number | null) => void
   index: number
+  /** Click opens the zone this connection label names — null for every other label. */
+  onOpen: (() => void) | null
 }
 
 /** The full text. `raised` is the hover state: lifted off its dot and above every other glyph. */
-function Label({ p, at, onHover, index, raised }: GlyphProps & { raised?: boolean }): JSX.Element {
+function Label({ p, at, onHover, index, onOpen, raised }: GlyphProps & { raised?: boolean }): JSX.Element {
   return (
     <span
       data-testid="map-point"
       // The RAW display text — `label.replace(/_/g,' ')`, computed once by the parser. The
-      // tooltip repeats it verbatim so a label clipped by a neighbour is still readable.
-      title={p.display}
+      // tooltip repeats it verbatim so a label clipped by a neighbour is still readable; a
+      // clickable connection also SAYS it is one, because a cursor change alone is not a promise.
+      title={onOpen == null ? p.display : `${p.display} - click to open this map`}
       onMouseEnter={() => {
         onHover(index)
       }}
       onMouseLeave={() => {
         onHover(null)
       }}
+      // Stop the press, not just the click: the surface's pointer-down starts a drag and takes
+      // pointer capture, and a captured pointer's click never reaches this span in Chromium.
+      onPointerDown={
+        onOpen == null
+          ? undefined
+          : (ev) => {
+              ev.stopPropagation()
+            }
+      }
+      onClick={onOpen ?? undefined}
       style={{
         position: 'absolute',
         left: at.px,
@@ -123,7 +143,7 @@ function Label({ p, at, onHover, index, raised }: GlyphProps & { raised?: boolea
         whiteSpace: 'nowrap',
         pointerEvents: 'auto',
         userSelect: 'none',
-        cursor: 'default',
+        cursor: onOpen == null ? 'default' : 'pointer',
         zIndex: raised === true ? 2 : 1
       }}
     >
@@ -138,17 +158,25 @@ function Label({ p, at, onHover, index, raised }: GlyphProps & { raised?: boolea
  * The POI stays on the map and stays a pointer target — the outer box is `DOT_HIT_PX` so a 5px
  * dot is still comfortably hoverable at any zoom.
  */
-function Dot({ p, at, onHover, index }: GlyphProps): JSX.Element {
+function Dot({ p, at, onHover, index, onOpen }: GlyphProps): JSX.Element {
   return (
     <span
       data-testid="map-point-dot"
-      title={p.display}
+      title={onOpen == null ? p.display : `${p.display} - click to open this map`}
       onMouseEnter={() => {
         onHover(index)
       }}
       onMouseLeave={() => {
         onHover(null)
       }}
+      onPointerDown={
+        onOpen == null
+          ? undefined
+          : (ev) => {
+              ev.stopPropagation()
+            }
+      }
+      onClick={onOpen ?? undefined}
       style={{
         position: 'absolute',
         left: at.px,
@@ -161,7 +189,7 @@ function Dot({ p, at, onHover, index }: GlyphProps): JSX.Element {
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'auto',
-        cursor: 'default'
+        cursor: onOpen == null ? 'default' : 'pointer'
       }}
     >
       <span
@@ -197,6 +225,17 @@ function useLabelSlots(props: MapPointsLayerProps): LabelSlot[] {
 export function MapPointsLayer(props: MapPointsLayerProps): JSX.Element {
   const slots = useLabelSlots(props)
   const [hover, setHover] = useState<number | null>(null)
+  const { linkFor, onOpenZone } = props
+  // Per-glyph, per-render: a regex and a table lookup over at most the ~320 visible points —
+  // the same order of work the declutter memo above already does per view change.
+  const openFor = (p: MapPoint): (() => void) | null => {
+    if (linkFor == null || onOpenZone == null) return null
+    const zone = linkFor(p.display)
+    if (zone == null) return null
+    return () => {
+      onOpenZone(zone)
+    }
+  }
   return (
     <div
       data-testid="map-points-layer"
@@ -204,9 +243,9 @@ export function MapPointsLayer(props: MapPointsLayerProps): JSX.Element {
     >
       {slots.map((s) =>
         s.shown ? (
-          <Label key={s.index} p={s.point} at={s} index={s.index} onHover={setHover} />
+          <Label key={s.index} p={s.point} at={s} index={s.index} onHover={setHover} onOpen={openFor(s.point)} />
         ) : (
-          <Dot key={s.index} p={s.point} at={s} index={s.index} onHover={setHover} />
+          <Dot key={s.index} p={s.point} at={s} index={s.index} onHover={setHover} onOpen={openFor(s.point)} />
         )
       )}
       {/* The hovered dot's text, raised above every placed label. Drawn outside the layout so
@@ -214,7 +253,15 @@ export function MapPointsLayer(props: MapPointsLayerProps): JSX.Element {
       {slots
         .filter((s) => s.index === hover && !s.shown)
         .map((s) => (
-          <Label key={`raised-${String(s.index)}`} p={s.point} at={s} index={s.index} onHover={setHover} raised />
+          <Label
+            key={`raised-${String(s.index)}`}
+            p={s.point}
+            at={s}
+            index={s.index}
+            onHover={setHover}
+            onOpen={openFor(s.point)}
+            raised
+          />
         ))}
     </div>
   )

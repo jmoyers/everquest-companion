@@ -450,6 +450,7 @@ export default function MapsView(): JSX.Element {
         marker={marker}
         locMarker={loc.marker}
         onJump={onJump}
+        zones={zones}
       />
       {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}
       <MapCredits data={data} reserve={reserve} />

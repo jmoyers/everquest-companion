@@ -32,6 +32,7 @@ import { MapMobPins } from './MapMobPins'
 import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
 import { paneOverlay, type PaneOverlay, type ZonePaneState } from './useMapPane'
+import { connectionTarget } from './zoneLinks'
 import { mapFromLoc, type EqLoc, type LayerMask } from './mapGeometry'
 import { bandRange, type FloorBand } from './floorSlice'
 import type { MapViewport } from './useMapViewport'
@@ -163,7 +164,9 @@ function MapSurface({
   floor,
   marker,
   locMarker,
-  pane
+  pane,
+  zones,
+  onJump
 }: {
   data: MapData
   vp: MapViewport
@@ -176,7 +179,16 @@ function MapSurface({
   locMarker: EqLoc | null
   /** The sidebar's contribution, or null when it is closed and draws nothing. */
   pane: PaneOverlay | null
+  /** Every stem an installed pack provides — gates which connection labels become links. */
+  zones: readonly ZoneShort[]
+  /** The search jump — a clicked connection label opens its zone with no position to centre on. */
+  onJump: (to: JumpTarget) => void
 }): JSX.Element {
+  // A `to_…` label the zone table resolves to an INSTALLED map becomes a link (zoneLinks.ts).
+  const linkFor = useMemo(() => {
+    const installed = new Set(zones)
+    return (display: string) => connectionTarget(display, installed)
+  }, [zones])
   const at = marker == null ? null : labelPosition(vp, marker)
   // The SELECTION ring — one symbol for both kinds of pane row, so a wiki mob and a map label
   // are marked identically once clicked. Persistent, unlike the search jump's flash: a selection
@@ -205,8 +217,20 @@ function MapSurface({
       }}
     >
       <MapCanvas lines={data.lines} vp={vp} layers={layers} zBand={zBand} />
-      <MapPointsLayer points={data.points} vp={vp} layers={layers} bands={bands} floor={floor} />
-      {pane != null && <MapMobPins pins={pane.pins} vp={vp} selectedId={pane.selectedId} />}
+      <MapPointsLayer
+        points={data.points}
+        vp={vp}
+        layers={layers}
+        bands={bands}
+        floor={floor}
+        linkFor={linkFor}
+        onOpenZone={(zone) => {
+          onJump({ zone, at: null })
+        }}
+      />
+      {pane != null && (
+        <MapMobPins pins={pane.pins} vp={vp} selectedId={pane.selectedId} onSelect={pane.select} />
+      )}
       {ringAt != null && <MarkerRing at={ringAt} size={26} testId="maps-pane-marker" />}
       {at != null && <MarkerRing at={at} size={22} testId="maps-marker" />}
       {/* THE ONE SEAM, AGAIN: the typed reading reaches the screen through `mapFromLoc` and then
@@ -258,11 +282,13 @@ export interface MapBodyProps {
   locMarker: EqLoc | null
   /** A cross-zone hit was clicked — `useSearchJump`'s handler, which changes zone first. */
   onJump: (to: JumpTarget) => void
+  /** Every stem an installed pack provides — gates which connection labels become links. */
+  zones: readonly ZoneShort[]
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
-  const { locMarker } = props
+  const { locMarker, zones } = props
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (
@@ -276,6 +302,8 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           marker={marker}
           locMarker={locMarker}
           pane={paneOverlay(pane)}
+          zones={zones}
+          onJump={onJump}
         />
       ) : (
         empty
