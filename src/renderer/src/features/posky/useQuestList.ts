@@ -28,17 +28,21 @@ import { filterByQuery } from './questSearch'
 // has-every-item-now, JOS-145 for has-ever-turned-in). Two lines of code, a page of reasoning, and
 // a node test — so they live in their own pure module.
 import { everTurnedIn, firstTimeReady, hasEveryItem, readyQuests } from './questCompletion'
+// The Targets tab's whole model (issue #30) — pure, node-tested, and fed the VISIBLE set below so
+// ignoring a quest takes its wants out of the kill list by the same one rule every tab obeys.
+import { skyTargets, type SkyTargetsModel } from './skyTargets'
 
 export type { SortKey }
 
 /**
- * Quests · Ready · Cleanup · Classes · Ignored. `ready` is JOS-147's turn-in list (rule in
- * questCompletion); `cleanup` is JOS-389's spare-items list (rule in cleanup.ts); `classes` is
- * JOS-148's per-class unlock progress (rule in classUnlocks.ts). None of them reads any of the
- * filter state below — they are derivations over the same quests, which is why the tab key is the
- * only thing each of them adds to this hook.
+ * Quests · Ready · Targets · Cleanup · Classes · Ignored. `ready` is JOS-147's turn-in list (rule
+ * in questCompletion); `targets` is issue #30's kill list (rule in skyTargets.ts); `cleanup` is
+ * JOS-389's spare-items list (rule in cleanup.ts); `classes` is JOS-148's per-class unlock
+ * progress (rule in classUnlocks.ts). None of them reads any of the filter state below — they are
+ * derivations over the same quests, which is why the tab key is the only thing each of them adds
+ * to this hook.
  */
-export type TabKey = 'quests' | 'ready' | 'cleanup' | 'classes' | 'ignored'
+export type TabKey = 'quests' | 'ready' | 'targets' | 'cleanup' | 'classes' | 'ignored'
 
 // How many Accordions to render before the "show more" cap kicks in. Exported because the LIST'S
 // FOOTER has to know it too (PoskyView.ListFooter): once "show all" is on there is no cap left to
@@ -258,6 +262,17 @@ function useReadySet(allReady: QuestProgress[]): {
 }
 
 
+/**
+ * The Targets tab's model (issue #30), derived from the VISIBLE quests and from nothing else —
+ * not the class filter, not the facets, not the hide-boxes, on the Ready tab's exact argument:
+ * the controls are not drawn on this tab, so no invisible state can be narrowing it. Its own
+ * hook, like `useReadySet` above, so `useQuestList`'s body stays under the measured per-function
+ * ceiling. The tab's COUNT reads `targets.mobs.length` — the same array the pane draws.
+ */
+function useTargetsModel(visible: QuestProgress[]): SkyTargetsModel {
+  return useMemo(() => skyTargets(visible), [visible])
+}
+
 interface QuestSelection {
   quests: QuestProgress[]
   selectedClasses: string[]
@@ -331,6 +346,13 @@ export interface QuestListState {
    * of the tab's count, because the count IS this array's length.
    */
   ready: QuestProgress[]
+  /**
+   * The Targets tab (issue #30): every mob still worth killing for the quests you have never
+   * turned in, plus the two honest remainders (the random-drop Wind Runes and the items nothing
+   * committed can source). Derived from `visible` only — the rule and its arguments live in
+   * skyTargets.ts.
+   */
+  targets: SkyTargetsModel
   /** `visible` after the filters, the sort and the favorite pinning */
   filtered: QuestProgress[]
   selectedClasses: string[]
@@ -485,6 +507,9 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
   // holding back. The tab's COUNT reads the same array the pane draws, so the number on the tab
   // and the rows under it can never disagree.
   const readySet = useReadySet(allReady)
+  // The Targets tab, whole (issue #30). Same shape as the Ready line above: the derivation is a
+  // pure module, the hook is one memo, and the tab count reads the array the pane draws.
+  const targets = useTargetsModel(visible)
 
   // What the two facet pickers can offer. Derived from the VISIBLE quests, so an ignored quest
   // takes its island and its boss out of the pickers along with itself.
@@ -544,6 +569,7 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
     ignored,
     // `ready`, the toggle and its setter, and the held-back count, all from the one hook above.
     ...readySet,
+    targets,
     filtered,
     selectedClasses,
     setSelectedClasses,

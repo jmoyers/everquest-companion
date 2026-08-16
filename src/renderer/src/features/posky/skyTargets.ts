@@ -114,66 +114,80 @@ function isRandomDrop(who: readonly string[]): boolean {
   return who.some((w) => w.toLowerCase().startsWith('random drop'))
 }
 
-/** The Targets model, from the quests the user can see. Membership is the fold, nothing else. */
-export function skyTargets(quests: readonly TargetsQuest[]): SkyTargetsModel {
+/** Fold one quest item into its counting key's aggregate. */
+function recordItem(byKey: Map<string, ItemAgg>, q: TargetsQuest, it: TargetsQuestItem): void {
+  const key = itemCountKey(it.name)
+  const agg = byKey.get(key) ?? {
+    name: it.name,
+    totalNeed: 0,
+    held: it.held,
+    droppers: it.droppers,
+    who: it.who,
+    islands: new Set<string>(),
+    quests: []
+  }
+  agg.totalNeed += it.need
+  // Prefer the BASE display name over a `+N` variant, the deriveLootNames rule.
+  if (agg.name !== normalizeItemName(agg.name) && it.name === normalizeItemName(it.name)) {
+    agg.name = it.name
+  }
+  // Same counting key ⇒ same resolved droppers; keep the first non-empty answer.
+  if (agg.droppers.length === 0 && it.droppers.length > 0) agg.droppers = it.droppers
+  const island = islandOf(it.where)
+  if (island !== undefined) agg.islands.add(island)
+  agg.quests.push({ className: q.className, questName: q.name, need: it.need })
+  byKey.set(key, agg)
+}
+
+/** Everything the need set says, per counting key. The never-turned-in filter is HERE. */
+function accumulateNeeds(quests: readonly TargetsQuest[]): Map<string, ItemAgg> {
   const byKey = new Map<string, ItemAgg>()
   for (const q of quests) {
     if (everTurnedIn(q)) continue
-    for (const it of q.items) {
-      const key = itemCountKey(it.name)
-      const agg = byKey.get(key) ?? {
-        name: it.name,
-        totalNeed: 0,
-        held: it.held,
-        droppers: it.droppers,
-        who: it.who,
-        islands: new Set<string>(),
-        quests: []
-      }
-      agg.totalNeed += it.need
-      // Prefer the BASE display name over a `+N` variant, the deriveLootNames rule.
-      if (agg.name !== normalizeItemName(agg.name) && it.name === normalizeItemName(it.name)) {
-        agg.name = it.name
-      }
-      // Same counting key ⇒ same resolved droppers; keep the first non-empty answer.
-      if (agg.droppers.length === 0 && it.droppers.length > 0) agg.droppers = it.droppers
-      const island = islandOf(it.where)
-      if (island !== undefined) agg.islands.add(island)
-      agg.quests.push({ className: q.className, questName: q.name, need: it.need })
-      byKey.set(key, agg)
-    }
+    for (const it of q.items) recordItem(byKey, q, it)
   }
+  return byKey
+}
 
-  const mobsByPage = new Map<string, { mob: DropperMob; islands: Set<string>; items: NeededItem[] }>()
+/** One aggregate as the pane's item line — or nothing, when the holdings already cover it. */
+function toNeeded(agg: ItemAgg): NeededItem | null {
+  const shortfall = Math.max(0, agg.totalNeed - agg.held)
+  if (shortfall === 0) return null
+  return { name: agg.name, shortfall, quests: agg.quests, islands: sortIslands(agg.islands) }
+}
+
+interface MobAcc {
+  mob: DropperMob
+  islands: Set<string>
+  items: NeededItem[]
+}
+
+/** Fold one needed item onto every mob that drops it — per ITEM dedupe by page, so a page listed
+ *  twice on one item cannot inflate its coverage (the questKillTargets rule). */
+function foldIntoMobs(mobsByPage: Map<string, MobAcc>, needed: NeededItem, droppers: readonly DropperMob[]): void {
+  const seen = new Set<string>()
+  for (const m of droppers) {
+    if (seen.has(m.page)) continue
+    seen.add(m.page)
+    const hit = mobsByPage.get(m.page) ?? { mob: m, islands: new Set<string>(), items: [] }
+    hit.items.push(needed)
+    for (const island of needed.islands) hit.islands.add(island)
+    mobsByPage.set(m.page, hit)
+  }
+}
+
+/** The Targets model, from the quests the user can see. Membership is the fold, nothing else. */
+export function skyTargets(quests: readonly TargetsQuest[]): SkyTargetsModel {
+  const mobsByPage = new Map<string, MobAcc>()
   const randomDrop: NeededItem[] = []
   const unsourced: NeededItem[] = []
-  for (const agg of byKey.values()) {
-    const shortfall = Math.max(0, agg.totalNeed - agg.held)
-    if (shortfall === 0) continue
-    const needed: NeededItem = {
-      name: agg.name,
-      shortfall,
-      quests: agg.quests,
-      islands: sortIslands(agg.islands)
-    }
-    if (agg.droppers.length > 0) {
-      // Per ITEM, so a page listed twice on one item cannot inflate its coverage.
-      const seen = new Set<string>()
-      for (const m of agg.droppers) {
-        if (seen.has(m.page)) continue
-        seen.add(m.page)
-        const hit = mobsByPage.get(m.page) ?? { mob: m, islands: new Set<string>(), items: [] }
-        hit.items.push(needed)
-        for (const island of needed.islands) hit.islands.add(island)
-        mobsByPage.set(m.page, hit)
-      }
-    } else if (isRandomDrop(agg.who)) {
-      randomDrop.push(needed)
-    } else {
-      unsourced.push(needed)
-    }
+  for (const agg of accumulateNeeds(quests).values()) {
+    const needed = toNeeded(agg)
+    if (needed === null) continue
+    if (agg.droppers.length > 0) foldIntoMobs(mobsByPage, needed, agg.droppers)
+    else if (isRandomDrop(agg.who)) randomDrop.push(needed)
+    else unsourced.push(needed)
   }
-
   const mobs: TargetMob[] = [...mobsByPage.values()]
     .map((e) => ({
       mob: e.mob,

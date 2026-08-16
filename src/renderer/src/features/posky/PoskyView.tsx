@@ -7,6 +7,7 @@ import { IgnoredList } from './IgnoredList'
 import QuestFilterBar, { InventorySource } from './QuestFilterBar'
 import { countSourcePhrase } from '../inventory/countSource'
 import ClassUnlockList from './ClassUnlockList'
+import { TargetsView } from './TargetsView'
 import { useQuestList, type QuestListState, type TabKey } from './useQuestList'
 // The rows themselves live in their own file since JOS-389 — see its header for why.
 import { QuestList, type QuestAnchor, type QuestListProps } from './QuestList'
@@ -216,6 +217,15 @@ function PoskyTabs({ list, cleanupCount }: { list: QuestListState; cleanupCount:
         label={list.ready.length ? `Ready (${list.ready.length})` : 'Ready'}
         data-testid="posky-tab-ready"
       />
+      {/* "Targets" - who to pull next (issue #30). The COUNT is `list.targets.mobs.length`, the
+          same array the pane draws, on the Ready precedent above - the collective random-drop
+          entry and the no-known-source note are NOT in it, because the number answers "how many
+          mobs", not "how many sections". */}
+      <Tab
+        value="targets"
+        label={list.targets.mobs.length ? `Targets (${list.targets.mobs.length})` : 'Targets'}
+        data-testid="posky-tab-targets"
+      />
       {/* "Cleanup" - the owner's own word for the screen (JOS-389). The count is how many items
           the model lists, i.e. how many stacks are candidates to throw away, which is exactly the
           number that decides whether the tab is worth opening after a long campaign. */}
@@ -325,6 +335,12 @@ function PoskyBody(x: PoskyBodyProps): JSX.Element {
         inventoryLoadedAt={inventoryLoadedAt}
       />
     )
+  }
+  if (list.tab === 'targets') {
+    // The kill list (issue #30): derived from the same visible set as every other tab, drawn
+    // by its own view file (TargetsView.tsx) because it renders mob cards, not quest rows.
+    // `onOpenMob` rides in on the rows bundle — same router the quest rows' mob chips use.
+    return <TargetsView targets={list.targets} onOpenMob={rows.onOpenMob} />
   }
   if (list.tab === 'classes') {
     // The VISIBLE quests, like every other tab: a quest the user permanently ignored is not shown
