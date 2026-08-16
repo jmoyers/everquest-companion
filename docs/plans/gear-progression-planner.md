@@ -47,10 +47,18 @@ entries whose name carries `+N`. The plus world exists only in the ITEM PAGES' `
 witnesses (`GearRow.wikiSources`), where zone spellings like `Timorous Deep +4` and mob
 spellings like `Ixiblat Fer +5` appear — names, not levels.
 
-**0.3 This log has considered zero +N mobs and entered zero +N zones.** `\+\d+ \(Lvl:` → 0
-matches; `You have entered .*\+\d` → 0 matches. So there is NO measured basis today for "a +4
-mob is your level + K". The plan refuses to invent one (law 1); §3 states what v1 says instead
-and how the number gets measured the day the data exists.
+**0.3 This log has considered zero +N mobs and entered zero +N zones** — *as the WIKI spells
+them.* `\+\d+ \(Lvl:` → 0 matches; `You have entered .*\+\d` → 0 matches. **CORRECTED at
+implementation time (2026-08-15): the game spells the tier differently.** The log HAS entered
+tiered zones — `You have entered Temple of Cazic-Thule 4 (Refined).`, `The Ruins of Old Guk 3
+(Fused)`, `Kerra Isle 4 (Refined)`, `Toxxulia Forest 1 (Awakened)` — i.e. `<base> <N>
+(<TierWord>)`, where the wiki writes `<base> +N`. Tier words measured so far: 1 = Awakened,
+3 = Fused, 4 = Refined; tier 2's word is unstated, so `plusSuffix` matches the parenthesized
+form generically, never a closed tier-word list. And the 26 considers made INSIDE those zones
+fit the same measured diff table as the base-zone considers (§0.1 addendum below) — the consider
+verdict tracks the mob's STATED level even in a tiered zone. What remains unmeasured is
+unchanged: the CATALOG states no level for any +N mob, so a +N gear target still has no stated
+level to con (§3 stands).
 
 **0.4 Everything else the feature needs already stands.** Current level:
 `shared/currentLevel.ts` + `useStatedLevel` (who/ding statements, staleness against the log
@@ -106,6 +114,17 @@ the finer bounds as awaiting-sample entries, exactly like the weapon-type census
 
 “Blue and white solo” in the ask maps to `safe`/`even`. A GROUP loosens the gate one band —
 an option, not a guess (§8).
+
+**Addendum (2026-08-15, the derivation ran):** 103 consider lines; 3 dings (42→44) anchor 53
+pairable considers; the 50 before the first level statement feed the phrase census only. The
+per-phrase (mobLevel − myLevel) table came out MONOTONIC once English intuition was dropped —
+"looks kind of dangerous" (−11..−6) is MILDER than "quite formidable" (−5..−2); "quite a
+gamble" sits at exactly 0; "wipe the floor" at +1..+2; "tombstone" at +7 and up; the two
+"probably win" stems below −13. One censored outlier: "looks kind of risky... you might win"
+measured once at −33 (a guard stated Lvl 10 vs own 43) — contradicts every neighbor, so
+`bandOfPhrase` returns null for it until a second sample. The five ConBands land as:
+trivial = "could probably win", safe = "would probably win" + "dangerous",
+even = "formidable" + "gamble", risky = "wipe the floor", deadly = "tombstone".
 
 ### 2.2 Zone level profile — derived, per zone, from stated mob levels (NEW, pure)
 
@@ -192,6 +211,13 @@ implementation branch therefore bases on that branch (or on main after #31 merge
 doc rides its own branch off main** so the design can be reviewed independently. If #31 is
 rejected, §2.3 falls back to a standalone `roleValue(stats, role)` in the new plan fold and
 nothing else here changes.
+
+**Decision (2026-08-15): the fallback IS the implementation.** The user directed the feature
+onto its own branch off main, so `roleValue(stats, role)` lives in `progressionPlan.ts` and
+`gearScale.ts` is untouched. If #31 merges later, folding `role` into `GearDerivedOpts` is a
+contained refactor. A second decoupling taken at the same time: `buildProgressionPlan` takes the
+con function INJECTED via `PlanCorpora` (`con: (my, mob) => ConBand`) rather than importing
+`conBand` — production wires the real one, tests hand in a synthetic table.
 
 ## 6. Fixtures and tests
 

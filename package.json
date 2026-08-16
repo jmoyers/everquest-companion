@@ -36,6 +36,7 @@
     "fixtures:e2e": "node --import tsx tests/extract-e2e-fixtures.mjs",
     "fixtures:group": "node --import tsx tests/extract-group-fixtures.mjs",
     "fixtures:consider": "node --import tsx tests/extract-consider-fixtures.mjs",
+    "fixtures:consider-pairs": "node --import tsx tests/extract-consider-pairs.mjs",
     "fixtures:item-tiers": "node --import tsx tests/extract-item-tier-fixtures.mjs",
     "fixtures:leveling": "node --import tsx tests/extract-leveling-fixtures.mjs",
     "fixtures:loot": "node --import tsx tests/extract-loot-fixtures.mjs",
