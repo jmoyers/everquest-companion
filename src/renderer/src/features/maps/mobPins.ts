@@ -52,6 +52,22 @@ const LEGEND_LAYER = 2
 /** How many pins the surface will draw at once. See `pinsForRows`. */
 export const MAX_PINS = 400
 
+/**
+ * `a skeleton` / `an orc pawn` — the game's own convention for a COMMON spawn is the leading
+ * article, and the named mobs worth walking to go without one (`skeleton Lrodd`, `the ghoul
+ * lord`, Baron Telyx V`Zher). The catalog carries no rarity field (mobTypes.ts keeps it
+ * compact on purpose), so the article is the one signal the data itself states.
+ *
+ * Case-insensitive because the wiki capitalizes some articles (`A Chokidai Growler`). MEASURED
+ * over the committed catalog, 2026-08-16: 2,137 of 7,872 pages are articled.
+ */
+const COMMON_NAME_RE = /^(a|an)\s/i
+
+/** True for the trash spawns the map pane does not list. Exported for its own test. */
+export function isCommonMob(name: string): boolean {
+  return COMMON_NAME_RE.test(name)
+}
+
 /** One spawn point, already in MAP coordinates — ready for `vp.toScreen`. */
 export interface MobPin {
   x: number
@@ -113,22 +129,29 @@ export function mobPins(entry: MobEntry): MobPin[] {
  * nothing on the page says which zone the numbers describe, so attributing them to the map on
  * screen would be a coin flip dressed as knowledge. Those rows are LISTED — the mob does live
  * here — and the pane states why they carry no pin (world-model law 1).
+ *
+ * COMMON SPAWNS ARE NOT LISTED AT ALL (owner call, 2026-08-16): the map pane exists for the
+ * mobs worth walking to, and a zone's forty `a skeleton`s bury its nameds. `isCommonMob` is the
+ * gate; the Mobs tab and the cross-zone search still answer for commons — this is the MAP's
+ * filter, not the app's.
  */
 export function mobRows(zoneRaw: string, catalog: MobEntry[]): MobPaneRow[] {
-  return mobsInZone(zoneRaw, catalog).map((m) => {
-    const zoneCount = m.zones?.length ?? 0
-    const ambiguous = zoneCount > 1
-    return {
-      kind: 'mob' as const,
-      id: m.page,
-      name: m.name,
-      ...(m.level === undefined ? {} : { level: m.level }),
-      pins: ambiguous ? [] : mobPins(m),
-      zoneCount,
-      unattributable: ambiguous && (m.loc?.length ?? 0) > 0,
-      searchKey: `${m.name} ${m.level ?? ''}`.toLowerCase()
-    }
-  })
+  return mobsInZone(zoneRaw, catalog)
+    .filter((m) => !isCommonMob(m.name))
+    .map((m) => {
+      const zoneCount = m.zones?.length ?? 0
+      const ambiguous = zoneCount > 1
+      return {
+        kind: 'mob' as const,
+        id: m.page,
+        name: m.name,
+        ...(m.level === undefined ? {} : { level: m.level }),
+        pins: ambiguous ? [] : mobPins(m),
+        zoneCount,
+        unattributable: ambiguous && (m.loc?.length ?? 0) > 0,
+        searchKey: `${m.name} ${m.level ?? ''}`.toLowerCase()
+      }
+    })
 }
 
 /**

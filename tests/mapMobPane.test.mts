@@ -29,6 +29,7 @@ import { parseMobLocations } from '../src/main/mobLookupParse'
 import {
   MAX_PINS,
   filterPaneRows,
+  isCommonMob,
   isLocatable,
   labelRows,
   mobPins,
@@ -98,16 +99,17 @@ test('mobPins invents nothing for a mob whose page stated no numbers', () => {
 
 // ---- 3. the rows -------------------------------------------------------------------------
 
+// NAMED fixtures — mobRows drops articled commons, so the pane fixtures are named mobs.
 const CATALOG: MobEntry[] = [
-  { page: 'Placed One', name: 'a placed one', level: '10', zones: ['Najena'], loc: [{ ns: 100, ew: 200 }] },
-  { page: 'Unplaced One', name: 'an unplaced one', level: '20', zones: ['Najena'] },
-  { page: 'Elsewhere', name: 'an elsewhere', level: '5', zones: ['Befallen'], loc: [{ ns: 1, ew: 1 }] }
+  { page: 'Placed One', name: 'Placed One', level: '10', zones: ['Najena'], loc: [{ ns: 100, ew: 200 }] },
+  { page: 'Unplaced One', name: 'Unplaced One', level: '20', zones: ['Najena'] },
+  { page: 'Elsewhere One', name: 'Elsewhere One', level: '5', zones: ['Befallen'], loc: [{ ns: 1, ew: 1 }] }
 ]
 
 /** A page that states a position AND names two zones — the coordinate belongs to one of them. */
 const WANDERER: MobEntry = {
   page: 'Wanderer',
-  name: 'a wanderer',
+  name: 'Wanderer',
   level: '30',
   zones: ['Najena', 'Befallen'],
   loc: [{ ns: 9, ew: 9 }]
@@ -117,12 +119,38 @@ test('mobRows lists the zone’s mobs, lowest level first, and marks which are p
   const rows = mobRows('Najena', CATALOG)
   assert.deepEqual(
     rows.map((r) => r.name),
-    ['a placed one', 'an unplaced one']
+    ['Placed One', 'Unplaced One']
   )
   assert.equal(isLocatable(rows[0]), true)
   assert.equal(isLocatable(rows[1]), false, 'a mob with no stated position is LISTED but not placeable')
   assert.deepEqual(rowTarget(rows[0]), { x: -200, y: -100 })
   assert.equal(rowTarget(rows[1]), null)
+})
+
+test('isCommonMob is the game’s own article convention, case-insensitive, prefix-anchored', () => {
+  assert.equal(isCommonMob('a mummy'), true)
+  assert.equal(isCommonMob('an orc pawn'), true)
+  assert.equal(isCommonMob('A Chokidai Growler'), true, 'the wiki capitalizes some articles')
+  assert.equal(isCommonMob('the ghoul lord'), false, 'lowercase `the` is a classic NAMED spelling')
+  assert.equal(isCommonMob('Asaka L`Rei'), false)
+  assert.equal(isCommonMob('Arisen Thaumaturgist'), false, '`a`/`an` must be whole words')
+  assert.equal(isCommonMob('Anaconda'), false)
+})
+
+test('mobRows drops common spawns — the map pane is for the mobs worth walking to', () => {
+  const common: MobEntry = {
+    page: 'A Mummy',
+    name: 'a mummy',
+    level: '4',
+    zones: ['Najena'],
+    loc: [{ ns: 5, ew: 5 }]
+  }
+  const rows = mobRows('Najena', [...CATALOG, common])
+  assert.deepEqual(
+    rows.map((r) => r.name),
+    ['Placed One', 'Unplaced One'],
+    'a stated position does not earn a common spawn a row'
+  )
 })
 
 test('mobRows folds the instance suffix the log prints, so an instance shows the zone’s bestiary', () => {
@@ -131,7 +159,7 @@ test('mobRows folds the instance suffix the log prints, so an instance shows the
 
 test('a page that names SEVERAL zones is listed but never pinned — the position is unattributable', () => {
   const rows = mobRows('Najena', [...CATALOG, WANDERER])
-  const row = rows.find((r) => r.name === 'a wanderer')
+  const row = rows.find((r) => r.name === 'Wanderer')
   assert.ok(row, 'the mob still appears — it does live here')
   assert.deepEqual(row.pins, [], 'nothing on the page says WHICH zone the coordinate describes')
   assert.equal(row.unattributable, true, 'and the pane must say that, not "no location"')
@@ -181,14 +209,14 @@ test('filterPaneRows requires EVERY word, and preserves the list’s order', () 
   const rows = mobRows('Najena', CATALOG)
   assert.deepEqual(
     filterPaneRows(rows, 'one').map((r) => r.name),
-    ['a placed one', 'an unplaced one']
+    ['Placed One', 'Unplaced One']
   )
   assert.deepEqual(
     filterPaneRows(rows, 'placed one').map((r) => r.name),
-    ['a placed one', 'an unplaced one'],
+    ['Placed One', 'Unplaced One'],
     '"placed" is a substring of "unplaced" — substring-AND, not word-boundary matching'
   )
-  assert.deepEqual(filterPaneRows(rows, 'unplaced').map((r) => r.name), ['an unplaced one'])
+  assert.deepEqual(filterPaneRows(rows, 'unplaced').map((r) => r.name), ['Unplaced One'])
   assert.deepEqual(filterPaneRows(rows, 'nothing here'), [])
 })
 
@@ -201,7 +229,7 @@ test('filterPaneRows treats a blank query as "everything", not "nothing"', () =>
 test('filterPaneRows matches a mob by the level the page states', () => {
   assert.deepEqual(
     filterPaneRows(mobRows('Najena', CATALOG), '20').map((r) => r.name),
-    ['an unplaced one']
+    ['Unplaced One']
   )
 })
 

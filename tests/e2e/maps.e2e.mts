@@ -72,9 +72,10 @@ const PANE_MOB = '[data-testid="maps-pane-mob"]'
 /** A mob row the wiki actually placed — the only kind that is clickable (the rest are disabled). */
 const PANE_MOB_PINNED = '[data-testid="maps-pane-mob"]:has([data-testid="maps-pane-pin"])'
 const PANE_LABEL = '[data-testid="maps-pane-label"]'
-const PANE_HIT = '[data-testid="maps-pane-hit"]'
 /** A cross-zone row the WIKI answered with, as opposed to another map's label text (JOS-135). */
 const PANE_HIT_MOB = '[data-testid="maps-pane-hit"][data-kind="mob"]'
+/** A cross-zone row from another MAP's label text — the only kind guaranteed to carry a position. */
+const PANE_HIT_LABEL = '[data-testid="maps-pane-hit"][data-kind="label"]'
 const PANE_MARKER = '[data-testid="maps-pane-marker"]'
 const ZONE_CHIP = '[data-testid="maps-zone-chip"]'
 
@@ -371,7 +372,11 @@ async function stepCrossZone(page: Page): Promise<void> {
     return
   }
   await page.fill(PANE_SEARCH, prefix, { timeout: 15_000 })
-  const found = await until(async () => (await countOf(page, PANE_HIT)) > 0, 15_000)
+  // A LABEL row specifically, not the first row of any kind: the bestiary half of this list
+  // (JOS-135) can rank a wiki mob above every label — `Druid` finds the East Karana mob
+  // "A Druid" at exact-match score — and a mob whose page states no position jumps with NO
+  // marker by design. The flash this step asserts is a promise only a label row makes.
+  const found = await until(async () => (await countOf(page, PANE_HIT_LABEL)) > 0, 15_000)
   if (!found) {
     note(`no other installed map labels "${prefix}" — the cross-zone list is correctly empty and the jump is not asserted`)
     return
@@ -379,11 +384,11 @@ async function stepCrossZone(page: Page): Promise<void> {
   check(
     'one box also finds labels in OTHER zones (the corpus lookup the toolbar used to hold)',
     true,
-    `"${prefix}" → ${String(await countOf(page, PANE_HIT))} rows in other zones`
+    `"${prefix}" → ${String(await countOf(page, PANE_HIT_LABEL))} label rows in other zones`
   )
   // The marker is transient by design, so it is polled for immediately and its later
   // disappearance is not asserted.
-  await page.click(PANE_HIT, { timeout: 15_000 })
+  await page.click(PANE_HIT_LABEL, { timeout: 15_000 })
   const marked = await until(async () => (await countOf(page, '[data-testid="maps-marker"]')) > 0, 20_000)
   check('clicking one loads that zone and flashes the marker where the label is', marked)
 }

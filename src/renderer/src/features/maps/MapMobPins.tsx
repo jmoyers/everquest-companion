@@ -20,13 +20,30 @@
 // REACH the one selection, never a second copy of it. The clicked pin itself is passed as the
 // target, so a mob with eight spawn points rings the one under the cursor, not its first.
 
-import { useMemo, type JSX } from 'react'
+import { useMemo, useState, type JSX } from 'react'
 import { useTheme } from '@mui/material'
-import type { MobPaneRow, PlacedPin } from './mobPins'
+import type { MobPin, MobPaneRow, PlacedPin } from './mobPins'
 import type { MapViewport } from './useMapViewport'
 
 /** Pin body size in CSS pixels. Does not scale with zoom, for the same reason label text doesn't. */
 const PIN_PX = 9
+
+/**
+ * Four-way dark halo behind the hover text — the label layer's technique (MapPointsLayer.tsx),
+ * with the dark side fixed: the pin colour is the theme's warning tone, light in both themes.
+ */
+const HALO =
+  '-1px 0 0 rgba(0,0,0,0.85), 1px 0 0 rgba(0,0,0,0.85), 0 -1px 0 rgba(0,0,0,0.85), 0 1px 0 rgba(0,0,0,0.85)'
+
+/**
+ * What a pin says about itself: the name, the level EXACTLY as the page states it, and the
+ * page's own spawn share when it stated one — never rounded into "likely" or "rare".
+ */
+function pinText(row: MobPaneRow, pin: MobPin): string {
+  const level = row.level === undefined ? '' : ` (${row.level})`
+  const share = pin.pct === undefined ? '' : ` - ${String(pin.pct)}% of spawns`
+  return `${row.name}${level}${share}`
+}
 
 export interface MapMobPinsProps {
   /** The pins to draw — already capped and keyed by `pinsForRows`, in list order. */
@@ -44,6 +61,11 @@ export interface MapMobPinsProps {
 
 export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps): JSX.Element {
   const { toScreen } = vp
+  // The hovered pin's key. Its text is drawn INSTANTLY as DOM beside the pin — the same deferred
+  // -text gesture the label layer's dots use, and for the same reason the surface bans poppers
+  // (JOS-143): the native `title` stays as the delayed backstop, but a hunter reading a zone
+  // should not wait a second per pin to learn a name.
+  const [hover, setHover] = useState<string | null>(null)
   // The SAME token the search-jump marker paints with (`warning.main`), read from the theme
   // rather than spelled as a hex literal so a theme change can never leave the two disagreeing.
   const pinColor = useTheme().palette.warning.main
@@ -62,12 +84,13 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
           <span
             key={key}
             data-testid="maps-mob-pin"
-            title={
-              pin.pct === undefined
-                ? row.name
-                : // The page's OWN number, verbatim — never rounded into "likely" or "rare".
-                  `${row.name} - ${String(pin.pct)}% of spawns`
-            }
+            title={pinText(row, pin)}
+            onMouseEnter={() => {
+              setHover(key)
+            }}
+            onMouseLeave={() => {
+              setHover(null)
+            }}
             // Stop the press, not just the click — the same reason as the connection labels
             // (MapPointsLayer.tsx): the surface's pointer-down would take pointer capture and
             // swallow the click.
@@ -97,6 +120,30 @@ export function MapMobPins({ pins, vp, selectedId, onSelect }: MapMobPinsProps):
           />
         )
       })}
+      {/* The hovered pin's text, raised above every pin. Drawn from the same `placed` array the
+          pins are, so the name and its pin can never disagree about where they sit. */}
+      {placed
+        .filter((pp) => pp.key === hover)
+        .map(({ row, pin, key, at }) => (
+          <span
+            key={`hover-${key}`}
+            data-testid="maps-mob-pin-name"
+            style={{
+              position: 'absolute',
+              left: at.px,
+              top: at.py - PIN_PX,
+              transform: 'translate(-50%, -100%)',
+              font: '12px/1.1 inherit',
+              color: pinColor,
+              textShadow: HALO,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              zIndex: 4
+            }}
+          >
+            {pinText(row, pin)}
+          </span>
+        ))}
     </div>
   )
 }
