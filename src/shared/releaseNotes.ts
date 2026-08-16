@@ -125,6 +125,44 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.3.0',
+    date: '2026-08-16',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Every Gear row now says where the item comes from: Zone, Level and Mob columns, with the level belonging to the mob shown and the full list of known sources on hover.'
+      },
+      {
+        kind: 'new',
+        text: 'Two calculated columns join the Columns picker: EFF DMG, one offense number built from a weapon’s ratio and its damage stats, and BIS, one overall worth-score so an item strong on several stats can outrank one tall on a single stat. Both are ranking aids, not numbers the game states.'
+      },
+      {
+        kind: 'new',
+        text: 'An Ignore haste toggle beside the upgrade slider leaves worn haste out of EFF DMG and BIS - haste items do not stack, so once you wear one, a second deserves no credit. The HASTE column itself still shows what the item states.'
+      },
+      {
+        kind: 'new',
+        text: 'The gear search box filters on numbers now: type rules like ac>=20, str>5 or ratio>=1 beside your words, and they read the values at the simulated +N, derived columns included.'
+      },
+      {
+        kind: 'new',
+        text: 'Gear columns resize: drag the grip at a header’s right edge and the width sticks on this machine. Double-click a grip to fit that column to its content; Alt+double-click puts every column back on the automatic layout.'
+      },
+      {
+        kind: 'new',
+        text: 'The item drill-down carries the wish-list button, so an item you are reading about can be added to the route without going back to the Gear tab.'
+      },
+      {
+        kind: 'changed',
+        text: 'Shield is a pick in the Weapon type dropdown rather than its own toggle, and it combines with the other picks - one-handers or shields is one question now.'
+      },
+      {
+        kind: 'changed',
+        text: 'The gear rows lead with the item’s icon, and the wish-list control moved out of the Item column into its own narrow WL column with short Add and Remove buttons - the item name has its room back.'
+      }
+    ]
+  },
+  {
     version: '1.2.0',
     date: '2026-08-16',
     entries: [
