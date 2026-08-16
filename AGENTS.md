@@ -143,10 +143,14 @@ docs/agents-archive.md.
     (2026-08-15 evening, machine-wide across both specs on code green ~90 min
     earlier; reverting the day's shared/renderer-only commits does not clear
     it; the user's PACKAGED app tailed the real log fine throughout) ·
-    environment suspected, not a spec race — candidate cause offered by the
-    user himself (his packaged app was running); probe protocol: re-run one
-    spec in the next window where his app is closed, then after a reboot; a
-    sighting that survives both is a main-process ticket.
+    environment, not a spec race — the cause was offered by the USER himself
+    (his packaged app was running) and the probe CONFIRMED it same evening:
+    plan.e2e all-green in 25.5 s the moment his app closed, no code change
+    between red and green. Unexplained residue, stated honestly: the earlier
+    ~19:40 runs were green WITH a (different, older) build running — so the
+    mechanism is not "any running app", and a red seen while the user's app
+    is up is a report line, never a product verdict. Diagnose only from a
+    closed-window run.
   - `combat-dashboard.e2e` · narrow-window resize never lands, settleStable
     settles on stale geometry · 5 sightings (2026-08-10/11/12 full-sweep; 4th
     in the JOS-229 sweep; 5th 2026-08-12 STANDALONE on the JOS-240 merge
