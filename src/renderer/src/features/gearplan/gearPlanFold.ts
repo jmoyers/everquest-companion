@@ -11,8 +11,10 @@ import {
   equippedRead,
   gearPlanDiff,
   gearPlanTotals,
+  weaponFacts,
   type CellDelta,
-  type GearPlanDiff
+  type GearPlanDiff,
+  type WeaponFacts
 } from '@shared/planner/gearPlanTotals'
 import type { EquipSlot, PlanSlotId } from '@shared/planner/types'
 import { useGearIndex } from '../gear/gearData'
@@ -58,8 +60,8 @@ export interface GearPlanFold {
   sockets: ReturnType<typeof plannedSockets>
   /** what the dump says is on the body, as a board; `null` when there is no dump */
   equipped: ReturnType<typeof equippedRead>['gearPlan'] | null
-  /** the three per-cell readers the board hands each card, grouped so the view spreads them once */
-  board: Pick<GearPlanBoardProps, 'blockOf' | 'deltaOf' | 'iconOf'>
+  /** the per-cell readers the board hands each card, grouped so the view spreads them once */
+  board: Pick<GearPlanBoardProps, 'blockOf' | 'deltaOf' | 'iconOf' | 'weaponOf'>
   /**
    * WHAT A CANDIDATE WOULD CHANGE, while you are still choosing it.
    *
@@ -73,6 +75,21 @@ export interface GearPlanFold {
    * where the rest of the question gets asked.
    */
   candidateDelta: (key: string, cell: PlanSlotId) => CellDelta[] | null
+  /** the same, for a weapon's derived ratio — see `WeaponRead` */
+  candidateWeapon: (key: string, cell: PlanSlotId) => WeaponRead | null
+}
+
+/**
+ * A WEAPON AND WHATEVER IT WOULD REPLACE, both at their own tiers.
+ *
+ * `worn` is `null` for two different-looking reasons that mean the same thing to a reader — no dump,
+ * or nothing worn in that cell — and one more that does not: the worn item is not a weapon. All
+ * three come out as "no comparison available", and the line then simply states the ratio rather
+ * than inventing a baseline to beat.
+ */
+export interface WeaponRead {
+  mine: WeaponFacts
+  worn: WeaponFacts | null
 }
 
 /** One cell's planned row and worn row, scaled to their own tiers — `cellBlock`'s arithmetic. */
@@ -147,7 +164,7 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
     }
 
     return {
-      // The three the BOARD hands each card, grouped: the view spreads them in one place, and a
+      // The ones the BOARD hands each card, grouped: the view spreads them in one place, and a
       // fourth per-cell reader is then one line here rather than one more prop at the call site.
       board: {
         blockOf: (cell: PlanSlotId): ItemStatBlock | undefined => blocks.get(cell),
@@ -161,12 +178,32 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
           const mine = scaledOf(gearPlan.cells[cell], lookup)
           const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
           return mine === null || theirs === null ? null : cellDelta(mine, theirs)
+        },
+        // THE RATIO IS READ SEPARATELY FROM THE DELTA and not folded into it, because it is not one
+        // of `GEAR_STAT_KEYS` — it is a quotient of two of them. Same two scaled vectors, asked a
+        // second question.
+        weaponOf: (cell: PlanSlotId): WeaponRead | null => {
+          const mine = scaledOf(gearPlan.cells[cell], lookup)
+          const facts = mine === null ? null : weaponFacts(mine)
+          if (facts === null) return null
+          const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+          return { mine: facts, worn: theirs === null ? null : weaponFacts(theirs) }
         }
       },
       candidateDelta: (key: string, cell: PlanSlotId): CellDelta[] | null => {
         const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
         const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
         return mine === null || theirs === null ? null : cellDelta(mine, theirs)
+      },
+      // AT BASE, for the reason `candidateDelta` is: a candidate has no planned tier yet. Which
+      // makes the ratio shown here the FLOOR of what the weapon offers, and the cell's own slider
+      // the place the rest of that question gets asked.
+      candidateWeapon: (key: string, cell: PlanSlotId): WeaponRead | null => {
+        const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
+        const facts = mine === null ? null : weaponFacts(mine)
+        if (facts === null) return null
+        const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+        return { mine: facts, worn: theirs === null ? null : weaponFacts(theirs) }
       },
       facts,
       totals,

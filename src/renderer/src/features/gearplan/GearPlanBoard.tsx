@@ -21,6 +21,7 @@ import type { CellDelta } from '@shared/planner/gearPlanTotals'
 import { gearPlanCells, type GearPlan } from '@shared/planner/gearPlan'
 import type { PlanSlotId } from '@shared/planner/types'
 import GearPlanCellCard, { type GearPlanCellHandlers } from './GearPlanCellCard'
+import type { WeaponRead } from './gearPlanFold'
 
 export interface GearPlanBoardProps {
   gearPlan: GearPlan
@@ -34,6 +35,8 @@ export interface GearPlanBoardProps {
   deltaOf: (cell: PlanSlotId) => CellDelta[] | null
   /** the corpus's icon for a cell's planned item, resolved by the view for the same reason */
   iconOf: (cell: PlanSlotId) => number | undefined
+  /** a weapon's ratio and what it would replace; `null` for every cell that is not a weapon */
+  weaponOf: (cell: PlanSlotId) => WeaponRead | null
   /**
    * The controls, threaded straight through. The board holds no popover state of its own for the
    * reason the cards do not: one open popover is a property of the SURFACE, not of a cell.
@@ -46,6 +49,7 @@ export default function GearPlanBoard({
   blockOf,
   deltaOf,
   iconOf,
+  weaponOf,
   on
 }: GearPlanBoardProps): JSX.Element {
   return (
@@ -77,6 +81,7 @@ export default function GearPlanBoard({
           block={blockOf(cell)}
           delta={deltaOf(cell)}
           iconId={iconOf(cell)}
+          weapon={weaponOf(cell)}
           on={on}
         />
       ))}

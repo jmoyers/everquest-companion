@@ -239,6 +239,7 @@ export async function stepTierUnlocks(page: Page): Promise<void> {
     countOf(page, `${cell} [data-testid^="gearplan-socket-"] a, ${cell} [data-testid^="gearplan-socket-"] button`)
 
   check('a cell planned at +0 offers no socket to fill', (await openSockets()) === 0)
+  const ratioBefore = await ratioOf(page, cell)
   const before = await textOf(page, cell)
   check('…and says what each locked socket would cost', before.includes('+1 to unlock') && before.includes('+4 to unlock'), before.slice(0, 200))
 
@@ -253,6 +254,27 @@ export async function stepTierUnlocks(page: Page): Promise<void> {
   const after = await textOf(page, cell)
   check('…and the card header states the new tier', after.includes('+4'), after.slice(0, 160))
   check('…and no "to unlock" sentence survives', !after.includes('to unlock'), after.slice(0, 200))
+
+  // THE SAME CONTROL DOING A THIRD JOB, and the reason the ratio is drawn on this surface at all.
+  // `scaleGearStat` scales DMG and deliberately leaves DELAY alone, so a weapon's damage ratio
+  // IMPROVES with its tier - which is a claim spanning phase 0's scaling, the shared fold and the
+  // card, and is visible nowhere else in the app because nowhere else lets you set the tier.
+  const ratioNow = await ratioOf(page, cell)
+  check('a weapon cell draws its damage ratio on its own line', ratioBefore !== null && ratioNow !== null, `before=${String(ratioBefore)} after=${String(ratioNow)}`)
+  if (ratioBefore !== null && ratioNow !== null) {
+    check('…and raising the tier RAISES it - DMG scales, DELAY does not', ratioNow > ratioBefore, `${String(ratioBefore)} -> ${String(ratioNow)}`)
+    note(`PRIMARY ratio +0 -> +4: ${String(ratioBefore)} -> ${String(ratioNow)}`)
+  }
+}
+
+/**
+ * The ratio a cell is printing, as a number. `null` when the cell draws no ratio line at all —
+ * which is the correct answer for every cell that is not holding a weapon.
+ */
+async function ratioOf(page: Page, cell: string): Promise<number | null> {
+  const text = await textOf(page, `${cell} [data-testid="gearplan-ratio"]`)
+  const found = /RATIO\s+([\d.]+)/.exec(text)
+  return found === null ? null : Number(found[1])
 }
 
 /** Pick an exaltation for a socket, through the donor corpus and R2. */

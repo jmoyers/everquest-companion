@@ -36,6 +36,8 @@ import { DashCard } from '../combat/combatShared'
 import { itemIconUrl } from '../../lib/ItemWindow'
 import { MIN_QUERY, useItemSearch } from '../planner/plannerPreset'
 import GearPlanDeltaLine from './GearPlanDeltaLine'
+import GearPlanRatioLine from './GearPlanRatioLine'
+import type { WeaponRead } from './gearPlanFold'
 import GearPlanRowChips from './GearPlanRowChips'
 import { PLANNER_PAGE, PLANNER_PAGE_MAX } from './gearPlanRules'
 import { hidesRow, type GearPlanRowFilter, type RowSignals } from './gearPlanSignals'
@@ -55,11 +57,13 @@ function CandidateRow({
   hit,
   signals,
   delta,
+  weapon,
   onPick
 }: {
   hit: PlannerItemHit
   signals: RowSignals
   delta: CellDelta[] | null
+  weapon: WeaponRead | null
   onPick: (h: PlannerItemHit) => void
 }): JSX.Element {
   return (
@@ -91,6 +95,14 @@ function CandidateRow({
           {hit.name}
         </Typography>
       </Stack>
+      {/* THE RATIO FIRST, WHEN THERE IS ONE. Comparing two weapons IS comparing their ratios, and a
+          candidate list is where that comparison actually happens - by the time the item is in the
+          cell you have already chosen it. Non-weapons draw nothing here and lose no space to it. */}
+      {weapon !== null && (
+        <Box sx={{ mt: 0.25 }}>
+          <GearPlanRatioLine mine={weapon.mine} worn={weapon.worn} testId="gearplan-hit-ratio" />
+        </Box>
+      )}
       {delta !== null && delta.length > 0 && (
         <Box sx={{ mt: 0.25 }}>
           <GearPlanDeltaLine delta={delta} testId="gearplan-hit-delta" />
@@ -133,6 +145,8 @@ export interface GearPlanSelectPanelProps {
   signalsOf: (subject: { key: string; classes?: readonly ClassAbbr[] }) => RowSignals
   /** what a candidate would change against the item worn in THIS cell — see `GearPlanFold` */
   deltaFor: (key: string, cell: PlanSlotId) => CellDelta[] | null
+  /** the same for a weapon's derived ratio, which is not one of the delta's keys */
+  weaponFor: (key: string, cell: PlanSlotId) => WeaponRead | null
   /** what the page's filter bar is narrowing the pool to */
   filter: GearPlanRowFilter
   /** the shared `eq.planner.era` value, which is not one of `filter`'s fields */
@@ -147,6 +161,7 @@ export default function GearPlanSelectPanel({
   onPick,
   signalsOf,
   deltaFor,
+  weaponFor,
   filter,
   eraOnly,
   onHidden
@@ -211,6 +226,7 @@ export default function GearPlanSelectPanel({
           hit={hit}
           signals={signals}
           delta={deltaFor(hit.key, cell)}
+          weapon={weaponFor(hit.key, cell)}
           onPick={onPick}
         />
       ))}

@@ -325,6 +325,7 @@ function RightColumn({
         onPick={edit.pickItem}
         signalsOf={signalsOf}
         deltaFor={fold.candidateDelta}
+        weaponFor={fold.candidateWeapon}
         {...pick}
       />
     )

@@ -30,6 +30,8 @@ import {
   type ItemUpgradeState
 } from '../src/shared/itemUpgrade'
 import { GEAR_STAT_KEYS, type GearRow } from '../src/shared/planner/gear'
+import { damageRatio } from '../src/shared/itemStats'
+import { scaleGearStats } from '../src/shared/planner/gearScale'
 import { equippedHosts } from '../src/shared/planner/inventorySlots'
 import {
   assignToCell,
@@ -46,6 +48,7 @@ import {
   cellBlock,
   cellDelta,
   splitDelta,
+  weaponFacts,
   cellStatLine,
   equippedRead,
   gearPlanDiff,
@@ -421,6 +424,39 @@ test('a percent stat CAN be subtracted - the refusal is about stacking, not comp
   // `sumGear` will not add two haste sources together because no source states whether they stack.
   // One item minus one other item asks nothing of that rule.
   assert.deepEqual(cellDelta({ HASTE: 41 }, { HASTE: 21 }), [{ key: 'HASTE', delta: 20 }])
+})
+
+test('`weaponFacts` is a weapon or it is nothing - half a ratio is not a number', () => {
+  const w = weaponFacts({ DMG: 20, DELAY: 26 })
+  assert.ok(w)
+  assert.equal(w.dmg, 20)
+  assert.equal(w.delay, 26)
+  // COMPUTED, NEVER TYPED - `damageRatio` is the one definition and this asks it rather than
+  // restating its arithmetic, so a change to the game's own rule moves both at once.
+  assert.equal(w.ratio, damageRatio(20, 26))
+
+  // BOTH INPUTS OR NOTHING. A page that states a damage and no delay is not a weapon this app can
+  // rate, and the line is absent rather than guessing at the missing half (law 1).
+  assert.equal(weaponFacts({ DMG: 20 }), null)
+  assert.equal(weaponFacts({ DELAY: 26 }), null)
+  assert.equal(weaponFacts({}), null)
+  assert.equal(weaponFacts({ AC: 12, STR: 8 }), null, 'a helm has no ratio')
+  // A zero delay would divide by zero; `damageRatio` refuses it and so does this.
+  assert.equal(weaponFacts({ DMG: 20, DELAY: 0 }), null)
+})
+
+test('the RATIO is what the tier slider moves - DMG scales and DELAY does not', () => {
+  // This is the whole reason the board draws a ratio at all, so it is pinned rather than assumed:
+  // if DELAY ever started scaling, the ratio would stop being the number a plus-state decides.
+  const at5: ItemUpgradeState = { full: 5, fraction: 0 }
+  const base = weaponFacts(scaleGearStats(THELVORN.stats, { full: 0, fraction: 0 }, false))
+  const merged = weaponFacts(scaleGearStats(THELVORN.stats, at5, false))
+  assert.ok(base)
+  assert.ok(merged)
+  assert.equal(merged.delay, base.delay, 'DELAY does not scale')
+  assert.ok(merged.dmg > base.dmg, 'DMG does')
+  assert.ok(merged.ratio > base.ratio, '…so the ratio improves, which is the point')
+  assert.equal(merged.ratio, damageRatio(merged.dmg, merged.delay))
 })
 
 test('`splitDelta` groups by sign and loses nothing on the way', () => {

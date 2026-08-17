@@ -52,7 +52,7 @@
 // that test red rather than silently dropping a stat out of every total.
 
 import { sumGear, type GearStat, type GearTotals } from '../characterSheet'
-import { statLabel, type ItemStat, type ItemStatBlock } from '../itemStats'
+import { damageRatio, statLabel, type ItemStat, type ItemStatBlock } from '../itemStats'
 import type { ItemUpgradeState } from '../itemUpgrade'
 import {
   GEAR_PERCENT_STAT_KEYS,
@@ -399,6 +399,39 @@ export function cellDelta(planned: GearStats, worn: GearStats): CellDelta[] {
     if (delta !== 0) out.push({ key, delta })
   }
   return out
+}
+
+/**
+ * A WEAPON'S THREE NUMBERS. `null` for everything that is not a weapon, which is most of the board.
+ *
+ * RATIO IS DERIVED AND NOT A VECTOR KEY, which is why it cannot ride in `cellDelta` and gets its
+ * own line instead. `GEAR_STAT_KEYS` indexes what an item page STATES; damage over delay is a
+ * quotient this app computes, and `damageRatio` is the one place it is computed (the Gear tab's
+ * `RATIO` column reads the same function).
+ *
+ * IT IS THE NUMBER THE TIER SLIDER IS FOR. `scaleGearStat` scales DMG and deliberately leaves DELAY
+ * alone — `gearScale.ts` calls that out as "a game fact with a consequence (it is the whole reason a
+ * weapon's damage RATIO improves)". So on a board where every cell states its own `+N`, the ratio is
+ * the number that moves when you drag, and the surface that lets you drag was the one surface not
+ * showing it.
+ *
+ * BOTH INPUTS OR NOTHING. `damageRatio` returns `undefined` when either is missing or zero, and that
+ * propagates here rather than being filled in: a page that states a damage and no delay is not a
+ * weapon this app can rate, and half a ratio is not a number.
+ */
+export interface WeaponFacts {
+  dmg: number
+  delay: number
+  /** damage ÷ delay, unrounded — the renderer decides how many places to print. */
+  ratio: number
+}
+
+/** One item's weapon numbers at whatever tier its stats were already scaled to. */
+export function weaponFacts(stats: GearStats): WeaponFacts | null {
+  const { DMG: dmg, DELAY: delay } = stats
+  const ratio = damageRatio(dmg, delay)
+  if (ratio === undefined || dmg === undefined || delay === undefined) return null
+  return { dmg, delay, ratio }
 }
 
 /**

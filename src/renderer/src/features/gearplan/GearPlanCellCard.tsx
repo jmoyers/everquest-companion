@@ -71,6 +71,8 @@ import type { ItemStatBlock } from '@shared/itemStats'
 import { unlockedSockets, type GearPlanCell } from '@shared/planner/gearPlan'
 import { cellStatLine, type CellDelta } from '@shared/planner/gearPlanTotals'
 import GearPlanDeltaLine from './GearPlanDeltaLine'
+import GearPlanRatioLine from './GearPlanRatioLine'
+import type { WeaponRead } from './gearPlanFold'
 
 import { extractionTier } from '@shared/planner/rules'
 import { SpellTooltip } from '../../lib/SpellCard'
@@ -112,6 +114,8 @@ export interface GearPlanCellCardProps {
    */
   block?: ItemStatBlock
   delta: CellDelta[] | null
+  /** a weapon's ratio and what it would replace; `null` when this cell holds no weapon */
+  weapon: WeaponRead | null
   /** the corpus's icon for the planned item; absent draws the empty frame, so cells line up */
   iconId?: number
   on: GearPlanCellHandlers
@@ -368,6 +372,7 @@ function PlannedBody({
   planned,
   block,
   delta,
+  weapon,
   iconId,
   on
 }: {
@@ -375,6 +380,7 @@ function PlannedBody({
   planned: GearPlanCell
   block?: ItemStatBlock
   delta: CellDelta[] | null
+  weapon: WeaponRead | null
   iconId?: number
   on: GearPlanCellHandlers
 }): JSX.Element {
@@ -384,6 +390,11 @@ function PlannedBody({
         <>
           <CellHeader cell={cell} planned={planned} iconId={iconId} on={on} />
           <CellStats block={block} delta={delta} />
+          {/* ITS OWN LINE, UNDER THE DELTA. A weapon's ratio is the number the tier slider directly
+              below it moves, so it sits between what the item is and the control that changes it. */}
+          {weapon !== null && (
+            <GearPlanRatioLine mine={weapon.mine} worn={weapon.worn} testId="gearplan-ratio" />
+          )}
 
 
           <Box sx={{ mt: 0.5 }}>
@@ -412,7 +423,15 @@ function PlannedBody({
   )
 }
 
-function GearPlanCellCard({ cell, planned, block, delta, iconId, on }: GearPlanCellCardProps): JSX.Element {
+function GearPlanCellCard({
+  cell,
+  planned,
+  block,
+  delta,
+  weapon,
+  iconId,
+  on
+}: GearPlanCellCardProps): JSX.Element {
   return (
     <DashCard
       fill
@@ -436,7 +455,15 @@ function GearPlanCellCard({ cell, planned, block, delta, iconId, on }: GearPlanC
           nothing planned
         </Link>
       ) : (
-        <PlannedBody cell={cell} planned={planned} block={block} delta={delta} iconId={iconId} on={on} />
+        <PlannedBody
+          cell={cell}
+          planned={planned}
+          block={block}
+          delta={delta}
+          weapon={weapon}
+          iconId={iconId}
+          on={on}
+        />
       )}
     </DashCard>
   )
