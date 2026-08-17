@@ -1,0 +1,248 @@
+// gearplan/GearPlanSelectPanel.tsx — choosing an item for one cell, in the right-hand column.
+//
+// THIS WAS A POPOVER, AND THE POPOVER WAS THE WRONG CONTAINER. `GearPlanItemPicker` anchored a
+// 340px card to the cell you clicked, which left no room to say the one thing you are choosing BY —
+// what each candidate would change about what you are wearing. Cramming sixteen stat deltas into
+// that width would have made a list nobody could scan.
+//
+// The 380px totals panel sits idle during exactly that moment. So while a cell is being filled, the
+// column shows the SELECTION instead of the sum, and hands it the room. Three things follow, and
+// each of them was a defect in the popover:
+//
+//   1. IT IS NOT MODAL. A `Popover` has a backdrop, so while one was open the filter bar above it
+//      could be READ but not CLICKED — a click out there dismissed the picker instead of toggling
+//      a chip, and `GearPlanFilterBar`'s header had to document that as a limitation. A panel takes
+//      no backdrop: the chips, the board and every other cell stay live while you choose.
+//   2. NOTHING CAN OPEN OFF-SCREEN. An anchored card near the window's bottom edge is clipped by
+//      it; a column is laid out, not positioned.
+//   3. THE BOARD STAYS VISIBLE, so the cell being filled is on screen next to its own candidates,
+//      and clicking a different cell just re-aims the panel rather than closing and reopening it.
+//
+// WHAT IS KEPT FROM THE POPOVER, because it was right there: the deferred query, main's slot-first
+// search, the "show more" walk-up to `PLANNER_PAGE_MAX`, the row warning chips, the pool filter,
+// and an empty line that names WHICH reason applies rather than reporting a bare zero.
+//
+// THE PANEL OWNS ITS OWN SCROLLER and the card owns the height it was given (`DashCard fill`), so
+// a list of four hundred rows scrolls inside a column that fits — the same bounded-layout law the
+// totals panel it replaces already obeys.
+
+import { type JSX, useDeferredValue, useEffect, useState } from 'react'
+import { Box, CircularProgress, Link, Stack, TextField, Typography } from '@mui/material'
+import type { ClassAbbr } from '@shared/classCombo'
+import type { CellDelta } from '@shared/planner/gearPlanTotals'
+import type { PlannerItemHit } from '@shared/planner/types'
+import { equipSlotOf, planSlotLabel, type PlanSlotId } from '@shared/planner/types'
+import { DashCard } from '../combat/combatShared'
+import { itemIconUrl } from '../../lib/ItemWindow'
+import { MIN_QUERY, useItemSearch } from '../planner/plannerPreset'
+import GearPlanDeltaLine from './GearPlanDeltaLine'
+import GearPlanRowChips from './GearPlanRowChips'
+import { PLANNER_PAGE, PLANNER_PAGE_MAX } from './gearPlanRules'
+import { hidesRow, type GearPlanRowFilter, type RowSignals } from './gearPlanSignals'
+
+/**
+ * ONE CANDIDATE: what it is, what it would change, and what is worth warning about.
+ *
+ * THE DELTA IS THE REASON THIS PANEL EXISTS, so it is permanent text rather than a hover — you are
+ * comparing candidates against each other, and a fact you have to hover for cannot be compared with
+ * a fact you have to hover for somewhere else.
+ *
+ * `null` and `[]` say different things and are drawn differently: `null` is "nothing to compare
+ * against" (no dump, or that cell is empty on your body) and shows nothing at all; `[]` is
+ * "compared, and it changes nothing", which is a real answer about a real candidate.
+ */
+function CandidateRow({
+  hit,
+  signals,
+  delta,
+  onPick
+}: {
+  hit: PlannerItemHit
+  signals: RowSignals
+  delta: CellDelta[] | null
+  onPick: (h: PlannerItemHit) => void
+}): JSX.Element {
+  return (
+    <Box
+      data-testid="gearplan-item-hit"
+      onClick={() => onPick(hit)}
+      sx={{
+        px: 1,
+        py: 0.75,
+        cursor: 'pointer',
+        borderTop: 1,
+        borderColor: 'divider',
+        '&:hover': { bgcolor: 'action.hover' }
+      }}
+    >
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
+        {hit.iconId !== undefined && (
+          <Box
+            component="img"
+            src={itemIconUrl(hit.iconId)}
+            alt=""
+            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+              e.currentTarget.style.display = 'none'
+            }}
+            sx={{ width: 20, height: 20, imageRendering: 'pixelated', flexShrink: 0 }}
+          />
+        )}
+        <Typography variant="body2" noWrap data-testid="gearplan-hit-name" sx={{ minWidth: 0 }}>
+          {hit.name}
+        </Typography>
+      </Stack>
+      {delta !== null && delta.length > 0 && (
+        <Box sx={{ mt: 0.25 }}>
+          <GearPlanDeltaLine delta={delta} testId="gearplan-hit-delta" />
+        </Box>
+      )}
+      {delta !== null && delta.length === 0 && (
+        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.25 }}>
+          changes nothing you are wearing there
+        </Typography>
+      )}
+      <GearPlanRowChips signals={signals} />
+    </Box>
+  )
+}
+
+/** Why the list is empty, in the words of whichever reason applies. */
+function emptyLine(
+  q: { text: string; loading: boolean; slotted: boolean },
+  filtered: number,
+  label: string
+): string {
+  // The minimum survives for the ONE case it was written for: a cell that names no slot.
+  if (!q.slotted && q.text.trim().length < MIN_QUERY) return 'Type at least two letters.'
+  if (q.loading) return 'Searching…'
+  if (filtered > 0) {
+    return `${String(filtered)} ${filtered === 1 ? 'match fits' : 'matches fit'} this slot, and your filters are hiding ${filtered === 1 ? 'it' : 'them all'}.`
+  }
+  if (q.text.trim() === '') {
+    return `No item in the database states ${label} - an item can only be planned into a slot its page names.`
+  }
+  return `No item that fits ${label} matches that.`
+}
+
+export interface GearPlanSelectPanelProps {
+  /** the cell being filled — this panel is only rendered when there is one */
+  cell: PlanSlotId
+  onClose: () => void
+  onPick: (hit: PlannerItemHit) => void
+  /** the row-warning fold, mounted once by the view — see `gearPlanSignalsHook.ts` */
+  signalsOf: (subject: { key: string; classes?: readonly ClassAbbr[] }) => RowSignals
+  /** what a candidate would change against the item worn in THIS cell — see `GearPlanFold` */
+  deltaFor: (key: string, cell: PlanSlotId) => CellDelta[] | null
+  /** what the page's filter bar is narrowing the pool to */
+  filter: GearPlanRowFilter
+  /** the shared `eq.planner.era` value, which is not one of `filter`'s fields */
+  eraOnly: boolean
+  /** how many slot-legal rows the filters just held back; `null` when this panel is not up */
+  onHidden: (n: number | null) => void
+}
+
+export default function GearPlanSelectPanel({
+  cell,
+  onClose,
+  onPick,
+  signalsOf,
+  deltaFor,
+  filter,
+  eraOnly,
+  onHidden
+}: GearPlanSelectPanelProps): JSX.Element {
+  const [text, setText] = useState('')
+  const query = useDeferredValue(text)
+  // The page resets with the QUESTION: a page walked out to four hundred for one query has nothing
+  // to do with the next one, and carrying it over would make an unrelated search silently expensive.
+  const [limit, setLimit] = useState(PLANNER_PAGE)
+  useEffect(() => {
+    setLimit(PLANNER_PAGE)
+  }, [query, cell])
+  // `undefined` for an any-cell, which is what keeps `MIN_QUERY` in force for it alone.
+  const wanted = equipSlotOf(cell) ?? undefined
+  const { hits, loading } = useItemSearch(query, true, wanted, limit)
+
+  // Signals are folded ONCE per row and used twice — to decide and to draw.
+  const rows = hits.map((hit) => ({ hit, signals: signalsOf(hit) }))
+  const usable = rows.filter((r) => !hidesRow(r.signals, filter, eraOnly))
+  const filtered = rows.length - usable.length
+  const more = hits.length >= limit && limit < PLANNER_PAGE_MAX
+
+  useEffect(() => {
+    onHidden(filtered)
+    return () => {
+      onHidden(null)
+    }
+  }, [filtered, onHidden])
+
+  return (
+    <DashCard
+      fill
+      title={`Filling ${planSlotLabel(cell)}`}
+      right={
+        <Link
+          component="button"
+          type="button"
+          underline="hover"
+          variant="caption"
+          data-testid="gearplan-select-close"
+          onClick={onClose}
+          sx={{ color: 'text.secondary', flexShrink: 0 }}
+        >
+          CANCEL
+        </Link>
+      }
+      testId="gearplan-select"
+    >
+      <TextField
+        autoFocus
+        fullWidth
+        size="small"
+        label="Search by name"
+        value={text}
+        data-testid="gearplan-item-search"
+        onChange={(e) => setText(e.target.value)}
+        sx={{ mb: 0.5 }}
+      />
+      {usable.map(({ hit, signals }) => (
+        <CandidateRow
+          key={hit.key}
+          hit={hit}
+          signals={signals}
+          delta={deltaFor(hit.key, cell)}
+          onPick={onPick}
+        />
+      ))}
+      {/* THE LIST NEVER TRUNCATES IN SILENCE — the rule the filter bar states about hidden rows,
+          and the reason `Patchwork Boots` (51st of 362 foot items) once read as "not in the
+          database". If the surface is holding something back, it says so and offers the way through. */}
+      {more && (
+        <Box
+          data-testid="gearplan-item-more"
+          onClick={() => setLimit((n) => Math.min(n + PLANNER_PAGE, PLANNER_PAGE_MAX))}
+          sx={{
+            px: 1,
+            py: 0.75,
+            cursor: 'pointer',
+            borderTop: 1,
+            borderColor: 'divider',
+            '&:hover': { bgcolor: 'action.hover' }
+          }}
+        >
+          <Typography variant="caption" color="primary.main">
+            {`Showing ${String(usable.length)} - show more`}
+          </Typography>
+        </Box>
+      )}
+      {usable.length === 0 && (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 1.5 }}>
+          {loading && <CircularProgress size={14} />}
+          <Typography variant="caption" color="text.secondary" data-testid="gearplan-item-empty">
+            {emptyLine({ text, loading, slotted: wanted !== undefined }, filtered, wanted ?? 'this slot')}
+          </Typography>
+        </Stack>
+      )}
+    </DashCard>
+  )
+}

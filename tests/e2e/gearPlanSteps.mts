@@ -28,7 +28,9 @@ export const DIFF = '[data-testid="gearplan-diff"]'
  * that reason: this prefix selector has counted a control twice already (once when the item name
  * was `gearplan-cell-name`, once when the add/clear links were `gearplan-cell-add`/`-clear`), and
  * both times the symptom was a cell count of 24 or 46 rather than anything that looked like a bug.
- * Controls inside a card are named for what they DO (`gearplan-add-item`), never `cell-*`.
+ * Controls inside a card are named for what they DO (`gearplan-add-item`), never `cell-*`. It has
+ * now happened a THIRD time, with `gearplan-cell-delta` — so the rule is restated as a rule: if a
+ * testid inside a card begins `gearplan-cell-`, this selector is already counting it.
  */
 export const CELL = '[data-testid^="gearplan-cell-"]'
 const HEAD = '[data-testid="gearplan-cell-HEAD"]'
@@ -352,10 +354,11 @@ export async function stepDonorHoverCard(page: Page): Promise<void> {
  * starts EMPTY, so "keep only what is wishlisted" must hide everything, which is an exact number
  * rather than an inequality.
  *
- * THE CHIP IS TOGGLED WITH THE PICKER CLOSED, and that is the product's behaviour rather than a
- * convenience here: a picker is a MUI `Popover` and its backdrop swallows a click aimed at the page
- * behind it. The bar is readable while a picker is open - which this step also asserts, because the
- * hidden count is only worth anything if it is on screen at the moment rows are missing.
+ * THE CHIP IS NOW TOGGLED WITH THE PANEL OPEN, and that is the point of the panel. Selecting used
+ * to be a MUI `Popover` whose backdrop swallowed any click aimed at the bar behind it, so this step
+ * had to close the picker, toggle, and reopen. A panel takes no backdrop: the chips stay live while
+ * you choose, and the list re-filters under you. Driving it the old way would no longer test the
+ * thing that changed.
  */
 export async function stepPoolFilter(page: Page): Promise<void> {
   const cell = '[data-testid="gearplan-cell-PRIMARY"]'
@@ -367,15 +370,25 @@ export async function stepPoolFilter(page: Page): Promise<void> {
   }
 
   await search()
-  if (!check('the picker has rows before any filter is applied', await until(async () => (await hits()) > 0, 20_000))) {
-    await page.keyboard.press('Escape')
+  // WAIT FOR THE QUERY'S OWN ROWS, NOT FOR ANY ROWS AT ALL. The panel lists the whole slot
+  // unprompted, so `hits() > 0` is already true the instant it opens and `before` used to be
+  // captured off that first, unfiltered list — then the deferred 'thelvorn' search landed, the
+  // count dropped, and the hidden-count assertion compared against a number from a different
+  // question. It passed or failed on whether the search beat the read, which is a coin flip.
+  //
+  // The positive signal is that every row ON SCREEN answers the query that was typed.
+  const onlyMatches = async (): Promise<boolean> => {
+    const names = await page.$$eval('[data-testid="gearplan-hit-name"]', (els) =>
+      els.map((e) => e.textContent ?? '')
+    )
+    return names.length > 0 && names.every((n) => n.toLowerCase().includes('thelvorn'))
+  }
+  if (!check('the panel has rows for the QUERY before any filter is applied', await until(onlyMatches, 20_000))) {
+    await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
     return
   }
   const before = await hits()
-  await page.keyboard.press('Escape')
-
   await page.click('[data-testid="gearplan-filter-wished"]', { timeout: 15_000 })
-  await search()
 
   // WAIT ON THE POSITIVE SIGNAL, NOT ON THE ABSENCE OF ROWS. "Zero hits" is also what an in-flight
   // search looks like, so settling on it passes at t=0 and then reads an empty list that has not
@@ -395,12 +408,10 @@ export async function stepPoolFilter(page: Page): Promise<void> {
   const empty = await textOf(page, '[data-testid="gearplan-item-empty"]')
   check('…and the empty list blames the FILTER, not the database', empty.includes('filters are hiding'), empty)
 
-  await page.keyboard.press('Escape')
   await page.click('[data-testid="gearplan-filter-wished"]', { timeout: 15_000 })
-  await search()
   const restored = await settle(hits, (n) => n === before)
   check('turning it back off restores every row', restored === before, `got ${String(restored)}`)
-  await page.keyboard.press('Escape')
+  await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
 }
 
 /**
@@ -493,65 +504,55 @@ export async function stepLoadedSocketReturns(page: Page): Promise<void> {
 }
 
 /**
- * HOVER AN ITEM, GET THE ITEM WINDOW — on the cell, and on a picker row that must still be pickable.
+ * A CELL STATES WHAT IT WOULD CHANGE, not what its item is.
  *
- * The card is `lib/KnownItemTooltip`, the app's generic item hover, mounted here in `clickThrough`
- * mode. Two things need a running app to check, and the second is the one with a history:
+ * THIS STEP REPLACED A HOVER-CARD TEST. The cell and the picker rows used to open the app's item
+ * window on hover; it was dropped because a `clickThrough` card cannot flip (its own header states
+ * that price) and so clipped off the bottom of the window, and because the absolute stat list it
+ * showed is not the question a board is asked. The delta is.
  *
- *   1. IT OPENS AT ALL from inside a board cell, and resolves — it fetches per name on open, so a
- *      card that mounts and never fills looks exactly like one that was never wired up.
- *   2. IT CANNOT EAT THE CLICK. An ordinary card holds `pointer-events: auto` for as long as it is
- *      up; over a list of options that is the JOS-127 defect verbatim (a user could not change the
- *      Loot sort). So a picker row is HOVERED UNTIL ITS CARD IS UP and only then clicked, and the
- *      pick has to land. Nothing else in this spec exercises that order.
- *
- * The popper is found by `role="tooltip"`, MUI's own, rather than by a testid added to a shared
- * component this feature does not own.
+ * WHAT ONLY A MOUNTED APP CAN SAY: that the comparison ran against the item worn in the SAME cell,
+ * at both sides' real tiers, through the corpus and the staged dump. The seeded HEAD cell plans a
+ * Crown of Narandi at +2 over whatever the dump wears there, so the line must be signed deltas
+ * rather than the item's own numbers.
  */
-export async function stepItemHoverCard(page: Page): Promise<void> {
-  const CARD = '[role="tooltip"]'
-  const identity = `${HEAD} [data-testid="gearplan-item-identity"]`
-  check('the seeded cell groups its icon and name as one hover target', (await countOf(page, identity)) === 1)
+export async function stepCellDelta(page: Page): Promise<void> {
+  check('no hover card is mounted from a cell any more', (await countOf(page, '[role="tooltip"]')) === 0)
 
-  await page.hover(identity, { timeout: 15_000 })
-  const opened = await settle(() => countOf(page, CARD), (n) => n >= 1)
-  if (check('hovering a planned item opens the app`s item window', opened >= 1)) {
-    const card = await settle(
-      () => textOf(page, CARD),
-      (t) => t.includes('Crown of Narandi')
-    )
-    check('…and it is the card for THAT item, fetched and drawn', card.includes('Crown of Narandi'), card.replace(/\s+/g, ' ').slice(0, 160))
-    note(`item card reads: ${card.replace(/\s+/g, ' ').slice(0, 200)}`)
-  }
-  await page.hover(TOTALS, { timeout: 15_000 })
-  await settle(() => countOf(page, CARD), (n) => n === 0)
-
-  // ---- and the same card over a list of options, which is where it used to eat clicks ----
-  const cell = '[data-testid="gearplan-cell-FINGER"]'
-  await page.click(`${cell} [data-testid="gearplan-add-item"]`, { timeout: 15_000 })
-  await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
-  if (!check('the picker offers rows to hover', await until(async () => (await countOf(page, '[data-testid="gearplan-item-hit"]')) > 0, 20_000))) {
-    await page.keyboard.press('Escape')
-    return
-  }
-  const name = await page.evaluate(
-    () => document.querySelector('[data-testid="gearplan-hit-name"]')?.textContent?.trim() ?? ''
+  const line = await settle(
+    () => textOf(page, `${HEAD} [data-testid="gearplan-stat-delta"]`),
+    (t) => t.length > 0
   )
+  if (!check('the seeded cell states a DELTA rather than its own stats', line.length > 0)) return
+  // Signed both ways or not a delta: an absolute stat line is all `+`, so a `-` is the proof the
+  // subtraction actually happened against something worn.
+  check('…and it is signed - the comparison ran', /[+-]\d/.test(line), line.replace(/\s+/g, ' ').slice(0, 160))
 
-  // The NAME, not the row: the card's anchor is the icon-and-name stack, and a row's centre can
-  // land on its warning chips instead - outside the anchor, so nothing opens and the step lies.
-  await page.hover('[data-testid="gearplan-hit-name"]', { timeout: 15_000 })
-  const overRow = await settle(() => countOf(page, CARD), (n) => n >= 1)
-  check('a picker row opens the item window too', overRow >= 1)
+  // THE GROUPING AND THE HUES, ASSERTED ON WHAT WAS ACTUALLY PAINTED. `splitDelta` is unit-tested,
+  // but nothing below the renderer can say the two groups reached the DOM in that order wearing
+  // those colours — and the pair of them IS the readability claim.
+  //
+  // IT READS THE COLOURS AND NOT THE SIGNS ON PURPOSE. The obvious version of this check — every
+  // `+` before every `-` — passes today and is wrong: `DELAY` and `WEIGHT` are better smaller, so
+  // a gains run may legitimately end `DELAY -6 · RANGE +5` and the sign order says nothing. The
+  // computed colour is the thing under test, so it is the thing to ask about.
+  const groups = await page.evaluate((sel) => {
+    const el = document.querySelector(sel)
+    if (el === null) return []
+    return [...el.querySelectorAll('span')]
+      .filter((s) => s.textContent !== null && /[+-]\d/.test(s.textContent))
+      .map((s) => getComputedStyle(s).color)
+  }, `${HEAD} [data-testid="gearplan-stat-delta"]`)
 
-  // THE ORDER IS THE TEST: the card is UP, and the click still reaches the row beneath it.
-  await page.click('[data-testid="gearplan-item-hit"]', { timeout: 15_000 })
-  const landed = await settle(() => textOf(page, cell), (t) => t.includes(name))
-  check(`"${name}" was picked THROUGH its own open card`, landed.includes(name), landed.slice(0, 160))
-
-  // Leave the board as this step found it, so the relaunch reads the seeded document.
-  await page.click(`${cell} [data-testid="gearplan-clear-cell"]`, { timeout: 15_000 })
-  await settle(() => countOf(page, `${cell} [data-testid="gearplan-add-item"]`), (n) => n === 1)
+  // rgb(127, 191, 143) is KIND_COLOR.member; rgb(207, 102, 121) is KIND_COLOR.enemy.
+  const seen = groups.map((c) => (c.includes('127, 191, 143') ? 'gain' : c.includes('207, 102, 121') ? 'loss' : '?'))
+  check('each stat run is painted a KIND_COLOR hue, not an unstyled default', !seen.includes('?'), seen.join(','))
+  check(
+    'gains are drawn before losses, in at most one run each - the line is grouped',
+    seen.join(',') === 'gain,loss' || seen.join(',') === 'gain' || seen.join(',') === 'loss',
+    seen.join(',')
+  )
+  note(`cell delta reads: ${line.replace(/\s+/g, ' ').slice(0, 200)}`)
 }
 
 /**

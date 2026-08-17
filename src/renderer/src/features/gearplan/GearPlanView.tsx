@@ -27,39 +27,29 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined'
-import type { ItemStatBlock } from '@shared/itemStats'
 import { outputKind } from '@shared/outputs/kinds'
-import type { GearRow } from '@shared/planner/gear'
-import type { ClassAbbr } from '@shared/classCombo'
-import type { ItemUpgradeState } from '@shared/itemUpgrade'
+import { type ItemUpgradeState } from '@shared/itemUpgrade'
 import {
   assignedCount,
   cellAt,
   EMPTY_GEAR_PLAN,
   fromEquipped,
   overwriteCount,
-  plannedSockets,
   type LoadMode
 } from '@shared/planner/gearPlan'
-import {
-  cellBlock,
-  equippedRead,
-  gearPlanDiff,
-  gearPlanTotals,
-  type GearPlanDiff
-} from '@shared/planner/gearPlanTotals'
-import type { PlanSlotId, PlannerDonor, PlannerItemHit, SocketType } from '@shared/planner/types'
+import type { PlanSlotId, PlannerDonor, PlannerItemHit } from '@shared/planner/types'
 import OutputFileLine from '../../components/OutputFileLine'
-import { useGearIndex } from '../gear/gearData'
+
 import { usePlannerInventory } from '../planner/plannerInventory'
-import { indexDonors, useDonors, useEraOnly } from '../planner/plannerData'
+import { useDonors, useEraOnly } from '../planner/plannerData'
 import { sanitizeGearPlanFilter } from '../gear/areaMemory'
 import { useRemembered } from '../gear/useAreaMemory'
 import GearPlanBoard from './GearPlanBoard'
 import GearPlanFilterBar, { type GearPlanFilterBarProps } from './GearPlanFilterBar'
 import type { GearPlanCellHandlers } from './GearPlanCellCard'
 import GearPlanDonorPicker from './GearPlanDonorPicker'
-import GearPlanItemPicker from './GearPlanItemPicker'
+import GearPlanSelectPanel from './GearPlanSelectPanel'
+import { useGearPlanFold, type GearPlanFold, type ItemFacts } from './gearPlanFold'
 import GearPlanTotalsPanel from './GearPlanTotalsPanel'
 import type { CellContext } from './gearPlanRules'
 import { useRowSignals } from './gearPlanSignalsHook'
@@ -109,98 +99,6 @@ function NothingPlanned(): JSX.Element {
   )
 }
 
-/** Everything the two panes read, folded once per change of the board, the corpus or the dump. */
-interface GearPlanFold {
-  blockOf: (cell: PlanSlotId) => ItemStatBlock | undefined
-  /** the corpus's icon for a cell's planned item; absent draws the empty frame */
-  iconOf: (cell: PlanSlotId) => number | undefined
-  /** the corpus's class list for an item key; `[]` is UNKNOWN and filters nothing */
-  classesOf: (key: string) => readonly ClassAbbr[]
-  totals: ReturnType<typeof gearPlanTotals>
-  diff: GearPlanDiff | null
-  unstated: number
-  /** worn exaltations the dump named but the corpus could not place in a socket */
-  unresolved: number
-  sockets: ReturnType<typeof plannedSockets>
-  /** what the dump says is on the body, as a board; `null` when there is no dump */
-  equipped: ReturnType<typeof equippedRead>['gearPlan'] | null
-}
-
-/** One stat block per filled cell, scaled to that cell's own plus-state. */
-function blocksOf(
-  gearPlan: ReturnType<typeof useGearPlan>['gearPlan'],
-  lookup: (key: string) => GearRow | undefined
-): Map<PlanSlotId, ItemStatBlock> {
-  const out = new Map<PlanSlotId, ItemStatBlock>()
-  for (const [cell, planned] of Object.entries(gearPlan.cells)) {
-    if (!planned) continue
-    const row = lookup(planned.key)
-    if (row) out.set(cell as PlanSlotId, cellBlock(row, planned.state))
-  }
-  return out
-}
-
-function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPlan']): GearPlanFold {
-  const { rows } = useGearIndex()
-  const { inventory } = usePlannerInventory()
-  const { donors } = useDonors()
-
-
-  // THE SAME CORPUS, KEYED THE OTHER WAY. `donorOf` answers "what is this one row", which is the
-  // corpus keyed the ordinary way; `offersOf` answers "what could an extraction from this ITEM be",
-  // which is
-  // the dump's question — it names a donor item, and one item can carry several effects.
-  //
-  // `indexDonors` IS THAT FOLD AND IT ALREADY EXISTED. Its own header states this exact case ("an
-  // item with a proc AND a click is TWO rows under one key") and the wish list resolves planned
-  // sockets through it; a second hand-rolled `key -> rows` map here would be the drift house law 7
-  // is about. Only the projection to (effect, socket) is this file's.
-  const offersOf = useMemo(() => {
-    const byKey = indexDonors(donors)
-    return (key: string): readonly { effect: string; socket: SocketType }[] =>
-      byKey.get(key)?.map((d) => ({ effect: d.effect, socket: d.socket })) ?? []
-  }, [donors])
-
-  // ONE map for the whole corpus, rebuilt only when the corpus is — six thousand rows keyed once
-  // rather than a `find` per cell per render.
-  const byKey = useMemo(() => new Map(rows.map((r: GearRow) => [r.key, r])), [rows])
-  const lookup = useMemo(() => (key: string): GearRow | undefined => byKey.get(key), [byKey])
-
-  return useMemo(() => {
-    const blocks = blocksOf(gearPlan, lookup)
-    const totals = gearPlanTotals(gearPlan, lookup)
-
-    // NO DUMP MEANS NO DIFF, never a diff against an empty body: "we cannot see what you are
-    // wearing" and "you are wearing nothing" are different statements, and the second would make
-    // every number on this tab read as a gain.
-    const worn = inventory === null ? null : equippedRead(inventory.hosts, 0, offersOf)
-    const diff =
-      worn === null
-        ? null
-        : gearPlanDiff(
-            { plan: totals, equipped: gearPlanTotals(worn.gearPlan, lookup) },
-            { plan: gearPlan, equipped: worn.gearPlan }
-          )
-
-    const classesOf = (key: string): readonly ClassAbbr[] => lookup(key)?.classes ?? []
-
-    return {
-      blockOf: (cell: PlanSlotId): ItemStatBlock | undefined => blocks.get(cell),
-      iconOf: (cell: PlanSlotId): number | undefined => {
-        const planned = gearPlan.cells[cell]
-        return planned === undefined ? undefined : lookup(planned.key)?.iconId
-      },
-      classesOf,
-      totals,
-      diff,
-      unstated: worn?.unstated ?? 0,
-      unresolved: worn?.unresolved ?? 0,
-      sockets: plannedSockets(gearPlan),
-      equipped: worn?.gearPlan ?? null
-    }
-  }, [gearPlan, lookup, inventory, offersOf])
-}
-
 /**
  * WHICH POPOVER IS OPEN, AND EVERY EDIT THE BOARD CAN MAKE.
  *
@@ -226,7 +124,8 @@ interface Editing {
 
 function useEditing(
   api: ReturnType<typeof useGearPlan>,
-  classesOf: (key: string) => readonly ClassAbbr[],
+  /** what the corpus says the planned item IS — both axes R2 judges a donor against */
+  facts: ItemFacts,
   addWishes: (offered: readonly WishEntry[]) => void
 ): Editing {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -249,7 +148,13 @@ function useEditing(
       },
       pickSocket: (cell, socket, el) => {
         setItemCell(null)
-        setSocketCtx({ cell, socket, itemClasses: classesOf(gearPlan.cells[cell]?.key ?? '') })
+        const key = gearPlan.cells[cell]?.key ?? ''
+        setSocketCtx({
+          cell,
+          socket,
+          itemClasses: facts.classesOf(key),
+          itemSlots: facts.slotsOf(key)
+        })
         setAnchor(el)
       },
       setState: (cell: PlanSlotId, next: ItemUpgradeState) => {
@@ -263,7 +168,7 @@ function useEditing(
         if (planned) addWishes(cellWishes(planned, Date.now()))
       }
     }),
-    [gearPlan, classesOf, setState, clear, addWishes]
+    [gearPlan, facts, setState, clear, addWishes]
   )
 
   const pickItem = useCallback(
@@ -383,6 +288,49 @@ function usePoolFilter(): {
   }
 }
 
+/**
+ * ONE COLUMN, TWO JOBS. While a cell is being filled it shows the CANDIDATES and what each would
+ * change; otherwise it shows what the board adds up to. They are never both useful at once —
+ * choosing is the moment the sum matters least — and giving the selection this width is the whole
+ * reason it is a panel rather than the popover it used to be.
+ */
+function RightColumn({
+  fold,
+  edit,
+  assigned,
+  signalsOf,
+  pick
+}: {
+  fold: GearPlanFold
+  edit: Editing
+  assigned: number
+  signalsOf: ReturnType<typeof useRowSignals>
+  pick: ReturnType<typeof usePoolFilter>['pick']
+}): JSX.Element {
+  if (edit.itemCell !== null) {
+    return (
+      <GearPlanSelectPanel
+        cell={edit.itemCell}
+        onClose={edit.close}
+        onPick={edit.pickItem}
+        signalsOf={signalsOf}
+        deltaFor={fold.candidateDelta}
+        {...pick}
+      />
+    )
+  }
+  return (
+    <GearPlanTotalsPanel
+      totals={fold.totals}
+      assigned={assigned}
+      plannedSockets={fold.sockets}
+      diff={fold.diff}
+      unstated={fold.unstated}
+      unresolved={fold.unresolved}
+    />
+  )
+}
+
 export default function GearPlanView(): JSX.Element {
   const api = useGearPlan()
   const { gearPlan, ready, replace } = api
@@ -394,7 +342,7 @@ export default function GearPlanView(): JSX.Element {
   const assigned = assignedCount(gearPlan)
   const { addWishes, wished } = useWishWriter()
   const signalsOf = useRowSignals()
-  const edit = useEditing(api, fold.classesOf, addWishes)
+  const edit = useEditing(api, fold.facts, addWishes)
   const pool = usePoolFilter()
 
   const addAll = useCallback(() => {
@@ -465,31 +413,26 @@ export default function GearPlanView(): JSX.Element {
         <Box sx={{ flexGrow: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
           <GearPlanBoard
             gearPlan={gearPlan}
-            blockOf={fold.blockOf}
-            iconOf={fold.iconOf}
+            {...fold.board}
+
             on={edit.on}
           />
         </Box>
+        {/* ONE COLUMN, TWO JOBS. While a cell is being filled it shows the CANDIDATES and what each
+            would change; otherwise it shows what the board adds up to. They are never both useful at
+            once — choosing is the moment the sum matters least — and giving the selection this width
+            is the whole reason it is not a popover any more. */}
         <Box sx={{ width: PANEL_WIDTH, flexShrink: 0, minHeight: 0, display: 'flex' }}>
-          <GearPlanTotalsPanel
-            totals={fold.totals}
+          <RightColumn
+            fold={fold}
+            edit={edit}
             assigned={assigned}
-            plannedSockets={fold.sockets}
-            diff={fold.diff}
-            unstated={fold.unstated}
-            unresolved={fold.unresolved}
+            signalsOf={signalsOf}
+            pick={pool.pick}
           />
         </Box>
       </Stack>
 
-      <GearPlanItemPicker
-        cell={edit.itemCell}
-        anchor={edit.itemCell === null ? null : edit.anchor}
-        onClose={edit.close}
-        onPick={edit.pickItem}
-        signalsOf={signalsOf}
-        {...pool.pick}
-      />
       <GearPlanDonorPicker
         ctx={edit.socketCtx}
         anchor={edit.socketCtx === null ? null : edit.anchor}

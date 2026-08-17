@@ -17,10 +17,10 @@
 //      would make every number here look like a gain.
 //
 // ---------------------------------------------------------------------------------------------
-// THE DELTAS ARE NOT GREEN AND RED, AND THAT IS THE DESIGN LIBRARY RATHER THAN TASTE.
+// THE DELTAS ARE STILL NOT `success.main` AND `error.main` — BUT THEY ARE NOW COLOURED.
 //
-// The first draft of this panel coloured a positive delta `success.main` and a negative one
-// `error.main`, which is the reflex every stat comparison has. Both are out of spec here:
+// This header used to forbid a coloured delta outright, and the half of that argument about the
+// SEMANTIC colours was right and still stands. Neither is used here and neither should be:
 //
 //   * `error.main` is written down as belonging to "the close button's hover fill, a stalled event
 //     loop. Almost nothing else — the app rarely has the right to be alarmed", and the colour
@@ -29,10 +29,17 @@
 //   * `success.main` is the LIVE dot, a celebration, a merge into an upgrade. It means something
 //     happened, not that a quantity is larger.
 //
-// So a delta is `text.primary` with `tabular-nums` and its own sign, and the sign carries the
-// meaning — the library's own instruction for hierarchy here is "contrast, not scale", and a
-// column of signed, tabular numbers reads faster than two hues anyway. If a loss ever genuinely
-// needs a hue, the app's adverse colour is `#cf6679` (KIND_COLOR.enemy), not `error.main`.
+// The half that has been overturned is the conclusion that therefore NO hue applies. That was
+// argued when this panel drew the only delta in the feature — one column, read deliberately, where
+// "contrast, not scale" and a run of signed tabular numbers really is fast enough. The board now
+// draws a delta on every filled cell and the select panel draws one per candidate across twenty
+// rows, and at that density a reader is scanning for a shape rather than reading numbers. This
+// header already named the way through: "if a loss ever genuinely needs a hue, the app's adverse
+// colour is #cf6679 (KIND_COLOR.enemy)".
+//
+// So the hue is `KIND_COLOR`'s own friendly/adverse pair, and it lives in ONE file for all three
+// surfaces — `GearPlanDeltaLine.tsx`, whose header carries the full argument and the rule that the
+// colour is always the SECOND encoding, never the only one. The signs stay.
 //
 // EVERY BLOCK HEADING IS THE LIBRARY'S CARD-TITLE MICRO TYPE (12px, 700, 0.06em, uppercase,
 // secondary ink) and every label is its 9px stat label, so this panel's internal structure reads
@@ -49,6 +56,7 @@ import type { GearPlanSocket } from '@shared/planner/gearPlan'
 import type { GearDiffRow, GearPlanDiff } from '@shared/planner/gearPlanTotals'
 import { planSlotLabel, type PlanSlotId, type SocketType } from '@shared/planner/types'
 import { DashCard, QuietNote } from '../combat/combatShared'
+import { GAIN_COLOR, LOSS_COLOR } from './GearPlanDeltaLine'
 
 const signed = (n: number): string => (n > 0 ? `+${String(n)}` : String(n))
 
@@ -159,7 +167,15 @@ function SocketsPlanned({ rows }: { rows: readonly PlannedSocketRow[] }): JSX.El
   )
 }
 
-/** One moved row of the comparison. The SIGN carries the meaning — see the header. */
+/**
+ * One moved row of the comparison. The SIGN carries the meaning and the hue seconds it.
+ *
+ * THE SIGN IS A SAFE VERDICT HERE, AND ONLY HERE. These rows come from `sumGear`'s `GearStat[]`,
+ * which the six `STRUCTURAL_KEYS` never reach — so `DELAY` and `WEIGHT`, the two keys a smaller
+ * number is better on, cannot appear in this list. The per-cell delta line has no such guarantee
+ * and splits on `isImprovement` instead. If a structural key is ever given a total, this row must
+ * start asking the same question.
+ */
 function DiffRow({ row }: { row: GearDiffRow }): JSX.Element {
   return (
     <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ gap: 1 }}>
@@ -168,7 +184,12 @@ function DiffRow({ row }: { row: GearDiffRow }): JSX.Element {
       </Typography>
       <Typography
         variant="caption"
-        sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', flexShrink: 0 }}
+        sx={{
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+          color: row.delta > 0 ? GAIN_COLOR : LOSS_COLOR
+        }}
       >
         {signed(row.delta)}
       </Typography>

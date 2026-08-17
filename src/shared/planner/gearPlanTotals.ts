@@ -54,7 +54,13 @@
 import { sumGear, type GearStat, type GearTotals } from '../characterSheet'
 import { statLabel, type ItemStat, type ItemStatBlock } from '../itemStats'
 import type { ItemUpgradeState } from '../itemUpgrade'
-import { GEAR_PERCENT_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
+import {
+  GEAR_PERCENT_STAT_KEYS,
+  GEAR_STAT_KEYS,
+  type GearRow,
+  type GearStatKey,
+  type GearStats
+} from './gear'
 import { scaleGearStats } from './gearScale'
 import { filledCells, wornState, type GearPlan, type GearPlanCell, type GearPlanSocket } from './gearPlan'
 import type { PlanSlotId, SocketType } from './types'
@@ -360,6 +366,88 @@ function wornSockets(
     }
   })
   return { sockets, unresolved }
+}
+
+/** One stat that MOVED between two items, at the tiers each is actually at. */
+export interface CellDelta {
+  key: GearStatKey
+  /** planned minus worn; never zero — an unmoved stat is not in this list */
+  delta: number
+}
+
+/**
+ * WHAT ONE CELL'S PLAN WOULD CHANGE, against the item worn in the same cell.
+ *
+ * ABSENT IS ZERO HERE, AND THAT IS NOT A LAW-1 VIOLATION — it is the rule the rest of this file
+ * already runs on. `sumGear` folds these same vectors and a key no row states contributes nothing;
+ * if absence meant "unknown" rather than "none", every total on this board would already be a lie.
+ * A scraped item page lists what the item gives, so a page without `STR` is an item without STR.
+ *
+ * THIS IS WHY IT IS NOT `gearCompare.compareStats`, which answers a NEIGHBOURING question for the
+ * Gear tab's hover card: there, a key one side omits reads `10 vs none`, because a card explaining
+ * one item should not pretend to a subtraction. Rendered per cell across twenty-three cards that
+ * phrasing buried the four numbers that moved under eight that only said "the other page is quiet".
+ * Same inputs, different question, and the board's own arithmetic settles which answer belongs here.
+ *
+ * PERCENTAGES ARE FINE IN A DELTA even though `sumGear` refuses to add them across items: the
+ * refusal is about STACKING two haste sources, and this subtracts one item from one other item.
+ */
+export function cellDelta(planned: GearStats, worn: GearStats): CellDelta[] {
+  const out: CellDelta[] = []
+  for (const key of GEAR_STAT_KEYS) {
+    const delta = (planned[key] ?? 0) - (worn[key] ?? 0)
+    if (delta !== 0) out.push({ key, delta })
+  }
+  return out
+}
+
+/**
+ * THE TWO STATS A SMALLER NUMBER IS BETTER ON.
+ *
+ * `DELAY` is the time between swings, so less of it is more attacks; `WEIGHT` is what you carry
+ * against your encumbrance limit, so less of it is more of everything else. Every other key in
+ * `GEAR_STAT_KEYS` is a quantity you want more of, including the saves — the corpus states those as
+ * resistances, not as the damage taken.
+ *
+ * THIS SET EXISTS BECAUSE A SIGN IS NOT A VERDICT, and until it did, `WEIGHT -1.6` was drawn as a
+ * cost, in the adverse colour, next to a red minus. It was one of the better things about the item.
+ */
+const LOWER_IS_BETTER: ReadonlySet<GearStatKey> = new Set<GearStatKey>(['DELAY', 'WEIGHT'])
+
+/** Would this movement please the person wearing it? The sign, corrected for what the stat IS. */
+export function isImprovement(entry: CellDelta): boolean {
+  return LOWER_IS_BETTER.has(entry.key) ? entry.delta < 0 : entry.delta > 0
+}
+
+/**
+ * A delta list cut into what it GIVES and what it COSTS, each half keeping `GEAR_STAT_KEYS` order.
+ *
+ * Sign order is the order `cellDelta` produces, and it is the wrong order to READ. A good item and
+ * a bad one both come back as one interleaved run — `AC +12 · AGI -3 · STR +8 · SV MAGIC -8` — so
+ * the question actually being asked ("what does this cost me") gets answered by hunting for minus
+ * signs down a row of sixteen entries. Two runs answer it without reading the numbers at all.
+ *
+ * IT SPLITS ON `isImprovement`, NOT ON THE SIGN, which is the same distinction and only looks like
+ * it in the common case. `WEIGHT -1.6` belongs with the gains and keeps its minus sign: the number
+ * is what the arithmetic says and the group is what it MEANS, and a surface that grouped by sign
+ * would file a lighter helm under what it costs you.
+ *
+ * THE ORDER INSIDE EACH HALF IS DELIBERATELY NOT BY MAGNITUDE. `GEAR_STAT_KEYS` is the order the
+ * Character tab prints, and the totals panel's standing rule is that a number reads in the same
+ * place it reads there. Sorting by size would land the same stat somewhere new on every candidate
+ * row, which costs more scanning than putting the biggest gain first buys.
+ *
+ * ZERO CANNOT APPEAR IN EITHER HALF — `CellDelta.delta` is never zero — so `gains.length +
+ * losses.length === delta.length`, and the caller never has to draw a third group.
+ */
+export function splitDelta(delta: readonly CellDelta[]): {
+  gains: CellDelta[]
+  losses: CellDelta[]
+} {
+  return {
+    gains: delta.filter(isImprovement),
+    losses: delta.filter((e) => !isImprovement(e))
+  }
 }
 
 // ---- the diff -----------------------------------------------------------------------------------

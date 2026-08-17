@@ -103,7 +103,12 @@ const UNSTATED = donor({
 
 const PALADIN: ClassAbbr[] = ['PAL']
 
-const HEAD_FOCUS = { cell: 'HEAD', socket: 'focus', itemClasses: PALADIN } as const
+const HEAD_FOCUS = {
+  cell: 'HEAD',
+  socket: 'focus',
+  itemClasses: PALADIN,
+  itemSlots: ['HEAD']
+} as const
 
 // =================================================================================
 // LEGALITY — R2 and R3, asked rather than restated
@@ -126,9 +131,17 @@ test('R2 slot: a donor that shares no equip slot with the cell is refused', () =
   assert.equal(donorFitsCell(HEALING, HEAD_FOCUS), true)
 })
 
-test('an ANY-cell constrains nothing, so the same donor passes there (JOS-104)', () => {
-  assert.equal(donorFitsCell(FOOTWEAR, { ...HEAD_FOCUS, cell: 'ANY1' }), true)
-  assert.equal(donorFitsCell(FOOTWEAR, { ...HEAD_FOCUS, cell: 'ANY2' }), true)
+test('an ANY-cell constrains nothing OF ITS OWN - but the item in it still does (JOS-104)', () => {
+  // THIS TEST USED TO ASSERT THE BUG. It spread a HEAD item's context, changed only the cell, and
+  // expected a BOOT donor to pass — which it did, because `hostSlotsOf('ANY1')` is all eighteen
+  // slots. That is the right answer about the CELL and the wrong question: an any-cell holding a
+  // helm is holding a helm. What JOS-104 actually established is that the CELL adds no constraint,
+  // and that survives — it is now visible only where the item adds none either.
+  assert.equal(donorFitsCell(FOOTWEAR, { ...HEAD_FOCUS, cell: 'ANY1' }), false, 'the item is a helm')
+  assert.equal(donorFitsCell(FOOTWEAR, { ...HEAD_FOCUS, cell: 'ANY2' }), false)
+  // …and with nothing known about the item, the any-cell constrains nothing, exactly as before.
+  const unknown = { ...HEAD_FOCUS, cell: 'ANY1', itemSlots: [] } as const
+  assert.equal(donorFitsCell(FOOTWEAR, unknown), true)
 })
 
 test('R2 class is asked against the PLANNED ITEM, not against a class trio', () => {
@@ -170,7 +183,10 @@ test('the three readings rank name-prefix, then name-contains, then donor-name-o
 
 test('a query matching nothing returns nothing, and the limit is honoured', () => {
   assert.deepEqual(donorPickerRows(CORPUS, HEAD_FOCUS, 'zzzz', 50), [])
-  assert.equal(donorPickerRows(CORPUS, { ...HEAD_FOCUS, cell: 'ANY1' }, '', 2).length, 2)
+  // An any-cell whose item the corpus cannot place: the one context that still offers everything,
+  // which is what makes it the right one for measuring the LIMIT rather than the filter.
+  const open = { ...HEAD_FOCUS, cell: 'ANY1', itemSlots: [], itemClasses: [] } as const
+  assert.equal(donorPickerRows(CORPUS, open, '', 2).length, 2)
 })
 
 test('ties break by effect-name LENGTH then locale, so the order is stable across renders', () => {
@@ -191,4 +207,39 @@ test('the picker`s page numbers ARE main`s - stated twice, pinned once', () => {
   assert.equal(PLANNER_PAGE, PLANNER_SEARCH_LIMIT, 'the page size drifted from main`s')
   assert.equal(PLANNER_PAGE_MAX, PLANNER_SEARCH_MAX, 'the ceiling drifted from main`s')
   assert.ok(PLANNER_PAGE_MAX > PLANNER_PAGE, 'a ceiling at the page size makes "show more" a lie')
+})
+
+// ---- R2's SLOT axis asks the ITEM, not the cell -----------------------------------------------
+//
+// THE ANY-CELL BUG, REPORTED FROM A REAL BOARD. `hostSlotsOf` answers about the CELL, and an
+// any-cell constrains nothing — so it returns all eighteen slots and every donor in the corpus
+// passed the slot axis. Every other cell filtered correctly, which is exactly why it survived: the
+// two agree everywhere except the one place the cell has no slot of its own.
+
+const HEAD_DONOR = donor({ key: 'helm', name: 'A Helm', effect: 'Focus A', slots: ['HEAD'] })
+const FINGER_DONOR = donor({ key: 'band', name: 'A Band', effect: 'Focus B', slots: ['FINGER'] })
+
+test('an ANY cell holding a RING is still holding a ring - the item decides, not the hole', () => {
+  const ring = { cell: 'ANY1', socket: 'focus', itemClasses: [], itemSlots: ['FINGER'] } as const
+  assert.equal(donorFitsCell(FINGER_DONOR, ring), true, 'a finger donor fits the ring')
+  // Before the fix this was TRUE: the cell said "all eighteen slots", so a helm-only donor passed.
+  assert.equal(donorFitsCell(HEAD_DONOR, ring), false, 'a helm-only donor must not fit a ring')
+})
+
+test('an ordinary cell is unchanged - the item and the cell agree there, which hid the bug', () => {
+  const helm = { cell: 'HEAD', socket: 'focus', itemClasses: [], itemSlots: ['HEAD'] } as const
+  assert.equal(donorFitsCell(HEAD_DONOR, helm), true)
+  assert.equal(donorFitsCell(FINGER_DONOR, helm), false)
+})
+
+test('an item the corpus does not carry falls back to the CELL, never to a refusal (law 1)', () => {
+  // No slot list stated: an any-cell then constrains nothing (its old behaviour, now scoped to the
+  // one case that earns it), and an ordinary cell still constrains to its own slot.
+  const unknownInAny = { cell: 'ANY1', socket: 'focus', itemClasses: [], itemSlots: [] } as const
+  assert.equal(donorFitsCell(HEAD_DONOR, unknownInAny), true)
+  assert.equal(donorFitsCell(FINGER_DONOR, unknownInAny), true)
+
+  const unknownInHead = { cell: 'HEAD', socket: 'focus', itemClasses: [], itemSlots: [] } as const
+  assert.equal(donorFitsCell(HEAD_DONOR, unknownInHead), true)
+  assert.equal(donorFitsCell(FINGER_DONOR, unknownInHead), false)
 })

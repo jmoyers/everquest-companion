@@ -17,6 +17,7 @@
 import type { JSX } from 'react'
 import { Box } from '@mui/material'
 import type { ItemStatBlock } from '@shared/itemStats'
+import type { CellDelta } from '@shared/planner/gearPlanTotals'
 import { gearPlanCells, type GearPlan } from '@shared/planner/gearPlan'
 import type { PlanSlotId } from '@shared/planner/types'
 import GearPlanCellCard, { type GearPlanCellHandlers } from './GearPlanCellCard'
@@ -29,6 +30,8 @@ export interface GearPlanBoardProps {
    * index — a card that looked its own item up would hold the corpus twenty-three times.
    */
   blockOf: (cell: PlanSlotId) => ItemStatBlock | undefined
+  /** what planning this cell would CHANGE against the worn item — see `GearPlanFold.deltaOf` */
+  deltaOf: (cell: PlanSlotId) => CellDelta[] | null
   /** the corpus's icon for a cell's planned item, resolved by the view for the same reason */
   iconOf: (cell: PlanSlotId) => number | undefined
   /**
@@ -41,6 +44,7 @@ export interface GearPlanBoardProps {
 export default function GearPlanBoard({
   gearPlan,
   blockOf,
+  deltaOf,
   iconOf,
   on
 }: GearPlanBoardProps): JSX.Element {
@@ -71,6 +75,7 @@ export default function GearPlanBoard({
           cell={cell}
           planned={planned}
           block={blockOf(cell)}
+          delta={deltaOf(cell)}
           iconId={iconOf(cell)}
           on={on}
         />

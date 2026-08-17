@@ -44,6 +44,8 @@ import {
 import {
   GEAR_STAT_SPELLING,
   cellBlock,
+  cellDelta,
+  splitDelta,
   cellStatLine,
   equippedRead,
   gearPlanDiff,
@@ -386,4 +388,108 @@ test('the diff never touches the unsummed list — you cannot subtract what you 
   assert.equal(labels.includes('Haste'), false)
   // …and both sides still SAY what they carry.
   assert.deepEqual(totals.plan.unsummed.find((u) => u.label === 'Haste')?.values, ['+36%'])
+})
+
+// ---- what one cell would CHANGE ----------------------------------------------------------------
+
+test('`cellDelta` reports only what MOVED, signed both ways', () => {
+  const moved = cellDelta({ AC: 20, STR: 10, HP: 50 }, { AC: 8, STR: 10, HP: 80 })
+  assert.deepEqual(moved, [
+    { key: 'AC', delta: 12 },
+    { key: 'HP', delta: -30 }
+  ])
+  // STR was equal on both sides and is absent: a list of unmoved stats buries the ones that moved.
+  assert.equal(moved.find((d) => d.key === 'STR'), undefined)
+})
+
+test('an absent key is ZERO here, because that is the arithmetic the board already runs on', () => {
+  // `sumGear` folds these same vectors and a key no row states contributes nothing — so a page
+  // without STR is an item without STR. Reading it as "unknown" instead would make every total on
+  // the board a lie, and would print `10 vs none` on eight lines of a card that has room for four.
+  assert.deepEqual(cellDelta({ STR: 10 }, {}), [{ key: 'STR', delta: 10 }])
+  assert.deepEqual(cellDelta({}, { STR: 10 }), [{ key: 'STR', delta: -10 }])
+  assert.deepEqual(cellDelta({}, {}), [])
+})
+
+test('two identical items compare to NOTHING - an empty list is a real answer', () => {
+  // The surface says "same as what you have on" for this; it is not the same as having no
+  // comparison at all, which is `null` and draws the item's own stats instead.
+  assert.deepEqual(cellDelta({ AC: 20, STR: 10 }, { AC: 20, STR: 10 }), [])
+})
+
+test('a percent stat CAN be subtracted - the refusal is about stacking, not comparing', () => {
+  // `sumGear` will not add two haste sources together because no source states whether they stack.
+  // One item minus one other item asks nothing of that rule.
+  assert.deepEqual(cellDelta({ HASTE: 41 }, { HASTE: 21 }), [{ key: 'HASTE', delta: 20 }])
+})
+
+test('`splitDelta` groups by sign and loses nothing on the way', () => {
+  // The interleaved run is what `cellDelta` actually produces, and the reason the surface groups:
+  // reading "what does this cost me" off this list means hunting for minus signs.
+  const mixed = cellDelta({ AC: 20, STR: 18, AGI: 4 }, { AC: 8, STR: 25, AGI: 7 })
+  const { gains, losses } = splitDelta(mixed)
+  assert.deepEqual(
+    gains.map((e) => e.key),
+    ['AC', 'STR'].filter((k) => mixed.some((e) => e.key === k && e.delta > 0))
+  )
+  assert.ok(gains.every((e) => e.delta > 0))
+  assert.ok(losses.every((e) => e.delta < 0))
+  // Nothing is dropped and nothing is duplicated - there is no third group to draw, because
+  // `CellDelta.delta` is never zero.
+  assert.equal(gains.length + losses.length, mixed.length)
+  assert.deepEqual([...gains, ...losses].map((e) => e.key).sort(), mixed.map((e) => e.key).sort())
+})
+
+test('`splitDelta` keeps GEAR_STAT_KEYS order INSIDE each group, not magnitude order', () => {
+  // The rule the totals panel runs on: a stat reads in the same place it reads on the Character
+  // tab. Sorting each group by size would move it per candidate row, which is what this pins.
+  const many = cellDelta({ AC: 2, STR: 40, HP: 3 }, {})
+  const { gains } = splitDelta(many)
+  const order = GEAR_STAT_KEYS.filter((k) => gains.some((e) => e.key === k))
+  assert.deepEqual(gains.map((e) => e.key), order)
+  // …and specifically NOT the biggest first, which is the tempting alternative.
+  assert.notEqual(gains[0].key, 'STR')
+})
+
+test('`splitDelta` files a LIGHTER and a FASTER item under gains, minus sign and all', () => {
+  // The defect this pins: grouping on the sign drew `WEIGHT -1.6` in the adverse colour, under
+  // what the item costs you. Less weight is more carrying capacity and less delay is more swings.
+  const lighter = cellDelta({ WEIGHT: 2, DELAY: 20 }, { WEIGHT: 5, DELAY: 26 })
+  const { gains, losses } = splitDelta(lighter)
+  assert.deepEqual(losses, [], 'nothing here is a cost')
+  assert.deepEqual(
+    gains.map((e) => [e.key, e.delta]),
+    [
+      ['DELAY', -6],
+      ['WEIGHT', -3]
+    ],
+    'the numbers keep their real sign - only the GROUP is corrected'
+  )
+  // …and the correction runs both ways: a heavier, slower item is a cost despite the plus signs.
+  const heavier = splitDelta(cellDelta({ WEIGHT: 5, DELAY: 26 }, { WEIGHT: 2, DELAY: 20 }))
+  assert.deepEqual(heavier.gains, [])
+  assert.equal(heavier.losses.length, 2)
+
+  // Every OTHER key reads its sign straight — the exception list is exactly two long, and a save
+  // is stated as a resistance, so more of it is better like everything else.
+  for (const key of GEAR_STAT_KEYS) {
+    if (key === 'WEIGHT' || key === 'DELAY') continue
+    assert.deepEqual(
+      splitDelta([{ key, delta: 5 }]).gains,
+      [{ key, delta: 5 }],
+      `${key}: more should be better`
+    )
+  }
+})
+
+test('`splitDelta` on a one-sided list leaves the other group empty, never absent', () => {
+  // Both surfaces branch on `.length > 0` to decide whether to draw a separator; an undefined
+  // group would draw one against nothing.
+  const allUp = splitDelta(cellDelta({ AC: 5 }, {}))
+  assert.deepEqual(allUp.losses, [])
+  assert.equal(allUp.gains.length, 1)
+  const allDown = splitDelta(cellDelta({}, { AC: 5 }))
+  assert.deepEqual(allDown.gains, [])
+  assert.equal(allDown.losses.length, 1)
+  assert.deepEqual(splitDelta([]), { gains: [], losses: [] })
 })

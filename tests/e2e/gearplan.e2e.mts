@@ -41,7 +41,7 @@ import {
   stepClearCell,
   stepDonorHoverCard,
   stepDiff,
-  stepItemHoverCard,
+  stepCellDelta,
   stepLoadEquipped,
   stepLoadedSocketReturns,
   stepMount,
@@ -103,7 +103,7 @@ async function firstLaunch(page: Page): Promise<void> {
   await stepSeededCell(page, SEEDED.name, SEEDED.tier)
   await stepUnlockLadder(page)
   await stepSocketHover(page)
-  await stepItemHoverCard(page)
+  await stepCellDelta(page)
   await stepSocketsListed(page)
   await stepDiff(page)
   await stepBounded(page)

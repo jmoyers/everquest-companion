@@ -26,6 +26,7 @@ import type { ClassAbbr } from '../../../../shared/classCombo'
 import { socketCompatibility } from '../../../../shared/planner/rules'
 import {
   hostSlotsOf,
+  type EquipSlot,
   type PlanSlotId,
   type PlannerDonor,
   type SocketType
@@ -37,6 +38,8 @@ export interface CellContext {
   socket: SocketType
   /** the PLANNED item's own class list; `[]` is UNKNOWN and filters nothing */
   itemClasses: readonly ClassAbbr[]
+  /** the PLANNED item's own slot list; `[]` is UNKNOWN and falls back to the cell's */
+  itemSlots: readonly EquipSlot[]
 }
 
 /**
@@ -48,8 +51,18 @@ export interface CellContext {
  *   * R3, HASTE — `socketCompatibility`'s first check, and it is checked first there for the same
  *     reason it is named first here: haste never travels, and that is a property of the effect
  *     itself rather than of the pairing.
- *   * R2, SLOT and CLASS — `hostSlotsOf(cell)` returns all eighteen slots for an any-cell, so an
- *     any-cell correctly constrains nothing at all.
+ *   * R2, SLOT and CLASS — both asked of the PLANNED ITEM rather than of the cell.
+ *
+ * THE SLOT AXIS ASKS THE ITEM, AND THAT WAS A REPORTED BUG BEFORE IT DID. It used to ask
+ * `hostSlotsOf(cell)`, which answers about the CELL: one slot for an ordinary cell, and all
+ * EIGHTEEN for an any-cell, because an any-cell constrains nothing about what you may put in it.
+ * That is the right answer to the question it asks and the wrong question to be asking — an
+ * any-cell holding a ring is still holding a RING, and R2 is about the host item. So an any-cell
+ * offered every donor in the corpus while every other cell filtered properly.
+ *
+ * This is the same correction the CLASS axis already had: judge the planned item, not the hole it
+ * sits in. The cell's slots survive only as the fallback for an item the corpus does not carry,
+ * where refusing on a slot list nobody stated would be inventing a fact (law 1).
  */
 /**
  * The item picker's page size, and the ceiling "show more" walks it to.
@@ -63,7 +76,8 @@ export const PLANNER_PAGE_MAX = 400
 
 export function donorFitsCell(donor: PlannerDonor, ctx: CellContext): boolean {
   if (donor.socket !== ctx.socket) return false
-  return socketCompatibility(donor, hostSlotsOf(ctx.cell), ctx.itemClasses).ok
+  const slots = ctx.itemSlots.length > 0 ? ctx.itemSlots : hostSlotsOf(ctx.cell)
+  return socketCompatibility(donor, slots, ctx.itemClasses).ok
 }
 
 /** One offerable donor, with the score the list is ordered by. */

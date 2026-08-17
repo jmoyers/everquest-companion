@@ -69,10 +69,11 @@ import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import GearPlanTierSlider from './GearPlanTierSlider'
 import type { ItemStatBlock } from '@shared/itemStats'
 import { unlockedSockets, type GearPlanCell } from '@shared/planner/gearPlan'
-import { cellStatLine } from '@shared/planner/gearPlanTotals'
+import { cellStatLine, type CellDelta } from '@shared/planner/gearPlanTotals'
+import GearPlanDeltaLine from './GearPlanDeltaLine'
+
 import { extractionTier } from '@shared/planner/rules'
 import { SpellTooltip } from '../../lib/SpellCard'
-import { KnownItemTooltip } from '../../lib/KnownItemTooltip'
 import { SOCKET_TYPES, planSlotLabel, type PlanSlotId, type SocketType } from '@shared/planner/types'
 import { DashCard, QuietNote } from '../combat/combatShared'
 import ItemIcon from '../../lib/ItemIcon'
@@ -110,6 +111,7 @@ export interface GearPlanCellCardProps {
    * takes no data hook and stays a pure render.
    */
   block?: ItemStatBlock
+  delta: CellDelta[] | null
   /** the corpus's icon for the planned item; absent draws the empty frame, so cells line up */
   iconId?: number
   on: GearPlanCellHandlers
@@ -247,14 +249,29 @@ function SocketLine({
   )
 }
 
-/** The cell's own numbers, in the totals row's words — or the honest silence when the corpus is. */
-function CellStats({ block }: { block?: ItemStatBlock }): JSX.Element {
+/**
+ * WHAT THIS CELL WOULD CHANGE — or, with nothing to compare against, what its item simply IS.
+ *
+ * THE DELTA IS THE ANSWER WHENEVER THERE IS ONE. A planner already knows roughly what a helm does;
+ * the question a board is asked is "is this better than what I have on", and a list of twelve
+ * absolute numbers makes the reader do that subtraction twenty-three times. `compareStats` drops
+ * every key that did not move, so what is left is exactly the part worth reading.
+ *
+ * `null` IS NOT AN EMPTY LIST. `null` means there was nothing to compare to (no dump, or that cell
+ * is empty on the body) and the absolute stats are the honest fallback; `[]` means the comparison
+ * RAN and nothing moved, which is a real answer and gets said out loud.
+ */
+function CellStats({ block, delta }: { block?: ItemStatBlock; delta: CellDelta[] | null }): JSX.Element {
   if (block === undefined) {
     return (
       <Box data-testid="gearplan-item-unknown">
         <QuietNote>not in the item database</QuietNote>
       </Box>
     )
+  }
+  if (delta !== null) {
+    if (delta.length === 0) return <QuietNote>same as what you have on</QuietNote>
+    return <GearPlanDeltaLine delta={delta} testId="gearplan-stat-delta" />
   }
   const rows = cellStatLine(block)
   if (rows.length === 0) return <QuietNote>no stats stated</QuietNote>
@@ -283,41 +300,29 @@ function CellHeader({
 }): JSX.Element {
   return (
           <Stack direction="row" alignItems="center" sx={{ gap: 0.75 }}>
-      {/* THE ICON AND THE NAME ARE ONE HOVER TARGET, because they are one thing: the item. Wrapping
-          them together rather than the name alone is what makes the icon answer too - it is the
-          first thing the eye lands on and the last thing that used to explain itself.
-
-          `clickThrough` IS MANDATORY HERE AND NOT A PREFERENCE. The anchor inside is a BUTTON that
-          opens the item picker, and the ordinary card is interactive - it holds `pointer-events:
-          auto` for as long as it is up, which is precisely the click-eating defect JOS-127 and
-          JOS-143 were filed for. The mode opens downward, cannot flip up over a neighbouring cell's
-          controls, takes no pointer events, and closes on pointerdown - so the card is gone before
-          the picker it sits over opens. Read on hover, change on click, and the two never fight. */}
-      <KnownItemTooltip name={planned.name} clickThrough>
-        <Stack
-          direction="row"
-          alignItems="center"
-          sx={{ gap: 0.75, minWidth: 0, flexShrink: 1 }}
-          data-testid="gearplan-item-identity"
+      <Stack
+        direction="row"
+        alignItems="center"
+        sx={{ gap: 0.75, minWidth: 0, flexShrink: 1 }}
+        data-testid="gearplan-item-identity"
+      >
+        {/* The Character tab's treatment, 20px for a dense card rather than its 28px armoury cell.
+            The frame draws even with no icon, so a cell whose item the corpus has no art for keeps
+            its name on the same left edge as its neighbours. */}
+        <ItemIcon iconId={iconId} size={20} filled />
+        <Link
+          component="button"
+          type="button"
+          underline="hover"
+          variant="body2"
+          color="text.primary"
+          data-testid="gearplan-item-name"
+          onClick={(e: MouseEvent<HTMLButtonElement>) => on.pickItem(cell, e.currentTarget)}
+          sx={{ lineHeight: 1.4, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
-          {/* The Character tab's treatment, 20px for a dense card rather than its 28px armoury cell.
-              The frame draws even with no icon, so a cell whose item the corpus has no art for keeps
-              its name on the same left edge as its neighbours. */}
-          <ItemIcon iconId={iconId} size={20} filled />
-          <Link
-            component="button"
-            type="button"
-            underline="hover"
-            variant="body2"
-            color="text.primary"
-            data-testid="gearplan-item-name"
-            onClick={(e: MouseEvent<HTMLButtonElement>) => on.pickItem(cell, e.currentTarget)}
-            sx={{ lineHeight: 1.4, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}
-          >
-            {planned.name}
-          </Link>
-        </Stack>
-      </KnownItemTooltip>
+          {planned.name}
+        </Link>
+      </Stack>
       <Box sx={{ flexGrow: 1, minWidth: 4 }} />
       {/* WISH, then CLEAR — and a NATIVE title, not a popper of any kind. House law 8: a card in a
           grid opens a popper straight over its neighbours, and `tests/tooltipCursor.test.mts`
@@ -362,12 +367,14 @@ function PlannedBody({
   cell,
   planned,
   block,
+  delta,
   iconId,
   on
 }: {
   cell: PlanSlotId
   planned: GearPlanCell
   block?: ItemStatBlock
+  delta: CellDelta[] | null
   iconId?: number
   on: GearPlanCellHandlers
 }): JSX.Element {
@@ -376,7 +383,7 @@ function PlannedBody({
     <>
         <>
           <CellHeader cell={cell} planned={planned} iconId={iconId} on={on} />
-          <CellStats block={block} />
+          <CellStats block={block} delta={delta} />
 
 
           <Box sx={{ mt: 0.5 }}>
@@ -405,7 +412,7 @@ function PlannedBody({
   )
 }
 
-function GearPlanCellCard({ cell, planned, block, iconId, on }: GearPlanCellCardProps): JSX.Element {
+function GearPlanCellCard({ cell, planned, block, delta, iconId, on }: GearPlanCellCardProps): JSX.Element {
   return (
     <DashCard
       fill
@@ -429,7 +436,7 @@ function GearPlanCellCard({ cell, planned, block, iconId, on }: GearPlanCellCard
           nothing planned
         </Link>
       ) : (
-        <PlannedBody cell={cell} planned={planned} block={block} iconId={iconId} on={on} />
+        <PlannedBody cell={cell} planned={planned} block={block} delta={delta} iconId={iconId} on={on} />
       )}
     </DashCard>
   )
