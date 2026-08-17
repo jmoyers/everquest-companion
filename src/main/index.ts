@@ -56,6 +56,9 @@ import { runSmokeFeedback } from './smokeFeedback'
 import { STORE_READY_MS, getOverlayConfig, getPerfHudPrefs } from './store'
 // The z-order guard's tally, read once at quit (JOS-368; see `logTopmostSavings`).
 import { topmostStats } from './topmost'
+// The notification-area icon and the close interceptor (JOS-139). Its own module beside windows.ts
+// for the reason stated in its header; the composition root only decides WHEN it is armed.
+import { installCloseToTray } from './tray'
 import { initUpdater } from './updater'
 import {
   createMainWindow,
@@ -211,6 +214,13 @@ const gotSingleInstanceLock = E2E || app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
+  // …AND THE SAME THREE LINES ALREADY COVER A WINDOW THAT IS HIDDEN IN THE TRAY (JOS-139).
+  // Re-launching the app is one of the ways a player asks for the window back, and since close-
+  // to-tray the window they are asking for may be hidden rather than minimized. `show()` is
+  // unconditional here, and on a hidden window that IS the restore — so this handler needed no
+  // change; the brief's suggested `if (!w.isVisible()) w.show()` would have been the same call
+  // behind a guard. Not something the harness can drive (a second instance is a second launch,
+  // and E2E skips the lock outright), so it is on the hands-on list for the packaged build.
   app.on('second-instance', () => {
     const mainWindow = getMainWindow()
     if (!mainWindow) return
@@ -282,6 +292,11 @@ if (!gotSingleInstanceLock) {
     markStartupPhase('protocols')
     createMainWindow()
     markStartupPhase('windowCreated')
+    // THE TRAY, AND WHAT THE X MEANS (JOS-139). Straight after the window exists, because the
+    // icon's whole job is to bring that window back — and because the quitting latch it arms has
+    // to be in place before anything can ask this process to quit. It creates no icon under
+    // EQ_E2E, where a close still closes; everything else about the app is unchanged either way.
+    installCloseToTray()
     // `replayDone` is the LONG one on a real log (a full historical scan), so it is marked when
     // the session's promise settles — with the event count, because "6 s" means something very
     // different for 40k events than for 1.1M. `tailAttached` is marked immediately after the

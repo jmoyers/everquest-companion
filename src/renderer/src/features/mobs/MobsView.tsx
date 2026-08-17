@@ -105,6 +105,7 @@ function MobResultRow({
       alignItems="baseline"
       role="button"
       tabIndex={0}
+      data-testid="mobs-result-row"
       onClick={() => onOpen({ mob: entry.name, entry })}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onOpen({ mob: entry.name, entry })
@@ -359,6 +360,7 @@ export default function MobsView({
         placeholder="Search mobs…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
+        slotProps={{ htmlInput: { 'data-testid': 'mobs-search' } }}
         sx={{ maxWidth: 420 }}
       />
 

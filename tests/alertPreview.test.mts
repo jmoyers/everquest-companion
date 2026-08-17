@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 import type { AlertAudio, AlertDef } from '../src/shared/types'
 import { speechPlan } from '../src/renderer/src/lib/speech'
 import { previewDef, previewPlan } from '../src/renderer/src/features/alerts/preview'
+import { alertBannerText, alertShowsOnScreen } from '../src/shared/alertBanner'
 
 function def(over: Partial<AlertDef> = {}): AlertDef {
   return {
@@ -129,6 +130,35 @@ test('preview forces exactly two fields — enabled and alwaysPlay — and touch
     { ...original, alwaysPlay: original.alwaysPlay },
     'every other field comes through untouched'
   )
+})
+
+// ------------------------------------------------------------ the ON-SCREEN channel (JOS-378)
+//
+// THE BANNER IS THE THIRD CHANNEL, and it inherits this file's equality for free — `previewDef`
+// carries every field but two, and `playAlertNow` sends the banner from the def it is handed. The
+// tests below pin that inheritance rather than restating it in prose, because the banner is the
+// one channel whose whole purpose is POSITIONING the window: a ▶ that showed no line would leave
+// the user dragging a strip they cannot see.
+
+test('▶ shows the SAME line a real firing would — same words, same swatch, same switch', () => {
+  const original = def({
+    speech: { mode: 'custom', phrase: 'Charm broke on {target}' },
+    bannerColor: 'red'
+  })
+  const preview = previewDef(original)
+  assert.equal(alertBannerText(preview), alertBannerText(original), 'one derivation')
+  assert.equal(preview.bannerColor, original.bannerColor, 'the swatch is not a preview decision')
+  assert.equal(alertShowsOnScreen(preview), alertShowsOnScreen(original))
+})
+
+test('…and an alert TAMED off the screen previews silently there too — preview IS the firing', () => {
+  const original = def({ showOnScreen: false })
+  assert.equal(alertShowsOnScreen(previewDef(original)), false, 'no line, because a firing shows none')
+})
+
+test('an On-screen override is auditioned, not bypassed', () => {
+  const original = def({ speech: { mode: 'custom', phrase: 'a long spoken sentence' }, bannerText: 'CHARM' })
+  assert.equal(alertBannerText(previewDef(original)), 'CHARM')
 })
 
 test('preview never mutates the def the row is rendering', () => {

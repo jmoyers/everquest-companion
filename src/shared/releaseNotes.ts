@@ -125,6 +125,29 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.1.0',
+    date: '2026-08-16',
+    entries: [
+      {
+        kind: 'new',
+        text: 'A new Alert banner overlay puts your alerts on screen as large text - for the moments a voice line is lost under Discord. It is off until you turn it on in Preferences, Overlays; then each alert gets a Show on screen switch and an optional on-screen wording of its own (the alert name is used until you write one). Early-warning alerts count down on the banner.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'A debuff on a mob learns its real length from the corpse: when the mob dies with your slow or debuff still on it and no wear-off ever printed, the timer knows it lasted at least that long, says "at least" on the bar, and warns you later next time instead of guessing early off the spell list.'
+      },
+      {
+        kind: 'changed',
+        text: 'A mob page and the current-mob card fold out-of-era loot away - Cazic Thule stops offering the Fear revamp table - with a small "out of era" disclosure if you want to see it anyway.'
+      },
+      {
+        kind: 'fixed',
+        text: 'A raid-target defeat celebrated exactly once: alerts fired by the app itself (raid target defeated, quest complete) were quietly playing twice, and they no longer also put a banner line beside the celebration card unless you ask.'
+      }
+    ]
+  },
+  {
     version: '1.0.1',
     date: '2026-08-15',
     entries: [

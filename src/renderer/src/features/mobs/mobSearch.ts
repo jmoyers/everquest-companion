@@ -102,6 +102,19 @@ export function searchMobs(text: string, limit: number = DEFAULT_LIMIT): MobHit[
  * COMPACT BY DESIGN, and honest about it: the catalog carries item NAMES only, so a per-drop
  * `rarity` is simply ABSENT here rather than invented. The live lookup is where one comes from,
  * and the page merges the two.
+ *
+ * AND NO ERA EVIDENCE EITHER (JOS-377), for the same kind of reason: `MobDrop.eraTag` comes off
+ * the ITEM page and the 11k-item corpus that holds it is main-only, so these drops arrive with the
+ * era fields absent. That is not a hole in the fold — the fold's layer 1 is the mob catalog, which
+ * `donorEra` inverts from the item KEY, so a pinned row still gets a real zone answer; what it
+ * cannot see is the banner, which is the witness a REVAMP defeats. The mob page therefore prefers
+ * main's annotated list whenever the lookup resolved the same page (`MobPage.pinIdentity`), and a
+ * record that never gets one renders as `era?` rather than as a verdict (law 1).
+ *
+ * SEARCH ITSELF IS UNTOUCHED BY ANY OF THIS. `searchMobs` matches over NAME + ZONES (see the
+ * haystack above), never over drop names, so an out-of-era drop cannot pull a mob into the results
+ * in the first place — and if it ever did, it should: finding where a thing drops is not a lie,
+ * and the ROW is where the chip would go, not the query.
  */
 export function knowledgeFromEntry(e: MobEntry): MobKnowledge {
   const out: MobKnowledge = { name: e.name, page: e.page, cached: true }

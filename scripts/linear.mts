@@ -111,6 +111,19 @@ if (cmd === 'list') {
     id: issue.id, sid: stateId(b)
   })
   console.log(`${issue.identifier} -> ${b}`)
+} else if (cmd === 'edit' && a && (flag('title') !== undefined || flag('desc-file') !== undefined)) {
+  // Rewrite an existing ticket's title and/or body in place (a ticket that graduates from GATED
+  // to a build brief keeps its identifier and its comment history).
+  const issue = await issueByIdentifier(a)
+  const input: Record<string, unknown> = {}
+  const title = flag('title')
+  const descFile = flag('desc-file')
+  if (title !== undefined) input.title = title
+  if (descFile !== undefined) input.description = readFileSync(descFile, 'utf8')
+  await gql('mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }', {
+    id: issue.id, input
+  })
+  console.log(`${issue.identifier} edited`)
 } else if (cmd === 'comment' && a && (b || flag('file'))) {
   const issue = await issueByIdentifier(a)
   const file = flag('file')
@@ -120,5 +133,5 @@ if (cmd === 'list') {
   })
   console.log(`${issue.identifier} commented`)
 } else {
-  console.log('usage: linear.mts list [--state S] | create "Title" [--state S] [--desc D|--desc-file F] | move JOS-N "State" | comment JOS-N "text"|--file F')
+  console.log('usage: linear.mts list [--state S] | create "Title" [--state S] [--desc D|--desc-file F] | edit JOS-N [--title T] [--desc-file F] | move JOS-N "State" | comment JOS-N "text"|--file F')
 }

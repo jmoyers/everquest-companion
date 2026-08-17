@@ -8,7 +8,14 @@ import type { JSX } from 'react'
 import { Box, Chip, LinearProgress, Paper, Stack, Typography } from '@mui/material'
 import type { ActiveBuff } from '@shared/types'
 import { rowRankLabel } from '@shared/buffTimers'
-import { fmtDuration, remainingFraction, isOverdue, classAccent, estimatorSourceTitle } from './format'
+import {
+  fmtDuration,
+  remainingFraction,
+  isOverdue,
+  classAccent,
+  estimatePrefix,
+  estimatorSourceTitle
+} from './format'
 import { Tooltip } from '../../lib/Tooltip'
 // The rich spell card (JOS-293). The row states what this INSTANCE is doing (elapsed, estimate,
 // provenance); the card behind the name states what the SPELL is - its effect list, its stated
@@ -33,9 +40,13 @@ interface EstimateState {
 function estimateState(buff: ActiveBuff, elapsed: number): EstimateState {
   const est = buff.estimatedMs != null && buff.estimatedMs > 0 ? buff.estimatedMs : null
   const spread = buff.p25 != null && buff.p75 != null ? (buff.p75 - buff.p25) / 2 : null
+  // A DEATH BOUND JOINS THE DB ARM (JOS-379) and not the mined one: like a database figure it is a
+  // number no cast of yours was ever seen ENDING at, so being past it is a statement about the
+  // model waiting for a line rather than about a distribution. It is a FLOOR, so "past estimate" is
+  // the literal truth — the spell has outlasted everything the log can prove.
+  const stated = buff.durationSource === 'db' || buff.durationSource === 'deathBound'
   const overdue =
-    isOverdue(elapsed, buff.p75, buff.n) ||
-    (buff.durationSource === 'db' && buff.estimatedMs != null && elapsed > buff.estimatedMs)
+    isOverdue(elapsed, buff.p75, buff.n) || (stated && buff.estimatedMs != null && elapsed > buff.estimatedMs)
   return { est, spread, overdue }
 }
 
@@ -91,11 +102,15 @@ function EstimateBar({
   const remaining = Math.max(0, est - elapsed)
   const frac = remainingFraction(elapsed, est)
   const { overdue, spread } = state
-  // Estimate provenance (JOS-117 + JOS-212): 'db' (the spell-database floor held) vs 'observed' (a
-  // logged cast ran LONGER than the floor) vs 'cluster' (your own clean cycles agree it is SHORTER
-  // than the floor and overruled it). Both learned sources show a "log" chip — the number came from
-  // the log either way — but they say opposite things about the database, so the tooltip says which.
+  // Estimate provenance (JOS-117 + JOS-212 + JOS-379): 'db' (the spell-database floor held) vs
+  // 'observed' (a logged cast ran LONGER than the floor) vs 'cluster' (your own clean cycles agree
+  // it is SHORTER than the floor and overruled it) vs 'deathBound' (a mob died still carrying it,
+  // so the number is a FLOOR under the truth and not the truth). All the learned sources show a
+  // "log" chip — the number came from the log either way — but they say different things about the
+  // database, so the tooltip says which, and a bound wears a `≥` on the figure itself.
   const source = buff.durationSource
+  const boundPrefix = estimatePrefix(source)
+  const left = `${boundPrefix === '' ? '~' : boundPrefix}${fmtDuration(remaining)} left`
   return (
     <>
       <LinearProgress
@@ -112,7 +127,7 @@ function EstimateBar({
       />
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Typography variant="caption" color={overdue ? 'warning.main' : 'text.secondary'}>
-          {overdue ? 'past estimate' : `~${fmtDuration(remaining)} left`}
+          {overdue ? 'past estimate' : left}
           {!overdue && spread != null && spread > 1000 ? ` (± ${fmtDuration(spread)})` : ''}
         </Typography>
         <Stack direction="row" spacing={0.5} alignItems="center">

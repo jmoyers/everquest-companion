@@ -70,6 +70,12 @@ export const SESSION_GAP_MS = 30 * 60_000 // 30 minutes
  *                later and lift the estimate back out.
  *   'db'       ⇒ 60 s. A minute past a stated end is long enough for a line that is merely late
  *                and short enough that a stale row is never a fixture of the window.
+ *   'deathBound' ⇒ 60 s, with the DB floor and for a reason of its own (JOS-379): the number is a
+ *                LOWER bound, so the true duration is known to be at least that and may be more.
+ *                Culling it on the 15 s learned-quality schedule would retire a row we have
+ *                positive evidence is still running late. It falls into this branch by being
+ *                neither 'observed' nor 'cluster' — stated here so the omission reads as a ruling
+ *                rather than an oversight.
  *
  * IT USED TO BE TWO RULES, AND THE SECOND ONE DIED HERE (JOS-156). Debuff and CC rows had their
  * own DB branch that waited THE DURATION AGAIN (floored at 60 s), on the argument that the DB row
@@ -383,6 +389,47 @@ export interface DurationSample {
    * rather than the duration. One-way, like `Hold.clean`: evidence of doubt does not expire.
    */
   censored?: boolean
+  /**
+   * A DEATH LOWER BOUND (JOS-379) — the one sample class that is not a cycle at all.
+   *
+   * NOTHING ENDED. The mob carrying this debuff DIED with the debuff still on it and no wear-off
+   * ever printed since the landing, so all the log states is that the spell lasted AT LEAST
+   * `ms` — landing to corpse. On a raid mob that is the only statement the log will ever make:
+   * measured over the owner's Plane of Fear night (2026-08-15), Togor's Insects landed on 27
+   * bosses and adds and not one of them ever printed `Your Togor's Insects spell has worn off of
+   * <mob>.` before the kill, because they die first and this server prints no wear-off for your
+   * slow when somebody else lands the killing blow (Dread: landed 21:57:06, slain 21:57:42, no
+   * line at all). The estimator saw no clean sample, kept the classic-era DB floor of 2:30, and
+   * the "slow wore off" alert spoke over a slow that was visibly still up.
+   *
+   * WHY A MAX ESTIMATOR MAY TAKE IT. A lower bound can only lift the estimate TOWARD the truth
+   * and never past it, given the wear-off line is reliable when it happens — and the golem cycles
+   * of the night before show it is (five clean Togor cycles, all of them ended by their own
+   * wear-off sentence). The guard rails are stated where they are applied
+   * (`buffsInstanceRules.ts deathBoundSpan`) and they are what keep "at least" honest.
+   *
+   * IT IS A LOWER BOUND FOR EVERY PURPOSE {@link censored} IS — {@link isLowerBound} is the one
+   * predicate both answer to, so a bound lives in the censored window of
+   * `SpellStats.observedWindowMaxFor` and can neither corroborate nor break a JOS-212 cluster. A
+   * bound is not a cycle, and the cluster rule is a question about agreeing CYCLES.
+   */
+  deathBound?: true
+}
+
+/**
+ * TRUE WHEN A SAMPLE IS A LOWER BOUND ON THE DURATION RATHER THAN A MEASUREMENT OF IT.
+ *
+ * Two ways the log produces one, and they are the same KIND of evidence from two directions:
+ * a cycle the log named a cause for ending early ({@link DurationSample.censored}, JOS-180) and a
+ * cycle that never ended at all because its mob died first ({@link DurationSample.deathBound},
+ * JOS-379). Both prove the spell was still running at the instant they name and neither says when
+ * it would have stopped.
+ *
+ * Everything that treats the two windows differently reads THIS rather than either flag, so a
+ * third bound class — if the log ever hands us one — joins at one seam.
+ */
+export function isLowerBound(s: DurationSample): boolean {
+  return s.censored === true || s.deathBound === true
 }
 
 /** Per-(line, caster) accumulated duration samples + display name. */

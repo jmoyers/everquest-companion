@@ -261,6 +261,12 @@ test('JOS-156: a death-clear mints nothing', () => {
   const row = slowRow(mod)
   assert.ok(row, 'the next slow lands')
   assert.equal(row!.n, 0, 'the corpse contributed no observation: the learner still has zero samples')
+  // AND NOT A LOWER BOUND EITHER (JOS-379). A death CAN now teach — a debuffed mob that dies with
+  // no wear-off since its landing proves the spell ran at least that long — but a BOUND is not a
+  // cycle and never enters `n`, so this row's assertion above would pass whether one was minted or
+  // not. The source is what tells them apart, and here every rail refuses: the module never saw a
+  // target-named wear-off for the line (no witnessed channel) and 20 s is under the floor anyway.
+  assert.equal(row!.durationSource, 'db', 'the estimate is still the database floor, unlifted by the kill')
 })
 
 test('JOS-156: a real wear-off DOES still mint', () => {

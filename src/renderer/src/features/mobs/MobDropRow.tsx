@@ -27,6 +27,11 @@ import { KnownItemTooltip } from '../../lib/KnownItemTooltip'
 import { useModule } from '../../lib/useModule'
 import { getPoskyData } from '../../data'
 import { ItemDetailDialog } from '../loot/ItemDetailDialog'
+// The app's ONE era chip, drawn from the app's ONE era verdict (JOS-377) — a drop row asks the
+// same function the planner's donor rows and the gear browser's items ask, and asks it no
+// differently for being on a mob page.
+import { EraChip } from '../planner/PlannerChips'
+import type { EraSubject } from '../planner/plannerData'
 import { perceivedDropRate, type SeenVariantGroup } from './seenVariants'
 
 // The Plane of Sky dataset, reused exactly as LootView reads it, so an item drilled into from a
@@ -172,12 +177,19 @@ function VariantList({ seen, onOpenItem }: { seen: SeenVariantGroup; onOpenItem:
 export function DropRow({
   item,
   rarity,
+  era,
   seen,
   kills,
   onOpenItem
 }: {
   item: string
   rarity?: string
+  /**
+   * WHAT THE WIKI SAYS ABOUT THIS ITEM'S ERA (JOS-377) — the subject, never a verdict: `EraChip`
+   * asks `eraChip` the same way the planner's rows and the gear browser's do. Absent on the rows
+   * that have no era question to answer (the "also looted by you" block is YOUR history).
+   */
+  era?: EraSubject
   seen?: SeenVariantGroup
   /** your recorded kills of THIS mob — the perceived rate's denominator, absent when unknown */
   kills?: number
@@ -189,6 +201,7 @@ export function DropRow({
     <Box sx={{ py: 0.2, minWidth: 0 }} data-testid="mob-drop-row">
       <Stack direction="row" spacing={1} alignItems="baseline" sx={{ minWidth: 0 }}>
         <ItemName name={item} onOpen={() => onOpenItem(item, foldable)} />
+        {era && <EraChip subject={era} />}
         {rarity && (
           <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
             {rarity}

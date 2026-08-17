@@ -98,6 +98,7 @@ import { OverlaySnapSetting } from './OverlaySnapSetting'
 // The release hold this card is behind (JOS-359). Imported for the FLAG, not for geometry.
 import { SNAP_RELEASE_HOLD } from '@shared/overlaySnap'
 import { ToastSetting } from './ToastSetting'
+import { AlertBannerSetting } from './AlertBannerSetting'
 // Cursor ring: another descriptor that lives beside its own card, same ceiling, same answer.
 import { cursorRingSection } from './CursorRingSetting'
 import { TelemetrySetting } from './TelemetrySetting'
@@ -114,6 +115,9 @@ import { buffTrustSection } from './BuffTrustSetting'
 // Same arrangement again (JOS-123): the main window's text size names its own section beside the
 // card that renders it. See ./TextSizeSetting.tsx.
 import { textSizeSection } from './TextSizeSetting'
+// Same arrangement again (JOS-139): what the X does — the app keeps running in the tray, or it
+// quits — names its own section beside the card that renders it. See ./CloseToTraySetting.tsx.
+import { windowSection } from './CloseToTraySetting'
 // Same arrangement again (JOS-73): the release-notes panel names its own section beside the card
 // that renders it. See features/whatsnew/WhatsNewPanel.tsx for why the notes are a SECTION.
 import { whatsNewSection } from '../whatsnew/WhatsNewPanel'
@@ -229,6 +233,13 @@ function overlaysSection(): PrefSection {
         keywords:
           'toast toasts celebrate celebration boss kill raid target defeated quest complete sky plane of sky notification popup card sound silent position move top',
         content: <ToastSetting />
+      },
+      {
+        id: 'alert-banner',
+        label: 'Alert banner',
+        keywords:
+          'alert alerts banner on screen onscreen text overlay big large popup message discord hear miss show display warning countdown colour color position move lines hold seconds',
+        content: <AlertBannerSetting />
       }
     ]
   }
@@ -293,6 +304,9 @@ function buildSections({ version, status, onSendFeedback, onWhatsNew }: SectionI
     textSizeSection(),
     combatSection(),
     overlaysSection(),
+    // Right after the overlays, because the promise this switch makes is about them: closing the
+    // window keeps them running (JOS-139).
+    windowSection(),
     graphicsSection(),
     buffTrustSection(),
     cursorRingSection(),

@@ -69,7 +69,11 @@ const COPY_FILES = [
   'src/main/feedback/slice.ts',
   'src/main/feedback/submit.ts',
   'src/main/updater.ts',
-  'src/main/userSounds.ts'
+  'src/main/userSounds.ts',
+  // The tray icon's tooltip and its context menu (JOS-139) — three labels a player reads, in a
+  // main-process module. Added here rather than left to the header's "main at large" carve-out,
+  // which is exactly what that paragraph asks a new copy-carrying main module to do.
+  'src/main/tray.ts'
 ] as const
 
 /** Excluded with a reason, every one of them spelled out in the header. */

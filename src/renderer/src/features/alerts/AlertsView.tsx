@@ -44,6 +44,7 @@ import UpgradeOffers from './UpgradeOffers'
 import { useUpgradeOffers } from './lineIntel'
 import { useAlertsStore, type AlertsStore } from './useAlertsStore'
 import { useAlertFilter } from './useAlertFilter'
+import { useBannerOverlay } from './useBannerOverlay'
 import type { VoiceSetupNotice } from './VoiceSetupLink'
 import ShareImportDialog from '../profiles/ShareImportDialog'
 import { copyText } from '../../lib/clipboard'
@@ -267,6 +268,43 @@ function useVoiceSetupNotice(onOpen?: () => void): VoiceSetupNotice {
 }
 
 /**
+ * The one AlertDialog instance, with everything it needs read off the objects this view already
+ * holds. Its own component because `AlertsView` sits against the 100-code-line function ceiling —
+ * a dialog with nine props is exactly the shape that breaches it — and because a caller passing a
+ * whole store is a smaller surface than one restating six of its fields.
+ */
+function EditAlertDialog({
+  store,
+  edit,
+  voiceSetup,
+  banner
+}: {
+  store: AlertsStore
+  edit: EditDialog
+  voiceSetup: VoiceSetupNotice
+  /** The banner overlay's state for this tab, plus the way to the switch that changes it. */
+  banner: { on: boolean; onOpenPrefs?: () => void }
+}): JSX.Element {
+  return (
+    <AlertDialog
+      open={edit.open}
+      initial={edit.target}
+      packs={store.sortedPacks}
+      defaultPackId={store.defaultPackId}
+      voiceSetup={voiceSetup}
+      allAlwaysPlay={store.prefs.alwaysPlayAll === true}
+      bannerOverlayOn={banner.on}
+      onOpenOverlayPrefs={banner.onOpenPrefs}
+      onClose={edit.close}
+      onSave={(def) => {
+        void store.persistAlerts(def)
+        edit.close()
+      }}
+    />
+  )
+}
+
+/**
  * `onOpenVoicePrefs` is the ONE App-facing prop of this view, and it is optional by agreement:
  * App.tsx hands it `prefsRouting.openSection('voice')` so a row that offers voice output while
  * the chosen tier has nothing to speak with can LINK to the place that fixes it instead of naming
@@ -274,13 +312,23 @@ function useVoiceSetupNotice(onOpen?: () => void): VoiceSetupNotice {
  * bare) must still compile — the link simply does not render.
  */
 export default function AlertsView({
-  onOpenVoicePrefs
+  onOpenVoicePrefs,
+  onOpenOverlayPrefs
 }: {
   onOpenVoicePrefs?: () => void
+  /**
+   * The SECOND such prop, on the same terms (JOS-378): App.tsx hands it
+   * `prefsRouting.openSection('overlays')` so an alert editor whose on-screen controls are hidden
+   * — because the banner overlay is off — can LINK to the switch instead of naming it in prose.
+   */
+  onOpenOverlayPrefs?: () => void
 } = {}): JSX.Element {
   const store = useAlertsStore()
   const { alerts, prefs, sortedPacks, history, persistAlerts, removeAlert } = store
   const voiceSetup = useVoiceSetupNotice(onOpenVoicePrefs)
+  // ONE reader for the whole tab (useBannerOverlay.ts): the list's column and the dialog's block
+  // obey the same visibility rule, so they must read the same answer rather than each asking.
+  const bannerOverlayOn = useBannerOverlay()
   // Local search over every facet an alert carries (JOS-178). It narrows the LIST and nothing
   // else: every alert still fires, whatever the box says.
   const filter = useAlertFilter(alerts, sortedPacks)
@@ -320,6 +368,7 @@ export default function AlertsView({
         packs={sortedPacks}
         voiceSetup={voiceSetup}
         defaultPackId={store.defaultPackId}
+        bannerOverlayOn={bannerOverlayOn}
         filtering={filter.filtering}
         onAddSuggestion={() => setSuggestOpen(true)}
         handlers={{
@@ -332,18 +381,11 @@ export default function AlertsView({
         }}
       />
 
-      <AlertDialog
-        open={edit.open}
-        initial={edit.target}
-        packs={sortedPacks}
-        defaultPackId={store.defaultPackId}
+      <EditAlertDialog
+        store={store}
+        edit={edit}
         voiceSetup={voiceSetup}
-        allAlwaysPlay={prefs.alwaysPlayAll === true}
-        onClose={edit.close}
-        onSave={(def) => {
-          void persistAlerts(def)
-          edit.close()
-        }}
+        banner={{ on: bannerOverlayOn, ...(onOpenOverlayPrefs ? { onOpenPrefs: onOpenOverlayPrefs } : {}) }}
       />
 
       <SoundLibraryDialogs

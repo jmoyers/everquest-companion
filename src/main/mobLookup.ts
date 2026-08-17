@@ -50,6 +50,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logError } from './errorLog'
 import { MobLootIndex, mobKey, parseMobWikitext } from './mobLookupParse'
+import { annotateDropEras } from './mobDropEra'
 import { knowledgeFromCatalog, localMobEntry, mergeLocalKnowledge } from './mobLookupLocal'
 import { type MobIdentity, poisonedAliasKeys, resolveMobIdentity } from './mobAliases'
 import type { MobKnowledge } from '../shared/types'
@@ -232,10 +233,19 @@ function cacheHit(entry: CacheEntry): boolean {
 
 // ---- merge + public API -------------------------------------------------------
 
-/** The LOCAL merge, bound to this process's shared own-loot index. The logic itself lives in
- *  mobLookupLocal.ts so the node test runner can drive it (see `mergeLocalKnowledge`). */
+/**
+ * The LOCAL merge, bound to this process's shared own-loot index. The logic itself lives in
+ * mobLookupLocal.ts so the node test runner can drive it (see `mergeLocalKnowledge`).
+ *
+ * AND THE ERA ANNOTATION (JOS-377), which is here because this is the CONFLUENCE: all four exits
+ * from `lookupMob` — the catalog hit, the cache hit, the freshly-parsed wiki page, and the thrown-
+ * error degrade — return through this one function, so both knowledge paths the ticket names are
+ * annotated by one call site instead of two that can drift. It runs on EVERY read and is never
+ * persisted, exactly like the local merge below it: mob-cache positives never expire, so an era
+ * baked into a cached record would be frozen at whatever the corpus said that day.
+ */
 function mergeLocal(base: MobKnowledge, id: MobIdentity): MobKnowledge {
-  return mergeLocalKnowledge(base, id, ownLoot)
+  return annotateDropEras(mergeLocalKnowledge(base, id, ownLoot))
 }
 
 /**

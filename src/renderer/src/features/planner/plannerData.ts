@@ -187,6 +187,14 @@ export type EraSubject = Pick<PlannerDonor, 'key'> &
     /** LAYER 3, built into the GEAR index at corpus-build time (`main/planner/eraDerive.ts`). Donor
      *  and wishlist subjects simply do not carry it, and absent is exactly "no derivation". */
     eraDerived?: EraDerivation
+    /**
+     * MORE LAYER-1 ZONES, already extracted (JOS-377). Same witness, second spelling: a mob drop
+     * arrives from main carrying the zones its ITEM PAGE named (`MobDrop.eraZones`) rather than the
+     * `{mob, zone}` rows a `PlannerDonor` carries, because a drop row has no use for the mob half
+     * and shipping it would be IPC weight nothing reads. Folded into the same union below, so this
+     * adds EVIDENCE and no rule: the verdict is still `layeredVerdict`'s, unchanged.
+     */
+    zones?: readonly string[]
   }
 
 // Release order AND the display spellings come from era.ts (`eraRank`, `ERA_LABEL`) — the planner
@@ -214,7 +222,7 @@ function latestZoneEra(zones: readonly string[]): Era | null {
 function eraZones(subject: EraSubject): string[] {
   const catalog = sourcesFor(subject.key).flatMap((s) => s.zones)
   const page = (subject.wikiSources ?? []).flatMap((s) => (s.zone === undefined ? [] : [s.zone]))
-  return [...new Set([...catalog, ...page])]
+  return [...new Set([...catalog, ...page, ...(subject.zones ?? [])])]
 }
 
 /**
@@ -232,6 +240,10 @@ function eraCacheKey(subject: EraSubject): string {
     subject.key,
     subject.eraTag ?? '',
     String(subject.wikiSources?.length ?? 0),
+    // SPELLED OUT, not counted, unlike the row above it: `zones` is the channel a MOB DROP arrives
+    // on (JOS-377), and the same item key reaches this cache from the planner carrying none, so a
+    // count would let a zone-less subject read a zone-backed answer straight off the cache.
+    (subject.zones ?? []).join(','),
     derived === undefined ? '' : `${derived.basis}:${derived.target}`
   ].join('\u0000')
 }

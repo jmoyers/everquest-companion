@@ -767,7 +767,10 @@ export class AlertsModule implements EqModule<AlertsSnap, AlertsDelta> {
     if (this.onCooldown(due.cooldownKey, def, nowMs)) return
     this.noteFire(due.cooldownKey, nowMs)
     this.seq += 1
-    this.pending.push({ ...due.fired, ts: nowMs })
+    // `dueAt` rides the firing so a consumer can COUNT DOWN to the deadline this warning is early
+    // of (JOS-378). It is carried only here, on the early-warning path, because it is only here
+    // that a deadline exists — see FiredAlert.dueAt.
+    this.pending.push({ ...due.fired, ts: nowMs, dueAt: due.dueAt })
     this.record(def.id, nowMs, due.fired.matchedText)
   }
 
@@ -788,7 +791,11 @@ export class AlertsModule implements EqModule<AlertsSnap, AlertsDelta> {
     // dupe (app fires arrive off the bus, so there's no fresh LogEvent seq); a
     // trailing flushNow() by main pushes it. matchedText = the signal context.
     this.seq += 1
-    this.pending.push({ alertId, ts, matchedText: context })
+    // MARKED AS AN ECHO (JOS-380). The renderer has already played this one — it is the only side
+    // that can evaluate an app signal — so the record travels for history's sake and the player
+    // skips playback on it. An unmarked record here is what made every app-signal alert fire
+    // twice; only audio coalescing kept it inaudible.
+    this.pending.push({ alertId, ts, matchedText: context, origin: 'app' })
   }
 
   /** Append a fire to an alert's ring buffer, capping at HISTORY_CAP (newest last). */

@@ -34,6 +34,9 @@ import AlertsView from './features/alerts/AlertsView'
 import BuffsView from './features/buffs/BuffsView'
 import TimersView from './features/timers/TimersView'
 import PreferencesView from './features/preferences/PreferencesView'
+// ONE symbol, for ONE preference (JOS-139): the tray menu can change what the X does while the
+// Preferences pane is closed, and the pane's warm snapshot has to hear about it. See the effect.
+import { recordPref } from './features/preferences/prefsSnapshot'
 import FeedbackDialog from './features/feedback/FeedbackDialog'
 // OWNER-ONLY. `devTriage` holds the single `DEV_TOOLS ? lazy(() => import(…)) : null` — the
 // STRIP, which is a compile-time question and stays on `DEV_TOOLS`; in a build without the flag
@@ -91,7 +94,8 @@ function PlainView({
   view,
   viewKey,
   routing,
-  onOpenVoicePrefs
+  onOpenVoicePrefs,
+  onOpenOverlayPrefs
 }: {
   view: View
   viewKey: string
@@ -99,6 +103,9 @@ function PlainView({
   /** CONTRACT with the alerts wave: AlertsView's optional "take me to the voice settings" hook.
    *  Spread rather than named so this tree compiles whether or not that prop exists yet. */
   onOpenVoicePrefs: () => void
+  /** The same contract for Preferences → Overlays (JOS-378): the alert editor's on-screen block
+   *  links there when the banner overlay is off. */
+  onOpenOverlayPrefs: () => void
 }): JSX.Element {
   return (
     <>
@@ -150,7 +157,7 @@ function PlainView({
           whole contract, since the watch list lives in the store and the clocks are re-derived
           by the fold the character switch kicks off. */}
       {view === 'timers' && <TimersView key={viewKey} />}
-      {view === 'alerts' && <AlertsView key={viewKey} {...{ onOpenVoicePrefs }} />}
+      {view === 'alerts' && <AlertsView key={viewKey} {...{ onOpenVoicePrefs, onOpenOverlayPrefs }} />}
       {/* CHARACTER (JOS-45, released JOS-327). It sits HERE, below the no-characters gate, and not
           beside the triage branch: unlike triage this tab reads the game log (name, level, loadout)
           and the character's own inventory dump, so a machine with no EverQuest install has nothing
@@ -211,6 +218,7 @@ function ViewContent({
         viewKey={viewKey}
         routing={routing}
         onOpenVoicePrefs={() => prefs.openSection('voice')}
+        onOpenOverlayPrefs={() => prefs.openSection('overlays')}
       />
       {/* The Mobs tab stays MOUNTED across a deep link (no `key` churn on target
           change) — remounting per character rebuild only, like every other view. */}
@@ -553,11 +561,20 @@ export default function App(): JSX.Element {
     const offFocus = window.eq.onFocusView((focus) =>
       applyDeepLink(focus, { openMob, openQuest, openLeveling, selectView })
     )
+    // WHAT THE X DOES CAN CHANGE WHERE THIS PANE CANNOT SEE IT (JOS-139). The tray icon's menu
+    // carries the same checkbox, and it is used precisely while this window is hidden — so the
+    // Preferences pane's warm snapshot is kept current HERE, at the root, rather than only by the
+    // card. Without it a tray-side flip would be invisible until the next launch: the card seeds
+    // from the cache (JOS-340) and the cache is only ever written by a card's own reply.
+    const offTray = window.eq.onCloseToTray((p) => {
+      recordPref('closeToTray', p)
+    })
     return () => {
       offDelta()
       offChar()
       offEqConfig()
       offFocus()
+      offTray()
     }
   }, [openMob, openQuest, openLeveling, selectView])
 

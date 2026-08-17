@@ -27,7 +27,7 @@ import type {
 } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 import { ActiveRow } from './ActiveBuffRow'
-import { fmtDuration, classAccent, groupKey, groupLabel, estimatorSourceTitle } from './format'
+import { fmtDuration, classAccent, groupKey, groupLabel, estimatePrefix, estimatorSourceTitle } from './format'
 import { Tooltip } from '../../lib/Tooltip'
 
 // Stats-table sections: buffs first, then debuffs (Task #35 — a spell property).
@@ -80,10 +80,13 @@ function StatsTable({ stats, cls }: { stats: Record<string, BuffStat>; cls: Buff
 
 /**
  * The estimate the app uses (JOS-117): max(DB floor, recent observed max). The source names which
- * WON — 'db' when the DB floor held, 'observed' when a logged cast beat it, and since JOS-212
- * 'cluster' when three agreeing clean cycles overruled a floor that was too long. Both learned
- * sources show a "log" chip (the DB is the baseline, the log is what makes it accurate) and are
- * told apart by the tooltip. Falls back to median for older deltas without the field.
+ * WON — 'db' when the DB floor held, 'observed' when a logged cast beat it, since JOS-212
+ * 'cluster' when three agreeing clean cycles overruled a floor that was too long, and since
+ * JOS-379 'deathBound' when the only evidence is a mob that died still carrying the spell. Every
+ * learned source shows a "log" chip (the DB is the baseline, the log is what makes it accurate)
+ * and they are told apart by the tooltip; a bound also wears a `≥` on the figure, because it is a
+ * floor under the duration rather than the duration. Falls back to median for older deltas without
+ * the field.
  */
 function rowEstimate(s: BuffStat): { ms?: number | null; src?: string } {
   const ms = s.estimateMs ?? s.dbDurationMs ?? s.medianMs
@@ -98,6 +101,9 @@ function EstimateCell({ ms, src }: { ms?: number | null; src?: string }): JSX.El
   return (
     <Tooltip title={estimatorSourceTitle(src)}>
       <span>
+        {/* A DEATH BOUND IS A FLOOR, AND THE CELL SAYS SO (JOS-379): `≥ 3m 08s`, never a bare
+            figure that reads as a measurement. See format.ts `estimatePrefix`. */}
+        {estimatePrefix(src)}
         {fmtDuration(ms)}
         {src ? (
           <Chip

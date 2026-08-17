@@ -13,7 +13,9 @@
 import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { ToastRequest } from '../shared/toast'
+import type { AlertBannerPayload } from '../shared/alertBanner'
 import type { ScopeSelection } from '../shared/scopeSelection'
+import type { CloseToTrayPrefs } from '../shared/closeToTray'
 import type { OverlayConfig, OverlayKind } from '../shared/types'
 
 export const windowsApi = {
@@ -29,6 +31,25 @@ export const windowsApi = {
     const listener = (_e: unknown, maximized: boolean): void => cb(maximized)
     ipcRenderer.on(IPC.onWindowMaximized, listener)
     return () => ipcRenderer.removeListener(IPC.onWindowMaximized, listener)
+  },
+
+  // ---- what the X does (JOS-139; shared/closeToTray.ts) ----
+  // IT LIVES IN THIS SLICE, not in a fourth prefs bridge of its own, for the reason this file
+  // exists: src/preload/index.ts is at the 400-code-line ceiling, and a preference about what
+  // CLOSING THIS WINDOW means is a window control wearing a Switch. The setter is a MERGE-PATCH
+  // and resolves to what was actually stored (main re-validates through the shared normalizer),
+  // so the Preferences card renders main's answer rather than assuming its request landed.
+  /** The close-to-tray preference. ON on every install that has not turned it off. */
+  getCloseToTray: (): Promise<CloseToTrayPrefs> => ipcRenderer.invoke(IPC.closeToTrayGet),
+  /** Merge-patch it; the very next close of this window obeys the new value. */
+  setCloseToTray: (patch: Partial<CloseToTrayPrefs>): Promise<CloseToTrayPrefs> =>
+    ipcRenderer.invoke(IPC.closeToTraySet, patch),
+  /** Subscribe to changes made where this window could not see them — the tray menu's checkbox,
+   *  the popover's `Always quit instead`. This is what keeps the two controls agreeing. */
+  onCloseToTray: (cb: (p: CloseToTrayPrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: CloseToTrayPrefs): void => cb(p)
+    ipcRenderer.on(IPC.onCloseToTray, listener)
+    return () => ipcRenderer.removeListener(IPC.onCloseToTray, listener)
   },
 
   // ---- the floating overlays' open-state (Task #52; per-kind in Task #54) ----
@@ -101,5 +122,29 @@ export const windowsApi = {
    * config patch above because this one is APPLIED to the live window as well as persisted —
    * `overlay:setConfig` only stores.
    */
-  setToastLocked: (locked: boolean): void => ipcRenderer.send(IPC.overlaySetLocked, 'toast', locked)
+  setToastLocked: (locked: boolean): void => ipcRenderer.send(IPC.overlaySetLocked, 'toast', locked),
+
+  // ---- the alert banner (JOS-378, shared/alertBanner.ts) ------------------------------
+  /**
+   * "Show this alert on screen." Called by the ALWAYS-MOUNTED AlertPlayer, which is the one place
+   * a fired alert becomes something the user experiences — so the banner rides the same firing
+   * paths as the sound and the speech and can never disagree with them about which alerts fired.
+   * Fire-and-forget; main re-validates and drops it when the overlay is off.
+   */
+  showAlertBanner: (payload: AlertBannerPayload): void => ipcRenderer.send(IPC.alertsBanner, payload),
+  /**
+   * Read the banner overlay's persisted config (its hold, its line budget, its lock).
+   *
+   * Kind-first like `getToastConfig` above, and for the same reason: the overlay WINDOWS read
+   * their own config through the overlay bridge, and the main window needs this for exactly the
+   * two kinds it draws a Preferences card for. Two spelled-out doors are still a smaller surface
+   * than a general per-kind config API handed to the app.
+   */
+  getAlertBannerConfig: (): Promise<OverlayConfig> => ipcRenderer.invoke(IPC.overlayGetConfig, 'alertBanner'),
+  /** Patch the banner overlay's config (Preferences owns its hold + line budget). Main clamps. */
+  setAlertBannerConfig: (patch: Partial<OverlayConfig>): Promise<OverlayConfig> =>
+    ipcRenderer.invoke(IPC.overlaySetConfig, 'alertBanner', patch),
+  /** Lock (click-through) / unlock (position it). APPLIED to the live window as well as stored. */
+  setAlertBannerLocked: (locked: boolean): void =>
+    ipcRenderer.send(IPC.overlaySetLocked, 'alertBanner', locked)
 }

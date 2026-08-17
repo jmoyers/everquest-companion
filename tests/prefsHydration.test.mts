@@ -58,6 +58,9 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     getGraphicsEnvironment: answer('getGraphicsEnvironment', { wine: false, auto: { safeMode: false, opaqueOverlays: false } }),
     getOverlayAutoHide: answer('getOverlayAutoHide', { hideWhenNotRunning: false, hideWhenUnfocused: true }),
     getOverlaySnap: answer('getOverlaySnap', { enabled: true }),
+    // The other switch whose compiled-in default is TRUE (JOS-139), stored FALSE — and the one
+    // with a SECOND control (the tray menu's checkbox) that can move it while this pane is closed.
+    getCloseToTray: answer('getCloseToTray', { enabled: false, noticeAcknowledged: true }),
     getOverlayState: answer('getOverlayState', { toast: true }),
     getToastConfig: answer('getToastConfig', { locked: false }),
     getBuffTrust: answer('getBuffTrust', { externals: ['Faelin'] }),
@@ -82,9 +85,9 @@ test('one read answers every card in the pane, and it snaps the text size to the
   const { reader, calls } = stubReader()
   const snap = await readPrefsSnapshot(reader)
 
-  // EIGHTEEN reads, one batch. The number is not the claim; the claim is that the gate asks each
+  // NINETEEN reads, one batch. The number is not the claim; the claim is that the gate asks each
   // question exactly once, so a pane that mounts does not stampede the store.
-  assert.equal(calls(), 18, 'every read fires exactly once')
+  assert.equal(calls(), 19, 'every read fires exactly once')
 
   // A sample across the KINDS of value, because the defect was never boolean-only: two switches
   // that disagree with their defaults, a ladder stop, a slider pair, and two counts.
@@ -92,6 +95,8 @@ test('one read answers every card in the pane, and it snaps the text size to the
   assert.equal(snap.overlayAutoHide.hideWhenUnfocused, true)
   // Another switch whose stored value disagrees with its compiled-in default (JOS-217 ships OFF).
   assert.equal(snap.overlaySnap.enabled, true)
+  // …and the same claim the other way up (JOS-139 ships ON).
+  assert.equal(snap.closeToTray.enabled, false)
   assert.equal(snap.uiScale, 1.1, 'the ladder value arrives snapped, so the cache cannot hold an off-rung number')
   assert.equal(snap.cursorRing.sizePx, 60)
   assert.equal(snap.alertCount, 3, 'a count, not the list - the Profiles caption is the only reader')
@@ -128,7 +133,7 @@ test('two mounts in one frame share ONE batch', async () => {
   resetPrefsSnapshotForTests()
   const { reader, calls } = stubReader()
   const [a, b] = await Promise.all([loadPrefsSnapshot(reader), loadPrefsSnapshot(reader)])
-  assert.equal(calls(), 18, 'not thirty-six')
+  assert.equal(calls(), 19, 'not thirty-eight')
   assert.equal(a, b)
   resetPrefsSnapshotForTests()
 })
@@ -189,6 +194,7 @@ test('every Preferences card seeds from the gate, and none of them re-reads main
   const cards = [
     'OverlayAutoHideSetting.tsx',
     'OverlaySnapSetting.tsx',
+    'CloseToTraySetting.tsx',
     'GraphicsSetting.tsx',
     'CursorRingSetting.tsx',
     'PerfSetting.tsx',

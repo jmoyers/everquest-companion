@@ -108,6 +108,16 @@ export interface EarlyWarnArm {
 export interface EarlyWarnDue {
   cooldownKey: string
   fired: FiredAlert
+  /**
+   * THE DEADLINE THIS WARNING IS EARLY OF (ms epoch) — the row's own estimated end, carried out
+   * so a consumer can count down to it (JOS-378 banner cards).
+   *
+   * It is `fireAt + sec`, i.e. the projection this scheduler already resolved, and NOT
+   * `now + sec`: the two differ whenever a deadline was already in the past when it was noticed
+   * (the documented degradation for an offset longer than the debuff), and a countdown built on
+   * the wrong one would print a number the world does not agree with.
+   */
+  dueAt: number
 }
 
 /** An arm that has found its row. `rowId` is the whole identity — its absence is the cancellation. */
@@ -335,7 +345,7 @@ export class EarlyWarnings {
       const at = row ? earlyWarnFireAt(row, w.sec) : undefined
       if (at === undefined || nowMs < at) continue
       w.spoken = true
-      due.push({ cooldownKey: w.cooldownKey, fired: w.fired })
+      due.push({ cooldownKey: w.cooldownKey, fired: w.fired, dueAt: at + w.sec * 1000 })
     }
     return due
   }
@@ -384,7 +394,7 @@ export class EarlyWarnings {
       }
       if (nowMs < at) continue
       this.armed.delete(key)
-      due.push({ cooldownKey: a.cooldownKey, fired: a.fired })
+      due.push({ cooldownKey: a.cooldownKey, fired: a.fired, dueAt: at + a.sec * 1000 })
     }
     return due
   }

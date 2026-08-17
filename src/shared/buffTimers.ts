@@ -37,6 +37,17 @@
 // what the player's own casts measured and `source` reads 'cluster'. Invisibility, the floor's own
 // counterexample, scatters and keeps its 20m.
 //
+// JOS-379 ADDED A SOURCE THIS SURFACE INHERITS AND DOES NOT PRINT, which is worth stating so the
+// absence reads as a ruling. A DEATH BOUND — a debuffed mob that died with no wear-off ever printed
+// — lifts the estimator to a proven FLOOR under the real duration and reports source 'deathBound'.
+// The bar counts down from it exactly as from any other number, which is the honest behaviour: it
+// is the best claim the log supports, and it is the one that stopped the early-warning alert from
+// announcing a slow that was still on the mob. The "at least" QUALIFIER is not on this surface,
+// because JOS-358 removed row hovers from the timer windows by owner ruling — a bar over a game is
+// a glance, and the sentence lives where a reader can act on it (the Buffs tab's estimate cell and
+// the active-buff row, which prefix the figure with `≥`). `BuffTimerRow` carries no `source` field
+// at all today; adding one to spell a qualifier no pixel would show would be the wrong half of it.
+//
 // JOS-118 EXTENDS THAT RULE IN TWO PLACES, both for the same reason — only OUR OWN cast under OUR
 // OWN modifiers is a duration we are entitled to learn from. (1) An instance now opens only from a
 // LANDING line, so a cast that was resisted (or simply never confirmed) mints nothing, where the

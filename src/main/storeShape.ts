@@ -8,6 +8,7 @@
 import type { AlertDef, AlertPrefs, OverlayConfig, OverlayKind, ProgressState, UpdateChannel, VoicePrefs } from '../shared/types'
 import type { CursorRingPrefs, OverlayAutoHidePrefs } from '../shared/presencePrefs'
 import type { OverlaySnapPrefs } from '../shared/overlaySnap'
+import type { CloseToTrayPrefs } from '../shared/closeToTray'
 import type { TelemetryPrefs } from '../shared/telemetry'
 import type { PerfHudPrefs } from '../shared/perf'
 import type { ProcessPriorityPrefs } from '../shared/processPriority'
@@ -148,6 +149,20 @@ export interface StoreShape {
    * `storeOverlaySnap.ts` because store.ts is at the 400-code-line ceiling.
    */
   overlaySnap?: OverlaySnapPrefs
+  /**
+   * WHAT THE X ON THE MAIN WINDOW DOES, and whether this install has been told (JOS-139;
+   * shared/closeToTray.ts). `{ enabled, noticeAcknowledged }`, defaulting to `{ true, false }`.
+   *
+   * ABSENT MEANS THE SHIPPED BEHAVIOUR OF THE FEATURE — the X hides to the tray, and the one-time
+   * card has not been acknowledged — so it is another additive optional key on the carve-out
+   * above: no schema bump, no migration, `normalizeCloseToTray` defaults every field. It is the
+   * one key on that list whose default is ON rather than off; `storeCloseToTray.ts`'s header says
+   * why that does not make it `processPriority` (which took a migration for exactly the reason
+   * this key does not need one: nothing here ever has to tell a stored default from an inherited
+   * one). The accessors live in `storeCloseToTray.ts` because store.ts is at the 400-code-line
+   * ceiling.
+   */
+  closeToTray?: CloseToTrayPrefs
   // `eqExclusiveNoticeDismissedVersion` (JOS-368) LIVED HERE and was removed by JOS-375 with the
   // note it remembered — the game's Fullscreen setting is a borderless window on this client, so
   // the advice could never be true. Migration 12 → 13 deletes the key from any store that has it.

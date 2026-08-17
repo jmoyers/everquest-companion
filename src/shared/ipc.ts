@@ -249,6 +249,23 @@ export const IPC = {
   // and it is OFF unless somebody has turned it on — an absent key drags exactly as it always did.
   overlaySnapGet: 'overlaySnap:get',
   overlaySnapSet: 'overlaySnap:set',
+  // ---- closing the window keeps the companion running (JOS-139; shared/closeToTray.ts) ----
+  // renderer(main app) -> main: read / patch the close-to-tray preference. Returns
+  // CloseToTrayPrefs, re-validated at the handler through the same normalizer the store uses.
+  closeToTrayGet: 'closeToTray:get',
+  closeToTraySet: 'closeToTray:set',
+  // main -> renderer(main app): the preference changed somewhere the app window could not see —
+  // the tray menu's checkbox, or the popover's `Always quit instead`. Payload CloseToTrayPrefs.
+  // Without it the Preferences switch and the tray checkbox would be two answers to one question.
+  onCloseToTray: 'closeToTray:changed',
+  // ---- the tray popover (JOS-139) ----
+  // renderer(tray notice window ONLY) -> main. Three SENDS and no reads: the card states what
+  // just happened and offers the three ways out of it, and every one of them is a decision main
+  // carries out. `quit` does not touch the preference (they may want to read the card again);
+  // `alwaysQuit` turns it OFF and quits; `acknowledge` is the card saying it has been read.
+  trayNoticeQuit: 'trayNotice:quit',
+  trayNoticeAlwaysQuit: 'trayNotice:alwaysQuit',
+  trayNoticeAcknowledge: 'trayNotice:acknowledge',
   // main -> renderer(ring window ONLY): the ring's size/thickness changed. Payload CursorRingPrefs.
   onCursorRingConfig: 'cursorRing:config',
   // main -> renderer(ring window ONLY): one cursor sample, in the ring window's own CSS px.
@@ -292,6 +309,21 @@ export const IPC = {
   // (`toast:sound` lived here until 2026-08-05. A toast has no voice of its own: the seeded
   // "Raid target defeated" / "Quest complete" ALERTS speak on the same events, and a second
   // channel could only ever say it twice. Removed with the sound controls it served.)
+
+  // ---- the alert banner (JOS-378, shared/alertBanner.ts) ----
+  // renderer(main app) -> main, FIRE-AND-FORGET: "show this alert on screen" (AlertBannerPayload).
+  // ONE channel for every firing path, because there is one producer: the always-mounted
+  // AlertPlayer, which is where a fired alert already becomes sound and speech. Everything that
+  // decides WHETHER an alert fires (enabled, cooldown, target scope) happened upstream in the
+  // alerts module and is not re-asked here.
+  // VALIDATED AT THE HANDLER (`validateAlertBannerPayload`): the payload is rebuilt field by
+  // field, the colour is checked against a closed union and the text is capped, because it
+  // crosses into a window that draws it.
+  alertsBanner: 'alerts:banner',
+  // main -> renderer(alertBanner overlay): one validated line to render. The overlay queues,
+  // times and dismisses it locally and fetches nothing — the celebration toast's contract, on
+  // the kind that shares its queue.
+  onAlertBanner: 'alerts:banner-card',
 
   // ---- cross-window deep link (Task #64) ----
   // renderer(overlay) -> main: "focus the app on this" (AppFocus). Main shows/restores/focuses

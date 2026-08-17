@@ -15,6 +15,7 @@ import type {
 import { OVERLAY_KINDS } from '../shared/types'
 import type { ScopeSelection } from '../shared/scopeSelection'
 import type { ToastPayload } from '../shared/toast'
+import type { AlertBannerPayload } from '../shared/alertBanner'
 
 export type { CombatSnapshot, SnapshotOpts, OverlayConfig, OverlayDrill, OverlayKind, MobKnowledge }
 
@@ -182,6 +183,18 @@ const overlayApi = {
     const listener = (_e: unknown, t: ToastPayload): void => cb(t)
     ipcRenderer.on(IPC.onToast, listener)
     return () => ipcRenderer.removeListener(IPC.onToast, listener)
+  },
+
+  /**
+   * ALERT BANNER (JOS-378): one validated line to render, pushed by main. Self-contained by the
+   * same law the toast keeps — the overlay times and dismisses it locally and fetches nothing.
+   * The two are separate members rather than one because they are separate WINDOWS: a banner
+   * window must never be handed a celebration, and vice versa.
+   */
+  onAlertBanner: (cb: (b: AlertBannerPayload) => void): (() => void) => {
+    const listener = (_e: unknown, b: AlertBannerPayload): void => cb(b)
+    ipcRenderer.on(IPC.onAlertBanner, listener)
+    return () => ipcRenderer.removeListener(IPC.onAlertBanner, listener)
   },
 
   /**

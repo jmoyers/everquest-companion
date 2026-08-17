@@ -30,7 +30,10 @@ import EditIcon from '@mui/icons-material/Edit'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import HistoryIcon from '@mui/icons-material/History'
 import IosShareIcon from '@mui/icons-material/IosShare'
+import DesktopWindowsIcon from '@mui/icons-material/DesktopWindows'
+import DesktopAccessDisabledIcon from '@mui/icons-material/DesktopAccessDisabled'
 import type { AlertDef, AlertFireRecord, SoundPack } from '@shared/types'
+import { alertShowsOnScreen } from '@shared/alertBanner'
 import { formatTime } from '../../lib/formatDate'
 import AudioPicker from './AudioPicker'
 import type { VoiceSetupNotice } from './VoiceSetupLink'
@@ -187,11 +190,29 @@ function AlertRowVolume({
   )
 }
 
-/** The constant five-icon action cluster (see ALERT_ROW_ACTIONS_SX). */
+/**
+ * The constant action cluster (see ALERT_ROW_ACTIONS_SX) — five icons, and a SIXTH while the alert
+ * banner overlay is on (JOS-378).
+ *
+ * WHY THIS CLUSTER AND NOT A NEW GRID COLUMN. The ask is bulk taming: go down the list and decide
+ * which alerts belong on screen, without opening eighty dialogs. That wants a control in the same
+ * place on every row, which is exactly what this cluster is — a fixed strip at the right edge, in
+ * a constant order, that never wraps. A sixth GRID column would instead have to be threaded
+ * through both `gridTemplateAreas` (tight and wide) and both column tracks, changing a measured
+ * layout at every width for every user — including the ones who never turn this overlay on, since
+ * the tracks are static. The cluster grows and shrinks with the feature; the row's layout does not
+ * move.
+ *
+ * IT IS ONLY THERE WHILE THE OVERLAY IS (owner ruling 2): a switch that does nothing is worse than
+ * a missing one, and eighty rows of dead chrome is the version of that mistake this list would
+ * make.
+ */
 function AlertRowActions({
   fireCount,
   isOpen,
+  showOnScreen,
   onToggle,
+  onToggleShowOnScreen,
   onTest,
   onCopyShare,
   onEdit,
@@ -199,7 +220,10 @@ function AlertRowActions({
 }: {
   fireCount: number
   isOpen: boolean
+  /** Null while the banner overlay is off — the icon does not render at all. */
+  showOnScreen: boolean | null
   onToggle: () => void
+  onToggleShowOnScreen: () => void
   onTest: () => void
   onCopyShare: () => void
   onEdit: () => void
@@ -207,6 +231,25 @@ function AlertRowActions({
 }): JSX.Element {
   return (
     <Box className="alertRowActions" sx={ALERT_ROW_ACTIONS_SX}>
+      {showOnScreen !== null && (
+        // STATE, NEVER PROCESS: the title says what is true of this alert now, and the two
+        // strikethrough/plain icons say the same thing without being read.
+        <IconButton
+          size="small"
+          aria-label={showOnScreen ? 'Showing on screen' : 'Not showing on screen'}
+          title={showOnScreen ? 'Showing on screen' : 'Not showing on screen'}
+          data-testid="alert-show-on-screen-toggle"
+          data-on={showOnScreen ? 'true' : 'false'}
+          color={showOnScreen ? 'primary' : 'default'}
+          onClick={onToggleShowOnScreen}
+        >
+          {showOnScreen ? (
+            <DesktopWindowsIcon fontSize="small" />
+          ) : (
+            <DesktopAccessDisabledIcon fontSize="small" />
+          )}
+        </IconButton>
+      )}
       <IconButton
         size="small"
         aria-label={`Recent fires (${fireCount})`}
@@ -254,6 +297,7 @@ function AlertRow({
   packs,
   voiceSetup,
   defaultPackId,
+  bannerOverlayOn,
   onToggle,
   handlers
 }: {
@@ -264,6 +308,8 @@ function AlertRow({
   voiceSetup: VoiceSetupNotice
   /** The user's default sound pack (JOS-273) — what this row falls back to, and reports. */
   defaultPackId: string | undefined
+  /** Is the alert banner overlay on (JOS-378)? Off ⇒ this row shows no on-screen control. */
+  bannerOverlayOn: boolean
   onToggle: (id: string) => void
   handlers: AlertRowHandlers
 }): JSX.Element {
@@ -309,7 +355,14 @@ function AlertRow({
         <AlertRowActions
           fireCount={fires.length}
           isOpen={isOpen}
+          showOnScreen={bannerOverlayOn ? alertShowsOnScreen(def) : null}
           onToggle={() => onToggle(def.id)}
+          // Written as an EXPLICIT boolean either way, so a row toggled ON stores `showOnScreen:
+          // true` rather than deleting the key — the def then says what the user decided, and
+          // `defFromForm`'s omit-at-default rule (which does drop it) stays the editor's business.
+          onToggleShowOnScreen={() =>
+            handlers.onPersist({ ...def, showOnScreen: !alertShowsOnScreen(def) })
+          }
           onTest={() => handlers.onTest(def)}
           onCopyShare={() => handlers.onCopyShare([def.id])}
           onEdit={() => handlers.onEdit(def)}
@@ -334,6 +387,7 @@ export default function AlertList({
   packs,
   voiceSetup,
   defaultPackId,
+  bannerOverlayOn,
   filtering,
   onAddSuggestion,
   handlers
@@ -346,6 +400,9 @@ export default function AlertList({
   voiceSetup: VoiceSetupNotice
   /** One answer for the whole list: which pack is the user's (JOS-273). */
   defaultPackId: string | undefined
+  /** One answer for the whole list: is the banner overlay on (JOS-378, useBannerOverlay.ts)?
+   *  The dialog opened from a row reads the SAME value, so the two surfaces agree by construction. */
+  bannerOverlayOn: boolean
   /**
    * Is a search narrowing this list right now (JOS-178)? The list itself does nothing differently;
    * it is the EMPTY state that changes — "nothing matches" and "you have no alerts" are two
@@ -385,6 +442,7 @@ export default function AlertList({
             packs={packs}
             voiceSetup={voiceSetup}
             defaultPackId={defaultPackId}
+            bannerOverlayOn={bannerOverlayOn}
             onToggle={toggleExpanded}
             handlers={handlers}
           />

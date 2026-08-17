@@ -102,7 +102,10 @@ test('NO BARE setAlwaysOnTop SURVIVES IN windows.ts — one door, or the guard i
 
 test('THE OVERLAY SHOW PATHS ARE GUARDED, and the ring paths are not', () => {
   for (const decl of [
-    'function applyOpaqueToastVisibility(',
+    // The opaque-visibility path is now per STRIP KIND rather than per toast (JOS-378 added the
+    // alert banner, whose empty window has the same problem opaque); the guard it must go through
+    // is unchanged, which is the whole of what this test is about.
+    'function applyOpaqueStripVisibility(',
     'export function createOverlayWindow(',
     'export function setOverlaysHidden('
   ]) {

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The TRAY POPOVER (JOS-139): the card that appears just above the notification-area icon the
+      first time the X hides this app instead of quitting it. Two sentences and three buttons,
+      in a frameless always-on-top window main positions and dismisses (src/main/tray.ts).
+
+      OPAQUE, unlike the overlays. It is not drawn over the game — it is drawn over the desktop,
+      beside the taskbar, and it has to be readable against whatever is behind it. So the page
+      paints the app's own background colour rather than leaving the window transparent, and the
+      window is built with the same solid `backgroundColor` (windows.ts / tray.ts).
+
+      CSP: the same deny-by-default policy as index.html / overlay.html, minus everything this
+      page cannot use. It loads no images, no fonts of its own, and speaks to nothing.
+        script-src 'self'   no inline/eval.
+        style-src 'unsafe-inline'  the <style> block below, and React's inline style props.
+        connect-src 'self'  no fetch of its own; 'self' covers dev HMR's WebSocket.
+        img-src / font-src / object-src / frame-src / child-src / base-uri / form-action  'none'.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'self'; object-src 'none'; frame-src 'none'; child-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>EQ Legends Companion</title>
+    <style>
+      /* The app's own background (theme.ts `background.default`), so the card reads as this
+         application rather than as a system notification. The window is built with the same
+         value, which is what keeps the first frame from flashing white. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0f1115;
+        color: #e6e8ee;
+        overflow: hidden;
+        user-select: none;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      /* NOTHING HERE IS DRAGGABLE. There is no `-webkit-app-region` anywhere on this page: the
+         card is placed by main against the tray icon and lives for fifteen seconds, so a window
+         the user could pick up would only ever be a window they picked up by accident. */
+      #tray-root {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="tray-root"></div>
+    <script type="module" src="/src/tray/trayNotice.tsx"></script>
+  </body>
+</html>

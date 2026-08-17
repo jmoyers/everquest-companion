@@ -81,14 +81,17 @@ export default defineConfig({
       // Sourcemaps, for the reason spelled out on the main bundle above.
       sourcemap: true,
       rollupOptions: {
-        // Three preloads: the full app bridge (index), a minimal overlay bridge (overlay)
-        // that exposes only the combat snapshot + overlay window controls (Task #52), and
+        // Four preloads: the full app bridge (index), a minimal overlay bridge (overlay)
+        // that exposes only the combat snapshot + overlay window controls (Task #52),
         // the receive-only cursor-ring bridge (cursor) — three methods, none of which can
-        // change anything. electron-vite emits out/preload/{index,overlay,cursor}.js.
+        // change anything — and the tray popover's send-only bridge (tray, JOS-139): three
+        // verbs and no reads at all. electron-vite emits
+        // out/preload/{index,overlay,cursor,tray}.js.
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
           overlay: resolve(__dirname, 'src/preload/overlay.ts'),
-          cursor: resolve(__dirname, 'src/preload/cursor.ts')
+          cursor: resolve(__dirname, 'src/preload/cursor.ts'),
+          tray: resolve(__dirname, 'src/preload/tray.ts')
         }
       }
     }
@@ -125,13 +128,15 @@ export default defineConfig({
       // the bundle a minifier renames and re-lines most aggressively.
       sourcemap: true,
       rollupOptions: {
-        // Three HTML entries: the main app (index), the floating overlay meters (overlay,
-        // Task #52) and the cursor ring (cursor) — one <div> and no framework.
-        // electron-vite emits out/renderer/{index,overlay,cursor}.html.
+        // Four HTML entries: the main app (index), the floating overlay meters (overlay,
+        // Task #52), the cursor ring (cursor) — one <div> and no framework — and the tray
+        // popover (tray, JOS-139), one static card with no MUI.
+        // electron-vite emits out/renderer/{index,overlay,cursor,tray}.html.
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
-          cursor: resolve(__dirname, 'src/renderer/cursor.html')
+          cursor: resolve(__dirname, 'src/renderer/cursor.html'),
+          tray: resolve(__dirname, 'src/renderer/tray.html')
         }
       }
     }

@@ -102,6 +102,29 @@ export interface MobDrop {
    * Absent when the span was empty or missing; never normalized into a scale we'd be inventing.
    */
   rarity?: string
+  /**
+   * THE ITEM PAGE'S OWN ERA BANNER, VERBATIM ("Velious", "FearHateRevamp") — the two fields
+   * below are the ERA JOIN'S EVIDENCE, attached in main by `mobDropEra.ts` because that is where
+   * the 11k-item corpus lives (`src/main/data/items.json`). They carry no verdict: what a token
+   * MEANS is decided in exactly one place for the whole app (`shared/planner/era.ts`), and the
+   * renderer folds these two into the same `EraSubject` the planner and the wish list use.
+   *
+   * WHY THIS EXISTS (JOS-377). The wiki's mob page transcludes `{{:Item}}` per row and each row
+   * draws its OUT OF ERA pill from the item page; our mob-loot surfaces rendered `dropsWiki`
+   * straight from the catalog and never consulted the era layer, so Cazic Thule offered the
+   * seven-item Fear-revamp table as farmable loot.
+   *
+   * BOTH ARE OPTIONAL AND ABSENT IS HONEST. A record served by an older build's persistent cache,
+   * or an item the corpus does not hold, simply arrives without them and renders as `era?` -
+   * "nothing states an era", never "it is gone" (law 1).
+   */
+  eraTag?: string
+  /**
+   * The zones the ITEM PAGE itself named under `|dropsfrom`, deduped. Layer 1's evidence from the
+   * half of the wiki the renderer cannot see: it already inverts the mob catalog for zones
+   * (`lib/itemSources.sourcesFor`), and the two halves omit different things.
+   */
+  eraZones?: string[]
 }
 
 /** One item the CURRENT character has actually looted off this mob (own loot history). */

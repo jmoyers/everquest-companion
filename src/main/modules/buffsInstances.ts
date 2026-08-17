@@ -44,6 +44,7 @@ import type { PetEntities } from './buffsEntities'
 import type { SpellStats } from './buffsStats'
 import { buildActive, type ActiveSpec } from './buffsView'
 import {
+  deathBoundSpan,
   deathCensorsActive,
   deathCensorsOpen,
   hygieneCap,
@@ -673,13 +674,30 @@ export class BuffInstances {
    * only an empty group removes it. This used to be `retireEntity(key, {hostileOnly:true})`,
    * which deleted the whole row, so killing one of four slowed mobs cleared all four.
    *
-   * AND IT MINTS NOTHING. A land-to-death span is not a duration — the spell was cut short by the
-   * corpse, not observed running out. That refusal is STRUCTURAL: unlike `recordFade`, this method
-   * discards what `closeOldest` hands back and never reaches `addSample` at all, exactly as
-   * `sweepHygiene` never has. `contaminateAll` is the separate half — it is about the landings
-   * that SURVIVE the close, which are now landings of a group that has lost track of which mob is
-   * which, and it is buffRounds.ts ruling 5's own sentence (a death contaminates) written where
-   * the death happens rather than left as an accident of how rounds are counted.
+   * AND IT MINTS NO CYCLE. A land-to-death span is not a duration — the spell was cut short by the
+   * corpse, not observed running out — so `closeOldest`'s sample is discarded here exactly as it
+   * always was and `addSample` is never reached down the clean-cycle path. `contaminateAll` is the
+   * separate half — it is about the landings that SURVIVE the close, which are now landings of a
+   * group that has lost track of which mob is which, and it is buffRounds.ts ruling 5's own
+   * sentence (a death contaminates) written where the death happens rather than left as an
+   * accident of how rounds are counted.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * WHAT IT DOES MINT, SINCE JOS-379, IS A LOWER BOUND — and the distinction above is exactly why
+   * it may. The span is not a duration; it is a PROOF THE DURATION IS AT LEAST THIS LONG, because
+   * no wear-off ever printed between the landing and the corpse. A landing that is still in this
+   * group has by construction not been closed by a wear-off — that is what `recordFade` does to
+   * one — so the absence is read off the model's own bookkeeping rather than searched for. Every
+   * rail that keeps "at least" honest (the witnessed channel, the one-landing rule, the same-name
+   * cap, the absolute cap, the offline-gap refusal) is stated on `deathBoundSpan`, and the bound is
+   * pushed through the SAME `addSample` a cycle uses so every live bar of that line re-reads it.
+   *
+   * IT IS THE OPEN RECORD, NOT THE ROW, THAT IS MEASURED — which is what makes the unwitnessed
+   * cull harmless here. JOS-156 deliberately leaves the open cast standing when it retires an
+   * overdue row, and JOS-203 retires that record on the FLOOR's schedule (3× the DB base); so a
+   * mob that dies after its bar was culled is still measured against the landing it belongs to,
+   * with no second memory to build. A zone forgets it (`onZone`), and the death itself CONSUMES it
+   * — the landing is closed on the way out, so one corpse can only ever teach once.
    *
    * An ACTIVE with no open record behind it has no group to count down and no landing to close,
    * so it clears outright.
@@ -687,12 +705,7 @@ export class BuffInstances {
   onEntityDeath(entityKey: string, ts: number): void {
     let changed = false
     for (const [ik, o] of [...this.open]) {
-      if (!deathCensorsOpen(o, entityKey, this.stats.classOf(o.spellKey) === 'debuff')) continue
-      o.group.contaminateAll()
-      o.group.closeOldest(ts)
-      if (!o.group.empty) this.restat(ik, o)
-      else if (this.open.delete(ik)) this.active.delete(ik)
-      changed = true
+      if (this.censorOpenOnDeath(ik, o, entityKey, ts)) changed = true
     }
     for (const [ik, a] of [...this.active]) {
       if (this.open.has(ik) || !deathCensorsActive(a, instanceEntityKey(ik), entityKey)) continue
@@ -700,6 +713,30 @@ export class BuffInstances {
       changed = true
     }
     if (changed) this.dirty = true
+  }
+
+  /**
+   * One open record against one corpse: MEASURE it (the JOS-379 lower bound, when every rail on
+   * `deathBoundSpan` holds), then close its oldest landing and contaminate what is left. Returns
+   * whether this record was the death's business at all.
+   *
+   * THE BOUND IS READ BEFORE THE CLOSE, because the close is what consumes the landing it measures,
+   * and MINTED before it too: `addSample` only re-projects rows that already exist, so a row this
+   * death is about to delete is re-read and then deleted, which costs nothing and keeps the mint
+   * beside the reasoning that earned it.
+   */
+  private censorOpenOnDeath(ik: string, o: OpenCast, entityKey: string, ts: number): boolean {
+    const isDebuff = this.stats.classOf(o.spellKey) === 'debuff'
+    if (!deathCensorsOpen(o, entityKey, isDebuff)) return false
+    // NEVER off the `unknown-hostile` bucket `deathCensorsOpen` also sweeps: that row's target is
+    // an INFERENCE, and a span measured against a mob the log never named is not evidence (law 1).
+    const ms = isDebuff && o.entityKey === entityKey ? deathBoundSpan(o, entityKey, ts, this.stats) : null
+    if (ms != null) this.addSample(o.spellKey, o.caster, o.spell, { ms, ts, deathBound: true })
+    o.group.contaminateAll()
+    o.group.closeOldest(ts)
+    if (!o.group.empty) this.restat(ik, o)
+    else if (this.open.delete(ik)) this.active.delete(ik)
+    return true
   }
 
   /**

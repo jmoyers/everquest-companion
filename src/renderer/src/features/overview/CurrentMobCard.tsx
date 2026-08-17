@@ -17,15 +17,23 @@
 // renders a leaner row set than MobPage — no rarity column, no per-item drill-down, no
 // also-looted-by-you section — but it keeps those distinctions intact, because they are the
 // difference between a claim and an absence of one.
+//
+// AND THE SAME ERA RULE THE MOB PAGE FOLLOWS (JOS-377), by the same call: out-of-era rows behind a
+// "+N out of era" disclosure, in-era and unknown plainly, chips from the app's one era verdict.
+// The card being small is not a reason to answer differently — it is the surface a player reads
+// mid-pull, so it is the worst place to name loot the server does not run.
 
-import type { JSX } from 'react'
+import { type JSX, useState } from 'react'
 import { Box, Chip, CircularProgress, Stack, Typography } from '@mui/material'
-import type { MobKnowledge } from '@shared/types'
+import type { MobDrop, MobKnowledge } from '@shared/types'
 import { DashCard, QuietNote } from '../combat/combatShared'
 import { KnownItemTooltip } from '../../lib/KnownItemTooltip'
 import { itemCountKey } from '../../lib/itemName'
+import { dropEraSubject, outOfEraLabel, splitDropsByEra } from '../mobs/dropEra'
 import type { MobTarget } from '../mobs/mobTarget'
 import { foldSeenVariants } from '../mobs/seenVariants'
+// The app's ONE era chip, from the app's ONE era verdict — the mob page's rows draw the same one.
+import { EraChip } from '../planner/PlannerChips'
 import type { CurrentMobState } from './useCurrentMob'
 
 /** Drop rows before the "+N more" hands off to the mob page. */
@@ -69,51 +77,89 @@ function DropsEmpty({ state }: { state: CurrentMobState }): JSX.Element {
   return <QuietNote>Nothing known about this one yet.</QuietNote>
 }
 
-/** The drop list: the wiki table leads (it is the definitive statement), capped, then "+N more". */
+/** One drop line: the name, its era chip when there is one to draw, and your own count. */
+function DropLine({ drop, seen }: { drop: MobDrop; seen?: { count: number } }): JSX.Element {
+  return (
+    <KnownItemTooltip name={drop.item}>
+      <Stack direction="row" spacing={1} alignItems="baseline" sx={{ py: 0.15, minWidth: 0 }}>
+        <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+          {drop.item}
+        </Typography>
+        <EraChip subject={dropEraSubject(drop)} />
+        <Box sx={{ flexGrow: 1 }} />
+        {seen && (
+          <Typography variant="caption" sx={{ color: 'success.main', flexShrink: 0 }}>
+            {seen.count}× yours
+          </Typography>
+        )}
+      </Stack>
+    </KnownItemTooltip>
+  )
+}
+
+/** A caption that behaves like a button — the card's two disclosures, one shape. */
+function TapLine({
+  onTap,
+  testId,
+  children
+}: {
+  onTap: () => void
+  testId?: string
+  children: React.ReactNode
+}): JSX.Element {
+  return (
+    <Typography
+      variant="caption"
+      role="button"
+      tabIndex={0}
+      data-testid={testId}
+      onClick={onTap}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onTap()
+      }}
+      sx={{ display: 'block', mt: 0.25, color: 'primary.main', cursor: 'pointer' }}
+    >
+      {children}
+    </Typography>
+  )
+}
+
+/**
+ * The drop list: the wiki table leads (it is the definitive statement), capped, then "+N more".
+ *
+ * AND IT IS READ AGAINST THE ERA THE SERVER IS ON (JOS-377), by the same rule and the same call as
+ * the mob page — a card that answers "what is this thing worth killing for" with a revamp table
+ * the server does not run is the same lie in a smaller box. Out-of-era rows sit behind their own
+ * "+N out of era" disclosure, which expands IN PLACE here rather than handing off to the page: the
+ * "+N more" line already owns the hand-off, and two links that mean different things must not look
+ * identical. In-era and unknown rows render plainly; nothing is dropped.
+ */
 function DropList({ state, onOpen }: { state: CurrentMobState; onOpen: () => void }): JSX.Element {
-  const wiki = state.knowledge?.dropsWiki ?? []
+  const [showOut, setShowOut] = useState(false)
+  const { shown, out } = splitDropsByEra(state.knowledge?.dropsWiki ?? [])
   // The SAME fold the mob page uses (JOS-196) — this card has no room for the breakdown and
   // deliberately does not offer it, but "3× yours" and "1× yours" cannot be two answers to one
   // question on two surfaces. Counting keys, so an upgrade annotates the row it belongs to.
   const seenByKey = new Map(foldSeenVariants(state.knowledge?.dropsSeen ?? []).map((g) => [g.key, g]))
+  const line = (d: MobDrop): JSX.Element => (
+    <DropLine key={d.item} drop={d} seen={seenByKey.get(itemCountKey(d.item))} />
+  )
   return (
     <Box sx={{ height: DROPS_BOX_HEIGHT, overflow: 'auto', minWidth: 0 }}>
-      {wiki.length === 0 ? (
+      {shown.length === 0 && out.length === 0 ? (
         <DropsEmpty state={state} />
       ) : (
         <>
-          {wiki.slice(0, DROPS_SHOWN).map((d) => {
-            const seen = seenByKey.get(itemCountKey(d.item))
-            return (
-              <KnownItemTooltip key={d.item} name={d.item}>
-                <Stack direction="row" spacing={1} alignItems="baseline" sx={{ py: 0.15, minWidth: 0 }}>
-                  <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
-                    {d.item}
-                  </Typography>
-                  <Box sx={{ flexGrow: 1 }} />
-                  {seen && (
-                    <Typography variant="caption" sx={{ color: 'success.main', flexShrink: 0 }}>
-                      {seen.count}× yours
-                    </Typography>
-                  )}
-                </Stack>
-              </KnownItemTooltip>
-            )
-          })}
-          {wiki.length > DROPS_SHOWN && (
-            <Typography
-              variant="caption"
-              role="button"
-              tabIndex={0}
-              onClick={onOpen}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onOpen()
-              }}
-              sx={{ display: 'block', mt: 0.25, color: 'primary.main', cursor: 'pointer' }}
-            >
-              +{wiki.length - DROPS_SHOWN} more
-            </Typography>
+          {shown.slice(0, DROPS_SHOWN).map(line)}
+          {shown.length > DROPS_SHOWN && (
+            <TapLine onTap={onOpen}>+{shown.length - DROPS_SHOWN} more</TapLine>
           )}
+          {out.length > 0 && (
+            <TapLine onTap={() => setShowOut(!showOut)} testId="overview-mob-era-toggle">
+              {outOfEraLabel(out.length)}
+            </TapLine>
+          )}
+          {showOut && out.map(line)}
         </>
       )}
     </Box>

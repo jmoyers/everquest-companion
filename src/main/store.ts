@@ -29,6 +29,7 @@ import {
 } from '../shared/presencePrefs'
 import { normalizeTelemetryPrefs, type TelemetryPrefs } from '../shared/telemetry'
 import { DEFAULT_TOAST_CONFIG, normalizeToastConfig } from '../shared/toast'
+import { DEFAULT_ALERT_BANNER_CONFIG, normalizeAlertBannerConfig } from '../shared/alertBanner'
 import { normalizePerfHudPrefs, type PerfHudPrefs } from '../shared/perf'
 import { normalizeGraphicsPrefs, type GraphicsPrefs } from '../shared/graphicsPrefs'
 import { normalizeBuffTrustPrefs, type BuffTrustPrefs } from '../shared/buffTrust'
@@ -433,7 +434,20 @@ const DEFAULT_OVERLAY_CONFIG: Record<OverlayKind, OverlayConfig> = {
   // RESPAWN CLOCKS (JOS-194). Default off, no migration — the fourth restatement of the same
   // policy, and the argument above holds verbatim: `overlays.respawn` has never been written by
   // any build, so every existing store reads this default and gets the window off for free.
-  respawn: { open: false, locked: false, bgAlpha: 0.72, bounds: undefined, drill: null }
+  respawn: { open: false, locked: false, bgAlpha: 0.72, bounds: undefined, drill: null },
+  // THE ALERT BANNER (JOS-378). `locked: true` is the resting state that makes it a notifier
+  // rather than a window — the celebration toast's arrangement, and for the same reason: locked
+  // is click-through, and the overlay flips capture on only while a line is actually on screen.
+  //
+  // DEFAULT OFF, NO MIGRATION — the fifth restatement of the policy above, and this time it is an
+  // explicit owner ruling (2026-08-15) rather than an inference: the overlay does not ship
+  // enabled, it lives in Preferences → Overlays beside the other kinds, and the user turns it on.
+  // `overlays.alertBanner` has never been written by any build, so every existing store reads this
+  // default and gets the window off for free. A migration is precisely the thing that could turn
+  // something on (migrateToV9 is the one time this repo flipped a stored default, and its comment
+  // says that was a one-time correction and never a policy), so there is none.
+  // prettier-ignore
+  alertBanner: { open: false, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, alertBanner: { ...DEFAULT_ALERT_BANNER_CONFIG } }
 }
 
 /** Read a kind's overlay config, filling missing fields with the kind's defaults.
@@ -447,6 +461,11 @@ export function getOverlayConfig(kind: OverlayKind): OverlayConfig {
   // hand) replaces the defaults wholesale. Normalizing it here means every reader — including
   // the one that decides what sound to play — sees a complete, clamped blob.
   if (kind === 'toast') cfg.toast = normalizeToastConfig({ ...DEFAULT_TOAST_CONFIG, ...cfg.toast })
+  // The banner blob gets the SAME treatment for the same reason (JOS-378): the spread above is
+  // shallow, so a stored blob replaces the defaults wholesale, and every reader — including main's
+  // relay, which fills a payload's hold from it — must see a complete, clamped one.
+  // prettier-ignore
+  if (kind === 'alertBanner') cfg.alertBanner = normalizeAlertBannerConfig({ ...DEFAULT_ALERT_BANNER_CONFIG, ...cfg.alertBanner })
   // Text scale postdates every other field, so it is ABSENT in most stores and out of range in a
   // hand-edited one — both answered here rather than repeated six times above, because the
   // default (1) does not differ per kind. Clamped on the way out as well as in: see
@@ -520,6 +539,11 @@ export function setOverlayConfig(kind: OverlayKind, patch: Partial<OverlayConfig
   // toast kind carries one; the meters must not grow a stray blob from a malformed patch.
   if (kind === 'toast') next.toast = normalizeToastConfig({ ...DEFAULT_TOAST_CONFIG, ...next.toast })
   else delete next.toast
+  // The banner blob is renderer-writable too (Preferences owns its hold and its line budget), so
+  // it is clamped by its own normalizer rather than trusted — the toast blob's rule, one kind over.
+  // prettier-ignore
+  if (kind === 'alertBanner') next.alertBanner = normalizeAlertBannerConfig({ ...DEFAULT_ALERT_BANNER_CONFIG, ...next.alertBanner })
+  else delete next.alertBanner
   // THE TWO TIMER WINDOWS' OWN KNOBS — the row arrangement (JOS-140) and the permanent-buff switch
   // (JOS-215). Both are rebuilt rather than trusted, on the same argument as the drill above; the
   // rule lives beside `isTimerOverlayKind` in shared/buffTimers.ts, which is what "which kinds

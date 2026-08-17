@@ -47,6 +47,7 @@ import {
 import ConditionEditor from './ConditionEditor'
 import SoundPicker from './SoundPicker'
 import SpeechBlock from './SpeechBlock'
+import BannerBlock from './BannerBlock'
 import type { VoiceSetupNotice } from './VoiceSetupLink'
 
 /** "Fire when…" — the single/any/all combine-mode picker plus the same-event caveat. */
@@ -276,6 +277,8 @@ export default function AlertDialog({
   defaultPackId,
   voiceSetup,
   allAlwaysPlay = false,
+  bannerOverlayOn = false,
+  onOpenOverlayPrefs,
   onClose,
   onSave
 }: {
@@ -297,6 +300,16 @@ export default function AlertDialog({
    * must still compile, and the safe rendering is the editable one.
    */
   allAlwaysPlay?: boolean
+  /**
+   * Is the ALERT BANNER overlay switched on (JOS-378)? The owner's ruling is that the on-screen
+   * controls are visible only while it is, so this decides whether the Banner block renders its
+   * three controls or the one quiet line naming the switch. Optional and false by default for
+   * `allAlwaysPlay`'s reason: a caller without the state must still compile, and OFF is the
+   * shipped default, so false is also the honest guess.
+   */
+  bannerOverlayOn?: boolean
+  /** Navigate to Preferences → Overlays. Absent ⇒ the quiet line renders without a link. */
+  onOpenOverlayPrefs?: () => void
   onClose: () => void
   onSave: (def: AlertDef) => void
 }): JSX.Element {
@@ -354,6 +367,17 @@ export default function AlertDialog({
             captureNames={captureNamesIn(triggerFromForm(f.mode, f.conditions))}
             autoNames={autoTokenNamesFor(triggerFromForm(f.mode, f.conditions))}
             allAlwaysPlay={allAlwaysPlay}
+          />
+
+          {/* THE ON-SCREEN CHANNEL (JOS-378), beside the spoken one because it is the same
+              question about a third channel. The placeholder is the NAME being typed above
+              (JOS-380), because that is what an empty override prints — one derivation, and not a
+              promise two files make separately. */}
+          <BannerBlock
+            alertName={f.name}
+            form={f.banner}
+            enabled={bannerOverlayOn}
+            onOpenPrefs={onOpenOverlayPrefs}
           />
         </Stack>
       </DialogContent>

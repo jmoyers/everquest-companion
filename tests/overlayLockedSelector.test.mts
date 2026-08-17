@@ -27,16 +27,17 @@ const METERS = {
 
 test('NO NEW HOOK: main still decides forwarding per kind, in exactly one place', () => {
   const windows = src('../src/main/windows.ts')
-  // ONE call site FORWARDS, and the toast is still the one kind that does not pay for the hook.
+  // ONE call site FORWARDS, and the STRIP kinds are still the ones that do not pay for the hook.
   // (The cursor ring's own `setIgnoreMouseEvents(true)` is the deliberate non-forwarding one and
   // is counted out here by the `{ forward` it does not have.)
   assert.equal((windows.match(/setIgnoreMouseEvents\(true, \{ forward/g) ?? []).length, 1)
   // …and it asks ONE predicate what the answer is. The rule moved to replayGate.ts with JOS-62,
-  // which added the second reason not to forward (a historical replay is folding); the toast's
-  // exemption is unchanged and still lives in exactly one expression.
+  // which added the second reason not to forward (a historical replay is folding); JOS-378 added
+  // the second exempt kind (the alert banner, a strip on the toast's own terms) and the exemption
+  // still lives in exactly one expression.
   assert.match(windows, /forward: overlayMouseForward\(kind\)/)
   const gate = src('../src/main/replayGate.ts')
-  assert.match(gate, /kind !== 'toast' && !replayRunning/)
+  assert.match(gate, /kind !== 'toast' && kind !== 'alertBanner' && !replayRunning/)
   // The freeze-hazard note has to survive in BOTH halves: it is the reason the split exists at
   // all, and now also the reason the replay drops the hook entirely.
   assert.match(windows, /WH_MOUSE_LL/)

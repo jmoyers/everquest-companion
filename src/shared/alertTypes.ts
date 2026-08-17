@@ -6,6 +6,11 @@
 // text is UNCHANGED and every name here is still exported from `shared/types` (which
 // re-exports this module), so no importer moved and no import path changed.
 
+// TYPE-ONLY, and the cycle it closes (alertBanner.ts imports `AlertDef` from here) is erased at
+// compile time — the `TimerGrouping` posture in shared/types.ts, applied. The banner's vocabulary
+// lives beside the code that gives it meaning; this file names the field.
+import type { AlertBannerColor } from './alertBanner'
+
 // ----- Alerts extension (Task #18) -----
 //
 // An alert = a trigger (matched against the live LogEvent stream, a raw log line,
@@ -387,6 +392,36 @@ export interface AlertDef {
    * an ordinary alert still saves byte-identically (import dedupe hashes these fields).
    */
   earlyWarnSec?: number
+  /**
+   * DOES THIS ALERT PUT A LINE ON THE ALERT BANNER OVERLAY (JOS-378)?
+   *
+   * ABSENT MEANS TRUE, AND THAT IS WHY THERE IS NO STORE MIGRATION. Every def in every existing
+   * install was written before this key existed, so an absent key has to mean the useful thing:
+   * switching the overlay on shows you your alerts rather than an empty strip you then have to
+   * tick eighty boxes to fill. `false` is the taming direction — the owner's ruling is that not
+   * every alert should show, and this switch is how you say which. Readers go through
+   * `alertShowsOnScreen` (shared/alertBanner.ts); the key is written only when it is false, so a
+   * def that shows saves the bytes it always did and import dedupe keeps matching it.
+   *
+   * IT IS NOT THE WHOLE GATE. The overlay being ON is the other half, checked in main — so an
+   * install that never turns the banner on has this field mean nothing at all.
+   */
+  showOnScreen?: boolean
+  /**
+   * WHAT THE BANNER PRINTS INSTEAD (JOS-378) — the optional "On-screen text" override.
+   *
+   * ABSENT OR EMPTY MEANS "print the alert's NAME" (JOS-380): `alertBannerText` falls back to
+   * `name`, which is the short thing the user wrote and already reads in the list. This field
+   * exists for the case where the name is not what you want on screen — a name written to be
+   * filed under ("Charm break - pet") against a line written to be seen ("CHARM BROKE").
+   */
+  bannerText?: string
+  /**
+   * WHICH SWATCH the banner line is drawn in (JOS-378) — the 2026-08-06 report's "controllable
+   * color". Absent ⇒ the overlay's default; the closed six-value union and its hexes live in
+   * shared/alertBanner.ts, which is also where the argument against a free colour picker is.
+   */
+  bannerColor?: AlertBannerColor
 }
 
 /** Global sound preferences (main-owned, persisted). */
@@ -420,6 +455,21 @@ export interface FiredAlert {
   ts: number
   /** The text that matched (raw line for raw/event triggers), for debugging/UI. */
   matchedText: string
+  /**
+   * WHERE THIS FIRE CAME FROM, when it did not come from the log (JOS-380).
+   *
+   * `'app'` marks the ECHO of a renderer-evaluated signal: the player fired the alert itself
+   * (`fireAppSignal`), told main so the recent-fires history stays the one source of truth, and
+   * main queued that record onto the same delta the log fires ride. Absent on every main-side
+   * fire, which is nearly all of them.
+   *
+   * IT EXISTS SO THE ECHO IS NOT A SECOND FIRING. The player skips playback — sound, speech AND
+   * banner — for a marked record, while history and the event feed still see it. Without the mark
+   * every app-signal alert plays twice; audio coalescing (same identity within 1.5 s) swallowed
+   * the second one for the life of the feature, and the banner, which is outside that gate by
+   * ruling, is what finally showed it: two lines for one raid target.
+   */
+  origin?: 'app'
   /**
    * SPELL CONTEXT for the speech modes (docs/plans/voice-alerts.md §1) — the triggering
    * spell's DISPLAY name with its rank suffix INTACT ("Mesmerization III"), exactly as the
@@ -457,6 +507,20 @@ export interface FiredAlert {
    * is nearly all of them).
    */
   captures?: Record<string, string>
+  /**
+   * WHEN THE THING THIS FIRING WARNS ABOUT IS DUE (ms epoch) — the countdown half of JOS-378.
+   *
+   * Present ONLY on an EARLY-WARNING firing (`AlertDef.earlyWarnSec`, JOS-216/235), and it is the
+   * deadline the scheduler counted back from rather than a number computed here: `nowMs + sec`
+   * would be a guess, and the row's own estimated end is what the debuffs overlay is already
+   * drawing. A consumer can therefore say "Celerity fades in 12s" without inventing anything.
+   *
+   * ABSENT on every ordinary firing, which is nearly all of them — and absent on an EARLY BREAK
+   * too (JOS-235: the hold ended before its warning, so the alert fires on its own trigger and
+   * there is no deadline left). That is the honest encoding of "there is nothing to count down",
+   * and it keeps the delta byte-identical for every alert without an offset.
+   */
+  dueAt?: number
 }
 
 /** One recorded fire in an alert's recent-fires ring buffer (Task #22). */

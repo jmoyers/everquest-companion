@@ -219,7 +219,14 @@ const OVERLAY_KIND_LABEL: Record<OverlayKind, string> = {
   // union on purpose, so it is named here rather than letting a future shared field render as a
   // raw kind id. The WATCH LIST is deliberately not shareable either: it names the mobs somebody
   // camps, which is a fact about their play, not a setting.
-  respawn: 'Respawn clocks'
+  respawn: 'Respawn clocks',
+  // And the alert banner (JOS-378). Same story a fifth time: no shared field today — `src/main/
+  // share.ts`'s KINDS list does not include it — but the map is keyed by the whole union on
+  // purpose, so it is named here rather than letting a future shared field render as a raw kind
+  // id. The PER-ALERT half of this feature (`showOnScreen` / `bannerText` / `bannerColor`) does
+  // travel in a shared bundle, because it lives on the alert def and an alert def is the thing
+  // sharing exists for.
+  alertBanner: 'Alert banner'
 }
 
 /**

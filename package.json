@@ -32,6 +32,7 @@
     "fixtures:cc-duration": "node --import tsx tests/extract-cc-duration-fixtures.mjs",
     "fixtures:combat": "node --import tsx tests/extract-combat-fixtures.mjs",
     "fixtures:combo": "node --import tsx tests/extract-combo-fixtures.mjs",
+    "fixtures:death-bound": "node --import tsx tests/extract-death-bound-fixtures.mjs",
     "fixtures:e2e": "node --import tsx tests/extract-e2e-fixtures.mjs",
     "fixtures:group": "node --import tsx tests/extract-group-fixtures.mjs",
     "fixtures:consider": "node --import tsx tests/extract-consider-fixtures.mjs",

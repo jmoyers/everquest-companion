@@ -23,6 +23,7 @@ import type {
 } from './types'
 import { ALERT_AUDIO_ACTIONS, MAX_SPEECH_CHARS, SPEECH_MODES } from './speechText'
 import { normalizeEarlyWarnSec } from './earlyWarning'
+import { MAX_BANNER_CHARS, normalizeBannerColor } from './alertBanner'
 
 /** Human-readable prefix + format generation. Bump the digit only for a BREAKING format. */
 export const SHARE_PREFIX = 'EQC1-'
@@ -360,6 +361,7 @@ export function sanitizeAlertDef(v: unknown): AlertDef | null {
   const note = clampStr(r.note, SHARE_LIMITS.maxNoteChars).trim()
   if (note) def.note = note
   applyVoiceFields(def, r)
+  applyBannerFields(def, r)
   return def
 }
 
@@ -403,6 +405,32 @@ function applyVoiceFields(def: AlertDef, r: Record<string, unknown>): void {
   // bundle must not make their alert the one that always shouts, so anything but a real `true`
   // is dropped back to the throttled default.
   if (r.alwaysPlay === true) def.alwaysPlay = true
+}
+
+/**
+ * Copy the ALERT BANNER keys onto a def in place (JOS-378) — whether it shows on screen, the
+ * optional on-screen wording, and its swatch.
+ *
+ * Its own function for the two above's reason (`sanitizeAlertDef` is at the factoring ceiling),
+ * and it keeps their rule: each key is written ONLY when it is present, legal, and not the
+ * default, so an alert that asked for none of this sanitizes to the byte-identical object it
+ * always did and import dedupe keeps matching it.
+ *
+ * EITHER BOOLEAN ON THE SWITCH, and only a boolean. What an absent key means is the trigger's to
+ * decide since JOS-380 (`defaultShowOnScreen`), so BOTH values now carry information: `false` is
+ * somebody deliberately taming an alert, and `true` is somebody deliberately showing one the
+ * default would have hidden. Dropping either would restore the recipient's default over the
+ * sender's decision, which is the bug this rule exists to prevent.
+ *
+ * The colour goes through the same closed-union normalizer every other inlet uses, so a
+ * stranger's bundle cannot name a colour this build would not have offered.
+ */
+function applyBannerFields(def: AlertDef, r: Record<string, unknown>): void {
+  if (typeof r.showOnScreen === 'boolean') def.showOnScreen = r.showOnScreen
+  const bannerText = clampStr(r.bannerText, MAX_BANNER_CHARS).trim()
+  if (bannerText) def.bannerText = bannerText
+  const bannerColor = normalizeBannerColor(r.bannerColor)
+  if (bannerColor) def.bannerColor = bannerColor
 }
 
 /** The three header fields that must be present and well-typed before anything else is read. */

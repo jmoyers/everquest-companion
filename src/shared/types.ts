@@ -6,6 +6,10 @@ import type { MobKnowledge } from './mobTypes'
 // The toast overlay's per-kind knobs live beside its payload in ./toast (this file is at its
 // factoring ceiling); OverlayConfig names the blob, that file owns its shape + normalizer.
 import type { ToastOverlayConfig } from './toast'
+// Same posture for the alert banner's knobs (JOS-378): TYPE-ONLY, so the cycle it closes is
+// erased at compile time, and the kind's own vocabulary lives beside the code that gives it
+// meaning rather than in this file, which is at its factoring ceiling.
+import type { AlertBannerOverlayConfig } from './alertBanner'
 // TYPE-ONLY, and the cycle it closes (buffTimers.ts imports `OverlayKind` from here) is erased at
 // compile time. The union lives beside the function that applies it, which is where the argument
 // for each value is written down.
@@ -48,6 +52,14 @@ export type { LootDisposition, ItemStatBlock }
  *                 tab's, through `renderer/overlay/xpRows.ts`. Ships DEFAULT OFF like the timer
  *                 windows. Its only configurability is a ROW CHECKLIST (`OverlayConfig.xpRows`) —
  *                 no widget builder, by owner scope.
+ *   - 'alertBanner' (JOS-378): the ALERT BANNER — big text where your eyes are, for the alerts
+ *                 you marked "Show on screen". Built on the celebration toast's queue machinery
+ *                 (the generic half now lives in renderer/overlay/cardQueue.ts) but a SEPARATE
+ *                 kind on purpose: the celebration strip sits at the top of the screen and this
+ *                 belongs in the upper third where you are already looking, and the two must be
+ *                 positioned, sized, held and locked independently. Ships DEFAULT OFF (owner
+ *                 ruling, 2026-08-15) — it is text over the game nobody asked for until they do.
+ *                 Its own knobs (hold, max lines, introduced) live in shared/alertBanner.ts.
  * Each kind has its own independently-persisted OverlayConfig (bounds/alpha/lock/text size/drill)
  * and can be open simultaneously. IPC channels + the store are keyed by this.
  *
@@ -70,9 +82,9 @@ export type { LootDisposition, ItemStatBlock }
  * tests/overlayLayout.test.mts pins both halves.
  */
 // prettier-ignore
-export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn'
+export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn' | 'alertBanner'
 // prettier-ignore
-export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn']
+export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn', 'alertBanner']
 
 /** True for the two HEALING overlay kinds (they render HealMeter, not OverlayMeter). */
 export function isHealOverlayKind(kind: OverlayKind): boolean {
@@ -142,6 +154,14 @@ export interface OverlayConfig {
    * landed round-trips untouched and `getOverlayConfig` fills it from the defaults.
    */
   toast?: ToastOverlayConfig
+  /**
+   * The 'alertBanner' kind's own knobs (hold / max lines / introduced — shared/alertBanner.ts).
+   * Present only on that kind; `setOverlayConfig` deletes it everywhere else so a malformed patch
+   * cannot grow one on a meter. Optional so every store written before JOS-378 round-trips
+   * untouched and `getOverlayConfig` fills it from the defaults — the toast blob's arrangement,
+   * for the same reason.
+   */
+  alertBanner?: AlertBannerOverlayConfig
   /**
    * TEXT SIZE for this overlay, as a CSS `zoom` factor on its CONTENT pane (1 = as shipped;
    * owner feedback, 2026-08-05: "text size scaling for overlays. we are old folks now."). It

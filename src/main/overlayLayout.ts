@@ -100,6 +100,26 @@ const TOAST_SIZE: Size = { width: 560, height: 360 }
 const TOAST_TOP = 12
 
 /**
+ * THE ALERT BANNER IS NOT A METER EITHER (JOS-378), and it is not the toast: it is a WIDE strip
+ * where your eyes already are. The celebration toast parks at the very top of the screen, which is
+ * the right place for something you look at afterwards and the wrong place for a raid call you
+ * have to read mid-pull.
+ *
+ * 720 wide because the line is one sentence at a large type size and wrapping a warning is how it
+ * stops being glanceable; 260 tall holds the default four lines plus the drag frame. The window is
+ * transparent and renders nothing when idle, so unused height costs nothing.
+ */
+const BANNER_SIZE: Size = { width: 720, height: 260 }
+
+/**
+ * How far down the work area the banner's top edge sits, as a fraction of its height: the UPPER
+ * THIRD. Not the top (the toast is there, and so is every game's own chat/target chrome) and not
+ * the middle (that is where the player is aiming). A third down is peripheral vision from the
+ * centre of the screen, which is what "where the eyes are" actually means for a strip of text.
+ */
+const BANNER_TOP_FRACTION = 1 / 3
+
+/**
  * The first-open size for a kind — the same for all the meters; the toast is its own strip.
  *
  * `workArea` is optional because one caller genuinely has no display to ask about (windows.ts's
@@ -108,7 +128,24 @@ const TOAST_TOP = 12
  */
 export function overlayDefaultSize(kind: OverlayKind, workArea?: Bounds): Size {
   if (kind === 'toast') return { ...TOAST_SIZE }
+  if (kind === 'alertBanner') return { ...BANNER_SIZE }
   return workArea ? meterSize(workArea) : { ...DEFAULT_SIZE }
+}
+
+/**
+ * The banner's first-open placement: horizontally CENTRED, its top edge a third of the way down
+ * the work area. Clamped like every other kind so a display smaller than the strip still lands
+ * on-screen — and a display too short for a third-down strip simply gets it as low as it fits.
+ */
+function bannerBounds(workArea: Bounds): Bounds {
+  const size = { ...BANNER_SIZE }
+  const x = workArea.x + Math.round((workArea.width - size.width) / 2)
+  const y = workArea.y + Math.round(workArea.height * BANNER_TOP_FRACTION)
+  return {
+    ...size,
+    x: Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - size.width)),
+    y: Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - size.height))
+  }
 }
 
 /**
@@ -129,8 +166,15 @@ function toastBounds(workArea: Bounds): Bounds {
 const MARGIN = 16
 const GUTTER = 10
 
-/** The kinds that dock into the bottom-right stack — every kind except the toast strip. */
-export const METER_KINDS: OverlayKind[] = OVERLAY_KINDS.filter((k) => k !== 'toast')
+/**
+ * The kinds that dock into the bottom-right stack — every kind except the two STRIPS (the
+ * celebration toast at the top, the alert banner a third of the way down). Neither holds a slot in
+ * the meter grid, so neither may consume an index either: adding one that did would shift every
+ * meter's reserved slot out from under a user who has never opened it.
+ */
+export const METER_KINDS: OverlayKind[] = OVERLAY_KINDS.filter(
+  (k) => k !== 'toast' && k !== 'alertBanner'
+)
 
 /**
  * How many uniform slots of this height stack between the bottom and top margins of a work area.
@@ -186,9 +230,9 @@ function meterSize(workArea: Bounds): Size {
  */
 export function defaultOverlayBounds(kind: OverlayKind, workArea: Bounds): Bounds {
   if (kind === 'toast') return toastBounds(workArea)
+  if (kind === 'alertBanner') return bannerBounds(workArea)
   const size = overlayDefaultSize(kind, workArea)
-  // The toast holds no slot in the meter stack (it lives at the top centre), so it must not
-  // consume an index either — otherwise adding it would shift every meter's reserved slot.
+  // Neither strip holds a slot in the meter stack, so neither consumes an index (METER_KINDS).
   const idx = Math.max(0, METER_KINDS.indexOf(kind))
   // How many uniform slots fit between the bottom and top margins of this work area.
   const perColumn = rowsThatFit(size.height, workArea)
@@ -227,5 +271,6 @@ export const OVERLAY_TITLE: Partial<Record<OverlayKind, string>> = {
   buffs: 'Buff Timer Overlay',
   debuffs: 'Debuff Timer Overlay',
   xp: 'XP Overlay',
-  respawn: 'Respawn Timer Overlay'
+  respawn: 'Respawn Timer Overlay',
+  alertBanner: 'Alert Banner Overlay'
 }

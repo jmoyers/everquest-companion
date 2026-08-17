@@ -26,6 +26,7 @@ import type { GraphicsPrefs } from '@shared/graphicsPrefs'
 import type { GraphicsEnvironment } from '@shared/wineDetect'
 import type { CursorRingPrefs, OverlayAutoHidePrefs } from '@shared/presencePrefs'
 import type { OverlaySnapPrefs } from '@shared/overlaySnap'
+import type { CloseToTrayPrefs } from '@shared/closeToTray'
 import type { PerfHudPrefs, StartupProfile } from '@shared/perf'
 import type { ProcessPriorityPrefs } from '@shared/processPriority'
 import type { TelemetryPayloadView } from '@shared/telemetry'
@@ -59,6 +60,10 @@ export interface PrefsSnapshot {
   overlayAutoHide: OverlayAutoHidePrefs
   /** Overlays — the opt-in drag magnetism (JOS-217). */
   overlaySnap: OverlaySnapPrefs
+  /** Window — what the X does (JOS-139). ON by default, and it has a SECOND control (the tray
+   *  menu's checkbox), so this entry is kept current by main's pushes as well as by the card's
+   *  own writes — see App.tsx. */
+  closeToTray: CloseToTrayPrefs
   /** Overlays — the celebration toast's open-state and its lock. */
   toast: ToastSeed
   /** Buff trust — the external-caster allowlist. */
@@ -98,6 +103,7 @@ export interface PrefsReader {
   getGraphicsEnvironment: () => Promise<GraphicsEnvironment>
   getOverlayAutoHide: () => Promise<OverlayAutoHidePrefs>
   getOverlaySnap: () => Promise<OverlaySnapPrefs>
+  getCloseToTray: () => Promise<CloseToTrayPrefs>
   getOverlayState: () => Promise<Record<OverlayKind, boolean>>
   getToastConfig: () => Promise<OverlayConfig>
   getBuffTrust: () => Promise<BuffTrustPrefs>
@@ -128,6 +134,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     graphicsEnv,
     overlayAutoHide,
     overlaySnap,
+    closeToTray,
     overlayState,
     toastConfig,
     buffTrust,
@@ -147,6 +154,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     eq.getGraphicsEnvironment(),
     eq.getOverlayAutoHide(),
     eq.getOverlaySnap(),
+    eq.getCloseToTray(),
     eq.getOverlayState(),
     eq.getToastConfig(),
     eq.getBuffTrust(),
@@ -168,6 +176,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     graphicsEnv,
     overlayAutoHide,
     overlaySnap,
+    closeToTray,
     toast: { open: overlayState.toast, locked: toastConfig.locked },
     buffTrust,
     cursorRing,

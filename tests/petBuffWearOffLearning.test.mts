@@ -161,8 +161,10 @@ test('every sample is CLEAN — nothing on this path is censored', () => {
 
 test('at n=2 the estimate STILL reads 15:00 from the DB floor — the reported symptom', () => {
   const stats = replay(WINDOW).spellStats()
-  // The learner did its job: the observed max is the real duration, to the second.
-  assert.equal(stats.observedWindowMaxFor(SPELL_KEY, SELF_CASTER), PET_SPAN_MS)
+  // The learner did its job: the observed max is the real duration, to the second — and it is a
+  // measured CYCLE, not a lower bound (`bound: false`; JOS-379 gave the window's answer that second
+  // field so a death bound cannot be mistaken for an observation).
+  assert.deepEqual(stats.observedWindowMaxFor(SPELL_KEY, SELF_CASTER), { ms: PET_SPAN_MS, bound: false })
   // …and loses to the floor, which is what the overlay draws. TWO agreeing cycles are below the
   // evidence bar the owner set (JOS-212), and two identical click-offs look exactly like this.
   assert.deepEqual(stats.estimateFor(SPELL_KEY, SELF_CASTER), { ms: DB_MS, source: 'db' })

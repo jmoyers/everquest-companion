@@ -43,6 +43,18 @@
 // is applied once per evidence class instead of once over the pooled list — so a run of broken
 // mezzes can never retire the one full-length cycle the log finally produced. The exact rule, the
 // measurement behind it and the property it must not cost are on `observedWindowMaxFor`.
+//
+// AND WHAT JOS-379 ADDED IS A THIRD KIND OF EVIDENCE, for the case where no cycle can ever be
+// witnessed at all (owner ruling 2026-08-15). A DEBUFFED MOB'S DEATH WITH NO WEAR-OFF SINCE THE
+// LANDING IS A LOWER BOUND: the spell lasted at least landing→corpse. On raid mobs that is the
+// whole of the available evidence — they die first, and this server prints no wear-off for your
+// slow when somebody else lands the kill — so before this the estimator had nothing to lift a
+// classic-era DB floor with, and an early-warning alert spoke "slow off a dracoliche" over a slow
+// that was visibly still on the mob. A bound folds into the MAX exactly like any other sample and
+// reports source 'deathBound' when it wins, because it is a bound and not an answer. It is refused
+// the JOS-212 cluster (`cleanWindowFor`) and the n/median columns (`statFor`): a bound is not a
+// cycle. The evidence rails — the witnessed wear-off channel, the same-name identity guard and the
+// caps — live at the seam that mints it, `modules/buffsInstanceRules.ts deathBoundSpan`.
 
 import type { SpellDb } from '../data/spellDb'
 import { spellCalmsTarget, spellNature } from '../data/spellDb'
@@ -51,11 +63,33 @@ import { learnKey, SELF_CASTER } from '../../shared/buffTrust'
 import type { EstimatorSource } from '../../shared/buffTypes'
 import {
   corroboratedMax,
+  isLowerBound,
   percentile,
   RECENT_SAMPLE_WINDOW,
   type DurationSample,
   type SpellSamples
 } from './buffsShapes'
+
+/** The winning candidate of the estimator's window: the longest span, and whether it is a bound. */
+interface WindowMax {
+  ms: number
+  bound: boolean
+}
+
+/**
+ * Fold one sample into the running window max (JOS-379) — separated from the walk so the two
+ * questions stay apart: WHICH samples are in view (the per-class windows) and WHICH of them wins.
+ *
+ * A TIE GOES TO THE MEASURED CYCLE. Two samples agreeing on a number, one of them a real observed
+ * ending, is an observation — the bound adds nothing to it and must not weaken the label the log
+ * already earned.
+ */
+function foldWindowMax(best: WindowMax | null, s: DurationSample): WindowMax {
+  const bound = s.deathBound === true
+  if (best == null || s.ms > best.ms) return { ms: s.ms, bound }
+  if (s.ms === best.ms && !bound) return { ms: best.ms, bound: false }
+  return best
+}
 
 export class SpellStats {
   /** The scraped spell database (Task #34), optional — the authoritative prior. */
@@ -67,6 +101,27 @@ export class SpellStats {
   samples = new Map<string, SpellSamples>()
   /** Spell keys ever seen fading / applied — the buff discriminator. */
   everFaded = new Set<string>()
+  /**
+   * SPELL LINES THIS LOG HAS EVER PRINTED A TARGET-NAMED WEAR-OFF FOR (JOS-379) — the
+   * "wear-off channel witnessed" flag, learned at runtime and from nothing else.
+   *
+   * WHAT IT IS FOR. The death lower bound (`buffsInstanceRules.ts deathBoundSpan`) reads an
+   * ABSENCE: no `Your <X> spell has worn off of <mob>.` between the landing and the corpse. An
+   * absence is only evidence about a spell that PRINTS the line in the first place, which is the
+   * awaiting-sample law applied to a bound — so a line whose channel this log has never
+   * demonstrated teaches nothing from silence, however many mobs die under it.
+   *
+   * IT IS THE TARGET-NAMED SENTENCE AND NOT THE SELF ONE. `Your speed returns to normal.` proves
+   * a buff on YOU ends audibly; it says nothing about whether a debuff on a MOB does, and the
+   * question here is only ever about a mob. `modules/buffs.ts onBuffFade` is the one writer and
+   * gates on the fade naming its target.
+   *
+   * RELEARNED EVERY LAUNCH, like every other map on this class: nothing here is persisted, the
+   * app re-folds the whole log at startup, and a full fold witnesses the channel long before it
+   * reaches today's raid. The rebirth/session-gap clears deliberately leave it standing — which
+   * spells print which sentence is game knowledge, not character state.
+   */
+  wearOffWitnessed = new Set<string>()
   /**
    * Per-spell LAST-SEEN event ts (Task #45): the newest castBegin / apply / fade involving
    * the spell — the cheapest consistent recency signal. Feeds the suggested-alerts wizard's
@@ -82,7 +137,22 @@ export class SpellStats {
   reset(): void {
     this.samples = new Map()
     this.everFaded = new Set()
+    this.wearOffWitnessed = new Set()
     this.lastSeen = new Map()
+  }
+
+  /**
+   * A `Your <X> spell has worn off of <target>.` line was seen for this LINE — the channel is
+   * witnessed from here on. See {@link wearOffWitnessed} for what an absence is then allowed to
+   * mean, and what it is not.
+   */
+  witnessWearOffChannel(key: string): void {
+    this.wearOffWitnessed.add(key)
+  }
+
+  /** True when this LINE has ever printed a target-named wear-off in this log (JOS-379). */
+  hasWearOffChannel(key: string): boolean {
+    return this.wearOffWitnessed.has(key)
   }
 
   /** Record the newest ts a spell was seen (cast/apply/fade) — the recency signal (Task #45). */
@@ -195,17 +265,27 @@ export class SpellStats {
     // The DISTRIBUTION columns describe every cycle the model measured, censored or not: the Buffs
     // tab's n/median/min/max are a report on what was OBSERVED, and hiding the broken cycles there
     // would misdescribe the log. Only the ESTIMATE reads the censoring (observedWindowMaxFor).
-    const sorted = s.samples.map((x) => x.ms).sort((a, b) => a - b)
+    //
+    // A DEATH BOUND IS NOT A CYCLE AND IS NOT COUNTED HERE (JOS-379). `n` is documented as the
+    // number of land→fade PAIRS and a bound has no fade in it — nothing ended, the mob simply
+    // stopped existing. Counting one would inflate the confidence hint and drag the median toward
+    // a number nobody measured, and the wizard's `usageCount` reads the same field. The bound is
+    // visible where it belongs: in the ESTIMATE, wearing its own source.
+    const sorted = s.samples
+      .filter((x) => x.deathBound !== true)
+      .map((x) => x.ms)
+      .sort((a, b) => a - b)
+    const n = sorted.length
     const est = this.estimateFor(key, caster)
     return {
       spell: s.spell,
       cls: this.classOf(key),
-      n: sorted.length,
-      medianMs: percentile(sorted, 0.5),
-      p25: percentile(sorted, 0.25),
-      p75: percentile(sorted, 0.75),
-      minMs: sorted[0],
-      maxMs: sorted[sorted.length - 1],
+      n,
+      medianMs: n > 0 ? percentile(sorted, 0.5) : null,
+      p25: n > 0 ? percentile(sorted, 0.25) : null,
+      p75: n > 0 ? percentile(sorted, 0.75) : null,
+      minMs: n > 0 ? sorted[0] : null,
+      maxMs: n > 0 ? sorted[n - 1] : null,
       dbDurationMs: this.dbDurationFor(key),
       estimateMs: est.ms,
       estimatorSource: est.source,
@@ -264,23 +344,32 @@ export class SpellStats {
    * A REAL DECREASE STILL RECOVERS, which is the property the split must not cost. It takes five
    * UNCENSORED shorter cycles, exactly as it always did — censoring changes which window a sample
    * lives in, never whether it ages out of one.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────
+   * JOS-379 PUT A SECOND KIND OF SAMPLE IN THE BOUND WINDOW and changed nothing else. A DEATH
+   * BOUND (a mob died still carrying the debuff, no wear-off ever printed) is the same shape of
+   * evidence as a censored cycle — the spell was still running at the instant the line names —
+   * so it rides the same window, under the same "may never evict a full cycle" rule, through the
+   * one predicate {@link isLowerBound}. What it also does is make the ANSWER weaker when it wins,
+   * which is why the return value now says whether the winning sample was a bound: the estimate
+   * reports source 'deathBound' rather than 'observed', and the surfaces say "at least".
    */
-  observedWindowMaxFor(key: string, caster: string = SELF_CASTER): number | null {
+  observedWindowMaxFor(key: string, caster: string = SELF_CASTER): WindowMax | null {
     const s = this.samples.get(learnKey(key, caster))
-    if (!s || s.samples.length === 0) return null
-    let best: number | null = null
+    if (!s) return null
+    let best: WindowMax | null = null
     let clean = 0
     let broken = 0
     for (let i = s.samples.length - 1; i >= 0; i--) {
       const sample = s.samples[i]
-      if (sample.censored === true) {
+      if (isLowerBound(sample)) {
         if (broken >= RECENT_SAMPLE_WINDOW) continue
         broken += 1
       } else {
         if (clean >= RECENT_SAMPLE_WINDOW) continue
         clean += 1
       }
-      if (best == null || sample.ms > best) best = sample.ms
+      best = foldWindowMax(best, sample)
       if (clean >= RECENT_SAMPLE_WINDOW && broken >= RECENT_SAMPLE_WINDOW) break
     }
     return best
@@ -292,9 +381,11 @@ export class SpellStats {
    * out as a list because the below-floor overrule (JOS-212) asks a question a max cannot answer:
    * do the observations AGREE?
    *
-   * Censored samples are absent by construction. They are lower bounds on a duration, not
-   * measurements of one, so they may neither corroborate a cluster nor break one — the same
-   * reasoning that gives them their own window in the max.
+   * LOWER BOUNDS ARE ABSENT BY CONSTRUCTION — a censored cycle (JOS-180) and a death bound
+   * (JOS-379) alike. They are lower bounds on a duration, not measurements of one, so they may
+   * neither corroborate a cluster nor break one — the same reasoning that gives them their own
+   * window in the max. A bound is emphatically not a CYCLE, and this rule is a question about
+   * whether the cycles AGREE.
    */
   cleanWindowFor(key: string, caster: string = SELF_CASTER): number[] {
     const s = this.samples.get(learnKey(key, caster))
@@ -302,7 +393,7 @@ export class SpellStats {
     const out: number[] = []
     for (let i = s.samples.length - 1; i >= 0 && out.length < RECENT_SAMPLE_WINDOW; i--) {
       const sample = s.samples[i]
-      if (sample.censored !== true) out.push(sample.ms)
+      if (!isLowerBound(sample)) out.push(sample.ms)
     }
     return out
   }
@@ -359,18 +450,35 @@ export class SpellStats {
    *
    * `source` names which won — 'observed' when a sample beat the floor, 'cluster' when a
    * corroborated below-floor cluster removed it, 'db' when the floor held.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────
+   * WHAT JOS-379 CHANGED IS THE LABEL, NOT THE ARITHMETIC (owner ruling 2026-08-15). A DEATH
+   * BOUND — a debuffed mob that died with no wear-off ever printed for it — enters the same max
+   * as every other sample, because a lower bound is exactly what a max estimator can accept
+   * safely: it lifts the floor TOWARD the truth and never past it. What it may not do is claim to
+   * be a measurement, so when the winning sample is one, the source reads 'deathBound' and every
+   * surface that draws the number says "at least". On raid mobs this is the ONLY evidence there
+   * is: they die before any slow of yours runs out, and this server prints no wear-off for a
+   * debuff on a mob somebody else kills.
+   *
+   * A BOUND NEVER REACHES THE BELOW-FLOOR OVERRULE. It cannot: the overrule requires the max to
+   * be UNDER the floor, and a bound is only ever pushed when it is over the current estimate,
+   * which is at or above the floor. It is refused a second time anyway, at
+   * {@link cleanWindowFor} — one refusal is the rule, the other is arithmetic, and neither is
+   * relied on alone.
    */
   estimateFor(key: string, caster: string = SELF_CASTER): { ms: number | null; source: EstimatorSource | undefined } {
     const dbMs = this.dbDurationFor(key)
-    const observedMax = this.observedWindowMaxFor(key, caster)
+    const observed = this.observedWindowMaxFor(key, caster)
+    const learned: EstimatorSource = observed?.bound === true ? 'deathBound' : 'observed'
     if (dbMs != null) {
-      if (observedMax != null && observedMax > dbMs) return { ms: observedMax, source: 'observed' }
-      if (observedMax != null && observedMax < dbMs && corroboratedMax(this.cleanWindowFor(key, caster)) != null) {
-        return { ms: observedMax, source: 'cluster' }
+      if (observed != null && observed.ms > dbMs) return { ms: observed.ms, source: learned }
+      if (observed != null && observed.ms < dbMs && corroboratedMax(this.cleanWindowFor(key, caster)) != null) {
+        return { ms: observed.ms, source: 'cluster' }
       }
       return { ms: dbMs, source: 'db' }
     }
-    if (observedMax != null) return { ms: observedMax, source: 'observed' }
+    if (observed != null) return { ms: observed.ms, source: learned }
     return { ms: null, source: undefined }
   }
 

@@ -1,5 +1,12 @@
 // AlertPlayer — an always-mounted (App-level) component that turns fired alerts
-// into sound AND SPEECH, and the `fireAppSignal` entry point for renderer-side app triggers.
+// into sound, SPEECH and (JOS-378) A LINE ON SCREEN, and the `fireAppSignal` entry point for
+// renderer-side app triggers.
+//
+// THE BANNER RIDES THE SAME PATHS AS THE AUDIO, which is why it lives here rather than in a
+// second always-mounted component: "which alerts fired" is a question with one answer, and a
+// surface that re-derived it would eventually disagree. It is sent FIRST and outside every audio
+// rule — see `showAlertBanner` and `playAlertNow` for the two owner rulings that placement
+// enforces (a muted app still shows lines; coalescing folds noise, never text).
 //
 // SPEECH (docs/plans/voice-alerts.md §3, wave 2) rides the SAME firing paths, decided by ONE
 // pure function — `speechPlan` in lib/speech.ts — rather than by a branch at each call site:
@@ -35,6 +42,11 @@ import type {
   FiredAlert,
   ModuleDelta
 } from '@shared/types'
+import {
+  alertBannerText,
+  alertShowsOnScreen,
+  type AlertBannerPayload
+} from '@shared/alertBanner'
 import { playSound } from './soundCache'
 import { currentVoicePrefs, loadVoicePrefs, speak, speechPlan } from '../../lib/speech'
 import { audioIdentity, coalesceAudio, type AudioWindow } from './audioThrottle'
@@ -92,6 +104,35 @@ function effectiveVolume(def: AlertDef): number {
 }
 
 /**
+ * Put this firing on the ALERT BANNER overlay (JOS-378), when the alert asks to be shown.
+ *
+ * THE PER-ALERT HALF OF THE GATE IS HERE because this is where the def is; the OVERLAY half is in
+ * main, which owns the window (main/alertBanner.ts). Neither side can answer the other's question,
+ * and sending an unwanted payload that main then drops would be a wire full of noise.
+ *
+ * WHAT IT SAYS IS NOT DECIDED HERE. `alertBannerText` resolves the def's optional override and
+ * otherwise prints the alert's NAME (JOS-380) — deliberately not the spoken sentence, which is
+ * written for the ear. Null means there was nothing truthful to print, and nothing is sent.
+ *
+ * EVERY FIRING IS ITS OWN LINE. The queue's dedupe key carries the timestamp, so a second landing
+ * of the same alert stacks a second line rather than re-clocking the first — which is what the
+ * reporter asked for: a banner is a short-lived record of what just happened, not a status field.
+ */
+function showAlertBanner(def: AlertDef, firing?: Pick<FiredAlert, 'spell' | 'captures' | 'dueAt'>): void {
+  if (!alertShowsOnScreen(def)) return
+  const text = alertBannerText(def)
+  if (!text) return
+  const ts = Date.now()
+  const payload: AlertBannerPayload = { id: `${def.id}:${String(ts)}`, alertId: def.id, ts, text }
+  if (def.bannerColor) payload.color = def.bannerColor
+  // The COUNTDOWN, where the firing has one (JOS-216 early warnings): the card prints "… in 12s"
+  // and leaves when it reaches zero instead of on the configured hold. Passed straight through —
+  // this side never computes a deadline, because main is the only place one exists.
+  if (firing?.dueAt !== undefined) payload.dueAt = firing.dueAt
+  window.eq.showAlertBanner(payload)
+}
+
+/**
  * Fire ONE alert's audio now — sound, speech, or both — respecting the master mute. Used by
  * both firing paths and by the list's Test button.
  *
@@ -106,7 +147,20 @@ function effectiveVolume(def: AlertDef): number {
  * preference (JOS-222) rides the SAME call: it is an argument to the pure decision, read off the
  * prefs copy this module already keeps live, so nothing here branches on it.
  */
-export function playAlertNow(def: AlertDef, firing?: Pick<FiredAlert, 'spell'>): void {
+export function playAlertNow(
+  def: AlertDef,
+  firing?: Pick<FiredAlert, 'spell' | 'captures' | 'dueAt'>
+): void {
+  // THE BANNER GOES FIRST, AND OUTSIDE EVERYTHING BELOW (JOS-378). Two rules the owner ruled on
+  // are enforced by that one placement:
+  //   MUTE IS ABOUT SOUND. A player on Discord runs the app muted precisely so they can still be
+  //   told things — that report is the whole reason this overlay exists — so the banner must be
+  //   sent before `speechPlan`, which returns silence for a muted app.
+  //   COALESCING IS ABOUT NOISE. The 1.5 s cross-alert window (JOS-347) folds a smear of
+  //   simultaneous SOUNDS into one thing to hear; four distinct alerts landing together are four
+  //   things to READ, and a line that is one of four is not a smear. So it is sent before the gate
+  //   too, and it neither consumes the window nor is gated by it.
+  showAlertBanner(def, firing)
   const voice = currentVoicePrefs()
   const plan = speechPlan(def, firing ?? null, prefs.muted)
   if (!plan.sound && !plan.speak) return
@@ -175,6 +229,14 @@ export default function AlertPlayer(): null {
     const offDelta = window.eq.onModuleDelta<AlertsDelta>((d: ModuleDelta<AlertsDelta>) => {
       if (d.moduleId !== 'alerts') return
       for (const fire of d.delta.fired) {
+        // AN ECHO IS NOT A FIRING (JOS-380). `origin: 'app'` marks the record main queued because
+        // THIS player told it about a signal it had just played — replaying it here is the same
+        // alert twice. It was inaudible for the life of the feature (audio coalescing swallows a
+        // repeat within 1.5 s) and visible the day the banner arrived: two lines, one raid target.
+        // The record still reaches history and the feed; only playback is skipped, and the play
+        // stays where it is rather than moving into the echo, which would add a flush of latency
+        // to the celebration sound.
+        if (fire.origin === 'app') continue
         const def = defs.find((a) => a.id === fire.alertId)
         // The firing is passed through: it is where the spell context lives (W1), and the
         // speech modes are the only thing that reads it.

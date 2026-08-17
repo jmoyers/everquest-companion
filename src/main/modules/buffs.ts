@@ -515,6 +515,17 @@ export class BuffsModule implements EqModule<BuffsSnap, BuffsDelta> {
   private onBuffFade(ev: Ev<'buffFade'>): void {
     const key = spellKey(ev.spell)
     this.stats.everFaded.add(key)
+    // THE WEAR-OFF CHANNEL IS WITNESSED HERE, AND ONLY FOR THE TARGET-NAMED SENTENCE (JOS-379).
+    //
+    // `Your <X> spell has worn off of <target>.` is the ONE line that proves this spell announces
+    // its own end on somebody who is not you — which is the only thing that lets a later SILENCE
+    // over a corpse mean anything (buffsStats.ts `wearOffWitnessed` states why, and
+    // `buffsInstanceRules.ts deathBoundSpan` is what reads it). The targetless shapes are a
+    // different channel entirely: `classifyWornOff` emits them with no target at all for a self
+    // buff and with the literal `'pet'` for `Your pet's <X> spell has worn off.`, so the named
+    // form is exactly "a target that is not the possessive". A mob cannot be called `pet` — the
+    // possessive form never carries a name — so the two can not collide.
+    if (ev.target != null && ev.target !== 'pet') this.stats.witnessWearOffChannel(key)
     // Resolve the fade's target entity. A possessive 'pet' form resolves against the
     // CURRENT pet entity's key; a named mob → that mob's key; targetless → self.
     // (The fade's DISPOSITION used to be tallied here as a fallback CLASSIFIER for a spell the DB

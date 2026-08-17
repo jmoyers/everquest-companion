@@ -37,11 +37,14 @@ test('mayShowWindows: E2E dominates, and the replay only ever removes a show', (
   assert.equal(mayShowWindows(true, true), false)
 })
 
-test('overlayForwardsMouse: the toast never forwards, and nobody forwards mid-replay', () => {
+test('overlayForwardsMouse: neither STRIP ever forwards, and nobody forwards mid-replay', () => {
   for (const kind of OVERLAY_KINDS) {
     // Steady state: every meter forwards (its hover sensor is what re-enables capture over the
-    // pin); the toast is the standing exception (JOS-40 — its capture comes from its queue).
-    assert.equal(overlayForwardsMouse(kind, false), kind !== 'toast', `${kind} outside a replay`)
+    // pin); the two STRIPS are the standing exception (JOS-40 for the celebration toast, JOS-378
+    // for the alert banner) — a strip's capture comes from its QUEUE, so a system-wide hook over
+    // a window that is empty almost all of the time would be pure cost.
+    const strip = kind === 'toast' || kind === 'alertBanner'
+    assert.equal(overlayForwardsMouse(kind, false), !strip, `${kind} outside a replay`)
     // During the fold NOTHING installs the hook — that hook is the reported jerky mouselook.
     assert.equal(overlayForwardsMouse(kind, true), false, `${kind} during a replay`)
   }

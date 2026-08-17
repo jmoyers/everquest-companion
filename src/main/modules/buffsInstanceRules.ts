@@ -52,6 +52,107 @@ export function deathCensorsActive(a: ActiveBuff, aKey: string, entityKey: strin
 }
 
 /**
+ * A NAME THE WORLD HANDS OUT MORE THAN ONCE — the leading article, which is how EQ spells
+ * "one of these" (`a rock golem`, `an elemental warrior`) as against an identity (`Cazic-Thule`,
+ * `Lord Nagafen`, `Dread`, `magus rokyl`). Read off the canonical KEY, which is already
+ * lowercased at the boundary (world-model law 2).
+ *
+ * The distinction is JOS-228's precedent, applied to a different question: there, whether a corpse
+ * may close a hold; here, whether a corpse may MEASURE one.
+ */
+export function isArticleNamed(entityKey: string): boolean {
+  return /^(?:a|an|the) /.test(entityKey)
+}
+
+/** How much longer than the current estimate an ARTICLE-named mob's bound may claim. */
+export const DEATH_BOUND_MAX_ESTIMATE_MULTIPLE = 2
+/** The absolute ceiling on any bound, as a multiple of the spell database's own duration. */
+export const DEATH_BOUND_MAX_DB_MULTIPLE = 3
+
+/**
+ * The three questions the bound asks of the LEARNER, as the narrowest interface that answers them
+ * — `SpellStats` satisfies it structurally, and this file stays the dependency-free rules half.
+ */
+export interface DeathBoundStats {
+  /** The number the row is currently counting down from, under this record's own caster key. */
+  estimateFor(key: string, caster: string): { ms: number | null }
+  /** What the spell database states for the line, or null when it states nothing. */
+  dbDurationFor(key: string): number | null
+  /** Has THIS log ever printed a target-named wear-off for the line? */
+  hasWearOffChannel(key: string): boolean
+}
+
+/**
+ * THE DEATH LOWER BOUND (JOS-379, owner ruling 2026-08-15) — the span a corpse is allowed to
+ * teach, or null when it teaches nothing. Pure: the store supplies the facts, this decides.
+ *
+ * THE OBSERVATION THE LEARNER USED TO THROW AWAY. A debuffed mob that DIES with no wear-off since
+ * its landing proves the debuff lasted AT LEAST landing→corpse. `buffsInstances.onEntityDeath` has
+ * always discarded that span structurally, on the correct reasoning that it is not a DURATION — and
+ * that reasoning stays correct. What it misses is that a MAX estimator does not need a duration: a
+ * lower bound lifts the floor toward the truth and can never lift it past, so long as the wear-off
+ * line is reliable when it does happen. Measured on the owner's log the night before the report:
+ * five Togor's Insects cycles on rock golems, every one of them ended by its own wear-off sentence
+ * at 2:20-2:29. The line is reliable. It simply never gets the chance on a raid mob.
+ *
+ * WHAT THE REPORT COST WITHOUT IT (owner, 2026-08-15, Plane of Fear). `a dracoliche` was slowed at
+ * 22:38:54 and slain at 22:42:02 with no wear-off in between — 3:08 of proof — while the app drew
+ * the classic-era database's 2:30 and the early-warning alert announced the slow had worn off at
+ * 22:41:19, with the slow visibly still on the mob. Twenty-seven landings on that night's bosses
+ * produced not one clean cycle, so nothing could ever lift the floor.
+ *
+ * THE FIVE RAILS, each of which refuses rather than guesses:
+ *
+ *  1. THE CHANNEL MUST BE WITNESSED. Silence is evidence only about a spell this log has actually
+ *     heard speak — `SpellStats.wearOffWitnessed`, learned at runtime from the target-named
+ *     wear-off sentence. Without it, "no wear-off printed" is a fact about the spell's messages
+ *     and not about its duration. This is the awaiting-sample law applied to a bound.
+ *  2. ONE LANDING ONLY. A corpse names a mob but never WHICH mob of that name, so with two
+ *     landings in the group the log does not say which one just died — and a wear-off may already
+ *     have closed the other. (The owner's rule admits a proper-named mob outright; this is the
+ *     same rule for it, because an identity can never legitimately hold two landings — a re-cast
+ *     REFRESHES the single hold, buffRounds.ts — so the check costs a proper name nothing and
+ *     covers the impossible case honestly rather than assuming it away.)
+ *  3. IT MUST BEAT THE CURRENT ESTIMATE. A bound below what the app already draws is true and
+ *     useless; pushing it would only add noise to the window.
+ *  4. THE SAME-NAME CAP. For an ARTICLE-named mob the span may not exceed
+ *     {@link DEATH_BOUND_MAX_ESTIMATE_MULTIPLE}× the current estimate: `a rock golem` that dies
+ *     six minutes after a slow landed is far more likely to be a DIFFERENT golem than a slow that
+ *     ran four times its stated length. A proper name has no twin and takes no such cap — that is
+ *     the whole content of JOS-228's identity distinction.
+ *  5. THE ABSOLUTE CAP. No bound may exceed {@link DEATH_BOUND_MAX_DB_MULTIPLE}× what the spell
+ *     database states, ever. A missed wear-off (a line that printed while the app was not
+ *     looking) must not be able to teach nonsense, and a factor of the FLOOR is the one bound a
+ *     bad observation cannot itself drag upward — the same argument `learningRecordCapMs` makes.
+ *     With no database row there is nothing to multiply and the bound is refused outright; that
+ *     is a stated limit, not an oversight.
+ *
+ * AND AN OFFLINE GAP REFUSES IT (world-model law 5's censor, the shape `OpenCast.spannedGap`
+ * already states): the wear-off sentence only exists while you are logged in, so across an absence
+ * "no wear-off printed" stops being a claim about the world at all.
+ *
+ * THE CASTER IS NOT RE-CHECKED and does not need to be: an instance opens only from a landing line
+ * the attribution gate admitted (`modules/buffLanding.ts`, `shared/buffTrust.ts`), so a record that
+ * exists at all is your own cast or an allowlisted external's — and the estimate it is measured
+ * against is read under that same caster's learner key, never the pooled one.
+ */
+export function deathBoundSpan(
+  o: OpenCast,
+  entityKey: string,
+  deathTs: number,
+  stats: DeathBoundStats
+): number | null {
+  const dbMs = stats.dbDurationFor(o.spellKey)
+  if (!stats.hasWearOffChannel(o.spellKey) || o.spannedGap === true) return null
+  if (o.group.count !== 1 || dbMs == null || dbMs <= 0) return null
+  const span = deathTs - o.group.oldestTs
+  const estimateMs = stats.estimateFor(o.spellKey, o.caster).ms
+  if (span <= 0 || estimateMs == null || span <= estimateMs) return null
+  if (isArticleNamed(entityKey) && span > DEATH_BOUND_MAX_ESTIMATE_MULTIPLE * estimateMs) return null
+  return span <= DEATH_BOUND_MAX_DB_MULTIPLE * dbMs ? span : null
+}
+
+/**
  * ZONE (the user's rule): the player keeps self buffs; a SUMMONED pet follows and keeps
  * its buffs; a CHARMED pet is LEFT BEHIND (retire + censor); hostile mobs are left behind
  * (censor open debuffs). Uses the SHARED isLeftBehindOnZone rule.
