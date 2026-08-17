@@ -263,8 +263,10 @@ export async function stepSocketPick(page: Page): Promise<void> {
 
   // An empty query LISTS: the legal set for one socket of one cell is small and closed.
   const listed = await until(async () => (await countOf(page, '[data-testid="gearplan-donor-hit"]')) > 0, 20_000)
-  if (!check('the donor picker lists what fits before a single letter is typed', listed)) {
-    await page.keyboard.press('Escape')
+  // A PANEL IS DISMISSED BY ITS OWN CONTROL, not by Escape: there is no backdrop and no focus trap
+  // to press against any more, which is the point of it being a column.
+  if (!check('the donor panel lists what fits before a single letter is typed', listed)) {
+    await page.click('[data-testid="gearplan-socket-close"]', { timeout: 15_000 })
     return
   }
   const effect = await page.evaluate(
@@ -293,52 +295,99 @@ export async function stepClearCell(page: Page): Promise<void> {
 }
 
 /**
- * THE DONOR ROWS EXPLAIN THEMSELVES ON HOVER — the same gesture a planned socket answers to.
+ * EVERY DONOR ROW SAYS WHAT ITS EFFECT DOES, WITHOUT BEING ASKED.
  *
- * THIS STEP USED TO DRIVE A DISCLOSURE BUTTON. The picker expanded a `SpellCard` inline behind a
- * per-row chevron, and the load-bearing check was that clicking the chevron did NOT also pick the
- * donor — reading a row and choosing it being different gestures sharing one row. The chevron is
- * gone: reading is a hover now, so there is no second click left to keep apart, and the check that
- * matters flipped with it. What must be true is the opposite claim — that hovering to READ picks
- * nothing, and that the card a row opens is the same one the board's own cells open.
+ * THIS STEP HAS NOW BEEN WRITTEN THREE TIMES AND THE THIRD IS WORTH RECORDING. It first drove a
+ * per-row chevron that expanded a `SpellCard` inline; then a hover card, on the argument that a
+ * planned socket already explains itself on hover and one question should not need two gestures.
+ * Both were arguments about which GESTURE reveals the effect, and both were had while the picker
+ * was a 360px popover with nowhere to put a list.
  *
- * AND THE CARD MUST NOT BLOCK THE ROW UNDER IT. `SpellTooltip` passes `disableInteractive`, which
- * is what earns MUI's `pointer-events: none` on the popper, and that property is the entire reason
- * a card over a list of click targets is allowed here at all. So the row is CLICKED while its own
- * card is open, and the pick has to land. If a later edit drops `disableInteractive`, this hangs.
+ * In the right column there is room, so there is no gesture: the effect lines are permanent text.
+ * The claim that replaces "hovering opens the card" is stronger and this step is what holds it —
+ * that the lines are THERE, before any pointer moves, on rows you can compare side by side.
+ *
+ * WHAT ONLY A MOUNTED APP CAN SAY: the donor corpus carries three facts per effect and NOT the
+ * numbered effect list. These lines come from the spell DB, one `spells:detail` round trip per
+ * drawn row, joined by case-folded name at index build. If that join or that channel breaks, the
+ * rows still render — with the corpus one-liner and no effect lines — and nothing below this level
+ * would notice.
  */
-export async function stepDonorHoverCard(page: Page): Promise<void> {
+export async function stepDonorInlineEffects(page: Page): Promise<void> {
   const cell = '[data-testid="gearplan-cell-PRIMARY"]'
-  const card = '[data-testid="spell-hover-card"]'
-  await page.click(`${cell} [data-testid="gearplan-socket-worn"] button`, { timeout: 15_000 })
+  const hit = '[data-testid="gearplan-donor-hit"]'
+  await page.click(`${cell} [data-testid="gearplan-socket-proc"] button`, { timeout: 15_000 })
   await page.waitForSelector('[data-testid="gearplan-donor-search"]', { timeout: 15_000 })
-  if (!check('the donor picker has rows to hover', await until(async () => (await countOf(page, '[data-testid="gearplan-donor-hit"]')) > 0, 20_000))) {
-    await page.keyboard.press('Escape')
+  if (!check('the exaltation panel has rows', await until(async () => (await countOf(page, hit)) > 0, 20_000))) {
+    await page.click('[data-testid="gearplan-socket-close"]', { timeout: 15_000 })
     return
   }
 
-  check('no chevron survives - reading a row is not a click any more', (await countOf(page, '[data-testid="gearplan-donor-details"]')) === 0)
-  check('…and no card is mounted until a row is hovered', (await countOf(page, card)) === 0)
+  check('no chevron survives', (await countOf(page, '[data-testid="gearplan-donor-details"]')) === 0)
 
-  const rows = await countOf(page, '[data-testid="gearplan-donor-hit"]')
-  await page.hover('[data-testid="gearplan-donor-hit"]', { timeout: 15_000 })
-  const opened = await settle(() => countOf(page, card), (n) => n === 1)
-  check('hovering a donor row opens the app`s own spell card', opened === 1)
-  if (opened === 1) {
-    note(`donor card reads: ${(await textOf(page, card)).replace(/\s+/g, ' ').slice(0, 200)}`)
+  // THE EFFECT LINES ARE THERE BEFORE ANYTHING IS HOVERED. Settled on rather than read once: each
+  // row fetches on mount, so "no lines yet" is also what an in-flight lookup looks like.
+  const withLines = await settle(
+    () => countOf(page, '[data-testid="gearplan-donor-effects"]'),
+    (n) => n > 0
+  )
+  check('rows state what their effect DOES, with no gesture at all', withLines > 0, `rows with lines=${String(withLines)}`)
+  const rowText = await textOf(page, hit)
+  note(`donor row reads: ${rowText.replace(/\s+/g, ' ').slice(0, 220)}`)
+
+  // …and the lines are the SPELL DB's, not a re-print of the corpus one-liner the row already has.
+  const lines = await page.$$eval('[data-testid="gearplan-donor-effects"]', (els) =>
+    (els[0]?.textContent ?? '').trim()
+  )
+  check('…in the wiki`s own words, which the donor corpus does not carry', lines.length > 0, lines.slice(0, 120))
+
+  // NO HOVER CARD ANYWHERE IN THIS PANEL, including after a pointer actually lands on a row - the
+  // check that would catch a `SpellTooltip` left wrapped around a row by a later edit.
+  // PARK THE POINTER FIRST. The click that opened this panel left it resting on the cell's own
+  // proc socket line, which DOES still carry a spell card (see `stepSocketHover` — the board cell
+  // has no room to inline anything, so hover is the only depth it has). MUI opens that card on an
+  // enter delay, so without this the card the BOARD legitimately owns lands inside the window where
+  // this step is asking about the PANEL, and the step reports the opposite of what is true.
+  await page.mouse.move(2, 2)
+  const settled = await until(async () => (await countOf(page, '[data-testid="spell-hover-card"]')) === 0, 8_000)
+  check('no card is left standing once the pointer is off the board', settled)
+
+  const rows = await countOf(page, hit)
+  await page.hover(hit, { timeout: 15_000 })
+  // A NEGATIVE ASSERTED OVER TIME, not sampled once: "no card yet" is what an enter delay looks
+  // like too, so a single read right after the hover would pass even if a tooltip were mounted.
+  const appeared = await until(async () => (await countOf(page, '[data-testid="spell-hover-card"]')) > 0, 2_000)
+  check('hovering a row opens NOTHING - the card is gone from this surface', !appeared)
+  check('…and hovering picked nothing either', (await countOf(page, '[data-testid="gearplan-donor-search"]')) === 1)
+  check('…with every row it had', (await countOf(page, hit)) === rows)
+
+  // THE PAGE, which is also what bounds the spell lookups — one `spells:detail` per DRAWN row, so
+  // the page size is the fetch budget.
+  //
+  // THE INVARIANT IS ASSERTED, NOT A PARTICULAR LIST LENGTH. Which socket this step lands on decides
+  // how many donors are legal, and the sockets vary by two orders of magnitude against the committed
+  // corpus (a worn socket on PRIMARY offers 8; proc on the same cell offers 197). Pinning "this
+  // list is long" would be pinning the fixture's gear, not the paging. What must hold either way is
+  // that the panel never draws more than a page, and that it offers the way through exactly when it
+  // is holding something back — the never-truncate-in-silence rule, measured.
+  const more = await countOf(page, '[data-testid="gearplan-donor-more"]')
+  check('the panel never draws more than one page at a time', rows <= 25, `rows=${String(rows)}`)
+  if (more === 1) {
+    note(`paging line: ${(await textOf(page, '[data-testid="gearplan-donor-more"]')).trim()}`)
+    await page.click('[data-testid="gearplan-donor-more"]', { timeout: 15_000 })
+    const grew = await settle(() => countOf(page, hit), (n) => n > rows)
+    check('…and "show more" walks it out', grew > rows, `${String(rows)} -> ${String(grew)}`)
+  } else {
+    check('a full page with no "show more" would be a silent truncation', rows < 25, `rows=${String(rows)}`)
+    note(`this socket's legal set fits in one page (${String(rows)} rows), so no paging control is drawn`)
   }
 
-  // THE LOAD-BEARING ONE, and the reason the old no-popper ruling did not survive: hovering to read
-  // changed nothing at all. The picker is still open and still offering exactly what it was.
-  check('…and hovering picked NOTHING - the picker is still open', (await countOf(page, '[data-testid="gearplan-donor-search"]')) === 1)
-  check('…with every row it had', (await countOf(page, '[data-testid="gearplan-donor-hit"]')) === rows)
-
-  await page.click('[data-testid="gearplan-donor-hit"]', { timeout: 15_000 })
+  await page.click(hit, { timeout: 15_000 })
   const picked = await settle(
     () => countOf(page, '[data-testid="gearplan-donor-search"]'),
     (n) => n === 0
   )
-  check('a row can be CLICKED while its own card is open - the card cannot intercept', picked === 0)
+  check('picking a row closes the panel and returns the column to the totals', picked === 0)
 }
 
 /**

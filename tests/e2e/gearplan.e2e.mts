@@ -39,7 +39,7 @@ import {
   stepBounded,
   stepClearAll,
   stepClearCell,
-  stepDonorHoverCard,
+  stepDonorInlineEffects,
   stepDiff,
   stepCellDelta,
   stepLoadEquipped,
@@ -114,7 +114,7 @@ async function firstLaunch(page: Page): Promise<void> {
   await stepAssignItem(page, 'thelvorn')
   await stepTierUnlocks(page)
   await stepSocketPick(page)
-  await stepDonorHoverCard(page)
+  await stepDonorInlineEffects(page)
   await stepClearCell(page)
 
   // Before the load, because the load fills PRIMARY's neighbours and this step wants an empty one.

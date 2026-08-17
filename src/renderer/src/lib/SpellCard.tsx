@@ -30,7 +30,7 @@ import {
   spellClassLine,
   spellEffectClassLabels,
   spellFactsAreForLine,
-  spellLineageLine,
+  spellLineageLine,
   spellStatRows
 } from '@shared/spellDetail'
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, CardSection, LABEL_STYLE, MoreLine, TEXT_STYLE } from './hoverCards'
@@ -52,8 +52,19 @@ const NATURE_COLOR: Record<SpellDetail['nature'], string> = {
  * Never throws: the handler answers a `found: false` record for a name it does not know, and an
  * IPC failure leaves `data` null, which the card reports as "looking up" rather than as an empty
  * spell window.
+ *
+ * EXPORTED FOR THE SURFACES THAT DRAW THE RECORD WITHOUT THE CARD. The gear plan's socket panel
+ * lists each candidate's effect lines as permanent text rather than behind a hover, because it has
+ * the width to and because comparing twenty procs by hovering them one at a time is not comparing.
+ * It wants the DATA, not this file's card layout, so the hook is the seam rather than the card.
+ *
+ * MOUNT IS STILL THE FETCH POINT AND THERE IS STILL NO CACHE, which is what keeps that caller
+ * honest: the record carries the ranks you have CAST, and those change while the app runs. A cache
+ * would keep saying you had never cast the rank you just cast. The cost is bounded by the CALLER
+ * instead - the socket panel pages its list, so a page of rows is a page of in-memory lookups in
+ * main rather than one per legal donor in the corpus.
  */
-function useSpellOnOpen(name: string): { data: SpellDetail | null; loading: boolean } {
+export function useSpellDetail(name: string): { data: SpellDetail | null; loading: boolean } {
   const [data, setData] = useState<SpellDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -199,7 +210,7 @@ function Footer({ detail, loading }: { detail: SpellDetail | null; loading: bool
 
 /** The card body. Exported for the surfaces that draw it somewhere other than a Tooltip. */
 export function SpellCard({ name }: { name: string }): JSX.Element {
-  const { data, loading } = useSpellOnOpen(name)
+  const { data, loading } = useSpellDetail(name)
   const accent = data ? NATURE_COLOR[data.nature] : CARD_TEXT
   const classLine = data ? spellClassLine(data) : null
   return (

@@ -47,7 +47,7 @@ import { useRemembered } from '../gear/useAreaMemory'
 import GearPlanBoard from './GearPlanBoard'
 import GearPlanFilterBar, { type GearPlanFilterBarProps } from './GearPlanFilterBar'
 import type { GearPlanCellHandlers } from './GearPlanCellCard'
-import GearPlanDonorPicker from './GearPlanDonorPicker'
+import GearPlanSocketPanel from './GearPlanSocketPanel'
 import GearPlanSelectPanel from './GearPlanSelectPanel'
 import { useGearPlanFold, type GearPlanFold, type ItemFacts } from './gearPlanFold'
 import GearPlanTotalsPanel from './GearPlanTotalsPanel'
@@ -100,13 +100,20 @@ function NothingPlanned(): JSX.Element {
 }
 
 /**
- * WHICH POPOVER IS OPEN, AND EVERY EDIT THE BOARD CAN MAKE.
+ * WHAT THE RIGHT COLUMN IS AIMED AT, AND EVERY EDIT THE BOARD CAN MAKE.
  *
- * ONE anchor for the whole surface rather than one per card: two popovers open at once is a state
- * twenty-three independently-anchored cells can reach and a single `open` cannot. The socket picker
- * carries its whole `CellContext` because that is what `donorFitsCell` is asked with — the cell,
- * the socket, and the PLANNED item's classes (R2 against the item, not against a class trio the
- * document deliberately does not carry).
+ * TWO NULLABLE TARGETS AND NO ANCHOR. Both pickers used to be popovers and this fold carried the
+ * anchoring element for them; a column is laid out rather than positioned, so the element went
+ * away and the cell handlers stopped passing one. What is left is the question being asked: an
+ * item for a cell, or a donor for one socket of one cell.
+ *
+ * SETTING EITHER CLEARS THE OTHER, which is what keeps "both pickers at once" out of reach. That
+ * used to be enforced by there being one anchor; it is now enforced explicitly in the handlers,
+ * because two independent `useState`s otherwise permit exactly the state a single anchor forbade.
+ *
+ * The socket target carries its whole `CellContext` because that is what `donorFitsCell` is asked
+ * with — the cell, the socket, and the PLANNED item's classes and slots (R2 against the item, not
+ * against a class trio the document deliberately does not carry).
  *
  * `classesOf` reads the corpus, so an item the gear index has no row for narrows nothing and
  * filters nothing — UNKNOWN, never "nobody" (law 1).
@@ -115,7 +122,6 @@ interface Editing {
   on: GearPlanCellHandlers
   itemCell: PlanSlotId | null
   socketCtx: CellContext | null
-  anchor: HTMLElement | null
   close: () => void
   pickItem: (hit: PlannerItemHit) => void
   pickDonor: (donor: PlannerDonor) => void
@@ -128,25 +134,22 @@ function useEditing(
   facts: ItemFacts,
   addWishes: (offered: readonly WishEntry[]) => void
 ): Editing {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [itemCell, setItemCell] = useState<PlanSlotId | null>(null)
   const [socketCtx, setSocketCtx] = useState<CellContext | null>(null)
   const { gearPlan, assign, clear, setState, setSocket } = api
 
   const close = useCallback(() => {
-    setAnchor(null)
     setItemCell(null)
     setSocketCtx(null)
   }, [])
 
   const on = useMemo<GearPlanCellHandlers>(
     () => ({
-      pickItem: (cell, el) => {
+      pickItem: (cell) => {
         setSocketCtx(null)
         setItemCell(cell)
-        setAnchor(el)
       },
-      pickSocket: (cell, socket, el) => {
+      pickSocket: (cell, socket) => {
         setItemCell(null)
         const key = gearPlan.cells[cell]?.key ?? ''
         setSocketCtx({
@@ -155,7 +158,6 @@ function useEditing(
           itemClasses: facts.classesOf(key),
           itemSlots: facts.slotsOf(key)
         })
-        setAnchor(el)
       },
       setState: (cell: PlanSlotId, next: ItemUpgradeState) => {
         setState(cell, next)
@@ -204,7 +206,6 @@ function useEditing(
     on,
     itemCell,
     socketCtx,
-    anchor,
     close,
     pickItem,
     pickDonor,
@@ -273,7 +274,7 @@ function usePoolFilter(): {
     sanitizeGearPlanFilter
   )
   const [eraOnly, setEraOnly] = useEraOnly()
-  // Only ONE picker can be open (the view owns a single anchor), so one number is the whole story.
+  // Only ONE picker can be open (`RightColumn` draws one surface), so one number is the whole story.
   // `null` is "nothing has been asked", which the bar renders as silence rather than as a zero.
   const [hidden, setHidden] = useState<number | null>(null)
   // STABLE, because both pickers report through it from inside an effect — a fresh identity every
@@ -289,21 +290,30 @@ function usePoolFilter(): {
 }
 
 /**
- * ONE COLUMN, TWO JOBS. While a cell is being filled it shows the CANDIDATES and what each would
- * change; otherwise it shows what the board adds up to. They are never both useful at once —
- * choosing is the moment the sum matters least — and giving the selection this width is the whole
- * reason it is a panel rather than the popover it used to be.
+ * ONE COLUMN, THREE JOBS, AND ONLY EVER ONE AT A TIME. While a cell is being filled it shows the
+ * CANDIDATE ITEMS and what each would change; while a socket is being filled it shows the LEGAL
+ * EXALTATIONS and what each does; otherwise it shows what the board adds up to.
+ *
+ * The two pickers are mutually exclusive by construction rather than by luck — `useEditing` clears
+ * one when it opens the other — so the order of these branches is a formality, not a precedence.
+ *
+ * WHY THE SUM IS THE ONE THAT YIELDS: choosing is the moment a total matters least. You are asking
+ * "which of these", and the answer to that lives in the list, not in what the board came to before
+ * you opened it. Every surface here is a `DashCard fill`, so the column's width and height belong
+ * to whichever is up.
  */
 function RightColumn({
   fold,
   edit,
   assigned,
+  donorsReady,
   signalsOf,
   pick
 }: {
   fold: GearPlanFold
   edit: Editing
   assigned: number
+  donorsReady: boolean
   signalsOf: ReturnType<typeof useRowSignals>
   pick: ReturnType<typeof usePoolFilter>['pick']
 }): JSX.Element {
@@ -315,6 +325,19 @@ function RightColumn({
         onPick={edit.pickItem}
         signalsOf={signalsOf}
         deltaFor={fold.candidateDelta}
+        {...pick}
+      />
+    )
+  }
+  if (edit.socketCtx !== null) {
+    return (
+      <GearPlanSocketPanel
+        ctx={edit.socketCtx}
+        ready={donorsReady}
+        onClose={edit.close}
+        onPick={edit.pickDonor}
+        signalsOf={signalsOf}
+        onClear={edit.clearSocket}
         {...pick}
       />
     )
@@ -418,31 +441,20 @@ export default function GearPlanView(): JSX.Element {
             on={edit.on}
           />
         </Box>
-        {/* ONE COLUMN, TWO JOBS. While a cell is being filled it shows the CANDIDATES and what each
-            would change; otherwise it shows what the board adds up to. They are never both useful at
-            once — choosing is the moment the sum matters least — and giving the selection this width
-            is the whole reason it is not a popover any more. */}
+        {/* THE COLUMN IS THE ONLY PLACE ANY OF THIS OPENS NOW — see `RightColumn`. Nothing in this
+            feature is anchored to a cell any more, so nothing can be clipped by the window edge and
+            nothing takes a backdrop that would freeze the board and the filter bar behind it. */}
         <Box sx={{ width: PANEL_WIDTH, flexShrink: 0, minHeight: 0, display: 'flex' }}>
           <RightColumn
             fold={fold}
             edit={edit}
             assigned={assigned}
+            donorsReady={donorsReady}
             signalsOf={signalsOf}
             pick={pool.pick}
           />
         </Box>
       </Stack>
-
-      <GearPlanDonorPicker
-        ctx={edit.socketCtx}
-        anchor={edit.socketCtx === null ? null : edit.anchor}
-        ready={donorsReady}
-        onClose={edit.close}
-        onPick={edit.pickDonor}
-        signalsOf={signalsOf}
-        onClear={edit.clearSocket}
-        {...pool.pick}
-      />
     </Stack>
   )
 }

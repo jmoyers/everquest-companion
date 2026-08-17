@@ -61,7 +61,7 @@
 // a pure render with no popover state of its own — twenty-three cards each holding an anchor is
 // twenty-three ways for two popovers to be open at once.
 
-import { memo, type JSX, type MouseEvent } from 'react'
+import { memo, type JSX } from 'react'
 import { Box, Link, Stack, Typography } from '@mui/material'
 import EditIcon from '@mui/icons-material/EditOutlined'
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder'
@@ -89,10 +89,10 @@ const STAT_LABEL = {
 
 /** Everything this card can ask the board to do. One object, so adding a control widens one prop. */
 export interface GearPlanCellHandlers {
-  /** open the item picker over this cell */
-  pickItem: (cell: PlanSlotId, anchor: HTMLElement) => void
-  /** open the donor picker over one socket of this cell */
-  pickSocket: (cell: PlanSlotId, socket: SocketType, anchor: HTMLElement) => void
+  /** aim the right column's item picker at this cell */
+  pickItem: (cell: PlanSlotId) => void
+  /** aim the right column's exaltation picker at one socket of this cell */
+  pickSocket: (cell: PlanSlotId, socket: SocketType) => void
   /** move this cell's planned merge tier */
   setState: (cell: PlanSlotId, state: ItemUpgradeState) => void
   /** empty the cell entirely */
@@ -155,7 +155,7 @@ function SocketLine({
   planned: GearPlanCell
   unlocked: boolean
   /** `null` when the tier has not unlocked this socket — an unreachable socket is NOT a control */
-  onPick: ((anchor: HTMLElement) => void) | null
+  onPick: (() => void) | null
 }): JSX.Element {
   const inSocket = planned.sockets[socket]
   // An unlocked socket with nothing in it is ABSENT and renders the app's `-` (house law 2). A
@@ -202,7 +202,7 @@ function SocketLine({
           // state. 18px is the library's in-a-row icon size; it inherits secondary ink and lifts to
           // primary on hover, which is its rule for a caption icon.
           color={inSocket === undefined ? 'text.disabled' : 'text.primary'}
-          onClick={(e: MouseEvent<HTMLButtonElement>) => onPick(e.currentTarget)}
+          onClick={() => onPick()}
           sx={{ minWidth: 0, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
@@ -317,7 +317,7 @@ function CellHeader({
           variant="body2"
           color="text.primary"
           data-testid="gearplan-item-name"
-          onClick={(e: MouseEvent<HTMLButtonElement>) => on.pickItem(cell, e.currentTarget)}
+          onClick={() => on.pickItem(cell)}
           sx={{ lineHeight: 1.4, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {planned.name}
@@ -399,8 +399,8 @@ function PlannedBody({
                 unlocked={unlocked.includes(socket)}
                 onPick={
                   unlocked.includes(socket)
-                    ? (anchor) => {
-                        on.pickSocket(cell, socket, anchor)
+                    ? () => {
+                        on.pickSocket(cell, socket)
                       }
                     : null
                 }
@@ -430,7 +430,7 @@ function GearPlanCellCard({ cell, planned, block, delta, iconId, on }: GearPlanC
           variant="body2"
           color="text.disabled"
           data-testid="gearplan-add-item"
-          onClick={(e: MouseEvent<HTMLButtonElement>) => on.pickItem(cell, e.currentTarget)}
+          onClick={() => on.pickItem(cell)}
           sx={{ alignSelf: 'flex-start' }}
         >
           nothing planned
