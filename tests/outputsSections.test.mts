@@ -93,7 +93,11 @@ test('only the Location table says what is WORN — a second table never dresses
   assert.ok(worn)
   assert.equal(worn.item?.name, 'Real Helm')
   assert.deepEqual(sheet.unplaced, [])
-  assert.deepEqual(equippedHosts(dump), [{ slot: 'HEAD', name: 'Real Helm' }])
+  // `exaltations` is ALWAYS present, and empty when the row printed no `(Exaltation)` children —
+  // the same split as everything else here, one level down: a stored row is not evidence about a
+  // worn one's sockets either. An absent list would spell "no exaltations" and "not looked at" the
+  // same way (law 1), which is exactly the distinction `equippedRead` goes on to keep.
+  assert.deepEqual(equippedHosts(dump), [{ slot: 'HEAD', name: 'Real Helm', exaltations: [] }])
 
   // …and coverage follows the same split: the stored row is not evidence about what is equipped.
   assert.deepEqual(storagesCoveredBy(dump), ['equip'])

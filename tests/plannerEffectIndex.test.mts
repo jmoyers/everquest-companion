@@ -418,3 +418,55 @@ test('host search: substring, prefix-first, shortest-first, capped', () => {
   assert.ok(index.items.length > donors.length, 'the item index must cover the whole corpus')
   assert.equal(new Set(index.items.map((i) => i.key)).size, index.items.length, 'one row per key')
 })
+
+// ---- narrowing to one equipment slot ---------------------------------------------------------
+//
+// The gear plan board asks this question about ONE cell. It used to narrow the ANSWER, in the
+// renderer, which silently defeated the fifty-hit cap: the cap had already chosen its fifty from
+// the whole corpus. These tests hold the fix to the property that actually matters — the cap and
+// the narrowing happen in the right ORDER — and they do it against the real corpus, because the
+// bug was only visible at eleven thousand rows.
+
+test('a slotted search narrows BEFORE the cap - every hit is one the caller can use', () => {
+  const rings = searchPlannerItems(index.items, '', PLANNER_SEARCH_LIMIT, 'FINGER')
+  assert.ok(rings.length > 0, 'the corpus states finger items')
+  for (const hit of rings) {
+    assert.ok(hit.slots.includes('FINGER'), `${hit.name} came back for FINGER without stating it`)
+  }
+
+  // THE REGRESSION ITSELF, measured rather than described. "ri" over the whole corpus fills the cap
+  // with fifty rows ranked corpus-wide; keeping only the rings out of THOSE is what the renderer
+  // used to do, and it is strictly worse than asking main for fifty rings.
+  const corpusWide = searchPlannerItems(index.items, 'ri')
+  const keptAfterwards = corpusWide.filter((h) => h.slots.includes('FINGER')).length
+  const narrowedFirst = searchPlannerItems(index.items, 'ri', PLANNER_SEARCH_LIMIT, 'FINGER').length
+  assert.ok(
+    narrowedFirst >= keptAfterwards,
+    `narrowing first offered ${narrowedFirst}, filtering afterwards offered ${keptAfterwards}`
+  )
+})
+
+test('an empty query answers ONLY with a slot - the minimum`s reason, in the model', () => {
+  // No slot: the haystack is the whole corpus and an unfiltered list of it says nothing. This is
+  // the rule `MIN_QUERY` exists to state, and it is unchanged for every caller without a cell.
+  assert.deepEqual(searchPlannerItems(index.items, ''), [])
+  assert.deepEqual(searchPlannerItems(index.items, '   '), [])
+
+  // With a slot the set is CLOSED, so the list is itself the answer to "what can go here".
+  for (const slot of EQUIP_SLOTS) {
+    const hits = searchPlannerItems(index.items, '', PLANNER_SEARCH_LIMIT, slot)
+    assert.ok(hits.length <= PLANNER_SEARCH_LIMIT, `${slot} came back over the cap`)
+    for (const hit of hits) assert.ok(hit.slots.includes(slot), `${slot} offered ${hit.name}`)
+  }
+  // …and at least one real slot actually fills, so the loop above is not vacuously true.
+  assert.ok(searchPlannerItems(index.items, '', PLANNER_SEARCH_LIMIT, 'HEAD').length > 0)
+})
+
+test('a slot narrows the query rather than replacing it - both constraints hold at once', () => {
+  const hits = searchPlannerItems(index.items, 'of', PLANNER_SEARCH_LIMIT, 'HEAD')
+  assert.ok(hits.length > 0, 'the corpus states head items with "of" in the name')
+  for (const hit of hits) {
+    assert.ok(hit.slots.includes('HEAD'), `${hit.name} is not a head item`)
+    assert.ok(hit.name.toLowerCase().includes('of'), `${hit.name} does not match the query`)
+  }
+})

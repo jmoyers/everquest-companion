@@ -39,6 +39,7 @@ import { EQUIP_SLOTS } from '../src/shared/planner/types'
 import { WEAPON_PICKS } from '../src/shared/planner/weaponType'
 import { DEFAULT_GEAR_FILTERS, DEFAULT_GEAR_SORT } from '../src/renderer/src/features/gear/gearFilter'
 import { PICKABLE_COLUMNS } from '../src/renderer/src/features/gear/gearColumns'
+import { NO_ROW_FILTER } from '../src/renderer/src/features/gearplan/gearPlanSignals'
 import {
   AREA_FORM_TIER,
   DEFAULT_GEAR_FORM,
@@ -48,6 +49,7 @@ import {
   sanitizeFlag,
   sanitizeGearClasses,
   sanitizeGearForm,
+  sanitizeGearPlanFilter,
   sanitizeGearSort,
   sanitizeItemFocus,
   sanitizeOpenGroups,
@@ -97,7 +99,10 @@ const BROWSE_FALLBACK: BrowseFormMemory = { socket: 'proc', slot: null, trioOnly
 
 test('the restart split is a table, and every key in it is on one of exactly two tiers', () => {
   const keys = Object.keys(AREA_FORM_TIER) as AreaFormKey[]
-  assert.equal(keys.length, 11, 'eleven fields were added by JOS-329 — update this test when a twelfth is')
+  // Eleven arrived with JOS-329; the twelfth is the Gear plan tab's pool filter. The count is
+  // asserted rather than derived on purpose - a key that lands here without a deliberate edit to
+  // this line is a key whose tier nobody decided.
+  assert.equal(keys.length, 12, 'twelve fields — update this test when a thirteenth is added')
   for (const key of keys) {
     const tier = tierOf(key)
     assert.ok(tier === 'restart' || tier === 'session', `${key} is on an unknown tier ${tier}`)
@@ -172,9 +177,26 @@ const READERS: Reader[] = [
   { key: 'eq.planner.item', read: sanitizeItemFocus, fallback: null },
   { key: 'eq.planner.open', read: sanitizeOpenGroups, fallback: [], legal: anyIdList },
   { key: 'eq.planner.search', read: sanitizeSearch, fallback: '', legal: anyString },
+  { key: 'eq.gearplan.filters', read: sanitizeGearPlanFilter, fallback: NO_ROW_FILTER },
   { key: 'eq.wishlist.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString }
 ]
+
+test('the gear plan pool filter degrades to hiding NOTHING, never to hiding something', () => {
+  // The inverse of the gear form's era field one test below, and the difference is the point. A
+  // corrupted gear filter must come back with era ON, because that filter ships on. A corrupted
+  // PLAN filter must come back OFF, because hiding rows nobody asked to hide is the single failure
+  // this control was built to avoid — and a store that cannot be read has asked for nothing.
+  assert.deepEqual(sanitizeGearPlanFilter({ ownedOnly: 'yes', usableOnly: 1 }), NO_ROW_FILTER)
+  assert.deepEqual(sanitizeGearPlanFilter(null), NO_ROW_FILTER)
+
+  // …and field by field, so a store written before `wishedOnly` existed keeps its two siblings.
+  assert.deepEqual(sanitizeGearPlanFilter({ ownedOnly: true, usableOnly: true }), {
+    ownedOnly: true,
+    usableOnly: true,
+    wishedOnly: false
+  })
+})
 
 test('every stored key has a reader in this file — a new key cannot be covered by being forgotten', () => {
   const covered = new Set(READERS.map((r) => r.key))

@@ -20,6 +20,7 @@ import type { ItemCountOverride } from './itemOverrides'
 import type { InventorySource } from './outputs/baseline'
 import type { ExaltPlan } from './planner/types'
 import type { GearSet } from './planner/gearSet'
+import type { GearPlan } from './planner/gearPlan'
 import type { WishList } from './planner/wishlist'
 
 /** Held-item counts keyed by lowercased item name. */
@@ -183,6 +184,31 @@ export interface ProgressState {
    * both halves).
    */
   wishlist?: WishList
+  /**
+   * THE GEAR PLAN BOARD — one item per equipment cell, at the plus-state planned for it, with that
+   * item's planned exaltations in its sockets (`shared/planner/gearPlan.ts`). Character-scoped for
+   * the same reason the three keys above are: a gear plan is one character's.
+   *
+   * SINGULAR, AND THAT IS THE FEATURE STATEMENT RATHER THAN A SIMPLIFICATION. `exaltPlans` and
+   * `gearSets` are ARRAYS because both surfaces were LISTS of documents with a selection, and the
+   * create/rename/delete/select machinery that came with them is most of what JOS-325 and JOS-326
+   * named when they retired those surfaces. There is one board per character, so there is nothing
+   * to select, and the type is the one place that is said once.
+   *
+   * A FOURTH KEY, AND THE THREE ABOVE ARE NEITHER READ NOR WRITTEN BY IT. The store-separation law
+   * is argued in full at `wishlist` above and it applies here unchanged — four questions, four
+   * tabs, four documents that must be able to be empty independently. Two of those documents are
+   * RETIRED FROM THE UI AND KEPT ON DISK on an owner promise, so this key is deliberately additive
+   * ALONGSIDE them rather than a repurposing of either: nothing here migrates a gear set, imports
+   * an exaltation plan, or changes what a byte already on disk means. `tests/gearPlanStore.test.mts`
+   * asserts exactly that — a store carrying all four round-trips all four.
+   *
+   * ADDITIVE and OPTIONAL — no schema bump and no migration, the `exaltPlans`/`gearSets`/`wishlist`
+   * precedent exactly: every reader defaults on a missing key and electron-store rewrites the
+   * whole parsed object, so a store written by any older build loads unchanged and one written
+   * here still opens in a build that predates the board.
+   */
+  gearPlan?: GearPlan
   /**
    * GROUP-ROSTER user edits (docs/plans/group-model.md §3). Character-scoped, like everything
    * else here. The roster itself is re-derived from the log on every replay; an edit is the one

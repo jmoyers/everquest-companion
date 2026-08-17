@@ -23,6 +23,12 @@ export type View =
   // you have decided you want, kept as a list rather than derived from a plan. It ships this
   // ticket as an honest placeholder panel and gains its content in JOS-326.
   | 'wishlist'
+  // The GEAR PLAN BOARD - the gear area's planning surface: one item per equipment cell at its own
+  // planned merge level, that item's exaltations in its sockets, and what the whole thing adds up
+  // to against the newest inventory dump (src/renderer/src/features/gearplan/**). It is the host
+  // targeting `progressState.ts` parks at the `wishlist` key ("an explicitly later addition"),
+  // built on its own tab with its own store key rather than by widening the flat list.
+  | 'gearplan'
   | 'buffs'
   | 'timers'
   | 'preferences'
@@ -71,6 +77,11 @@ export const VIEW_LABELS: Record<View, string> = {
   // JOS-324. Two words, as a player writes it — the tab bar says it and, the day a wish-list row
   // deep-links into Loot, so will that drill's Back button.
   wishlist: 'Wish list',
+  // THE TAB IS CALLED PLAN, and the view id is not - the `planner`/'Exaltations' arrangement two
+  // lines up, for the same reason it was right there: a label names the thing the player came here
+  // about, and an id is a route, a storage key and forty testids. One is cheap to change and the
+  // other is not, so they are allowed to differ and this table is the one place that is said.
+  gearplan: 'Plan',
   buffs: 'Buffs',
   timers: 'Timers',
   preferences: 'Preferences',
@@ -93,6 +104,7 @@ const KNOWN_VIEWS: View[] = [
   'planner',
   'gear',
   'wishlist',
+  'gearplan',
   'buffs',
   'timers',
   'preferences',
@@ -154,7 +166,7 @@ export const DEFAULT_GEAR_TAB: View = 'gear'
 export const GEAR_AREA_VIEWS: readonly View[] = (
   // Character sits LEFT of Wish list, in the run with everything else (owner ruling 2026-08-13:
   // the right-pushed placement hid the tab well enough that the owner reported it missing).
-  ['gear', 'planner', 'character', 'wishlist'] as const
+  ['gear', 'planner', 'character', 'gearplan', 'wishlist'] as const
 ).filter((v) => (KNOWN_VIEWS as readonly View[]).includes(v))
 
 /** Is this view drawn inside the gear area? (⇒ the nav row reads selected, the tab bar is up.) */

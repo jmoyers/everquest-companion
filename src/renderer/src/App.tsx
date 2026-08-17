@@ -46,6 +46,7 @@ import DevTriageView from './devTriage'
 // keep the tree out of packaged bytes. The owner released the tab, so that file is gone and this is
 // an ordinary static import like the eleven views above it.
 import CharacterView from './features/character/CharacterView'
+import GearPlanView from './features/gearplan/GearPlanView'
 import { OWNER_TOOLS } from './devFlags'
 import { useFeedbackDialog, type FeedbackPrefill } from './features/feedback/useFeedback'
 // Usage analytics (docs/plans/usage-analytics.md). The notice is mounted unconditionally and
@@ -156,6 +157,13 @@ function PlainView({
           to show it. Keyed like the rest — the sheet and its carry-all ledger are one character's,
           and the remount is how this app says that. */}
       {view === 'character' && <CharacterView key={viewKey} />}
+      {/* THE PLAN board (view id `gearplan`) - one item per equipment cell with its exaltations, and
+          what that adds up to against the newest dump. Keyed like the rest, and for the strongest
+          version of the same reason: a gearPlan is one character's plan for one character's body,
+          and the remount is how this app says that. It takes NO prop today - the board owns its own
+          document through `useGearPlan` and reads the corpus and the dump through the hooks its
+          siblings use - and it will take `onOpenLoot` when a cell's item name becomes a link. */}
+      {view === 'gearplan' && <GearPlanView key={viewKey} />}
     </>
   )
 }

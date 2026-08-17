@@ -122,6 +122,15 @@ export const TELEMETRY_VIEWS = [
   // hard, so releasing the view without adding it here is a red build. Graduation is both halves at
   // once, which is exactly what JOS-327 did.
   'character',
+  // The gear area's Plan tab (view id `gearplan`) - the gear plan board. SAME CLOSED-ENUM DEPLOY ORDER
+  // as every member added since JOS-119 - the ingest Lambda validates through this module, so the
+  // server has to learn the value before a client that can emit it ships, or one dwell on this tab
+  // 400s the whole batch and drops every counter in it.
+  //
+  // THE VALUE IS THE VIEW ID AND NOT THE LABEL, which is the `planner`/'Exaltations' arrangement:
+  // a label is what the tab bar says and an id is what a route, a store key and a counter are made
+  // of. Renaming the tab must never move a histogram.
+  'gearplan',
   'preferences',
   'triage'
 ] as const

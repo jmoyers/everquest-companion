@@ -74,7 +74,14 @@ export function itemFits(donor: PlannerDonor, item: ItemFocus): boolean {
 
 // ---- the item index, as the two pickers ask it ----------------------------------------
 
-/** Shortest query worth a round trip — one letter matches thousands of items and says nothing. */
+/**
+ * Shortest query worth a round trip — one letter matches thousands of items and says nothing.
+ *
+ * IT APPLIES ONLY WHEN THERE IS NO SLOT TO NARROW BY. A caller that names an equipment slot has a
+ * CLOSED, small set to offer and does not need a query at all ("what can go here" is the question
+ * an empty cell poses), so `useItemSearch` waives this for them. Without a slot the haystack is
+ * still the whole corpus and the rule stands unchanged.
+ */
 export const MIN_QUERY = 2
 
 export interface ItemHitsState {
@@ -86,18 +93,29 @@ export interface ItemHitsState {
  * One search per settled query, shared by the host picker and the filter bar's item picker. An
  * in-flight answer for an older query is dropped, not shown; `enabled` is the popover's own open
  * state, because a closed picker must not keep asking.
+ *
+ * `slot` IS PASSED TO MAIN RATHER THAN APPLIED TO THE ANSWER, and it changes two things. Main
+ * narrows before its fifty-hit cap, so the fifty that come back are fifty the caller can use — a
+ * FINGER cell searching "ri" used to get fifty rows ranked across the whole corpus and keep
+ * whichever happened to be rings. And a slotted search needs no minimum query, because the set it
+ * offers is closed: see `MIN_QUERY`.
  */
-export function useItemSearch(query: string, enabled: boolean): ItemHitsState {
+export function useItemSearch(
+  query: string,
+  enabled: boolean,
+  slot?: EquipSlot,
+  limit?: number
+): ItemHitsState {
   const [state, setState] = useState<ItemHitsState>({ hits: [], loading: false })
   useEffect(() => {
-    if (!enabled || query.trim().length < MIN_QUERY) {
+    if (!enabled || (slot === undefined && query.trim().length < MIN_QUERY)) {
       setState({ hits: [], loading: false })
       return
     }
     let alive = true
     setState((prev) => ({ hits: prev.hits, loading: true }))
     void window.eq
-      .plannerSearchItems(query.trim())
+      .plannerSearchItems(query.trim(), slot, limit)
       .then((hits) => {
         if (alive) setState({ hits, loading: false })
       })
@@ -108,6 +126,6 @@ export function useItemSearch(query: string, enabled: boolean): ItemHitsState {
     return () => {
       alive = false
     }
-  }, [query, enabled])
+  }, [query, enabled, slot, limit])
   return state
 }

@@ -62,6 +62,10 @@ import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
 import { WEAPON_PICKS, type WeaponPick } from '../../../../shared/planner/weaponType'
+// The gear PLAN tab is part of the gear area, so its remembered form belongs in this table beside
+// the other four tabs'. The type comes from that tab's PURE signals file, which imports nothing but
+// `shared` — so this file stays a fold over plain data and its no-React/no-storage rule holds.
+import { NO_ROW_FILTER, type GearPlanRowFilter } from '../gearplan/gearPlanSignals'
 import { PICKABLE_COLUMNS } from './gearColumns'
 import {
   DEFAULT_GEAR_FILTERS,
@@ -108,6 +112,15 @@ export const AREA_FORM_TIER = {
   'eq.planner.item': 'session',
   'eq.planner.open': 'session',
   'eq.planner.search': 'session',
+  // ---- the Gear plan tab ----
+  /**
+   * which rows the two pickers may OFFER - owned / my classes / wishlisted, all shipping OFF.
+   *
+   * Era is deliberately absent: that toggle is `plannerData.useEraOnly`, one shared
+   * `eq.planner.era` key already governing two other tabs, and a second opinion about what era
+   * means is worth less than the consistency of having one.
+   */
+  'eq.gearplan.filters': 'restart',
   // ---- the Wish list tab ----
   'eq.wishlist.search': 'session',
   // ---- the Character tab ----
@@ -223,6 +236,25 @@ export function sanitizeGearForm(raw: unknown): GearFormMemory {
     // bare `=== true`, which would silently turn the default filter off for a corrupted store.
     eraOnly: sanitizeFlag(o.eraOnly, DEFAULT_GEAR_FORM.eraOnly),
     ownedOnly: sanitizeFlag(o.ownedOnly, DEFAULT_GEAR_FORM.ownedOnly)
+  }
+}
+
+/**
+ * The stored gear-plan pool filter, field by field for `sanitizeGearForm`'s reason: a store written
+ * before a fourth filter existed keeps its three siblings instead of being thrown away.
+ *
+ * ALL THREE FALL BACK TO OFF, which is the opposite of the gear form's era field and deliberate:
+ * these narrow a PLAN's pool, and a plan is allowed to be aspirational. An unreadable value must
+ * therefore hide nothing, because hiding rows nobody asked to hide is the one failure this whole
+ * control was built to avoid.
+ */
+export function sanitizeGearPlanFilter(raw: unknown): GearPlanRowFilter {
+  const o = asRecord(raw)
+  if (o === null) return NO_ROW_FILTER
+  return {
+    ownedOnly: sanitizeFlag(o.ownedOnly, NO_ROW_FILTER.ownedOnly),
+    usableOnly: sanitizeFlag(o.usableOnly, NO_ROW_FILTER.usableOnly),
+    wishedOnly: sanitizeFlag(o.wishedOnly, NO_ROW_FILTER.wishedOnly)
   }
 }
 
