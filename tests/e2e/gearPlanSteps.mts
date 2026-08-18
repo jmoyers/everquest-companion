@@ -81,6 +81,51 @@ export async function stepMount(page: Page): Promise<void> {
   check('…and the totals panel is up beside it', (await countOf(page, TOTALS)) === 1)
 }
 
+/**
+ * THE TEACHING, ON BOTH SURFACES — and the rule that decided which teaching goes where.
+ *
+ * A card that opens itself on first visit is the shape the owner deleted on the Exaltations tab
+ * (JOS-51). So the first-visit teaching is the EMPTY STATE, which needs no remembered flag, and the
+ * depth is behind a `?` that is the card's only door in. Both halves of that are asserted, because
+ * the failure that matters is the card learning to open itself.
+ *
+ * WHAT ONLY A MOUNTED APP CAN SAY: that the `?` reaches the card at all, that the card is closed on
+ * a store that has never answered it, and that the numbers inside it were READ rather than typed —
+ * the unlock ladder in the card has to agree with the ladder the board itself draws, and the two
+ * come from `extractionTier` through completely different code paths.
+ */
+export async function stepTeaching(page: Page): Promise<void> {
+  const card = '[data-testid="gearplan-explainer"]'
+  check('the teaching card is CLOSED on a store that has never asked for it', (await countOf(page, card)) === 0)
+  check('…and the `?` that opens it is always on the toolbar', (await countOf(page, '[data-testid="gearplan-explain"]')) === 1)
+
+  await page.click('[data-testid="gearplan-explain"]', { timeout: 15_000 })
+  const opened = await until(async () => (await countOf(page, card)) > 0, 20_000)
+  if (!check('the `?` opens the teaching card', opened)) return
+
+  const text = await textOf(page, card)
+  // THE NUMBERS ARE THE RULE'S. `+4` for the strictest socket reaches this card from
+  // `extractionTier` and reaches the board from the same function through the cell card - so a
+  // corrected ladder moves both, and a card that quoted it by hand would fail here first.
+  check('…and its unlock ladder is the same one the board draws', text.includes('proc at +4'), text.slice(0, 200))
+  check('…and it states the dump command, which used to live in a permanent row', text.includes('/outputfile inventory'), text.slice(0, 240))
+  note(`explainer reads: ${text.replace(/\s+/g, ' ').slice(0, 260)}`)
+
+  // THE ROW THAT STAYED is the clock, and ONLY the clock: the command moved into the card above.
+  const row = '[data-testid="gearplan-outputfile"]'
+  if ((await countOf(page, row)) > 0) {
+    const rowText = await textOf(page, row)
+    check('the dump row keeps the age and sheds the instructions', !rowText.includes('/outputfile'), rowText.slice(0, 120))
+    check('…and still says how old the dump is', (await countOf(page, `${row} [data-testid="gearplan-outputfile-age"]`)) === 1, rowText.slice(0, 120))
+    note(`dump row reads: ${rowText.replace(/\s+/g, ' ').slice(0, 120)}`)
+  }
+
+  // DISMISSING IS REMEMBERED IN BOTH DIRECTIONS, so the card left dismissed here is what the
+  // relaunch step reads back.
+  await page.click(`${card} button[aria-label="Close"]`, { timeout: 15_000 })
+  check('…and it can be dismissed', await settleGone(page, card, { timeoutMs: 8_000 }))
+}
+
 /** The seeded cell reads out its item, its planned tier, and all four socket lines. */
 export async function stepSeededCell(page: Page, item: string, tier: number): Promise<void> {
   const head = await settle(
@@ -629,4 +674,17 @@ export async function stepClearAll(page: Page, planned: number): Promise<void> {
   check('confirming empties every cell', left === 0, `${String(planned)} -> ${String(left)}`)
   // …and the controls that only make sense with a plan go with it (law 9, the toolbar's own rule).
   check('…and the wipe control removes itself', (await countOf(page, '[data-testid="gearplan-clear-all"]')) === 0)
+
+  // THE TUTORIAL IS THE EMPTY STATE, so this is the one moment in the spec it can be seen: the
+  // board only goes empty here. It is also the honest test of the shape — the teaching came back
+  // WITHOUT a remembered flag, on a store that has already dismissed the `?` card, purely because
+  // the board is empty again. A first-run bit could not do that and would not want to.
+  const tutorial = await until(async () => (await countOf(page, '[data-testid="gearplan-tutorial"]')) > 0, 20_000)
+  check('an emptied board teaches again, with no first-run flag involved', tutorial)
+  if (tutorial) {
+    const text = await textOf(page, '[data-testid="gearplan-tutorial"]')
+    check('…in three steps, starting with filling a slot', text.startsWith('1. Fill a slot.'), text.slice(0, 120))
+    check('…and offers the way into the full card', (await countOf(page, '[data-testid="gearplan-empty-explain"]')) === 1)
+    note(`tutorial reads: ${text.replace(/\s+/g, ' ').slice(0, 220)}`)
+  }
 }

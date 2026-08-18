@@ -46,8 +46,9 @@
 // other two: a load that cannot read sockets is not a slower load, it is a lossy one.
 
 import { type JSX, useState, type MouseEvent } from 'react'
-import { Box, Button, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, IconButton, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material'
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder'
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweepOutlined'
 import type { LoadMode } from '@shared/planner/gearPlan'
@@ -73,6 +74,8 @@ export interface GearPlanToolbarProps {
   onWish: () => void
   /** how many rows the wish control just wrote, for the one line that says it happened */
   wished: number | null
+  /** open the teaching card — the `?` is its only door in, see `GearPlanExplainer` */
+  onExplain: () => void
 }
 
 
@@ -151,7 +154,8 @@ export default function GearPlanToolbar({
   onLoad,
   onClearAll,
   onWish,
-  wished
+  wished,
+  onExplain
 }: GearPlanToolbarProps): JSX.Element | null {
   // WHICH menu, not just where: two anchors that can each be non-null is a state where both are
   // open at once, and one field cannot reach it.
@@ -228,6 +232,23 @@ export default function GearPlanToolbar({
               : `Added ${String(wished)} to your wish list.`}
           </Typography>
         )}
+        {/* THE ONLY DOOR INTO THE TEACHING CARD, and it is on the right of the action row rather
+            than among the actions because it is not one: the three buttons to the left CHANGE the
+            board, and this one explains it. The Exaltations tab puts its `?` in the same place for
+            the same reason, which is what makes it recognisable here without a label.
+
+            ALWAYS DRAWN, unlike the three actions, which come and go with whether the board has
+            anything to act on. Help that disappears exactly when you are most lost is not help. */}
+        <IconButton
+          size="small"
+          data-testid="gearplan-explain"
+          aria-label="How the plan board works"
+          title="How the plan board works"
+          onClick={onExplain}
+          sx={{ color: 'text.disabled', flexShrink: 0, '&:hover': { color: 'text.primary' } }}
+        >
+          <HelpOutlineIcon sx={{ fontSize: 18 }} />
+        </IconButton>
       </Stack>
 
       <LoadMenu anchor={menu?.kind === 'load' ? menu.el : null} overwrites={overwrites ?? 0} onClose={close} onRun={run} />

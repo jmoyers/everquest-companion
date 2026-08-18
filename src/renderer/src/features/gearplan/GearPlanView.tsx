@@ -25,7 +25,7 @@
 // do these items add up to". This file resolves keys to corpus rows and lays panes out.
 
 import { useCallback, useMemo, useState, type JSX } from 'react'
-import { Box, Stack, Typography } from '@mui/material'
+import { Box, Button, Stack, Typography } from '@mui/material'
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined'
 import { outputKind } from '@shared/outputs/kinds'
 import { type ItemUpgradeState } from '@shared/itemUpgrade'
@@ -39,6 +39,7 @@ import {
 } from '@shared/planner/gearPlan'
 import type { PlanSlotId, PlannerDonor, PlannerItemHit } from '@shared/planner/types'
 import OutputFileLine from '../../components/OutputFileLine'
+import GearPlanExplainer, { useGearPlanExplainer } from './GearPlanExplainer'
 
 import { usePlannerInventory } from '../planner/plannerInventory'
 import { useDonors, useEraOnly } from '../planner/plannerData'
@@ -77,11 +78,31 @@ const PANEL_WIDTH = 380
  * FOR rather than what it is missing — "empty is a state, not an error" — and it carries no button
  * because there is nowhere to send anyone yet: the board is right there.
  */
-function NothingPlanned(): JSX.Element {
+/**
+ * THE FIRST-VISIT TUTORIAL, AND THE REASON IT IS THE EMPTY STATE.
+ *
+ * A card that opens itself on first visit is the shape the owner deleted on the Exaltations tab
+ * (JOS-51, quoted in `GearPlanExplainer`'s header): "the rules are there when asked for, never by
+ * default". An empty board does the same teaching without being that shape - it needs no remembered
+ * flag, no dismissal and no way back, it never interrupts somebody who already has a plan, and it
+ * returns exactly when it is true again. A "have they seen it" bit is a thing that can be wrong;
+ * an empty board cannot be wrong about being empty.
+ *
+ * THREE STEPS, because three is what somebody reads before clicking something. Everything else this
+ * board can do is behind the `?`, which is one button away and stays on the toolbar forever.
+ *
+ * THE DUMP HINT IS ONE SENTENCE and appears only when there is no dump, because that is the only
+ * state it is advice in. With a dump on disk the board can already answer the question it is about.
+ */
+function NothingPlanned({ hasDump, onLoad, onExplain }: {
+  hasDump: boolean
+  /** `null` when a load cannot honestly be offered yet - see the toolbar's `canLoad` */
+  onLoad: (() => void) | null
+  onExplain: () => void
+}): JSX.Element {
   return (
     <Stack
       alignItems="center"
-      justifyContent="center"
       spacing={1.5}
       sx={{ py: 4, px: 4, textAlign: 'center', color: 'text.secondary' }}
     >
@@ -89,13 +110,45 @@ function NothingPlanned(): JSX.Element {
       <Typography variant="h6" sx={{ color: 'text.primary' }}>
         Nothing planned yet
       </Typography>
-      <Typography variant="body2" data-testid="gearplan-empty" sx={{ maxWidth: 440, lineHeight: 1.5 }}>
+      <Typography variant="body2" data-testid="gearplan-empty" sx={{ maxWidth: 460, lineHeight: 1.6 }}>
         {/* "a plan", not "a loadout": this app already says LOADOUT to the player about which
             CLASSES they are running (Preferences → Profiles), and one word cannot mean two things
             in one product. The tab is called Plan and so is this sentence. */}
-        Put an item in a cell and this becomes a plan: what it adds up to, which exaltations its
-        merge level unlocks, and what it would change about what you have on.
+        This board is one item per equipment slot, with its exaltations in its sockets. It adds up
+        what you would be wearing and compares it against what you have on now.
       </Typography>
+      <Stack spacing={0.75} sx={{ maxWidth: 460, textAlign: 'left' }} data-testid="gearplan-tutorial">
+        {[
+          ['1. Fill a slot.', 'Click a slot name or its icon to search for an item that fits it.'],
+          ['2. Set its merge level.', "The slider under each item scales its stats and unlocks its exaltation sockets - that is the same control doing both jobs."],
+          ['3. Read the right column.', 'It shows what your plan adds up to, and what would change if you wore it.']
+        ].map(([lead, rest]) => (
+          <Typography key={lead} variant="body2" sx={{ lineHeight: 1.55 }}>
+            <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+              {lead}
+            </Box>
+            {` ${rest}`}
+          </Typography>
+        ))}
+      </Stack>
+      {!hasDump && (
+        <Typography variant="body2" sx={{ maxWidth: 460, lineHeight: 1.55 }} data-testid="gearplan-empty-dump">
+          {`Type ${INVENTORY.command} in game and this board can read what you are wearing.`}
+        </Typography>
+      )}
+      <Stack direction="row" spacing={1} sx={{ pt: 0.5 }}>
+        {/* HIDDEN, NOT DISABLED, when a load cannot be offered - the toolbar's own rule, and it is
+            a real bug rather than a style: loading before the donor corpus settles silently drops
+            every socket into a cell that `fill` never revisits. */}
+        {onLoad !== null && (
+          <Button size="small" variant="outlined" data-testid="gearplan-empty-load" onClick={onLoad}>
+            Load what you are wearing
+          </Button>
+        )}
+        <Button size="small" data-testid="gearplan-empty-explain" onClick={onExplain}>
+          How merging works
+        </Button>
+      </Stack>
     </Stack>
   )
 }
@@ -395,6 +448,7 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
   const signalsOf = useRowSignals()
   const edit = useEditing(api, fold.facts, addWishes)
   const pool = usePoolFilter()
+  const explainer = useGearPlanExplainer()
 
   const addAll = useCallback(() => {
     addWishes(planWishes(gearPlan, Date.now()))
@@ -421,16 +475,23 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
       // and the two panes below then flex into what is left instead of growing the page.
       sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
-      {/* The freshness line, only once a dump exists — the case an instructions card cannot cover:
-          the comparison below renders with total confidence whether the dump is a minute or a
-          month old, and the file's own mtime is the difference. */}
+      {/* THE CLOCK, AND ONLY THE CLOCK (`ageOnly`). What to type, why, and how to type it are all
+          TEACHING and they moved into the tutorial and the `?` card, which is where somebody goes
+          to be taught. How old your dump is did not move, and could not: it is ambient state about
+          the numbers on screen right now, it is most load-bearing exactly when neither of those is
+          showing (a full board, a month-old dump), and it has nowhere else to live.
+
+          Only once a dump exists, because this is the case an instructions card cannot cover - the
+          comparison below renders with total confidence whether the dump is a minute or a month
+          old, and the file's own mtime is the difference. */}
       {inventory && (
         <Box sx={{ flexShrink: 0 }}>
           <OutputFileLine
             command={INVENTORY.command}
             why="Re-type it in game whenever your gear changes - the comparison follows the dump."
             updatedAt={inventory.loadedAt}
-            steps={INVENTORY.steps}
+            ageOnly
+            quiet
             testId="gearplan-outputfile"
           />
         </Box>
@@ -446,11 +507,25 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
         onClearAll={clearAll}
         onWish={addAll}
         wished={wished}
+        onExplain={explainer.show}
       />
+
+      {/* ASKED FOR, NEVER BY DEFAULT (JOS-51) - the `?` above is its only door in. */}
+      {explainer.open && (
+        <Box sx={{ flexShrink: 0 }}>
+          <GearPlanExplainer onDismiss={explainer.dismiss} />
+        </Box>
+      )}
 
       <GearPlanFilterBar {...pool.bar} />
 
-      {ready && assigned === 0 && <NothingPlanned />}
+      {ready && assigned === 0 && (
+        <NothingPlanned
+          hasDump={inventory !== null}
+          onLoad={donorsReady && fold.equipped !== null ? () => load('fill') : null}
+          onExplain={explainer.show}
+        />
+      )}
 
       {/* TWO REGIONS, SO THE GAP IS 16px (`spacing={2}`) — the library's whole sectioning device
           is the 12px-within / 16px-between pair, with no rules and no second border level. There

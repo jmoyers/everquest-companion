@@ -46,6 +46,7 @@ import {
   stepLoadedSocketReturns,
   stepMount,
   stepSeededCell,
+  stepTeaching,
   stepSocketHover,
   stepSocketPick,
   stepSocketsListed,
@@ -100,6 +101,7 @@ function seedStore(userData: string): void {
 
 async function firstLaunch(page: Page): Promise<void> {
   await stepMount(page)
+  await stepTeaching(page)
   await stepSeededCell(page, SEEDED.name, SEEDED.tier)
   await stepUnlockLadder(page)
   await stepSocketHover(page)
