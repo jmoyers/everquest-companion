@@ -42,6 +42,8 @@ export interface GearPlanBoardProps {
    * reason the cards do not: one open popover is a property of the SURFACE, not of a cell.
    */
   on: GearPlanCellHandlers
+  /** route a planned item to its full record on the Loot tab; absent = nowhere to go */
+  onOpenLoot?: (item: string) => void
 }
 
 export default function GearPlanBoard({
@@ -50,7 +52,8 @@ export default function GearPlanBoard({
   deltaOf,
   iconOf,
   weaponOf,
-  on
+  on,
+  onOpenLoot
 }: GearPlanBoardProps): JSX.Element {
   return (
     <Box
@@ -93,6 +96,7 @@ export default function GearPlanBoard({
           iconId={iconOf(cell)}
           weapon={weaponOf(cell)}
           on={on}
+          onOpenLoot={onOpenLoot}
         />
       ))}
     </Box>

@@ -119,6 +119,8 @@ export interface GearPlanCellCardProps {
   /** the corpus's icon for the planned item; absent draws the empty frame, so cells line up */
   iconId?: number
   on: GearPlanCellHandlers
+  /** route this item to its full record on the Loot tab; absent = nowhere to go */
+  onOpenLoot?: (item: string) => void
 }
 
 /** `+4`, or `+4 · 3 banked`. Gold and tabular — it is the card's one status value. */
@@ -298,12 +300,14 @@ function CellHeader({
   cell,
   planned,
   iconId,
-  on
+  on,
+  onOpenLoot
 }: {
   cell: PlanSlotId
   planned: GearPlanCell
   iconId?: number
   on: GearPlanCellHandlers
+  onOpenLoot?: (item: string) => void
 }): JSX.Element {
   return (
           <Stack direction="row" alignItems="center" sx={{ gap: 0.75 }}>
@@ -313,10 +317,38 @@ function CellHeader({
         sx={{ gap: 0.75, minWidth: 0, flexShrink: 1 }}
         data-testid="gearplan-item-identity"
       >
-        {/* The Character tab's treatment, 20px for a dense card rather than its 28px armoury cell.
-            The frame draws even with no icon, so a cell whose item the corpus has no art for keeps
-            its name on the same left edge as its neighbours. */}
-        <ItemIcon iconId={iconId} size={20} filled />
+        {/* THE ICON IS THE DOOR TO THE ITEM'S FULL RECORD, and the NAME still opens the picker.
+            Two controls, two jobs, and the split is forced rather than chosen: the name was already
+            the picker's door, and one click target cannot do two things. The icon is the better half
+            to give this to anyway — it is the part of the row that MEANS "this specific item", where
+            the name is the part you click to stop using it.
+
+            IT ONLY BECOMES A CONTROL WHEN THERE IS SOMEWHERE TO GO. Without `onOpenLoot` it keeps
+            the default cursor and takes no click — `DonorName`'s rule verbatim, and the fix behind
+            e8d0fd0: a hand appears only where a click actually goes somewhere.
+
+            The 20px treatment is the Character tab's, sized for a dense card rather than its 28px
+            armoury cell. The frame draws even with no icon, so a cell whose item the corpus has no
+            art for keeps its name on the same left edge as its neighbours. */}
+        <Box
+          component={onOpenLoot === undefined ? 'div' : 'button'}
+          type={onOpenLoot === undefined ? undefined : 'button'}
+          data-testid="gearplan-open-item"
+          aria-label={onOpenLoot === undefined ? undefined : `Open ${planned.name}`}
+          title={onOpenLoot === undefined ? undefined : `Open ${planned.name} on the Loot tab`}
+          onClick={onOpenLoot === undefined ? undefined : () => onOpenLoot(planned.name)}
+          sx={{
+            display: 'flex',
+            p: 0,
+            border: 0,
+            bgcolor: 'transparent',
+            flexShrink: 0,
+            cursor: onOpenLoot === undefined ? 'default' : 'pointer',
+            ...(onOpenLoot === undefined ? {} : { '&:hover': { filter: 'brightness(1.35)' } })
+          }}
+        >
+          <ItemIcon iconId={iconId} size={20} filled />
+        </Box>
         <Link
           component="button"
           type="button"
@@ -377,7 +409,8 @@ function PlannedBody({
   delta,
   weapon,
   iconId,
-  on
+  on,
+  onOpenLoot
 }: {
   cell: PlanSlotId
   planned: GearPlanCell
@@ -386,11 +419,12 @@ function PlannedBody({
   weapon: WeaponRead | null
   iconId?: number
   on: GearPlanCellHandlers
+  onOpenLoot?: (item: string) => void
 }): JSX.Element {
   const unlocked = unlockedSockets(planned.state)
   return (
     <>
-          <CellHeader cell={cell} planned={planned} iconId={iconId} on={on} />
+          <CellHeader cell={cell} planned={planned} iconId={iconId} on={on} onOpenLoot={onOpenLoot} />
           <CellStats block={block} delta={delta} />
           {/* ITS OWN LINE, UNDER THE DELTA. A weapon's ratio is the number the tier slider directly
               below it moves, so it sits between what the item is and the control that changes it. */}
@@ -431,7 +465,8 @@ function GearPlanCellCard({
   delta,
   weapon,
   iconId,
-  on
+  on,
+  onOpenLoot
 }: GearPlanCellCardProps): JSX.Element {
   return (
     <DashCard
@@ -472,6 +507,7 @@ function GearPlanCellCard({
           weapon={weapon}
           iconId={iconId}
           on={on}
+          onOpenLoot={onOpenLoot}
         />
       )}
     </DashCard>

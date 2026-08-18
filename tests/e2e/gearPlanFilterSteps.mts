@@ -17,6 +17,12 @@ import { until } from './plannerSteps.mjs'
 // geometry, and a fourth copy of "type it, arrow down, enter" is the drift law 7 is about.
 import { clearPicks, pickIn } from './gearFilterSteps.mjs'
 import { textOf } from './gearPlanSteps.mjs'
+import {
+  chipLit,
+  drillAndBack,
+  setChip,
+  textOf as memoText
+} from './areaMemorySteps.mjs'
 
 /** The comparison chip — in the PANEL, because only a cell knows what "worn" means. */
 const BEATS = '[data-testid="gearplan-stat-beats"]'
@@ -178,4 +184,52 @@ export async function stepPoolFilter(page: Page): Promise<void> {
   const restored = await settle(hits, (n) => n === before)
   check('turning it back off restores every row', restored === before, `got ${String(restored)}`)
   await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
+}
+
+/**
+ * THE ITEM'S FULL RECORD, AND THE WAY BACK — one step, because they are one promise.
+ *
+ * `openLoot` is the app's standing deep-link idiom and the Gear, Effects and Wish list tabs already
+ * take it; this adds the Plan tab to that list, so the claim to prove is the WHOLE round trip
+ * rather than that a click fired. `drillAndBack` is the shared helper that owns it, and using it
+ * buys a second assertion for free — the one the plan doc named as this feature's trap: that the
+ * board's own filters survive being unmounted by a route rather than by a nav click (JOS-90/97/116).
+ *
+ * THE FORM IS PUT INTO A STATE NOTHING DEFAULTS TO first, which is what makes the restoration mean
+ * anything: restoring a default is indistinguishable from having never saved.
+ *
+ * THE ICON IS THE LINK AND THE NAME IS NOT. The name was already the picker's door and one click
+ * target cannot do two things, so the two are asserted apart — if a later edit moves the routing
+ * onto the name, opening the picker starts navigating away from the board and this fails.
+ */
+export async function stepOpenItemRecord(page: Page): Promise<void> {
+  const cell = '[data-testid="gearplan-cell-HEAD"]'
+  const link = `${cell} [data-testid="gearplan-open-item"]`
+  if (!check('a filled cell offers a way to the item`s full record', (await countOf(page, link)) === 1)) return
+
+  // A state nothing ships with: wishlisted ON, and a stat picked.
+  await setChip(page, '[data-testid="gearplan-filter-wished"]', 'on')
+  await pickIn(page, '[data-testid="gearplan-stat-pick"]', 'WIS')
+  const read = async (p: Page): Promise<Record<string, string>> => ({
+    wished: await chipLit(p, '[data-testid="gearplan-filter-wished"]'),
+    stats: await memoText(p, '[data-testid="gearplan-stat-pick"]')
+  })
+  const parked = await read(page)
+  check(
+    'the Plan tab is holding a form nothing defaults to before it is taken away',
+    parked.wished === 'on' && parked.stats.includes('WIS'),
+    Object.entries(parked).map(([k, v]) => `${k}=${v}`).join(' · ')
+  )
+
+  await drillAndBack(page, {
+    label: 'the Plan tab',
+    tab: '[data-testid="tab-gearplan"]',
+    view: '[data-testid="gearplan-view"]',
+    read,
+    link
+  })
+
+  // …and hand the tab back the way the steps around this one expect to find it.
+  await setChip(page, '[data-testid="gearplan-filter-wished"]', 'off')
+  await clearPicks(page, '[data-testid="gearplan-stat-pick"]')
 }

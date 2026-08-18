@@ -372,7 +372,17 @@ function RightColumn({
   )
 }
 
-export default function GearPlanView(): JSX.Element {
+export interface GearPlanViewProps {
+  /**
+   * THE ITEM'S FULL RECORD, on the tab that owns it — `routing.openLoot`, the same one-argument
+   * hand-off the Gear, Effects and Wish list tabs already take. Optional for the same reason it is
+   * optional there: a surface with nowhere to route to draws a name, not a link, and the cursor
+   * follows that exactly.
+   */
+  onOpenLoot?: (item: string) => void
+}
+
+export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Element {
   const api = useGearPlan()
   const { gearPlan, ready, replace } = api
   // The donor corpus's readiness, so an empty picker can say "still reading" rather than "nothing
@@ -455,8 +465,8 @@ export default function GearPlanView(): JSX.Element {
           <GearPlanBoard
             gearPlan={gearPlan}
             {...fold.board}
-
             on={edit.on}
+            onOpenLoot={onOpenLoot}
           />
         </Box>
         {/* THE COLUMN IS THE ONLY PLACE ANY OF THIS OPENS NOW — see `RightColumn`. Nothing in this

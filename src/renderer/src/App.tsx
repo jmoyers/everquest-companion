@@ -170,7 +170,7 @@ function PlainView({
           and the remount is how this app says that. It takes NO prop today - the board owns its own
           document through `useGearPlan` and reads the corpus and the dump through the hooks its
           siblings use - and it will take `onOpenLoot` when a cell's item name becomes a link. */}
-      {view === 'gearplan' && <GearPlanView key={viewKey} />}
+      {view === 'gearplan' && <GearPlanView key={viewKey} onOpenLoot={routing.openLoot} />}
     </>
   )
 }
