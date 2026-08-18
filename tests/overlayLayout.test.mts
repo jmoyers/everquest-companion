@@ -27,8 +27,11 @@ import assert from 'node:assert/strict'
 import {
   METER_KINDS,
   OVERLAY_MIN_SIZE,
+  STRIP_KINDS,
   defaultOverlayBounds,
   overlayDefaultSize,
+  scaledStripBounds,
+  stripLayoutBounds,
   type Bounds
 } from '../src/main/overlayLayout'
 import { OVERLAY_KINDS } from '../src/shared/types'
@@ -271,4 +274,139 @@ test('…and it is a FLOOR: strictly below the size every kind opens at, on ever
       )
     }
   }
+})
+
+// ---- JOS-406: A STRIP'S WINDOW IS ITS CARD -----------------------------------------------
+//
+// The store keeps a LAYOUT BOX (CSS px at 100% text); the screen gets that box times the kind's
+// effective text scale. These pin the arithmetic — centre-preserving, work-area clamped, and the
+// exact inverse on the way back into the store — because it is the half of the feature that can be
+// stated without a window. What only a real window can say (that the con card at 200% really is
+// twice as wide, with the same three columns of chips) is asserted in tests/e2e/con-card.e2e.mts.
+
+/** The work area the strip tests place against: an ordinary 1080p desktop with a taskbar. */
+const STRIP_WA: Bounds = WORK_AREAS['1080p']
+
+/** A layout box shaped like the con card's own first open: top-centred, 12px down. */
+const centredLayout = (width: number, height: number): Bounds => ({
+  width,
+  height,
+  x: STRIP_WA.x + Math.round((STRIP_WA.width - width) / 2),
+  y: STRIP_WA.y + 12
+})
+
+test('a text scale of 1 is the identity — every strip is exactly its layout box', () => {
+  for (const kind of STRIP_KINDS) {
+    const layout = defaultOverlayBounds(kind, STRIP_WA)
+    assert.deepEqual(scaledStripBounds(kind, layout, 1, STRIP_WA), layout, `${kind} moved at 1.0`)
+  }
+})
+
+test('200% doubles a strip and keeps its MIDDLE where it was — the top edge holds', () => {
+  const layout = centredLayout(530, 220)
+  const b = scaledStripBounds('conCard', layout, 2, STRIP_WA)
+  assert.equal(b.width, 1060, 'twice as wide')
+  assert.equal(b.y, layout.y, 'the top edge never moves')
+  const midLayout = layout.x + layout.width / 2
+  const midWindow = b.x + b.width / 2
+  assert.ok(Math.abs(midLayout - midWindow) <= 1, `grew off-centre (${midLayout} vs ${midWindow})`)
+})
+
+test('…and the con card is the one whose HEIGHT is not the scale’s to touch', () => {
+  const layout = centredLayout(530, 220)
+  assert.equal(
+    scaledStripBounds('conCard', layout, 2, STRIP_WA).height,
+    220,
+    'the card measures its own height (JOS-386); scaling the placeholder would be a second opinion'
+  )
+  // The toast and the banner have no such measurement, so both of their axes scale.
+  const toast = scaledStripBounds('toast', centredLayout(560, 360), 1.5, STRIP_WA)
+  assert.equal(toast.width, 840)
+  assert.equal(toast.height, 540)
+})
+
+test('a strip scaled wider than the screen becomes the screen, on-screen', () => {
+  // A banner somebody has already dragged out to 1200 wide, then doubled: 2400 on a 1920 desktop.
+  const layout = centredLayout(1200, 260)
+  const b = scaledStripBounds('alertBanner', layout, 2, STRIP_WA)
+  assert.equal(b.width, STRIP_WA.width, 'the work area is the real ceiling, not the old 720 cap')
+  assert.equal(b.x, STRIP_WA.x, 'and it starts at the work area’s left edge')
+})
+
+test('…and a strip parked at an edge is pushed IN rather than allowed to grow off it', () => {
+  // A banner the user dragged hard against the right edge, low down, then doubled.
+  const layout: Bounds = { width: 400, height: 200, x: STRIP_WA.x + STRIP_WA.width - 400, y: 800 }
+  const b = scaledStripBounds('alertBanner', layout, 2, STRIP_WA)
+  assert.equal(b.x + b.width, STRIP_WA.x + STRIP_WA.width, 'right edge held to the work area')
+  assert.ok(b.x >= STRIP_WA.x, 'and the left edge never left it')
+  // The top edge is 800 and the work area ends at 1040, so a 400px-tall banner cannot fit under
+  // it: the HEIGHT gives, exactly as `fittedOverlayHeight` makes it — the window never slides up.
+  assert.equal(b.y, 800, 'the top edge still did not move')
+  assert.equal(b.y + b.height, STRIP_WA.y + STRIP_WA.height, 'the bottom stopped at the work area')
+})
+
+test('an offset display places a strip on ITSELF, never back at the origin', () => {
+  const wa = WORK_AREAS['offset display']
+  const layout = defaultOverlayBounds('toast', wa)
+  const b = scaledStripBounds('toast', layout, 1.5, wa)
+  assert.ok(b.x >= wa.x && b.x + b.width <= wa.x + wa.width, `${b.x}+${b.width} left the display`)
+  assert.ok(b.y >= wa.y, 'above the top of the work area')
+})
+
+test('a resize at 150% is remembered as the box it would be at 100%', () => {
+  // The user drags the banner's right edge: the window is 900 wide, at 1.5.
+  const chrome: Bounds = { width: 900, height: 300, x: 500, y: 340 }
+  const layout = stripLayoutBounds('alertBanner', chrome, 1.5)
+  assert.equal(layout.width, 600, 'chrome / 1.5')
+  assert.equal(layout.height, 200, 'both axes for a banner')
+  assert.equal(layout.y, chrome.y, 'position stays chrome pixels')
+})
+
+test('…and re-applying that scale gives back the very window the user let go of', () => {
+  // The round trip is what makes the two functions one rule rather than two guesses — and it is
+  // why BOTH are centre-preserving: record the left edge instead and a resize walks the window.
+  for (const scale of [0.8, 1, 1.3, 1.5, 2]) {
+    for (const kind of STRIP_KINDS) {
+      const chrome: Bounds = { width: 640, height: 240, x: 600, y: 200 }
+      const layout = stripLayoutBounds(kind, chrome, scale)
+      const back = scaledStripBounds(kind, layout, scale, STRIP_WA)
+      assert.ok(Math.abs(back.width - chrome.width) <= 1, `${kind}@${scale}: width ${back.width}`)
+      assert.ok(Math.abs(back.x - chrome.x) <= 1, `${kind}@${scale}: x ${back.x}`)
+      assert.equal(back.y, chrome.y, `${kind}@${scale}: y moved`)
+    }
+  }
+})
+
+test('a con card resize keeps its height out of the arithmetic entirely', () => {
+  const chrome: Bounds = { width: 795, height: 411, x: 100, y: 12 }
+  assert.equal(
+    stripLayoutBounds('conCard', chrome, 1.5).height,
+    411,
+    'the height is the card’s; `storedOverlayBounds` replaces it with the placeholder anyway'
+  )
+})
+
+/**
+ * THE DEFAULT CON CARD WIDTH IS DERIVED FROM THE CHIP, not chosen (JOS-406).
+ *
+ * `CHIP_MIN_PX` (overlay/ConCard.tsx) is the measured minimum a resist chip column may be — 160,
+ * being the widest phrase a chip prints (`may not land even with overchannel`, 145.23px in the
+ * overlay's own type) plus 14px of padding and border. Three of those columns is the row this card
+ * is supposed to draw, and the width is what holds three.
+ *
+ * The renderer's constant is SPELLED OUT here rather than imported, for the reason the e2e specs
+ * spell out `PAD`: this is a node test over a main-process module, and reaching into a .tsx for one
+ * number would drag React into it. A change to either number that forgets the other fails here.
+ */
+test('the con card opens wide enough for THREE chip columns at the measured chip minimum', () => {
+  const CHIP_MIN_PX = 160
+  const GRID_GAP = 4
+  const ROOT_PAD = 6 // ConCardOverlay's own inset, each side
+  const CARD_PAD = 10 // ConCard's padding, each side
+  const CARD_BORDER = 1 // …and its border
+  const grid = overlayDefaultSize('conCard').width - 2 * (ROOT_PAD + CARD_PAD + CARD_BORDER)
+  const columns = Math.floor((grid + GRID_GAP) / (CHIP_MIN_PX + GRID_GAP))
+  assert.ok(columns >= 3, `only ${columns} chip column(s) fit in ${grid}px of card`)
+  // …and not FOUR, which would be a card wider than the row it is supposed to draw.
+  assert.equal(columns, 3, `${columns} columns — the card is wider than the chips it holds`)
 })

@@ -105,6 +105,11 @@ export function ToastSetting(): JSX.Element {
             ? 'A card slides in at the top of the screen when you drop a raid target or finish a Plane of Sky quest, then fades. Point at it to keep it up; a quest’s reward card opens the Plane of Sky tab.'
             : 'Off. Boss kills and quest completions still show up in the app and in your alerts - nothing appears over the game.'}
         </Typography>
+        {/* JOS-405: the strip's own A− / A+ is in a drag frame you have to unlock to see, so this
+            says where else the size lives. One sentence, state not process. */}
+        <Typography variant="caption" color="text.secondary" data-testid="pref-toast-text-size-note">
+          Its text size is Text size → Overlay text size.
+        </Typography>
       </Stack>
 
       <Stack spacing={0.5}>

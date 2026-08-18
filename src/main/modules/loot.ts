@@ -1,6 +1,12 @@
 // loot module — the self-loot history. Wraps the pure loot fold from reducers.ts
 // (a LootEvent tagged with the zone it happened in). Delta = the rows appended
 // since the last flush; the renderer concats them.
+//
+// IT CARRIES THE DESTROY UNCHANGED (JOS-401, the census). `disposition: 'destroyed'` rides the
+// same row shape, the same append-only history, the same delta — which is the whole reason the
+// destroy was given a disposition instead of an event kind of its own. This module takes NO
+// position on what it means; `shared/lootDisposition.ts` is where each reader states one. The zone
+// tag rides along too and is honest: a destroy happens somewhere, even though it names no mob.
 
 import type { EqModule } from './types'
 import type { LogEvent } from '../../shared/logEvents'

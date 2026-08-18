@@ -31,8 +31,11 @@
 //             ./EqFolderSetting.tsx, like Updates does — this file only names it.
 //   Text size — how big the MAIN window draws everything (JOS-123): a five-stop ladder from 90%
 //             to 150%, applied on the press and remembered. Second in the rail on purpose. Lives
-//             in ./TextSizeSetting.tsx, descriptor and all. The overlays' own text scaling is a
-//             separate control on the overlay itself.
+//             in ./TextSizeSetting.tsx, descriptor and all. SINCE JOS-405 IT IS BOTH SIZES: the
+//             overlays' shared size, the opt-in switch that unpins them from each other, and a
+//             persistent row per overlay window (./OverlayTextSizeSetting.tsx). The steppers on
+//             the overlays themselves are unchanged and write the same value — this is where a
+//             player who pinned their meters can reach it at all.
 //   Combat   — the meters' two shaping choices: WHOSE damage they show (You / Group / Everyone,
 //             default Everyone since JOS-229 — JOS-115 moved it here off every combat surface,
 //             JOS-229 changed which way it opens) and where the
@@ -99,6 +102,7 @@ import { OverlaySnapSetting } from './OverlaySnapSetting'
 import { SNAP_RELEASE_HOLD } from '@shared/overlaySnap'
 import { ToastSetting } from './ToastSetting'
 import { AlertBannerSetting } from './AlertBannerSetting'
+import { ConCardSetting } from './ConCardSetting'
 // Cursor ring: another descriptor that lives beside its own card, same ceiling, same answer.
 import { cursorRingSection } from './CursorRingSetting'
 import { TelemetrySetting } from './TelemetrySetting'
@@ -240,6 +244,16 @@ function overlaysSection(): PrefSection {
         keywords:
           'alert alerts banner on screen onscreen text overlay big large popup message discord hear miss show display warning countdown colour color position move lines hold seconds',
         content: <AlertBannerSetting />
+      },
+      {
+        id: 'con-card',
+        label: 'Mob card on con',
+        // Written for the person who saw a card appear over their game and came here to find out
+        // what it was: this kind ships ON, so the search terms have to include what they SAW (a
+        // card, a popup, resists, drops) as well as what it is called.
+        keywords:
+          'con consider mob card popup tooltip creature resists resist chips drops loot level zone respawn faction overlay top centre center hide auto hide seconds close',
+        content: <ConCardSetting />
       }
     ]
   }

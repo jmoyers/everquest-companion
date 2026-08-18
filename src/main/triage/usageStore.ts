@@ -8,8 +8,11 @@
 // so the split moved code, not import paths.
 //
 // THREE READS, and each is a single indexed statement with a bound:
-//   * `usage_daily` and `usage_funnel_daily` are `day >= :floor` over the PRIMARY KEY's
-//     leading column, so the window bounds the scan.
+//   * `usage_daily_all` and `usage_funnel_daily` are `day >= :floor` over the PRIMARY KEY's
+//     leading column, so the window bounds the scan. (`usage_daily_all` is a VIEW since
+//     JOS-394 — the frozen pre-shard table UNION ALL the 32-way sharded one, summed back to
+//     the old key — and `day` leads the primary key of both legs, so the bound survives the
+//     union. Same for `perf_daily_all`. infra/schema.sql carries the why.)
 //   * `analytics_install` is the whole table, because that is the question — WAU/MAU,
 //     retention cohorts and version spread are all "count rows by a date", and there is no
 //     window that makes them cheaper. It is bounded by a LIMIT anyway: this panel must not
@@ -82,9 +85,21 @@ export function missingColumn(err: unknown): string | null {
 export const USAGE_ROW_LIMIT = 20_000
 export const INSTALL_ROW_LIMIT = 50_000
 
+/**
+ * THE MERGED VIEW, NEVER THE TABLE (JOS-394). `usage_daily_all` is
+ * `usage_daily UNION ALL usage_daily_sharded`, summed back to the old key — the frozen
+ * pre-cutover rows plus the 32-way sharded rows the Lambda writes now, in one projection that
+ * is column-for-column what this function has always returned. Reading `usage_daily` directly
+ * from here would report the fleet as it was on cutover day and nothing since, which is the
+ * kind of wrong that looks like a quiet week.
+ *
+ * The degrade path is UNCHANGED and is the reason the name matters: a cluster that has not run
+ * the JOS-394 migration answers `42P01` naming `usage_daily_all`, which `missingTable` above
+ * hands back and the panel renders as "this cluster is not migrated" rather than as zeros.
+ */
 export function readUsageDaily(c: Clients, sinceDay: string): Promise<Row[]> {
   return c.query(
-    'SELECT day, cohort, metric, dim, n FROM usage_daily WHERE day >= $1 ORDER BY day LIMIT $2',
+    'SELECT day, cohort, metric, dim, n FROM usage_daily_all WHERE day >= $1 ORDER BY day LIMIT $2',
     [sinceDay, USAGE_ROW_LIMIT],
   )
 }
@@ -158,11 +173,16 @@ export function readErrorReports(c: Clients, sinceDay: string): Promise<Row[]> {
  * (every dim is a closed set — infra/schema.sql states the budget), so the window bounds the scan
  * twice over. There is no id on this table at all, so as with `error_report` there is not even an
  * identifier to decline to select.
+ *
+ * IT READS `perf_daily_all`, THE MERGED VIEW (JOS-394), for the reason `readUsageDaily` does: the
+ * cube is written 32 ways now and the pre-cutover rows are frozen in `perf_daily`. The view sums
+ * both back to the seven-column key this function has always returned, so the cross-tab the panel
+ * renders is unchanged — one shard's slice of a bucket was never a fact anybody asked for.
  */
 export function readPerfDaily(c: Clients, sinceDay: string): Promise<Row[]> {
   return c.query(
     'SELECT day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket, n' +
-      ' FROM perf_daily WHERE day >= $1 ORDER BY day LIMIT $2',
+      ' FROM perf_daily_all WHERE day >= $1 ORDER BY day LIMIT $2',
     [sinceDay, USAGE_ROW_LIMIT],
   )
 }

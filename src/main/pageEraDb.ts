@@ -80,6 +80,30 @@ export interface PageEraFile {
    * true before it will speak.
    */
   mobs: Record<string, boolean>
+  /**
+   * THE SPELL PAGES (JOS-393): `pageEraKey(spell page title)` → `action=eqlmetadata`'s `outOfEra`
+   * for that page.
+   *
+   * WHY SPELLS ARE HERE AT ALL. The wiki draws its era pill on the link to a SPELL page exactly the
+   * way it draws one on a link to an item or a mob, and the committed spell catalog
+   * (`spells.json`, `embeddedin Template:Spellpage`) records everything on those pages EXCEPT that
+   * verdict. So `Sloths Healing` — `{{Kunark Era}}`, `Shaman - Level 50+` — was offered to a level
+   * 50 shaman as a spell newly available to him, on a server that has not opened Kunark.
+   *
+   * A BOOLEAN AND NOT A RECORD, the `mobs` reasoning applied unchanged: only the OUT direction is
+   * read. A spell page the wiki badges is a positive claim about content; `false` covers both "the
+   * wiki files this as classic" and "nobody has classified this page", and neither of those is a
+   * reason to say anything to the player. The page's own `{{X Era}}` token would be free to keep
+   * (the spell scrape's wikitext cache is committed) and is deliberately NOT kept: a field no
+   * reader reads is a field that rots.
+   *
+   * PRESENT MEANS ASKED, and the keys asked are the spell scrape's own enumeration UNION the names
+   * `spells.json` carries — the two differ on 53 rows (the wiki's `spellname` field spells a few
+   * pages with a backtick, and a few catalog names are redirects that embed no template), and the
+   * catalog's name is the only handle the loader has. A spell absent from this table was never put
+   * to the endpoint, and law 1 makes that silence: `spellEra.ts` marks nothing for it.
+   */
+  spells: Record<string, boolean>
 }
 
 /**

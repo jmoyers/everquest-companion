@@ -61,6 +61,7 @@
 //      -model law 12's drift with a clock in it.
 
 import type { LootEvent } from './types'
+import { isAcquisition, isDestroyed } from './lootDisposition'
 import type { ZoneRangeRow } from './progressionStats'
 // `wallMs` is rule 5's denominator as a function (JOS-288): the subtraction below used to be
 // spelled out here, and once the AA rates and the XP overlay needed the same one, a per-file
@@ -98,6 +99,13 @@ function dropsOf(e: LootEvent): number {
  * `zk` bundles both keys because `max-params` is 4 and because they travel together by rule.
  */
 function inWindow(e: LootEvent, t0: number, t1: number, zk: ZoneFilter): boolean {
+  // A DESTROY IS NOT A DROP (JOS-401, the census). The destroy line rides the loot lane so held
+  // counts can subtract it, and this file is the ONE membership test every rate derivation here
+  // runs — item-zone rows, mote rates, the leveling window's drop rows and the XP overlay all come
+  // through it — so refusing it once here is what keeps a bag cleanup out of every drops-per-hour
+  // in the app. It is also the only refusal that has to be explicit: the mob-side drop knowledge
+  // (main/mobLookupParse.ts) is immune already, because a destroy names no mob.
+  if (isDestroyed(e)) return false
   if (e.ts < t0 || e.ts >= t1) return false
   return zoneAdmits(e.zone ?? UNKNOWN_ZONE, zk.zoneKey, zk.zoneExactKey)
 }
@@ -160,7 +168,11 @@ export function itemZoneRows(args: ItemZoneArgs): ItemZoneRow[] {
   for (const z of zones) spans.set(zoneIdKey(z.zone), z)
 
   const rows = new Map<string, ItemZoneRow>()
-  for (const e of events) {
+  // The same refusal `inWindow` makes for the two windowed derivations (JOS-401) — this one takes
+  // its rows pre-filtered by the caller and cut to one item, so it states the rule itself. Spelled
+  // as a filter rather than as a `continue` because the loop below is at its measured branch
+  // ceiling and this is not a per-row decision the body should have to re-read.
+  for (const e of events.filter(isAcquisition)) {
     const name = e.zone ?? UNKNOWN_ZONE
     const key = zoneIdKey(name)
     let row = rows.get(key)

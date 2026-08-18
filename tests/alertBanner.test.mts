@@ -51,9 +51,15 @@ function def(over: Partial<AlertDef> = {}): AlertDef {
 
 // ---- the kind itself -------------------------------------------------------------------
 
-test('the alert banner is an overlay kind, appended at the end, and holds no meter slot', () => {
+test('the alert banner is an overlay kind, appended after the meters, and holds no meter slot', () => {
   assert.ok(OVERLAY_KINDS.includes('alertBanner'), 'the kind exists')
-  assert.equal(OVERLAY_KINDS[OVERLAY_KINDS.length - 1], 'alertBanner', 'APPENDED — see shared/types.ts')
+  // It was the LAST kind until JOS-383 appended the con card behind it. What the claim is really
+  // about is that nothing was INSERTED in front of it — an index here is a reserved dock slot, so
+  // an insertion moves somebody's window (shared/types.ts states the rule).
+  assert.ok(
+    OVERLAY_KINDS.indexOf('alertBanner') > OVERLAY_KINDS.indexOf('respawn'),
+    'APPENDED, never inserted — see shared/types.ts'
+  )
   assert.ok(!METER_KINDS.includes('alertBanner'), 'a strip is not a meter and must not consume a slot')
 })
 

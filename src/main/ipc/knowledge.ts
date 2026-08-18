@@ -10,6 +10,11 @@ import { buildSpellDetail } from '../data/spellDetail'
 import { lookupItem } from '../itemLookup'
 import { lookupMob } from '../mobLookup'
 import { registry, spellDb } from '../pipeline'
+// THE CLIENT'S SPELL TABLE, READ AT THE HANDLER (JOS-396). `spellTableNow()` is the already-resolved
+// table or null — never a promise, so nothing here waits on a 38 MB parse. Reading it HERE, on every
+// invoke, is what makes the fallback lazy: the table lands on a worker some seconds into a cold
+// launch, and the next read after it lands is the one that carries the figures.
+import { spellTableNow } from '../resist/spellTable'
 import type { AlertsSnap } from '../../shared/alertTypes'
 import type { BuffsSnap } from '../../shared/types'
 
@@ -29,7 +34,7 @@ export function registerKnowledgeIpc(): void {
   // trusted, like every other renderer-supplied argument at a handler. A bare invoke — the
   // wizard's — still gets the wizard's catalog, unchanged and no larger than it was.
   ipcMain.handle(IPC.spellsCatalog, (_e, req: unknown) => {
-    if (isUnlocksRequest(req)) return buildLevelUnlocks()
+    if (isUnlocksRequest(req)) return buildLevelUnlocks(spellTableNow())
     const usage = new Map<string, number>()
     const lastSeen = new Map<string, number>()
     const snap = registry.get('buffs')?.snapshot()?.state as BuffsSnap | undefined
@@ -57,7 +62,7 @@ export function registerKnowledgeIpc(): void {
   ipcMain.handle(IPC.spellsDetail, (_e, name: unknown) => {
     const snap = registry.get('alerts')?.snapshot()?.state as AlertsSnap | undefined
     const observed = Object.keys(snap?.spellLastCast ?? {})
-    return buildSpellDetail(spellDb, typeof name === 'string' ? name : '', observed)
+    return buildSpellDetail(spellDb, typeof name === 'string' ? name : '', observed, spellTableNow())
   })
 
   // ---- item knowledge ("what's this lore/quest item for", Task #53) ----

@@ -125,6 +125,64 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.4.0',
+    date: '2026-08-17',
+    entries: [
+      {
+        kind: 'new',
+        text: 'The buff and debuff windows can track only what you choose. On the Buffs tab, turn on Only track buffs and debuffs I check: a checkbox appears on every buff and debuff card and on every row of the durations tables, which you can search - and the windows draw only what you have checked. Off, and everything shows as before.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'Destroying an item in the game now counts. The log records the destroy, so Plane of Sky and inventory counts go down by what you destroyed - and the Cleanup tab no longer needs a button for it. Cleanup is also live from your log and inventory export like every other Sky tab, is laid out as a table, and the reward names open the item card on hover.'
+      },
+      {
+        kind: 'changed',
+        text: 'Wherever you pick classes - Gear, the Planner, your loadout - the choices read Warrior and Shadow Knight rather than WAR and SHD.'
+      }
+    ]
+  },
+  {
+    version: '1.3.0',
+    date: '2026-08-16',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Every mob’s page now shows what it resists, mined from your own game log over a shipped baseline: magic, fire, cold, poison and disease, each with a plain verdict - should land, needs overchannel, or may not land even with overchannel - the chance with and without overchannel at your level, and how much evidence stands behind it. Your own casts outweigh the shipped data, and recent casts outweigh old ones.'
+      },
+      {
+        kind: 'new',
+        text: 'Every cast is read for what it had going for it - the spell’s own resist adjust, its upgrade rank, overchannel, and any tash, malo or scent on the target - so a resist under overchannel counts for more than one without.'
+      },
+      {
+        kind: 'new',
+        text: '/con a creature and a small card appears at the top of the screen with its name, level and only the resists that would change what you cast. Click it to open the mob’s page, or the X to dismiss it. It stays a few seconds, is on by default, and Preferences, Overlays turns it off.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Plane of Sky has a Cleanup tab: the quest items you could destroy because every quest that needs them has been turned in, with the quantity, where they sit, and the turn-in and reward you would give up by destroying them. Mark a stack destroyed and the counts follow.'
+      },
+      {
+        kind: 'new',
+        text: 'New at this level now says what each spell is worth - damage and healing, per second and per point of mana - whether another of your classes already has it, which spell in your repertoire it replaces (hover the name to compare), and whether that spell is memorized right now and in which named spell set.'
+      },
+      {
+        kind: 'new',
+        text: 'Search spells from the same panel: type a name, a class, a level or a range in any order - 27-28 cleric shaman - and the matches list the level every class gets them, with the same figures.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Spells that are not yet in era on this server, Sloths Healing at 50 among them, no longer appear as new at a level; they fold under an out-of-era line, and search and the spell card mark them.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Spells whose damage the wiki page leaves out - Odium and a dozen more - now show it, read from the game’s own spell data.'
+      }
+    ]
+  },
+  {
     version: '1.2.0',
     date: '2026-08-16',
     entries: [

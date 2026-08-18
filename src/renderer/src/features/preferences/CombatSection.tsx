@@ -6,16 +6,23 @@
 // at the 100-line one, and the honest home for a section's label, icon and search keywords is
 // beside the cards it names. JOS-115 gave the section a second card and that was the line.
 //
-// Both cards are RENDERER-LOCAL preferences (localStorage, features/combat/useCombatPrefs.ts) —
-// no store migration, and they apply LIVE across windows: same-window readers are notified
-// directly, and the floating overlays are same-origin, so the DOM's own 'storage' event carries
-// the change to them with no IPC channel involved.
+// THE TWO METER CARDS are RENDERER-LOCAL preferences (localStorage,
+// features/combat/useCombatPrefs.ts) — no store migration, and they apply LIVE across windows:
+// same-window readers are notified directly, and the floating overlays are same-origin, so the
+// DOM's own 'storage' event carries the change to them with no IPC channel involved.
+//
+// THE THIRD CARD is not one of those, and the difference is worth a line: what teaches the resist
+// numbers (JOS-385) is a MAIN-side store value, because the thing that reads it is the estimator in
+// main, and because it is the kind of preference that has to survive a reinstall of the renderer's
+// localStorage. It joins the section on subject rather than on mechanism — all three cards answer
+// "what does this app count".
 
 import { type JSX } from 'react'
 import { FormControlLabel, Stack, Switch, Typography } from '@mui/material'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import { useCombinePetRow } from '../combat/useCombatPrefs'
 import { MeterScopeSetting } from './MeterScopeSetting'
+import { ResistEvidenceSetting } from './ResistEvidenceSetting'
 import type { PrefSection } from './PreferencesView'
 
 /**
@@ -79,6 +86,16 @@ export function combatSection(): PrefSection {
         label: 'Show your pet inside your damage',
         keywords: 'pet combine merge damage breakdown solo meter drill charm nest source zoom default level',
         content: <PetNestingSetting />
+      },
+      {
+        id: 'resist-evidence',
+        label: 'What teaches the resist numbers',
+        // Written for the person who saw a mob's resist number move and came looking for why, so
+        // the words they would use about the FEATURE (resists, mob page, con card) are here beside
+        // the words for the thing the switch is about (pets, charm, NPC casters).
+        keywords:
+          'resist resists resistance evidence npc mob creature pet pets charm charmed caster casters learn mine mined data mob page con card magic fire cold poison disease sample samples',
+        content: <ResistEvidenceSetting />
       }
     ]
   }

@@ -13,6 +13,14 @@
  * `stepTitleBarRoom` MEASURES it, reconstructing the old row in place to have something to
  * measure against.
  *
+ * NOT HERE, AND DELIBERATELY: the overlays' TEXT SIZE (JOS-405) and their TRANSPARENCY (JOS-407),
+ * which is the same arrangement one field over. This spec is the natural place to
+ * look for either — it owns "two overlay windows agree about something" — and it has never asserted
+ * anything about them, including under the retired fan-out. The cross-window claims (a control in
+ * Preferences moves both meters, a control on one meter moves the other, and with the matching
+ * switch on it stops doing that) live in tests/e2e/text-size.e2e.mts beside the CONTROLS, which is
+ * where both are now set. This sentence is here so the next reader stops looking.
+ *
  * WHAT ONLY THE REAL APP CAN SHOW. The pure halves are pinned elsewhere: the value model and the
  * one-seam wiring in tests/fightSelection.test.mts, the locked-selector mechanism in
  * tests/overlayLockedSelector.test.mts. What no unit test can claim is that the PIECES ARE WIRED

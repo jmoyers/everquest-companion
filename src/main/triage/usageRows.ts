@@ -17,8 +17,23 @@ import type { UsageDayPoint } from '../../shared/triage'
 export type Row = Record<string, unknown>
 
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback)
-/** `bigint` comes back as a number (store.ts sets the int8 parser); anything else is 0. */
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+/**
+ * `bigint` comes back as a number (store.ts sets the int8 parser on OID 20); anything else is 0.
+ *
+ * A NUMERIC STRING IS ALSO A NUMBER HERE, and that is a fix, not a loosening (JOS-394). MEASURED
+ * against a real DSQL cluster: an uncast `SUM(bigint)` in a view is NUMERIC — OID 1700, which no
+ * type parser is set for — so node-postgres hands the counter over as `'12'`. The old predicate
+ * turned that into 0 SILENTLY, and a readout full of honest-looking zeros is the worst answer a
+ * panel can give. `usage_daily_all` casts its sum back to bigint precisely so this cannot happen
+ * (infra/schema.sql says so at the view), and this is the second line of defence for the next
+ * aggregate somebody adds without reading that note.
+ */
+const num = (v: unknown): number => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  if (typeof v !== 'string' || v.trim().length === 0) return 0
+  const parsed = Number(v)
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 /**
  * Every row carries its cohort ('user' or 'owner'), normalized through `cohortOf` so a NULL

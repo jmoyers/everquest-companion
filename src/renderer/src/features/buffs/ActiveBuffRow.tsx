@@ -21,6 +21,9 @@ import { Tooltip } from '../../lib/Tooltip'
 // provenance); the card behind the name states what the SPELL is - its effect list, its stated
 // duration, what it costs to put back up when this one falls off.
 import { SpellTooltip } from '../../lib/SpellCard'
+// THE TRACKING BOX (JOS-168) — one per card, on the SELF group and on every entity group, because
+// a debuff you cast lives on the mob's card and it is the same box as the one on your own.
+import { BuffAllowCheck } from './BuffAllowCheck'
 
 /** Everything the countdown bar needs, resolved once so nothing downstream re-derives it. */
 interface EstimateState {
@@ -180,6 +183,11 @@ export function ActiveRow({ buff, now }: { buff: ActiveBuff; now: number }): JSX
       }}
     >
       <Stack direction="row" alignItems="baseline" spacing={1}>
+        {/* THE BOX, FIRST ON THE ROW (JOS-168): "you would check a box on the card for each
+            buff/debuff after casting". It keys on the SPELL LINE, so this box and the one on the
+            same spell's stats row are one box, and unchecking it removes the bar from the timer
+            window while leaving this card exactly where it is - the model is untouched. */}
+        <BuffAllowCheck spell={buff.spell} />
         {/* The card is asked about the RANKED name when this instance came from a cast line that
             spelled one (`rank` is non-null exactly then, and only for the same line) - that is the
             only way the card can name what this rank replaces. Otherwise it is asked about the

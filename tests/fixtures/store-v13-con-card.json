@@ -1,0 +1,74 @@
+{
+	"schemaVersion": 13,
+	"byCharacter": {
+		"fixture_freeport": {
+			"inventory": {},
+			"completedQuests": [],
+			"combo": {
+				"corrections": []
+			}
+		}
+	},
+	"activeLogPath": "C:\\Fixture\\Logs\\eqlog_Fixture_freeport.txt",
+	"alerts": [],
+	"alertPrefs": {
+		"globalVolume": 0.5,
+		"muted": false
+	},
+	"voice": {
+		"engine": "system",
+		"voiceId": null,
+		"rate": 1,
+		"volume": 1
+	},
+	"overlays": {
+		"fight": {
+			"open": true,
+			"locked": true,
+			"bgAlpha": 0.72,
+			"drill": null
+		},
+		"toast": {
+			"open": true,
+			"locked": true,
+			"bgAlpha": 0.72,
+			"drill": null,
+			"toast": {
+				"durationMs": 6000
+			}
+		},
+		"alertBanner": {
+			"open": true,
+			"locked": true,
+			"bgAlpha": 0.72,
+			"drill": null,
+			"alertBanner": {
+				"holdMs": 4000,
+				"maxLines": 4,
+				"introduced": true
+			}
+		}
+	},
+	"updateChannel": "main",
+	"cursorRing": {
+		"enabled": false,
+		"sizePx": 44,
+		"thicknessPx": 4,
+		"colorHex": "#ffffff"
+	},
+	"overlayAutoHide": {
+		"hideWhenNotRunning": true,
+		"hideWhenUnfocused": false
+	},
+	"telemetry": {
+		"enabled": true,
+		"noticeShown": true,
+		"analyticsId": null
+	},
+	"perfHud": {
+		"enabled": false
+	},
+	"processPriority": {
+		"yieldToGame": true
+	}
+}

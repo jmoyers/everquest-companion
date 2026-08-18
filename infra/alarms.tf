@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Ops: one SNS topic, one email subscription, six alarms, one budget (§9.2).
+# Ops: one SNS topic, one email subscription, NINE alarms, one budget (§9.2).
 #
 # The point of the alarms is TIME TO KNOWLEDGE. A budget alone tells you about a
 # flood at the end of the month; a 5-minute request-count alarm tells you while
@@ -8,6 +8,13 @@
 # The email subscription needs ONE manual confirmation click after the first
 # apply. Terraform shows it as `pending confirmation` until then, and an
 # unconfirmed subscription delivers nothing — check it before trusting the alarms.
+#
+# THREE MORE ALARMS LIVE ELSEWHERE, and this line is here so the inventory stays
+# findable from the file called alarms.tf: `backup.tf` carries the AWS Backup
+# job-failure alarm, and `export.tf` carries the nightly export's failure and
+# staleness pair. Both were kept beside their subsystem because each is one
+# mechanism a reader has to take in whole, not because the split is a preference.
+# They all publish to `aws_sns_topic.ops` below.
 # -----------------------------------------------------------------------------
 
 data "aws_caller_identity" "current" {}
@@ -86,8 +93,11 @@ resource "aws_sns_topic_subscription" "ops_email" {
 # ---- alarms -----------------------------------------------------------------
 
 # A flood is visible in minutes, not at month end. 5,000 requests in 5 minutes is
-# ~16 rps sustained — three times the stage ceiling, so this can only fire on a
-# genuine anomaly (or a throttle that was widened without thinking).
+# ~16 rps sustained. It used to be three times the stage ceiling; since JOS-394
+# raised that ceiling to 15 rps it is just above a SATURATED stage (15 rps is
+# 4,500 per 5 min), which is still the right reading — at the throttle for five
+# solid minutes is exactly the anomaly this is for, and the measured steady state
+# is 4.5 RPS. Raising the stage further means revisiting this number with it.
 resource "aws_cloudwatch_metric_alarm" "api_flood" {
   alarm_name          = "${var.name_prefix}-api-request-flood"
   alarm_description   = "API Gateway request count over 5,000 in 5 minutes."
@@ -225,21 +235,101 @@ resource "aws_cloudwatch_metric_alarm" "dsql_dpu" {
 }
 
 # DSQL is optimistic: a write conflict is a commit-time abort the caller retries.
-# The handler retries a bounded number of times, so a HANDFUL of these is the
-# system working. A storm means many installs are colliding on one row, which at
-# this product's volume can only mean a bug or an attack — the threshold is set
-# well above normal noise so it says something when it speaks.
+#
+# A RAW COUNT IS NOT A HEALTH SIGNAL, AND THIS ALARM PROVED IT (JOS-394). The old
+# form of this resource fired on `OccConflicts > 50 per 5 min` and fired ALL DAY.
+# What was measured on 2026-08-16 while it was firing: ~1,350 telemetry requests
+# per 5 min (4.5 RPS, flat, 3-4 concurrent Lambdas) and 60-90 conflicts per 5 min
+# — about 5% of writes — with a retry ladder over two hours of 1,634 first-attempt
+# conflicts -> 104 second -> 6 third -> ZERO exhausted, and zero API 5xx. That is
+# a healthy optimistic database under concurrency, not an incident: the threshold
+# was written when this product's traffic made 50 conflicts impossible without a
+# bug, and traffic outgrew it. An alarm that is always on is an alarm nobody reads.
+#
+# SO IT IS A RATIO NOW: conflicts per TELEMETRY INVOCATION, which is the number
+# that stays flat as the install base grows and moves only when writes start
+# colliding at a rate the retry ladder cannot absorb. 0.25 is five times the
+# measured pre-shard rate and more than a hundred times the post-shard one (32-way
+# sharding takes ~5% to ~0.2%), and it must hold for THREE consecutive periods, so
+# a single busy five minutes cannot page anybody.
+#
+# `IF(invocations > 0, ...)` is not decoration: metric math over a zero
+# denominator yields no data point, and an alarm that goes INSUFFICIENT_DATA every
+# quiet night is one nobody trusts either.
+#
+# THE OTHER HALF OF THE PAIR IS `telemetry_db_retry_exhausted` BELOW. This alarm
+# watches for PATHOLOGY (contention out of proportion to traffic); that one watches
+# for LOSS (a bounded retry ladder actually running out). Neither implies the other,
+# which is exactly why there are two.
 resource "aws_cloudwatch_metric_alarm" "dsql_occ_conflicts" {
   alarm_name          = "${var.name_prefix}-feedback-dsql-occ-conflicts"
-  alarm_description   = "Aurora DSQL optimistic-concurrency aborts over 50 in 5 minutes."
-  namespace           = "AWS/AuroraDSQL"
-  metric_name         = "OccConflicts"
-  dimensions          = { ClusterId = aws_dsql_cluster.feedback.identifier }
+  alarm_description   = "Aurora DSQL OCC aborts over 25% of telemetry invocations for 15 minutes (measured healthy: ~5% pre-shard, ~0.2% expected after the 32-way shard)."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 0.25
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ops.arn]
+
+  metric_query {
+    id = "conflicts"
+
+    metric {
+      namespace   = "AWS/AuroraDSQL"
+      metric_name = "OccConflicts"
+      dimensions  = { ClusterId = aws_dsql_cluster.feedback.identifier }
+      stat        = "Sum"
+      period      = 300
+    }
+  }
+
+  # The denominator is the TELEMETRY function's invocations rather than the API's
+  # request count: every conflict measured here came from the counter transaction,
+  # and a request throttled at the route never reached the database at all.
+  metric_query {
+    id = "invocations"
+
+    metric {
+      namespace   = "AWS/Lambda"
+      metric_name = "Invocations"
+      dimensions  = { FunctionName = aws_lambda_function.telemetry.function_name }
+      stat        = "Sum"
+      period      = 300
+    }
+  }
+
+  metric_query {
+    id          = "ratio"
+    expression  = "IF(invocations > 0, conflicts / invocations, 0)"
+    label       = "OCC conflicts per telemetry invocation"
+    return_data = true
+  }
+}
+
+# THE LOSS ALARM, and the one that is allowed to be twitchy (JOS-394).
+#
+# `DbRetryExhausted` is emitted by infra/lambda/db.ts — one EMF document, no
+# dimensions — when a bounded, full-jittered retry ladder gives up on a 40001. Up
+# to that point a conflict costs milliseconds and nothing is lost; past it the
+# handler returns 500, the client buffers the batch for a later flush, and NOTHING
+# ELSE ANYWHERE SAYS SO. The measured ladder never reached attempt four, so the
+# honest threshold is one: a single exhausted write is already the fact this alarm
+# exists to deliver.
+#
+# EMF IS A LOG LINE, so this metric only exists once the handler has emitted it at
+# least once — before that the alarm sits in INSUFFICIENT_DATA, which
+# `notBreaching` renders as OK. That is the correct reading: no metric here means
+# no ladder has ever run out.
+resource "aws_cloudwatch_metric_alarm" "telemetry_db_retry_exhausted" {
+  alarm_name          = "${var.name_prefix}-telemetry-db-retry-exhausted"
+  alarm_description   = "A bounded DSQL retry ladder gave up — an aggregate write was LOST (the client buffers and re-flushes, so nothing else reports this)."
+  namespace           = "EQCompanion/Telemetry"
+  metric_name         = "DbRetryExhausted"
   statistic           = "Sum"
   period              = 300
   evaluation_periods  = 1
-  threshold           = 50
-  comparison_operator = "GreaterThanThreshold"
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops.arn]
 }

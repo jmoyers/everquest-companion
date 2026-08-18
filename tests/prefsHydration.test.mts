@@ -58,15 +58,37 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     getGraphicsEnvironment: answer('getGraphicsEnvironment', { wine: false, auto: { safeMode: false, opaqueOverlays: false } }),
     getOverlayAutoHide: answer('getOverlayAutoHide', { hideWhenNotRunning: false, hideWhenUnfocused: true }),
     getOverlaySnap: answer('getOverlaySnap', { enabled: true }),
+    // The overlays' text size (JOS-405). Stored ABOVE the shipped 100% and with the switch ON,
+    // because both of those are what somebody who used this feature would have: the person who
+    // opens this section is the person who cannot read their meters, so a stepper painting 100%
+    // first would be wrong for exactly the audience the card is for.
+    getOverlayTextSize: answer('getOverlayTextSize', { shared: 1.4, independent: true }),
+    // …and the twelve per-kind values the list edits, which under that switch are what each of
+    // those windows is genuinely drawing at. Deliberately NOT all equal: the flattened-by-fan-out
+    // store is the OLD shape, and this stub is a store somebody has since taken apart.
+    getOverlayTextScales: answer('getOverlayTextScales', { fight: 1.6, overall: 1, events: 0.9 }),
+    // The overlays' TRANSPARENCY (JOS-407), stored off-default and with its OWN switch ON. This is
+    // the first switch in the pane whose stored value can be decided by a MIGRATION rather than by
+    // a click — an install whose overlays already differed comes up independent — so a card that
+    // painted the compiled-in OFF first would be wrong for everybody the migration spoke for.
+    getOverlayBgAlpha: answer('getOverlayBgAlpha', { shared: 0.4, independent: true }),
+    // …and the twelve per-kind alphas the same list edits, deliberately not all equal: differing
+    // values are the ordinary shape of this field, which is the whole reason its switch defaults
+    // the other way up from the text size's.
+    getOverlayBgAlphas: answer('getOverlayBgAlphas', { fight: 0.3, overall: 0.72, events: 0.9 }),
     // Stored ON against a compiled-in default of OFF (JOS-139; OFF since the owner's 2026-08-16
     // reversal) — and the one with TWO other controls (the tray menu's checkbox and the title bar's
     // overlay-menu row) that can move it while this pane is closed.
     getCloseToTray: answer('getCloseToTray', { enabled: true, noticeAcknowledged: true }),
-    getOverlayState: answer('getOverlayState', { toast: true, alertBanner: true }),
+    getOverlayState: answer('getOverlayState', { toast: true, alertBanner: true, conCard: false }),
     getToastConfig: answer('getToastConfig', { locked: false }),
     // The banner ships OFF and its first card mounted on that default; stored ON here, with an
     // off-default hold, so the seed has to carry both (owner, hands-on, 2026-08-16).
     getAlertBannerConfig: answer('getAlertBannerConfig', { locked: false, alertBanner: { holdMs: 8000, maxLines: 4, introduced: true } }),
+    // The con card ships ON (JOS-383) — so the value that can be WRONG for somebody is a stored
+    // OFF, which is what this stub carries. Its auto-hide is stored off-default too, and out of
+    // range, so the seed has to normalize rather than pass it through.
+    getConCardConfig: answer('getConCardConfig', { locked: true, conCard: { autoHideMs: 999_999 } }),
     getBuffTrust: answer('getBuffTrust', { externals: ['Faelin'] }),
     getCursorRing: answer('getCursorRing', { enabled: true, sizePx: 60, thicknessPx: 5, color: 'white' }),
     getVoicePrefs: answer('getVoicePrefs', { engine: 'system', voice: 'x', rate: 1, volume: 1 }),
@@ -76,6 +98,9 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     // A switch whose compiled-in default is TRUE (JOS-366), stored FALSE — the flash this gate
     // exists to prevent, in the direction the other switches cannot express.
     getProcessPriority: answer('getProcessPriority', { yieldToGame: false }),
+    // The second of those (JOS-385), and stored FALSE for the same reason: the only person whose
+    // resist-evidence value differs from the shipped one is the person who switched it off.
+    getResistPrefs: answer('getResistPrefs', { includeNpcCasters: false }),
     getAppVersion: answer('getAppVersion', '9.9.9'),
     getUpdateStatus: answer('getUpdateStatus', { state: 'ready' }),
     listAlerts: answer('listAlerts', [{ id: 'a' }, { id: 'b' }, { id: 'c' }])
@@ -89,9 +114,34 @@ test('one read answers every card in the pane, and it snaps the text size to the
   const { reader, calls } = stubReader()
   const snap = await readPrefsSnapshot(reader)
 
-  // TWENTY reads, one batch. The number is not the claim; the claim is that the gate asks each
-  // question exactly once, so a pane that mounts does not stampede the store.
-  assert.equal(calls(), 20, 'every read fires exactly once')
+  // TWENTY-SIX reads, one batch (JOS-405 added the overlays' text size and its twelve per-kind
+  // values; JOS-407 the same pair for transparency). The number is not the claim; the claim is
+  // that the gate asks each question exactly once, so a pane that mounts does not stampede the
+  // store.
+  assert.equal(calls(), 26, 'every read fires exactly once')
+
+  // The overlays' size (JOS-405), which is TWO facts read together for the toast pair's reason:
+  // the shared stepper and the twelve rows are one control group, and a frame where the size was
+  // right and the switch was still off would draw twelve rows disabled that are not.
+  assert.deepEqual(snap.overlayTextSize, { shared: 1.4, independent: true, seeded: false })
+  assert.equal(snap.overlayTextScales.fight, 1.6, 'and each window’s own size seeds the list')
+  // The shared value arrives through the same normalizer main's store reader uses, so the cache
+  // can never hold a size no overlay could draw at (the `uiScale` argument, on a different blob).
+  const clamped = await readPrefsSnapshot(stubReader({ getOverlayTextSize: { shared: 9 } }).reader)
+  assert.deepEqual(clamped.overlayTextSize, { shared: 2, independent: false, seeded: false })
+
+  // The overlays' TRANSPARENCY (JOS-407), the same two facts one field over — and its per-kind
+  // map, which is what a row states while the switch is on.
+  assert.deepEqual(snap.overlayBgAlpha, { shared: 0.4, independent: true, seeded: false })
+  assert.equal(snap.overlayBgAlphas.fight, 0.3, 'and each window’s own transparency seeds the list')
+  // Through its own normalizer for the same reason, and the FLOOR is the interesting end: a stored
+  // 0 is a body nobody can see, and no slider in the app can get it back off the floor.
+  const floored = await readPrefsSnapshot(stubReader({ getOverlayBgAlpha: { shared: 0 } }).reader)
+  assert.deepEqual(floored.overlayBgAlpha, { shared: 0.1, independent: false, seeded: false })
+
+  // The resist-evidence switch (JOS-385), stored against its shipped ON. It is in the batch for
+  // the `processPriority` reason, and it is asserted here for the same one.
+  assert.equal(snap.resists.includeNpcCasters, false)
 
   // A sample across the KINDS of value, because the defect was never boolean-only: two switches
   // that disagree with their defaults, a ladder stop, a slider pair, and two counts.
@@ -115,6 +165,9 @@ test('one read answers every card in the pane, and it snaps the text size to the
     locked: false,
     cfg: { holdMs: 8000, maxLines: 4, introduced: true }
   })
+  // And the con card's three (JOS-383). The switch is the one that ships ON, so a stored OFF is the
+  // flash this gate exists to prevent; the out-of-range auto-hide arrives clamped.
+  assert.deepEqual(snap.conCard, { open: false, locked: true, cfg: { autoHideMs: 120_000 } })
 })
 
 test('an off-ladder text size is snapped rather than stored as it was found', async () => {
@@ -144,7 +197,7 @@ test('two mounts in one frame share ONE batch', async () => {
   resetPrefsSnapshotForTests()
   const { reader, calls } = stubReader()
   const [a, b] = await Promise.all([loadPrefsSnapshot(reader), loadPrefsSnapshot(reader)])
-  assert.equal(calls(), 20, 'not forty')
+  assert.equal(calls(), 26, 'not fifty-two')
   assert.equal(a, b)
   resetPrefsSnapshotForTests()
 })
@@ -210,7 +263,12 @@ test('every Preferences card seeds from the gate, and none of them re-reads main
     'CursorRingSetting.tsx',
     'PerfSetting.tsx',
     'BuffTrustSetting.tsx',
+    'ResistEvidenceSetting.tsx',
     'TextSizeSetting.tsx',
+    // JOS-405's two: the shared overlay size + the switch, and the twelve-row list. The list is
+    // the one this rule is sharpest about — twelve rows that painted a default first would be the
+    // JOS-340 defect twelve times over on one card.
+    'OverlayTextSizeSetting.tsx',
     'ToastSetting.tsx',
     'VoiceSetting.tsx',
     'TelemetrySetting.tsx',

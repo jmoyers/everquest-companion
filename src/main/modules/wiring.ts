@@ -36,12 +36,14 @@ import { LevelingModule } from './leveling'
 import { ProgressionModule } from './progression'
 import { CharacterModule } from './character'
 import { OutputFilesModule } from './outputFiles'
+import { SpellSetsModule } from './spellSets'
 import { ItemTiersModule } from './itemTiers'
 import { AlertsModule } from './alerts'
 import { BuffsModule } from './buffs'
 import { BuffTimersModule } from './buffTimers'
 import { ConsiderModule, type ConsiderDeps } from './consider'
 import { EventFeedModule, type EventFeedDeps } from './eventFeed'
+import { ResistModule, type ResistLedgerSeam } from '../resist/module'
 import type { EqModule } from './types'
 import { buildTimerRows } from '../../shared/buffTimers'
 import type { LogEvent } from '../../shared/logEvents'
@@ -52,6 +54,8 @@ import type { RespawnPrefs } from '../../shared/respawn'
 /** Everything the module set needs from outside itself. Every field is a seam pipeline.ts fills
  *  from Electron and the bench fills with a stub or an empty list. */
 export interface ModuleWiringDeps extends ConsiderDeps, EventFeedDeps {
+  /** The userData-backed resist ledger. Absent ⇒ an in-memory one that writes nothing. */
+  resistLedger?: ResistLedgerSeam
   /** The user's alert definitions (the store owns them; the module is kept in sync by setDefs). */
   alertDefs?: AlertDef[]
   /**
@@ -98,12 +102,14 @@ export interface ModuleWiring {
   leveling: LevelingModule
   character: CharacterModule
   outputFiles: OutputFilesModule
+  spellSets: SpellSetsModule
   itemTiers: ItemTiersModule
   alerts: AlertsModule
   buffs: BuffsModule
   buffTimers: BuffTimersModule
   consider: ConsiderModule
   eventFeed: EventFeedModule
+  resist: ResistModule
   /** REGISTRATION ORDER = BUS DELIVERY ORDER. Load-bearing; see the comments below. */
   ordered: EqModule[]
 }
@@ -171,6 +177,11 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
   // rule needs, folded from `Outputfile Complete: <file>`. Surface-free: main reads it directly
   // when it loads a dump, nothing in the renderer subscribes.
   const outputFiles = new OutputFilesModule()
+  // WHAT IS IN YOUR GEMS (JOS-391) — the memorized bar and the CURRENT definition of each named
+  // spell set. Beside `outputFiles` because it is the same kind of fact: the player operating
+  // their own client, not the world acting on them. It reads three event kinds nothing else reads
+  // and no other module reads its state, so its position is free.
+  const spellSets = new SpellSetsModule()
   // Observed item levels (Task #60): character-scoped, epoch-aware per-item tier state.
   const itemTiers = new ItemTiersModule()
   // The alerts extension (Task #18): evaluates event/raw triggers on LIVE events only. Its defs
@@ -216,6 +227,15 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
   const eventFeed = new EventFeedModule({
     ...(deps.lookupItem ? { lookupItem: deps.lookupItem } : {})
   })
+  // Per-mob resist profiles (JOS-382). It reads the WIKI spell catalog to recognise a resist
+  // debuff by its verbatim effect line, and nothing else — the client's spells_us.txt is joined in
+  // at estimate time, never at fold time (src/main/resist/fold.ts states why). The LEDGER is
+  // injected because it is the only Electron-touching part, and this function has to stay
+  // constructible under plain node (the bench and tests/foldDeterminism.test.mts both do it).
+  const resist = new ResistModule({
+    spellDb,
+    ...(deps.resistLedger ? { ledger: deps.resistLedger } : {})
+  })
 
   return {
     spellDb,
@@ -231,12 +251,14 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
     leveling,
     character,
     outputFiles,
+    spellSets,
     itemTiers,
     alerts,
     buffs,
     buffTimers,
     consider,
     eventFeed,
+    resist,
     // combo goes FIRST (design § 5.1): within one bus delivery every later module — and the combat
     // engine, which folds the same event afterwards — then sees an already-advanced combo state.
     // roster goes SECOND for the same reason: the engine's admission gate pulls the roster through
@@ -263,6 +285,10 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
       // client's own bookkeeping. Position is otherwise free — it folds one line kind that no
       // other module reads and it emits no delta.
       outputFiles,
+      // Beside `outputFiles` for the same reason it sits beside `character`: the client's own
+      // bookkeeping, one more level of it. Free position — three event kinds nobody else folds,
+      // and no module reads its state within a delivery.
+      spellSets,
       itemTiers,
       alerts,
       buffs,
@@ -271,6 +297,10 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
       // half-advanced pair would show a mez for one extra flush.
       buffTimers,
       consider,
+      // Position is free: it reads no other module's state and pushes no delta (it is read by
+      // pulling, like the combat engine). AFTER consider so a `/con` that states a mob's level is
+      // already folded when the same delivery files an observation about that mob.
+      resist,
       eventFeed
     ]
   }

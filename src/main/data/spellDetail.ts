@@ -15,8 +15,11 @@
 // boundary that arrangement is honest about.
 
 import type { SpellDetail, SpellRankMember } from '../../shared/spellDetail'
+import { spellMetricsAt } from '../../shared/spellMetrics'
 import { parseSpellClassLevels, parseSpellRank, spellLineKey } from '../../shared/spellLines'
+import type { SpellResistTable } from '../../shared/resistTypes'
 import type { SpellEntry } from '../../shared/types'
+import { clientHpFor } from './clientSpellHp'
 import { spellEffectClasses } from './spellEffectClass'
 import { spellNature, type SpellDb } from './spellDb'
 
@@ -116,23 +119,53 @@ function dbRowFor(db: SpellDb, name: string): SpellEntry | undefined {
 export function buildSpellDetail(
   db: SpellDb,
   queried: string,
-  observedRanks: readonly string[] = []
+  observedRanks: readonly string[] = [],
+  client: SpellResistTable | null = null
 ): SpellDetail {
   const name = queried.trim()
   if (!name) return notFound(queried)
   const entry: SpellEntry | undefined = dbRowFor(db, name)
   if (!entry) return notFound(name)
+  const classLevels = parseSpellClassLevels(entry.classes)
   return {
     queried: name,
     name: entry.name,
     found: true,
     ...statedFields(entry),
+    ...worthFields(entry, classLevels, client),
     nature: spellNature(entry.spellType),
     illusion: entry.illusion,
-    classLevels: parseSpellClassLevels(entry.classes),
+    classLevels,
     effectClasses: spellEffectClasses(entry),
     lineage: buildLineage(name, db, observedRanks, entry)
   }
+}
+
+/**
+ * WHAT IT IS WORTH, at the level it becomes yours (JOS-392, owner addition).
+ *
+ * The SAME reader the unlock rows use (`spellMetricsAt`) at the SAME evaluation level — the lowest
+ * level any class gains the line — so the figures on the card and the figures on the row beside it
+ * are the same numbers rather than two derivations that agree today. A spell the DB places for
+ * nobody is read at level 1, which is the only level it can honestly be read at.
+ *
+ * Absent for every spell with no hitpoint line, which is most of them, and the card draws nothing.
+ *
+ * AND SINCE JOS-396 THE CLIENT'S SLOTS ANSWER WHERE THE PAGE DOES NOT. `client` is the parsed
+ * `spells_us.txt` table or null; it is a FALLBACK inside `spellMetricsAt`, so a spell whose page
+ * states a hitpoint line is byte-identical to what it was. Null (no install, or the worker has not
+ * finished) simply means the card behaves exactly as it did before this ticket — and because this
+ * record is rebuilt on every invoke rather than cached, the next hover after the table resolves
+ * carries the figures with no invalidation to arrange.
+ */
+function worthFields(
+  e: SpellEntry,
+  classLevels: readonly { level: number }[],
+  client: SpellResistTable | null
+): Partial<SpellDetail> {
+  const level = classLevels.length > 0 ? Math.min(...classLevels.map((c) => c.level)) : 1
+  const metrics = spellMetricsAt(e, level, clientHpFor(client, e.name))
+  return metrics ? { metrics, metricsLevel: level } : {}
 }
 
 /**
@@ -156,5 +189,9 @@ function statedFields(e: SpellEntry): Partial<SpellDetail> {
   if (e.msgCastOnYou !== undefined) out.msgCastOnYou = e.msgCastOnYou
   if (e.msgCastOnOther !== undefined) out.msgCastOnOther = e.msgCastOnOther
   if (e.msgWearsOff !== undefined) out.msgWearsOff = e.msgWearsOff
+  // The era verdict is DERIVED rather than scraped (`spellEra.ts` joins it at load), but it obeys
+  // the same rule as every line above it: copied across only when it is a positive claim, so the
+  // card has nothing to interpret and cannot print "in era" over a page nobody has classified.
+  if (e.outOfEra === true) out.outOfEra = true
   return out
 }

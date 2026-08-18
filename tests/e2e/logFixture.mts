@@ -28,6 +28,14 @@
  * install simply gets no junction, and the maps spec says so and skips — the same honesty branch
  * it has always had.
  *
+ * THE SPELLS_US CARVE-OUT (JOS-382). The resist card joins the client's own `spells_us.txt` in
+ * at read time, and that file is Daybreak's: 38 MB, and explicitly not something this repo may
+ * carry a copy or a derivative of. `{ spells: true }` symlinks the REAL install's copy in beside
+ * the fixture log for the resist spec, exactly as `{ maps: true }` junctions the map packs and
+ * for exactly the same reason. A machine with no EQ install gets no link, and the spec asserts
+ * the honest degraded state instead — which is itself the behaviour the ticket asks for, since
+ * an install-dir override with no EverQuest behind it is a supported configuration.
+ *
  * THE `/outputfile` CARVE-OUT (JOS-185). EQ writes an export dump into the INSTALL ROOT, beside
  * the executable and NOT into `Logs\` — so a staged install with only a log in it is a machine
  * where the player has never run `/outputfile`, and every surface fed by a dump took its
@@ -63,6 +71,45 @@ const LOG_NAME = 'eqlog_Primitive_freeport.txt'
 const STAGE_PREFIX = 'everquest-companion-e2e-log-'
 /** The server every staged character logs on — the same one `LOG_NAME` names. */
 const SERVER = 'freeport'
+
+/**
+ * The map packs, junctioned in from the real install (maps spec only). A JUNCTION, not a copy:
+ * 200 MB per launch would be absurd, and a junction needs no elevation on Windows. Failure is not
+ * fatal — the viewer's no-packs picker state is a correct, asserted outcome.
+ */
+function stageMaps(installDir: string): void {
+  const root = realEqRoot()
+  const packs = root ? join(root, 'maps') : null
+  if (!packs || !existsSync(packs)) return
+  try {
+    symlinkSync(packs, join(installDir, 'maps'), 'junction')
+  } catch {
+    // no junction ⇒ the maps spec takes its stated no-packs branch
+  }
+}
+
+/**
+ * The client's `spells_us.txt`, from the real install (resist spec only). A LINK IF WINDOWS ALLOWS
+ * ONE, ELSE A COPY: a FILE symlink needs SeCreateSymbolicLinkPrivilege (Developer Mode) where the
+ * maps junction needs nothing. Either way it lands in a throwaway temp install and never in the
+ * repo, which is the rule that matters — this repo may carry neither that file nor a derivative.
+ */
+function stageSpells(installDir: string): void {
+  const root = realEqRoot()
+  const file = root ? join(root, 'spells_us.txt') : null
+  if (!file || !existsSync(file)) return
+  try {
+    symlinkSync(file, join(installDir, 'spells_us.txt'), 'file')
+    return
+  } catch {
+    // Developer Mode is off; fall through to the copy.
+  }
+  try {
+    copyFileSync(file, join(installDir, 'spells_us.txt'))
+  } catch {
+    // neither ⇒ the resist spec takes its stated no-spell-data branch
+  }
+}
 
 /** Two-digit, zero-padded — the way EQ writes it (`[Wed Aug 05 20:48:16 2026]`). */
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -153,7 +200,12 @@ function realEqRoot(): string | null {
  */
 export function stageFixture(
   fixture: string,
-  opts: { maps?: boolean; inventory?: string; others?: Readonly<Record<string, string>> } = {}
+  opts: {
+    maps?: boolean
+    spells?: boolean
+    inventory?: string
+    others?: Readonly<Record<string, string>>
+  } = {}
 ): FixtureLog {
   const source = join(FIXTURES, fixture)
   if (!existsSync(source)) {
@@ -179,20 +231,8 @@ export function stageFixture(
 
   if (opts.inventory !== undefined) writeInventoryDump(installDir, opts.inventory)
 
-  if (opts.maps) {
-    const root = realEqRoot()
-    const packs = root ? join(root, 'maps') : null
-    if (packs && existsSync(packs)) {
-      // A JUNCTION, not a copy: 200 MB of map packs per launch would be absurd, and a junction
-      // needs no elevation on Windows. Failure is not fatal — the viewer's picker state is a
-      // correct, asserted outcome.
-      try {
-        symlinkSync(packs, join(installDir, 'maps'), 'junction')
-      } catch {
-        // no junction ⇒ the maps spec takes its stated no-packs branch
-      }
-    }
-  }
+  if (opts.maps) stageMaps(installDir)
+  if (opts.spells) stageSpells(installDir)
 
   const appendAt = (at: Date, ...messages: readonly string[]): number => {
     if (messages.length === 0) return 0
@@ -238,6 +278,7 @@ export async function launchOnFixture(
   fixture: string | FixtureLog,
   opts: {
     maps?: boolean
+    spells?: boolean
     inventory?: string
     userData?: string
     env?: Record<string, string>
@@ -248,6 +289,7 @@ export async function launchOnFixture(
   const log = owned
     ? stageFixture(fixture, {
         ...(opts.maps === undefined ? {} : { maps: opts.maps }),
+        ...(opts.spells === undefined ? {} : { spells: opts.spells }),
         ...(opts.inventory === undefined ? {} : { inventory: opts.inventory }),
         ...(opts.others === undefined ? {} : { others: opts.others })
       })

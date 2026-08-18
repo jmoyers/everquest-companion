@@ -45,6 +45,7 @@ import {
   classifyPoisonCoat,
   classifyPoisonProc,
   classifySpellEmote,
+  classifySpellGems,
   classifyStance,
   classifyWornOff
 } from './parseCasts'
@@ -185,6 +186,12 @@ const CLASSIFIERS: readonly Classifier[] = [
   classifyAaPotion,
   classifyAaActivate,
   classifyStance,
+  // WHAT IS IN YOUR GEMS (JOS-391) — memorize / forget / spell set. Beside the stance and
+  // invocation rules because it is the same family of statement (the player operating their own
+  // character sheet, not the world acting on them), and, like them, MEASURED to claim only lines
+  // that were `{kind:'unknown'}` beforehand: all 4,321 begin, 4,285 finished, 4,232 forget and
+  // 474 spell-set lines of the owner's 2,048,450-line log. So the position is legibility.
+  classifySpellGems,
   // CLASS EVIDENCE (class-combo inference Wave 1). Both are gated on a substring probe and
   // both were MEASURED to claim only lines that previously produced `{kind:'unknown'}` (all
   // 421 /who rows, all 10,216 skill-ups). They sit beside the stance/invocation rule because

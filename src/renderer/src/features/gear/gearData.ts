@@ -24,6 +24,7 @@ import { resolvedClasses } from '@shared/classCombo'
 import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import { GEAR_INDEX_VERSION, type GearBuildStats, type GearRow } from '@shared/planner/gear'
 import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
+import { isAcquisition } from '@shared/lootDisposition'
 import { useLootHistory } from '../loot/useLootHistory'
 import { useComboSnap } from '../profiles/ClassComboData'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
@@ -177,7 +178,16 @@ export function useGearOwnership(): GearOwnershipState {
   }, [read])
 
   // The loot names, deduped before the join so a thousand `Bone Chips` lines cost one key.
-  const lootedNames = useMemo(() => [...new Set(history.map((e) => e.item))], [history])
+  //
+  // DESTROYS ARE NOT NAMES HERE (JOS-401, the census). This set answers "does this character OWN
+  // one", so a line saying an item left the bags must not be the reason the app says it is owned.
+  // It costs nothing in the ordinary case — an item you looted and then destroyed one of is still
+  // in the set through its own loot rows — and it is only decisive for an item this log has seen
+  // exclusively as a destroy, which is exactly the one the Owned column must not claim.
+  const lootedNames = useMemo(
+    () => [...new Set(history.filter(isAcquisition).map((e) => e.item))],
+    [history]
+  )
 
   const map = useMemo(() => {
     if (payload.entries.length === 0 && lootedNames.length === 0) return null

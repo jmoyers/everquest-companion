@@ -26,6 +26,11 @@ import { check, note, settle, settleStable, snapshot, waitHydrated } from './app
 import { mainWindow, overlayWindow } from './appWindow.mjs'
 import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
 import { timerRows } from './buffTimerSteps.mjs'
+// THE ALLOW-LIST'S OWN RESTART CLAIM (JOS-168). It rides THIS launch rather than getting a third
+// one of its own: the preference is in the settings store and is not part of any module snapshot,
+// so what has to be proved is exactly that a quit and a whole-world re-fold leave it alone — and
+// this is the launch that performs both.
+import { stepAllowSurvivesRestart } from './buffAllowSteps.mjs'
 
 const SPELL = 'Ensnare'
 /**
@@ -215,6 +220,8 @@ export async function stepRestartRehydrate(log: FixtureLog, userData: string): P
       drops.length === 0,
       JSON.stringify(drops)
     )
+    await stepAllowSurvivesRestart(page, buffs)
+
     check('no overlay console errors across the restart', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
   } finally {
     await close()

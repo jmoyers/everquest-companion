@@ -417,7 +417,11 @@ test('scalar changes are reported only when they actually differ', () => {
     ui: { 'eq.combat.scope': 'overall' }
   })
   const ids = changes.map((c) => c.id).sort()
-  assert.deepEqual(ids, ['alertPrefs.muted', 'overlay.fight.bgAlpha'])
+  // `overlayBgAlpha.shared` is there because this body is an OLD one (JOS-407): it carries per-kind
+  // alphas and no preference, so the planner reads the sender's mode off the values themselves —
+  // one value, therefore unanimous, therefore synced at 90% against this machine's 72%. Its
+  // `independent` twin offers no row: both sides are Off, and a row nobody would change is noise.
+  assert.deepEqual(ids, ['alertPrefs.muted', 'overlay.fight.bgAlpha', 'overlayBgAlpha.shared'])
 })
 
 test('the global always-play preference travels, and an OLD bundle offers no row for it', () => {

@@ -15,6 +15,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
 import type { Timeslice } from '@shared/timeslice'
+import { isAcquisition } from '@shared/lootDisposition'
 import { formatDate } from '../../lib/formatDate'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
 import { ObservedItemWindow } from '../../lib/ObservedItemWindow'
@@ -353,17 +354,27 @@ export function ItemDetailContent({
   slice,
   owned
 }: Omit<ItemDetailProps, 'isQuestItem'> & { active: boolean }): JSX.Element {
-  const agg = useMemo(() => aggregateLoot(events), [events])
+  /**
+   * EVERY NUMBER BELOW IS ABOUT LOOTING, so the destroys come out here (JOS-401, the census).
+   * `Times looted`, `Distinct mobs`, `Zones seen`, the mob breakdown, the per-zone rates and the
+   * "Looted over time" histogram would each be wrong in the same way otherwise: a destroy names no
+   * mob (it would tally under `unknown`), it is not a drop, and it happened in your bags.
+   *
+   * The filter is HERE rather than at the two call sites (`LootView`'s pane takeover and the Mobs
+   * tab's dialog) precisely because there are two of them and a third would inherit the answer.
+   */
+  const looted = useMemo(() => events.filter(isAcquisition), [events])
+  const agg = useMemo(() => aggregateLoot(looted), [looted])
   const knowledge = useItemKnowledge(item, active)
   // The per-zone RATES (JOS-78). Its own hook because it joins a SECOND module — the progression
   // snapshot, for the active-time denominators — and that join is the one thing on this surface
   // that is not simply a fold of `events`.
-  const zoneRates = useItemZoneRates(events, slice)
+  const zoneRates = useItemZoneRates(looted, slice)
   return (
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
       <ItemWindowColumn item={item} stats={stats} knowledge={knowledge} />
       <ObservedColumn
-        events={events}
+        events={looted}
         agg={agg}
         knowledge={knowledge}
         item={item}

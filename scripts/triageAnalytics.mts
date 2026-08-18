@@ -29,6 +29,11 @@ import {
   type Clients,
 } from '../src/main/triage/store'
 import { runBackfill, runSwap, verifyTables } from './analyticsBackfill.mjs'
+// The offline copy (JOS-399) and the restore that shares its shape with JOS-398's S3 export.
+// Their CLI entry points live beside their implementations for the same reason this whole file
+// does: the parent router is at the 400-code-line ceiling and so, now, is this one.
+import { cmdAnalyticsExport, requireFreshExport } from './analyticsExport.mjs'
+import { cmdAnalyticsImport } from './analyticsImport.mjs'
 import { buildAnalytics } from '../src/main/triage/analytics'
 import {
   addDays,
@@ -78,6 +83,14 @@ export const ANALYTICS_USAGE = `
                                             and arrives UNMARKED — re-run owner-add after one.
                                             Marking is FROM-MARKING-ONWARD: counters already
                                             summed carry no id and are never re-attributed.
+
+  THE OFFLINE COPY (JOS-399). Take one BEFORE anything that touches a table: \`migrate\` and the
+  three backfill commands REFUSE to run without an export from the last 6 hours.
+  analytics export [--out <dir>]            every table, gzipped, with a checksummed manifest.
+                                            READ ONLY. Default --out .triage/exports/ (gitignored).
+  analytics import <dir> [--dry-run]        put one back: checksums verified BEFORE any write,
+                                            then an idempotent keyed upsert per table. Rows from
+                                            a MERGED-VIEW export land under shard 0.
 
   THE ONE-OFF COHORT MIGRATION (a cluster with the PRE-COHORT counter tables). COPY FIRST —
   nothing is dropped until a verified copy exists. Ordered commands: infra/README.md.
@@ -332,7 +345,25 @@ async function cmdOwnerLs(ctx: AnalyticsCtx): Promise<void> {
 // ever regretted. The reasoning, the DSQL RENAME finding and the cohort derivation are all
 // written out in the header of ./analyticsBackfill.mts; the ordered runbook is infra/README.md.
 
+/**
+ * THE EXPORT GUARD (JOS-399), on the three commands that rewrite or swap a physical table.
+ *
+ * It lives HERE, in the dispatch, rather than inside analyticsBackfill.mts, and that is the same
+ * boundary that module's own header draws: it takes `Clients` as an argument and touches no
+ * filesystem, so it can be driven end to end by a fake with no AWS in sight. A disk check inside
+ * it would put an operator's `.triage/` directory into every one of those tests. The CLI is the
+ * only way any of the three is ever reached.
+ *
+ * `backfill-verify` is guarded too even though it only reads: it is the step an operator runs
+ * immediately before the swap, so refusing there is refusing at the moment the copy is still
+ * cheap to take, rather than one command later with the DROP already queued up in their head.
+ */
+function guard(ctx: AnalyticsCtx, what: string): void {
+  requireFreshExport(ctx.args, what, ctx.nowMs)
+}
+
 async function cmdBackfill(ctx: AnalyticsCtx): Promise<void> {
+  guard(ctx, 'analytics backfill-cohort')
   const { installs, tables } = await runBackfill(ctx.clients(), readFileSync(SCHEMA_FILE, 'utf8'))
   for (const t of tables) {
     console.log(`${t.table.padEnd(20)} ${t.created ? 'staging created' : 'staging existed'} · ${String(t.copied)} row(s) copied`)
@@ -342,6 +373,7 @@ async function cmdBackfill(ctx: AnalyticsCtx): Promise<void> {
 }
 
 async function cmdBackfillVerify(ctx: AnalyticsCtx): Promise<void> {
+  guard(ctx, 'analytics backfill-verify')
   const rows = await verifyTables(ctx.clients())
   const cell = (t: { rows: number; total: number } | null): string =>
     t === null ? '(absent)' : `${String(t.rows)} row(s) / n=${String(t.total)}`
@@ -356,6 +388,7 @@ async function cmdBackfillVerify(ctx: AnalyticsCtx): Promise<void> {
 }
 
 async function cmdBackfillSwap(ctx: AnalyticsCtx): Promise<void> {
+  guard(ctx, 'analytics backfill-swap')
   for (const step of await runSwap(ctx.clients())) console.log(`${step.done ? 'ran     ' : 'skipped '} ${step.sql}`)
   console.log(
     '\nThe cohort-keyed tables now carry the real names, with every legacy row in them.\n' +
@@ -395,6 +428,10 @@ export const ANALYTICS_SUBCOMMANDS: Record<string, (ctx: AnalyticsCtx) => Promis
   'owner-add': (ctx) => markCohort(ctx, 'owner'),
   'owner-rm': (ctx) => markCohort(ctx, 'user'),
   'owner-ls': cmdOwnerLs,
+  // The offline copy and its restore (JOS-399). `export` is the only command in this family that
+  // is safe against production by construction: it holds no statement that writes.
+  export: cmdAnalyticsExport,
+  import: cmdAnalyticsImport,
   'backfill-cohort': cmdBackfill,
   'backfill-verify': cmdBackfillVerify,
   'backfill-swap': cmdBackfillSwap,

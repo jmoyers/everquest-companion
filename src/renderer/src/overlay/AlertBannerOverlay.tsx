@@ -51,6 +51,7 @@ import {
   type CardState
 } from './cardQueue'
 import { TextScaleStepper } from './TextScaleStepper'
+import { BgAlphaSlider } from './BgAlphaSlider'
 import { useOverlayChrome, type OverlayChrome } from './useOverlayChrome'
 
 const GOLD = '#d9b25f'
@@ -66,18 +67,21 @@ function bannerConfig(config: OverlayConfig | null): AlertBannerOverlayConfig {
 
 /**
  * The positioning frame, shown only while the overlay is unlocked — the toast's DragFrame, with
- * this window's own words. It is also where the TEXT SIZE lives, for the same reason: this kind
- * renders nothing at all most of the time, so the frame is the only chrome it ever shows, and
- * Preferences → Overlays → "Move it" is the whole route to both knobs.
+ * this window's own words. It is also where the TEXT SIZE and the TRANSPARENCY live, for the same
+ * reason: this kind renders nothing at all most of the time, so the frame is the only chrome it
+ * ever shows, and Preferences → Overlays → "Move it" is the whole route to all three knobs. (The
+ * `bg` slider arrived in JOS-407; until then this kind's 0.72 was not settable at all.)
  */
 function DragFrame({
   onDone,
   textScale,
+  bgAlpha,
   patch,
   noDrag
 }: {
   onDone: () => void
   textScale: number
+  bgAlpha: number
   patch: OverlayChrome['patch']
   noDrag: React.CSSProperties
 }): JSX.Element {
@@ -98,11 +102,12 @@ function DragFrame({
         fontSize: 11
       }}
     >
-      {/* The PROSE is the give on a narrow strip; the two controls beside it are the whole point
+      {/* The PROSE is the give on a narrow strip; the three controls beside it are the whole point
           of the frame and stay whole at every width. */}
       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         Drag me where alerts should appear
       </span>
+      <BgAlphaSlider bgAlpha={bgAlpha} patch={patch} noDrag={noDrag} />
       <TextScaleStepper textScale={textScale} patch={patch} noDrag={noDrag} />
       <button
         type="button"
@@ -206,6 +211,7 @@ export default function AlertBannerOverlay(): JSX.Element {
         <DragFrame
           onDone={chrome.toggleLock}
           textScale={chrome.textScale}
+          bgAlpha={chrome.bgAlpha}
           patch={chrome.patch}
           noDrag={chrome.noDrag}
         />

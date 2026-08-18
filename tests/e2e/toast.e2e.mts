@@ -48,6 +48,10 @@ import {
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
 import { launchOnFixture } from './logFixture.mjs'
+// THE STRIP SCALES WITH ITS TEXT (JOS-406). The toast, the alert banner and the con card are the
+// three overlays whose WINDOW IS THE CARD, so the one step is shared between their three specs
+// rather than written out three times — its header carries the whole argument.
+import { stepStripBgSlider, stepStripScalesWithText } from './stripScaleSteps.mjs'
 import { DING_LEVEL, stepDeepLinkRoundtrip, stepRepeatDeepLink } from './toastDeepLinkSteps.mjs'
 
 /** A Sky reward that exists in the committed item DB, so the card resolves with NO network. */
@@ -388,6 +392,12 @@ async function main(): Promise<void> {
       await stepRefusal(page, t)
       await stepQuestToast(page, t)
       await stepLevelUpToast(page, t)
+      // Three cards are standing in the lane at this point, which is the state worth measuring AND
+      // worth photographing: at 200% the strip has to be the same lane, twice the size.
+      await stepStripScalesWithText(app, t, 'toast', 'celebration toast')
+      // …and the drag frame's OTHER new knob (JOS-407): this kind's transparency, which until now
+      // was a 0.72 nobody could reach.
+      await stepStripBgSlider(t, 'toast-drag-frame', 'celebration toast')
       // The two deep links need a mounted feature view to land in; a machine with no character
       // logs shows App's fresh-machine empty state in front of every one of them, which is the
       // CORRECT behaviour and not something these steps can assert through.

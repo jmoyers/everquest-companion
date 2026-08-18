@@ -64,6 +64,10 @@ const CONTROL_ANY_RE = /[\x00-\x1F\x7F-\x9F]/g
 /** The same class MINUS TAB (0009) and LF (000A) — the two a multi-line report may keep. */
 const CONTROL_BLOCK_RE = /[\x00-\x08\x0B-\x1F\x7F-\x9F]/g
 
+/** The same class MINUS TAB ALONE — for ONE LINE of a tab-separated table (see
+ *  `sanitizeTabbedLine`). LF and CR are in it: a line that contains one is not a row. */
+const CONTROL_BLOCK_TAB_RE = /[\x00-\x08\x0A-\x1F\x7F-\x9F]/g
+
 /** CR and CRLF, normalized to LF before anything else looks at the string. */
 const NEWLINE_RE = /\x0D\x0A?/g
 
@@ -143,6 +147,39 @@ export function sanitizeOneLine(raw: string): string {
     .replace(NEWLINE_RE, '\n')
     .replace(CONTROL_ANY_RE, (c) => (AS_SPACE.has(c) ? ' ' : ''))
     .replace(INVISIBLE_RE, '')
+}
+
+/**
+ * ONE LINE OF A TAB-SEPARATED TABLE THE GAME ITSELF WROTE — today exactly one caller, the
+ * `/outputfile inventory` dump (`src/main/triage/rows.ts sanitizeInventory`, JOS-404).
+ *
+ * WHY TAB SURVIVES HERE AND NOWHERE ELSE, because that is the only interesting thing about this
+ * function. `sanitizeOneLine` folds TAB to a space so that a REPORTER'S OWN TEXT — a description,
+ * an `env.*` value, a log line — cannot forge columns in a table the CLI is drawing. An inventory
+ * export is the opposite kind of string: the TABS ARE THE FORMAT (`Location<TAB>Name<TAB>ID<TAB>
+ * Count<TAB>Slots`, the shape measured in `src/main/feedback/inventory.ts`'s header), the columns
+ * are the game's and not the reporter's, and the file is not drawn into a table at all — it is
+ * written to disk for the owner to read and to feed back through the app's own dump parser.
+ * Folding the tabs there destroyed the structure AND made "this line carried a control character"
+ * true of every honest row, which is a warning that fires always and therefore says nothing.
+ *
+ * Everything else `sanitizeOneLine` removes is still removed, and for its own reason: the dump is
+ * text the app did not write and an operator will eventually `cat`. ANSI sequences go whole, then
+ * C0 (minus TAB) + DEL + C1 — LF and CR included, so the output IS one line — then the invisibles.
+ *
+ * DO NOT widen `sanitizeOneLine` to match this. The narrowness is the guarantee.
+ */
+export function sanitizeTabbedLine(raw: string): string {
+  return stripAnsi(raw).replace(CONTROL_BLOCK_TAB_RE, '').replace(INVISIBLE_RE, '')
+}
+
+/**
+ * `sanitizeTabbedLine`'s flagging twin — `sanitizeAndFlag` for a table row. The caller counts the
+ * lines that changed and reports the count as evidence, so it needs the fact, not a second pass.
+ */
+export function sanitizeTabbedAndFlag(raw: string): { text: string; changed: boolean } {
+  const text = sanitizeTabbedLine(raw)
+  return { text, changed: text !== raw }
 }
 
 /**

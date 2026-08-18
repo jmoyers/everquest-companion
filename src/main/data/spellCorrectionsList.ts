@@ -180,15 +180,49 @@ const HAND_DERIVED_CORRECTIONS: readonly SpellCorrection[] = [
     evidence:
       'THE REPORTED DEFECT (01KZNWX8Y6YWXQ8YRM8KGWN48E, v0.18.0, an SK/necro). Owner log, 1,557,569 lines: `<T> is engulfed in darkness.` occurs ZERO times while `<Name> begins casting Dooming Darkness.` occurs 159 times and `Cascading Darkness` 36 — so both ranks ARE cast here, which is precisely what JOS-150 could not establish and why it left them alone. 17 of the 159 Dooming casts and 1 of the 36 Cascading casts are followed within 12 s (p50 3 s) by `<T> is engulfed by darkness.`; the rate is low because that sentence is SHARED with Engulfing Darkness (249 casts, 106 matched) and only the nearest cast can claim each of the 124 landings. Purely additive to the table: the suffix already exists, so this adds two candidates to a sentence the cast anchor already resolves and creates no new tail.'
   },
-  // NOT CORRECTED, and the reason is worth keeping: Largo's Melodic Binding (bard 20) says `bound
-  // IN strands of solid music.` while its direct upgrade Largo's Assonant Binding (bard 51) says
-  // `bound BY`. The owner's log has 4,148 of `by` and 0 of `in` — and that is NOT drift, it is a
-  // level-20 song nobody in this log ever sang. JOS-84 already treats the two as separate families
-  // (tests/charmCcRoster.test.mts CC_FAMILIES) and merging them would delete a real distinction.
-  // The same doubt covers Selo's Chords of Cessation (`in chords` in the wiki, 7 log lines of `by
-  // chords` with no DB owner): the shape is real, the SPELL is not established, so it waits for a
-  // bard's log rather than being guessed. This is the awaiting-sample law, applied against a
-  // correction that would otherwise have looked obvious.
+  // THE BARD BINDING PAIR — NOT CORRECTED FOR THREE TICKETS, AND CORRECTED NOW (JOS-384).
+  //
+  // JOS-150 wrote the note this entry replaces: Largo's Melodic Binding (bard 20) says `bound IN
+  // strands of solid music.` while its direct upgrade Largo's Assonant Binding (bard 51) says
+  // `bound BY`; the log had thousands of `by` and zero `in`, and the honest reading THEN was that
+  // this is not drift at all but a level-20 song nobody in this log ever sang. That reading rested
+  // on one thing — that the sentence's real owner is the level-51 song — and it is the thing the
+  // awaiting-sample law was waiting to test.
+  //
+  // JOS-382 TESTED IT, from a direction nothing before had looked from: the RESIST half. The log
+  // prints `<T> resisted your Largo's Melodic Binding!` 570 times and the Assonant resist line
+  // ZERO times, interleaved with the 4,152 `bound by` emotes on one six-second SYMPHONIC AURA grid,
+  // while the character is level 21-24. So the level-20 song was sung here, constantly, and the
+  // level-51 one has never been cast in this corpus at all. `by` is MELODIC's sentence on Legends.
+  //
+  // WHAT ASSONANT KEEPS: its own text, unchanged. Nothing says the wiki is wrong ABOUT ASSONANT —
+  // `bound by` is what the wiki gives it and what the game prints — so there is no drift to correct
+  // and correcting it would be inventing one. The two therefore SHARE the sentence, which is
+  // world-model law 3's ordinary case (EQ prints one sentence per spell FAMILY) and is what the
+  // shared-message machinery exists for: `messageOverlay` files the text SHARED, so it never names
+  // a spell on its own, and `buffLanding.ts` resolves it by EVIDENCE — the cast anchor first, so a
+  // level-21 bard's `You begin singing Largo's Melodic Binding.` claims its own landing and the
+  // level-51 song it cannot have does not. Pinned in `tests/largoBinding.test.mts`.
+  //
+  // The RESIST module used to carry this same correction locally, as a two-name pooling table in
+  // `src/main/resist/songIdentity.ts`. Owner ruling 2026-08-16: an override on wiki data is
+  // APP-WIDE or it is nothing, because a module-local one means the buff overlay, the alerts and
+  // the timers keep reading a catalog the resist page has already decided is wrong.
+  {
+    spells: ["Largo's Melodic Binding"],
+    field: 'msgCastOnOther',
+    from: 'Someone is bound in strands of solid music.',
+    to: 'Someone is bound by strands of solid music.',
+    attribution: 'cast',
+    evidence:
+      "Owner log, 2,013,844 lines (whole-log, read-only, measured 2026-08-16): `<T> is bound in strands of solid music.` occurs ZERO times, `<T> is bound by strands of solid music.` 4,152 times. The attribution is the RESIST line rather than a cast line, because the aura prints no cast line at all — `You begin singing` occurs 0 times for either song in the whole log — and `<T> resisted your Largo's Melodic Binding!` is first-person, names the spell outright, and occurs 570 times against 0 for the Assonant form; the two shapes interleave on one six-second grid while the character is level 21-24, and a level-21 bard cannot have a level-51 song. Corroborated the `db` way as well: Assonant carries this exact replacement text verbatim, so the DB is its own witness for the wording. Purely additive at the suffix table — Assonant has owned `is bound by strands of solid music.` since the scrape, so this adds a second candidate to a sentence the cast anchor already resolves and mints no new tail."
+  },
+  // STILL NOT CORRECTED, and for the reason the entry above has now outgrown: Selo's Chords of
+  // Cessation says `in chords` in the wiki against 7 log lines of `by chords` with no DB owner.
+  // The shape is real, the SPELL is not established — no resist line, no cast line, nothing that
+  // names it the way 570 lines name Melodic — so it waits for a bard's log rather than being
+  // guessed. This is the awaiting-sample law, still applied, against a correction that would
+  // otherwise look obvious by analogy.
   {
     spells: ['Resist Magic', 'Resistance to Magic'],
     field: 'msgCastOnYou',
@@ -583,6 +617,19 @@ const HAND_DERIVED_CORRECTIONS: readonly SpellCorrection[] = [
     attribution: 'sole',
     evidence:
       'The wiki page`s `spellname` is `Solon`s Bravura`; the game has never printed it. Owner log: 20 lines naming `Solon`s Bewitching Bravura` (5 own-guild casts by the bard Enzee, 14 sung AT the player by fire giants, 1 resist) and 0 naming `Solon`s Bravura`. Reporter slice 01KZAG2QAW885YJNRTDDND8BF2 adds `You begin singing Solon`s Bewitching Bravura IX.` x5 and `Your Solon`s Bewitching Bravura spell has worn off of a fire giant warrior.` x5; slice 01KZM7F36JD12WYF15DHCCWNEE ends on `You have finished memorizing Solon`s Bewitching Bravura.`. A dropped word, never a different spell: nothing else in the DB is named Bravura (src/main/log/rulesets.ts says so too), the level, class, cast time, duration and all three messages are untouched, and the entry`s own `You are captivated by the bewitching tune.` carries the missing word already. Both level-39 rows (18 s and the April-2000 1 Min) are renamed together.'
+  },
+  // Found by the JOS-387 audit of what the resist fold recognises as a RESIST DEBUFF. The tash
+  // ladder, the malo ladder and the whole Scent line are recognised correctly off the catalog`s
+  // verbatim `Decrease <Axis> Resist` effect lines; this one name is the only member of any of them
+  // that the log and the wiki spell differently, so it was the only one whose windows never opened.
+  {
+    spells: ['Malisement'],
+    field: 'name',
+    to: 'Malaisement',
+    from: 'Malisement',
+    attribution: 'sole',
+    evidence:
+      'The shaman malo ladder`s level-32 rung. Owner log, whole file (2,026,223 lines): 229 lines naming `Malaisement` (123 `<mob> begins casting Malaisement.`, 5 `You begin casting Malaisement.`, the rest interrupts and fades) and 0 naming `Malisement`. One inserted vowel, never a different spell: nothing else in the DB is named Mal*sement, and the entry`s four `Decrease Cold/Magic/Poison/Fire Resist by 36-40` effect lines are exactly the rung between Malaise (15-20) and Malosi (59-60), which the log casts 136 and 63 times under names the catalog already matches. Until this correction `isResistDebuff` (main/resist/world.ts) answered false for all 229 lines, so the debuff was never recorded against a mob and every observation made under it was fitted at an offset 36 to 40 points too small.'
   }
 ]
 
