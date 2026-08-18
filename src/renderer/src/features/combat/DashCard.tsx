@@ -33,6 +33,8 @@ export function DashCard({
   fill,
   height,
   titleLead,
+  onTitle,
+  titleTestId,
   testId
 }: {
   title: string
@@ -49,6 +51,19 @@ export function DashCard({
    * card moves.
    */
   titleLead?: boolean
+  /**
+   * Make the title itself a control.
+   *
+   * FOR THE CARD WHOSE TITLE NAMES THE THING YOU WOULD CHANGE. On the gear plan's board the title
+   * is an equipment slot, and "swap what is in this slot" is the card's primary action — so the
+   * word HEAD is the most obvious thing on the card to click, and it was inert.
+   *
+   * Absent leaves the title exactly as it was: plain text, default cursor, no hit area. A hand
+   * appears only where a click actually goes somewhere.
+   */
+  onTitle?: () => void
+  /** the title control's own testid — only meaningful with `onTitle` */
+  titleTestId?: string
   /**
    * Grid-cell mode: `height: 100%` + `minHeight: 0` let a `minmax(0, 1fr)` track shrink the
    * card freely, and the body gets its own `overflow: auto` so content scrolls INSIDE the cell
@@ -84,13 +99,28 @@ export function DashCard({
         sx={{ mb: 0.75, flexShrink: 0 }}
       >
         <Typography
+          component={onTitle === undefined ? 'span' : 'button'}
+          type={onTitle === undefined ? undefined : 'button'}
+          data-testid={titleTestId}
+          onClick={onTitle}
           variant={titleLead === true ? 'body2' : 'caption'}
           noWrap
           sx={{
             fontWeight: 700,
             letterSpacing: '0.06em',
             textTransform: 'uppercase',
-            color: titleLead === true ? 'text.primary' : 'text.secondary'
+            color: titleLead === true ? 'text.primary' : 'text.secondary',
+            ...(onTitle === undefined
+              ? {}
+              : {
+                  p: 0,
+                  border: 0,
+                  bgcolor: 'transparent',
+                  font: 'inherit',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  '&:hover': { color: 'primary.main' }
+                })
           }}
         >
           {title}

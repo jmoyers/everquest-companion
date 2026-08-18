@@ -55,7 +55,7 @@ export async function stepStatFilter(page: Page): Promise<void> {
   check('the stat pick is reachable with no picker open', (await countOf(page, '[data-testid="gearplan-stat-pick"]')) === 1)
   check('…and the compare chip is not, because no cell has been named', (await countOf(page, BEATS)) === 0)
 
-  await page.click(`${cell} [data-testid="gearplan-item-name"]`, { timeout: 15_000 })
+  await page.click(`${cell} [data-testid="gearplan-swap-item"]`, { timeout: 15_000 })
   await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
   if (!check('the panel lists head items to narrow', await until(async () => (await countOf(page, hit)) > 0, 20_000))) {
     await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
@@ -103,7 +103,7 @@ export async function stepStatFilter(page: Page): Promise<void> {
   )
   check('the pick outlives the panel it narrowed', kept.some((c) => c.includes('WIS')), kept.join(','))
 
-  await page.click('[data-testid="gearplan-cell-PRIMARY"] [data-testid="gearplan-item-name"]', { timeout: 15_000 })
+  await page.click('[data-testid="gearplan-cell-PRIMARY"] [data-testid="gearplan-swap-item"]', { timeout: 15_000 })
   await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
   check('…and a DIFFERENT cell opens already ranked by it', (await countOf(page, BEATS)) === 1)
 
@@ -204,8 +204,17 @@ export async function stepPoolFilter(page: Page): Promise<void> {
  */
 export async function stepOpenItemRecord(page: Page): Promise<void> {
   const cell = '[data-testid="gearplan-cell-HEAD"]'
-  const link = `${cell} [data-testid="gearplan-open-item"]`
+  const link = `${cell} [data-testid="gearplan-item-name"]`
   if (!check('a filled cell offers a way to the item`s full record', (await countOf(page, link)) === 1)) return
+
+  // THE THREE TARGETS ON A CELL, AND WHICH WAY EACH GOES. They were reassigned once already, so the
+  // pairing is asserted rather than assumed: the NAME opens the item, and the ICON and the SLOT
+  // TITLE both change what is in the slot. A control should do what the thing you clicked IS.
+  //
+  // The two swap controls are proved by USE below (the filter step opens the picker through the
+  // icon); here it is enough that all three exist and are distinct elements, because the failure
+  // this guards is an edit that collapses them onto one.
+  check('…and two separate ways to change what is IN the slot', (await countOf(page, `${cell} [data-testid="gearplan-swap-item"]`)) === 1 && (await countOf(page, `${cell} [data-testid="gearplan-swap-slot"]`)) === 1)
 
   // A state nothing ships with: wishlisted ON, and a stat picked.
   await setChip(page, '[data-testid="gearplan-filter-wished"]', 'on')

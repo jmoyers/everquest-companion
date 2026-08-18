@@ -317,47 +317,60 @@ function CellHeader({
         sx={{ gap: 0.75, minWidth: 0, flexShrink: 1 }}
         data-testid="gearplan-item-identity"
       >
-        {/* THE ICON IS THE DOOR TO THE ITEM'S FULL RECORD, and the NAME still opens the picker.
-            Two controls, two jobs, and the split is forced rather than chosen: the name was already
-            the picker's door, and one click target cannot do two things. The icon is the better half
-            to give this to anyway — it is the part of the row that MEANS "this specific item", where
-            the name is the part you click to stop using it.
+        {/* THE ICON SWAPS THE SLOT; THE NAME OPENS THE ITEM. This pairing was the other way round
+            for exactly one commit, and the way round it is now is the one that reads.
 
-            IT ONLY BECOMES A CONTROL WHEN THERE IS SOMEWHERE TO GO. Without `onOpenLoot` it keeps
-            the default cursor and takes no click — `DonorName`'s rule verbatim, and the fix behind
-            e8d0fd0: a hand appears only where a click actually goes somewhere.
+            The rule that settles it: a control should do what the thing you clicked IS. The icon
+            and the slot title both say "this is the HEAD slot" — so both of them change what is in
+            it. The item's NAME says "Crown of Narandi" — so it opens Crown of Narandi. The old
+            split had the name changing the item and the icon describing it, which put the two most
+            item-shaped things on the card on opposite sides of the question.
 
-            The 20px treatment is the Character tab's, sized for a dense card rather than its 28px
-            armoury cell. The frame draws even with no icon, so a cell whose item the corpus has no
-            art for keeps its name on the same left edge as its neighbours. */}
+            IT IS BIGGER NOW, at the Character tab's own 28px armoury size rather than the 20px a
+            dense card started with. It is a primary control on this card, and the card gained the
+            room when the board stopped levelling its rows.
+
+            The frame draws even with no icon, so a cell whose item the corpus has no art for keeps
+            its name on the same left edge as its neighbours — and stays just as clickable. */}
         <Box
-          component={onOpenLoot === undefined ? 'div' : 'button'}
-          type={onOpenLoot === undefined ? undefined : 'button'}
-          data-testid="gearplan-open-item"
-          aria-label={onOpenLoot === undefined ? undefined : `Open ${planned.name}`}
-          title={onOpenLoot === undefined ? undefined : `Open ${planned.name} on the Loot tab`}
-          onClick={onOpenLoot === undefined ? undefined : () => onOpenLoot(planned.name)}
+          component="button"
+          type="button"
+          data-testid="gearplan-swap-item"
+          aria-label={`Change what is planned in ${planSlotLabel(cell)}`}
+          title={`Change what is planned in ${planSlotLabel(cell)}`}
+          onClick={() => on.pickItem(cell)}
           sx={{
             display: 'flex',
             p: 0,
             border: 0,
             bgcolor: 'transparent',
             flexShrink: 0,
-            cursor: onOpenLoot === undefined ? 'default' : 'pointer',
-            ...(onOpenLoot === undefined ? {} : { '&:hover': { filter: 'brightness(1.35)' } })
+            cursor: 'pointer',
+            '&:hover': { filter: 'brightness(1.35)' }
           }}
         >
-          <ItemIcon iconId={iconId} size={20} filled />
+          <ItemIcon iconId={iconId} size={28} filled />
         </Box>
+        {/* THE NAME IS THE ITEM'S OWN RECORD, and it is a control only when there is somewhere to
+            go — `DonorName`'s rule verbatim, and the fix behind e8d0fd0: a hand appears only where
+            a click actually goes somewhere. Without a route it is the same words, unlinked. */}
         <Link
-          component="button"
-          type="button"
-          underline="hover"
+          component={onOpenLoot === undefined ? 'span' : 'button'}
+          type={onOpenLoot === undefined ? undefined : 'button'}
+          underline={onOpenLoot === undefined ? 'none' : 'hover'}
           variant="body2"
           color="text.primary"
           data-testid="gearplan-item-name"
-          onClick={() => on.pickItem(cell)}
-          sx={{ lineHeight: 1.4, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          title={onOpenLoot === undefined ? undefined : `Open ${planned.name} on the Loot tab`}
+          onClick={onOpenLoot === undefined ? undefined : () => onOpenLoot(planned.name)}
+          sx={{
+            lineHeight: 1.4,
+            minWidth: 0,
+            textAlign: 'left',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            cursor: onOpenLoot === undefined ? 'default' : 'pointer'
+          }}
         >
           {planned.name}
         </Link>
@@ -480,6 +493,11 @@ function GearPlanCellCard({
       // The slot name IS what tells these twenty-three cards apart, so it leads rather than
       // captions. Everything else on the card is a consequence of which slot this is.
       titleLead
+      // …AND IT IS THE THIRD WAY TO CHANGE WHAT IS IN THE SLOT, beside the icon and (on an empty
+      // cell) the one link. The word HEAD is the most obvious thing on this card to click and it
+      // was inert; naming the slot and changing what fills it are the same gesture to a reader.
+      onTitle={() => on.pickItem(cell)}
+      titleTestId="gearplan-swap-slot"
       right={planned === null ? undefined : <TierValue planned={planned} />}
       testId={`gearplan-cell-${cell}`}
     >

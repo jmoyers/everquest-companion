@@ -97,6 +97,17 @@ export async function stepSeededCell(page: Page, item: string, tier: number): Pr
     )
   }
   note(`seeded cell reads: ${head.replace(/\s+/g, ' ').slice(0, 200)}`)
+
+  // THE SLOT TITLE IS A CONTROL. It is the most obvious word on the card and it was inert until
+  // the click targets were reassigned; a reader who clicks HEAD means "change what is in HEAD".
+  await page.click(`${HEAD} [data-testid="gearplan-swap-slot"]`, { timeout: 15_000 })
+  const opened = await until(async () => (await countOf(page, '[data-testid="gearplan-item-search"]')) === 1, 20_000)
+  check('clicking the SLOT NAME opens the picker for that slot', opened)
+  if (opened) {
+    const heading = await textOf(page, '[data-testid="gearplan-select"]')
+    check('…aimed at the slot whose name was clicked', heading.includes('Filling'), heading.slice(0, 80))
+    await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
+  }
 }
 
 /**
