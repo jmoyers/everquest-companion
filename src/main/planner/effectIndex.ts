@@ -450,6 +450,16 @@ export function buildPlannerDonors(file: ItemDbFile): PlannerDonor[] {
 export const PLANNER_SEARCH_LIMIT = 50
 
 /**
+ * The most any one search may return, however loudly the renderer asks.
+ *
+ * The page size above is a READING decision — fifty rows is a list you can scan. This is a
+ * SERVING one: a picker that asked for everything would draw a thousand un-virtualised rows into
+ * a popover. Two numbers because they answer to different pressures, and a "show more" control
+ * walks from one to the other.
+ */
+export const PLANNER_SEARCH_MAX = 400
+
+/**
  * Substring search over item names for the host picker.
  *
  * Ranking, in order: names that START with the query first (typing "ghoul" wants Ghoulbane before
@@ -458,17 +468,39 @@ export const PLANNER_SEARCH_LIMIT = 50
  *
  * Deliberately substring, not fuzzy (law 12): this picks a real item by the name the user is
  * typing; a fuzzy matcher would happily offer a different item that reads nearly the same.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * `slot` NARROWS BEFORE THE CAP, AND THAT ORDER IS THE WHOLE POINT OF THE PARAMETER.
+ *
+ * The gear plan board asks this question about ONE equipment cell, and it used to narrow the
+ * answer itself, in the renderer, AFTER the cap had already been applied here. That silently
+ * broke the promise the cap makes: fifty hits ranked across eleven thousand items can contain no
+ * rings at all, so a FINGER cell searching "ri" showed a nearly empty list while the corpus held
+ * hundreds of matching rings. Filtering here means the fifty that come back are fifty the caller
+ * can actually use.
+ *
+ * AND IT IS WHAT LETS AN EMPTY QUERY ANSWER. With no slot the haystack is the whole corpus and an
+ * unfiltered list says nothing, so an empty query still returns nothing — that is the rule the
+ * two-letter minimum exists for and it is unchanged for every caller that has no cell in mind.
+ * WITH a slot the set is closed and small enough to be an answer in itself: "what can go here",
+ * which is the question somebody who has just opened an empty cell actually has. Same reasoning
+ * the donor picker already ships with (`GearPlanDonorPicker`, difference 2).
  */
 export function searchPlannerItems(
   index: readonly PlannerItemRow[],
   query: string,
-  limit: number = PLANNER_SEARCH_LIMIT
+  limit: number = PLANNER_SEARCH_LIMIT,
+  slot?: EquipSlot
 ): PlannerItemHit[] {
   const q = query.trim().toLowerCase()
-  if (q === '') return []
+  // No slot and no query is the one combination with no honest answer — see the header.
+  if (q === '' && slot === undefined) return []
+  const pool = slot === undefined ? index : index.filter((row) => row.slots.includes(slot))
   const hits: { row: PlannerItemRow; rank: number }[] = []
-  for (const row of index) {
-    const at = row.searchKey.indexOf(q)
+  for (const row of pool) {
+    // An empty query matches everything the slot allows, all at rank 0 — the sort below then
+    // orders them by name length and alphabetically, which is a stable, readable "what fits here".
+    const at = q === '' ? 0 : row.searchKey.indexOf(q)
     if (at >= 0) hits.push({ row, rank: at === 0 ? 0 : 1 })
   }
   hits.sort(

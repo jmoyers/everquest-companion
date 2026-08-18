@@ -78,6 +78,22 @@ export interface InventoryHost {
   name: string
   /** the ` +N` merge tier the dump stated; absent means the name carried none, NOT tier 0 */
   tier?: number
+  /**
+   * THE DONOR ITEMS THIS ITEM'S EXALTATION SOCKETS HOLD, as the client names them, in file order.
+   *
+   * WHAT THE DUMP ACTUALLY STATES, and it is less than you would hope. A socketed exaltation is a
+   * CHILD row of its host spelled `<Donor> (Exaltation)` — so the client names the DONOR ITEM the
+   * effect was pulled out of, and never the effect itself. These are those names, decorations
+   * already split off, and nothing here interprets them.
+   *
+   * AND THE SUB-SLOT NUMBER IS NOT A SOCKET TYPE. The rows carry `-Slot7` and `-Slot10` in the
+   * committed dump, which map to nothing this app can justify: `InventoryEntry.slots` already
+   * states that the file does not distinguish a socket slot from a bag slot. So the ORDER is kept
+   * (it is the file's) and the number is dropped, because reading `Slot7` as "focus" would be
+   * inventing a fact (law 1). A reader that wants the socket resolves the DONOR through the donor
+   * corpus, which does state it.
+   */
+  exaltations: string[]
 }
 
 /**
@@ -87,6 +103,8 @@ export interface InventoryHost {
 export interface PlannerInventoryHost extends InventoryHost {
   /** `itemKey(name)` — joins the donor corpus and the host picker */
   key: string
+  /** `itemKey` of each name in `exaltations`, same order — main applies it, for the reason it applies the host's */
+  exaltationKeys: string[]
 }
 
 /** The answer to "what is this character wearing", with the dump it was read from. */
@@ -151,7 +169,18 @@ export function equippedHosts(dump: InventoryDump): InventoryHost[] {
     if (cell === undefined) continue
     filled.add(cell)
     const parsed = parseItemName(entry.name)
-    const host: InventoryHost = { slot: cell, name: parsed.base }
+    // The socketed exaltations are this row's CHILDREN, and only the ones the client marked. A
+    // host's children also include ordinary bag contents when the host is a container, which is
+    // exactly why the `(Exaltation)` marker is the test rather than "has children" (ownership.ts
+    // argues the same distinction for the same reason).
+    const host: InventoryHost = {
+      slot: cell,
+      name: parsed.base,
+      exaltations: entry.children
+        .map((child) => parseItemName(child.name))
+        .filter((c) => c.exaltation)
+        .map((c) => c.base)
+    }
     if (parsed.tier !== undefined) host.tier = parsed.tier
     out.push(host)
   }

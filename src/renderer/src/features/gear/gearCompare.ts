@@ -58,7 +58,8 @@
 import { GEAR_STAT_KEYS, type GearStatKey, type GearStats } from '../../../../shared/planner/gear'
 import type { PlannerInventoryHost } from '../../../../shared/planner/inventorySlots'
 import { cellsForSlot, planSlotLabel, type EquipSlot, type PlanSlotId } from '../../../../shared/planner/types'
-import { ITEM_UPGRADE_BASE, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
+import type { ItemUpgradeState } from '../../../../shared/itemUpgrade'
+import { wornState } from '../../../../shared/planner/gearPlan'
 import { outputAgeLabel } from '../../lib/outputFreshness'
 import { statText } from './gearColumns'
 
@@ -116,9 +117,14 @@ export function equippedCells(index: EquippedIndex, slots: readonly EquipSlot[])
  * this is a FLOOR on what the equipped item actually reads, which is the safe direction for a
  * comparison whose point is "is the candidate better": it can understate the thing you already own,
  * never overstate it.
+ *
+ * THE RULE ITSELF LIVES IN SHARED NOW (`planner/gearPlan.ts wornState`), because the gear plan board's
+ * totals need the same two lines and `gearPlanTotals.ts` is shared code that cannot import a
+ * renderer module. This stays as the name this file's callers already know it by, and delegates —
+ * one rule, two readers, and no second opinion about what a dump's silence means.
  */
 export function equippedState(host: PlannerInventoryHost): ItemUpgradeState {
-  return host.tier === undefined ? ITEM_UPGRADE_BASE : { full: host.tier, fraction: 0 }
+  return wornState(host.tier)
 }
 
 // ---- the numbers -------------------------------------------------------------------------------

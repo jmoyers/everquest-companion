@@ -475,9 +475,11 @@ export const IPC = {
   // renderer -> main: every effect the corpus states, one row per (item, effect). Returns
   // PlannerDonor[] (~1.5k rows, a few hundred KB) — fetched once and cached by the renderer.
   plannerDonors: 'planner:donors',
-  // renderer -> main: substring search over item NAMES for the Board's host picker. Arg: query
-  // (VALIDATED AT THE HANDLER — a non-string answers with no hits). Returns PlannerItemHit[],
-  // capped at PLANNER_SEARCH_LIMIT.
+  // renderer -> main: substring search over item NAMES for the Board's host picker. Args: query,
+  // and an OPTIONAL equip slot to narrow to (BOTH VALIDATED AT THE HANDLER — a non-string query or
+  // an unrecognised slot answers with no hits). Returns PlannerItemHit[], capped at
+  // PLANNER_SEARCH_LIMIT — and the slot narrows BEFORE that cap, which is the whole reason it is
+  // asked here rather than applied to the answer. An empty query answers only WITH a slot.
   plannerSearchItems: 'planner:searchItems',
   // renderer -> main: the active character's saved exaltation sets. Returns ExaltPlan[] ([] when
   // the character has none — the key is optional and readers default, D4).
@@ -540,6 +542,19 @@ export const IPC = {
   // the list and the two facts about it must move together or not at all.
   wishlistGet: 'wishlist:get',
   wishlistSet: 'wishlist:set',
+
+  // ---- the gear plan board ----
+  // The active character's GEAR PLAN BOARD — one item per equipment cell at its own planned `+N`,
+  // with that item's planned exaltations in its sockets (shared/planner/gearPlan.ts). Read/write
+  // pair over `ProgressState.gearPlan`, the same arrangement as the three documents above: the
+  // renderer is UNTRUSTED, so a written board is re-validated cell by cell against the same closed
+  // `PLAN_SLOTS` allowlist, socket by socket against the same closed four, and clamped to states
+  // the game's item window can be in (src/main/planner/validate.ts sanitizeGearPlan) before a byte
+  // of it reaches the store — and the same validator runs on the way out, so the round trip is a
+  // fixed point. WHOLE-DOCUMENT and SINGULAR: one board per character, so there is no id to select
+  // by, and a cell's item and its sockets must move together or the plan disagrees with itself.
+  gearPlanGet: 'gearplan:get',
+  gearPlanSet: 'gearplan:set',
 
   // ---- character sheet (JOS-45) ----
   // renderer -> main: the armory grid + the gear sum, built from the active character's newest

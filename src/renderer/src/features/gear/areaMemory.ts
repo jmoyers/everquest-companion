@@ -60,8 +60,13 @@
 
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
+import { isGearStatKey, type GearStatKey } from '../../../../shared/planner/gear'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
 import { WEAPON_PICKS, type WeaponPick } from '../../../../shared/planner/weaponType'
+// The gear PLAN tab is part of the gear area, so its remembered form belongs in this table beside
+// the other four tabs'. The type comes from that tab's PURE signals file, which imports nothing but
+// `shared` — so this file stays a fold over plain data and its no-React/no-storage rule holds.
+import { NO_ROW_FILTER, type GearPlanRowFilter } from '../gearplan/gearPlanSignals'
 import { PICKABLE_COLUMNS } from './gearColumns'
 import {
   DEFAULT_GEAR_FILTERS,
@@ -108,6 +113,24 @@ export const AREA_FORM_TIER = {
   'eq.planner.item': 'session',
   'eq.planner.open': 'session',
   'eq.planner.search': 'session',
+  // ---- the Gear plan tab ----
+  /**
+   * which rows the two pickers may OFFER - owned / my classes / wishlisted, all shipping OFF.
+   *
+   * Era is deliberately absent: that toggle is `plannerData.useEraOnly`, one shared
+   * `eq.planner.era` key already governing two other tabs, and a second opinion about what era
+   * means is worth less than the consistency of having one.
+   */
+  'eq.gearplan.filters': 'restart',
+  /**
+   * which STATS the item picker ranks by - a closed-vocabulary pick, so restart like the rest.
+   *
+   * The `Beats worn` toggle beside it is deliberately NOT remembered. It is a comparison against
+   * the item worn in one cell, and an app that started up already hiding everything you own would
+   * be answering a question you asked days ago about gear you may have since replaced. The lens
+   * persists; the verdict does not.
+   */
+  'eq.gearplan.stats': 'restart',
   // ---- the Wish list tab ----
   'eq.wishlist.search': 'session',
   // ---- the Character tab ----
@@ -224,6 +247,37 @@ export function sanitizeGearForm(raw: unknown): GearFormMemory {
     eraOnly: sanitizeFlag(o.eraOnly, DEFAULT_GEAR_FORM.eraOnly),
     ownedOnly: sanitizeFlag(o.ownedOnly, DEFAULT_GEAR_FORM.ownedOnly)
   }
+}
+
+/**
+ * The stored gear-plan pool filter, field by field for `sanitizeGearForm`'s reason: a store written
+ * before a fourth filter existed keeps its three siblings instead of being thrown away.
+ *
+ * ALL THREE FALL BACK TO OFF, which is the opposite of the gear form's era field and deliberate:
+ * these narrow a PLAN's pool, and a plan is allowed to be aspirational. An unreadable value must
+ * therefore hide nothing, because hiding rows nobody asked to hide is the one failure this whole
+ * control was built to avoid.
+ */
+export function sanitizeGearPlanFilter(raw: unknown): GearPlanRowFilter {
+  const o = asRecord(raw)
+  if (o === null) return NO_ROW_FILTER
+  return {
+    ownedOnly: sanitizeFlag(o.ownedOnly, NO_ROW_FILTER.ownedOnly),
+    usableOnly: sanitizeFlag(o.usableOnly, NO_ROW_FILTER.usableOnly),
+    wishedOnly: sanitizeFlag(o.wishedOnly, NO_ROW_FILTER.wishedOnly)
+  }
+}
+
+/**
+ * The stored stat pick, as a list of keys the vector actually has.
+ *
+ * EVERY ENTRY IS CHECKED INDIVIDUALLY and unknown ones are DROPPED rather than failing the whole
+ * list — the `sanitizeGearSort` treatment, for the same reason: a build that renamed one stat key
+ * should cost you that one chip, not every chip you had picked.
+ */
+export function sanitizeStatPick(raw: unknown): GearStatKey[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((k): k is GearStatKey => typeof k === 'string' && isGearStatKey(k))
 }
 
 /** Every axis the table can sort on: the item column, plus every column the picker can draw. */

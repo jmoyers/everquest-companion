@@ -21,6 +21,7 @@
 import { isClassAbbr, MAX_COMBO_SLOTS, type ClassAbbr } from '../../shared/classCombo'
 import { normalizeUpgradeState } from '../../shared/itemUpgrade'
 import type { GearAssignment, GearSet } from '../../shared/planner/gearSet'
+import type { GearPlan, GearPlanCell, GearPlanSocket } from '../../shared/planner/gearPlan'
 import { MAX_WISHES, type WishEntry, type WishList } from '../../shared/planner/wishlist'
 import {
   PLAN_SLOTS,
@@ -332,4 +333,76 @@ export function sanitizeWishlist(raw: unknown, now: number = Date.now()): WishLi
   // no change in meaning — and this function is the READ path too.
   if (raw.seededFromPlans === true) list.seededFromPlans = true
   return list
+}
+
+// ---- the gear plan board ------------------------------------------------------------------------
+//
+// THE SAME DOOR AND THE SAME DISCIPLINE, A FOURTH TIME. `IPC.gearPlanSet` runs this on the way IN
+// because the renderer is not the authority on what may be stored, and `storePlans.getGearPlan`
+// runs it on the way OUT so a hand-edited progress file cannot hand the renderer a shape it will
+// crash on. Both directions ⇒ one definition ⇒ the round trip is a fixed point
+// (tests/gearPlanStore.test.mts).
+//
+// IT REUSES THE THREE DOORS ABOVE RATHER THAN OPENING A FOURTH VOCABULARY. `SLOT_SET` is the same
+// twenty-three-cell allowlist a gear set and an exaltation plan are checked against, `SOCKET_SET`
+// the same closed four, and `upgradeState` the same clamp through phase 0's own normalizer. A
+// board is the two documents' shapes in one cell, so it is validated by their two validators'
+// parts — a new allowlist here would be a second opinion about how many ears a character has.
+//
+// IT STRIPS RATHER THAN REJECTS: an unknown cell key, a fifth socket type, a socket naming no
+// donor, a cell naming no item — each is dropped and everything else is kept. Refusing the whole
+// board over one bad field would lose a user's real work to a typo in a file they never edited.
+//
+// AND IT TOUCHES NOTHING ELSE. `sanitizeGearSets` and `sanitizeExaltPlans` above are unchanged and
+// uncalled from here: the two documents they guard are retired from the UI and KEPT ON DISK on an
+// owner promise, and this validator neither reads nor rewrites a byte of either.
+
+/** One planned exaltation, or `undefined` when it names no effect or no donor to farm it from. */
+function gearPlanSocket(v: unknown): GearPlanSocket | undefined {
+  if (!isRecord(v)) return undefined
+  const effect = text(v.effect, MAX_NAME_CHARS)
+  const donorKey = text(v.donorKey, MAX_ID_CHARS)
+  if (!effect || !donorKey) return undefined
+  return { effect, donorKey, donorName: text(v.donorName, MAX_NAME_CHARS) ?? donorKey }
+}
+
+/** A cell's sockets, filtered to the closed four. A socket the board cannot draw is not stored. */
+function gearPlanSockets(v: unknown): Partial<Record<SocketType, GearPlanSocket>> {
+  const out: Partial<Record<SocketType, GearPlanSocket>> = {}
+  if (!isRecord(v)) return out
+  for (const [name, value] of Object.entries(v)) {
+    if (!SOCKET_SET.has(name)) continue
+    const planned = gearPlanSocket(value)
+    if (planned) out[name as SocketType] = planned
+  }
+  return out
+}
+
+/** One planned cell, or `undefined` when it names no item — a cell without an item is not a plan. */
+function gearPlanCell(v: unknown): GearPlanCell | undefined {
+  if (!isRecord(v)) return undefined
+  const key = text(v.key, MAX_ID_CHARS)
+  if (!key) return undefined
+  return {
+    key,
+    name: text(v.name, MAX_NAME_CHARS) ?? key,
+    state: upgradeState(v.state),
+    sockets: gearPlanSockets(v.sockets)
+  }
+}
+
+/**
+ * Whatever the renderer (or the store file) offered → the board this app will actually keep.
+ * Never throws, never rejects the document; an unreadable value is an empty board, which is what
+ * a character who has never opened the tab has anyway.
+ */
+export function sanitizeGearPlan(raw: unknown, now: number = Date.now()): GearPlan {
+  if (!isRecord(raw)) return { cells: {}, updatedAt: now }
+  const cells: Partial<Record<PlanSlotId, GearPlanCell>> = {}
+  for (const [name, value] of Object.entries(isRecord(raw.cells) ? raw.cells : {})) {
+    if (!SLOT_SET.has(name)) continue
+    const planned = gearPlanCell(value)
+    if (planned) cells[name as PlanSlotId] = planned
+  }
+  return { cells, updatedAt: stamp(raw.updatedAt, now) }
 }

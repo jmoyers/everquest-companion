@@ -208,6 +208,22 @@ export interface OutputFileLineProps {
    */
   updatedAt?: string
   /**
+   * DROP THE INSTRUCTIONS AND KEEP THE CLOCK - for a surface that teaches the command somewhere
+   * else.
+   *
+   * This is a deliberate narrowing of the three-things-and-stop contract in the header, and it is
+   * allowed for exactly one reason: the three things are not equally movable. What to type, why,
+   * and how to type it are all TEACHING, and teaching has a better home than a permanent row -
+   * the Plan tab puts them in its empty-state tutorial and its `?` card. How old the dump is is
+   * not teaching. It is ambient state about the data on screen right now, it is most load-bearing
+   * exactly when a tutorial is not showing (a full board, a month-old dump), and it has nowhere
+   * else to go. So the row keeps the fact that cannot move and sheds the ones that can.
+   *
+   * A surface that sets this owes the player the command SOMEWHERE, and the reason JOS-42 put it
+   * here in the first place still stands everywhere it is not set.
+   */
+  ageOnly?: boolean
+  /**
    * How to type the command so it captures everything, one short imperative per step. The
    * registry owns them (`OutputKindDef.steps`); an empty list renders no toggle at all.
    */
@@ -231,6 +247,69 @@ export interface OutputFileLineProps {
   testId?: string
 }
 
+/**
+ * THE TEACHING HALF OF THE ROW - what to type, why, and the How toggle.
+ *
+ * Its own component so `ageOnly` is ONE branch rather than three, which is what keeps the row's
+ * function under the complexity ceiling. The grouping is honest as well as convenient: these three
+ * are exactly the parts that can live somewhere else, and `ageOnly` is the surface saying they do.
+ */
+function Instructions({
+  command,
+  why,
+  chrome,
+  steps,
+  showSteps,
+  onSteps,
+  hidden,
+  testId
+}: {
+  command: string
+  why: string
+  chrome: LineChrome
+  steps: readonly string[]
+  showSteps: boolean
+  onSteps: () => void
+  hidden: boolean
+  testId?: string
+}): JSX.Element | null {
+  if (hidden) return null
+  return (
+    <>
+      <Typography
+        variant={chrome.commandVariant}
+        sx={chrome.command}
+        // On the quiet line the clause is one hover away rather than one column over — the row is
+        // a caption in a layout gap, and a second column of prose is the loudness the ticket is
+        // about. Nothing is lost: this is the same one clause, said on demand.
+        title={chrome.whyOnRow ? undefined : why}
+        data-testid={sub(testId, 'command')}
+      >
+        {command}
+      </Typography>
+      {chrome.whyOnRow && (
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0, flexShrink: 1 }}>
+          {why}
+        </Typography>
+      )}
+      <Box sx={{ flexGrow: 1, minWidth: 8 }} />
+      {/* The steps toggle sits BEFORE the age and never shrinks: it is a control, and the
+          why-clause remains the one group allowed to give up room (the compact-bar contract). */}
+      {steps.length > 0 && (
+        <Button
+          size="small"
+          variant="text"
+          onClick={onSteps}
+          data-testid={sub(testId, 'steps-toggle')}
+          sx={chrome.toggle}
+        >
+          {showSteps ? 'Hide steps' : 'How'}
+        </Button>
+      )}
+    </>
+  )
+}
+
 export default function OutputFileLine({
   command,
   why,
@@ -238,6 +317,7 @@ export default function OutputFileLine({
   steps = [],
   loadedAt,
   quiet = false,
+  ageOnly = false,
   testId
 }: OutputFileLineProps): JSX.Element {
   const [now, setNow] = useState(() => Date.now())
@@ -262,36 +342,16 @@ export default function OutputFileLine({
   return (
     <Paper variant="outlined" data-testid={testId} sx={chrome.root}>
       <Stack direction="row" spacing={1} alignItems="baseline" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
-        <Typography
-          variant={chrome.commandVariant}
-          sx={chrome.command}
-          // On the quiet line the clause is one hover away rather than one column over — the row
-          // is a caption in a layout gap, and a second column of prose is the loudness the ticket
-          // is about. Nothing is lost: this is the same one clause, said on demand.
-          title={chrome.whyOnRow ? undefined : why}
-          data-testid={sub(testId, 'command')}
-        >
-          {command}
-        </Typography>
-        {chrome.whyOnRow && (
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0, flexShrink: 1 }}>
-            {why}
-          </Typography>
-        )}
-        <Box sx={{ flexGrow: 1, minWidth: 8 }} />
-        {/* The steps toggle sits BEFORE the age and never shrinks: it is a control, and the
-            why-clause remains the one group allowed to give up room (the compact-bar contract). */}
-        {steps.length > 0 && (
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => setShowSteps((v) => !v)}
-            data-testid={sub(testId, 'steps-toggle')}
-            sx={chrome.toggle}
-          >
-            {showSteps ? 'Hide steps' : 'How'}
-          </Button>
-        )}
+        <Instructions
+          command={command}
+          why={why}
+          chrome={chrome}
+          steps={steps}
+          showSteps={showSteps}
+          onSteps={() => setShowSteps((v) => !v)}
+          hidden={ageOnly}
+          testId={testId}
+        />
         {/* The exact clock time is one hover away; the ambient text stays coarse (formatDate's
             own contract). This is the ONE place a tooltip is warranted here — it states the
             precise value of the number beside it, which is what makes the coarse one safe. */}

@@ -16,7 +16,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { EQUIP_LOCATIONS, walkEntries } from '../src/shared/outputs/inventory'
+import { EQUIP_LOCATIONS, splitLocationPath, walkEntries } from '../src/shared/outputs/inventory'
 import { parseInventoryDump } from '../src/main/outputs/inventoryParse'
 import { ANY_CELL_LOCATIONS, SLOT_OF_LOCATION, equippedHosts } from '../src/shared/planner/inventorySlots'
 import {
@@ -74,6 +74,45 @@ test('the real dump yields one host per CELL, top-level and non-empty only', () 
     assert.ok(!h.name.endsWith('(Exaltation)'), 'a socketed exaltation is not the item being worn')
     assert.ok(!/ \+\d+$/.test(h.name), 'the merge tier is split off into `tier`, never left in the name')
   }
+})
+
+test('a host carries the DONOR NAMES the dump printed in its sockets, and nothing more', () => {
+  // WHAT THE FILE ACTUALLY SAYS. A socketed exaltation is a `-Slot<n>` CHILD whose name is the
+  // DONOR ITEM the effect was extracted from, marked `(Exaltation)` — never the effect. So this is
+  // all a host may carry, and turning a donor into an effect is the corpus's job downstream
+  // (`gearPlanTotals.equippedRead`), done conservatively and counted where it cannot be done.
+  const socketed = hosts.filter((h) => h.exaltations.length > 0)
+  assert.ok(socketed.length > 0, 'the committed character has exaltations in worn gear')
+
+  for (const h of socketed) {
+    for (const donor of h.exaltations) {
+      assert.ok(donor.length > 0)
+      assert.ok(!donor.includes('(Exaltation)'), 'the marker is stripped — the NAME is the payload')
+      assert.ok(!/ \+\d+$/.test(donor), 'and so is any merge tier, exactly as for the host itself')
+    }
+    // A host never carries more donors than the game has sockets (R1's four).
+    assert.ok(h.exaltations.length <= 4, `${h.slot} claims ${String(h.exaltations.length)} sockets`)
+  }
+
+  // THE SUB-SLOT NUMBER IS DELIBERATELY DROPPED, not lost. The children print as `Face-Slot7`,
+  // `Ear-Slot10` and so on, and nothing in the file or the wiki maps those integers onto
+  // focus/click/worn/proc — `InventoryEntry.slots` says the file does not distinguish them. Reading
+  // one as a socket type would be inventing a fact (law 1), so the order is all that survives.
+  const marked = [...walkEntries(dump.items)].filter(
+    (e) =>
+      !e.empty &&
+      e.path.length === 1 &&
+      e.name.includes('(Exaltation)') &&
+      EQUIP_LOCATIONS.includes(splitLocationPath(e.location).base)
+  )
+  assert.ok(marked.length > 0, 'the fixture is expected to print exaltation children')
+  assert.equal(
+    hosts.reduce((n, h) => n + h.exaltations.length, 0),
+    marked.length,
+    'every marked child of a worn row reaches its host, and no host invents one'
+  )
+  // The numbers themselves are real and various — which is exactly why they are not a socket map.
+  assert.ok(new Set(marked.map((e) => e.path[0])).size > 0)
 })
 
 test('BOTH of a paired slot fill, in file order — the dump never says which ear is which', () => {

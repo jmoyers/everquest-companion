@@ -23,10 +23,16 @@
 // loadout. Whole-array writes — a list is small (tens of entries at most) and the renderer edits
 // it as one document.
 
-import { sanitizeExaltPlans, sanitizeGearSets, sanitizeWishlist } from './planner/validate'
+import {
+  sanitizeExaltPlans,
+  sanitizeGearSets,
+  sanitizeGearPlan,
+  sanitizeWishlist
+} from './planner/validate'
 import { getProgress, setProgress } from './store'
 import type { ExaltPlan } from '../shared/planner/types'
 import type { GearSet } from '../shared/planner/gearSet'
+import type { GearPlan } from '../shared/planner/gearPlan'
 import type { WishList } from '../shared/planner/wishlist'
 
 /** This character's saved exaltation sets ([] when it has none, or the stored value is unusable). */
@@ -70,5 +76,25 @@ export function getWishlist(charId: string): WishList {
 export function setWishlist(charId: string, list: WishList): WishList {
   const next = sanitizeWishlist(list)
   setProgress(charId, { ...getProgress(charId), wishlist: next })
+  return next
+}
+
+/**
+ * This character's GEAR PLAN BOARD — an empty board when it has none, or when the stored value is
+ * unusable. A FOURTH document rather than a field on any of the three above; the store-separation
+ * argument is stated once, at the key, in shared/progressState.ts.
+ *
+ * WHOLE-DOCUMENT, and SINGULAR where the two above are lists: there is one board per character, so
+ * there is no id to select by and no list to splice. The renderer edits the whole thing and writes
+ * it back debounced, exactly as the wish list does.
+ */
+export function getGearPlan(charId: string): GearPlan {
+  return sanitizeGearPlan(getProgress(charId).gearPlan)
+}
+
+/** Replace the whole gear plan board for a character. Returns what was actually stored. */
+export function setGearPlan(charId: string, gearPlan: GearPlan): GearPlan {
+  const next = sanitizeGearPlan(gearPlan)
+  setProgress(charId, { ...getProgress(charId), gearPlan: next })
   return next
 }

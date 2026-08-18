@@ -17,10 +17,11 @@
 
 import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { ExaltPlan, PlannerDonor, PlannerItemHit } from '../shared/planner/types'
+import type { EquipSlot, ExaltPlan, PlannerDonor, PlannerItemHit } from '../shared/planner/types'
 import type { PlannerInventory } from '../shared/planner/inventorySlots'
 import type { GearIndexPayload } from '../shared/planner/gear'
 import type { GearSet } from '../shared/planner/gearSet'
+import type { GearPlan } from '../shared/planner/gearPlan'
 import type { OwnershipPayload } from '../shared/planner/ownership'
 import type { WishList } from '../shared/planner/wishlist'
 
@@ -34,8 +35,9 @@ export const plannerApi = {
 
   /** Substring search over item NAMES for the Board's host picker (prefix hits first, then the
    *  shortest name; capped at 50). An empty query resolves to no hits. */
-  plannerSearchItems: (query: string): Promise<PlannerItemHit[]> =>
-    ipcRenderer.invoke(IPC.plannerSearchItems, query),
+  /** `slot` narrows to one equipment slot BEFORE the cap; `limit` is the "show more" page size. */
+  plannerSearchItems: (query: string, slot?: EquipSlot, limit?: number): Promise<PlannerItemHit[]> =>
+    ipcRenderer.invoke(IPC.plannerSearchItems, query, slot, limit),
 
   /** What the active character is WEARING, from their newest `/outputfile inventory` dump —
    *  `null` when no dump exists. Re-ask on `onInventoryReload` and the tab fills itself the
@@ -91,5 +93,18 @@ export const plannerApi = {
   /** Replace the whole wish list for the active character. Main re-validates every entry — the
    *  item key, the two kinds, the closed socket allowlist — and silently drops what does not fit.
    *  Whole-document, because the list and the two facts about it must move together. */
-  setWishlist: (list: WishList): Promise<void> => ipcRenderer.invoke(IPC.wishlistSet, list)
+  setWishlist: (list: WishList): Promise<void> => ipcRenderer.invoke(IPC.wishlistSet, list),
+
+  // ---- the gear plan board ----
+
+  /** The active character's GEAR PLAN BOARD — the empty board when it has none. One item per
+   *  equipment cell at its own planned `+N`, with that item's planned exaltations in its
+   *  sockets. Singular: one board per character, so there is no id to ask for. */
+  getGearPlan: (): Promise<GearPlan> => ipcRenderer.invoke(IPC.gearPlanGet),
+
+  /** Replace the whole gear plan board for the active character. Main re-validates every cell
+   *  against the same closed cell allowlist a gear set is checked against, every socket against
+   *  the closed four, and clamps each plus-state to a state the game's item window can be in,
+   *  silently dropping what does not fit. */
+  setGearPlan: (gearPlan: GearPlan): Promise<void> => ipcRenderer.invoke(IPC.gearPlanSet, gearPlan)
 }
