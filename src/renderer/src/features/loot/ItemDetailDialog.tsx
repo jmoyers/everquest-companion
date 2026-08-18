@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useMemo, useState } from 'react'
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   Dialog,
@@ -432,8 +433,20 @@ export function ItemDetailDialog({
   item,
   events,
   stats,
-  isQuestItem
-}: ItemDetailProps & { open: boolean; onClose: () => void }): JSX.Element {
+  isQuestItem,
+  onOpenLoot
+}: ItemDetailProps & {
+  open: boolean
+  onClose: () => void
+  /**
+   * The route OUT of the dialog chrome and into the Loot tab's own pane on this item (user ask,
+   * 2026-08-17) — the same drill the Gear and Wishlist names deep-link to, with the breadcrumb,
+   * the timeslice and the reconcile counts this dialog deliberately does not carry. Optional
+   * because the dialog's host must have the router in hand (the Mobs tab does); absent draws
+   * nothing rather than a dead button.
+   */
+  onOpenLoot?: (item: string) => void
+}): JSX.Element {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ pr: 6 }}>
@@ -442,6 +455,19 @@ export function ItemDetailDialog({
             {item}
           </Box>
           {isQuestItem && <Chip size="small" color="primary" variant="outlined" label="Plane of Sky" />}
+          {onOpenLoot !== undefined && (
+            <Button
+              size="small"
+              onClick={() => {
+                // Close first: navigation unmounts the host view, and a dialog left "open" on an
+                // unmounting page is a transition the user never asked to watch.
+                onClose()
+                onOpenLoot(item)
+              }}
+            >
+              Open in Loot
+            </Button>
+          )}
         </Stack>
         <IconButton onClick={onClose} sx={{ position: 'absolute', right: 8, top: 8 }}>
           <CloseIcon />

@@ -51,6 +51,8 @@ export interface GearViewRow extends GearRow {
   dropMobs: string[]
   dropZones: string[]
   dropLevels: string[]
+  /** `dropMobs[i]`'s catalog page title, `''` when the witness stated none — the link's pin. */
+  dropPages: string[]
 }
 
 // ---- the fetch ----------------------------------------------------------------------
@@ -67,21 +69,24 @@ function effectHaystack(row: GearRow): string {
  * mob B's level would be a fabricated claim. `''` marks a mob whose level the catalog never stated
  * (absent is not a value). Zones dedupe across all sources — a zone is a place, not a per-mob fact.
  */
-function dropDetails(row: GearRow): Pick<GearViewRow, 'dropMobs' | 'dropZones' | 'dropLevels'> {
+function dropDetails(row: GearRow): Pick<GearViewRow, 'dropMobs' | 'dropZones' | 'dropLevels' | 'dropPages'> {
   const dropMobs: string[] = []
   const dropLevels: string[] = []
   const dropZones: string[] = []
+  const dropPages: string[] = []
   for (const s of mergeItemSources(sourcesFor(row.key), row.wikiSources)) {
     const mob = s.mob.trim()
     if (mob === '' || dropMobs.includes(mob)) continue
     dropMobs.push(mob)
     dropLevels.push(s.levelText?.trim() ?? '')
+    // The catalog witness carries its page title; a `dropsfrom`-only one doesn't (dropLinks.ts).
+    dropPages.push(s.mobPage ?? '')
     for (const zone of s.zones) {
       const z = zone.trim()
       if (z !== '' && !dropZones.includes(z)) dropZones.push(z)
     }
   }
-  return { dropMobs, dropZones, dropLevels }
+  return { dropMobs, dropZones, dropLevels, dropPages }
 }
 
 function statHaystack(row: GearRow): string {

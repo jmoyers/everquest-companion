@@ -153,6 +153,14 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
         text: 'The item drill-down carries the wish-list button, so an item you are reading about can be added to the route without going back to the Gear tab.'
       },
       {
+        kind: 'new',
+        text: 'The drop columns are doors now: a Gear row’s Zone opens that zone’s map on the Maps tab, and its Mob opens the mob’s own page. A zone the map table cannot place stays plain text rather than linking to a guess.'
+      },
+      {
+        kind: 'new',
+        text: 'The item dialog a mob’s drop list opens carries an Open in Loot button, so a drop you are reading about can jump to that item’s own page on the Loot tab - history, rates and inventory counts included.'
+      },
+      {
         kind: 'changed',
         text: 'Shield is a pick in the Weapon type dropdown rather than its own toggle, and it combines with the other picks - one-handers or shields is one question now.'
       },

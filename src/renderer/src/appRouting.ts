@@ -11,6 +11,10 @@ import { VIEW_LABELS, type View } from './appViews'
 import { afterBack, afterLink, originTop, type NavOrigin } from './navOrigin'
 import type { CombatFocus } from './features/combat/combatFocus'
 import type { MobTarget } from './features/mobs/mobTarget'
+import type { ZoneShort } from '@shared/maps'
+// The Maps tab's zone selection is persisted machine-local state with pin semantics (JOS-97);
+// `openMapZone` writes a pick through the same pure rules the toolbar uses. See the opener's doc.
+import { onPick, saveZoneSelection } from './features/maps/zoneFollow'
 
 /**
  * THE ONE BACK CONTRACT (JOS-43). Every cross-view drill receiver takes this same object — never
@@ -146,6 +150,16 @@ export interface AppRouting {
    */
   openLeveling: (level?: number) => void
   clearLevelFocus: () => void
+  /**
+   * The Maps tab, pointed at a zone another surface named (the Gear tab's Zone cells, user ask
+   * 2026-08-17). UNLIKE the openers above there is no focus/nonce pair to hand `MapsView`: which
+   * zone the viewer shows is already persisted machine-local state with pin semantics
+   * (features/maps/zoneFollow.ts, JOS-97), and a cross-view zone link IS a pick — so this writes
+   * the pick through the same pure rule the toolbar's selector uses and switches tabs; the
+   * remount reads it back. Unanchored on purpose: Maps is a tab with no drill and no Back button,
+   * so parking an origin would promise a return nothing on that surface can deliver.
+   */
+  openMapZone: (zone: ZoneShort) => void
 }
 
 export function useAppRouting(view: View, setView: (v: View) => void): AppRouting {
@@ -211,6 +225,15 @@ export function useAppRouting(view: View, setView: (v: View) => void): AppRoutin
     },
     [linkTo]
   )
+  const openMapZone = useCallback(
+    (zone: ZoneShort) => {
+      // Persist first, then navigate: App mounts one view at a time, so the Maps remount's
+      // `loadZoneSelection` is what reads this back — the ordering is the whole mechanism.
+      saveZoneSelection(onPick(zone))
+      linkTo('maps', false)
+    },
+    [linkTo]
+  )
   return {
     selectView,
     nav,
@@ -233,7 +256,8 @@ export function useAppRouting(view: View, setView: (v: View) => void): AppRoutin
     lootItem,
     lootNonce,
     openLoot,
-    clearLootFocus: () => setLootItem(null)
+    clearLootFocus: () => setLootItem(null),
+    openMapZone
   }
 }
 

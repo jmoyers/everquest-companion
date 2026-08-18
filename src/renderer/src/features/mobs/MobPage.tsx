@@ -352,7 +352,16 @@ function WikiSourceLine({ wikiUrl }: { wikiUrl?: string }): JSX.Element | null {
  * identity than this page's name would: the raid roster matches its targets article-insensitively
  * (bossStatus.ts), so it pins the record it matched, exactly as `entry` pins the identity half.
  */
-export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }): JSX.Element {
+export function MobPage({
+  target,
+  kills,
+  onOpenLoot
+}: {
+  target: MobTarget
+  kills: KillMap
+  /** the drop dialog's route onward to the Loot tab (user ask, 2026-08-17); absent, no button */
+  onOpenLoot?: (item: string) => void
+}): JSX.Element {
   const { mob, seed, entry, con } = target
   const kill = target.kill ?? killsFor(kills, mob)
   const { data, loading } = useMobKnowledge(mob, seed, entry)
@@ -396,7 +405,12 @@ export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }
 
       {/* One hop deep: the item's own dialog. Mounted only on demand (see ItemDrillDown). */}
       {drill && (
-        <ItemDrillDown item={drill.item} family={drill.family} onClose={() => setDrill(null)} />
+        <ItemDrillDown
+          item={drill.item}
+          family={drill.family}
+          onClose={() => setDrill(null)}
+          onOpenLoot={onOpenLoot}
+        />
       )}
     </>
   )

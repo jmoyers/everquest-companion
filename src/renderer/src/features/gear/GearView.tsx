@@ -125,6 +125,8 @@
 import { type JSX, useCallback, useDeferredValue, useMemo, useRef } from 'react'
 import { Box, Chip, Stack, Typography } from '@mui/material'
 import { ITEM_UPGRADE_BASE, type ItemUpgradeState } from '@shared/itemUpgrade'
+import type { MobTarget } from '../mobs/mobTarget'
+import type { ZoneShort } from '@shared/maps'
 import OutputKindLine from '../../components/OutputKindLine'
 import { useWindowedRows } from '../../lib/useWindowedRows'
 import GearFilterBar from './GearFilterBar'
@@ -442,9 +444,40 @@ export interface GearViewProps {
    * answers "what does the whole corpus read at +N", the drill answers "and what about this one".
    */
   onOpenLoot?: (item: string) => void
+  /** The Mob cell's door (App's `openMob`) — GearTable states the contract; absent means text. */
+  onOpenMob?: (t: MobTarget) => void
+  /** The Zone cell's door (App's `openMapZone`) — same rule, refusal argument in dropLinks.ts. */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
-export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Element {
+/**
+ * THE BAR'S OWN `GearFilters`, REBUILT FROM THE STORED FORM.
+ *
+ * `GearFilters` has seven fields and only five of them belong to this key: `text` and `classes`
+ * are remembered separately (different tier, and a provenance respectively) and are merged in
+ * by the view, exactly as they always were. Keeping the bar's prop a whole `GearFilters` is what
+ * lets `GearFilterBar` stay unchanged — it writes back a whole object and `setOwn` projects the
+ * five fields worth storing out of it, which is also what stops the deferred text and the
+ * detected trio from being written into a key that would only overwrite them on the next render.
+ *
+ * (A hook of its own since 2026-08-17, purely for GearView's 100-code-line ceiling — the drop
+ * trio's door props tipped it over; every rule above is verbatim from where it stood.)
+ */
+function useOwnFilters(
+  form: GearFormMemory,
+  setForm: (next: GearFormMemory) => void
+): { own: GearFilters; setOwn: (f: GearFilters) => void } {
+  const own = useMemo<GearFilters>(() => ({ ...DEFAULT_GEAR_FILTERS, ...form }), [form])
+  const setOwn = useCallback(
+    ({ slots, weaponTypes, effect, eraOnly, ownedOnly, ignoreHaste }: GearFilters) => {
+      setForm({ slots, weaponTypes, effect, eraOnly, ownedOnly, ignoreHaste })
+    },
+    [setForm]
+  )
+  return { own, setOwn }
+}
+
+export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearViewProps = {}): JSX.Element {
   const { rows, ready, refused, scrapedAt } = useGearIndex()
   const classes = useGearClasses()
   const upgrade = useUpgradeState()
@@ -462,23 +495,9 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
   const [sort, setSort] = useRemembered<GearSort>('eq.gear.sort', sanitizeGearSort)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  /**
-   * THE BAR'S OWN `GearFilters`, REBUILT FROM THE STORED FORM.
-   *
-   * `GearFilters` has seven fields and only five of them belong to this key: `text` and `classes`
-   * are remembered separately (different tier, and a provenance respectively) and are merged in
-   * below, exactly as they always were. Keeping the bar's prop a whole `GearFilters` is what lets
-   * `GearFilterBar` stay unchanged — it writes back a whole object and `setOwn` projects the five
-   * fields worth storing out of it, which is also what stops the deferred text and the detected
-   * trio from being written into a key that would only overwrite them on the next render.
-   */
-  const own = useMemo<GearFilters>(() => ({ ...DEFAULT_GEAR_FILTERS, ...form }), [form])
-  const setOwn = useCallback(
-    ({ slots, weaponTypes, effect, eraOnly, ownedOnly, ignoreHaste }: GearFilters) => {
-      setForm({ slots, weaponTypes, effect, eraOnly, ownedOnly, ignoreHaste })
-    },
-    [setForm]
-  )
+  // The bar's own five stored fields — rebuilt and projected by `useOwnFilters` (its header
+  // carries the argument, verbatim from when the pair lived inline here).
+  const { own, setOwn } = useOwnFilters(form, setForm)
 
   // Both deferrals, and nothing else deferred: the two controls whose every movement re-derives
   // six thousand rows (see the header).
@@ -569,6 +588,10 @@ export default function GearView({ onOpenLoot }: GearViewProps = {}): JSX.Elemen
           ownedHint={hint}
           onSort={onSort}
           onOpenLoot={onOpenLoot}
+          // The drop trio's doors (user ask, 2026-08-17): a Mob cell opens the mob's page, a Zone
+          // cell opens that zone's map. Threaded from App's router like `onOpenLoot` above.
+          onOpenMob={onOpenMob}
+          onOpenMapZone={onOpenMapZone}
           // JOS-335, JOS-343 — the per-row wish gesture (add, and click again to remove) and the
           // added state it reads. UNDEFINED until the document has loaded (`useGearWishes`), which
           // is what draws no control at all rather than one lying about what is already on the list.

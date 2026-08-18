@@ -265,12 +265,15 @@ function MobDrill({
   target,
   kills,
   nav,
-  onClose
+  onClose,
+  onOpenLoot
 }: {
   target: MobTarget
   kills: KillMap
   nav?: NavBack
   onClose: () => void
+  /** the drop dialog's route to the Loot tab (user ask, 2026-08-17) — MobPage passes it through */
+  onOpenLoot?: (item: string) => void
 }): JSX.Element {
   // ONE expression, read by TWO things (JOS-201): the button below, and the mouse's Back button,
   // which registers it for as long as this page is on screen. The browse surface behind it
@@ -288,7 +291,7 @@ function MobDrill({
         </Button>
       </Box>
       <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-        <MobPage key={`${target.mob}#${target.entry?.page ?? ''}`} target={target} kills={kills} />
+        <MobPage key={`${target.mob}#${target.entry?.page ?? ''}`} target={target} kills={kills} onOpenLoot={onOpenLoot} />
       </Box>
     </Stack>
   )
@@ -312,12 +315,19 @@ export default function MobsView({
   target,
   targetNonce,
   onTargetConsumed,
-  nav
+  nav,
+  onOpenLoot
 }: {
   target?: MobTarget | null
   targetNonce?: number
   onTargetConsumed?: () => void
   nav?: NavBack
+  /**
+   * The item drill-down's route to the Loot tab (user ask, 2026-08-17) — App's `openLoot`,
+   * the same contract the Gear and Wishlist names use. Threaded, never imported: this view
+   * knows nothing about the router, only that a page it shows may hand an item onward.
+   */
+  onOpenLoot?: (item: string) => void
 }): JSX.Element {
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
@@ -351,7 +361,10 @@ export default function MobsView({
   // when you zone, so memoize on the zone string.
   const zoneRows = useMemo(() => (zone ? mobsInZone(zone, MOB_CATALOG) : []), [zone])
 
-  if (drill) return <MobDrill target={drill} kills={kills} nav={nav} onClose={() => setDrill(null)} />
+  if (drill)
+    return (
+      <MobDrill target={drill} kills={kills} nav={nav} onClose={() => setDrill(null)} onOpenLoot={onOpenLoot} />
+    )
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%' }}>

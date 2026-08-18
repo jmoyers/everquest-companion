@@ -84,6 +84,10 @@ import { ownedCellText, ownedCellTitle, ownershipFor, type GearOwnershipMap } fr
 // JOS-343 — the ONE wish control in the app, shared with the Exaltations donor row by owner ruling.
 import WishToggle from '../wishlist/WishToggle'
 import type { ClassAbbr } from '@shared/classCombo'
+import type { MobTarget } from '../mobs/mobTarget'
+import type { ZoneShort } from '@shared/maps'
+// The drop trio's doors (user ask, 2026-08-17) — both resolutions refuse-over-guess; see its header.
+import { dropMobTarget, dropZoneTarget } from './dropLinks'
 
 /** Dense row height (px), MUI `size="small"` — the number the windowing hook is handed. */
 export const ROW_HEIGHT = 37
@@ -100,11 +104,59 @@ const FIXED_ROW = {
   }
 } as const
 
-/** The first entry, with a `+N` admitting how many more the hover title holds. Blank when none. */
-function overflowText(values: readonly string[]): string {
+/**
+ * The link affordance the Sky dropper cell wears (posky/DropperCell.tsx `DropperName`): a span
+ * that reads as a link, keyboard-reachable, click stopped so the row's own hover card machinery
+ * never sees it. Same idiom on purpose — the drop trio's names are the third surface to become
+ * doors, and a reader should not have to learn a second spelling of "this name opens".
+ */
+function CellLink({ text, onOpen }: { text: string; onOpen: () => void }): JSX.Element {
+  const open = (e: { stopPropagation: () => void }): void => {
+    e.stopPropagation()
+    onOpen()
+  }
+  return (
+    <Box
+      component="span"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        open(e)
+      }}
+      sx={{
+        cursor: 'pointer',
+        textDecoration: 'underline dotted',
+        textUnderlineOffset: 2,
+        '&:hover': { color: 'primary.main' },
+        '&:focus-visible': { outline: '1px solid', outlineColor: 'primary.main', borderRadius: 0.5 }
+      }}
+    >
+      {text}
+    </Box>
+  )
+}
+
+/**
+ * The first entry with a `+N` admitting how many more the hover title holds — and the first
+ * entry a DOOR when the host can open it. Only the first: the cell
+ * is one clipped line (FIXED_ROW) showing one name and a `+N`, so one link is the honest set of
+ * targets — the hover title still lists the rest, exactly as before. `open` is undefined when the
+ * host has nowhere to send the click OR this particular name resolves to nothing, and then the
+ * cell renders the plain text it always did (absent beats disabled, the onOpenLoot rule).
+ */
+function OverflowCell({ values, open }: { values: readonly string[]; open?: () => void }): JSX.Element | null {
   const first = values[0]
-  if (first === undefined) return ''
-  return values.length > 1 ? `${first} +${String(values.length - 1)}` : first
+  if (first === undefined) return null
+  const tail = values.length > 1 ? ` +${String(values.length - 1)}` : ''
+  return (
+    <>
+      {open === undefined ? first : <CellLink text={first} onOpen={open} />}
+      {tail}
+    </>
+  )
 }
 
 /** Sixteen classes is `Class: ALL`, and sixteen chips would be the widest cell in the table. */
@@ -140,6 +192,19 @@ export interface GearTableProps {
    * draws plain text rather than a link that goes nowhere.
    */
   onOpenLoot?: (item: string) => void
+  /**
+   * OPEN A DROP-MOB'S PAGE (user ask, 2026-08-17) — the Mob cell's first name becomes the same
+   * door the Sky dropper cell and the Maps pane already open, `App`'s `openMob`. The target is
+   * pinned by the catalog page the witness carried (`dropPages`, dropLinks.ts) so an ambiguous
+   * name lands on the page the drop was stated on. Absent, the cell is the plain text it was.
+   */
+  onOpenMob?: (t: MobTarget) => void
+  /**
+   * OPEN A DROP-ZONE'S MAP (same ask) — the Zone cell's first name opens the Maps tab pointed at
+   * that zone, through `App`'s `openMapZone` (a pick, so the map holds — zoneFollow.ts). Only a
+   * spelling `zoneShortNameFromCatalog` resolves becomes a link; the refused ones stay text.
+   */
+  onOpenMapZone?: (zone: ZoneShort) => void
   /**
    * PUT THIS ROW ON THE WISH LIST, OR TAKE IT OFF (JOS-335, made a toggle by JOS-343) — the second
    * per-row action, and the one the general rule above was waiting for.
@@ -237,6 +302,29 @@ function PadRow({ height, colSpan }: { height: number; colSpan: number }): JSX.E
 }
 
 /**
+ * The Zone cell's click, or undefined when there is nothing honest to open: no host handler, no
+ * zone, or a spelling the zone table refuses (dropLinks.ts carries the refusal argument).
+ */
+function dropZoneOpen(row: GearViewRow, openMapZone?: (zone: ZoneShort) => void): (() => void) | undefined {
+  const zone = row.dropZones[0]
+  if (openMapZone === undefined || zone === undefined) return undefined
+  const stem = dropZoneTarget(zone)
+  if (stem === null) return undefined
+  return () => {
+    openMapZone(stem)
+  }
+}
+
+/** The Mob cell's click — a bare name is still a target, so only an absent host says no. */
+function dropMobOpen(row: GearViewRow, openMob?: (t: MobTarget) => void): (() => void) | undefined {
+  const mob = row.dropMobs[0]
+  if (openMob === undefined || mob === undefined) return undefined
+  return () => {
+    openMob(dropMobTarget(mob, row.dropPages[0] ?? ''))
+  }
+}
+
+/**
  * ONE CANDIDATE. Every number on it is the SCALED one — the row this component is handed has
  * already been through `scaleAll` at the table's plus-state, so nothing here knows the simulation
  * exists. `memo` because a slider drag re-renders the table and most visible rows are unchanged
@@ -263,7 +351,12 @@ const GearLine = memo(function GearLine({
   derived: GearDerivedOpts
   /** the Zone / Level / Mob trio, toggleable since 2026-08-15 — a primitive, same argument */
   showDrops: boolean
-  on: { openLoot?: (item: string) => void; wish?: (row: GearViewRow, wished: boolean) => void }
+  on: {
+    openLoot?: (item: string) => void
+    wish?: (row: GearViewRow, wished: boolean) => void
+    openMob?: (t: MobTarget) => void
+    openMapZone?: (zone: ZoneShort) => void
+  }
 }): JSX.Element {
   // ONE MAP LOOKUP PER RENDERED ROW, and only for the screenful the window mounted. `row.key` is
   // already the ownership key — phase 3's seam — so there is nothing to normalise here.
@@ -328,12 +421,16 @@ const GearLine = memo(function GearLine({
       <TableCell title={row.classes.join(' ')}>{classText(row.classes)}</TableCell>
       {showDrops && (
         <>
-          <TableCell title={row.dropZones.join(' · ')}>{overflowText(row.dropZones)}</TableCell>
+          <TableCell title={row.dropZones.join(' · ')}>
+            <OverflowCell values={row.dropZones} open={dropZoneOpen(row, on.openMapZone)} />
+          </TableCell>
           {/* dropLevels[i] IS dropMobs[i]'s level (gearData.dropDetails), so the title can pair them. */}
           <TableCell title={row.dropMobs.map((m, i) => `${m}: ${row.dropLevels[i] === '' ? '?' : row.dropLevels[i]}`).join(' · ')}>
             {row.dropLevels[0] ?? ''}
           </TableCell>
-          <TableCell title={row.dropMobs.join(' · ')}>{overflowText(row.dropMobs)}</TableCell>
+          <TableCell title={row.dropMobs.join(' · ')}>
+            <OverflowCell values={row.dropMobs} open={dropMobOpen(row, on.openMob)} />
+          </TableCell>
         </>
       )}
       {columns.map((c) => (
@@ -374,6 +471,8 @@ export default function GearTable({
   ownedHint,
   onSort,
   onOpenLoot,
+  onOpenMob,
+  onOpenMapZone,
   onToggleWish,
   wished,
   compare,
@@ -399,7 +498,10 @@ export default function GearTable({
   // `memo`'d and a fresh literal per render would defeat it on every keystroke. It held two until
   // JOS-325 retired the `+`, and holds two again since JOS-335 — which is exactly why it stayed an
   // object through the year it held one: the wrapper is what the memo depends on.
-  const handlers = useMemo(() => ({ openLoot: onOpenLoot, wish: onToggleWish }), [onOpenLoot, onToggleWish])
+  const handlers = useMemo(
+    () => ({ openLoot: onOpenLoot, wish: onToggleWish, openMob: onOpenMob, openMapZone: onOpenMapZone }),
+    [onOpenLoot, onToggleWish, onOpenMob, onOpenMapZone]
+  )
   return (
     <Table
       size="small"

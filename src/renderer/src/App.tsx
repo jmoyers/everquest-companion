@@ -143,7 +143,16 @@ function PlainView({
           committed corpus, which is character-independent, so the remount `key` is the whole
           character contract and every item name links OUT to that item's Loot drill-down — which
           is where the per-item tier block is drawn. */}
-      {view === 'gear' && <GearView key={viewKey} onOpenLoot={routing.openLoot} />}
+      {view === 'gear' && (
+        <GearView
+          key={viewKey}
+          onOpenLoot={routing.openLoot}
+          // The drop trio's doors (user ask, 2026-08-17): the Mob cell opens the mob's page, the
+          // Zone cell opens that zone's map — GearTable states both contracts.
+          onOpenMob={routing.openMob}
+          onOpenMapZone={routing.openMapZone}
+        />
+      )}
       {/* WISH LIST (JOS-324's tab, JOS-326's feature) — one flat list of items this character has
           decided they want, grouped by where to go and get them. Keyed like the rest because a
           wish list is a CHARACTER's: the rebuild counter is how this app says that, and the
@@ -221,6 +230,9 @@ function ViewContent({
           targetNonce={routing.mobNonce}
           onTargetConsumed={routing.clearMob}
           nav={routing.nav}
+          // A drop dialog's route onward to the Loot tab (user ask, 2026-08-17) — the same
+          // openLoot contract every other item name in the app already deep-links through.
+          onOpenLoot={routing.openLoot}
         />
       )}
       {view === 'bosses' && <BossView key={viewKey} onOpenMob={routing.openMob} />}
