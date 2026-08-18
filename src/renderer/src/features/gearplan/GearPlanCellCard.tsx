@@ -175,7 +175,10 @@ function SocketLine({
       direction="row"
       justifyContent="space-between"
       alignItems="baseline"
-      sx={{ gap: 1 }}
+      // FOUR OF THESE ON EVERY FILLED CARD, so their line height is the single biggest lever on the
+      // board's height - 1.6 is where a caption with an 18px icon in it lands by default, and 1.35
+      // still clears the icon while giving back most of a row across the four.
+      sx={{ gap: 1, lineHeight: 1.35 }}
       data-testid={`gearplan-socket-${socket}`}
     >
       <Typography sx={{ ...STAT_LABEL, flexShrink: 0 }}>{socket}</Typography>
@@ -387,7 +390,6 @@ function PlannedBody({
   const unlocked = unlockedSockets(planned.state)
   return (
     <>
-        <>
           <CellHeader cell={cell} planned={planned} iconId={iconId} on={on} />
           <CellStats block={block} delta={delta} />
           {/* ITS OWN LINE, UNDER THE DELTA. A weapon's ratio is the number the tier slider directly
@@ -395,13 +397,13 @@ function PlannedBody({
           {weapon !== null && (
             <GearPlanRatioLine mine={weapon.mine} worn={weapon.worn} testId="gearplan-ratio" />
           )}
-
-
-          <Box sx={{ mt: 0.5 }}>
+          {/* 0.25 = 2px, not 4. Twenty-three cards pay every gap on this card twice (once above the
+              slider, once above the sockets), and the two blocks are already told apart by the
+              slider's own track. */}
+          <Box sx={{ mt: 0.25 }}>
             <GearPlanTierSlider state={planned.state} onChange={(next) => on.setState(cell, next)} />
           </Box>
-
-          <Box sx={{ mt: 0.5 }}>
+          <Box sx={{ mt: 0.25 }}>
             {SOCKET_TYPES.map((socket) => (
               <SocketLine
                 key={socket}
@@ -418,7 +420,6 @@ function PlannedBody({
               />
             ))}
           </Box>
-        </>
     </>
   )
 }
@@ -434,8 +435,16 @@ function GearPlanCellCard({
 }: GearPlanCellCardProps): JSX.Element {
   return (
     <DashCard
-      fill
+      // NOT `fill` ANY MORE. `fill` contributes no intrinsic height and takes whatever track it is
+      // given — which was right while the board levelled every row to the tallest card, and is
+      // exactly wrong now that a row sizes to its content: a card with no height of its own gives
+      // an `auto` track nothing to size to. The library's warning about content-sized cards is
+      // about a card in a SHARED flex box stealing from shrinkable siblings; a grid cell has its
+      // own track and a `minmax(0, 1fr)` column still caps the width, so neither risk applies here.
       title={planSlotLabel(cell)}
+      // The slot name IS what tells these twenty-three cards apart, so it leads rather than
+      // captions. Everything else on the card is a consequence of which slot this is.
+      titleLead
       right={planned === null ? undefined : <TierValue planned={planned} />}
       testId={`gearplan-cell-${cell}`}
     >

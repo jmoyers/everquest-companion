@@ -61,12 +61,22 @@ export default function GearPlanBoard({
         // habit: "a track that can shrink below its content is what stops any one card dictating
         // the page's size". The 260px is the COLUMN floor; `gridAutoRows` carries the row floor.
         gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-        // A MEASURED floor, and a floor rather than a cap. A filled cell is a title row, an item
-        // name, its stat line and four socket lines; 152px is a hair over that, so an ordinary
-        // cell never scrolls and an exceptional one (a long stat line, wrapped) pushes its row
-        // taller and its row-mates follow — which is exactly what the library says a row floor is
-        // for. The cards are `fill`, so they take the track rather than setting it.
-        gridAutoRows: 'minmax(152px, 1fr)',
+        // ROWS SIZE TO THEIR CONTENT, and the `1fr` that used to be here is why they did not.
+        //
+        // `minmax(152px, 1fr)` reads like a floor and behaves like a LEVELLER: `1fr` shares the
+        // container's height out equally, so every row in the board took the height of the tallest
+        // row anywhere in it. One weapon cell carrying a ratio line and a wrapped delta set the
+        // height of all eight rows, and the other twenty-two cells drew a third of a card of empty
+        // space underneath their sockets. That is the blank space; it was never padding.
+        //
+        // `auto` sizes each row to its own tallest card. Cards WITHIN a row still match each other,
+        // which is alignment rather than waste - a ragged bottom edge across a row of four cards
+        // reads as broken, where a ragged edge between ROWS is just cells that hold less.
+        //
+        // NO FLOOR AT ALL, because there is no longer anything to protect. The floor existed so a
+        // `1fr` track could not collapse a card below its content; an `auto` track is its content.
+        // An empty cell is a title and one link and should be exactly that tall.
+        gridAutoRows: 'auto',
         // 1.5 = 12px: the library's gap WITHIN a region of cards. (16px is the gap BETWEEN
         // regions, and the view spends it between this board and the totals panel.)
         gap: 1.5,

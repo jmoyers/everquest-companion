@@ -3,7 +3,7 @@
 // colors and the SAME card chrome (one look, one source of truth).
 
 import { type ReactNode } from 'react'
-import { Box, Collapse, Paper, Stack, Typography } from '@mui/material'
+import { Box, Collapse, Stack, Typography } from '@mui/material'
 import type { DamageCategory } from '@shared/combat'
 import { CATEGORY_LABEL } from '@shared/combat'
 import { formatNum as fmt, formatRate } from '../../lib/formatRate'
@@ -474,87 +474,9 @@ export function SkillBar({
   )
 }
 
-/**
- * Dashboard card chrome: dense uppercase caption on the left, a free-form status slot on
- * the right, body fills the rest. Matches the app's outlined-Paper card style.
- *
- * TWO sizing modes, and a card must pick exactly one — a card NEVER sizes itself to its
- * content, because a content-sized card in a shared box silently steals the whole box from
- * its shrinkable siblings (that is precisely how the combat log once ate the dashboard):
- *  - `fill`   — the card takes 100% of whatever box it was given (a 2x2 grid CELL) and
- *               contributes NO intrinsic height. Its body scrolls internally, so a cramped
- *               cell clips nothing and cannot push the grid past the viewport.
- *  - `height` — FIXED px height, for a body that is an ever-growing append-only ring.
- */
-export function DashCard({
-  title,
-  right,
-  children,
-  fill,
-  height,
-  testId
-}: {
-  title: string
-  right?: ReactNode
-  children: ReactNode
-  /**
-   * Grid-cell mode: `height: 100%` + `minHeight: 0` let a `minmax(0, 1fr)` track shrink the
-   * card freely, and the body gets its own `overflow: auto` so content scrolls INSIDE the cell
-   * instead of growing it.
-   */
-  fill?: boolean
-  /** FIXED card height (`flex: 0 0 <height>px`) — the combat log's ring. */
-  height?: number
-  /** Marks the card as one of the dashboard's measurable panels (e2e layout assertions). */
-  testId?: string
-}): React.JSX.Element {
-  return (
-    <Paper
-      variant="outlined"
-      data-testid={testId}
-      sx={{
-        p: 1.25,
-        display: 'flex',
-        flexDirection: 'column',
-        minWidth: 0,
-        ...(fill
-          ? { height: '100%', minHeight: 0, overflow: 'hidden' }
-          : height != null
-            ? { flex: `0 0 ${height}px`, minHeight: 0, maxHeight: height }
-            : { flex: '0 0 auto' })
-      }}
-    >
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="baseline"
-        spacing={1}
-        sx={{ mb: 0.75, flexShrink: 0 }}
-      >
-        <Typography
-          variant="caption"
-          noWrap
-          sx={{ fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'text.secondary' }}
-        >
-          {title}
-        </Typography>
-        {right}
-      </Stack>
-      <Box
-        sx={{
-          minWidth: 0,
-          minHeight: 0,
-          flexGrow: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          ...(fill ? { overflow: 'auto' } : null)
-        }}
-      >
-        {children}
-      </Box>
-    </Paper>
-  )
-}
+// The app's card chrome moved to its own file (see its header — this one hit the line
+// ceiling). Re-exported so every caller keeps the import it already had.
+export { DashCard } from './DashCard'
 
 /** A one-line quiet state for a panel that has nothing (honest) to show. Never an error. */
 export function QuietNote({ children }: { children: ReactNode }): React.JSX.Element {

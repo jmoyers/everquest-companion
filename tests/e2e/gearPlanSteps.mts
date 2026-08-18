@@ -158,6 +158,44 @@ export async function stepBounded(page: Page): Promise<void> {
   check('the page itself does not scroll', m.docOverflow <= 1, `overflow=${String(m.docOverflow)}px`)
   check('…because the board is its own bounded scroller', m.boardFits, JSON.stringify(m))
   note(`board scrolls internally: ${String(m.boardScrolls)}`)
+
+  // A CELL IS AS TALL AS WHAT IT HOLDS, which is the claim `gridAutoRows: 'auto'` makes and the
+  // one the old `minmax(152px, 1fr)` quietly broke. `1fr` shares the container height out EQUALLY,
+  // so every row took the height of the tallest row on the board and a cell holding one link drew
+  // a third of a card of empty space under it.
+  //
+  // MEASURED AS A RATIO RATHER THAN A PIXEL COUNT, because the numbers move with fonts, zoom and
+  // the platform's scrollbars, and a pinned pixel height would be a screenshot in test form. What
+  // must hold is the relationship: an empty cell is MATERIALLY shorter than a filled one. Under the
+  // defect they were exactly equal, so any real gap fails the old layout and passes this one.
+  // NO INNER FUNCTION IN HERE, deliberately. This file is run through esbuild with `keepNames`,
+  // which wraps a named arrow in a `__name` helper that exists in the bundle and NOT in the page —
+  // so a tidy `const box = (sel) => …` inside an evaluate dies with "__name is not defined".
+  // THE MEASUREMENT IS ACROSS ROWS, NOT ACROSS CARDS, and the first version of this check got that
+  // wrong. Grid items still stretch WITHIN their row, so an empty card sharing a row with a filled
+  // one is legitimately as tall as it — that is alignment, and a ragged bottom edge along a row of
+  // four cards would read as broken. What `1fr` did, and `auto` does not, is level every row on the
+  // board to the tallest row ANYWHERE in it. So the defect is visible only between rows: under it,
+  // all eight row heights were identical by construction.
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="gearplan-cell-"]')].reduce<Record<number, number>>(
+      (acc, c) => {
+        const r = c.getBoundingClientRect()
+        const top = Math.round(r.top)
+        acc[top] = Math.max(acc[top] ?? 0, Math.round(r.height))
+        return acc
+      },
+      {}
+    )
+  )
+  const tall = Object.values(rows)
+  const distinct = new Set(tall).size
+  check(
+    'rows are as tall as what they hold - the board does not level them all to the tallest',
+    tall.length > 1 && distinct > 1,
+    `${String(tall.length)} rows, heights ${tall.join('/')}`
+  )
+  note(`row heights: ${tall.join(' / ')}`)
 }
 
 // =================================================================================
