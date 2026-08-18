@@ -681,6 +681,25 @@ export async function stepClearAll(page: Page, planned: number): Promise<void> {
   // the board is empty again. A first-run bit could not do that and would not want to.
   const tutorial = await until(async () => (await countOf(page, '[data-testid="gearplan-tutorial"]')) > 0, 20_000)
   check('an emptied board teaches again, with no first-run flag involved', tutorial)
+
+  // AND THE TUTORIAL DOES NOT COST YOU THE PAGE. It used to be a sibling of the two panes - a
+  // direct child of a `height: 100%` column with no scroller - so it took its height out of the
+  // board's share, and a column that is exactly the viewport tall cannot overflow, so nothing
+  // scrolled and the cells underneath were simply unreachable. Inside the board's own scroller it
+  // competes with nothing. Both halves are measured: the page still does not scroll, and the board
+  // region can still be scrolled to reach what is below the tutorial.
+  const room = await page.evaluate(() => {
+    const doc = document.documentElement
+    const box = document.querySelector('[data-testid="gearplan-board"]')?.parentElement ?? null
+    return {
+      docOverflow: doc.scrollHeight - doc.clientHeight,
+      boardHeight: box?.clientHeight ?? 0,
+      reachable: box !== null && box.scrollHeight > 0
+    }
+  })
+  check('…without taking the page`s scroll with it', room.docOverflow <= 1, JSON.stringify(room))
+  check('…and the board underneath is still reachable', room.boardHeight > 100 && room.reachable, JSON.stringify(room))
+  note(`empty-board layout: ${JSON.stringify(room)}`)
   if (tutorial) {
     const text = await textOf(page, '[data-testid="gearplan-tutorial"]')
     check('…in three steps, starting with filling a slot', text.startsWith('1. Fill a slot.'), text.slice(0, 120))

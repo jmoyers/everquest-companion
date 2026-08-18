@@ -351,31 +351,84 @@ function CellHeader({
         >
           <ItemIcon iconId={iconId} size={28} filled />
         </Box>
-        {/* THE NAME IS THE ITEM'S OWN RECORD, and it is a control only when there is somewhere to
-            go — `DonorName`'s rule verbatim, and the fix behind e8d0fd0: a hand appears only where
-            a click actually goes somewhere. Without a route it is the same words, unlinked. */}
+        {/* ALL THREE OF THESE EDIT THE SLOT: the title, the icon and the name. That reads like a
+            contradiction of the rule the last change was made on ("a control does what the thing
+            you clicked IS") and it is that rule applied further. Every one of the three is a way of
+            saying THIS CELL, and a cell's own action is choosing what goes in it. Reading the
+            item's record is a different subject, so it now has its own control instead of borrowing
+            one of the three.
+
+            THE PRACTICAL ARGUMENT IS THE STRONGER ONE. Whichever of the three carried the record,
+            two of them edited and one navigated, and nothing about a name, an icon or a title tells
+            you which is which. A header where every obvious target does the same thing needs no
+            rule to remember. */}
         <Link
-          component={onOpenLoot === undefined ? 'span' : 'button'}
-          type={onOpenLoot === undefined ? undefined : 'button'}
-          underline={onOpenLoot === undefined ? 'none' : 'hover'}
+          component="button"
+          type="button"
+          underline="hover"
           variant="body2"
           color="text.primary"
           data-testid="gearplan-item-name"
-          title={onOpenLoot === undefined ? undefined : `Open ${planned.name} on the Loot tab`}
-          onClick={onOpenLoot === undefined ? undefined : () => onOpenLoot(planned.name)}
+          title={`Change what is planned in ${planSlotLabel(cell)}`}
+          onClick={() => on.pickItem(cell)}
           sx={{
             lineHeight: 1.4,
             minWidth: 0,
             textAlign: 'left',
             overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            cursor: onOpenLoot === undefined ? 'default' : 'pointer'
+            textOverflow: 'ellipsis'
           }}
         >
           {planned.name}
         </Link>
       </Stack>
+      <CellActions cell={cell} planned={planned} on={on} onOpenLoot={onOpenLoot} />
+    </Stack>
+  )
+}
+
+/**
+ * THE PER-CELL ACTIONS - the record, the wish list, and the one destructive control.
+ *
+ * Its own component because `CellHeader` crossed the 100-line function ceiling when the record got
+ * a control of its own. The seam is honest rather than convenient: everything above it NAMES the
+ * cell, and every part of that now edits it; everything in here ACTS on what is already there.
+ */
+function CellActions({
+  cell,
+  planned,
+  on,
+  onOpenLoot
+}: {
+  cell: PlanSlotId
+  planned: GearPlanCell
+  on: GearPlanCellHandlers
+  onOpenLoot?: (item: string) => void
+}): JSX.Element {
+  return (
+    <>
       <Box sx={{ flexGrow: 1, minWidth: 4 }} />
+      {/* THE ITEM'S RECORD, ON ITS OWN CONTROL. It used to be the item name, which made the name
+          the one thing in the header that navigated while everything around it edited. A named
+          button says what it opens; a name that is secretly a link does not.
+
+          A WORD AND NOT A GLYPH, for the reason the clear control is one: a 20px icon in a 260px
+          card is a guess about what it does. And drawn only when there is somewhere to go, which
+          is `DonorName`'s rule and the fix behind e8d0fd0. */}
+      {onOpenLoot !== undefined && (
+        <Link
+          component="button"
+          type="button"
+          underline="hover"
+          variant="caption"
+          data-testid="gearplan-full-stats"
+          title={`Open ${planned.name} on the Loot tab`}
+          onClick={() => onOpenLoot(planned.name)}
+          sx={{ flexShrink: 0, color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+        >
+          FULL STATS
+        </Link>
+      )}
       {/* WISH, then CLEAR — and a NATIVE title, not a popper of any kind. House law 8: a card in a
           grid opens a popper straight over its neighbours, and `tests/tooltipCursor.test.mts`
           enforces that only `lib/Tooltip.tsx` may import MUI's. An icon-only control still needs an
@@ -406,7 +459,7 @@ function CellHeader({
       >
         clear
       </Link>
-    </Stack>
+    </>
   )
 }
 

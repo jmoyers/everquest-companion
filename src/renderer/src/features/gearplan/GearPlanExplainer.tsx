@@ -40,7 +40,7 @@
 // screen, it matters most when this card is closed, and it has nowhere else to go.
 
 import { type JSX, useCallback, useState } from 'react'
-import { Alert, AlertTitle, Box, Stack, Typography } from '@mui/material'
+import { Alert, AlertTitle, Box, Button, Stack, Typography } from '@mui/material'
 import { SOCKET_TYPES, type SocketType } from '@shared/planner/types'
 import { extractionCost, extractionTier } from '@shared/planner/rules'
 import { outputKind } from '@shared/outputs/kinds'
@@ -92,6 +92,7 @@ function Point({ lead, children }: { lead: string; children: string }): JSX.Elem
 }
 
 export default function GearPlanExplainer({ onDismiss }: { onDismiss: () => void }): JSX.Element {
+  const [steps, setSteps] = useState(false)
   return (
     <Alert
       severity="info"
@@ -102,50 +103,53 @@ export default function GearPlanExplainer({ onDismiss }: { onDismiss: () => void
     >
       <AlertTitle>How the plan board works</AlertTitle>
       <Stack spacing={1}>
-        <Point lead="A cell is an item and its sockets.">
-          Click a slot name or its icon to pick an item for it. Click an item&apos;s name to open its
-          full record.
+        <Point lead="Merging does two things.">
+          {`Raising an item's slider scales its stats and unlocks its exaltation sockets: ${unlockLine()}. Lowering it never deletes a socket you already planned.`}
         </Point>
-        <Point lead="Merging does two things at once.">
-          {`Each item has its own merge level. Raising it scales that item's stats and unlocks its exaltation sockets: ${unlockLine()}. Lowering it never deletes a socket you have already planned - the socket stays and says what would unlock it again.`}
+        <Point lead="Weapons gain twice.">
+          Merging raises damage and leaves delay alone, so the ratio improves.
         </Point>
-        <Point lead="Weapons get better twice.">
-          Merging raises a weapon&apos;s damage and leaves its delay alone, so its ratio improves.
-          That is the number on the weapon&apos;s own line.
+        <Point lead="Exaltations are listed, not added.">
+          One moves an effect and this board sums stats, so a planned proc sits beside the totals
+          rather than inside them.
         </Point>
-        <Point lead="Exaltations are listed, never added up.">
-          An exaltation moves an effect, and this board sums stats. A planned proc contributes
-          nothing to the totals, so it is listed in its own block beside them rather than inside
-          them.
-        </Point>
-        <Point lead="What an exaltation costs.">{costLine()}</Point>
+        <Point lead="Extraction costs copies.">{costLine()}</Point>
         <Point lead="Green is better, red is worse.">
-          Each cell states what it would change against what you have on, gains first and losses
-          second. Lower is better on delay and weight, so a shorter delay is a gain even though the
-          number goes down.
-        </Point>
-        <Point lead="The filter bar narrows both pickers.">
-          It never hides anything from the board itself, and it always says how many rows it is
-          holding back.
+          Delay and weight are better smaller, so a shorter delay is a gain even though the number
+          drops.
         </Point>
         <Point lead="Best on ranks, Beats worn filters.">
-          Picking stats puts the best candidates first and removes nothing. The Beats worn chip in
-          the item panel is the one that hides things, and it compares against the item worn in the
-          slot you are filling.
+          Picking stats reorders the list; the chip in the item panel hides what does not beat what
+          you have on.
         </Point>
-        {/* THE DUMP, LAST, because it is the one thing here you do outside the app. The command and
-            the steps are the registry's own words (`OutputKindDef`), so a corrected command reaches
-            this card and the Exaltations tab together. */}
-        <Point lead="Where the comparison comes from.">
+        {/* THE DUMP, LAST, because it is the one thing here you do outside the app - and its steps
+            are COLLAPSED, which is the idiom they arrived with. `OutputFileLine`'s own argument for
+            hiding them by default holds wherever they live: "nothing about the line changes for
+            somebody who is not asking, and one click gets the answer without leaving the tab." They
+            are also the bulkiest block on a card whose whole point is being short. */}
+        <Point lead="The comparison reads your inventory dump.">
           {`${INVENTORY.command} - ${INVENTORY.why}`}
         </Point>
         {INVENTORY.steps.length > 0 && (
-          <Box component="ul" sx={{ m: 0, pl: 2.5 }} data-testid="gearplan-explainer-steps">
-            {INVENTORY.steps.map((step) => (
-              <Typography key={step} component="li" variant="body2" sx={{ lineHeight: 1.55 }}>
-                {step}
-              </Typography>
-            ))}
+          <Box>
+            <Button
+              size="small"
+              variant="text"
+              data-testid="gearplan-explainer-steps-toggle"
+              onClick={() => setSteps((v) => !v)}
+              sx={{ textTransform: 'none', px: 0, minWidth: 0 }}
+            >
+              {steps ? 'Hide how to type it' : 'How to type it'}
+            </Button>
+            {steps && (
+              <Box component="ul" sx={{ m: 0, pl: 2.5 }} data-testid="gearplan-explainer-steps">
+                {INVENTORY.steps.map((step) => (
+                  <Typography key={step} component="li" variant="body2" sx={{ lineHeight: 1.55 }}>
+                    {step}
+                  </Typography>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
       </Stack>

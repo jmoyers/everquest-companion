@@ -204,17 +204,17 @@ export async function stepPoolFilter(page: Page): Promise<void> {
  */
 export async function stepOpenItemRecord(page: Page): Promise<void> {
   const cell = '[data-testid="gearplan-cell-HEAD"]'
-  const link = `${cell} [data-testid="gearplan-item-name"]`
+  const link = `${cell} [data-testid="gearplan-full-stats"]`
   if (!check('a filled cell offers a way to the item`s full record', (await countOf(page, link)) === 1)) return
 
-  // THE THREE TARGETS ON A CELL, AND WHICH WAY EACH GOES. They were reassigned once already, so the
-  // pairing is asserted rather than assumed: the NAME opens the item, and the ICON and the SLOT
-  // TITLE both change what is in the slot. A control should do what the thing you clicked IS.
-  //
-  // The two swap controls are proved by USE below (the filter step opens the picker through the
-  // icon); here it is enough that all three exist and are distinct elements, because the failure
-  // this guards is an edit that collapses them onto one.
-  check('…and two separate ways to change what is IN the slot', (await countOf(page, `${cell} [data-testid="gearplan-swap-item"]`)) === 1 && (await countOf(page, `${cell} [data-testid="gearplan-swap-slot"]`)) === 1)
+  // WHICH TARGET GOES WHERE, asserted rather than assumed - these have been reassigned twice now.
+  // EVERY way of naming the cell edits it (the slot title, the icon, the item name), and reading
+  // the item's record has its own named control. The failure this guards is the record quietly
+  // moving back onto one of the three, which is what made the header confusing the first time.
+  const edits = ['gearplan-swap-slot', 'gearplan-swap-item', 'gearplan-item-name']
+  for (const id of edits) {
+    check(`…and ${id} is one of the ways to EDIT the slot`, (await countOf(page, `${cell} [data-testid="${id}"]`)) === 1)
+  }
 
   // A state nothing ships with: wishlisted ON, and a stat picked.
   await setChip(page, '[data-testid="gearplan-filter-wished"]', 'on')

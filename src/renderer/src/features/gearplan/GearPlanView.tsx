@@ -119,7 +119,7 @@ function NothingPlanned({ hasDump, onLoad, onExplain }: {
       </Typography>
       <Stack spacing={0.75} sx={{ maxWidth: 460, textAlign: 'left' }} data-testid="gearplan-tutorial">
         {[
-          ['1. Fill a slot.', 'Click a slot name or its icon to search for an item that fits it.'],
+          ['1. Fill a slot.', "Click a slot name or its icon to search for an item that fits it. Once it is filled, that same click swaps it - and clicking the item's name opens its full details."],
           ['2. Set its merge level.', "The slider under each item scales its stats and unlocks its exaltation sockets - that is the same control doing both jobs."],
           ['3. Read the right column.', 'It shows what your plan adds up to, and what would change if you wore it.']
         ].map(([lead, rest]) => (
@@ -435,6 +435,35 @@ export interface GearPlanViewProps {
   onOpenLoot?: (item: string) => void
 }
 
+/**
+ * THE CLOCK, AND ONLY THE CLOCK (`ageOnly`).
+ *
+ * What to type, why, and how to type it are all TEACHING, and they moved into the empty-state
+ * tutorial and the `?` card - which is where somebody goes to be taught. How old your dump is did
+ * not move and could not: it is ambient state about the numbers on screen right now, it is most
+ * load-bearing exactly when neither teaching surface is showing (a full board, a month-old dump),
+ * and it has nowhere else to live.
+ *
+ * ONLY ONCE A DUMP EXISTS, because this is the case an instructions card cannot cover - the
+ * comparison below renders with total confidence whether the dump is a minute or a month old, and
+ * the file's own mtime is the difference.
+ */
+function DumpClock({ loadedAt }: { loadedAt?: string }): JSX.Element | null {
+  if (loadedAt === undefined) return null
+  return (
+    <Box sx={{ flexShrink: 0 }}>
+      <OutputFileLine
+        command={INVENTORY.command}
+        why="Re-type it in game whenever your gear changes - the comparison follows the dump."
+        updatedAt={loadedAt}
+        ageOnly
+        quiet
+        testId="gearplan-outputfile"
+      />
+    </Box>
+  )
+}
+
 export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Element {
   const api = useGearPlan()
   const { gearPlan, ready, replace } = api
@@ -475,27 +504,7 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
       // and the two panes below then flex into what is left instead of growing the page.
       sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
-      {/* THE CLOCK, AND ONLY THE CLOCK (`ageOnly`). What to type, why, and how to type it are all
-          TEACHING and they moved into the tutorial and the `?` card, which is where somebody goes
-          to be taught. How old your dump is did not move, and could not: it is ambient state about
-          the numbers on screen right now, it is most load-bearing exactly when neither of those is
-          showing (a full board, a month-old dump), and it has nowhere else to live.
-
-          Only once a dump exists, because this is the case an instructions card cannot cover - the
-          comparison below renders with total confidence whether the dump is a minute or a month
-          old, and the file's own mtime is the difference. */}
-      {inventory && (
-        <Box sx={{ flexShrink: 0 }}>
-          <OutputFileLine
-            command={INVENTORY.command}
-            why="Re-type it in game whenever your gear changes - the comparison follows the dump."
-            updatedAt={inventory.loadedAt}
-            ageOnly
-            quiet
-            testId="gearplan-outputfile"
-          />
-        </Box>
-      )}
+      <DumpClock loadedAt={inventory?.loadedAt} />
 
       <GearPlanToolbar
         assigned={assigned}
@@ -519,14 +528,6 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
 
       <GearPlanFilterBar {...pool.bar} />
 
-      {ready && assigned === 0 && (
-        <NothingPlanned
-          hasDump={inventory !== null}
-          onLoad={donorsReady && fold.equipped !== null ? () => load('fill') : null}
-          onExplain={explainer.show}
-        />
-      )}
-
       {/* TWO REGIONS, SO THE GAP IS 16px (`spacing={2}`) — the library's whole sectioning device
           is the 12px-within / 16px-between pair, with no rules and no second border level. There
           is deliberately NO vertical divider here any more: the panel is a card now, and cards own
@@ -537,6 +538,21 @@ export default function GearPlanView({ onOpenLoot }: GearPlanViewProps): JSX.Ele
         sx={{ flexWrap: 'nowrap', flexGrow: 1, minHeight: 0, alignItems: 'stretch' }}
       >
         <Box sx={{ flexGrow: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
+          {/* THE TUTORIAL SCROLLS WITH THE BOARD, and it has to. It was a sibling of this row - a
+              direct child of a `height: 100%` flex column with no scroller of its own - so it took
+              its height out of the board's share and, once it grew into a tutorial, left nothing to
+              scroll and no way to reach the cells underneath. A column that is exactly the viewport
+              tall cannot overflow, so the app-content scroller never engages and the content is
+              simply cut off.
+              Inside the board's own scroll box it competes with nothing: it is the board's empty
+              state, it scrolls with the cells it is about, and the right column is untouched. */}
+          {ready && assigned === 0 && (
+            <NothingPlanned
+              hasDump={inventory !== null}
+              onLoad={donorsReady && fold.equipped !== null ? () => load('fill') : null}
+              onExplain={explainer.show}
+            />
+          )}
           <GearPlanBoard
             gearPlan={gearPlan}
             {...fold.board}
