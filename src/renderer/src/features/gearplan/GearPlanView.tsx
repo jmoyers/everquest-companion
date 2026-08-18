@@ -119,7 +119,14 @@ function NothingPlanned({ hasDump, onLoad, onExplain }: {
       </Typography>
       <Stack spacing={0.75} sx={{ maxWidth: 460, textAlign: 'left' }} data-testid="gearplan-tutorial">
         {[
-          ['1. Fill a slot.', "Click a slot name or its icon to search for an item that fits it. Once it is filled, that same click swaps it - and clicking the item's name opens its full details."],
+          // THE THREE TARGETS ARE NAMED AS ONE GROUP, which is the whole point of them: every way of
+          // naming a cell edits it, so this teaches one gesture rather than three. `Full stats` is
+          // the clause after it because it is the one control on a cell with a different subject -
+          // and naming it here is what stops somebody hunting for a way in to the item's record.
+          //
+          // STILL THREE STEPS. A fourth for "read the item" would number something you do whenever
+          // you feel like it, in a list whose other entries are in order.
+          ['1. Fill a slot.', "Click a slot name, its icon or the item's name - all three open the search. Full stats opens that item's own record instead."],
           ['2. Set its merge level.', "The slider under each item scales its stats and unlocks its exaltation sockets - that is the same control doing both jobs."],
           ['3. Read the right column.', 'It shows what your plan adds up to, and what would change if you wore it.']
         ].map(([lead, rest]) => (

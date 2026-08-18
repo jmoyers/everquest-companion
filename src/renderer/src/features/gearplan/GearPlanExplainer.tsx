@@ -1,9 +1,20 @@
-// gearplan/GearPlanExplainer.tsx — THE CARD THAT TEACHES THE BOARD.
+// gearplan/GearPlanExplainer.tsx — THE CARD THAT SAYS WHAT THIS TAB CAN DO.
 //
-// `planner/RulesExplainer.tsx` for the Plan tab, and the reason it is a second file rather than a
-// mode of that one is that they teach different things: that card teaches EXALTATION, a set of
-// game rules; this one teaches a SURFACE, which controls do what. The two overlap on the merge
-// ladder alone, and that one line is read from the same function on both.
+// IT TEACHES THE TOOL AND NOT THE GAME, which is the whole editorial line and it was learned the
+// hard way: the first version explained what merging does, what an extraction costs, and that green
+// means better. Every one of those is something a player already knows before they open this app,
+// and spending a card's worth of attention on them buries the part they cannot know - which
+// controls exist here and what each one acts on.
+//
+// So every point below is a capability: pick an item for a slot, set its level, fill a socket, act
+// on the whole board, narrow the two pickers, feed the comparison. Where a game rule is unavoidable
+// it is stated as a consequence of a control rather than as a lesson ("sockets unlock as it rises"),
+// and where the surface already says a thing in place - `+3 to unlock` on a locked socket, the
+// filter bar's own hidden count - the card does not repeat it.
+//
+// `planner/RulesExplainer.tsx` is the sibling that DOES teach a game system, and the split is now
+// clean: that card owns exaltation's rules, this one owns this tab's controls. Neither restates the
+// other.
 //
 // -------------------------------------------------------------------------------------------------
 // IT WAITS TO BE ASKED, AND THAT IS AN OWNER RULING RATHER THAN A PREFERENCE.
@@ -25,24 +36,13 @@
 // An empty board cannot be wrong about being empty.
 //
 // -------------------------------------------------------------------------------------------------
-// EVERY NUMBER IS READ, NOT WRITTEN — `RulesExplainer`'s rule, and the reason it has one.
-//
-// `extractionTier` gives the four unlock tiers, `extractionCost` gives the merge arithmetic,
-// `SOCKET_TYPES` gives how many sockets there are and their order, and the `/outputfile` command
-// and its steps come from the registry (`shared/outputs/kinds.ts`). Nothing here restates a
-// constant: "+4 costs 15" has exactly one home, and a teaching card that quoted it by hand would be
-// the first thing to go stale when the wiki is corrected.
-//
-// THE DUMP INSTRUCTIONS LIVE HERE NOW. They used to sit in a permanent `OutputFileLine` at the top
-// of the tab; the command, the why-clause and the How steps are all TEACHING, and teaching belongs
-// in the thing you open when you want to be taught. What stayed on the tab is the one part of that
-// row that is not teaching - how old your dump is - because that is ambient state about the data on
-// screen, it matters most when this card is closed, and it has nowhere else to go.
+// THE ONE THING THIS CARD STATES THAT COULD GO STALE is the dump command and its steps, and they are
+// READ from the output registry (`shared/outputs/kinds.ts`) rather than typed - so a corrected
+// command reaches this card and the Exaltations tab together. Nothing else here quotes a constant,
+// which is a property of teaching the tool rather than the numbers: a control's name is the control.
 
 import { type JSX, useCallback, useState } from 'react'
 import { Alert, AlertTitle, Box, Button, Stack, Typography } from '@mui/material'
-import { SOCKET_TYPES, type SocketType } from '@shared/planner/types'
-import { extractionCost, extractionTier } from '@shared/planner/rules'
 import { outputKind } from '@shared/outputs/kinds'
 
 const KEY = 'eq.gearplan.explainer'
@@ -67,18 +67,6 @@ export function useGearPlanExplainer(): { open: boolean; show: () => void; dismi
   return { open, show: () => set(true), dismiss: () => set(false) }
 }
 
-/** "focus at +1, click at +2, worn at +3, proc at +4" — built from the rule, in unlock order. */
-function unlockLine(): string {
-  return SOCKET_TYPES.map((s: SocketType) => `${s} at +${String(extractionTier(s))}`).join(', ')
-}
-
-/** The dearest socket's own arithmetic, quoted from `extractionCost` and never recomputed. */
-function costLine(): string {
-  const dearest = SOCKET_TYPES.reduce((a, b) => (extractionTier(a) >= extractionTier(b) ? a : b))
-  const cost = extractionCost(extractionTier(dearest))
-  return `Extracting into the ${dearest} socket needs the donor merged to +${String(cost.tier)}, which is about ${String(cost.d0Copies)} ordinary copies of it, or ${String(cost.d4Copies)} from the hardest tier.`
-}
-
 /** One teaching paragraph: a bold lead, then the sentence that earns it. */
 function Point({ lead, children }: { lead: string; children: string }): JSX.Element {
   return (
@@ -101,32 +89,35 @@ export default function GearPlanExplainer({ onDismiss }: { onDismiss: () => void
       data-testid="gearplan-explainer"
       sx={{ flexShrink: 0 }}
     >
-      <AlertTitle>How the plan board works</AlertTitle>
+      <AlertTitle>What this tab can do</AlertTitle>
       <Stack spacing={1}>
-        <Point lead="Merging does two things.">
-          {`Raising an item's slider scales its stats and unlocks its exaltation sockets: ${unlockLine()}. Lowering it never deletes a socket you already planned.`}
+        <Point lead="One item per slot.">
+          Click a slot name, its icon or the item&apos;s name to search what fits it. Full stats
+          opens that item&apos;s own record.
         </Point>
-        <Point lead="Weapons gain twice.">
-          Merging raises damage and leaves delay alone, so the ratio improves.
+        <Point lead="The slider sets the item's level.">
+          Sockets unlock as it rises, and every number on the board follows it.
         </Point>
-        <Point lead="Exaltations are listed, not added.">
-          One moves an effect and this board sums stats, so a planned proc sits beside the totals
-          rather than inside them.
+        <Point lead="Each socket takes one exaltation.">
+          Click a socket to see the effects that fit it, what each one does, and which item it comes
+          off.
         </Point>
-        <Point lead="Extraction costs copies.">{costLine()}</Point>
-        <Point lead="Green is better, red is worse.">
-          Delay and weight are better smaller, so a shorter delay is a gain even though the number
-          drops.
+        <Point lead="The right column does the comparing.">
+          What the board adds up to, and what it would change against what you have on. Planned
+          exaltations are listed there rather than summed, because they move an effect and not a
+          stat.
         </Point>
-        <Point lead="Best on ranks, Beats worn filters.">
-          Picking stats reorders the list; the chip in the item panel hides what does not beat what
-          you have on.
+        <Point lead="The toolbar acts on the whole board.">
+          Load what you are wearing onto it, send the whole plan to your wish list, or clear it.
+        </Point>
+        <Point lead="The filter bar narrows both pickers.">
+          Best on ranks candidates by the stats you pick. Beats worn keeps only the ones that beat
+          the piece in that slot.
         </Point>
         {/* THE DUMP, LAST, because it is the one thing here you do outside the app - and its steps
             are COLLAPSED, which is the idiom they arrived with. `OutputFileLine`'s own argument for
             hiding them by default holds wherever they live: "nothing about the line changes for
-            somebody who is not asking, and one click gets the answer without leaving the tab." They
-            are also the bulkiest block on a card whose whole point is being short. */}
+            somebody who is not asking, and one click gets the answer without leaving the tab." */}
         <Point lead="The comparison reads your inventory dump.">
           {`${INVENTORY.command} - ${INVENTORY.why}`}
         </Point>

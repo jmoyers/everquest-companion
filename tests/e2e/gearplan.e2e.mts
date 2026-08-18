@@ -46,7 +46,6 @@ import {
   stepLoadedSocketReturns,
   stepMount,
   stepSeededCell,
-  stepTeaching,
   stepSocketHover,
   stepSocketPick,
   stepSocketsListed,
@@ -54,6 +53,7 @@ import {
   stepUnlockLadder
 } from './gearPlanSteps.mjs'
 import { stepOpenItemRecord, stepPoolFilter, stepStatFilter } from './gearPlanFilterSteps.mjs'
+import { stepTeaching } from './gearPlanTeachSteps.mjs'
 
 /**
  * THE SEEDED BOARD. Nothing in the product can put an item in a cell yet (the pickers are the next
