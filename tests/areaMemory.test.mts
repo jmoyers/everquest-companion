@@ -50,6 +50,7 @@ import {
   sanitizeGearClasses,
   sanitizeGearForm,
   sanitizeGearPlanFilter,
+  sanitizeStatPick,
   sanitizeGearSort,
   sanitizeItemFocus,
   sanitizeOpenGroups,
@@ -99,10 +100,10 @@ const BROWSE_FALLBACK: BrowseFormMemory = { socket: 'proc', slot: null, trioOnly
 
 test('the restart split is a table, and every key in it is on one of exactly two tiers', () => {
   const keys = Object.keys(AREA_FORM_TIER) as AreaFormKey[]
-  // Eleven arrived with JOS-329; the twelfth is the Gear plan tab's pool filter. The count is
-  // asserted rather than derived on purpose - a key that lands here without a deliberate edit to
-  // this line is a key whose tier nobody decided.
-  assert.equal(keys.length, 12, 'twelve fields — update this test when a thirteenth is added')
+  // Eleven arrived with JOS-329; the twelfth is the Gear plan tab's pool filter and the thirteenth
+  // its stat ranking. The count is asserted rather than derived on purpose - a key that lands here
+  // without a deliberate edit to this line is a key whose tier nobody decided.
+  assert.equal(keys.length, 13, 'thirteen fields — update this test when a fourteenth is added')
   for (const key of keys) {
     const tier = tierOf(key)
     assert.ok(tier === 'restart' || tier === 'session', `${key} is on an unknown tier ${tier}`)
@@ -178,9 +179,23 @@ const READERS: Reader[] = [
   { key: 'eq.planner.open', read: sanitizeOpenGroups, fallback: [], legal: anyIdList },
   { key: 'eq.planner.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.gearplan.filters', read: sanitizeGearPlanFilter, fallback: NO_ROW_FILTER },
+  { key: 'eq.gearplan.stats', read: sanitizeStatPick, fallback: [] },
   { key: 'eq.wishlist.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString }
 ]
+
+test('the stat pick drops the keys it cannot read, never the whole list', () => {
+  // The `sanitizeGearSort` treatment and the same reason: a build that renamed one stat key should
+  // cost you that one chip, not every chip you had picked.
+  assert.deepEqual(sanitizeStatPick(['WIS', 'nonsense', 'INT']), ['WIS', 'INT'])
+  assert.deepEqual(sanitizeStatPick(['WIS', 7, null, { }]), ['WIS'])
+  // A pick is a RANKING, so an unreadable one degrades to ranking nothing — which changes what
+  // order rows are in and never which rows exist. That is why it can fall back to empty safely
+  // where the pool filter had to argue about it.
+  assert.deepEqual(sanitizeStatPick('WIS'), [])
+  assert.deepEqual(sanitizeStatPick(null), [])
+  assert.deepEqual(sanitizeStatPick([]), [])
+})
 
 test('the gear plan pool filter degrades to hiding NOTHING, never to hiding something', () => {
   // The inverse of the gear form's era field one test below, and the difference is the point. A

@@ -60,6 +60,7 @@
 
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
+import { isGearStatKey, type GearStatKey } from '../../../../shared/planner/gear'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
 import { WEAPON_PICKS, type WeaponPick } from '../../../../shared/planner/weaponType'
 // The gear PLAN tab is part of the gear area, so its remembered form belongs in this table beside
@@ -121,6 +122,15 @@ export const AREA_FORM_TIER = {
    * means is worth less than the consistency of having one.
    */
   'eq.gearplan.filters': 'restart',
+  /**
+   * which STATS the item picker ranks by - a closed-vocabulary pick, so restart like the rest.
+   *
+   * The `Beats worn` toggle beside it is deliberately NOT remembered. It is a comparison against
+   * the item worn in one cell, and an app that started up already hiding everything you own would
+   * be answering a question you asked days ago about gear you may have since replaced. The lens
+   * persists; the verdict does not.
+   */
+  'eq.gearplan.stats': 'restart',
   // ---- the Wish list tab ----
   'eq.wishlist.search': 'session',
   // ---- the Character tab ----
@@ -256,6 +266,18 @@ export function sanitizeGearPlanFilter(raw: unknown): GearPlanRowFilter {
     usableOnly: sanitizeFlag(o.usableOnly, NO_ROW_FILTER.usableOnly),
     wishedOnly: sanitizeFlag(o.wishedOnly, NO_ROW_FILTER.wishedOnly)
   }
+}
+
+/**
+ * The stored stat pick, as a list of keys the vector actually has.
+ *
+ * EVERY ENTRY IS CHECKED INDIVIDUALLY and unknown ones are DROPPED rather than failing the whole
+ * list — the `sanitizeGearSort` treatment, for the same reason: a build that renamed one stat key
+ * should cost you that one chip, not every chip you had picked.
+ */
+export function sanitizeStatPick(raw: unknown): GearStatKey[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((k): k is GearStatKey => typeof k === 'string' && isGearStatKey(k))
 }
 
 /** Every axis the table can sort on: the item column, plus every column the picker can draw. */

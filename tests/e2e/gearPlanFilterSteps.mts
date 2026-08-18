@@ -15,8 +15,11 @@ import { check, countOf, note, settle } from './appHarness.mjs'
 import { until } from './plannerSteps.mjs'
 // The ChipMultiSelect driver, shared rather than re-rolled: the listbox is a portal with its own
 // geometry, and a fourth copy of "type it, arrow down, enter" is the drift law 7 is about.
-import { pickIn } from './gearFilterSteps.mjs'
+import { clearPicks, pickIn } from './gearFilterSteps.mjs'
 import { textOf } from './gearPlanSteps.mjs'
+
+/** The comparison chip — in the PANEL, because only a cell knows what "worn" means. */
+const BEATS = '[data-testid="gearplan-stat-beats"]'
 
 /**
  * THE STAT FILTER, THROUGH THE REAL SEARCH — "show me gear with more of this than I have on".
@@ -38,6 +41,13 @@ export async function stepStatFilter(page: Page): Promise<void> {
   const hit = '[data-testid="gearplan-item-hit"]'
   const names = (): Promise<string[]> =>
     page.$$eval('[data-testid="gearplan-hit-name"]', (els) => els.map((e) => e.textContent ?? ''))
+
+  // THE STAT PICK IS ON THE PAGE'S FILTER BAR AND THE COMPARISON IS IN THE PANEL, which is the
+  // split this step exists to hold. So the pick is made BEFORE a cell is opened — it has to be
+  // reachable with no panel up, and the `Beats worn` chip must not exist yet, because nothing has
+  // named what "worn" would mean.
+  check('the stat pick is reachable with no picker open', (await countOf(page, '[data-testid="gearplan-stat-pick"]')) === 1)
+  check('…and the compare chip is not, because no cell has been named', (await countOf(page, BEATS)) === 0)
 
   await page.click(`${cell} [data-testid="gearplan-item-name"]`, { timeout: 15_000 })
   await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
@@ -64,10 +74,9 @@ export async function stepStatFilter(page: Page): Promise<void> {
 
   // THE TOGGLE APPEARS ONLY ONCE THERE IS SOMETHING TO BE BETTER ON — not disabled, absent, and
   // present the moment it has meaning (house law 9).
-  const toggle = '[data-testid="gearplan-stat-beats"]'
-  check('the compare toggle appears with the first picked stat', (await countOf(page, toggle)) === 1)
+  check('the compare toggle appears with the first picked stat', (await countOf(page, BEATS)) === 1)
   const listed = await countOf(page, hit)
-  await page.click(toggle, { timeout: 15_000 })
+  await page.click(BEATS, { timeout: 15_000 })
   const narrowed = await settle(() => countOf(page, hit), (n) => n < listed)
   check('…and turning it on can only ever REMOVE rows', narrowed <= listed, `${String(listed)} -> ${String(narrowed)}`)
   note(`beats-worn narrowed HEAD: ${String(listed)} -> ${String(narrowed)}`)
@@ -79,7 +88,23 @@ export async function stepStatFilter(page: Page): Promise<void> {
     check('…and an empty list says nothing BEAT what is worn', empty.includes('beats what you have on'), empty)
   }
 
+  // THE LENS SURVIVES THE CELL, which is the whole reason it moved out of the panel. Closing and
+  // opening a DIFFERENT cell must find the pick still made — under the old placement it reset, so
+  // working down a board meant re-picking the same stat at every slot.
   await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
+  const kept = await page.$$eval('[data-testid="gearplan-stat-pick"] .MuiChip-root', (els) =>
+    els.map((e) => e.textContent ?? '')
+  )
+  check('the pick outlives the panel it narrowed', kept.some((c) => c.includes('WIS')), kept.join(','))
+
+  await page.click('[data-testid="gearplan-cell-PRIMARY"] [data-testid="gearplan-item-name"]', { timeout: 15_000 })
+  await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
+  check('…and a DIFFERENT cell opens already ranked by it', (await countOf(page, BEATS)) === 1)
+
+  // Put the bar back the way it was found — every later step reads an unfiltered list.
+  await page.click(BEATS, { timeout: 15_000 })
+  await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
+  await clearPicks(page, '[data-testid="gearplan-stat-pick"]')
 }
 
 /**

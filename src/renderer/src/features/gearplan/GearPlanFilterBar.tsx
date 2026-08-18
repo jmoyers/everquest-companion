@@ -38,6 +38,9 @@
 import type { JSX } from 'react'
 import { Paper, Stack, Typography } from '@mui/material'
 import ToggleChip from '../../components/ToggleChip'
+import ChipMultiSelect from '../../components/ChipMultiSelect'
+import { STAT_PICK_OPTIONS } from '@shared/planner/gearPlanStatPick'
+import type { GearStatKey } from '@shared/planner/gear'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
 import type { GearPlanRowFilter } from './gearPlanSignals'
 
@@ -53,6 +56,25 @@ export interface GearPlanFilterBarProps {
    * which is different from zero, and reads as silence rather than as "hiding nothing".
    */
   hidden: number | null
+  /**
+   * WHICH STATS THE ITEM PICKER RANKS BY — and why a stat pick belongs on this bar rather than
+   * inside the picker it affects, which is where it was first built.
+   *
+   * The argument for the picker was that its companion control (`Beats worn`) compares against the
+   * item worn in ONE cell, so it cannot exist out here. True of that toggle, and not of this: which
+   * stats you care about is the same question at every slot on the board. Left in the panel it
+   * reset with the cell, so working down a board asking "what has more wisdom" meant re-picking
+   * wisdom twenty-three times — the surface making you repeat yourself.
+   *
+   * The other half of the argument was that this bar is for GLOBAL concerns and a stat pick is
+   * local. That does not survive inspection: era, owned, my-classes and wishlisted do not filter
+   * the board either — every one of them narrows candidate rows inside the two pickers. This bar
+   * was already picker-scoped and globally placed, so a stat pick is not the odd one out.
+   *
+   * What stays behind is the comparison, in the panel, where a cell names what it is comparing to.
+   */
+  statKeys: GearStatKey[]
+  setStatKeys: (next: GearStatKey[]) => void
 }
 
 export default function GearPlanFilterBar({
@@ -60,7 +82,9 @@ export default function GearPlanFilterBar({
   setFilter,
   eraOnly,
   setEraOnly,
-  hidden
+  hidden,
+  statKeys,
+  setStatKeys
 }: GearPlanFilterBarProps): JSX.Element {
   const set = (patch: Partial<GearPlanRowFilter>): void => {
     setFilter({ ...filter, ...patch })
@@ -106,6 +130,22 @@ export default function GearPlanFilterBar({
           on={filter.wishedOnly}
           onToggle={() => set({ wishedOnly: !filter.wishedOnly })}
           hint="Keep only what is already on your wish list."
+        />
+
+        {/* THE ONE CONTROL HERE THAT ORDERS RATHER THAN NARROWS, and it is placed last for that
+            reason: everything to its left answers "offer me", and this answers "best first". It
+            removes nothing on its own — the `Beats worn` chip in the item panel is what turns a
+            ranking into a filter, and it only exists there because only a cell knows what "worn"
+            means. `ChipMultiSelect` is the app's one pick-several control (house law 7). */}
+        <ChipMultiSelect
+          options={STAT_PICK_OPTIONS}
+          value={statKeys}
+          onChange={setStatKeys}
+          label="Best on"
+          placeholder="no ranking"
+          minWidth={170}
+          optionLabel={(key) => key.replace(/_/g, ' ')}
+          testId="gearplan-stat-pick"
         />
 
         <div style={{ flexGrow: 1, minWidth: 4 }} />

@@ -42,7 +42,8 @@ import OutputFileLine from '../../components/OutputFileLine'
 
 import { usePlannerInventory } from '../planner/plannerInventory'
 import { useDonors, useEraOnly } from '../planner/plannerData'
-import { sanitizeGearPlanFilter } from '../gear/areaMemory'
+import { sanitizeGearPlanFilter, sanitizeStatPick } from '../gear/areaMemory'
+import type { GearStatKey } from '@shared/planner/gear'
 import { useRemembered } from '../gear/useAreaMemory'
 import GearPlanBoard from './GearPlanBoard'
 import GearPlanFilterBar, { type GearPlanFilterBarProps } from './GearPlanFilterBar'
@@ -265,6 +266,8 @@ function useWishWriter(): {
 function usePoolFilter(): {
   bar: Omit<GearPlanFilterBarProps, 'hidden'> & { hidden: number | null }
   pick: { filter: GearPlanRowFilter; eraOnly: boolean; onHidden: (n: number | null) => void }
+  /** the ranking lens and its comparison — only the ITEM panel reads these */
+  stats: { keys: GearStatKey[]; beatsWorn: boolean; setBeatsWorn: (v: boolean) => void }
 } {
   // Three flags on the restart tier under one key (`eq.gear.filters`'s shape), plus the SHARED era
   // toggle, which has its own key and its own owner ruling about shipping ON —
@@ -274,6 +277,14 @@ function usePoolFilter(): {
     sanitizeGearPlanFilter
   )
   const [eraOnly, setEraOnly] = useEraOnly()
+  const [statKeys, setStatKeys] = useRemembered<GearStatKey[]>('eq.gearplan.stats', sanitizeStatPick)
+  // NOT REMEMBERED ACROSS RESTARTS, unlike the pick it rides on — see `areaMemory`'s note on the
+  // key. It DOES survive moving between cells, which is the whole point of the move: "beats what I
+  // have on" is the same question at every slot, and re-arming it per cell was the repetition.
+  const [beatsWorn, setBeatsWorn] = useState(false)
+  // DROPPING THE LAST STAT DROPS THE COMPARISON WITH IT. An armed toggle with nothing under it
+  // would come back the moment a stat was picked again — a filter nobody asked for twice.
+  const armed = statKeys.length > 0 && beatsWorn
   // Only ONE picker can be open (`RightColumn` draws one surface), so one number is the whole story.
   // `null` is "nothing has been asked", which the bar renders as silence rather than as a zero.
   const [hidden, setHidden] = useState<number | null>(null)
@@ -284,8 +295,9 @@ function usePoolFilter(): {
   }, [])
 
   return {
-    bar: { filter, setFilter, eraOnly, setEraOnly, hidden },
-    pick: { filter, eraOnly, onHidden }
+    bar: { filter, setFilter, eraOnly, setEraOnly, hidden, statKeys, setStatKeys },
+    pick: { filter, eraOnly, onHidden },
+    stats: { keys: statKeys, beatsWorn: armed, setBeatsWorn }
   }
 }
 
@@ -308,7 +320,8 @@ function RightColumn({
   assigned,
   donorsReady,
   signalsOf,
-  pick
+  pick,
+  stats
 }: {
   fold: GearPlanFold
   edit: Editing
@@ -316,6 +329,8 @@ function RightColumn({
   donorsReady: boolean
   signalsOf: ReturnType<typeof useRowSignals>
   pick: ReturnType<typeof usePoolFilter>['pick']
+  /** the ranking lens — the ITEM panel's, and not the socket panel's: an effect has no stats */
+  stats: ReturnType<typeof usePoolFilter>['stats']
 }): JSX.Element {
   if (edit.itemCell !== null) {
     return (
@@ -327,6 +342,7 @@ function RightColumn({
         deltaFor={fold.candidateDelta}
         weaponFor={fold.candidateWeapon}
         statsFor={fold.candidateStats}
+        stats={stats}
         {...pick}
       />
     )
@@ -454,6 +470,7 @@ export default function GearPlanView(): JSX.Element {
             donorsReady={donorsReady}
             signalsOf={signalsOf}
             pick={pool.pick}
+            stats={pool.stats}
           />
         </Box>
       </Stack>

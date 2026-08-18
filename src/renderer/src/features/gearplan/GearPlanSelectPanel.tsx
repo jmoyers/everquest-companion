@@ -39,9 +39,9 @@ import GearPlanDeltaLine from './GearPlanDeltaLine'
 import GearPlanRatioLine from './GearPlanRatioLine'
 import type { WeaponRead } from './gearPlanFold'
 import GearPlanRowChips from './GearPlanRowChips'
-import GearPlanStatPicker, { NO_STAT_PICK, type StatPick } from './GearPlanStatPicker'
 import { beatsWornOn, pickScore } from '@shared/planner/gearPlanStatPick'
-import type { GearStats } from '@shared/planner/gear'
+import ToggleChip from '../../components/ToggleChip'
+import type { GearStatKey, GearStats } from '@shared/planner/gear'
 import { PLANNER_PAGE, PLANNER_PAGE_MAX } from './gearPlanRules'
 import { hidesRow, type GearPlanRowFilter, type RowSignals } from './gearPlanSignals'
 
@@ -169,6 +169,12 @@ export interface GearPlanSelectPanelProps {
   eraOnly: boolean
   /** how many slot-legal rows the filters just held back; `null` when this panel is not up */
   onHidden: (n: number | null) => void
+  /**
+   * THE RANKING LENS, OWNED BY THE PAGE. The stats live on the filter bar (see its header) because
+   * "which stats do I care about" is the same question at every cell; only the COMPARISON is local,
+   * because only a cell knows what "worn" means.
+   */
+  stats: { keys: GearStatKey[]; beatsWorn: boolean; setBeatsWorn: (v: boolean) => void }
 }
 
 /**
@@ -194,7 +200,7 @@ function useCandidates({
   cell: PlanSlotId
   query: string
   limit: number
-  pick: StatPick
+  pick: { keys: GearStatKey[]; beatsWorn: boolean }
   signalsOf: GearPlanSelectPanelProps['signalsOf']
   statsFor: GearPlanSelectPanelProps['statsFor']
   filter: GearPlanRowFilter
@@ -285,6 +291,45 @@ function MoreRow({ shown, on, onMore }: { shown: number; on: boolean; onMore: ()
   )
 }
 
+/**
+ * THE COMPARISON, AND ONLY THE COMPARISON. The stats themselves are picked on the page's filter
+ * bar; what is local to this panel is the thing that needs a cell to mean anything.
+ *
+ * Drawn only once a stat is picked, because "better on nothing" is not a question — absent rather
+ * than disabled (house law 9), and present the moment it has something to act on.
+ *
+ * IT SAYS WHAT IT IS COMPARING AGAINST, and the two cases genuinely differ: with an item worn in
+ * this cell it reads `Beats worn` and means it; with nothing worn the baseline is zero, so the same
+ * switch means "states these at all" and says `Has these` instead. One word for both would make an
+ * empty slot look like a comparison it cannot make.
+ */
+function BeatsChip({
+  stats,
+  hasWorn
+}: {
+  stats: GearPlanSelectPanelProps['stats']
+  hasWorn: boolean
+}): JSX.Element | null {
+  if (stats.keys.length === 0) return null
+  return (
+    <Box sx={{ mb: 0.5 }}>
+      <ToggleChip
+        label={hasWorn ? 'Beats worn' : 'Has these'}
+        hint={
+          hasWorn
+            ? 'Keep only items better than the one worn in this slot, on every stat picked above'
+            : 'Nothing is worn in this slot, so this keeps items that state every stat picked above'
+        }
+        testId="gearplan-stat-beats"
+        on={stats.beatsWorn}
+        onToggle={() => {
+          stats.setBeatsWorn(!stats.beatsWorn)
+        }}
+      />
+    </Box>
+  )
+}
+
 export default function GearPlanSelectPanel({
   cell,
   onClose,
@@ -295,30 +340,23 @@ export default function GearPlanSelectPanel({
   statsFor,
   filter,
   eraOnly,
-  onHidden
+  onHidden,
+  stats
 }: GearPlanSelectPanelProps): JSX.Element {
   const [text, setText] = useState('')
   const query = useDeferredValue(text)
   // The page resets with the QUESTION: a page walked out to four hundred for one query has nothing
   // to do with the next one, and carrying it over would make an unrelated search silently expensive.
   const [limit, setLimit] = useState(PLANNER_PAGE)
-  const [pick, setPick] = useState<StatPick>(NO_STAT_PICK)
   useEffect(() => {
     setLimit(PLANNER_PAGE)
   }, [query, cell])
-  // THE PICK RESETS WITH THE CELL AND NOT WITH THE QUERY. "More wisdom than my gloves" survives
-  // retyping the name you are hunting - it is the question, where the text is the hunt. Moving to a
-  // DIFFERENT cell is a different question, and carrying a stat filter into it silently would be
-  // the picker lying about why it is empty.
-  useEffect(() => {
-    setPick(NO_STAT_PICK)
-  }, [cell])
   const slot = equipSlotOf(cell) ?? undefined
   const { usable, filtered, byStats, hasWorn, loading, more } = useCandidates({
     cell,
     query,
     limit,
-    pick,
+    pick: stats,
     signalsOf,
     statsFor,
     filter,
@@ -361,9 +399,7 @@ export default function GearPlanSelectPanel({
         onChange={(e) => setText(e.target.value)}
         sx={{ mb: 0.5 }}
       />
-      {/* UNDER THE NAME BOX, because it answers the question the name box cannot. You reach for it
-          when typing has stopped helping — which is after you have tried typing. */}
-      <GearPlanStatPicker pick={pick} onChange={setPick} hasWorn={hasWorn} />
+      <BeatsChip stats={stats} hasWorn={hasWorn} />
       {usable.map(({ hit, signals }) => (
         <CandidateRow
           key={hit.key}
