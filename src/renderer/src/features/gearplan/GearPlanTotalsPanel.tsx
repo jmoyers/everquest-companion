@@ -3,18 +3,28 @@
 // `GearSetTotalsPanel.tsx` (JOS-286) revived under the gear plan document, with one block added.
 //
 // FOUR BLOCKS, AND THE ORDER IS THE READING ORDER:
-//   1. THE TOTALS. AC, then stats, then saves — `sumGear`'s own ordering, so a number here reads
-//      in the same place it reads on the Character tab.
-//   2. NOT SUMMED. Percent-valued stats, stated and never added. ALWAYS VISIBLE when non-empty:
-//      hiding it behind a disclosure would turn "we cannot say" into "there is nothing here".
-//   3. EXALTATIONS PLANNED. The block this panel has that the retired one did not, and the reason
-//      it exists is that an exaltation moves an EFFECT while these numbers sum stats — so a planned
-//      proc contributes exactly nothing above, and a list of four socketed effects sitting beside
-//      a stat total with nothing distinguishing them would be read as having been counted.
-//   4. AGAINST EQUIPPED. Only the rows that MOVED: a diff whose zero rows outnumber its answers is
+//   1. AGAINST EQUIPPED. Only the rows that MOVED: a diff whose zero rows outnumber its answers is
 //      a table, not a comparison. Absent entirely when there is no dump — "we cannot see your
 //      body" is a different statement from "you are wearing nothing", and claiming the second
 //      would make every number here look like a gain.
+//   2. THE TOTALS. AC, then stats, then saves — `sumGear`'s own ordering, so a number here reads
+//      in the same place it reads on the Character tab.
+//   3. NOT SUMMED. Percent-valued stats, stated and never added. ALWAYS VISIBLE when non-empty:
+//      hiding it behind a disclosure would turn "we cannot say" into "there is nothing here".
+//   4. EXALTATIONS PLANNED. The block this panel has that the retired one did not, and the reason
+//      it exists is that an exaltation moves an EFFECT while these numbers sum stats — so a planned
+//      proc contributes exactly nothing above, and a list of four socketed effects sitting beside
+//      a stat total with nothing distinguishing them would be read as having been counted.
+//
+// THE DIFF LEADS, AND IT USED TO BE LAST. The old order built up to it: totals first, because the
+// card is titled "what this adds up to" and a sum is what a reader is promised. That is a good
+// argument about the CARD and a bad one about the READER. Nobody plans gear to learn their total
+// AC; they plan it to find out whether the plan is an upgrade, which is one block that answers the
+// question and three that supply the evidence for it. The evidence goes under the answer.
+//
+// It also fixes an ordering accident: the diff is the block most likely to be scrolled past, being
+// last in a panel whose earlier blocks grow with the board. The one thing you came for should not
+// be the one thing below the fold.
 //
 // ---------------------------------------------------------------------------------------------
 // THE DELTAS ARE STILL NOT `success.main` AND `error.main` — BUT THEY ARE NOW COLOURED.
@@ -209,7 +219,7 @@ function AgainstEquipped({
   if (diff === null) return null
   const moved = [diff.ac, ...diff.stats, ...diff.saves].filter((r) => r.delta !== 0)
   return (
-    <Box sx={{ mt: 1.25 }} data-testid="gearplan-diff">
+    <Box data-testid="gearplan-diff">
       <BlockHeading>Against what you are wearing</BlockHeading>
       <Box sx={{ mb: 0.5 }}>
         <QuietNote>
@@ -268,7 +278,12 @@ export default function GearPlanTotalsPanel({
       }
       testId="gearplan-totals"
     >
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+      <AgainstEquipped diff={diff} unstated={unstated} unresolved={unresolved} />
+
+      {/* THE SEPARATOR MOVED WITH THE BLOCKS. The diff carried its own top margin while it was
+          last; leading the card, that margin was dead space under the title, and the totals needed
+          one instead - but only when there is a diff above them to be separated FROM. */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: diff === null ? 0 : 1.25 }}>
         <StatRows rows={[{ label: 'AC', total: totals.ac, from: totals.counted }]} />
         <StatRows rows={totals.stats} />
         <StatRows rows={totals.saves} />
@@ -284,8 +299,6 @@ export default function GearPlanTotalsPanel({
           </QuietNote>
         </Box>
       )}
-
-      <AgainstEquipped diff={diff} unstated={unstated} unresolved={unresolved} />
     </DashCard>
   )
 }
