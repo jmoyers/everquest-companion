@@ -17,6 +17,8 @@ import classes from '../src/main/data/classes.json'
 import spellsJson from '../src/main/data/spells.json'
 import { CLASS_ABBRS } from '../src/shared/classCombo'
 import {
+  classAbbrForDisplayName,
+  classDisplayName,
   knownClassDisplayNames,
   parseSpellClasses,
   scanSpellClasses,
@@ -53,6 +55,21 @@ test('a multi-class field parses every bullet, sorted by class code', () => {
 test('both wiki spellings of the Shadow Knight resolve to SHD', () => {
   assert.deepEqual(parseSpellClasses('* Shadow Knight - Level 9'), [{ cls: 'SHD', level: 9 }])
   assert.deepEqual(parseSpellClasses('* Shadowknight - Level 9'), [{ cls: 'SHD', level: 9 }])
+})
+
+test('a trailing `+` on the level is read as the level, not dropped with the bullet (JOS-393)', () => {
+  // `Sloths Healing` states `* Shaman - Level 50+` and is the ONE row in the committed DB that
+  // writes the form (measured 2026-08-16) — which is exactly why it is pinned: a parse that
+  // dropped the segment would take the spell out of the level join silently, and the era fold
+  // beside it would then have nothing to fold. The `+` itself carries no claim we can use (the
+  // wiki means "and above", which is where every spell already stays), so it is IGNORED rather
+  // than interpreted, the same way `(Autogranted)` is.
+  assert.deepEqual(parseSpellClasses('* Shaman - Level 50+'), [{ cls: 'SHM', level: 50 }])
+  assert.equal(spellLevelFor('* Shaman - Level 50+', 'SHM'), 50)
+  assert.deepEqual(scanSpellClasses('* Shaman - Level 50+').dropped, [])
+  const sloths = spells.find((s) => s.name === 'Sloths Healing')
+  assert.ok(sloths, 'the committed DB no longer carries Sloths Healing')
+  assert.deepEqual(parseSpellClasses(sloths.classes), [{ cls: 'SHM', level: 50 }])
 })
 
 test('a class stated twice keeps the LOWEST level, never a duplicate chip', () => {
@@ -157,4 +174,22 @@ test('the display-name table matches classes.json name-for-name', () => {
     ['shadowknight']
   )
   assert.equal(known.length, wiki.length + 1)
+})
+
+test('classDisplayName answers for all 16 codes, exactly as classes.json spells them (JOS-402)', () => {
+  // The UI's labels are this table (every class filter, offer chip and loadout picker since
+  // JOS-402), so a drift from the scrape is a wrong word on screen, not just a stale constant.
+  const names: Record<string, string> = classes.names
+  for (const abbr of CLASS_ABBRS) {
+    assert.equal(classDisplayName(abbr), names[abbr], `${abbr} is not spelled as classes.json does`)
+  }
+  assert.equal(classDisplayName('SHD'), 'Shadow Knight')
+})
+
+test('every display name round-trips back to its own code', () => {
+  // The reverse direction is the parse the wiki fields go through, so the two tables in
+  // spellLevels.ts have to agree: a name this app PRINTS must be a name it can READ.
+  for (const abbr of CLASS_ABBRS) {
+    assert.equal(classAbbrForDisplayName(classDisplayName(abbr)), abbr, `${abbr} does not round-trip`)
+  }
 })

@@ -93,3 +93,33 @@ output "api_access_log_group" {
   description = "CloudWatch log group holding API access logs (source IPs, 14-day retention)."
   value       = aws_cloudwatch_log_group.api_access.name
 }
+
+# ---- never lose the data (JOS-398) ------------------------------------------
+
+# Consumed by `triage-feedback migrate`, which substitutes it into schema.sql's
+# `AWS IAM GRANT analytics_export TO '<arn>'` — the THIRD placeholder, and the
+# third account-id-carrying value that is therefore not a literal in the file.
+output "export_lambda_role_arn" {
+  description = "Execution role ARN the read-only `analytics_export` database role is mapped to."
+  value       = aws_iam_role.export.arn
+}
+
+output "archive_bucket_name" {
+  description = "S3 bucket holding the nightly logical exports under exports/. Versioned, account-private, lifecycle-managed."
+  value       = aws_s3_bucket.archive.bucket
+}
+
+output "export_function_name" {
+  description = "Nightly analytics export function name (for a manual `aws lambda invoke` during a drill)."
+  value       = aws_lambda_function.export.function_name
+}
+
+output "export_log_group" {
+  description = "CloudWatch log group for the nightly export (also where its EMF metric documents land)."
+  value       = aws_cloudwatch_log_group.export.name
+}
+
+output "backup_vault_name" {
+  description = "AWS Backup vault holding the DSQL cluster's recovery points (for `aws backup list-recovery-points-by-backup-vault`)."
+  value       = aws_backup_vault.analytics.name
+}

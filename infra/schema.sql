@@ -378,6 +378,118 @@ CREATE TABLE IF NOT EXISTS perf_daily (
   PRIMARY KEY (day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket)
 );
 
+-- ---- the SHARDED counters, and the views that merge them (JOS-394) -----------
+--
+-- WHY THIS EXISTS. Every client increments the SAME handful of rows: `usage_daily`'s
+-- (day, cohort, 'sessionHeartbeat', '-') and the small CLOSED set of `perf_daily`
+-- buckets. DSQL is optimistic — it takes no locks and aborts the second committer of
+-- a write-write race with 40001 — so the conflict rate is a function of how many
+-- writers meet on ONE row, and at this product's traffic that is all of them. MEASURED
+-- on the live stack 2026-08-16: ~1,350 telemetry requests per 5 minutes (4.5 RPS, flat,
+-- 3-4 concurrent Lambdas) produced 60-90 OCC conflicts per 5 minutes — about 5% of
+-- writes, every one of them on the `counters` transaction. Nothing was lost (the retry
+-- ladder over two hours was 1,634 first-attempt conflicts -> 104 second -> 6 third ->
+-- ZERO exhausted), but a permanently-firing alarm is an alarm nobody reads.
+--
+-- WHY A SHARD COLUMN AND NOT A BIGGER RETRY BUDGET. Retrying is paying for the
+-- collision after it happens, and the bill grows with concurrency; the shard makes the
+-- collision RARE. One row becomes SHARD_COUNT rows (32 — infra/lambda/telemetry.ts
+-- carries the arithmetic beside the constant), and two concurrent writers now have to
+-- agree on the shard as well as on the counter, so conflicts fall roughly linearly with
+-- the shard count. Reading is a SUM that was already a SUM.
+--
+-- WHY THE SHARD IS RANDOM, AND WHY IT MAY NEVER BE A HASH OF THE INSTALL. The obvious
+-- shard key is the analyticsId, and it is FORBIDDEN here: a hash of the install id is a
+-- FUNCTION OF THE INSTALL ID, and this file's whole design (the long note above
+-- `usage_daily`, the header of infra/lambda/telemetry.ts) is that no such function
+-- reaches a counter table — a stable per-install shard would let anyone holding these
+-- rows partition a day's counters into per-install buckets, which is exactly the
+-- per-user trail the aggregate-on-arrival design refuses to keep. A shard drawn from
+-- `Math.random()` per REQUEST spreads writes exactly as well and carries no information
+-- about who sent them. The shard column is therefore not a key anybody can join on; it
+-- is noise with a purpose.
+--
+-- WHY A NEW TABLE INSTEAD OF AN ALTER. The shard is part of the PRIMARY KEY (the
+-- `ON CONFLICT` target has to BE the uniqueness rule, or two shards of one counter
+-- collide into one row), and Aurora DSQL has no ALTER path to a primary key — a key is
+-- the table's distribution, not an index. THESE TABLES ARE BORN WITH THEIR KEYS, like
+-- every other keyed table in this file.
+--
+-- WHY THE OLD TABLES STAY, AND WHY THERE IS NO BACKFILL. `usage_daily` and `perf_daily`
+-- hold real counters from real users. They are FROZEN at cutover — the Lambda stops
+-- writing them, nothing drops them, nothing rewrites them — and the two views below add
+-- them back to every read. A backfill would be a copy with no reader that needed it,
+-- and a drop would be a data loss to save two `UNION ALL` legs (owner, 2026-08-05:
+-- "we shouldn't drop anything"). The cutover DAY is the case that proves the shape: its
+-- counters live half in the old table and half in the new one, and the view is what
+-- makes that invisible to every reader.
+--
+-- WHY A VIEW AND NOT A UNION IN EVERY READER. There are five reader call sites for
+-- these two tables (the app's Analytics tab, the CLI digest, the release smoke test,
+-- and the two panels behind them) and one writer. A view puts the merge in ONE place,
+-- in the database, so a reader that forgets it cannot silently report half the fleet.
+-- VERIFIED ON A REAL DSQL CLUSTER, 2026-08-16 (an ephemeral cluster stood up for this
+-- ticket and deleted after): DSQL accepts `CREATE VIEW` over a grouped `UNION ALL`,
+-- accepts `CREATE OR REPLACE VIEW`, accepts `DROP VIEW`, answers a repeat `CREATE VIEW`
+-- with `42P07` (which `migrate` already treats as `exists`, so the plain form below is
+-- idempotent), and pushes `WHERE day >= $1 ORDER BY day LIMIT $2` through it.
+--
+-- `SUM(n)::bigint` IS LOAD-BEARING, and this is the one line here that a reviewer
+-- should not "simplify". MEASURED on the same cluster: an uncast `SUM(bigint)` comes
+-- back as NUMERIC (type OID 1700), and both readers set node-postgres's int8 parser on
+-- OID 20 ONLY — so an uncast view hands every counter over as a STRING, and the
+-- readouts' `num()` helpers turn a non-number into 0. That failure is SILENT and looks
+-- exactly like a quiet fleet. The cast makes the view's `n` int8, i.e. the same type
+-- and the same JS `number` the tables themselves have always produced.
+
+CREATE TABLE IF NOT EXISTS usage_daily_sharded (
+  shard  integer NOT NULL,
+  day    text    NOT NULL,
+  cohort text    NOT NULL,
+  metric text    NOT NULL,
+  dim    text    NOT NULL,
+  n      bigint  NOT NULL,
+  PRIMARY KEY (shard, day, cohort, metric, dim)
+);
+
+CREATE TABLE IF NOT EXISTS perf_daily_sharded (
+  shard         integer NOT NULL,
+  day           text    NOT NULL,
+  cohort        text    NOT NULL,
+  window_mode   text    NOT NULL,
+  machine_class text    NOT NULL,
+  locked        text    NOT NULL,
+  stall_bucket  text    NOT NULL,
+  tail_bucket   text    NOT NULL,
+  n             bigint  NOT NULL,
+  PRIMARY KEY (shard, day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket)
+);
+
+-- THE MERGED READ, and the ONLY thing any reader outside the Lambda should name. The
+-- projection is the OLD table's exactly — (day, cohort, metric, dim, n) — so switching
+-- a reader over is a change of table name and nothing else, and the degrade path is
+-- unchanged too: a cluster without this view answers `42P01` naming `usage_daily_all`,
+-- which src/main/triage/usageStore.ts already renders as "this cluster is not migrated"
+-- rather than as a crash.
+CREATE VIEW usage_daily_all AS
+SELECT day, cohort, metric, dim, SUM(n)::bigint AS n
+  FROM (SELECT day, cohort, metric, dim, n FROM usage_daily
+        UNION ALL
+        SELECT day, cohort, metric, dim, n FROM usage_daily_sharded) t
+ GROUP BY day, cohort, metric, dim;
+
+-- The cube's twin, over its seven-column key. Same projection as `perf_daily`, same
+-- cast, same reasoning.
+CREATE VIEW perf_daily_all AS
+SELECT day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket,
+       SUM(n)::bigint AS n
+  FROM (SELECT day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket, n
+          FROM perf_daily
+        UNION ALL
+        SELECT day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket, n
+          FROM perf_daily_sharded) t
+ GROUP BY day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket;
+
 -- The kill switch and the cap for the TELEMETRY route, added to the existing
 -- config row rather than a second table: one row is where an operator already
 -- looks, and `triage-feedback` already reads and writes it.
@@ -553,3 +665,72 @@ GRANT SELECT, INSERT, UPDATE ON error_report TO telemetry_ingest;
 -- read the feedback backlog nor destroy a history. The TRIAGE reader needs no grant here — it
 -- connects as `admin` (src/main/triage/store.ts).
 GRANT SELECT, INSERT, UPDATE ON perf_daily TO telemetry_ingest;
+
+-- The two SHARDED counter tables (JOS-394) — the ONLY counter tables the Lambda writes from
+-- cutover onward. Same three privileges and the same reason for the SELECT (the additive
+-- `ON CONFLICT DO UPDATE` reads the existing row to evaluate the sum), and still no DELETE.
+--
+-- THESE MUST BE GRANTED BEFORE THE BUNDLE THAT WRITES THEM. A missing grant is `42501
+-- permission denied` on every batch, which is the same shape of trap as a missing column, so
+-- the order is the one this file and infra/README.md state everywhere: `migrate` first,
+-- `terraform apply` second.
+--
+-- NO GRANT ON THE TWO VIEWS, deliberately. The Lambda never reads a counter back — it only
+-- adds — and the only reader of `usage_daily_all` / `perf_daily_all` is the triage side, which
+-- connects as `admin`. Granting SELECT on the merged view to a public write endpoint's role
+-- would hand it the whole fleet's counters for nothing.
+GRANT SELECT, INSERT, UPDATE ON usage_daily_sharded TO telemetry_ingest;
+
+GRANT SELECT, INSERT, UPDATE ON perf_daily_sharded TO telemetry_ingest;
+
+-- ---- the EXPORT database role (JOS-398) --------------------------------------
+--
+-- A THIRD ROLE, AND IT IS THE ONLY READ-ONLY ONE. The nightly archive Lambda
+-- (infra/lambda/export.ts) copies every table to S3 so that a bad migration, a
+-- table-swapping script or a fat-fingered DROP is recoverable at the ROW level and
+-- not only through an AWS Backup restore. Owner ruling 2026-08-16: the analytics
+-- data must never be lost.
+--
+-- IT IS THE WIDEST READ IN THIS FILE AND THE NARROWEST WRITE. Note what is absent
+-- from every line below: INSERT, UPDATE and DELETE, on every table, without
+-- exception. A full compromise of the export function can read the corpus — that is
+-- its entire job — and cannot change one byte of it. That is the opposite shape from
+-- the two ingest roles, which may write a little and read almost nothing, and the
+-- asymmetry is the point: the thing with a public endpoint cannot read, and the thing
+-- that can read has no public endpoint (its only invoker is an EventBridge rule).
+--
+-- NO GRANT ON THE TWO MERGE VIEWS, deliberately. The export copies TABLES — the
+-- physical rows, each under its own name — because a restore has to put a row back
+-- where it came from, and `usage_daily_all` would hand back a SUM whose two legs can
+-- no longer be told apart. src/shared/analyticsTables.ts states the same rule from
+-- the other end.
+
+CREATE ROLE analytics_export WITH LOGIN;
+
+AWS IAM GRANT analytics_export TO '${EXPORT_LAMBDA_ROLE_ARN}';
+
+GRANT SELECT ON feedback_config TO analytics_export;
+
+GRANT SELECT ON install_profile TO analytics_export;
+
+GRANT SELECT ON report TO analytics_export;
+
+GRANT SELECT ON install_quota TO analytics_export;
+
+GRANT SELECT ON report_idempotency TO analytics_export;
+
+GRANT SELECT ON dedupe_probe TO analytics_export;
+
+GRANT SELECT ON usage_daily TO analytics_export;
+
+GRANT SELECT ON usage_daily_sharded TO analytics_export;
+
+GRANT SELECT ON usage_funnel_daily TO analytics_export;
+
+GRANT SELECT ON analytics_install TO analytics_export;
+
+GRANT SELECT ON error_report TO analytics_export;
+
+GRANT SELECT ON perf_daily TO analytics_export;
+
+GRANT SELECT ON perf_daily_sharded TO analytics_export;

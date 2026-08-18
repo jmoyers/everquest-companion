@@ -11,6 +11,15 @@
  *      reading a file the first one wrote, so this spec runs two launches over one userData dir —
  *      the telemetry-restart pattern. A reload would prove nothing: the zoom is already on that
  *      webContents.
+ * SINCE JOS-405 IT OWNS BOTH TEXT SIZES, because Preferences → Text size now carries both: the
+ * window's ladder and the OVERLAYS' shared size, the opt-in switch that unpins them from each
+ * other, and the twelve per-overlay rows. Those steps are in ./overlayTextSizeSteps.mts, and they
+ * belong to an e2e for a second reason on top of the three below — they are claims about SEPARATE
+ * RENDERER PROCESSES agreeing, which no assertion in one process can make.
+ *
+ * AND SINCE JOS-407 IT OWNS THE OVERLAYS' TRANSPARENCY TOO (./overlayBgAlphaSteps.mts), for the
+ * same reason and in the same section — which the section's own name now says out loud.
+ *
  *   3. "…before the first paint" is the half no test can watch directly (there is no frame to
  *      inspect in a window that is never shown). What IS assertable is that the window is already
  *      at the stored size the first time the renderer can be asked at all, with nothing in this
@@ -36,6 +45,27 @@ import {
   settleGone
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+// THE OVERLAYS' size (JOS-405) — the same Preferences section, but every claim about it spans two
+// renderer processes, so the steps live in their own module beside the harness ones.
+import {
+  openTwoMeters,
+  stepIndependent,
+  stepOverlaySizeCard,
+  stepPinnedMeterFollows,
+  stepSharedAppliesLive,
+  stepSurvivesTheSwitch,
+  stepWindowMovesShared
+} from './overlayTextSizeSteps.mjs'
+// …and the overlays' TRANSPARENCY (JOS-407), which lives in the same Preferences section under its
+// OWN switch. It runs after the size steps deliberately: they leave their switch on, so the very
+// first thing the transparency steps can measure is that one row is half live.
+import {
+  stepAlphaSurvivesTheSwitch,
+  stepBgAlphaCard,
+  stepIndependentAlpha,
+  stepSharedAlphaAppliesLive,
+  stepWindowMovesSharedAlpha
+} from './overlayBgAlphaSteps.mjs'
 import { launchOnFixture, stageFixture } from './logFixture.mjs'
 import { UI_SCALE_DEFAULT, UI_SCALE_STEPS, uiScalePercent } from '../../src/shared/uiScale'
 
@@ -131,9 +161,13 @@ async function stepCard(page: Page): Promise<void> {
   ))
     .replace(/\s+/g, ' ')
     .trim()
+  // JOS-405 CHANGED WHAT THIS SENTENCE SAYS. It used to send an overlay question to the overlay
+  // ("the floating overlays keep their own size control, on the overlay itself") and two 1.4.0
+  // reporters proved that was a dead end — the stepper it pointed at is in a footer a PINNED
+  // overlay does not draw. It now points at the control directly below it, in this same section.
   check(
-    '…and the caption sends an overlay question to the overlay, where that control lives',
-    /overlay/i.test(text),
+    '…and the caption points at the overlays’ own size, which is now the next control down',
+    /overlay/i.test(text) && !/on the overlay itself/i.test(text),
     text.slice(0, 140)
   )
 }
@@ -276,6 +310,32 @@ async function main(): Promise<void> {
     await stepSurvivesReload(page, base)
     await openTextSize(page)
     await stepBackTo100(page, base)
+
+    // ---- THE OTHER TEXT SIZE (JOS-405) ----
+    // The same section carries the OVERLAYS' size now, and every claim about it is a claim about
+    // two renderer processes agreeing — see tests/e2e/overlayTextSizeSteps.mts for why none of it
+    // can be a unit test. It runs in this launch because it needs a window whose Preferences pane
+    // is already open, and it leaves the meters open for the teardown to close.
+    await stepOverlaySizeCard(page)
+    const meters = await openTwoMeters(second.app, page)
+    if (meters) {
+      const [fight, overall] = meters
+      await stepSharedAppliesLive(page, fight, overall)
+      await stepWindowMovesShared(page, fight, overall)
+      await stepPinnedMeterFollows(page, fight)
+      const own = await stepIndependent(page, fight, overall)
+      await stepSurvivesTheSwitch(page, fight, overall, own)
+
+      // ---- AND THE TRANSPARENCY (JOS-407) ----
+      // The same section, the same two meters, and a switch of its own. The card step runs first
+      // because it is the one that can see the two switches disagreeing — the size's is ON when
+      // it starts, left that way by the step directly above.
+      await stepBgAlphaCard(page)
+      await stepSharedAlphaAppliesLive(page, fight, overall)
+      await stepWindowMovesSharedAlpha(page, fight, overall)
+      const ownAlpha = await stepIndependentAlpha(page, fight, overall)
+      await stepAlphaSurvivesTheSwitch(page, fight, overall, ownAlpha)
+    }
     if (failures.length) await dumpArtifacts(page, 'text-size-FAIL-restart')
   } finally {
     await second.close()

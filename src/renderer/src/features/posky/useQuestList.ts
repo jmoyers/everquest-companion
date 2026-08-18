@@ -32,12 +32,13 @@ import { everTurnedIn, firstTimeReady, hasEveryItem, readyQuests } from './quest
 export type { SortKey }
 
 /**
- * Quests · Ready · Classes · Ignored. `ready` is JOS-147's turn-in list (rule in questCompletion);
- * `classes` is JOS-148's per-class unlock progress (rule in classUnlocks.ts). Neither reads any of
- * the filter state below — they are derivations over the same quests, which is why the tab key is
- * the only thing either of them adds to this hook.
+ * Quests · Ready · Cleanup · Classes · Ignored. `ready` is JOS-147's turn-in list (rule in
+ * questCompletion); `cleanup` is JOS-389's spare-items list (rule in cleanup.ts); `classes` is
+ * JOS-148's per-class unlock progress (rule in classUnlocks.ts). None of them reads any of the
+ * filter state below — they are derivations over the same quests, which is why the tab key is the
+ * only thing each of them adds to this hook.
  */
-export type TabKey = 'quests' | 'ready' | 'classes' | 'ignored'
+export type TabKey = 'quests' | 'ready' | 'cleanup' | 'classes' | 'ignored'
 
 // How many Accordions to render before the "show more" cap kicks in. Exported because the LIST'S
 // FOOTER has to know it too (PoskyView.ListFooter): once "show all" is on there is no cap left to

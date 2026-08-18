@@ -10,6 +10,10 @@ import { getFightSelection, setFightSelection } from '../fightSelection'
 import { getScopeSelection, setScopeSelection } from '../scopeSelection'
 import { getOverlayConfig, setOverlayConfig } from '../store'
 import { getOverlaySnap, setOverlaySnap } from '../storeOverlaySnap'
+import { getOverlayTextSize, setOverlayTextSize } from '../storeOverlayTextSize'
+import type { OverlayTextSizePrefs } from '../../shared/overlayTextScale'
+import { getOverlayBgAlpha, setOverlayBgAlpha } from '../storeOverlayBgAlpha'
+import { BG_ALPHA_DEFAULT, type OverlayBgAlphaPrefs } from '../../shared/overlayBgAlpha'
 import { getCloseToTray } from '../storeCloseToTray'
 import { applyCloseToTray } from '../tray'
 import { noteCurrentView } from '../telemetry/errorReports'
@@ -23,6 +27,7 @@ interface RendererErrorPayload {
   name?: string
   view?: string
 }
+import { fitOverlayHeight, refitStripsForTextScale } from '../overlayBounds'
 import {
   applyOverlayLocked,
   getMainWindow,
@@ -32,8 +37,126 @@ import {
   setOverlayIgnoreMouse,
   setOverlayOpen
 } from '../windows'
-import { OVERLAY_KINDS } from '../../shared/types'
+import { OVERLAY_KINDS, TEXT_SCALE_DEFAULT } from '../../shared/types'
 import type { AppFocus, AppFocusView, OverlayConfig, OverlayKind } from '../../shared/types'
+
+/**
+ * ONE VALUE, THIRTEEN CONTROLS — so every change is told to all of them (JOS-405).
+ *
+ * The overlays' text size can be moved from any of twelve windows' own A− / A+ and from three
+ * controls in Preferences, and the thing that decides what a window DRAWS is the preference rather
+ * than anything in that window. So a change goes to every OPEN overlay window (which is how a
+ * pinned meter — no chrome, no stepper, nothing to press — follows the shared size) and to the app
+ * window (so the Preferences stepper and the twelve rows agree with a press made on a meter).
+ *
+ * Closed windows need nothing: an overlay reads the prefs on mount, so the next one to open comes
+ * up at the current size by construction.
+ */
+function broadcastOverlayTextSize(prefs: OverlayTextSizePrefs): void {
+  for (const k of OVERLAY_KINDS) {
+    getOverlayWindow(k)?.webContents.send(IPC.onOverlayTextSize, prefs)
+  }
+  const app = getMainWindow()
+  if (app && !app.isDestroyed()) app.webContents.send(IPC.onOverlayTextSize, prefs)
+}
+
+/** Every kind's OWN stored scale, clamped by the store on the way out. What Preferences'
+ *  per-overlay list edits while independent sizes are on. */
+function overlayTextScaleMap(): Record<OverlayKind, number> {
+  const out = {} as Record<OverlayKind, number>
+  for (const k of OVERLAY_KINDS) out[k] = getOverlayConfig(k).textScale ?? TEXT_SCALE_DEFAULT
+  return out
+}
+
+/**
+ * RE-STATE EVERY OPEN OVERLAY'S OWN CONFIG (JOS-405).
+ *
+ * An overlay window holds its config locally and only ever hears about changes it made or was
+ * echoed. The first opt-in to independent sizes SEEDS all twelve per-kind values in the store
+ * (storeOverlayTextSize.ts), which is a change no window made — MEASURED in
+ * tests/e2e/text-size.e2e.mts: without this the fight meter went independent still holding the
+ * `textScale` it was born with, and snapped to 100% under a store that said 120%.
+ *
+ * Called only from the two prefs setters (JOS-407 added transparency's, which seeds the same way),
+ * not from every shared press: a press changes no kind's config at all, so echoing there would be
+ * twelve sends saying nothing.
+ */
+function echoOverlayConfigs(): void {
+  for (const k of OVERLAY_KINDS) {
+    getOverlayWindow(k)?.webContents.send(IPC.onOverlayConfig, { kind: k, config: getOverlayConfig(k) })
+  }
+}
+
+/** …and the push that keeps that list honest when a press is made on a WINDOW instead. Only the
+ *  app window has rows to correct; an overlay's own config echo already told it about itself. */
+function broadcastOverlayTextScales(): void {
+  const app = getMainWindow()
+  if (app && !app.isDestroyed()) app.webContents.send(IPC.onOverlayTextScales, overlayTextScaleMap())
+}
+
+/** THE SAME THREE, ONE FIELD OVER (JOS-407) — `bgAlpha` is the second overlay setting with a
+ *  shared/independent switch, and it is broadcast, mapped and pushed by exactly the rules above.
+ *  Separate functions rather than a generic pair because the two are linked and unlinked
+ *  separately: a message carrying both would make one switch's flip look like the other's. */
+function broadcastOverlayBgAlpha(prefs: OverlayBgAlphaPrefs): void {
+  for (const k of OVERLAY_KINDS) {
+    getOverlayWindow(k)?.webContents.send(IPC.onOverlayBgAlpha, prefs)
+  }
+  const app = getMainWindow()
+  if (app && !app.isDestroyed()) app.webContents.send(IPC.onOverlayBgAlpha, prefs)
+}
+
+/** Every kind's OWN stored alpha, clamped by the store on the way out. What Preferences'
+ *  per-overlay list edits while independent transparency is on. */
+function overlayBgAlphaMap(): Record<OverlayKind, number> {
+  const out = {} as Record<OverlayKind, number>
+  for (const k of OVERLAY_KINDS) out[k] = getOverlayConfig(k).bgAlpha ?? BG_ALPHA_DEFAULT
+  return out
+}
+
+function broadcastOverlayBgAlphas(): void {
+  const app = getMainWindow()
+  if (app && !app.isDestroyed()) app.webContents.send(IPC.onOverlayBgAlphas, overlayBgAlphaMap())
+}
+
+/**
+ * THE TWO SHARED FIELDS, TAKEN OUT OF A PER-KIND PATCH BEFORE IT IS STORED (JOS-405, JOS-407).
+ *
+ * `overlay:setConfig` is one door for everything a window remembers, and two of those fields are
+ * not that window's business while their switch is off: a press on the fight meter's A+ or a drag
+ * of its `bg` slider moves the SHARED preference and touches no kind's stored value. This lifts
+ * whichever of them is currently shared out of the patch, writes it where it actually lives, tells
+ * every window, and hands back what remains for the ordinary per-kind path.
+ *
+ * Its own function because the handler it was inlined in is at the measured complexity ceiling, and
+ * because the two fields' rules are now identical enough to read side by side: same test, same
+ * setter shape, same broadcast. `routed` is returned rather than inferred from `rest`, because an
+ * EMPTY remainder means two completely different things — nothing left to store, versus a patch
+ * that was empty to begin with.
+ */
+function routeSharedOverlayFields(p: Partial<OverlayConfig>): {
+  rest: Partial<OverlayConfig>
+  routed: boolean
+} {
+  const rest = { ...p }
+  let routed = false
+  if (p.textScale !== undefined && !getOverlayTextSize().independent) {
+    broadcastOverlayTextSize(setOverlayTextSize({ shared: p.textScale }))
+    // …and the THREE STRIPS grow their windows with it (JOS-406): for the toast, the banner and
+    // the con card the window IS the card, so a text size that only zoomed the content would lay
+    // the card out in half the room. Panels are untouched; they scroll.
+    refitStripsForTextScale()
+    delete rest.textScale
+    routed = true
+  }
+  if (p.bgAlpha !== undefined && !getOverlayBgAlpha().independent) {
+    broadcastOverlayBgAlpha(setOverlayBgAlpha({ shared: p.bgAlpha }))
+    // No refit: transparency changes what a card is painted with, never how much room it needs.
+    delete rest.bgAlpha
+    routed = true
+  }
+  return { rest, routed }
+}
 
 /** A non-empty display string, or undefined. Trimmed only for the emptiness test — the receiving
  *  view looks the value up verbatim, exactly as the sending window read it. */
@@ -106,26 +229,46 @@ export function registerWindowIpc(): void {
   ipcMain.handle(IPC.overlayGetState, () => overlayStateMap())
   ipcMain.handle(IPC.overlayGetConfig, (_e, kind: OverlayKind) => getOverlayConfig(kind))
   ipcMain.handle(IPC.overlaySetConfig, (_e, kind: OverlayKind, patch: Partial<OverlayConfig>) => {
-    // TEXT SCALE IS ONE VALUE ACROSS EVERY OVERLAY (owner, 2026-08-05: scaling the fight meter
-    // and watching the overall meter not move reads as broken). The field still LIVES per kind
-    // (config shape untouched, every reader unchanged) — this setter is the one door every
-    // patch walks through, so a textScale write simply fans out to all kinds and every open
-    // overlay window hears its own echo. A locked window with hidden controls follows along,
-    // which is half the point.
+    // TEXT SCALE AND BACKGROUND ALPHA ARE ROUTED, NOT FANNED OUT (JOS-405, JOS-407).
+    //
+    // The 2026-08-05 rule was that one text-size press moves every overlay, because scaling the
+    // fight meter and watching the overall meter not move reads as broken. It was implemented by
+    // WRITING all twelve per-kind fields on every press — which is right until somebody asks for
+    // them apart, and then the twelve copies have already been flattened into one and there is
+    // nothing to go back to. So the rule is now the DEFAULT of a switch rather than the law of this
+    // handler, and transparency arrived a ticket later under the same two modes:
+    //
+    //   SYNCED       — the press or drag moves the SHARED preference and touches no kind's stored
+    //                  value. Every open window is pushed the new prefs and resolves its own
+    //                  effective value; a locked window with hidden controls follows along, which
+    //                  is half the point.
+    //   INDEPENDENT  — it writes THIS kind and echoes THIS window, exactly as the field's own shape
+    //                  always said it would.
+    //
+    // Either way the per-kind value survives what the other mode does to it, which is the promise
+    // both switches make: sync for a week, unsync, and your fight meter is 150% and faint again.
     const p = patch ?? {}
-    if (p.textScale !== undefined) {
-      let out: OverlayConfig | null = null
-      for (const k of OVERLAY_KINDS) {
-        const merged = setOverlayConfig(k, k === kind ? p : { textScale: p.textScale })
-        getOverlayWindow(k)?.webContents.send(IPC.onOverlayConfig, { kind: k, config: merged })
-        if (k === kind) out = merged
-      }
-      return out ?? setOverlayConfig(kind, {})
-    }
-    const next = setOverlayConfig(kind, p)
+    const { rest, routed } = routeSharedOverlayFields(p)
+    // Whatever ELSE the patch carried is still this kind's own business. `rest` is almost always
+    // EMPTY (a stepper or a slider sends one field) and an empty write is not a no-op here: every
+    // write merges over `getOverlayConfig`, which clamps an absent field to its default — so
+    // writing nothing would still stamp a `textScale` onto a kind that has never had one.
+    if (routed && Object.keys(rest).length === 0) return getOverlayConfig(kind)
+    const next = setOverlayConfig(kind, rest)
     // Echo the merged config to that kind's overlay window so its UI stays in sync if the change
     // originated elsewhere (keeps the contract honest and cheap).
     getOverlayWindow(kind)?.webContents.send(IPC.onOverlayConfig, { kind, config: next })
+    // …and, when the thing that moved was a per-kind SIZE (independent mode), tell Preferences,
+    // whose per-overlay list is the only other place that number is written down.
+    if (rest.textScale !== undefined) {
+      broadcastOverlayTextScales()
+      // …and the strip windows follow the size they are now drawing at (JOS-406), exactly as they
+      // do on the shared route above. This is the INDEPENDENT branch, so at most one window moves.
+      refitStripsForTextScale()
+    }
+    // The same correction for a per-kind ALPHA moved on a window while independent transparency is
+    // on. No refit: a shade is not a size.
+    if (rest.bgAlpha !== undefined) broadcastOverlayBgAlphas()
     return next
   })
   // Locked (click-through) vs interactive. Persist + apply to the live window + ECHO.
@@ -146,6 +289,15 @@ export function registerWindowIpc(): void {
     setOverlayIgnoreMouse(kind, ignore)
   })
   ipcMain.on(IPC.overlayClose, (_e, kind: OverlayKind) => setOverlayOpen(kind, false))
+  // "What I drew is this tall" (JOS-386). ONLY the height moves, only for a kind whose height is
+  // its content's, and never into the store as a chosen size — all three of those rules live in
+  // `fitOverlayHeight` (overlayBounds.ts) beside the window it has to move. The height is
+  // renderer input and is validated there rather than here, for the same reason the snap patch is
+  // validated inside its setter: one door, one normalizer, and a hand-crafted send cannot find a
+  // second one.
+  ipcMain.on(IPC.overlayFitHeight, (_e, kind: OverlayKind, height: unknown) => {
+    fitOverlayHeight(kind, height)
+  })
 
   // ---- overlay snapping (JOS-217) ----
   // The one preference behind `installOverlaySnap` (src/main/overlaySnapDrag.ts). It needs no
@@ -155,6 +307,59 @@ export function registerWindowIpc(): void {
   // hand-edited file and a renderer cannot disagree about what this setting is.
   ipcMain.handle(IPC.overlaySnapGet, () => getOverlaySnap())
   ipcMain.handle(IPC.overlaySnapSet, (_e, patch: unknown) => setOverlaySnap(patch))
+
+  // ---- the overlays' text size (JOS-405) ----
+  // The read every overlay window makes on mount and Preferences seeds its three controls from,
+  // and the write Preferences makes (a window's own A− / A+ arrives through `overlay:setConfig`
+  // above, which routes it here). The patch is renderer input and is re-validated inside
+  // `setOverlayTextSize` through the shared normalizer, so a hand-edited file and a renderer
+  // cannot disagree about what this setting is.
+  //
+  // THE WRITE ALWAYS BROADCASTS, including the `independent` flip that carries no number: turning
+  // the switch off is what puts every window back on the shared size, and no window can observe
+  // that for itself.
+  ipcMain.handle(IPC.overlayTextSizeGet, () => getOverlayTextSize())
+  ipcMain.handle(IPC.overlayTextScalesGet, () => overlayTextScaleMap())
+  ipcMain.handle(IPC.overlayTextSizeSet, (_e, patch: unknown) => {
+    const prefs = setOverlayTextSize(patch)
+    broadcastOverlayTextSize(prefs)
+    // …the per-kind map with it, because the FIRST opt-in seeds all twelve per-kind values
+    // (storeOverlayTextSize.ts `seedOnFirstOptIn`, so opting in resizes nothing) and Preferences'
+    // rows go live in that same instant and must state the seeded numbers…
+    broadcastOverlayTextScales()
+    // …and each window's own config, for the same seed: a change no window made is a change no
+    // window would otherwise hear about.
+    echoOverlayConfigs()
+    // …and the three STRIP WINDOWS are re-placed at the size they now draw at (JOS-406). Last,
+    // after the seed has been written and told: `refitStripsForTextScale` reads each kind's
+    // effective scale out of the store, so it has to run on the store this write leaves behind.
+    refitStripsForTextScale()
+    return prefs
+  })
+
+  // ---- the overlays' BACKGROUND TRANSPARENCY (JOS-407) ----
+  // The read every overlay window makes on mount and Preferences seeds its controls from, and the
+  // write Preferences makes (a window's own `bg` slider arrives through `overlay:setConfig` above,
+  // which routes it here). The patch is renderer input and is re-validated inside `setOverlayBgAlpha`
+  // through the shared normalizer, so a hand-edited file and a renderer cannot disagree.
+  //
+  // THE WRITE ALWAYS BROADCASTS, including the `independent` flip that carries no number: turning
+  // the switch off is what puts every window back on the shared alpha, and no window can observe
+  // that for itself.
+  ipcMain.handle(IPC.overlayBgAlphaGet, () => getOverlayBgAlpha())
+  ipcMain.handle(IPC.overlayBgAlphasGet, () => overlayBgAlphaMap())
+  ipcMain.handle(IPC.overlayBgAlphaSet, (_e, patch: unknown) => {
+    const prefs = setOverlayBgAlpha(patch)
+    broadcastOverlayBgAlpha(prefs)
+    // …the per-kind map with it, because the FIRST opt-in seeds all twelve per-kind values
+    // (storeOverlayBgAlpha.ts `seedOnFirstOptIn`, so opting in re-paints nothing) and Preferences'
+    // rows go live in that same instant and must state the seeded numbers…
+    broadcastOverlayBgAlphas()
+    // …and each window's own config, for the same seed: a change no window made is a change no
+    // window would otherwise hear about.
+    echoOverlayConfigs()
+    return prefs
+  })
 
   // ---- what the X does (JOS-139) ----
   // The preference behind the close interceptor (src/main/tray.ts). The patch is renderer input

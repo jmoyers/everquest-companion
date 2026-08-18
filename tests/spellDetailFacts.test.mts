@@ -22,6 +22,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadSpellDb } from '../src/main/data/spellDb'
 import { buildSpellDetail } from '../src/main/data/spellDetail'
+import { spellMetricsAt } from '../src/shared/spellMetrics'
 import {
   spellClassLine,
   spellEffectClassLabels,
@@ -234,4 +235,42 @@ test('D16 a name the DB and the log BOTH carry is not listed twice', () => {
 test('D17 an empty / whitespace name is answered, never thrown on', () => {
   assert.equal(buildSpellDetail(db, '').found, false)
   assert.equal(buildSpellDetail(db, '   ').found, false)
+})
+
+// ─────────────────────────── 3. what it is worth (JOS-392) ───────────────────────────────────
+//
+// The owner asked for the unlock row's figures ON THE CARD. The claim these pin is not that the
+// numbers are right (tests/spellMetrics.test.mts owns that) — it is that they are THE SAME
+// NUMBERS: one reader, in main, at one evaluation level, so a card and the row it hangs off can
+// never state two different answers for the same spell.
+
+test('D18 the record carries the row’s own figures, read at the level the spell becomes yours', () => {
+  // Superior Healing is a cleric 30 heal the DB places for four classes — so it exercises the rule
+  // as well as the arithmetic: the LOWEST of those four is where the numbers are read.
+  const d = buildSpellDetail(db, 'Superior Healing')
+  assert.equal(d.metricsLevel, 30, 'the lowest level any class gains the line — the unlock rule')
+  assert.ok(d.metrics?.heal !== undefined && d.metrics.healPerMana !== undefined)
+  const entry = db.spells.find((s) => s.name === 'Superior Healing')
+  assert.ok(entry)
+  assert.deepEqual(d.metrics, spellMetricsAt(entry, 30), 'the card reads what the row reads, from one function')
+
+  // A nuke reads out of the same seam with the damage half of the same shape.
+  const nuke = buildSpellDetail(db, 'Ice Comet')
+  assert.equal(nuke.metricsLevel, 49)
+  assert.ok((nuke.metrics?.damage ?? 0) > 0, 'a nuke states damage')
+})
+
+test('D19 a spell with no hitpoint line states no figures at all — never a zero', () => {
+  const d = buildSpellDetail(db, 'Clarity')
+  assert.equal(d.metrics, undefined)
+  assert.equal(d.metricsLevel, undefined)
+  // The whole shipped DB, as a property: metrics and their level travel together or not at all.
+  for (const s of db.spells.slice(0, 400)) {
+    const rec = buildSpellDetail(db, s.name)
+    assert.equal(
+      rec.metrics === undefined,
+      rec.metricsLevel === undefined,
+      `${s.name}: figures and the level they were read at are one statement`
+    )
+  }
 })

@@ -51,15 +51,15 @@ variable "lambda_reserved_concurrency" {
 }
 
 variable "api_rate_limit" {
-  description = "Stage-wide steady-state request rate (rps) across every route on this API."
+  description = "Stage-wide steady-state request rate (rps) across every route on this API. JOS-394 (2026-08-16): 5 -> 15. It has to stay ABOVE the per-route ceilings it contains, or the stage throttles a route that is inside its own budget — measured live at 4.5 RPS steady on /v1/telemetry alone, i.e. ~10% headroom under the old 5."
   type        = number
-  default     = 5
+  default     = 15
 }
 
 variable "api_burst_limit" {
-  description = "Stage-wide burst capacity."
+  description = "Stage-wide burst capacity. Raised with the rate (JOS-394), keeping the same 2x relationship."
   type        = number
-  default     = 10
+  default     = 30
 }
 
 variable "route_rate_limit" {
@@ -107,19 +107,63 @@ variable "telemetry_reserved_concurrency" {
 }
 
 variable "telemetry_route_rate_limit" {
-  description = "Steady-state rate (rps) for POST /v1/telemetry. Wider than feedback's because every install is a caller on a flush timer, not a human pressing a button. Owner 2026-08-12: halved 10 -> 5 alongside the client flush going 60s -> 5min (JOS-269); throttled callers buffer and retry by design, and unanswered 429s are unbilled, so this is the account's de facto spend ceiling (~$1/day worst case)."
+  description = "Steady-state rate (rps) for POST /v1/telemetry. Wider than feedback's because every install is a caller on a flush timer, not a human pressing a button. Owner 2026-08-12: halved 10 -> 5 alongside the client flush going 60s -> 5min (JOS-269); throttled callers buffer and retry by design, and unanswered 429s are unbilled, so this is the account's de facto spend ceiling. JOS-394 (2026-08-16): back to 10, on a MEASUREMENT rather than a guess — the live route sits at 4.5 RPS (~1,350 requests per 5 min, flat) with 4xx at 2-12 per 5 min, so the old 5 left ~10% headroom and the next few installs would have started throttling real flushes. 10 RPS worst case is ~$2/day, still bounded by this ceiling and alarmed within five minutes."
   type        = number
-  default     = 5
+  default     = 10
 }
 
 variable "telemetry_route_burst_limit" {
-  description = "Burst capacity for POST /v1/telemetry. Halved with the rate limit (owner 2026-08-12)."
+  description = "Burst capacity for POST /v1/telemetry. Doubled with the rate limit (JOS-394), keeping the same 2x relationship it has had since it was halved."
   type        = number
-  default     = 10
+  default     = 20
 }
 
 variable "default_max_events_per_id_per_day" {
   description = "Fallback per-analyticsId daily EVENT cap, used when the feedback_config column is NULL. The column is the live control (deploy-free); this is the cold-start default. 20,000 is ~14 events/minute sustained for 24h — far past a real install's flush loop."
   type        = number
   default     = 20000
+}
+
+# ---- never lose the data (JOS-398): AWS Backup + the nightly S3 export -------
+#
+# Every knob here bounds STORAGE spend, which is why each is a variable rather
+# than a literal — but the defaults are the designed windows and the two SECURITY
+# numbers among them (the backlog's 90 days, the monthly plan's 12 months) are
+# stated to users in SECURITY.md. Changing either is a change to a published
+# promise, not a tuning decision.
+
+variable "backup_daily_retention_days" {
+  description = "How long a DAILY AWS Backup recovery point of the DSQL cluster is kept. 35 days is comfortably longer than the time it has ever taken to notice a data problem here, and it matches the depth the S3 archive gives the same window."
+  type        = number
+  default     = 35
+}
+
+variable "backup_monthly_retention_days" {
+  description = "How long a MONTHLY recovery point is kept. 12 months: the depth that makes a slow, quiet corruption recoverable at all. STATED IN SECURITY.md — a deleted report can survive in a monthly recovery point for this long, which is inherent to having backups and is disclosed rather than discovered."
+  type        = number
+  default     = 365
+}
+
+variable "archive_glacier_transition_days" {
+  description = "Days before a nightly export object moves to GLACIER_IR. Nothing reads a month-old export except a restore, and a restore can wait milliseconds."
+  type        = number
+  default     = 30
+}
+
+variable "archive_noncurrent_retention_days" {
+  description = "How long a SUPERSEDED export version is kept. A superseded object is a broken or duplicated night rather than history, but a year makes 'the export has been silently wrong since March' recoverable."
+  type        = number
+  default     = 365
+}
+
+variable "archive_backlog_retention_days" {
+  description = "How long `exports/report/` objects are kept — the ONE prefix that expires, because `report` is the only table holding human-written text and SECURITY.md promises a deletion request is honoured. 90 days is the window an attached log slice already has in s3.tf: one published number, not a second one to explain."
+  type        = number
+  default     = 90
+}
+
+variable "export_schedule_expression" {
+  description = "EventBridge schedule for the nightly analytics export. 09:30 UTC — half an hour after the AWS Backup daily rule, so the two never meet on the same cluster and a morning's recovery point exists before the export."
+  type        = string
+  default     = "cron(30 9 * * ? *)"
 }

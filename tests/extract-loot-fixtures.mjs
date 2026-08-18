@@ -21,6 +21,11 @@ const lines = readFileSync(LOG, 'utf8').split(/\r?\n/)
 const KEEP = [
   /\] --You have looted /,
   /\] You looted /,
+  // The DESTROY (JOS-401) — the negative member of the loot family, and the only line in it that
+  // subtracts. It belongs in these windows for the same reason the sold form does: the held-count
+  // rule is a fold over the whole family, and a window that shows only the additions can only
+  // prove half of it.
+  /\] You successfully destroyed /,
   /\] You have entered /
 ]
 // Routed through the SHARED scrub (tests/fixture-scrub.mjs) — one definition of
@@ -55,3 +60,12 @@ slice(2560, 15115, 'w20-combine.log')
 // Chips …--" kept stacks AND "You looted 2 Phosphorous Powder … and sold it …" sold
 // stacks (the old regexes swallowed the digits into the item name).
 slice(151440, 169545, 'w21-stacked.log')
+// W33 DESTROY (JOS-401): the Aug 4 21:35–21:37 Nagafen loot-then-clean-out — three Prayers of
+// Life off one corpse and ONE destroyed (held 2), a `Blight, Hammer of the Scourge +1` looted and
+// then destroyed on the same counting key, and two destroys of things this window never saw
+// arrive (`Backpack`, `Diamond Dust`) — the floor-at-0 case, on real bytes.
+slice(1315000, 1315060, 'w33-destroy.log')
+// W34 DESTROY STACKS (JOS-401): the Aug 12 00:36–00:38 Karana skeleton pull — a `2 Bone Chips`
+// stack, two singles and one auto-sold (never held) followed by two destroys, so the stack size
+// rule and the subtraction meet on one counting key inside one zone.
+slice(1608330, 1608460, 'w34-destroy-stacks.log')

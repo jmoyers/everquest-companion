@@ -44,6 +44,10 @@ import {
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture } from './logFixture.mjs'
+// THE STRIP SCALES WITH ITS TEXT (JOS-406). The toast, the alert banner and the con card are the
+// three overlays whose WINDOW IS THE CARD, so the one step is shared between their three specs
+// rather than written out three times — its header carries the whole argument.
+import { stepStripBgSlider, stepStripScalesWithText } from './stripScaleSteps.mjs'
 
 const ROW = '[data-testid="alert-row"]'
 const LINE = '[data-testid="banner-line"]'
@@ -300,6 +304,12 @@ async function main(): Promise<void> {
       await stepControlsAppear(page)
       const name = await stepFiringRendersALine(page, banner)
       await stepTextIsCentered(banner)
+      // …and with a line on screen, the window at 200% has to be the same banner, twice the size:
+      // a raid call that wrapped because the window did not grow is the defect this ticket is about.
+      await stepStripScalesWithText(app, banner, 'alertBanner', 'alert banner')
+      // …and the drag frame's OTHER new knob (JOS-407): this kind's transparency, which until now
+      // was a 0.72 nobody could reach.
+      await stepStripBgSlider(banner, 'banner-drag-frame', 'alert banner')
       await stepPerAlertSwitchHides(page, banner)
       await stepMutedStillShows(page, banner, name)
     }

@@ -36,6 +36,8 @@ import {
   setOverlayConfig
 } from './store'
 import { listPacks } from './sounds'
+import { getOverlayBgAlpha, setOverlayBgAlpha } from './storeOverlayBgAlpha'
+import { bodyBgAlphaPrefs } from '../shared/shareMerge'
 import type { OverlayKind } from '../shared/types'
 
 const KINDS: OverlayKind[] = ['fight', 'overall', 'heal-fight', 'heal-overall', 'events']
@@ -68,6 +70,9 @@ export function exportSettingsString(appVersion: string, ui: UiPrefMap): string 
     alerts: getAlerts(),
     alertPrefs: getAlertPrefs(),
     overlays: currentOverlays(),
+    // JOS-407: the shared transparency rides ALONGSIDE the per-kind values above, never instead of
+    // them, so a machine on an older build reads this bundle and applies everything it knows.
+    overlayBgAlpha: getOverlayBgAlpha(),
     ui
   })
   return encodeShareString(makeEnvelope('settings', body, appVersion))
@@ -110,6 +115,7 @@ export function previewShare(text: string, ui: UiPrefMap): SharePreview {
     scalars = planScalarChanges(body, {
       alertPrefs: getAlertPrefs(),
       overlays: currentOverlays(),
+      overlayBgAlpha: getOverlayBgAlpha(),
       ui
     })
   }
@@ -162,6 +168,29 @@ function applyOverlayScalar(changeId: string, body: SettingsBundleBody): boolean
   return false
 }
 
+/**
+ * Apply one selected `overlayBgAlpha.<half>` change (JOS-407). True when it actually wrote.
+ *
+ * HALF AT A TIME, because it is offered half at a time: the alpha and the mode are two rows, and a
+ * person taking a friend's transparency should not have to take their independent-mode answer with
+ * it. `bodyBgAlphaPrefs` is what makes an OLD bundle — per-kind alphas and no preference at all —
+ * importable under the least-harm rule: equal values mean the sender was synced, differing ones
+ * mean they were not. It runs BEFORE the per-kind rows, because the first opt-in to independent
+ * transparency seeds every kind (see planScalarChanges).
+ *
+ * Its own function because `applyScalarChange` is at the measured complexity ceiling — the reason
+ * `applyOverlayScalar` and `applyUiScalar` beside it are functions too.
+ */
+function applyBgAlphaScalar(changeId: string, body: SettingsBundleBody): boolean {
+  const incoming = bodyBgAlphaPrefs(body)
+  if (!incoming) return false
+  const half = changeId.slice('overlayBgAlpha.'.length)
+  if (half === 'shared') setOverlayBgAlpha({ shared: incoming.shared })
+  else if (half === 'independent') setOverlayBgAlpha({ independent: incoming.independent })
+  else return false
+  return true
+}
+
 /** Apply one selected `ui.<key>` change, recording the renderer's localStorage write.
  *  True when it actually wrote. */
 function applyUiScalar(
@@ -203,6 +232,7 @@ function applyScalarChange(
     setAlertPrefs({ ...getAlertPrefs(), alwaysPlayAll: body.alertPrefs.alwaysPlayAll === true })
     return true
   }
+  if (change.id.startsWith('overlayBgAlpha.')) return applyBgAlphaScalar(change.id, body)
   if (change.id.startsWith('overlay.')) return applyOverlayScalar(change.id, body)
   if (change.id.startsWith('ui.')) return applyUiScalar(change.id, body, ui, uiWrites)
   return false

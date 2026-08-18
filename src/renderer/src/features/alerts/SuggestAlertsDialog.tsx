@@ -111,7 +111,7 @@ function SearchBox({
       size="small"
       fullWidth
       data-testid="suggest-search"
-      placeholder="Search name, spell text, level:25, class:shm, type:debuff…"
+      placeholder="Search name, spell text, level:25, class:shaman, type:debuff…"
       value={query}
       onChange={(e) => onQuery(e.target.value)}
       slotProps={{

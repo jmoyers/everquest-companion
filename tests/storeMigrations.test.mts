@@ -210,6 +210,12 @@ test('an EMPTY pre-framework store migrates to a valid current store, not to jun
     // experience, nothing it does latency-critical — rather than an instrument or a workaround,
     // which is why it does not ship off like the two above it.
     processPriority: { yieldToGame: true },
+    // ON (v14, JOS-385), and the SECOND blob here whose default is `true` — for a different
+    // reason, worth stating so the next author does not read "new switches ship off" as the whole
+    // rule. This one was MEASURED: the shipped default is whatever the player-versus-pet
+    // comparison on a real log said, and it said NPC casters are not systematically easier to
+    // resist than players. The switch stays because that is a fact a patch could move.
+    resists: { includeNpcCasters: true },
     [SCHEMA_VERSION_KEY]: CURRENT_SCHEMA_VERSION
   })
 })

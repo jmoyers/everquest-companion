@@ -69,6 +69,11 @@
 // from the base rank's 24 s to the 44 s their own log proves.
 
 import type { ActiveBuff, BuffsSnap, EstimatorSource } from './buffTypes'
+// THE ALLOW-LIST (JOS-168). A value import, and relative like every other value import in this
+// file's neighbourhood, so the node tests can drive `filterAllowedRows` under tsx. The preference's
+// own vocabulary — the tri-state, the mode, and what an unset line means — lives THERE; what lives
+// here is only the mapping from a ROW to the line key it is about, which is a fact about rows.
+import { buffAllowAllowed, buffAllowIsDefault, type BuffAllowPrefs } from './buffAllow'
 // Type-only: `shared/types.ts` is a value module (OVERLAY_KINDS) and this one is imported by the
 // node tests as a pure module, so the reference is erased at compile time and nothing follows it.
 import type { OverlayConfig, OverlayKind } from './types'
@@ -346,6 +351,51 @@ export function rowsForSurface(rows: readonly BuffTimerRow[], kind: TimerOverlay
  */
 export function filterPermanentRows(rows: readonly BuffTimerRow[], showPermanent: boolean): BuffTimerRow[] {
   return showPermanent ? [...rows] : rows.filter((r) => r.mode !== 'permanent')
+}
+
+/**
+ * THE SPELL LINES ONE ROW IS ABOUT (JOS-168) — usually one, and more only when the row is a FAMILY.
+ *
+ * A row whose landing sentence was shared carries `candidates` and its `name` is those names joined
+ * with ` / ` (see `ccRow`), which is not a spell line and would key nothing. So a family asks about
+ * every spell it could be. Everything else asks about its own name, folded the same way its `id`
+ * already is.
+ */
+function rowAllowKeys(row: BuffTimerRow): string[] {
+  return row.candidates && row.candidates.length > 0
+    ? row.candidates.map(timerNameKey)
+    : [timerNameKey(row.name)]
+}
+
+/**
+ * THE ALLOW-LIST, AS A DISPLAY FILTER OVER THE TWO TIMER WINDOWS (JOS-168, owner ask 2026-08-16) —
+ * the second thing in this file that removes a row for a reason the model does not believe, and it
+ * sits beside `filterPermanentRows` because it is the same KIND of thing and obeys the same law.
+ *
+ * WHAT DECIDES: `shared/buffAllow.ts`, one function (`buffAllowAllowed`) over one tri-state and one
+ * mode. What decides HERE is only which key a row is about — see `rowAllowKeys`.
+ *
+ * A FAMILY IS KEPT WHEN ANY OF ITS CANDIDATES MAY DRAW, and that is the honest reading rather than
+ * a lenient one: the row stands for a sentence the log printed that could be any of four spells
+ * (JOS-84), so denying one member of the family has not denied the thing on screen. The user who
+ * wants it gone denies the ones it could be, or turns opt-in on and checks nothing.
+ *
+ * WHY IT IS IN THE RENDERER AND NOT THE MODEL — verbatim the argument `filterPermanentRows` makes
+ * one function up, and it is the half a future reader is most likely to be tempted by. The model
+ * keeps these instances whatever a window draws: the Buffs TAB lists them (that is where the
+ * checkboxes are, so a filtered tab would hide the control that unfilters it), the alerts module
+ * reads them, the learner mints durations off them, and the tab's header chip reports what the
+ * model believes. A preference that reached into `buffs.active` would be one window's opinion
+ * deleting evidence from everybody else's model.
+ *
+ * Applied BEFORE ordering and dismissal, like the permanent filter, so everything downstream — the
+ * header count, the groups, the drop flash — is talking about what is actually on screen.
+ */
+export function filterAllowedRows(rows: readonly BuffTimerRow[], prefs: BuffAllowPrefs): BuffTimerRow[] {
+  // NOTHING SAID, SHIPPED MODE ⇒ EVERY ROW, and not merely as an optimization: it is the statement
+  // that this feature is invisible until somebody uses it.
+  if (buffAllowIsDefault(prefs)) return [...rows]
+  return rows.filter((r) => rowAllowKeys(r).some((k) => buffAllowAllowed(prefs, k)))
 }
 
 /** One "… dropped" notice: the row that left, and the words the overlay says about it. */

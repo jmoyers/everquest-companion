@@ -1,25 +1,17 @@
-import { type JSX, useCallback, useEffect, useState } from 'react'
-import {
-  Alert,
-  Box,
-  Button,
-  Checkbox,
-  FormControlLabel,
-  Stack,
-  Tab,
-  Tabs,
-  Typography
-} from '@mui/material'
+import { type JSX, useCallback, useEffect, useMemo, useState } from 'react'
+import { Alert, Box, Checkbox, FormControlLabel, Stack, Tab, Tabs, Typography } from '@mui/material'
 import type { CountSource, ItemCountOverride } from '@shared/types'
-import { OverrideSummaryChip, type SetItemCount } from './ItemOverrides'
+import { OverrideSummaryChip } from './ItemOverrides'
 import { useProgress, type QuestProgress } from './useProgress'
-import type { SharedItem, SharedItemsMap } from './sharedItems'
 import { IgnoredList } from './IgnoredList'
-import { QuestAccordion } from './QuestAccordion'
 import QuestFilterBar, { InventorySource } from './QuestFilterBar'
 import { countSourcePhrase } from '../inventory/countSource'
 import ClassUnlockList from './ClassUnlockList'
-import { QUEST_PAGE, useQuestList, type QuestListState, type TabKey } from './useQuestList'
+import { useQuestList, type QuestListState, type TabKey } from './useQuestList'
+// The rows themselves live in their own file since JOS-389 — see its header for why.
+import { QuestList, type QuestAnchor, type QuestListProps } from './QuestList'
+import CleanupList, { NO_DUMP_LOCATIONS } from './CleanupList'
+import { cleanupRowsFor } from './cleanup'
 import type { MobTarget } from '../mobs/mobTarget'
 import Confetti from '../../lib/Confetti'
 
@@ -78,155 +70,6 @@ function CountsLine({
   )
 }
 
-/** The quest a deep link asked us to open, and the nonce that re-delivers the same ask twice. */
-interface QuestAnchor {
-  key: string
-  nonce: number
-}
-
-/**
- * Everything it takes to draw a list of quest rows. One interface because the Quests tab and the
- * Ready tab draw the SAME row (JOS-147's requirement) — the only thing that differs between them
- * is which quests go in, so `quests` is a parameter and the rest is shared verbatim.
- */
-interface QuestListProps {
-  /** the rows to draw, already filtered and ordered by the caller */
-  quests: QuestProgress[]
-  list: QuestListState
-  sharedItems: SharedItemsMap
-  ambiguousNames: Set<string>
-  /** the anchored quest, or null. Its accordion mounts EXPANDED and scrolls itself into view. */
-  anchor: QuestAnchor | null
-  recordTurnIn: (key: string) => Promise<void>
-  undoTurnIn: (key: string) => Promise<void>
-  /** correct one item's held count by hand (JOS-186) — the same bundle on both row-drawing tabs */
-  setItemCount: (name: string, count: number | null) => Promise<void>
-  onOpenMob: (t: MobTarget) => void
-  onOpenLoot?: (item: string) => void
-}
-
-/**
- * THE BOTTOM OF THE LIST: how to see more of it, and how to stop (JOS-191).
- *
- * "Show more" is the page it always was. "Show all" beside it is the reporter's ask — they had
- * paged the whole list open, and every star, every drop and every turn-in threw it back to the
- * first page (the cause was `usePaging`'s reset key, fixed there). One click for the lot is the
- * affordance they thought they were using, and it is a STORED preference, so it holds across the
- * tab switch that unmounts this view and across a restart.
- *
- * SO THE OFF SWITCH LIVES HERE TOO, in the place the on switch was: a preference with no visible
- * way back is a trap, and the bottom of the list is where the user just clicked. It appears only
- * when the list is long enough for the cap to have meant something — under one page, "show fewer"
- * would draw exactly the same rows and read as a button that does nothing.
- */
-function ListFooter({ total, list }: { total: number; list: QuestListState }): JSX.Element | null {
-  if (list.showAll) {
-    if (total <= QUEST_PAGE) return null
-    return (
-      <Box sx={{ textAlign: 'center', py: 1.5 }}>
-        <Button size="small" data-testid="posky-show-fewer" onClick={() => list.setShowAll(false)}>
-          Show fewer
-        </Button>
-      </Box>
-    )
-  }
-  if (total <= list.visibleCount) return null
-  return (
-    <Stack direction="row" spacing={1} justifyContent="center" sx={{ py: 1.5 }}>
-      <Button variant="outlined" size="small" data-testid="posky-show-more" onClick={list.showMore}>
-        Show more ({total - list.visibleCount} more)
-      </Button>
-      <Button
-        variant="outlined"
-        size="small"
-        data-testid="posky-show-all"
-        title="Draw every quest, and keep drawing them - this is remembered"
-        onClick={() => list.setShowAll(true)}
-      >
-        Show all ({total})
-      </Button>
-    </Stack>
-  )
-}
-
-/**
- * The shared "this quest shares nothing" answer. A `?? []` written in the map would mint a new
- * array per row per render, which is a changed prop on a memoized row — the whole point of
- * JOS-206's first fix — for a quest that shares nothing with anything.
- */
-const NO_SHARED_ITEMS: SharedItem[] = []
-
-/**
- * The scrolling body: one accordion per quest up to the page cap, then the list footer.
- *
- * EVERY PROP THIS PASSES DOWN IS IDENTITY-STABLE ACROSS A KEYSTROKE (JOS-206), because
- * `QuestAccordion` is `memo`'d and a shallow comparison is only as good as what it is handed. The
- * two turn-in actions are the only ones that need wrapping — they are async, and the row wants a
- * `void` handler — so they are `useCallback`ed here rather than written inline in the map. The
- * rest are already stable at their source: `questFavorites.toggle` / `questIgnored.toggle` are
- * module-lifetime store methods, `setQuery` is a `useState` setter, `isFavorite` is pinned to the
- * favorites Set (useFavorites), and `onOpenMob`/`onOpenLoot` are App's memoized routers.
- */
-function QuestList({
-  quests,
-  list,
-  sharedItems,
-  ambiguousNames,
-  anchor,
-  recordTurnIn,
-  undoTurnIn,
-  setItemCount,
-  onOpenMob,
-  onOpenLoot
-}: QuestListProps): JSX.Element {
-  const onRecordTurnIn = useCallback(
-    (questKey: string) => {
-      void recordTurnIn(questKey)
-    },
-    [recordTurnIn]
-  )
-  const onUndoTurnIn = useCallback(
-    (questKey: string) => {
-      void undoTurnIn(questKey)
-    },
-    [undoTurnIn]
-  )
-  const onSetItemCount = useCallback<SetItemCount>(
-    (name, count) => {
-      void setItemCount(name, count)
-    },
-    [setItemCount]
-  )
-  return (
-    <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-      {quests.slice(0, list.visibleCount).map((q) => (
-        <QuestAccordion
-          // The NONCE rides the key for the anchored quest alone: the accordion is uncontrolled
-          // (each one opens and closes independently, and lifting that into one "which is open"
-          // state would silently make the list single-open), so a remount is what lets a SECOND
-          // link to the same quest re-open and re-scroll it.
-          key={anchor?.key === q.key ? `${q.key}#${String(anchor.nonce)}` : q.key}
-          anchored={anchor?.key === q.key}
-          q={q}
-          shared={sharedItems.get(q.key) ?? NO_SHARED_ITEMS}
-          ambiguousNames={ambiguousNames}
-          favorited={list.questFavorites.has(q.key)}
-          onToggleFavorite={list.questFavorites.toggle}
-          onToggleIgnore={list.questIgnored.toggle}
-          isFavorite={list.isFavorite}
-          toggleFavorite={list.toggleFavorite}
-          onRecordTurnIn={onRecordTurnIn}
-          onUndoTurnIn={onUndoTurnIn}
-          onSetItemCount={onSetItemCount}
-          onSelectQuest={list.setQuery}
-          onOpenMob={onOpenMob}
-          onOpenLoot={onOpenLoot}
-        />
-      ))}
-      <ListFooter total={quests.length} list={list} />
-    </Box>
-  )
-}
 
 /**
  * The Ready tab's ONE control (JOS-155): show only the quests you have never handed in.
@@ -341,16 +184,21 @@ function ReadyList(props: ReadyListProps): JSX.Element {
 }
 
 /**
- * The four tabs, in the order the work happens: what you are farming, what you can hand in, what
- * all that grinding is FOR, and what you told the app to forget. Ready and Ignored carry their own
- * count, because the number IS the reason to look.
+ * The five tabs, in the order the work happens: what you are farming, what you can hand in, what
+ * you could throw away now that you have, what all that grinding is FOR, and what you told the app
+ * to forget. Ready, Cleanup and Ignored carry their own count, because the number IS the reason to
+ * look.
  *
  * Classes deliberately does not (JOS-148). Its number would be "how many classes are unlocked",
  * which needs the classUnlocks module — and subscribing to it HERE, just to letter a tab, would
  * put a second copy of the tab's own model in the container that mounts it. The count is the first
  * thing the tab says when you open it, one line above the rows.
+ *
+ * Cleanup's number arrives as a PROP rather than off `list` (JOS-389): it is not list state at
+ * all, it is the cleanup model's own row count, and the view computes it once above both this bar
+ * and the pane so the tab and its rows cannot disagree.
  */
-function PoskyTabs({ list }: { list: QuestListState }): JSX.Element {
+function PoskyTabs({ list, cleanupCount }: { list: QuestListState; cleanupCount: number }): JSX.Element {
   return (
     <Tabs
       value={list.tab}
@@ -367,6 +215,14 @@ function PoskyTabs({ list }: { list: QuestListState }): JSX.Element {
         value="ready"
         label={list.ready.length ? `Ready (${list.ready.length})` : 'Ready'}
         data-testid="posky-tab-ready"
+      />
+      {/* "Cleanup" - the owner's own word for the screen (JOS-389). The count is how many items
+          the model lists, i.e. how many stacks are candidates to throw away, which is exactly the
+          number that decides whether the tab is worth opening after a long campaign. */}
+      <Tab
+        value="cleanup"
+        label={cleanupCount ? `Cleanup (${String(cleanupCount)})` : 'Cleanup'}
+        data-testid="posky-tab-cleanup"
       />
       {/* "Classes" - what the tests are for. The word is the class, not the unlock, because a row
           is a class whether or not it is unlocked and the tab is as much a progress list. */}
@@ -422,6 +278,93 @@ function useQuestAnchor(
   return anchor
 }
 
+/** Everything the five panes need between them. One bag, because it is one switch. */
+interface PoskyBodyProps {
+  quests: QuestProgress[]
+  list: QuestListState
+  classes: string[]
+  /** the identical bundle both row-drawing tabs take (see `QuestListProps`) */
+  rows: Omit<QuestListProps, 'quests'>
+  countSource: CountSource
+  onCountSource: (s: CountSource) => void
+  inventoryLoadedAt: number | null
+  /** an item name → the Loot tab's drill-down, for the pane that draws names without quest rows */
+  onOpenLoot?: (item: string) => void
+  itemOverrides: readonly ItemCountOverride[]
+}
+
+/**
+ * WHICH PANE IS UNDER THE TABS. Its own function since JOS-389 put a fifth branch in the chain:
+ * the container was over the measured per-function ceiling, and the split is the honest one —
+ * `PoskyView` owns the hooks, the confetti and the derivations, and this owns the switch.
+ */
+function PoskyBody(x: PoskyBodyProps): JSX.Element {
+  const { list, rows, countSource, onCountSource, inventoryLoadedAt } = x
+  if (list.tab === 'ignored') {
+    return <IgnoredList quests={list.ignored} onUnignore={list.questIgnored.toggle} />
+  }
+  if (list.tab === 'cleanup') {
+    return (
+      <CleanupList
+        // EVERY quest, ignored ones included - see the note on `cleanupCount` below.
+        quests={x.quests}
+        countSource={countSource}
+        onCountSource={onCountSource}
+        inventoryLoadedAt={inventoryLoadedAt}
+        onOpenLoot={x.onOpenLoot}
+      />
+    )
+  }
+  if (list.tab === 'ready') {
+    return (
+      <ReadyList
+        quests={list.ready}
+        {...rows}
+        countSource={countSource}
+        onCountSource={onCountSource}
+        inventoryLoadedAt={inventoryLoadedAt}
+      />
+    )
+  }
+  if (list.tab === 'classes') {
+    // The VISIBLE quests, like every other tab: a quest the user permanently ignored is not shown
+    // here either, and a class's total shrinks with it rather than counting a quest the app has
+    // been told to forget. `list.visible` is that set (useQuestList.useVisibleQuests). A row is a
+    // DOOR (JOS-157): clicking a class lands on the Quests tab filtered to it. The navigation is
+    // `list.showClassQuests`, so the drill-down writes the same stored pick the class chip writes
+    // and the state it leaves behind is one a user could have set by hand.
+    return <ClassUnlockList quests={list.visible} onOpenClass={list.showClassQuests} />
+  }
+  return (
+    <>
+      {/* THE FRESHNESS LINE MOVED INTO THIS BAR (JOS-268), and both halves of that are the
+          owner's ruling on the JOS-253 surface. WHERE: it hangs under the "Count items from"
+          dropdown as an absolutely-positioned caption, so it is beside the control it is
+          about and nothing below it moves when it appears. WHEN: only while an inventory-
+          backed source is selected — JOS-253 put it on ALWAYS, because `log` is the default
+          and a player who never opened the dropdown had no line at all, but the answer to
+          that was auto-loading (this app now reads the dump at startup and follows it), not a
+          permanent bar about a file the current source does not read. */}
+      <QuestFilterBar
+        list={list}
+        classes={x.classes}
+        countSource={countSource}
+        onCountSource={onCountSource}
+        inventoryLoadedAt={inventoryLoadedAt}
+      />
+      <CountsLine
+        questCount={x.quests.length}
+        // Counts describe the list you are looking at, so ignored quests are not in them.
+        totalQuests={list.visible.length}
+        filteredCount={list.filtered.length}
+        countSource={countSource}
+        overrides={x.itemOverrides}
+      />
+      <QuestList quests={list.filtered} {...rows} />
+    </>
+  )
+}
+
 export default function PoskyView({
   onOpenMob,
   onOpenLoot,
@@ -460,13 +403,24 @@ export default function PoskyView({
     ambiguousQuestNames
   } = useProgress({ onQuestComplete })
   const list = useQuestList(quests)
+  /**
+   * THE CLEANUP COUNT, derived without the dump (JOS-389). Where an item SITS decides nothing
+   * about whether it belongs on that tab — membership is the turn-in rule and the held counts, and
+   * nothing else (cleanup.ts) — so the number on the tab costs one pass over the quests here and
+   * no `character:sheet` read for a player who never opens it. The pane recomputes the same list
+   * WITH the places on it; the two agree by construction because locations are decoration.
+   *
+   * It reads EVERY quest, ignored ones included, unlike every other tab on this view. Ignoring a
+   * quest means "never show me this row"; it does not mean "give away the drops it needs". On a
+   * screen whose advice is destructive the safe reading is the conservative one, so an ignored
+   * quest still speaks for its items.
+   */
+  const cleanupCount = useMemo(() => cleanupRowsFor(quests, NO_DUMP_LOCATIONS).length, [quests])
   const anchor = useQuestAnchor(quests, list, {
     quest: focusQuest,
     nonce: focusNonce,
     onConsumed: onFocusConsumed
   })
-  // Counts describe the list you are looking at, so ignored quests are not in them.
-  const totalQuests = list.visible.length
 
   // Everything a quest ROW needs except which quests to draw. Both tabs that draw rows pass the
   // identical bundle, which is what "same row rendering" means in code rather than in prose.
@@ -485,52 +439,18 @@ export default function PoskyView({
   return (
     <Stack spacing={2} sx={{ height: '100%', position: 'relative' }}>
       {burst != null && <Confetti key={burst} onDone={() => setBurst(null)} />}
-      <PoskyTabs list={list} />
-      {list.tab === 'ignored' ? (
-        <IgnoredList quests={list.ignored} onUnignore={list.questIgnored.toggle} />
-      ) : list.tab === 'ready' ? (
-        <ReadyList
-          quests={list.ready}
-          {...rows}
-          countSource={countSource}
-          onCountSource={setCountSource}
-          inventoryLoadedAt={inventoryInfo?.readAt ?? null}
-        />
-      ) : list.tab === 'classes' ? (
-        // The VISIBLE quests, like every other tab: a quest the user permanently ignored is not
-        // shown here either, and a class's total shrinks with it rather than counting a quest the
-        // app has been told to forget. `list.visible` is that set (useQuestList.useVisibleQuests).
-        // A row is a DOOR (JOS-157): clicking a class lands on the Quests tab filtered to it. The
-        // navigation is `list.showClassQuests`, so the drill-down writes the same stored pick the
-        // class chip writes and the state it leaves behind is one a user could have set by hand.
-        <ClassUnlockList quests={list.visible} onOpenClass={list.showClassQuests} />
-      ) : (
-        <>
-          {/* THE FRESHNESS LINE MOVED INTO THIS BAR (JOS-268), and both halves of that are the
-              owner's ruling on the JOS-253 surface. WHERE: it hangs under the "Count items from"
-              dropdown as an absolutely-positioned caption, so it is beside the control it is
-              about and nothing below it moves when it appears. WHEN: only while an inventory-
-              backed source is selected — JOS-253 put it on ALWAYS, because `log` is the default
-              and a player who never opened the dropdown had no line at all, but the answer to
-              that was auto-loading (this app now reads the dump at startup and follows it), not a
-              permanent bar about a file the current source does not read. */}
-          <QuestFilterBar
-            list={list}
-            classes={classes}
-            countSource={countSource}
-            onCountSource={setCountSource}
-            inventoryLoadedAt={inventoryInfo?.readAt ?? null}
-          />
-          <CountsLine
-            questCount={quests.length}
-            totalQuests={totalQuests}
-            filteredCount={list.filtered.length}
-            countSource={countSource}
-            overrides={itemOverrides}
-          />
-          <QuestList quests={list.filtered} {...rows} />
-        </>
-      )}
+      <PoskyTabs list={list} cleanupCount={cleanupCount} />
+      <PoskyBody
+        quests={quests}
+        list={list}
+        classes={classes}
+        rows={rows}
+        countSource={countSource}
+        onCountSource={setCountSource}
+        inventoryLoadedAt={inventoryInfo?.readAt ?? null}
+        onOpenLoot={onOpenLoot}
+        itemOverrides={itemOverrides}
+      />
     </Stack>
   )
 }

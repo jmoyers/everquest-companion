@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
 import { isNotableKnowledge } from '@shared/itemKnowledge'
+import { isDestroyed } from '@shared/lootDisposition'
 import { itemCountKey } from '../../lib/itemName'
 
 /** How many most-recent distinct looted items to probe for notability. */
@@ -60,6 +61,12 @@ export function useNotablePickups(history: LootEvent[], dismissed: Set<string>):
     const list: { item: string; ts: number; key: string }[] = []
     for (let i = history.length - 1; i >= 0 && list.length < PROBE_LIMIT; i--) {
       const e = history[i]
+      // A DESTROY IS NOT A PICKUP (JOS-401, the census), and here that is a cost as well as a
+      // meaning: the probe window is the 40 most recent DISTINCT items, so admitting a bag
+      // cleanup would push real pickups out of it and spend main's lookup queue on items the
+      // player just threw away. An item known to this app ONLY from a destroy line therefore has
+      // no knowledge record, which is the right trade - nothing on any surface asks about it.
+      if (isDestroyed(e)) continue
       const key = itemCountKey(e.item)
       if (seen.has(key)) continue
       seen.add(key)

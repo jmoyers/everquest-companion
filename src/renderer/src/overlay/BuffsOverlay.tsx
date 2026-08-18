@@ -46,12 +46,17 @@ import {
   type TimerOverlayKind,
   buildTimerRows,
   dismissTimerRows,
+  filterAllowedRows,
   filterPermanentRows,
   orderTimerRows,
   rowsForSurface,
   timerDrops,
   withTimerDismissal
 } from '@shared/buffTimers'
+// THE TRACKING ALLOW-LIST (JOS-168). The controls are on the Buffs TAB — this window only obeys
+// them, which is why the hook is handed the overlay bridge (no setter on it, by construction).
+import type { BuffAllowPrefs } from '@shared/buffAllow'
+import { useBuffAllow } from '../features/buffs/useBuffAllow'
 import { OverlayHeader } from './OverlayHeader'
 import { FOOTER_ROW, OverlayContent } from './overlayScale'
 import { TextScaleStepper } from './TextScaleStepper'
@@ -239,6 +244,23 @@ function useDropFlash(
 }
 
 const DROP_FLASH_MS = 6_000
+
+/**
+ * HOW MANY TIMES THIS VALUE HAS CHANGED IDENTITY — the drop-flash epoch's contribution from a
+ * preference whose shape is an object rather than a count (JOS-168).
+ *
+ * The permanent switch could join the epoch as `showPermanent ? 1 : 0` because it is one boolean;
+ * an allow-list cannot, since flipping one verdict from allowed to denied changes no length. What
+ * the epoch needs is only that it CHANGE, so this counts identity changes of the store's own value
+ * — which the store bumps exactly when the preference really moved (`sameBuffAllowPrefs` makes an
+ * echo free). A StrictMode double render can count one change twice; harmless, because the number
+ * is compared to itself and never read as a quantity.
+ */
+function useChangeCount(value: unknown): number {
+  const ref = useRef<{ value: unknown; count: number }>({ value, count: 0 })
+  if (ref.current.value !== value) ref.current = { value, count: ref.current.count + 1 }
+  return ref.current.count
+}
 
 /**
  * THE BARS THIS WINDOW HAS BEEN TOLD TO STOP DRAWING (JOS-203).
@@ -432,6 +454,35 @@ function groupRows(
   return out
 }
 
+/**
+ * WHAT THIS WINDOW ACTUALLY DRAWS — the whole pipeline from two module snapshots to an ordered row
+ * list, in the order the steps have to run.
+ *
+ * `buildTimerRows` folds the models ONCE, `rowsForSurface` keeps the rows that are this window's
+ * subject (JOS-119), and then the two DISPLAY filters run BEFORE the sort so everything downstream
+ * — the groups, the header's count, the drop flash — is talking about what is on screen: the
+ * permanent roster (JOS-215) and the tracking allow-list (JOS-168). Both remove rows the model
+ * still believes in, and neither reaches the model. The dismissals (JOS-203) are LAST, over the
+ * ordered rows, because a verdict names one reading of one row.
+ *
+ * A function beside the component rather than lines inside it: the component is at the repo's
+ * measured 100-line-per-function ceiling, and the answer is a split (AGENTS.md's rule, one
+ * component up).
+ */
+function drawnRows(
+  model: { buffs: BuffsSnap; timers: BuffTimersSnap; kind: TimerOverlayKind },
+  view: {
+    showPermanent: boolean
+    allow: BuffAllowPrefs
+    grouping: TimerGrouping
+    dismissals: TimerDismissals
+  }
+): BuffTimerRow[] {
+  const mine = rowsForSurface(buildTimerRows(model.buffs, model.timers), model.kind)
+  const shown = filterAllowedRows(filterPermanentRows(mine, view.showPermanent), view.allow)
+  return dismissTimerRows(orderTimerRows(shown, view.grouping), view.dismissals)
+}
+
 export default function BuffsOverlay({ kind }: { kind: TimerOverlayKind }): JSX.Element {
   const surface = SURFACE[kind]
   // BOTH kinds read BOTH modules. The window is a view; the model is not sliced per window, and
@@ -450,20 +501,14 @@ export default function BuffsOverlay({ kind }: { kind: TimerOverlayKind }): JSX.
   // ABSENT MEANS HIDDEN (JOS-215, owner ruling) — the same answer for both windows, so unlike the
   // arrangement above it needs no per-surface row.
   const showPermanent = config?.showPermanent === true
+  // THE TRACKING ALLOW-LIST (JOS-168) — one app-wide preference, hydrated on mount and pushed by
+  // main whenever a box on the Buffs tab moves. Shipped-default until somebody sets it, which is
+  // what makes this whole feature invisible to a user who never opens it.
+  const { prefs: allow } = useBuffAllow(window.eqOverlay)
   const { dismissals, dismiss } = useDismissals()
-  // THE DISMISSALS ARE THE LAST STEP, over the ordered rows of THIS surface: everything downstream
-  // — the groups, the header's count, the drop flash — is then talking about what is on screen.
-  // The permanent filter is the FIRST, ahead of the sort, for the same reason.
   const rows = useMemo(
-    () =>
-      dismissTimerRows(
-        orderTimerRows(
-          filterPermanentRows(rowsForSurface(buildTimerRows(buffs, timers), kind), showPermanent),
-          grouping
-        ),
-        dismissals
-      ),
-    [buffs, timers, kind, grouping, showPermanent, dismissals]
+    () => drawnRows({ buffs, timers, kind }, { showPermanent, allow, grouping, dismissals }),
+    [buffs, timers, kind, grouping, showPermanent, allow, dismissals]
   )
   const groups = useMemo(() => groupRows(rows, surface.selfLabel, grouping), [rows, surface.selfLabel, grouping])
   // ONE COUNTER OVER BOTH MODULES: either one re-hydrating is a rebuilt row set, and the two
@@ -471,10 +516,14 @@ export default function BuffsOverlay({ kind }: { kind: TimerOverlayKind }): JSX.
   // dismissal count joins it for the same reason (JOS-203): a row the user cleared did not drop.
   // …and so does the permanent switch (JOS-215): hiding the roster removes rows, and "Yaulp
   // dropped" is exactly what the window must not say about a preference the user just set.
+  // …and so does the ALLOW-LIST (JOS-168), for that reason exactly: unchecking a buff on the Buffs
+  // tab removes its row here, and announcing it as a drop would be this window arguing with a box
+  // the user pressed a moment ago in another one.
+  const allowChanges = useChangeCount(allow)
   const drops = useDropFlash(
     rows,
     nowMs,
-    buffsHydrations + timersHydrations + dismissals.size + (showPermanent ? 1 : 0)
+    buffsHydrations + timersHydrations + dismissals.size + (showPermanent ? 1 : 0) + allowChanges
   )
 
   return (

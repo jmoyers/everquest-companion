@@ -19,11 +19,18 @@ import {
   comboClassesAt,
   comboClassesOf,
   levelUpSubtitle,
+  ownershipPhrase,
+  replacesEntries,
+  replacesPhrase,
   unlockCounts,
   unlockLevels,
   unlocksAtLevel,
-  type LevelUnlockData
+  type LevelUnlockData,
+  type LevelUnlocks,
+  type UnlockRow,
+  type UnlockSpell
 } from '../src/shared/levelUnlocks'
+import { spellMetricsParts } from '../src/shared/spellMetrics'
 import { buildLevelUnlocks } from '../src/main/data/levelUnlocks'
 
 // ---- fixtures ---------------------------------------------------------------------------
@@ -72,6 +79,13 @@ const DATA: LevelUnlockData = {
     ],
     MNK: [{ name: 'Whirlwind', level: 12, kind: 'disc', dispute: "the Disciplines page strikes MNK through" }]
   }
+}
+
+/** The named spell row, which MUST be there — so the assertions read about the row, not the null. */
+function spellRow(u: LevelUnlocks, name: string): UnlockRow {
+  const row = u.spells.find((r) => r.name === name)
+  assert.ok(row, `no ${name} row at level ${String(u.level)}`)
+  return row
 }
 
 // ---- the combo join (law 10) -------------------------------------------------------------
@@ -287,5 +301,134 @@ test('a real ding produces a real subtitle — the exact string the toast would 
   // Every row names at least one class IN the loadout — the join never leaks a stranger's unlock.
   for (const row of [...u.spells, ...u.skills]) {
     assert.ok(row.classes.every((c) => ['CLR', 'PAL', 'ENC'].includes(c)), `${row.name}: ${row.classes.join('/')}`)
+  }
+})
+
+// ---- what a row says beyond its name (JOS-391) --------------------------------------------
+//
+// Four statements were added to the unlock row and each has a different failure mode, so each
+// gets its own test. The ownership and replaces WORDING is pure over hand-built data (a class's
+// own ladder is not this suite's subject — tests/spellLineLookup.test.mts owns it); the last two
+// check that the COMMITTED dataset actually carries the fields, because a join that silently
+// produces nothing is exactly what a floors test is for.
+
+test('already yours names the loadout class that bought it EARLIER, and only those', () => {
+  // Cure Blindness: CLR 12, PAL 22. Viewed at 22 for a CLR/PAL loadout, the cleric already has it.
+  const combo = comboClassesOf(interval(0, null, [slot(['CLR']), slot(['PAL'])]))
+  const row = spellRow(unlocksAtLevel(DATA, combo, 22), 'Cure Blindness')
+  assert.deepEqual(row.earlier, [{ cls: 'CLR', level: 12 }])
+  assert.equal(ownershipPhrase(row, new Set(['CLR', 'PAL'])), 'already yours (CLR 12)')
+
+  // Viewed at 12 the cleric is gaining it NOW, so there is nothing earlier to claim.
+  const at12 = spellRow(unlocksAtLevel(DATA, combo, 12), 'Cure Blindness')
+  assert.equal(at12.earlier, undefined)
+  assert.equal(ownershipPhrase(at12, new Set(['CLR', 'PAL'])), null)
+
+  // A PALADIN-ONLY loadout at 22 has nobody who bought it earlier — the claim is about YOUR
+  // classes, never about the game.
+  const palOnly = comboClassesOf(interval(0, null, [slot(['PAL'])]))
+  assert.equal(spellRow(unlocksAtLevel(DATA, palOnly, 22), 'Cure Blindness').earlier, undefined)
+})
+
+test('an UNRESOLVED slot marks the ownership claim, it does not suppress it', () => {
+  // {CLR,PAL} narrows to two candidates and resolves neither. At 22 the row still knows a class
+  // that could have it at 12 — and says so with the app's one marker for a narrowed loadout.
+  const combo = comboClassesOf(interval(0, null, [slot(['CLR', 'PAL'])]))
+  const row = spellRow(unlocksAtLevel(DATA, combo, 22), 'Cure Blindness')
+  assert.deepEqual(row.earlier, [{ cls: 'CLR', level: 12 }])
+  assert.equal(ownershipPhrase(row, new Set<string>()), '~already yours (CLR 12)')
+  // Resolve the cleric and the tilde comes off.
+  assert.equal(ownershipPhrase(row, new Set(['CLR'])), 'already yours (CLR 12)')
+})
+
+test('two loadout classes gaining it at the SAME level get the quiet `also`, not `already yours`', () => {
+  const data: LevelUnlockData = {
+    spells: [{ name: 'Sense Undead', at: [{ cls: 'CLR', level: 27 }, { cls: 'PAL', level: 27 }] }],
+    skills: {}
+  }
+  const combo = comboClassesOf(interval(0, null, [slot(['CLR']), slot(['PAL'])]))
+  const row = unlocksAtLevel(data, combo, 27).spells[0]
+  assert.deepEqual(row.classes, ['CLR', 'PAL'])
+  assert.equal(row.earlier, undefined)
+  assert.equal(ownershipPhrase(row, new Set(['CLR', 'PAL'])), 'also PAL 27')
+})
+
+test('the replaces phrase is scoped to the row own classes, and dedupes', () => {
+  const row: UnlockRow = {
+    kind: 'spell',
+    name: 'Healing',
+    classes: ['CLR'],
+    level: 10,
+    spell: {
+      name: 'Healing',
+      at: [{ cls: 'CLR', level: 10 }, { cls: 'SHM', level: 19 }],
+      replaces: [
+        { name: 'Light Healing', cls: 'CLR' },
+        { name: 'Light Healing', cls: 'SHM' }
+      ]
+    }
+  }
+  assert.equal(replacesPhrase(row), 'replaces Light Healing (CLR)', 'the shaman answer is not this row')
+  assert.equal(replacesPhrase({ ...row, classes: ['SHM'], level: 19 }), 'replaces Light Healing (SHM)')
+  // Two classes at once print both, because a trio really does retire two spells.
+  assert.equal(
+    replacesPhrase({ ...row, classes: ['CLR', 'SHM'] }),
+    'replaces Light Healing (CLR), Light Healing (SHM)'
+  )
+  // A row with no line says nothing.
+  assert.equal(replacesPhrase({ kind: 'spell', name: 'X', classes: ['CLR'], level: 1 }), null)
+
+  // THE SAME ANSWER UNJOINED (JOS-392): the panel hangs the spell card off each replaced NAME, so
+  // the parts are exported and the phrase is COMPOSED from them. Same scoping, same dedupe, same
+  // order — a renderer re-splitting the sentence on ` (` would be a second parser for it.
+  assert.deepEqual(replacesEntries(row), [{ name: 'Light Healing', cls: 'CLR' }])
+  assert.deepEqual(replacesEntries({ ...row, classes: ['CLR', 'SHM'] }), [
+    { name: 'Light Healing', cls: 'CLR' },
+    { name: 'Light Healing', cls: 'SHM' }
+  ])
+  assert.deepEqual(replacesEntries({ kind: 'spell', name: 'X', classes: ['CLR'], level: 1 }), [])
+})
+
+/** The committed dataset's row for a spell, which must exist for the assertions beneath it. */
+function realSpell(name: string): UnlockSpell {
+  const s = REAL.spells.find((x) => x.name === name)
+  assert.ok(s, `the committed dataset carries ${name}`)
+  return s
+}
+
+test('the committed dataset carries real figures and real replaces', () => {
+  // Read at the LOWEST level any class gains it (WIZ 34), not at the level being browsed.
+  const anarchy = realSpell('Anarchy').metrics
+  assert.equal(anarchy?.damage, 273)
+  assert.ok((anarchy?.damagePerMana ?? 0) > 2)
+  assert.equal(anarchy?.hot, undefined)
+
+  const healing = realSpell('Healing')
+  assert.ok(healing.replaces?.some((r) => r.cls === 'CLR' && r.name === 'Light Healing'))
+
+  // FLOORS over the whole dataset — a join that quietly produced nothing is the failure this
+  // catches, and exact counts would break on the next scrape.
+  const withMetrics = REAL.spells.filter((s) => s.metrics !== undefined)
+  const withReplaces = REAL.spells.filter((s) => s.replaces !== undefined)
+  assert.ok(withMetrics.length > 300, `${String(withMetrics.length)} spells carry figures`)
+  assert.ok(withReplaces.length > 500, `${String(withReplaces.length)} spells replace something`)
+  // And nothing names a spell as replacing itself.
+  for (const s of withReplaces) {
+    for (const r of s.replaces ?? []) {
+      assert.notEqual(r.name.toLowerCase(), s.name.toLowerCase(), `${s.name} replaces itself`)
+    }
+  }
+})
+
+test('a real level 24 CLR/PAL/ENC row reads the way the panel prints it', () => {
+  const combo = comboClassesOf(interval(0, null, [slot(['CLR']), slot(['PAL']), slot(['ENC'])]))
+  const rows = unlocksAtLevel(REAL, combo, 24).spells
+  const withFigures = rows.filter((r) => r.spell?.metrics !== undefined)
+  assert.ok(withFigures.length > 0, `level 24 CLR/PAL/ENC: ${String(rows.length)} spells, none with figures`)
+  for (const r of withFigures) {
+    const parts = spellMetricsParts(r.spell?.metrics ?? {})
+    assert.ok(parts.length > 0, r.name)
+    // No em dashes in anything a player reads.
+    for (const p of parts) assert.ok(!/[—–]/.test(p), `${r.name}: ${p}`)
   }
 })

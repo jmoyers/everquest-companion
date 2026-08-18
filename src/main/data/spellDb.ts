@@ -60,6 +60,11 @@ import {
 // evidence bar of its own — absence cannot be log-measured, so the bar is a dated owner
 // verification per entry — and it is not the corrections bar. Read it before adding a removal.
 import { applySpellRemovals, type RemovalsReport } from './spellRemovals'
+// …and the wiki's ERA VERDICT for each spell's page (JOS-393), joined from the sidecar the item and
+// mob surfaces already read. A JOIN, not an edit: the verdict comes from a second scrape of a
+// different endpoint, and `spells.json` is rewritten wholesale by its own. Read that file's header
+// for why the field is `true`-or-absent and never `false`.
+import { applySpellEra } from './spellEra'
 // WHAT THE SPELL DOES, read off the wiki's own effect list (JOS-251). The suggestion catalog uses
 // exactly one class of it — `healOverTime`, which is what makes the `healsOverTime` template a
 // claim about a mechanic rather than about a message somebody typed into a wiki table.
@@ -925,7 +930,13 @@ export function loadSpellDb(): SpellDb {
   // Then DURATIONS, then the message overlay. Those two never touch the same field, so their order
   // is legibility rather than semantics: one reads what the wiki already said and the other states
   // what it got wrong.
-  const dated = applyDerivedDurations(present.spells).spells
+  //
+  // …and THE ERA JOIN (JOS-393) rides inside the same expression, for the same kind of reason: it
+  // writes a field none of the passes around it reads and reads a field none of them writes, so its
+  // position is free. What is NOT free is that it happens HERE rather than at each consumer — one
+  // catalog, one verdict, so the level panel, the search and the spell card cannot disagree about
+  // whether the wiki badges a spell. Its own report is `spellEra.ts`'s (`spellEraReport`).
+  const dated = applyDerivedDurations(applySpellEra(present.spells).spells).spells
   const { spells, report } = applySpellCorrections(dated)
   cachedCorrections = report
   // …and LAST, the scrape's stubs, blanked so every table below reads them as the nothing they are.

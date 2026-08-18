@@ -406,7 +406,10 @@ test('the ingest handler runs the SHARED validator and the SHARED rollup', () =>
 
 test('every counter UPSERT is ADDITIVE, so a retried transaction cannot double-count', () => {
   const src = readFileSync(join(ROOT, 'infra', 'lambda', 'telemetry.ts'), 'utf8')
-  assert.match(src, /ON CONFLICT \(day, cohort, metric, dim\) DO UPDATE SET n = usage_daily\.n \+ EXCLUDED\.n/)
+  // The conflict target gained the SHARD (JOS-394) and must still be EXACTLY the sharded
+  // table's primary key, or postgres answers 42P10 and the UPSERT resolves against nothing.
+  assert.match(src, /ON CONFLICT \(shard, day, cohort, metric, dim\) DO UPDATE/)
+  assert.match(src, /SET n = usage_daily_sharded\.n \+ EXCLUDED\.n/)
   assert.match(src, /ON CONFLICT \(day, cohort, funnel, step, outcome, app_version\) DO UPDATE/)
   assert.match(src, /SET n = usage_funnel_daily\.n \+ EXCLUDED\.n/)
   // The install UPSERT's guard IS the daily cap; without the WHERE it would never refuse.
@@ -450,17 +453,34 @@ test('THE FIVE TABLES, AND NO SIXTH: the handler writes exactly the plan’s sto
   // TRAIL; `error_report` is keyed on (day, cohort, version, FINGERPRINT) and `perf_daily` on
   // seven dims with no id among them, so a hundred installs on the same class of box write ONE
   // row. There is still nothing here that could reconstruct what one install did.
+  //
+  // JOS-394 DID NOT ADD A SIXTH KIND. Two of the five are written under their SHARDED names now
+  // (`usage_daily_sharded`, `perf_daily_sharded`) — same columns, same meaning, one extra key
+  // column that spreads a hot counter over 32 rows — and the pre-cutover tables are frozen and
+  // merged back by a view at read time. The storage SHAPE is unchanged: still five kinds of
+  // fact, still no per-user trail, and the new column is a random integer that carries no
+  // information about the sender (the test below pins that).
   const src = readFileSync(join(ROOT, 'infra', 'lambda', 'telemetry.ts'), 'utf8')
   const tables = [...src.matchAll(/INSERT INTO (\w+)/g)].map((m) => m[1])
   assert.deepEqual(
     [...new Set(tables)].sort(),
-    ['analytics_install', 'error_report', 'perf_daily', 'usage_daily', 'usage_funnel_daily']
+    [
+      'analytics_install',
+      'error_report',
+      'perf_daily_sharded',
+      'usage_daily_sharded',
+      'usage_funnel_daily'
+    ]
   )
   // The cube's CONFLICT TARGET and the schema's PRIMARY KEY have to agree, or the UPSERT
   // resolves against nothing (42P10, on a cluster, weeks later) — the pin the cohort test above
   // makes for the two counter tables, made for the fifth.
-  const cubeKey = 'day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket'
-  assert.ok(src.includes(`ON CONFLICT (${cubeKey})`))
+  const cubeKey =
+    'shard, day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket'
+  // The statement is assembled from concatenated literals, so the pin is over the JOINED text:
+  // a key that only matches because of where the source happens to wrap is not a pin.
+  const joined = src.replace(/' \+\s+'/g, '')
+  assert.ok(joined.includes(`ON CONFLICT (${cubeKey})`))
   assert.ok(readFileSync(join(ROOT, 'infra', 'schema.sql'), 'utf8').includes(`PRIMARY KEY (${cubeKey})`))
   // The cube carries no id either, and the two install-level dims it needs live on the row that
   // already exists rather than in a table of their own.

@@ -177,6 +177,15 @@ export const IPC = {
   overlaySetIgnoreMouse: 'overlay:setIgnoreMouse',
   // renderer(overlay) -> main: close the overlay from its own close button. Arg: kind.
   overlayClose: 'overlay:close',
+  // renderer(overlay) -> main: "what I drew is this tall - make the window fit it" (JOS-386).
+  // Args: kind, height in DIP (content + the overlay's padding + the drag frame while unlocked).
+  //
+  // ONLY THE HEIGHT MOVES, and only for a kind whose height is the content's rather than the
+  // user's (overlayLayout.ts FIT_HEIGHT_KINDS - today the con card alone). x, y and width are the
+  // user's and are never touched by this, which is what makes "the top edge stays put and the
+  // window shrinks instead" true even for a card dragged to the bottom of the screen. Main clamps
+  // the request to the work area and does NOT persist the result as a chosen size.
+  overlayFitHeight: 'overlay:fitHeight',
   // renderer(overlay) -> main: read a kind's persisted config. Arg: kind. Returns OverlayConfig.
   overlayGetConfig: 'overlay:getConfig',
   // renderer(overlay) -> main: persist a kind's config (partial merge). Args: kind, patch.
@@ -256,6 +265,48 @@ export const IPC = {
   // and it is OFF unless somebody has turned it on — an absent key drags exactly as it always did.
   overlaySnapGet: 'overlaySnap:get',
   overlaySnapSet: 'overlaySnap:set',
+  // ---- the overlays' TEXT SIZE (JOS-405; shared/overlayTextScale.ts) ----
+  // renderer(main app OR any overlay window) -> main: read / patch `{ shared, independent }`.
+  // Returns OverlayTextSizePrefs, re-validated at the handler through the same normalizer the
+  // store reader uses. BOTH bridges carry the read, because both surfaces decide the same thing
+  // with it: Preferences paints the shared stepper and the twelve rows, and every overlay window
+  // resolves its own effective scale (`effectiveOverlayTextScale`) before it draws a row.
+  overlayTextSizeGet: 'overlayTextSize:get',
+  overlayTextSizeSet: 'overlayTextSize:set',
+  // main -> renderer(main app AND every open overlay window): the prefs changed somewhere this
+  // window could not see. Payload OverlayTextSizePrefs. It is the whole reason a pinned meter
+  // resizes when Preferences moves the shared size, and the reason the Preferences stepper agrees
+  // with a press made on a meter's own A+ — one value with thirteen controls needs one push.
+  onOverlayTextSize: 'overlayTextSize:changed',
+  // renderer(main app) -> main: every kind's OWN stored `textScale`, in one read. Preferences'
+  // per-overlay list is twelve rows and this is one call rather than twelve; an overlay window
+  // never asks, because the only per-kind value it can draw is its own and that is in its config.
+  overlayTextScalesGet: 'overlayTextSize:kinds',
+  // main -> renderer(main app): a per-kind value moved (a window's own A− / A+ while independent
+  // sizes are on). Payload Record<OverlayKind, number>. Preferences' rows would otherwise seed
+  // from a cache written before the press and state a size that window is not drawing at.
+  onOverlayTextScales: 'overlayTextSize:kindsChanged',
+  // ---- the overlays' BACKGROUND TRANSPARENCY (JOS-407; shared/overlayBgAlpha.ts) ----
+  // FOUR CHANNELS OF ITS OWN, mirroring the four above rather than widening them to carry both
+  // preferences in one message. The two settings are linked and unlinked SEPARATELY by design
+  // (owner: if they are separate in their settings, separate them), so a shared envelope would put
+  // two independent switches on one wire and make every reader unpack a pair it half-cares about;
+  // a window that only redraws its background would re-resolve its text size on every alpha drag.
+  // renderer(main app OR any overlay window) -> main: read / patch `{ shared, independent }`.
+  // Returns OverlayBgAlphaPrefs, re-validated at the handler through the same normalizer the store
+  // reader uses.
+  overlayBgAlphaGet: 'overlayBgAlpha:get',
+  overlayBgAlphaSet: 'overlayBgAlpha:set',
+  // main -> renderer(main app AND every open overlay window): the prefs changed somewhere this
+  // window could not see. Payload OverlayBgAlphaPrefs — one value with fifteen controls (twelve
+  // windows' own `bg` sliders and Preferences' slider, switch and rows) needs one push.
+  onOverlayBgAlpha: 'overlayBgAlpha:changed',
+  // renderer(main app) -> main: every kind's OWN stored `bgAlpha`, in one read, for the twelve-row
+  // list. An overlay window never asks: the only per-kind value it can draw is its own.
+  overlayBgAlphasGet: 'overlayBgAlpha:kinds',
+  // main -> renderer(main app): a per-kind value moved (a window's own `bg` slider while
+  // independent transparency is on). Payload Record<OverlayKind, number>.
+  onOverlayBgAlphas: 'overlayBgAlpha:kindsChanged',
   // ---- closing the window keeps the companion running (JOS-139; shared/closeToTray.ts) ----
   // renderer(main app) -> main: read / patch the close-to-tray preference. Returns
   // CloseToTrayPrefs, re-validated at the handler through the same normalizer the store uses.
@@ -331,6 +382,20 @@ export const IPC = {
   // times and dismisses it locally and fetches nothing — the celebration toast's contract, on
   // the kind that shares its queue.
   onAlertBanner: 'alerts:banner-card',
+
+  // ---- the con card (JOS-383, shared/conCard.ts) ----
+  // main -> renderer(conCard overlay): one finished card for the creature just `/con`ed. There is
+  // no renderer->main producer on this feature at all, which is what makes it different from the
+  // banner above: the trigger is a LOG LINE, and main owns the log, the resist ledger, the mob
+  // knowledge and the kill counts the card is made of. Nothing is validated on the way out because
+  // nothing untrusted is on the way in — main built it — but it IS capped (shared/conCard.ts), for
+  // the reason every payload that crosses into a window that draws it is.
+  onConCard: 'con:card',
+  // renderer(conCard overlay) -> main, FIRE-AND-FORGET: "I closed the card for this mob."
+  // The overlay dismisses its own card locally; this tells main, whose business the SUPPRESSION is
+  // (`CON_CARD_REOPEN_SUPPRESS_MS` — a re-con inside a minute of a close must not nag). Main
+  // re-validates the key at the handler, because it is a renderer-supplied string.
+  conCardClosed: 'con:card-closed',
 
   // ---- cross-window deep link (Task #64) ----
   // renderer(overlay) -> main: "focus the app on this" (AppFocus). Main shows/restores/focuses
@@ -658,6 +723,32 @@ export const IPC = {
   // Returns what was stored.
   buffTrustSet: 'buffTrust:set',
 
+  // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168 — shared/buffAllow.ts) ---------------
+  //
+  // WHICH of your spells the two timer OVERLAY windows may draw: a mode switch that lives on the
+  // Buffs tab, and a tri-state verdict per spell line behind it. It is a DISPLAY filter over those
+  // two windows and nothing else — the model, the Buffs tab list and its header count are
+  // untouched (JOS-215's law).
+  //
+  // IT IS IPC RATHER THAN RENDERER STATE FOR ONE REASON: the window that SETS it (the Buffs tab,
+  // in the main window) is not the window that OBEYS it (the buffs/debuffs overlays, separate
+  // BrowserWindows with their own localStorage). Main is the only process that can reach both,
+  // which is the fight-selection/scope-selection argument — except that this one is PERSISTED,
+  // because a choice about which spells you track is not a thing you re-make every launch.
+  //
+  // renderer(any window) -> main: the persisted allow-list, for hydrating a window that mounted
+  // after the last change. Returns BuffAllowPrefs.
+  buffAllowGet: 'buffAllow:get',
+  // renderer(main app) -> main: a PARTIAL — the mode, some verdicts, or both. Each control sets
+  // what it touches and no more, so a checkbox never has to restate the mode. REBUILT AT THE
+  // HANDLER through the same normalizer the store reader uses (`applyBuffAllowPatch`), persisted,
+  // and fanned out. Returns what was stored.
+  buffAllowSet: 'buffAllow:set',
+  // main -> the main window + the two timer overlays: the allow-list changed. Payload is the whole
+  // `BuffAllowPrefs`. This is the half that makes a checkbox reach an ALREADY-OPEN overlay within
+  // one delta rather than at the next launch.
+  onBuffAllow: 'buffAllow:changed',
+
   // ---- respawn clocks (JOS-194 — shared/respawn.ts) -------------------------------------
   //
   // WHICH MOBS GET A CLOCK. The clocks themselves are log-derived and ride the generic module
@@ -687,6 +778,33 @@ export const IPC = {
   // running module and pushes (`registry.flushNow`) exactly as the setter does. Returns whether
   // anything was actually watching that name — false is a no-op, not a failure.
   respawnUnwatch: 'respawn:unwatch',
+
+  // ---- per-mob resist profiles (JOS-382 — docs/plans/resist-mining.md) -------------------
+  //
+  // A PULL, NOT A SUBSCRIPTION, and the reason is the size of the thing being read: the resist
+  // ledger is ~700 kB of pooled observations and the only consumer wants ONE mob out of it at a
+  // time, on a page the user has to navigate to. Mirroring it into the renderer over
+  // `module:delta` would ship the whole ledger to draw five rows. So the module (id `resist`)
+  // pushes no increments, exactly as the combat engine does not, and these two channels answer
+  // the question the screen is actually asking.
+  //
+  // Both DERIVE on every call. Nothing about a resist stat is stored — not R, not the interval,
+  // not "nearly immune" — because a stored verdict is a second opinion waiting to disagree with
+  // the derived one, and because the answer legitimately moves as the user plays.
+  //
+  // renderer -> main: (mobDisplayName) -> MobResistProfile. Five axis rows, always, in one order.
+  resistProfile: 'resist:profile',
+  // renderer -> main: (mobDisplayName, axis) -> the evidence behind one row: the estimate, its
+  // per-spell breakdown, and the rows themselves. Null when the client's spell data is missing.
+  resistCell: 'resist:cell',
+  // Which casters teach the profiles (JOS-385 — shared/resistPrefs.ts). Returns ResistPrefs.
+  //
+  // A PREFERENCE, NOT A RE-FOLD. `includeNpcCasters` is read when a card is DRAWN, so setting it
+  // writes one boolean and returns; the next `resist:profile` pull is already the new answer. No
+  // ledger is touched, nothing is invalidated, and flipping it back costs the same nothing.
+  resistPrefsGet: 'resist:prefs:get',
+  // Arg: Partial<ResistPrefs>. A malformed value leaves the pref alone. Returns ResistPrefs.
+  resistPrefsSet: 'resist:prefs:set',
 
   // ---- main window text size (JOS-123 — shared/uiScale.ts) ------------------------------
   //

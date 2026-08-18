@@ -89,6 +89,27 @@ export function overlayFittedBounds(kind: OverlayKind, stored?: Rect): Rect | nu
 }
 
 /**
+ * THE WORK AREA A GIVEN RECTANGLE IS ON (JOS-386) — the screen a window has to fit inside RIGHT
+ * NOW, which for a multi-monitor user is not the primary one.
+ *
+ * `getDisplayMatching` is Electron's own answer to "which display is this window mostly on", so a
+ * window straddling two monitors resolves the same way the OS resolves it rather than by a rule
+ * invented here. The WORK AREA rather than `bounds`, for the reason `displayWorkAreas` gives: a
+ * window the app is sizing should stop at the taskbar, not run under it.
+ *
+ * `null` when there is no screen information at all (the `screen` module throws before Electron is
+ * ready; a headless environment can answer with nothing), which every caller reads as "we cannot
+ * know, so change nothing" — never as a reason to invent a rectangle.
+ */
+export function workAreaFor(rect: Rect): Rect | null {
+  try {
+    return screen.getDisplayMatching(rect).workArea
+  } catch {
+    return null
+  }
+}
+
+/**
  * The same question for the MAIN window, whose fallback is different: it has no reserved slot, so a
  * rectangle on no display keeps the SIZE the user chose and is centred on the primary display.
  *

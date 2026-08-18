@@ -309,14 +309,147 @@ Surfaces (depth-over-surface: hang these on existing places, no new top-level ta
   inside a <=30 s window without a `You begin singing` line, which the log shows no mechanism
   for; rule 3 under-counts attempts on ranged/rooted mobs (biases R up, i.e. toward "more
   resistant" - the safe direction).
-- Confidence: simple count-based, no big minimums (owner, 2026-08-16). Draw a cell at n >= 5,
-  always print n and the 95% interval next to the number, never hide what we know. No
-  CI-gated "advice" layer for v1.
+- Confidence: simple count-based, no minimums at all for DISPLAY (owner, 2026-08-16, twice):
+  always show the result - tag, R, interval, n - from n >= 1, with a quieter secondary caveat
+  `low samples` under n = 10 (`LOW_SAMPLE_BELOW`); only n = 0 says `no data`. Never print "not
+  enough data" in place of the answer. Why it is not merely a smaller threshold: the estimator
+  is a likelihood over a prior, so it has an answer from n = 1, and what a thin cell produces
+  is a WIDE INTERVAL - which is the honest display of thin evidence rather than a reason to
+  hide it. The shipped baseline still drops rows under 5 observations at freeze
+  (`scripts/gen-resist-baseline.ts`); that is a file-size rule, not a display rule. No
+  CI-gated "advice" layer for v1. Landed in JOS-383, on both surfaces at once.
+- NPC-on-NPC evidence (owner, 2026-08-16, revised): a switchable family, ON to start; the
+  shipped default is decided by the measured player-vs-pet comparison on the owner's log
+  (JOS-385). Worry to test: players' fire resisted where pets' fire is not, from pet tuning.
+  **MEASURED, and the default is ON** (JOS-385, `npm run gen:resist-baseline -- --compare`):
+  48 (mob, axis) cells where both populations put 20+ observations into the fit, 28 of them
+  with disjoint 95% intervals, and **5 of the 28 (17.9%)** show the worry — fire/cold/poison/
+  disease with R_npc at least 30 below R_pc. The decision rule the ticket set was "over a
+  third ⇒ ship OFF". The worry case is real and rare (a fire giant warrior's fire reads 410
+  from players against 110 from NPC casters) and is outnumbered four to one by the opposite
+  direction: on 23 of the 28 flagged cells NPC casters are resisted the SAME or MORE (an
+  azarack magic 56 vs 100, Lord Nagafen 106 vs 214, a thunder spirit 18 vs 56), which is the
+  safe direction for a number a player acts on. The switch stays because the answer is the
+  kind a patch can move, and it is read at ESTIMATE time so flipping it never costs a re-fold
+  (`shared/resistPrefs.ts`, store key `resists.includeNpcCasters`, schema v14).
+- A resist row's TARGET has to be a creature (JOS-385, discovered while adding the above): R is
+  a statement about a creature, and nothing checked that the thing being cast ON was one. The
+  first shipped baseline carried rows keyed `you` (Cannibalization damages its own caster), a
+  groupmate's Superior Healing landing, and Jonthan's Provocation pulsing on five people —
+  ~2,700 observations under 56 keys that are players, in a public file. `isMobTarget`
+  (main/resist/world.ts) is the app's standing "is this a person" pair applied to every arm of
+  the fold; the residual it accepts is the con card's, verbatim.
+- Wiki overrides are app-wide (owner, 2026-08-16): a catalog correction (Largo's Melodic
+  Binding prints "bound BY strands" on Legends) lives in `spellCorrectionsList*.ts`, never in a
+  feature module (JOS-384).
 - Own log beats the frozen baseline (owner, 2026-08-16, patch resilience): the baseline carries
   `frozenAt` + the spells_us.txt mtime it was mined against; per cell, baseline observations
   weigh `K/(K+nUser)` with K = 20, at `nUser >= 50` the user's data stands alone and the
   baseline is only a faded reference marker, and two well-populated (n >= 30 each) estimates
   with disjoint intervals raise a "differs from shipped data" note - the patch detector.
+- Con card display (owner, 2026-08-16, after seeing it): the card sits at the TOP of the screen
+  in the celebration band (it was covering the character), its window fits the card (no empty
+  apron in either overlay mode), and it shows ONLY what the mob resists - axes tagged
+  resistant / very resistant / nearly immune (R >= 45); weak, normal and no-data axes are not
+  chips. One quiet "no notable resists" line when nothing qualifies. The mob page keeps the
+  full five-row table (JOS-386).
+- The tag is a benchmark, not an R band (owner, 2026-08-16 - SHIPPED in JOS-387). Two Legends
+  mechanics entered the model with it: spell upgrade ranks are -15 resist adjust per rank (the
+  Roman numeral in the log name; `Scorching Arrow IV` = -60) and the Overchannel invocation is
+  -150 plus -15 per non-hybrid caster class on CAST spells (Legends wiki, Stances & Invocations,
+  cached in the repo). Both ride the ROW, with the caster's class count, so a shipped observation
+  is read at the offset it was MADE under. Then, per viewer level L: `rc0 = R + levelMod(L, mob)`,
+  `pPlain = (200 - rc0)/200`, `pOver` the same at rc0 - 150.
+  **THREE BANDS, READ TWO WAYS** (owner's final wording, same day): the scannable WORD stays
+  weak / normal / resistant / very resistant and a GUIDANCE SENTENCE sits under it - `should land`
+  (pPlain >= 60%), `needs overchannel`, `may not land even with overchannel` (pOver < 60%). Both
+  percentages print under the sentence on every row and every chip, because the band answers the
+  common case and the numbers let a reader answer theirs (a rank-10 spell is another -150, and
+  tash, malo or the necromancer Scent line another 20 to 60). The player cap is 50 and Sky runs to
+  70, so THE LEVEL TERM ALONE can put a creature in the top band; that is correct and intended.
+  The con card keeps `resistant` + `very resistant`.
+- The estimate is a POSTERIOR MEDIAN and the interval its central 95% (owner review, 2026-08-16 -
+  JOS-387), because `P(resist) = rc/200` saturates and the old argmax reported the weakest edge of
+  the resulting plateau (a dracoliche's disease read `R 60 (46-600) resistant` off thirty
+  observations that were all resists). The prior became a broad Gaussian on R at the same time: the
+  old pseudo-observation prior charges 22 log units to say "this mob resists everything", which was
+  survivable while it only picked a point and is not now that it decides the interval too.
+  Three guards sit on top of the model, and every threshold is measured against the shipped
+  baseline rather than chosen: a HARD DATA RULE (10+ informative observations, 90%+ resisted =>
+  the top band whatever the fit says); a PINNED-FIT GUARD (grid edge, or a residual that is both
+  big - 15 points of resist rate - and certain - 4 sigma, or a whole credible interval below zero
+  on a creature that demonstrably resists) which prints `does not fit the model: 62 of 118
+  resisted` instead of a number and falls back to the raw rate on the con card; and a
+  `from pets and other creatures only` caveat. Result: 3 of 598 non-empty cells refuse to print.
+- **A DoT AND A PROC ARE ALL-OR-NOTHING** (JOS-387, found by the pinned-fit guard rather than by
+  reasoning). Of 207 (spell, caster level) histograms with 20+ hits, 50 carry essentially no
+  partials, and they are exactly the DoTs and the procs; the 157 that do run 14% to 20% partial.
+  So a partial-free histogram means the spell lands or is refused and its damage lines are
+  LANDINGS. Reading one as direct damage asks the fitter to explain 262 resists beside 86 hits and
+  zero partials (a thunder spirit princess's Choking), which no rc can do.
+- The full-damage reference is the BASE OF THE UPPER CLUSTER (owner, 2026-08-16 - JOS-387, refining
+  JOS-385's mode): the largest value whose focus band `[v, 1.35v]` holds 60% of the (spell, level)
+  histogram AND is the most common value inside that band. The mode rule gave up exactly where the
+  owner plays - at level 50 his damage focus leaves Discordant Mind's base 394 at 6% of the
+  histogram - and "the largest v covering 60%" alone answers 458, a number the game never computes.
+  Measured: 394 at levels 43-50, Scorching Arrow 214 / 233 / 239 at 46 / 47 / 48-up. Informative n
+  (spells with adjust > -100) still drives the low-samples caveat (JOS-385).
+- **What `n` counts** (owner, 2026-08-16, off a live thunder spirit princess reading
+  `R 58 (36-102) n=83 resistant` with no caveat): an observation only counts as evidence if the
+  spell could have been resisted at all. `rc = R + levelMod + resistAdj`, so a -150/-200/-250 proc
+  or a -300/-1000 lure is out of reach of any roll and its casts say only "R is not enormous".
+  Those rows still enter the likelihood; they no longer inflate the count, no longer suppress the
+  low-samples caveat, and no longer head the evidence list. The row prints both
+  (`n=8 informative · 83 total`), the con card chip prints the informative one, the caveat keys off
+  it, and an uninformative line says `cannot be resisted at this level: -250 adjust`. The threshold
+  is `INFORMATIVE_RESIST_ADJ = -100` (shared/resistFormula.ts) and it is drawn where this log's own
+  spells fall: procs at -150 and below, everything else at 0.
+- **The full-damage reference is the MODE, never the max** (owner, same review): Live spell-damage
+  focus effects roll a random bonus per cast, so the largest value a spell ever printed is a
+  focused roll and every ordinary full hit sits below it — read as a partial, which invents
+  resistance out of an item the player is wearing. The reference is the mode of the (spell,
+  casterLevel) histogram pooled over EVERY mob in the ledger, a hit at or above 0.97 x mode is
+  full, and a (spell, level) whose top value holds under 40% of the histogram is treated as
+  variable damage for that level (shared/resistDamage.ts). MEASURED: Discordant Mind is 394 at
+  levels 43-49 (78-93% of each level's hits) and unreadable at 50, where the owner's focus item
+  spreads the same spell across 449-528 and leaves the base at 6%; Scorching Arrow reads 214 / 233
+  / 239 at levels 46 / 47 / 48-up, which are the game's own tiers. Cost of the fix, on the shipped
+  baseline: a zol ghoul knight's cold falls from R 60 [40,84] to R 26 [10,50] as 23 partials become
+  5, and the "provably cold-resistant" claim that stood on them is withdrawn.
+- **Recent evidence weighs more** (owner, 2026-08-16 - SHIPPED in JOS-397; its second half removed
+  the same day by JOS-400, see the end of this bullet).
+
+  THE WEIGHT. Rows carry the ISO WEEK they were observed in, in the pooling key (schema 3; a
+  schema-2 row pooled its counts across weeks and nothing can un-pool them, so the bump is a
+  re-fold, which this app does from the log every launch). Each term then weighs
+  `w = max(0.15, 0.5 ^ (ageDays / 21))`, aged in whole weeks from the NEWEST OBSERVATION THE
+  LEDGER HOLDS rather than from the wall clock - a paused log must not decay itself, or a player
+  who stops for three months returns to doubled intervals having learned nothing new. Half-life
+  21 days because patches land weeks apart; floor 0.15 because history fades and does not vanish,
+  and because a weight decaying to zero would silently delete the whole shipped baseline after a
+  month of play, which is not the same statement as "your own log outweighs it". It MULTIPLIES
+  JOS-382's `K/(K + nUser)` rather than replacing it: a shipped observation that is both
+  out-voted and old pays for both. Counts are untouched - `n`, the low-samples caveat and the
+  hard data rule still speak in observations a player could count themselves. Cost, measured on
+  the owner's 2.08M-line log: the resist module goes 0.94 -> 0.99 us/event (10.6% -> 10.8% of the
+  fold), of which most of the week key's own share is recovered by a one-entry memo.
+
+  THE SHIPPED BASELINE IS AGED FROM `frozenAt`, and its rows do not carry a week at all. The file
+  is a snapshot rather than a diary (its timestamps have been stripped since JOS-382), so the
+  freeze RE-POOLS the fold's week buckets onto that one week and the store fills the value back in
+  from the stamp as the file is read. MEASURED, and it is why the re-pool is not optional: pooled,
+  4,016 rows carrying 59,987 observations clear the five-observation floor; left split by their
+  real weeks, 4,164 rows carrying 58,368 do - a bigger file that knows less. Omitting the field
+  saves 80 kB of one repeated string.
+
+  THE DECAY ABOVE IS ALL OF IT, AND IT STAYS AS DESCRIBED: recent evidence weighs more inside the
+  one formula, with every modifier - rank, overchannel, debuffs - still applied.
+
+  THE RUN DETECTOR THAT SHIPPED BESIDE IT WAS REMOVED THE SAME DAY (owner ruling, JOS-400). It
+  tracked orthogonal outcomes without the modifiers and printed a second verdict - a `lately` line
+  and a `lately resistant` word - next to the real one, which is a verdict outside the formula. The
+  ring, the `lately` fields on the profile and the con-card wire, and the third route onto the card
+  all went with it; a card says one thing about a creature.
 - Presentation: **no acronyms**. Every axis is shown as its word (magic, fire, cold, poison,
   disease) with a stable colour per axis; the colour and the word always appear together.
 

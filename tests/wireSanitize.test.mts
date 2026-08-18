@@ -19,6 +19,9 @@
 //   4. THE SLICE RE-SCRUB (rescrubSlice) — the presign policy pins an upload's key, size and
 //      content-type and CANNOT pin its content, so a downloaded slice is re-scrubbed with the
 //      app's OWN shared scrubber before it touches the owner's disk, and the delta is reported.
+//   5. THE INVENTORY DUMP (sanitizeInventory) — the same third leg over a TAB-SEPARATED table the
+//      GAME wrote, where the tabs are the format and must survive (JOS-404) while everything else
+//      in the control classes still goes.
 //
 // The feedback wire's own truth table (strip in `description`, reject in `env.*`) lives with the
 // rest of the contract, in tests/feedbackContract.test.mts.
@@ -33,9 +36,19 @@ import {
   sanitizeAndFlag,
   sanitizeMultiline,
   sanitizeOneLine,
+  sanitizeTabbedAndFlag,
+  sanitizeTabbedLine,
   stripAnsi
 } from '../src/shared/sanitizeText'
-import { parseEnv, rescrubNotes, rescrubSlice, toDetail, toRow } from '../src/main/triage/rows'
+import {
+  inventoryNotes,
+  parseEnv,
+  rescrubNotes,
+  rescrubSlice,
+  sanitizeInventory,
+  toDetail,
+  toRow
+} from '../src/main/triage/rows'
 import {
   validateEnvelope,
   validateTelemetryBatch,
@@ -110,6 +123,34 @@ test('sanitizeOneLine folds TAB/LF/CR to a single space and deletes the rest', (
   assert.equal(sanitizeOneLine(`${ESC}[31ma${ESC}[0m`), 'a')
   // the point of the fold: a value cannot forge an extra row in an aligned table
   assert.equal(sanitizeOneLine('win32\nplatform: linux').includes('\n'), false)
+})
+
+test('sanitizeTabbedLine keeps TAB — and ONLY where the columns are the game’s (JOS-404)', () => {
+  // The one difference from sanitizeOneLine, and the whole reason this function exists: a row of
+  // an inventory export is `Location<TAB>Name<TAB>ID<TAB>Count<TAB>Slots` and the tabs ARE the
+  // format. A real row must come out byte for byte.
+  const row = 'General 5-Slot13\tEfreeti War Bow\t20861\t1\t10'
+  assert.equal(sanitizeTabbedLine(row), row)
+  assert.equal(sanitizeTabbedLine('Location\tName\tID\tCount\tSlots'), 'Location\tName\tID\tCount\tSlots')
+  // NOTHING ELSE in that class survives, and the output is still ONE line: LF and CR are gone
+  // rather than folded, so a forged "row" cannot become two rows in the file on disk.
+  assert.equal(sanitizeTabbedLine('a\nb'), 'ab')
+  assert.equal(sanitizeTabbedLine('a\r\nb'), 'ab')
+  for (const code of [0x00, 0x01, 0x07, 0x08, 0x0b, 0x0c, 0x0d, 0x1f, 0x7f, 0x80, 0x9b, 0x9f]) {
+    assert.equal(sanitizeTabbedLine(`a${ch(code)}b`), 'ab', `U+${code.toString(16)} must go`)
+  }
+  assert.equal(sanitizeTabbedLine(`${ESC}[31mred${ESC}[0m`), 'red')
+  assert.equal(sanitizeTabbedLine(`${ESC}]0;pwned${BEL}after`), 'after')
+  for (const code of [0x200b, 0x202e, 0x2060, 0x2069, 0xfeff]) {
+    assert.equal(sanitizeTabbedLine(`a${ch(code)}b`), 'ab', `U+${code.toString(16)} must go`)
+  }
+  // and the narrowness is the guarantee: sanitizeOneLine still folds the tab it is given
+  assert.equal(sanitizeOneLine(row).includes('\t'), false)
+  // the flagging twin agrees with it, and says nothing happened when nothing did
+  assert.deepEqual(sanitizeTabbedAndFlag(row), { text: row, changed: false })
+  const dirty = sanitizeTabbedAndFlag(`${ESC}[2JGeneral 1\tRusty Dagger\t5\t1\t0`)
+  assert.equal(dirty.changed, true)
+  assert.equal(dirty.text, 'General 1\tRusty Dagger\t5\t1\t0')
 })
 
 test('hasWireControls is the REJECT predicate — stricter than the strip, by design', () => {
@@ -433,4 +474,69 @@ test('CRLF slices count lines the same as LF ones', () => {
   const res = rescrubSlice([COMBAT, "[Sun] Stranger says, 'hi'", HEAL].join('\r\n'))
   assert.equal(res.dropped, 1)
   assert.equal(res.text, [COMBAT, HEAL].join('\n'))
+})
+
+// =========================================================================================
+// 5. the inventory dump — the SAME third leg, over a TAB-SEPARATED table (JOS-404)
+// =========================================================================================
+//
+// The slice's sanitize is a DISPLAY fold: tabs and newlines become spaces so a reporter's own
+// text cannot forge rows in a table the CLI draws. A dump is not the reporter's text and is not
+// drawn into a table — it is the game's own tab-separated export, written to disk for the owner
+// to read and to re-parse. Folding its tabs counted every honest row as dirty (1079 of 1080 on
+// report 01M081TPHPGB173YCC4YH7AMZB) and destroyed the columns. The round trip over the committed
+// REAL dump lives with the rest of the dump's format law, in tests/feedbackInventory.test.mts.
+
+/** The dump's shape, in the exact form `src/main/feedback/inventory.ts`'s header measured. */
+const DUMP_HEADER = 'Location\tName\tID\tCount\tSlots'
+const DUMP_ROW = 'General 5-Slot13\tEfreeti War Bow\t20861\t1\t10'
+
+test('an honest dump is passed through UNTOUCHED — tabs, terminators and all', () => {
+  for (const eol of ['\n', '\r\n']) {
+    const honest = [DUMP_HEADER, DUMP_ROW, 'Charm\tEmpty\t0\t0\t0', ''].join(eol)
+    const res = sanitizeInventory(honest)
+    assert.equal(res.cleaned, 0, `no row of a real dump is dirty (${JSON.stringify(eol)})`)
+    // BYTE FOR BYTE, which is the claim the CLI's silence makes about the local copy.
+    assert.equal(res.text, honest)
+    assert.equal(res.text.split(eol)[1], DUMP_ROW, 'the columns survive for the dump parser')
+  }
+})
+
+test('a dump row carrying an escape is STILL cleaned, and still counted', () => {
+  // The other half: the presign policy cannot pin an object's content, and this file is one the
+  // owner will eventually `cat`. Keeping TAB does not mean keeping anything else.
+  const forged = [
+    DUMP_HEADER,
+    `${ESC}]0;pwned${BEL}General 1\tRusty Dagger\t5\t1\t0`,
+    DUMP_ROW,
+    `Bank1\tScroll${ch(0x202e)}\t9\t1\t0`,
+    `Bank2\tNul${NUL}\t9\t1\t0`
+  ].join('\r\n')
+  const res = sanitizeInventory(forged)
+  assert.equal(res.cleaned, 3, 'the three forged rows, and only those')
+  for (const line of res.text.split('\r\n')) {
+    assert.equal(hasWireControls(line.replace(/\t/g, '')), false, `${JSON.stringify(line)} is clean`)
+  }
+  assert.ok(res.text.includes('General 1\tRusty Dagger\t5\t1\t0'), 'the row SURVIVES; the escape goes')
+  assert.ok(res.text.includes(DUMP_ROW), 'the honest row beside it is untouched')
+  // a stray CR INSIDE a row is not a terminator and is not content either
+  const strayCr = sanitizeInventory(`${DUMP_HEADER}\r\nGeneral 1\rRusty Dagger\t5\t1\t0`)
+  assert.equal(strayCr.cleaned, 1)
+  assert.equal(strayCr.text.includes('\r\n'), true, 'the real terminator is untouched')
+})
+
+test('the CLI says NOTHING about an honest dump, and names the count otherwise', () => {
+  const path = '.triage/inventory/ID.txt'
+  assert.deepEqual(inventoryNotes({ path, cleaned: 0, fromLegacyCache: false }), [])
+
+  const warned = inventoryNotes({ path, cleaned: 3, fromLegacyCache: false })
+  assert.equal(warned.length, 1)
+  assert.ok(warned[0].includes('3 row(s)'))
+  assert.ok(warned[0].includes('did not come from the game'), 'the accusation is the point')
+  assert.ok(warned[0].includes('S3 object is untouched'), 'the evidence claim must be stated')
+
+  const legacy = inventoryNotes({ path, cleaned: 0, fromLegacyCache: true })
+  assert.equal(legacy.length, 1)
+  assert.ok(legacy[0].includes('never measured'))
+  assert.ok(legacy[0].includes(path), 'it must name the file to delete')
 })

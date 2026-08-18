@@ -147,6 +147,12 @@ export function inWorldEvidence(ev: LogEvent): boolean {
  * shapes name YOU (`<Name> told you, '… Master.'` and `<Name> says, 'My leader is <You>.'`);
  * the ally form has been its own kind since JOS-250 and is deliberately absent.
  *
+ * `loot` covers the DESTROY line too since JOS-401 (`You successfully destroyed …` is a loot
+ * event with disposition 'destroyed'), and it belongs on this list for the identical reason every
+ * other loot line does: the game prints it for nobody but the character that typed it. The kind is
+ * what this predicate asks about, so the addition needed no change here — this note is the census
+ * saying so rather than leaving it to be re-derived.
+ *
  * Everything NOT listed here and not handled by the two predicates below is refused, which
  * includes every broadcast that names no caster (`charm`, `cc`, `ccWake`, `poisonProc`,
  * `poisonCoat`), another player's cast (`otherCastBegin`), another player's pet

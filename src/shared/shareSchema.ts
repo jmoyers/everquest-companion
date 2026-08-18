@@ -60,11 +60,27 @@ export interface ExportableOverlayConfig {
   bgAlpha: number
 }
 
+/**
+ * The overlays' shared TRANSPARENCY preference (JOS-407) — the pair, not the per-kind values.
+ *
+ * IT RIDES ALONGSIDE `overlays`, never instead of it. A bundle keeps carrying per-kind `bgAlpha`
+ * exactly as it always has, so a machine running an older build reads a new bundle and finds
+ * everything it knows how to apply; this key is simply one it ignores. `seeded` is deliberately
+ * absent from the wire: it is bookkeeping about THIS install's history with the switch, and a
+ * stranger's answer to it would suppress the seed that keeps opting in from repainting anything.
+ */
+export interface ExportableBgAlphaPrefs {
+  shared: number
+  independent: boolean
+}
+
 /** Body of a `kind:'settings'` envelope. Every field is optional so a bundle can be partial. */
 export interface SettingsBundleBody {
   alerts?: AlertDef[]
   alertPrefs?: AlertPrefs
   overlays?: Partial<Record<OverlayKind, ExportableOverlayConfig>>
+  /** the shared transparency and whether it is in force (JOS-407) */
+  overlayBgAlpha?: ExportableBgAlphaPrefs
   /** whitelisted renderer prefs, raw localStorage values keyed by UI_PREF_SPECS[].key */
   ui?: Record<string, string>
 }

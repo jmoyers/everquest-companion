@@ -1,6 +1,6 @@
 // telemetry/flush.ts — the session lifecycle and the flush loop that now actually sends.
 //
-// TWO TIMERS, and they answer different questions, which is why they are not one:
+// TWO JOBS, ONE TIMER (JOS-395 merged them; before that they were two `setInterval`s):
 //
 //   * THE HEARTBEAT (10 min) is COLLECTION. It records `sessionHeartbeat` into the local ring so
 //     "how long do sessions actually last" survives a process that is killed rather than closed
@@ -8,13 +8,32 @@
 //     whenever the user's switch is on, endpoint or no endpoint, because nothing it does leaves
 //     the machine.
 //
-//   * THE FLUSH (5 min) is NETWORK. It starts only when `telemetryFlushEnabled` says so: not
+//   * THE FLUSH (5 min) is NETWORK. It happens only when `telemetryFlushEnabled` says so: not
 //     under e2e, not without an endpoint, not with the switch off, and NOT BEFORE THE FIRST-RUN
-//     NOTICE HAS RENDERED. Same discipline as `startQueueFlush` — one predicate (net.ts),
-//     shared by the starter and the worker, because two copies of a network gate is how one of
-//     them drifts.
+//     NOTICE HAS RENDERED. Same discipline as `startQueueFlush` — one predicate (net.ts), read
+//     by the loop on every tick rather than once at startup, because two copies of a network
+//     gate is how one of them drifts.
 //
-// Both timers are `unref`'d, so neither can be the reason the process stays alive.
+// WHY ONE TIMER AND NOT TWO, which is THE COINCIDENCE INVARIANT made structural. The heartbeat
+// cadence is a MULTIPLE of the flush cadence on purpose: a heartbeat tick must also be a flush
+// tick, so the pulse rides out on the same timer turn that recorded it rather than waiting five
+// minutes for the next one, and `triage/liveSessions.ts` can keep reading one heartbeat per
+// session per bucket. Two `setInterval`s made that true by luck — they were started microseconds
+// apart and drifted only slowly. Once each tick carries its own ±5% jitter (JOS-395) luck is not
+// good enough: two independently wobbling timers land up to 30 s apart and fire in either order,
+// and the flush-first half of those is exactly the five-minute wait the invariant forbids. So
+// there is ONE loop over ONE grid (`./schedule.ts`), the heartbeat is an INDEX on that grid
+// (`isHeartbeatTick`), and it is recorded BEFORE the tick's flush reads the ring. Coincidence is
+// then a property of the code's shape, not of two clocks agreeing.
+//
+// AND WHY THE FLUSH RIDES A TIMER IT DOES NOT GATE. "A timer that can only ever no-op is still not
+// created" (the `startQueueFlush` precedent) survives this merge intact and is in fact honoured
+// harder: the collection timer exists whenever the switch is on, and a shut network gate now costs
+// one predicate call per tick instead of a second timer. Nothing reaches the network before the
+// notice — `flushTelemetry` re-reads the gate first, every time.
+//
+// The loop's timers are `unref`'d, so neither the tick nor a pending retry can be the reason the
+// process stays alive.
 //
 // WHY THOSE TWO NUMBERS AND NOT THE ORIGINAL 60 s / 5 min (JOS-269, owner cost ruling 2026-08-12).
 // Every flush is ONE request through API Gateway, Lambda and DSQL — the three meters that cost
@@ -80,32 +99,58 @@ import { takeHealth } from './health'
 import { takeErrorReports } from './errorReports'
 import { readRing, writeRing } from './ring'
 import { getTelemetryPrefs } from '../store'
+// WHEN this loop fires, as pure arithmetic: the per-launch phase, the drift-corrected grid, the
+// heartbeat's index on it and the retry's full-jitter backoff. It lives one file over because it
+// must import NOTHING — this file imports `../store`, and therefore Electron, and the schedule is
+// the half a node test can drive with a seeded `rand` and a virtual clock (JOS-395).
+import {
+  advance,
+  armDelayMs,
+  beginSchedule,
+  isHeartbeatTick,
+  nominalMs,
+  retryDelayMs,
+  type TickSchedule
+} from './schedule'
 
-/** Batch cadence. Counts, not click streams — 5 min (JOS-269; the plan's T5 number was 60 s, and
- *  the header says why one request in five minutes buys the same numbers for a fifth of the bill). */
-export const FLUSH_INTERVAL_MS = 5 * 60 * 1000
-/** Session heartbeat cadence: the "is anyone using it right now" pulse, 10 min (JOS-269; T5 said
- *  5). A MULTIPLE OF THE FLUSH ON PURPOSE — a heartbeat tick always coincides with a flush tick, so
- *  the pulse rides out on the same timer turn that records it rather than waiting for the next one,
- *  and `liveSessions.ts` can keep reading one heartbeat per session per bucket. */
-export const HEARTBEAT_INTERVAL_MS = 10 * 60 * 1000
+// The two cadences are SCHEDULE facts and are declared beside the grid they space; they are
+// re-exported here because this is the module the rest of the app (and `liveSessions.ts`'s comment)
+// has always named for them.
+export { FLUSH_INTERVAL_MS, HEARTBEAT_INTERVAL_MS } from './schedule'
 
 /**
- * Send the batch this tick has to send, and return it once the server has ACCEPTED it (null
- * for every other outcome — gate shut, nothing buffered, refused, or never answered).
+ * WHAT ONE ATTEMPT SETTLED, as four words — the loop's whole reason for knowing more than "did a
+ * batch come back". Only `retry` schedules anything: `idle` (gate shut or nothing buffered) has
+ * nothing to try again with, and `accepted` / `refused` have both already left the ring.
+ */
+type FlushOutcome = 'idle' | 'accepted' | 'refused' | 'retry'
+
+/**
+ * Send the batch this tick has to send, and say how it went.
  *
  * The gate is re-read here rather than trusted from `startTimers`: the switch can go off, and
  * the notice can be answered, between one tick and the next.
  */
-export async function flushTelemetry(): Promise<TelemetryBatch | null> {
-  if (!telemetryFlushEnabled(E2E, TELEMETRY_API_URL, getTelemetryPrefs())) return null
+async function attemptFlush(): Promise<{ outcome: FlushOutcome; batch: TelemetryBatch | null }> {
+  if (!telemetryFlushEnabled(E2E, TELEMETRY_API_URL, getTelemetryPrefs())) {
+    return { outcome: 'idle', batch: null }
+  }
   const batch = pendingBatch()
-  if (batch === null) return null
+  if (batch === null) return { outcome: 'idle', batch: null }
   const { status } = await postTelemetryBatch(batch)
   const accepted = status >= 200 && status < 300
-  // "Not now" (0 offline, 429 daily cap, 503 kill switch) keeps the buffer for the next tick.
-  if (!accepted && !telemetryPermanentRefusal(status)) return null
-  return retireBatch(batch, accepted)
+  // "Not now" (0 offline, 429 daily cap, 503 kill switch) keeps the buffer — for a jittered retry
+  // inside this interval (`scheduleRetry`) and, failing that, for the next tick.
+  if (!accepted && !telemetryPermanentRefusal(status)) return { outcome: 'retry', batch: null }
+  return { outcome: accepted ? 'accepted' : 'refused', batch: retireBatch(batch, accepted) }
+}
+
+/**
+ * Send the batch this tick has to send, and return it once the server has ACCEPTED it (null
+ * for every other outcome — gate shut, nothing buffered, refused, or never answered).
+ */
+export async function flushTelemetry(): Promise<TelemetryBatch | null> {
+  return (await attemptFlush()).batch
 }
 
 /**
@@ -191,8 +236,27 @@ function reportErrors(): void {
   for (const ev of takeErrorReports()) recordEvent(ev)
 }
 
-let heartbeat: ReturnType<typeof setInterval> | null = null
-let flushTimer: ReturnType<typeof setInterval> | null = null
+// ------------------------------------------------------------------------------- THE LOOP
+//
+// A CHAINED `setTimeout`, NOT A `setInterval`, and that is forced rather than stylistic: every
+// tick's delay is a different number (the grid point minus where the clock actually is, plus this
+// tick's wobble), and an interval cannot be re-timed without being torn down and rebuilt. A chained
+// timeout IS "compute the next fire time from the grid" written out.
+//
+// `retry` is a second, short-lived handle: at most one in flight, and the next tick clears it.
+
+/** This launch's phase and the index of the tick currently armed. `null` = not collecting, and it
+ *  is the sentinel the two idempotent entry points below read. */
+let sched: TickSchedule | null = null
+/** Wall clock at which the grid begins. Every delay is expressed as ms after this. */
+let origin = 0
+let tick: ReturnType<typeof setTimeout> | null = null
+let retry: ReturnType<typeof setTimeout> | null = null
+
+/** ms since the loop's origin — the coordinate `./schedule.ts` speaks in. */
+function elapsed(): number {
+  return Date.now() - origin
+}
 
 /**
  * Start collection for this session. Idempotent.
@@ -202,7 +266,7 @@ let flushTimer: ReturnType<typeof setInterval> | null = null
  * does not) and bucketed here so the raw millisecond never enters the ring.
  */
 export function startTelemetry(coldStartMs: number): void {
-  if (heartbeat !== null) return
+  if (sched !== null) return
   const prefs = getTelemetryPrefs()
   if (!prefs.enabled) return
   ensureAnalyticsId()
@@ -216,64 +280,122 @@ export function startTelemetry(coldStartMs: number): void {
   startTimers(prefs)
 }
 
-/** Both timers, once the decision to run them has been made. */
+/** The loop, once the decision to run it has been made: mint this launch's phase, arm tick 0. */
 function startTimers(prefs: TelemetryPrefs): void {
-  heartbeat = setInterval(() => {
-    // The heartbeat is also what DRAINS the parsed-line delta (collector.ts): the counter is
-    // reported by the same event that proves the session was still alive to do the parsing, so a
-    // killed process loses at most the last ten minutes of it (JOS-269; it was five). A LOST TAIL
-    // IS NOT A MISCOUNT of an ordinary exit — `stopTelemetry` drains the same counter below — so
-    // what widened is only how much a CRASH can swallow, and a counter is the shape that survives
-    // that best.
-    recordEvent({
-      t: 'sessionHeartbeat',
-      uptimeMs: sessionUptimeMs(),
-      linesParsed: takeLinesParsed(),
-      // …and this launch's startup replay, on the first heartbeat after it finished (JOS-57).
-      // Drained, so exactly one report carries it: one launch is one reading. THE 10-MINUTE
-      // HEARTBEAT DOES NOT ENDANGER THAT — the drain is a race between this and `sessionEnd`,
-      // whichever fires first, and `takeStartupReplay` empties the slot either way. A longer
-      // heartbeat only shifts WHICH of the two carries it; it can never lose or duplicate it.
-      ...startupField(),
-      // …and how the LAST TEN MINUTES ACTUALLY WENT (JOS-367): how late our two clocks ran and
-      // whether they went late together, what the tail's reads cost, and what was switched on
-      // while both were measured. Drained here on the same terms as the line delta above — one
-      // interval is reported once, by whichever of these two events gets to it first.
-      ...liveRiderFields()
-    })
-    reportHealth()
-    reportErrors()
-  }, HEARTBEAT_INTERVAL_MS)
-  heartbeat.unref()
-  ensureFlushTimer(prefs)
+  origin = Date.now()
+  sched = beginSchedule()
+  armTick()
+  announceFlush(prefs)
+}
+
+/** Arm the currently-scheduled tick, at whatever the grid says this one's delay is. */
+function armTick(): void {
+  if (sched === null) return
+  tick = setTimeout(onTick, armDelayMs(sched, elapsed()))
+  // `unref` so a pending timer can never be the reason the process stays alive.
+  tick.unref()
 }
 
 /**
- * The network half, started only when the gate is open — and startable LATER IN THE SAME
- * SESSION, which is the whole reason it is its own function.
+ * ONE TICK: the heartbeat if this grid index is one, then the upload.
  *
- * On a first run the app starts with `noticeShown: false`, so the gate is shut when
- * `startTimers` runs; it opens a few seconds later when the notice renders and is answered.
- * Before this existed, that first session collected but never sent, and the counters only began
- * to move on the NEXT launch — a silent off-by-one-session in every install's first day.
+ * THE ORDER IS THE COINCIDENCE INVARIANT. `recordHeartbeat` is synchronous and runs FIRST, so the
+ * `pendingBatch()` read inside the flush below sees a ring that already contains the pulse and it
+ * leaves on this turn rather than waiting five minutes for the next. Nothing about the jitter can
+ * separate them, because there is nothing to separate — it is one call after another.
  *
- * A timer that can only ever no-op is still not created (the `startQueueFlush` precedent).
+ * The next tick is armed BEFORE the flush is started: the flush is async and may sit on a 15-second
+ * POST budget, and a grid that only advances after the network answers is a grid that drifts by
+ * exactly the thing it was built not to drift by.
  */
-function ensureFlushTimer(prefs: TelemetryPrefs): void {
-  if (flushTimer !== null) return
-  if (!telemetryFlushEnabled(E2E, TELEMETRY_API_URL, prefs)) return
-  flushTimer = setInterval(() => {
-    void flushTelemetry()
-  }, FLUSH_INTERVAL_MS)
-  flushTimer.unref()
+function onTick(): void {
+  const s = sched
+  if (s === null) return
+  if (isHeartbeatTick(s.k)) recordHeartbeat()
+  sched = advance(s, elapsed())
+  // A retry left over from the previous interval is superseded by this tick's own attempt.
+  clearRetry()
+  armTick()
+  void runFlush(0)
+}
+
+/** The 10-minute pulse and the two drains that ride it. */
+function recordHeartbeat(): void {
+  // The heartbeat is also what DRAINS the parsed-line delta (collector.ts): the counter is
+  // reported by the same event that proves the session was still alive to do the parsing, so a
+  // killed process loses at most the last ten minutes of it (JOS-269; it was five). A LOST TAIL
+  // IS NOT A MISCOUNT of an ordinary exit — `stopTelemetry` drains the same counter below — so
+  // what widened is only how much a CRASH can swallow, and a counter is the shape that survives
+  // that best.
+  recordEvent({
+    t: 'sessionHeartbeat',
+    uptimeMs: sessionUptimeMs(),
+    linesParsed: takeLinesParsed(),
+    // …and this launch's startup replay, on the first heartbeat after it finished (JOS-57).
+    // Drained, so exactly one report carries it: one launch is one reading. THE 10-MINUTE
+    // HEARTBEAT DOES NOT ENDANGER THAT — the drain is a race between this and `sessionEnd`,
+    // whichever fires first, and `takeStartupReplay` empties the slot either way. A longer
+    // heartbeat only shifts WHICH of the two carries it; it can never lose or duplicate it.
+    ...startupField(),
+    // …and how the LAST TEN MINUTES ACTUALLY WENT (JOS-367): how late our two clocks ran and
+    // whether they went late together, what the tail's reads cost, and what was switched on
+    // while both were measured. Drained here on the same terms as the line delta above — one
+    // interval is reported once, by whichever of these two events gets to it first.
+    ...liveRiderFields()
+  })
+  reportHealth()
+  reportErrors()
+}
+
+/**
+ * One tick's upload, and the retries a "not now" earns it.
+ *
+ * WHY RETRY AT ALL WHEN THE NEXT TICK WOULD DO IT ANYWAY (JOS-395): because the next tick is the
+ * SAME BOUNDARY, and a fleet that all got 429 at once would all come back at once five minutes
+ * later — the herd re-forming out of the very answer that was meant to thin it. A full-jitter wait
+ * (uniform in [0, ceiling), ceiling doubling from 30 s) spreads the second attempt across the
+ * interval instead.
+ *
+ * `attempt` counts consecutive "not now" answers WITHIN this interval. Nothing here is a new
+ * give-up rule: the ceiling is clamped to the next nominal tick, so the chain ends by arithmetic,
+ * the buffer keeps its records exactly as it did before (`retireBatch`), and the next tick starts a
+ * fresh chain. A permanent refusal (400/413) never reaches this code — it retires inside
+ * `attemptFlush`, as it always has.
+ */
+async function runFlush(attempt: number): Promise<void> {
+  const { outcome } = await attemptFlush()
+  if (outcome !== 'retry' || sched === null) return
+  const toNextTick = nominalMs(sched) - elapsed()
+  if (toNextTick <= 0) return
+  retry = setTimeout(() => void runFlush(attempt + 1), Math.max(1, retryDelayMs(attempt, toNextTick)))
+  retry.unref()
+}
+
+/** Whether the loop's flush half has anywhere to go — said ONCE per process, in the log.
+ *
+ *  On a first run the app starts with `noticeShown: false`, so the gate is shut when `startTimers`
+ *  runs; it opens a few seconds later when the notice renders and is answered. The loop needs no
+ *  restarting for that (it has been ticking since launch and `attemptFlush` re-reads the gate every
+ *  time) — but the log line still marks the moment the network half went live, which is the first
+ *  thing anyone reads when asking why an install sent nothing. */
+let announced = false
+function announceFlush(prefs: TelemetryPrefs): void {
+  if (announced || !telemetryFlushEnabled(E2E, TELEMETRY_API_URL, prefs)) return
+  announced = true
   logInfo('[everquest-companion] telemetry: flush loop started')
 }
 
+function clearRetry(): void {
+  if (retry !== null) clearTimeout(retry)
+  retry = null
+}
+
 function clearTimers(): void {
-  if (heartbeat !== null) clearInterval(heartbeat)
-  if (flushTimer !== null) clearInterval(flushTimer)
-  heartbeat = null
-  flushTimer = null
+  if (tick !== null) clearTimeout(tick)
+  clearRetry()
+  tick = null
+  // Dropping the schedule is what makes a restart mint a NEW phase rather than resume the old one.
+  sched = null
 }
 
 /**
@@ -290,10 +412,11 @@ function clearTimers(): void {
 export function resumeTelemetry(): void {
   const prefs = getTelemetryPrefs()
   if (!prefs.enabled) return
-  if (heartbeat !== null) {
+  if (sched !== null) {
     // Already collecting — this call came from the first-run notice being answered, which is
-    // the moment the NETWORK gate opens for a session that is already under way.
-    ensureFlushTimer(prefs)
+    // the moment the NETWORK gate opens for a session that is already under way. The loop is
+    // already on the grid; the next tick simply finds the gate open.
+    announceFlush(prefs)
     return
   }
   beginSession()

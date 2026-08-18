@@ -1,4 +1,5 @@
 import type { LootDisposition, LootEvent } from '@shared/types'
+import { isAcquisition } from '@shared/lootDisposition'
 import type { InventoryRow } from '../inventory/reconcile'
 import { questItemNames } from './lootItemData'
 import { DEFAULT_LOOT_SORT, sortLootRows, type LootSortKey } from './lootSort'
@@ -58,9 +59,20 @@ interface Group {
   dispositions: Set<LootDisposition | undefined>
 }
 
+/**
+ * ONE ROW PER ITEM, over the LOOT rows only.
+ *
+ * A destroy is honest bag history and the flat chronological ledger keeps it, wearing its own chip
+ * (JOS-401) — but this table's columns are `Times looted`, `Top source` and `Zones`, and a destroy
+ * answers none of them: it names no mob, and adding its stack size to a times-looted count would
+ * make emptying a bag look like farming. So the grouped table is built from acquisitions, and an
+ * item this character ONLY ever destroyed has no group row (its flat rows are still in the ledger,
+ * and the inventory-only tail is where a held-but-never-looted item is reported).
+ */
 function tallyGroups(events: KeyedLoot[]): Map<string, Group> {
   const map = new Map<string, Group>()
   for (const e of events) {
+    if (!isAcquisition(e)) continue
     const key = e.itemKey
     let cur = map.get(key)
     if (!cur) {

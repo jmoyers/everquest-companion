@@ -102,6 +102,26 @@ const LOOT_CURRENCY_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse an
 const LOOT_SOLD_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse and sold it for (?:free|[\d,]+ (?:platinum|gold|silver|copper).*?)\.?$/
 const LOOT_STORED_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse and stored it in your (Dragon Hoard|tradeskill depot)\.?$/
 const LOOT_COMBINE_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse to create (?:an? )?(.+?)\.?$/
+// THE ONE LINE THAT SUBTRACTS (JOS-401):
+//   You successfully destroyed 1 Enchanted Fine Steel Morning Star +3.
+//   You successfully destroyed 38 Bone Chips.
+//   You successfully destroyed 3 Mosquito Rations*.
+// FULL-LOG SWEEP (read-only, 2026-08-16, eqlog_Primitive_freeport.txt): 356 lines, and every one
+// of them matches this shape — a count that is always stated (stacks say the stack size), the
+// item name verbatim, a trailing period. It joins the loot family as `disposition: 'destroyed'`
+// with NO source, because a destroy happens in your bags and names no mob.
+//
+// ANCHORED AT BOTH ENDS, like every other family here, and that is what keeps player chat out of
+// it: seven other lines in the log contain "destroyed" and six are quoted speech (`'i just
+// destroyed …'`), which ends in a quote rather than a period and never starts the message.
+//
+// THE ` +N` AND THE TRAILING `*` ARE KEPT VERBATIM, exactly as the loot family keeps a `+N`:
+// `itemCountKey` folds the `+N` at the counting boundary downstream (law 2). The `*` is NOT
+// folded, and that is measured rather than overlooked — no loot line in the whole log carries one
+// (0 of 6,216), while the `/outputfile inventory` dump writes the same six items with the same
+// star (`Backpack*`, `Bandages*`), so keeping it verbatim is what makes a destroy line and a dump
+// row land on ONE counting key. Stripping it would invent a fold neither source asked for.
+const DESTROY_RE = /^You successfully destroyed (\d+) (.+?)\.$/
 
 const ZONE_RE = /^You have entered (.+?)\.$/
 // Pseudo-zone notices that share the "You have entered <X>." grammar but are NOT
@@ -220,6 +240,13 @@ const AA_IMPROVED_RE = /^You have improved (.+?) (\d+) at a cost of/
 //     1×  `The item you are trying to add will not work, you cannot merge two different
 //         types of items.`                                           (no item named)
 //     1×  `Request to merge items canceled, both items remain unmodified.` (no item named)
+//   356×  `You successfully destroyed <N> <Item>[ +N][*].` — PARSED SINCE JOS-401, as a loot event
+//         with disposition 'destroyed' (see DESTROY_RE above). It was in the not-parsed list below
+//         for two releases on the reasoning "a destroy can only retire tier evidence we never
+//         claimed to be current inventory" — which was true of TIERS, the only thing this sweep was
+//         about, and false of held counts, which is the whole of the Sky tracker. The item-tier
+//         module still ignores it (it folds 'combined' rows only) and that reasoning still holds
+//         there; what changed is that something else now needs the line.
 //
 //   EXISTS, DELIBERATELY NOT PARSED (nothing to model — see the reason on each)
 //   302×  `You looted <item> from <mob>'s corpse to create a <item> +N` — an AUTO-merge on
@@ -231,8 +258,6 @@ const AA_IMPROVED_RE = /^You have improved (.+?) (\d+) at a cost of/
 //         A socketed exaltation FIRING. It names the exaltation's SOURCE item, never the
 //         host it is socketed into, and carries no tier, so it can neither identify the
 //         item in front of you nor advance any tier state.
-//    ~30× `You successfully destroyed 1 <Item> +N.` — the item is GONE; a destroy can only
-//         retire tier evidence we never claimed to be current inventory.
 //   Motes appear ONLY inside ordinary loot lines (`--You have looted a Mote of
 //   Infinitesimal Potential …--`), which the loot family already parses.
 //   NOTHING anywhere reports item EXP within a tier, socket CONTENTS, or the tier of an
@@ -367,9 +392,15 @@ export function classifyZone({ text, ts, seq, raw }: ClassifyCtx): LogEvent | nu
   return null
 }
 
-/** Self-loot, including the auto-disposition variants. */
+/** Self-loot, including the auto-disposition variants — and the destroy, which is the negative. */
 export function classifyLoot(c: ClassifyCtx): LogEvent | null {
   const { text } = c
+  // The destroy (JOS-401). Its own probe rather than a branch of the loot gate below, because the
+  // sentence never says "looted"; a `startsWith` costs one length-guarded compare on the hot path.
+  if (text.startsWith('You successfully destroyed ')) {
+    const d = DESTROY_RE.exec(text)
+    if (d) return loot(c, { item: d[2], source: undefined, disposition: 'destroyed', countStr: d[1] })
+  }
   if (text.includes('looted')) {
     const m = LOOT_RE.exec(text) ?? LOOT_RE_PLAIN.exec(text)
     if (m) return loot(c, { item: m[2], source: cleanMob(m[3]), disposition: undefined, countStr: m[1] })

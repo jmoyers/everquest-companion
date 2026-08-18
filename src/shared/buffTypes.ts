@@ -375,6 +375,21 @@ export interface SpellEntry {
    * non-song) that have no such row.
    */
   instrumentEnhanced?: string
+  /**
+   * THE WIKI BADGES THIS SPELL'S PAGE OUT OF ERA (JOS-393) — DERIVED AT LOAD, never in spells.json.
+   *
+   * `src/main/data/spellEra.ts` joins it from the era sidecar (`pageEra.json`, written by
+   * `scripts/scrape-page-era.ts` off eqlwiki's own `action=eqlmetadata` predicate — the same one
+   * that decides whether the wiki draws its red pill on a link). The spell scrape rewrites
+   * `spells.json` wholesale, so a verdict from a DIFFERENT scrape cannot live in it; the field is
+   * attached by the loader, exactly as the corrections and removals overlays are applied there.
+   *
+   * `true` OR ABSENT, and never `false`. The endpoint answers `false` both for a page it files as
+   * classic and for a page nobody has classified, and the table is silent for a name it was never
+   * asked about — so the only thing worth carrying is the positive claim. A surface reads an absent
+   * field as "nothing to say", which is exactly what it is.
+   */
+  outOfEra?: boolean
 }
 
 /** The committed spells.json shape: metadata + the spell list. */

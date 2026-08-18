@@ -166,6 +166,14 @@ export const TELEMETRY_DOC_EVENTS: readonly DocEvent[] = [
     t: 'sessionHeartbeat',
     when:
       'Every 10 minutes while the app is open — the "is anyone using it right now" signal. ' +
+      // JOS-395. The cadence is unchanged and this says so in the same breath as the change: what
+      // moves is only WHERE in the ten minutes a given copy of the app sits, and it is worth one
+      // sentence here because a reader watching their own network would otherwise see the timing
+      // wander and have nowhere to read why.
+      'Which moment in those ten minutes it falls on is picked fresh each time the app starts, ' +
+      'and every one is nudged a few seconds either way, so that many copies of this app started ' +
+      'at the same time do not all call home in the same second — the ten minutes itself never ' +
+      'changes. ' +
       `${STARTUP_WHEN} ${LIVE_RIDER_WHEN}`,
     fields: [
       { name: 'uptimeMs', type: COUNT, note: 'How long this session has been running.' },
