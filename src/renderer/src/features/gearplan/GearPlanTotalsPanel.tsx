@@ -270,7 +270,11 @@ export default function GearPlanTotalsPanel({
   return (
     <DashCard
       fill
-      title="What this adds up to"
+      // THE CARD NAMES ITS SUBJECT AND NOT ITS FIRST BLOCK. It used to be titled "What this adds
+      // up to", which was accurate while the totals led and became a lie the moment the diff did -
+      // the card promised a sum and opened with a verdict. The title is the panel; the sum is one
+      // block in it and now carries its own heading like the other three.
+      title="Your plan"
       right={
         <Typography variant="caption" sx={{ color: 'primary.main', flexShrink: 0 }}>
           {`${String(assigned)} planned`}
@@ -283,7 +287,10 @@ export default function GearPlanTotalsPanel({
       {/* THE SEPARATOR MOVED WITH THE BLOCKS. The diff carried its own top margin while it was
           last; leading the card, that margin was dead space under the title, and the totals needed
           one instead - but only when there is a diff above them to be separated FROM. */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: diff === null ? 0 : 1.25 }}>
+      <Box sx={{ mt: diff === null ? 0 : 1.25 }}>
+        <BlockHeading>What this adds up to</BlockHeading>
+      </Box>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
         <StatRows rows={[{ label: 'AC', total: totals.ac, from: totals.counted }]} />
         <StatRows rows={totals.stats} />
         <StatRows rows={totals.saves} />
