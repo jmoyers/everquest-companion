@@ -29,6 +29,11 @@ import type { JumpTarget } from './crossZone'
 import { MapCanvas } from './MapCanvas'
 import { MapPointsLayer, labelPosition } from './MapPointsLayer'
 import { MapMobPins } from './MapMobPins'
+// The respawn-timer lane (user ask, 2026-08-17): where the mobs you are timing spawn. The hook
+// subscribes the respawn module; the layer draws a third, clearly different symbol. Both headers
+// carry the contracts.
+import { MapTimerPins, useTimerPins } from './MapTimerPins'
+import type { TimerPin } from './respawnPins'
 import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
 import type { MobPaneRow } from './mobPins'
@@ -166,6 +171,7 @@ function MapSurface({
   marker,
   locMarker,
   pane,
+  timers,
   zones,
   onJump
 }: {
@@ -180,6 +186,9 @@ function MapSurface({
   locMarker: EqLoc | null
   /** The sidebar's contribution, or null when it is closed and draws nothing. */
   pane: PaneOverlay | null
+  /** The respawn-timer lane's rows for THIS map — drawn whether or not the sidebar is open,
+   *  because a clock is live state of your own, not a pane derivation. */
+  timers: readonly TimerPin[]
   /** Every stem an installed pack provides — gates which connection labels become links. */
   zones: readonly ZoneShort[]
   /** The search jump — a clicked connection label opens its zone with no position to centre on. */
@@ -238,6 +247,7 @@ function MapSurface({
           onSelect={pane.select}
         />
       )}
+      {timers.length > 0 && <MapTimerPins timers={timers} vp={vp} />}
       {ringAt != null && <MarkerRing at={ringAt} size={26} testId="maps-pane-marker" />}
       {at != null && <MarkerRing at={at} size={22} testId="maps-marker" />}
       {/* THE ONE SEAM, AGAIN: the typed reading reaches the screen through `mapFromLoc` and then
@@ -298,6 +308,9 @@ export interface MapBodyProps {
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
   const { locMarker, zones, onOpenMob } = props
+  // The respawn-timer join for the map ON SCREEN (`data.zone`, like every overlay). Subscribed
+  // here rather than in MapsView so the view above stays ignorant of the respawn module.
+  const timers = useTimerPins(data?.zone ?? null, zoneName)
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (
@@ -311,6 +324,7 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           marker={marker}
           locMarker={locMarker}
           pane={paneOverlay(pane)}
+          timers={timers}
           zones={zones}
           onJump={onJump}
         />
