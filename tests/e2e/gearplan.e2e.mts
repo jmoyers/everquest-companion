@@ -45,7 +45,6 @@ import {
   stepLoadEquipped,
   stepLoadedSocketReturns,
   stepMount,
-  stepPoolFilter,
   stepSeededCell,
   stepSocketHover,
   stepSocketPick,
@@ -53,6 +52,7 @@ import {
   stepTierUnlocks,
   stepUnlockLadder
 } from './gearPlanSteps.mjs'
+import { stepPoolFilter, stepStatFilter } from './gearPlanFilterSteps.mjs'
 
 /**
  * THE SEEDED BOARD. Nothing in the product can put an item in a cell yet (the pickers are the next
@@ -113,6 +113,7 @@ async function firstLaunch(page: Page): Promise<void> {
   // asserting the SEEDED board rather than whatever this run happened to pick.
   await stepAssignItem(page, 'thelvorn')
   await stepTierUnlocks(page)
+  await stepStatFilter(page)
   await stepSocketPick(page)
   await stepDonorInlineEffects(page)
   await stepClearCell(page)

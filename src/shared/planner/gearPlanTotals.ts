@@ -53,6 +53,7 @@
 
 import { sumGear, type GearStat, type GearTotals } from '../characterSheet'
 import { damageRatio, statLabel, type ItemStat, type ItemStatBlock } from '../itemStats'
+import { betterIsLess } from './gearPlanStatPick'
 import type { ItemUpgradeState } from '../itemUpgrade'
 import {
   GEAR_PERCENT_STAT_KEYS,
@@ -435,21 +436,17 @@ export function weaponFacts(stats: GearStats): WeaponFacts | null {
 }
 
 /**
- * THE TWO STATS A SMALLER NUMBER IS BETTER ON.
+ * Would this movement please the person wearing it? The sign, corrected for what the stat IS.
  *
- * `DELAY` is the time between swings, so less of it is more attacks; `WEIGHT` is what you carry
- * against your encumbrance limit, so less of it is more of everything else. Every other key in
- * `GEAR_STAT_KEYS` is a quantity you want more of, including the saves — the corpus states those as
- * resistances, not as the damage taken.
+ * A SIGN IS NOT A VERDICT, and until this asked, `WEIGHT -1.6` was drawn as a cost, in the adverse
+ * colour, next to a red minus. It was one of the better things about the item.
  *
- * THIS SET EXISTS BECAUSE A SIGN IS NOT A VERDICT, and until it did, `WEIGHT -1.6` was drawn as a
- * cost, in the adverse colour, next to a red minus. It was one of the better things about the item.
+ * WHICH-WAY-IS-UP LIVES IN ONE FILE, `gearPlanStatPick.betterIsLess`, because the stat filter has
+ * to agree with the coloured delta line about it: a filter that hid every faster weapon while the
+ * delta line drew its shorter delay green would be two answers to one question.
  */
-const LOWER_IS_BETTER: ReadonlySet<GearStatKey> = new Set<GearStatKey>(['DELAY', 'WEIGHT'])
-
-/** Would this movement please the person wearing it? The sign, corrected for what the stat IS. */
 export function isImprovement(entry: CellDelta): boolean {
-  return LOWER_IS_BETTER.has(entry.key) ? entry.delta < 0 : entry.delta > 0
+  return betterIsLess(entry.key) ? entry.delta < 0 : entry.delta > 0
 }
 
 /**

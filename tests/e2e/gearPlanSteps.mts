@@ -36,7 +36,7 @@ export const CELL = '[data-testid^="gearplan-cell-"]'
 const HEAD = '[data-testid="gearplan-cell-HEAD"]'
 
 /** The whole visible text of one element, as a user reads it. */
-function textOf(page: Page, selector: string): Promise<string> {
+export function textOf(page: Page, selector: string): Promise<string> {
   return page.evaluate((sel) => document.querySelector(sel)?.textContent?.trim() ?? '', selector)
 }
 
@@ -448,79 +448,6 @@ export async function stepDonorInlineEffects(page: Page): Promise<void> {
     (n) => n === 0
   )
   check('picking a row closes the panel and returns the column to the totals', picked === 0)
-}
-
-/**
- * THE POOL FILTER, THROUGH THE REAL PICKER — the claim no unit test can reach.
- *
- * `tests/gearPlanSignals.test.mts` pins `hidesRow`'s truth table. What it cannot see is whether the
- * bar's value actually REACHES the picker: wire `filter` to the wrong prop and every unit test
- * stays green while the control does nothing at all. So this drives the chip and then counts rows.
- *
- * "WISHLISTED" IS THE ONE TO DRIVE, because it is the only filter whose input this spec controls.
- * Era depends on the corpus's provenance, ownership on the staged dump, class fit on the inferred
- * loadout - all three are real but none is something a step can set to a known value. The wish list
- * starts EMPTY, so "keep only what is wishlisted" must hide everything, which is an exact number
- * rather than an inequality.
- *
- * THE CHIP IS NOW TOGGLED WITH THE PANEL OPEN, and that is the point of the panel. Selecting used
- * to be a MUI `Popover` whose backdrop swallowed any click aimed at the bar behind it, so this step
- * had to close the picker, toggle, and reopen. A panel takes no backdrop: the chips stay live while
- * you choose, and the list re-filters under you. Driving it the old way would no longer test the
- * thing that changed.
- */
-export async function stepPoolFilter(page: Page): Promise<void> {
-  const cell = '[data-testid="gearplan-cell-PRIMARY"]'
-  const hits = (): Promise<number> => countOf(page, '[data-testid="gearplan-item-hit"]')
-  const search = async (): Promise<void> => {
-    await page.click(`${cell} [data-testid="gearplan-add-item"]`, { timeout: 15_000 })
-    await page.waitForSelector('[data-testid="gearplan-item-search"]', { timeout: 15_000 })
-    await page.fill('[data-testid="gearplan-item-search"] input', 'thelvorn')
-  }
-
-  await search()
-  // WAIT FOR THE QUERY'S OWN ROWS, NOT FOR ANY ROWS AT ALL. The panel lists the whole slot
-  // unprompted, so `hits() > 0` is already true the instant it opens and `before` used to be
-  // captured off that first, unfiltered list — then the deferred 'thelvorn' search landed, the
-  // count dropped, and the hidden-count assertion compared against a number from a different
-  // question. It passed or failed on whether the search beat the read, which is a coin flip.
-  //
-  // The positive signal is that every row ON SCREEN answers the query that was typed.
-  const onlyMatches = async (): Promise<boolean> => {
-    const names = await page.$$eval('[data-testid="gearplan-hit-name"]', (els) =>
-      els.map((e) => e.textContent ?? '')
-    )
-    return names.length > 0 && names.every((n) => n.toLowerCase().includes('thelvorn'))
-  }
-  if (!check('the panel has rows for the QUERY before any filter is applied', await until(onlyMatches, 20_000))) {
-    await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
-    return
-  }
-  const before = await hits()
-  await page.click('[data-testid="gearplan-filter-wished"]', { timeout: 15_000 })
-
-  // WAIT ON THE POSITIVE SIGNAL, NOT ON THE ABSENCE OF ROWS. "Zero hits" is also what an in-flight
-  // search looks like, so settling on it passes at t=0 and then reads an empty list that has not
-  // been filtered yet — which is exactly how this step first failed. The hidden COUNT only appears
-  // once rows have arrived AND been held back, so it is the one state worth waiting for.
-  const line = await settle(
-    () => textOf(page, '[data-testid="gearplan-filter-hidden"]'),
-    (t) => t.includes(String(before))
-  )
-  check('the bar, readable behind the open picker, says how many it is holding back', line.includes(String(before)), line)
-
-  const after = await hits()
-  check('"Wishlisted" empties the picker when the wish list is empty', after === 0, `before=${String(before)} after=${String(after)}`)
-
-  // RULE 2 of the signals file: nothing is hidden silently — and the empty list has to say which
-  // of the two possible reasons emptied it, because "no such item" is the wrong answer here.
-  const empty = await textOf(page, '[data-testid="gearplan-item-empty"]')
-  check('…and the empty list blames the FILTER, not the database', empty.includes('filters are hiding'), empty)
-
-  await page.click('[data-testid="gearplan-filter-wished"]', { timeout: 15_000 })
-  const restored = await settle(hits, (n) => n === before)
-  check('turning it back off restores every row', restored === before, `got ${String(restored)}`)
-  await page.click('[data-testid="gearplan-select-close"]', { timeout: 15_000 })
 }
 
 /**

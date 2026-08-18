@@ -77,6 +77,14 @@ export interface GearPlanFold {
   candidateDelta: (key: string, cell: PlanSlotId) => CellDelta[] | null
   /** the same, for a weapon's derived ratio — see `WeaponRead` */
   candidateWeapon: (key: string, cell: PlanSlotId) => WeaponRead | null
+  /**
+   * A CANDIDATE'S RAW VECTOR AND THE WORN ONE, for the stat filter to compare and rank on.
+   *
+   * The vectors rather than a verdict, because the QUESTION is the caller's: which stats, and
+   * whether to filter or only to sort. This file resolves rows and scales them; deciding what
+   * beats what is `gearPlanStatPick`'s, and it is pure so it can be tested without a renderer.
+   */
+  candidateStats: (key: string, cell: PlanSlotId) => { mine: GearStats; worn: GearStats | null } | null
 }
 
 /**
@@ -204,6 +212,16 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
         if (facts === null) return null
         const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
         return { mine: facts, worn: theirs === null ? null : weaponFacts(theirs) }
+      },
+      // AT BASE ON THE CANDIDATE AND AT ITS OWN TIER ON THE WORN SIDE, which is the same pairing
+      // every other candidate reader uses. It matters more here: the filter answers "does this beat
+      // what I have on AS IT IS", and scaling the candidate up to some tier it has not been merged
+      // to would answer a question about an item that does not exist yet.
+      candidateStats: (key: string, cell: PlanSlotId) => {
+        const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
+        if (mine === null) return null
+        const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+        return { mine, worn: theirs }
       },
       facts,
       totals,

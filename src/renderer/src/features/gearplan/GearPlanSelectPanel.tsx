@@ -39,6 +39,9 @@ import GearPlanDeltaLine from './GearPlanDeltaLine'
 import GearPlanRatioLine from './GearPlanRatioLine'
 import type { WeaponRead } from './gearPlanFold'
 import GearPlanRowChips from './GearPlanRowChips'
+import GearPlanStatPicker, { NO_STAT_PICK, type StatPick } from './GearPlanStatPicker'
+import { beatsWornOn, pickScore } from '@shared/planner/gearPlanStatPick'
+import type { GearStats } from '@shared/planner/gear'
 import { PLANNER_PAGE, PLANNER_PAGE_MAX } from './gearPlanRules'
 import { hidesRow, type GearPlanRowFilter, type RowSignals } from './gearPlanSignals'
 
@@ -118,15 +121,26 @@ function CandidateRow({
   )
 }
 
-/** Why the list is empty, in the words of whichever reason applies. */
+/**
+ * Why the list is empty, in the words of whichever reason applies.
+ *
+ * THE STAT FILTER GETS ITS OWN SENTENCE and is asked about FIRST, because it is the reason a
+ * reader is least likely to guess and the easiest to leave switched on by accident. "Nothing here
+ * beats what you have on" is also a genuinely useful answer — it means you are already wearing the
+ * best the corpus knows about for that slot, which no other line here can tell you.
+ */
 function emptyLine(
   q: { text: string; loading: boolean; slotted: boolean },
-  filtered: number,
+  held: { filtered: number; byStats: number },
   label: string
 ): string {
   // The minimum survives for the ONE case it was written for: a cell that names no slot.
   if (!q.slotted && q.text.trim().length < MIN_QUERY) return 'Type at least two letters.'
   if (q.loading) return 'Searching…'
+  const { filtered, byStats } = held
+  if (byStats > 0) {
+    return `Nothing here beats what you have on. ${String(byStats)} ${byStats === 1 ? 'item fits' : 'items fit'} this slot and ${byStats === 1 ? 'it does' : 'none of them do'} better on every stat you picked.`
+  }
   if (filtered > 0) {
     return `${String(filtered)} ${filtered === 1 ? 'match fits' : 'matches fit'} this slot, and your filters are hiding ${filtered === 1 ? 'it' : 'them all'}.`
   }
@@ -147,12 +161,128 @@ export interface GearPlanSelectPanelProps {
   deltaFor: (key: string, cell: PlanSlotId) => CellDelta[] | null
   /** the same for a weapon's derived ratio, which is not one of the delta's keys */
   weaponFor: (key: string, cell: PlanSlotId) => WeaponRead | null
+  /** a candidate's vector and the worn one, for the stat filter to rank and compare on */
+  statsFor: (key: string, cell: PlanSlotId) => { mine: GearStats; worn: GearStats | null } | null
   /** what the page's filter bar is narrowing the pool to */
   filter: GearPlanRowFilter
   /** the shared `eq.planner.era` value, which is not one of `filter`'s fields */
   eraOnly: boolean
   /** how many slot-legal rows the filters just held back; `null` when this panel is not up */
   onHidden: (n: number | null) => void
+}
+
+/**
+ * THE ROWS, NARROWED AND ORDERED — split out of the panel, which crossed the 100-line function
+ * ceiling when the stat pick arrived.
+ *
+ * THE ORDER OF OPERATIONS IS THE DESIGN. The pool filter runs first and the stat filter second, so
+ * hidden-by-pool and hidden-by-stats stay counted APART and the empty line can name which of the
+ * two emptied the list — "your filters are hiding them" and "nothing here beats what you have on"
+ * are different answers and only one of them is about the filter bar. The sort runs last, over what
+ * survived, because sorting rows that are about to be dropped is work for nobody.
+ */
+function useCandidates({
+  cell,
+  query,
+  limit,
+  pick,
+  signalsOf,
+  statsFor,
+  filter,
+  eraOnly
+}: {
+  cell: PlanSlotId
+  query: string
+  limit: number
+  pick: StatPick
+  signalsOf: GearPlanSelectPanelProps['signalsOf']
+  statsFor: GearPlanSelectPanelProps['statsFor']
+  filter: GearPlanRowFilter
+  eraOnly: boolean
+}): {
+  usable: { hit: PlannerItemHit; signals: RowSignals }[]
+  filtered: number
+  byStats: number
+  hasWorn: boolean
+  loading: boolean
+  more: boolean
+} {
+  // `undefined` for an any-cell, which is what keeps `MIN_QUERY` in force for it alone.
+  const wanted = equipSlotOf(cell) ?? undefined
+  // ASK FOR THE WHOLE SLOT ONCE A STAT IS PICKED, because a sort over one page is not a sort.
+  // Main ranks by NAME and caps at `limit`, so ordering that page by wisdom would surface the
+  // wisest of the fifty best NAME matches — which is not what "sort by wisdom" means, and is wrong
+  // in a way nothing on screen would reveal. A slot's legal set is closed and tops out inside
+  // `PLANNER_PAGE_MAX`, so asking for all of it makes the ranking honest.
+  const wide = pick.keys.length > 0
+  const { hits, loading } = useItemSearch(query, true, wanted, wide ? PLANNER_PAGE_MAX : limit)
+
+  // Signals are folded ONCE per row and used twice — to decide and to draw.
+  const rows = hits.map((hit) => ({ hit, signals: signalsOf(hit) }))
+  const kept = rows.filter((r) => !hidesRow(r.signals, filter, eraOnly))
+
+  // A ROW THE CORPUS HAS NO VECTOR FOR CANNOT BE COMPARED, and it is KEPT rather than hidden. The
+  // picker deliberately lets you plan an item the gear index does not carry (the cell then reads
+  // `not in the item database` and counts into `unknown`), so dropping those rows here would make
+  // a stat filter quietly delete the one class of item the surface promises not to hide. It sorts
+  // last instead, because there is nothing to rank it by.
+  const pairOf = (key: string): { mine: GearStats; worn: GearStats | null } | null => statsFor(key, cell)
+  const beaten = pick.beatsWorn
+    ? kept.filter((r) => {
+        const pair = pairOf(r.hit.key)
+        return pair === null || beatsWornOn(pick.keys, pair.mine, pair.worn)
+      })
+    : kept
+  const scored = new Map(
+    beaten.map((r) => {
+      const pair = pairOf(r.hit.key)
+      return [r.hit.key, pair === null ? -Infinity : pickScore(pick.keys, pair.mine)]
+    })
+  )
+  const usable = wide
+    ? [...beaten].sort((a, b) => (scored.get(b.hit.key) ?? 0) - (scored.get(a.hit.key) ?? 0))
+    : beaten
+
+  return {
+    usable,
+    filtered: rows.length - kept.length,
+    byStats: kept.length - beaten.length,
+    // WHETHER THE TOGGLE CAN HONESTLY SAY "BEATS WORN" — see `GearPlanStatPicker`'s header. Read
+    // off a row rather than asked separately: `statsFor` already answers what is worn in this cell
+    // as half of every pair. Any row does; they all carry the same worn side.
+    hasWorn: rows.length > 0 && (pairOf(rows[0].hit.key)?.worn ?? null) !== null,
+    loading,
+    // The walk-up is only offered while the PAGE is what limits the list; with a stat picked the
+    // whole slot is already here, so there is nothing left to show more of.
+    more: !wide && hits.length >= limit && limit < PLANNER_PAGE_MAX
+  }
+}
+
+/**
+ * THE LIST NEVER TRUNCATES IN SILENCE — the rule the filter bar states about hidden rows, and the
+ * reason `Patchwork Boots` (51st of 362 foot items) once read as "not in the database". If the
+ * surface is holding something back it says so, and offers the way through.
+ */
+function MoreRow({ shown, on, onMore }: { shown: number; on: boolean; onMore: () => void }): JSX.Element | null {
+  if (!on) return null
+  return (
+    <Box
+      data-testid="gearplan-item-more"
+      onClick={onMore}
+      sx={{
+        px: 1,
+        py: 0.75,
+        cursor: 'pointer',
+        borderTop: 1,
+        borderColor: 'divider',
+        '&:hover': { bgcolor: 'action.hover' }
+      }}
+    >
+      <Typography variant="caption" color="primary.main">
+        {`Showing ${String(shown)} - show more`}
+      </Typography>
+    </Box>
+  )
 }
 
 export default function GearPlanSelectPanel({
@@ -162,6 +292,7 @@ export default function GearPlanSelectPanel({
   signalsOf,
   deltaFor,
   weaponFor,
+  statsFor,
   filter,
   eraOnly,
   onHidden
@@ -171,18 +302,28 @@ export default function GearPlanSelectPanel({
   // The page resets with the QUESTION: a page walked out to four hundred for one query has nothing
   // to do with the next one, and carrying it over would make an unrelated search silently expensive.
   const [limit, setLimit] = useState(PLANNER_PAGE)
+  const [pick, setPick] = useState<StatPick>(NO_STAT_PICK)
   useEffect(() => {
     setLimit(PLANNER_PAGE)
   }, [query, cell])
-  // `undefined` for an any-cell, which is what keeps `MIN_QUERY` in force for it alone.
-  const wanted = equipSlotOf(cell) ?? undefined
-  const { hits, loading } = useItemSearch(query, true, wanted, limit)
-
-  // Signals are folded ONCE per row and used twice — to decide and to draw.
-  const rows = hits.map((hit) => ({ hit, signals: signalsOf(hit) }))
-  const usable = rows.filter((r) => !hidesRow(r.signals, filter, eraOnly))
-  const filtered = rows.length - usable.length
-  const more = hits.length >= limit && limit < PLANNER_PAGE_MAX
+  // THE PICK RESETS WITH THE CELL AND NOT WITH THE QUERY. "More wisdom than my gloves" survives
+  // retyping the name you are hunting - it is the question, where the text is the hunt. Moving to a
+  // DIFFERENT cell is a different question, and carrying a stat filter into it silently would be
+  // the picker lying about why it is empty.
+  useEffect(() => {
+    setPick(NO_STAT_PICK)
+  }, [cell])
+  const slot = equipSlotOf(cell) ?? undefined
+  const { usable, filtered, byStats, hasWorn, loading, more } = useCandidates({
+    cell,
+    query,
+    limit,
+    pick,
+    signalsOf,
+    statsFor,
+    filter,
+    eraOnly
+  })
 
   useEffect(() => {
     onHidden(filtered)
@@ -220,6 +361,9 @@ export default function GearPlanSelectPanel({
         onChange={(e) => setText(e.target.value)}
         sx={{ mb: 0.5 }}
       />
+      {/* UNDER THE NAME BOX, because it answers the question the name box cannot. You reach for it
+          when typing has stopped helping — which is after you have tried typing. */}
+      <GearPlanStatPicker pick={pick} onChange={setPick} hasWorn={hasWorn} />
       {usable.map(({ hit, signals }) => (
         <CandidateRow
           key={hit.key}
@@ -230,32 +374,14 @@ export default function GearPlanSelectPanel({
           onPick={onPick}
         />
       ))}
-      {/* THE LIST NEVER TRUNCATES IN SILENCE — the rule the filter bar states about hidden rows,
-          and the reason `Patchwork Boots` (51st of 362 foot items) once read as "not in the
-          database". If the surface is holding something back, it says so and offers the way through. */}
-      {more && (
-        <Box
-          data-testid="gearplan-item-more"
-          onClick={() => setLimit((n) => Math.min(n + PLANNER_PAGE, PLANNER_PAGE_MAX))}
-          sx={{
-            px: 1,
-            py: 0.75,
-            cursor: 'pointer',
-            borderTop: 1,
-            borderColor: 'divider',
-            '&:hover': { bgcolor: 'action.hover' }
-          }}
-        >
-          <Typography variant="caption" color="primary.main">
-            {`Showing ${String(usable.length)} - show more`}
-          </Typography>
-        </Box>
-      )}
+      <MoreRow shown={usable.length} on={more} onMore={() => {
+        setLimit((n) => Math.min(n + PLANNER_PAGE, PLANNER_PAGE_MAX))
+      }} />
       {usable.length === 0 && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 1.5 }}>
           {loading && <CircularProgress size={14} />}
           <Typography variant="caption" color="text.secondary" data-testid="gearplan-item-empty">
-            {emptyLine({ text, loading, slotted: wanted !== undefined }, filtered, wanted ?? 'this slot')}
+            {emptyLine({ text, loading, slotted: slot !== undefined }, { filtered, byStats }, slot ?? 'this slot')}
           </Typography>
         </Stack>
       )}

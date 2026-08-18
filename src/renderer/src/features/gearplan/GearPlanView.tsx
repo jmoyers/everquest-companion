@@ -326,6 +326,7 @@ function RightColumn({
         signalsOf={signalsOf}
         deltaFor={fold.candidateDelta}
         weaponFor={fold.candidateWeapon}
+        statsFor={fold.candidateStats}
         {...pick}
       />
     )
