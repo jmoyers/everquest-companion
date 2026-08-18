@@ -28,6 +28,7 @@ import { MessageOverlayMiner, type OverlaySeed } from '../data/messageOverlay'
 import { ComboModule } from './combo'
 import { RosterModule } from './roster'
 import { LootModule } from './loot'
+import { ChatModule } from './chat'
 import { TurnInsModule } from './turnins'
 import { ClassUnlocksModule } from './classUnlocks'
 import { KillsModule } from './kills'
@@ -94,6 +95,7 @@ export interface ModuleWiring {
   combo: ComboModule
   roster: RosterModule
   loot: LootModule
+  chat: ChatModule
   turnIns: TurnInsModule
   classUnlocks: ClassUnlocksModule
   kills: KillsModule
@@ -156,6 +158,11 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
   // lines the log prints outright.
   const roster = new RosterModule()
   const loot = new LootModule()
+  // The chat log (the in-app viewer half of chat capture). Folds the `chat` event parseChat.ts
+  // emits beside the cascade into an append-only history, exactly like loot. Position is free: it
+  // folds one event kind (`chat`) no other module reads, and nothing reads its state within a
+  // delivery. The DURABLE half is chatArchive.ts, a bus sink pipeline.ts wires — not a module.
+  const chat = new ChatModule()
   const turnIns = new TurnInsModule()
   // WHICH CLASSES THIS CHARACTER MAY RUN AS A PRIMARY (JOS-148) — the observed half of the Sky
   // tab's class-unlock reading, folded from the one line that states an unlock outright. Beside
@@ -243,6 +250,7 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
     combo,
     roster,
     loot,
+    chat,
     turnIns,
     classUnlocks,
     kills,
@@ -269,6 +277,9 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
       combo,
       roster,
       loot,
+      // Free position: folds only `chat` (which nothing else reads) and no module reads its state
+      // within a delivery. Beside loot because it is the same append-only history shape.
+      chat,
       turnIns,
       // Position is free: it folds one line kind no other module reads, and nothing reads its
       // state within a delivery. Beside turnIns because that is where a reader looks for it.

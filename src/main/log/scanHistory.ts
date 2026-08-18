@@ -1,6 +1,7 @@
 import { createReadStream } from 'fs'
 import { stat } from 'fs/promises'
 import { parseEvent } from './parser'
+import { parseChat } from './parseChat'
 import { createSlicer, type Slicer } from './replaySlicer'
 import type { LogBus } from './bus'
 
@@ -215,6 +216,16 @@ export async function scanLog(
     if (!ev) return // not a log line at all (no timestamp)
     seq++
     bus.emit(ev, false)
+    // CHAT rides its own pass beside the cascade and emits an ADDITIONAL event claiming the next
+    // seq (see parseChat.ts). live:false — the historical scan folds it into the chat MODULE's
+    // snapshot (so the viewer opens with history) but the archive ignores replayed events, so no
+    // old line is re-written to disk. A non-chat line never reaches the regex battery: the `, '`
+    // probe inside parseChat rules it out for the ~96% that carry no quoted speech.
+    const chat = parseChat(raw, seq)
+    if (chat) {
+      seq++
+      bus.emit(chat, false)
+    }
   }
 
   // Byte-accurate line splitting (see SplitState / consumeChunk).

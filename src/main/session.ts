@@ -24,6 +24,7 @@ import {
 } from './log/config'
 import { Tailer } from './log/Tailer'
 import { parseEvent, parseLine } from './log/parser'
+import { parseChat } from './log/parseChat'
 import { installCharacterName } from './log/rulesets'
 import { scanLog } from './log/scanHistory'
 import { formatTailIoSummary, takeTailIoSummary } from './log/tailIoStats'
@@ -35,6 +36,7 @@ import {
   bus,
   buffsModule,
   characterModule,
+  chatArchive,
   combat,
   epoch,
   killsModule,
@@ -177,6 +179,9 @@ export async function applyEqDirChange(): Promise<EqConfig> {
     // No character ⇒ no self-`/who` row is identifiable. Clear the name rather than let a
     // stale one attribute the next log's rows to the character we just stopped tailing.
     installCharacterName(undefined)
+    // …and close the chat archive's file: with no character there is nothing to append, and a live
+    // line that somehow arrived must not land in the file of the character we just left.
+    chatArchive.setCharacter(null)
     // Every window that folds a module, not just the main one (JOS-172): an overlay left open
     // over an install whose log went away must empty with everything else.
     sendWorldRebuilt(null)
@@ -281,6 +286,11 @@ function resetWorldFor(ref: CharacterRef): void {
   // the character on their own group roster. Same injection path, same instant, for the same
   // reason: it must be in place before the scan replay folds the first burst.
   rosterModule.setSelfName(ref.name)
+  // Point the durable chat archive at this character's file (chatArchive.ts). Beside the other
+  // per-character injections here for the same reason they are: everything that must know "whose log
+  // this now is" learns it in one place, before the scan replay — though the archive itself ignores
+  // that replay and only writes the live tail.
+  chatArchive.setCharacter(ref)
   combat.reset()
   // Inject the player's own name (we know it from the ref) BEFORE the scan replay,
   // so incoming self-heals ("You healed <Name> for N") attribute from the first
@@ -327,6 +337,16 @@ function startTailer(logPath: string, startOffset: number): void {
       seq++
       noteParsed(1)
       bus.emit(ev, true)
+    }
+    // CHAT is cross-cutting, so it rides its OWN pass beside the cascade and is emitted as an
+    // ADDITIONAL event claiming the next seq (see the ChatEvent header / parseChat.ts). A chat line
+    // always carries a timestamp, so `parseEvent` above already produced its primary event (a
+    // `group` tell, or `unknown`); this adds the message alongside it. Live, so the archive saves it
+    // and the viewer updates.
+    const chat = parseChat(raw, seq)
+    if (chat) {
+      seq++
+      bus.emit(chat, true)
     }
     notifyCombatActivity() // FIX 4: throttled push so the meter refreshes sub-second
   })

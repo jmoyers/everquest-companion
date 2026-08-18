@@ -55,6 +55,14 @@ export const windowsApi = {
     return () => ipcRenderer.removeListener(IPC.onCloseToTray, listener)
   },
 
+  // ---- does the Chat tab also SAVE chat to a file (chat capture; storeChatCapture.ts) ----
+  // Here rather than in a bridge of its own for the same reason closeToTray is: index.ts is at the
+  // 400-line ceiling and this is a preference read/set pair. A plain boolean, one control, no push.
+  /** Is live chat being saved to a file? ON on every install that has not turned it off. */
+  getChatCapture: (): Promise<boolean> => ipcRenderer.invoke(IPC.chatCaptureGet),
+  /** Set it; chatArchive.ts obeys the new value on the next chat line, no relaunch. */
+  setChatCapture: (enabled: boolean): Promise<boolean> => ipcRenderer.invoke(IPC.chatCaptureSet, enabled),
+
   // ---- the floating overlays' open-state (Task #52; per-kind in Task #54) ----
   /** Toggle a kind's overlay window; resolves to the resulting open-state. */
   toggleOverlay: (kind: OverlayKind): Promise<boolean> => ipcRenderer.invoke(IPC.overlayToggle, kind),

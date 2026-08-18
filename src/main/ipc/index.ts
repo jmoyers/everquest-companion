@@ -20,6 +20,7 @@ import { registerResistIpc } from './resist'
 import { registerRespawnIpc } from './respawn'
 import { registerCharacterIpc } from './character'
 import { registerCharacterSheetIpc } from './characterSheet'
+import { registerChatIpc } from './chat'
 import { registerClipboardIpc } from './clipboard'
 import { registerComboIpc } from './combo'
 import { registerDevIpc } from './dev'
@@ -76,6 +77,7 @@ export function registerIpc(): void {
   registerConCardIpc()
   registerTrayIpc()
   registerClipboardIpc()
+  registerChatIpc()
   registerFeedbackIpc()
   registerTelemetryIpc()
   registerPerfIpc()

@@ -709,6 +709,11 @@ export interface LootDelta {
   appended: LootEvent[]
 }
 
+// chat module — the append-only chat history. Defined in ./chatLine beside the row shape and the
+// argument for it, on the `kills.ts` precedent (this file is at its line budget). Delta =
+// `ChatLine[]` appended since the last flush; the renderer concats, exactly like loot.
+export type { ChatChannel, ChatLine, ChatSnap, ChatDelta } from './chatLine'
+
 /** turnins module. Delta = turn-ins appended since the last flush. */
 export type TurnInSnap = TurnInEvent[]
 export interface TurnInDelta {

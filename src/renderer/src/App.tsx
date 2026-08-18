@@ -18,6 +18,7 @@ import { useAppRouting, usePrefsRouting, type AppRouting, type PrefsRouting } fr
 import { useBackFallback } from './appBack'
 import PoskyView from './features/posky/PoskyView'
 import LootView from './features/loot/LootView'
+import ChatView from './features/chat/ChatView'
 import LevelingView from './features/leveling/LevelingView'
 import PlannerView from './features/planner/PlannerView'
 import GearView from './features/gear/GearView'
@@ -159,6 +160,9 @@ function PlainView({
           by the fold the character switch kicks off. */}
       {view === 'timers' && <TimersView key={viewKey} />}
       {view === 'alerts' && <AlertsView key={viewKey} {...{ onOpenVoicePrefs, onOpenOverlayPrefs }} />}
+      {/* CHAT is a character's log, so it is keyed like the rest: the remount `key` is the whole
+          character contract, and the chat module re-hydrates under the new one. */}
+      {view === 'chat' && <ChatView key={viewKey} />}
       {/* CHARACTER (JOS-45, released JOS-327). It sits HERE, below the no-characters gate, and not
           beside the triage branch: unlike triage this tab reads the game log (name, level, loadout)
           and the character's own inventory dump, so a machine with no EverQuest install has nothing

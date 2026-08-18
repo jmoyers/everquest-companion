@@ -122,6 +122,12 @@ export const TELEMETRY_VIEWS = [
   // hard, so releasing the view without adding it here is a red build. Graduation is both halves at
   // once, which is exactly what JOS-327 did.
   'character',
+  // The Chat tab (chat capture). SAME CLOSED-ENUM DEPLOY ORDER as every member added since
+  // JOS-119: the ingest Lambda validates through this module, so the server has to learn 'chat'
+  // BEFORE a client that can emit it ships, or one dwell on this tab 400s the whole batch and drops
+  // every counter in it. It is a REACHABLE tab from day one (unlike the UNRELEASED-gated views), so
+  // it belongs here rather than held back — the dwell histogram wants to know how used it is.
+  'chat',
   'preferences',
   'triage'
 ] as const

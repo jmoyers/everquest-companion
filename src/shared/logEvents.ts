@@ -24,6 +24,11 @@ import type { CoinEvent, ItemReceivedEvent, PurchaseEvent } from './acquireEvent
 // ./gemEvents for the same file-mass reason as the two imports above. Re-exported verbatim.
 import type { SpellForgetEvent, SpellMemorizeEvent, SpellSetEvent } from './gemEvents'
 
+// The CHAT event shape, out in ./chatLine for the same file-mass reason (it sits beside the
+// module row it maps to). Imported here for the union member below; re-exported down beside its
+// doc so every consumer still reads it from `@shared/logEvents`.
+import type { ChatEvent } from './chatLine'
+
 export type { SpellForgetEvent, SpellMemorizeEvent, SpellSetEvent } from './gemEvents'
 
 export type { ConsiderFaction }
@@ -638,6 +643,13 @@ export interface PetSayEvent extends LogEventBase {
   name: string
   say: PetSayKind
 }
+
+// A player CHAT line — the ONE event that carries a person's words. Its shape (ChatEvent) and its
+// channel taxonomy (ChatChannel) live in ./chatLine.ts, beside the module row (ChatLine) they map
+// to and the whole privacy argument, because this file is at its 400-code-line ceiling — the
+// `kills.ts` / `classUnlocks.ts` precedent. Re-exported here so every consumer still imports both
+// from logEvents, exactly as it does the module's own kinds.
+export type { ChatChannel, ChatEvent } from './chatLine'
 
 /**
  * `You begin casting <Spell>.` (and `You begin singing <Song>.` for bard songs) —
@@ -1460,6 +1472,10 @@ export type LogEvent =
   // bind `petClaim` to YOU and none of them should have to learn a new field to keep doing it.
   | AllyPetLeaderEvent
   | PetSayEvent
+  // The ONE event that carries a person's words. Emitted by its own pass beside the cascade
+  // (parseChat.ts), never by `classify()` — see the ChatEvent header. Local-only: two sinks, the
+  // in-app viewer and the on-disk save, and nothing that leaves the machine.
+  | ChatEvent
   | CastBeginEvent
   | OtherCastBeginEvent
   | CastFizzleEvent

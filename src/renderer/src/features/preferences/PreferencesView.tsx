@@ -127,6 +127,8 @@ import { appearanceSection } from './TextSizeSetting'
 // Same arrangement again (JOS-139): what the X does — the app keeps running in the tray, or it
 // quits — names its own section beside the card that renders it. See ./CloseToTraySetting.tsx.
 import { windowSection } from './CloseToTraySetting'
+// The Chat tab's save-to-file switch (chat capture) — names its own section beside the card.
+import { chatSection } from './ChatCaptureSetting'
 // Same arrangement again (JOS-73): the release-notes panel names its own section beside the card
 // that renders it. See features/whatsnew/WhatsNewPanel.tsx for why the notes are a SECTION.
 import { whatsNewSection } from '../whatsnew/WhatsNewPanel'
@@ -326,6 +328,8 @@ function buildSections({ version, status, onSendFeedback, onWhatsNew }: SectionI
     // Right after the overlays, because the promise this switch makes is about them: closing the
     // window keeps them running (JOS-139).
     windowSection(),
+    // The Chat tab's one preference: does it also save chat to a file (chat capture).
+    chatSection(),
     graphicsSection(),
     buffTrustSection(),
     cursorRingSection(),
