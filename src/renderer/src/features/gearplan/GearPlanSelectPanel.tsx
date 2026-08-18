@@ -122,6 +122,17 @@ function CandidateRow({
 }
 
 /**
+ * WHICH BASELINE NOTHING BEAT, in its own words. Same three states the compare chip has, and for
+ * the same reason: "beats what you have on" is simply false on a cell that already holds a plan,
+ * and an empty list that misreports WHY it is empty is worse than one that says nothing.
+ */
+const BEATEN_NONE: Record<'planned' | 'worn' | 'nothing', string> = {
+  planned: 'Nothing here beats what you have planned.',
+  worn: 'Nothing here beats what you have on.',
+  nothing: 'Nothing here states every stat you picked.'
+}
+
+/**
  * Why the list is empty, in the words of whichever reason applies.
  *
  * THE STAT FILTER GETS ITS OWN SENTENCE and is asked about FIRST, because it is the reason a
@@ -131,7 +142,7 @@ function CandidateRow({
  */
 function emptyLine(
   q: { text: string; loading: boolean; slotted: boolean },
-  held: { filtered: number; byStats: number },
+  held: { filtered: number; byStats: number; against: 'planned' | 'worn' | 'nothing' },
   label: string
 ): string {
   // The minimum survives for the ONE case it was written for: a cell that names no slot.
@@ -139,7 +150,7 @@ function emptyLine(
   if (q.loading) return 'Searching…'
   const { filtered, byStats } = held
   if (byStats > 0) {
-    return `Nothing here beats what you have on. ${String(byStats)} ${byStats === 1 ? 'item fits' : 'items fit'} this slot and ${byStats === 1 ? 'it does' : 'none of them do'} better on every stat you picked.`
+    return `${BEATEN_NONE[held.against]} ${String(byStats)} ${byStats === 1 ? 'item fits' : 'items fit'} this slot and ${byStats === 1 ? 'it does' : 'none of them do'} better on every stat you picked.`
   }
   if (filtered > 0) {
     return `${String(filtered)} ${filtered === 1 ? 'match fits' : 'matches fit'} this slot, and your filters are hiding ${filtered === 1 ? 'it' : 'them all'}.`
@@ -161,8 +172,15 @@ export interface GearPlanSelectPanelProps {
   deltaFor: (key: string, cell: PlanSlotId) => CellDelta[] | null
   /** the same for a weapon's derived ratio, which is not one of the delta's keys */
   weaponFor: (key: string, cell: PlanSlotId) => WeaponRead | null
-  /** a candidate's vector and the worn one, for the stat filter to rank and compare on */
-  statsFor: (key: string, cell: PlanSlotId) => { mine: GearStats; worn: GearStats | null } | null
+  /**
+   * A candidate's vector and the one it is measured against, for the stat filter to rank and
+   * compare on. `against` names WHICH of the two the baseline came from, so the compare chip can
+   * say what it is comparing to rather than guessing — see `GearPlanFold.candidateStats`.
+   */
+  statsFor: (
+    key: string,
+    cell: PlanSlotId
+  ) => { mine: GearStats; worn: GearStats | null; against: 'planned' | 'worn' | 'nothing' } | null
   /** what the page's filter bar is narrowing the pool to */
   filter: GearPlanRowFilter
   /** the shared `eq.planner.era` value, which is not one of `filter`'s fields */
@@ -209,7 +227,7 @@ function useCandidates({
   usable: { hit: PlannerItemHit; signals: RowSignals }[]
   filtered: number
   byStats: number
-  hasWorn: boolean
+  against: 'planned' | 'worn' | 'nothing'
   loading: boolean
   more: boolean
 } {
@@ -232,7 +250,7 @@ function useCandidates({
   // `not in the item database` and counts into `unknown`), so dropping those rows here would make
   // a stat filter quietly delete the one class of item the surface promises not to hide. It sorts
   // last instead, because there is nothing to rank it by.
-  const pairOf = (key: string): { mine: GearStats; worn: GearStats | null } | null => statsFor(key, cell)
+  const pairOf = (key: string): ReturnType<GearPlanSelectPanelProps['statsFor']> => statsFor(key, cell)
   const beaten = pick.beatsWorn
     ? kept.filter((r) => {
         const pair = pairOf(r.hit.key)
@@ -253,10 +271,10 @@ function useCandidates({
     usable,
     filtered: rows.length - kept.length,
     byStats: kept.length - beaten.length,
-    // WHETHER THE TOGGLE CAN HONESTLY SAY "BEATS WORN" — see `GearPlanStatPicker`'s header. Read
-    // off a row rather than asked separately: `statsFor` already answers what is worn in this cell
-    // as half of every pair. Any row does; they all carry the same worn side.
-    hasWorn: rows.length > 0 && (pairOf(rows[0].hit.key)?.worn ?? null) !== null,
+    // WHAT THE COMPARE CHIP IS ALLOWED TO CALL ITSELF. Read off a row rather than asked separately:
+    // `statsFor` already answers what this cell is measured against as part of every pair, and any
+    // row will do because they all share the same other side.
+    against: rows.length > 0 ? (pairOf(rows[0].hit.key)?.against ?? 'nothing') : 'nothing',
     loading,
     // The walk-up is only offered while the PAGE is what limits the list; with a stat picked the
     // whole slot is already here, so there is nothing left to show more of.
@@ -292,6 +310,29 @@ function MoreRow({ shown, on, onMore }: { shown: number; on: boolean; onMore: ()
 }
 
 /**
+ * THE THREE THINGS THIS CHIP CAN HONESTLY BE COMPARING AGAINST, and they are genuinely different
+ * claims rather than one claim with three wordings.
+ *
+ * A cell that already holds a plan is measured against THAT - the decision in front of you is "is
+ * this better than what I have already chosen", and the worn item is two decisions ago. An empty
+ * cell falls back to what you are wearing there. A cell with neither has a baseline of zero, so the
+ * same switch means "states these at all" and says so.
+ *
+ * One word for all three would make an empty slot look like a comparison it cannot make.
+ */
+const BEATS_LABEL: Record<'planned' | 'worn' | 'nothing', string> = {
+  planned: 'Beats planned',
+  worn: 'Beats worn',
+  nothing: 'Has these'
+}
+
+const BEATS_HINT: Record<'planned' | 'worn' | 'nothing', string> = {
+  planned: 'Keep only items better than the one already planned here, on every stat picked above',
+  worn: 'Nothing is planned here yet, so this keeps only items better than the one you are wearing',
+  nothing: 'Nothing is planned or worn here, so this keeps items that state every stat picked above'
+}
+
+/**
  * THE COMPARISON, AND ONLY THE COMPARISON. The stats themselves are picked on the page's filter
  * bar; what is local to this panel is the thing that needs a cell to mean anything.
  *
@@ -305,21 +346,17 @@ function MoreRow({ shown, on, onMore }: { shown: number; on: boolean; onMore: ()
  */
 function BeatsChip({
   stats,
-  hasWorn
+  against
 }: {
   stats: GearPlanSelectPanelProps['stats']
-  hasWorn: boolean
+  against: 'planned' | 'worn' | 'nothing'
 }): JSX.Element | null {
   if (stats.keys.length === 0) return null
   return (
     <Box sx={{ mb: 0.5 }}>
       <ToggleChip
-        label={hasWorn ? 'Beats worn' : 'Has these'}
-        hint={
-          hasWorn
-            ? 'Keep only items better than the one worn in this slot, on every stat picked above'
-            : 'Nothing is worn in this slot, so this keeps items that state every stat picked above'
-        }
+        label={BEATS_LABEL[against]}
+        hint={BEATS_HINT[against]}
         testId="gearplan-stat-beats"
         on={stats.beatsWorn}
         onToggle={() => {
@@ -352,7 +389,7 @@ export default function GearPlanSelectPanel({
     setLimit(PLANNER_PAGE)
   }, [query, cell])
   const slot = equipSlotOf(cell) ?? undefined
-  const { usable, filtered, byStats, hasWorn, loading, more } = useCandidates({
+  const { usable, filtered, byStats, against, loading, more } = useCandidates({
     cell,
     query,
     limit,
@@ -397,9 +434,14 @@ export default function GearPlanSelectPanel({
         value={text}
         data-testid="gearplan-item-search"
         onChange={(e) => setText(e.target.value)}
-        sx={{ mb: 0.5 }}
+        // THE FLOATING LABEL SITS ABOVE THE FIELD'S OWN BOX, and a `DashCard fill` body is an
+        // `overflow: auto` scroller - so at scrollTop 0 the label was clipped in half by the top
+        // edge of the scroller and read as "Search by name" with its ascenders shaved off. The
+        // margin is the label's room, not decoration: MUI lifts it by 9px and this is the 8px
+        // grid step that clears it.
+        sx={{ mt: 1, mb: 0.5 }}
       />
-      <BeatsChip stats={stats} hasWorn={hasWorn} />
+      <BeatsChip stats={stats} against={against} />
       {usable.map(({ hit, signals }) => (
         <CandidateRow
           key={hit.key}
@@ -417,7 +459,7 @@ export default function GearPlanSelectPanel({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 1.5 }}>
           {loading && <CircularProgress size={14} />}
           <Typography variant="caption" color="text.secondary" data-testid="gearplan-item-empty">
-            {emptyLine({ text, loading, slotted: slot !== undefined }, { filtered, byStats }, slot ?? 'this slot')}
+            {emptyLine({ text, loading, slotted: slot !== undefined }, { filtered, byStats, against }, slot ?? 'this slot')}
           </Typography>
         </Stack>
       )}

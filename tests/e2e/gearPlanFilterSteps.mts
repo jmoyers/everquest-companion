@@ -81,17 +81,28 @@ export async function stepStatFilter(page: Page): Promise<void> {
   // THE TOGGLE APPEARS ONLY ONCE THERE IS SOMETHING TO BE BETTER ON — not disabled, absent, and
   // present the moment it has meaning (house law 9).
   check('the compare toggle appears with the first picked stat', (await countOf(page, BEATS)) === 1)
+  // AND IT NAMES WHAT IT IS COMPARING TO. HEAD holds a planned item in this fixture, so the chip
+  // must say `Beats planned` - the decision in front of you is whether a candidate beats what you
+  // have already chosen, not what you were wearing two decisions ago. On a cell with nothing
+  // planned it falls back to the worn item and says so instead.
+  const beatsLabel = await textOf(page, BEATS)
+  check('the compare chip names the baseline it is actually using', beatsLabel === 'Beats planned', beatsLabel)
+
   const listed = await countOf(page, hit)
   await page.click(BEATS, { timeout: 15_000 })
   const narrowed = await settle(() => countOf(page, hit), (n) => n < listed)
   check('…and turning it on can only ever REMOVE rows', narrowed <= listed, `${String(listed)} -> ${String(narrowed)}`)
-  note(`beats-worn narrowed HEAD: ${String(listed)} -> ${String(narrowed)}`)
+  note(`beats-planned narrowed HEAD: ${String(listed)} -> ${String(narrowed)}`)
 
   // AND THE EMPTY LIST BLAMES THE RIGHT THING. "Your filters are hiding them" is the pool filter's
   // sentence and would be the wrong answer here; the stat filter has its own, and it is asked first.
   if (narrowed === 0) {
     const empty = await textOf(page, '[data-testid="gearplan-item-empty"]')
-    check('…and an empty list says nothing BEAT what is worn', empty.includes('beats what you have on'), empty)
+    check(
+      '…and an empty list says WHICH baseline nothing beat',
+      empty.includes('beats what you have planned'),
+      empty
+    )
   }
 
   // THE LENS SURVIVES THE CELL, which is the whole reason it moved out of the panel. Closing and

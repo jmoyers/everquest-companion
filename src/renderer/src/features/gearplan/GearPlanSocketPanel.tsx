@@ -351,7 +351,12 @@ export default function GearPlanSocketPanel({
         value={text}
         data-testid="gearplan-donor-search"
         onChange={(e) => setText(e.target.value)}
-        sx={{ mb: 0.5 }}
+        // THE FLOATING LABEL SITS ABOVE THE FIELD'S OWN BOX, and a `DashCard fill` body is an
+        // `overflow: auto` scroller - so at scrollTop 0 the label was clipped in half by the top
+        // edge of the scroller and read as "Search by name" with its ascenders shaved off. The
+        // margin is the label's room, not decoration: MUI lifts it by 9px and this is the 8px
+        // grid step that clears it.
+        sx={{ mt: 1, mb: 0.5 }}
       />
       <ClearRow onClear={onClear} />
       <DonorList

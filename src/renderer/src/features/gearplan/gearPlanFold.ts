@@ -65,14 +65,23 @@ export interface GearPlanFold {
   /**
    * WHAT A CANDIDATE WOULD CHANGE, while you are still choosing it.
    *
-   * The same question the cell answers, asked one step earlier — and against the SAME anchor, the
-   * item worn in that cell, so a number in the picker means what the number on the card will mean.
-   * Comparing instead against whatever is currently PLANNED there would make the list re-baseline
-   * itself every time you picked something, and two candidates would stop being comparable.
+   * AGAINST WHAT IS IN THE SLOT, which means the PLANNED item when the cell has one and the WORN
+   * item when it does not. This reverses the rule this reader shipped with, so the argument:
    *
-   * AT BASE, because a candidate has no planned tier yet — nothing has been decided about merging
-   * it. That is the honest reading of "if I put this on as it is", and the cell's own slider is
-   * where the rest of the question gets asked.
+   * The old rule compared every candidate against the worn item always, on the grounds that a fixed
+   * anchor keeps two candidates comparable and stops the list re-baselining itself each time you
+   * pick something. That is true and it answers the wrong question. Once a cell holds a plan, the
+   * decision in front of you is "is this better than what I have already chosen" - the worn item is
+   * two decisions ago, and a picker that keeps measuring against it is reporting a gain you already
+   * banked. Re-baselining is not a bug here; it is the list keeping up with the board.
+   *
+   * The cell CARD still compares against what you are wearing, and that is not an inconsistency:
+   * the card answers "what would this plan change about me", which is the board's whole purpose,
+   * and the picker answers "what should go in this slot". Different questions, different anchors.
+   *
+   * AT BASE ON THE CANDIDATE, because it has no planned tier yet - nothing has been decided about
+   * merging it. The other side is read at its OWN tier, so a +5 planned item is compared as the +5
+   * item it is; a candidate that looks worse against it usually is.
    */
   candidateDelta: (key: string, cell: PlanSlotId) => CellDelta[] | null
   /** the same, for a weapon's derived ratio — see `WeaponRead` */
@@ -84,7 +93,10 @@ export interface GearPlanFold {
    * whether to filter or only to sort. This file resolves rows and scales them; deciding what
    * beats what is `gearPlanStatPick`'s, and it is pure so it can be tested without a renderer.
    */
-  candidateStats: (key: string, cell: PlanSlotId) => { mine: GearStats; worn: GearStats | null } | null
+  candidateStats: (
+    key: string,
+    cell: PlanSlotId
+  ) => { mine: GearStats; worn: GearStats | null; against: 'planned' | 'worn' | 'nothing' } | null
 }
 
 /**
@@ -166,6 +178,22 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
             { plan: gearPlan, equipped: worn.gearPlan }
           )
 
+    /**
+     * WHAT A CANDIDATE IS MEASURED AGAINST: the plan in that cell, or what is worn there when the
+     * cell is empty. Defined once because three readers ask it and one of them (`candidateStats`)
+     * also decides what the compare chip is allowed to CALL itself.
+     */
+    const baselineFor = (cell: PlanSlotId): GearStats | null => {
+      const planned = scaledOf(gearPlan.cells[cell], lookup)
+      if (planned !== null) return planned
+      return worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+    }
+    /** Which of the two the baseline actually came from, so a surface can say so in words. */
+    const againstFor = (cell: PlanSlotId): 'planned' | 'worn' | 'nothing' => {
+      if (scaledOf(gearPlan.cells[cell], lookup) !== null) return 'planned'
+      return worn !== null && scaledOf(worn.gearPlan.cells[cell], lookup) !== null ? 'worn' : 'nothing'
+    }
+
     const facts: ItemFacts = {
       classesOf: (key) => lookup(key)?.classes ?? [],
       slotsOf: (key) => lookup(key)?.slots ?? []
@@ -200,7 +228,7 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
       },
       candidateDelta: (key: string, cell: PlanSlotId): CellDelta[] | null => {
         const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
-        const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+        const theirs = baselineFor(cell)
         return mine === null || theirs === null ? null : cellDelta(mine, theirs)
       },
       // AT BASE, for the reason `candidateDelta` is: a candidate has no planned tier yet. Which
@@ -210,7 +238,7 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
         const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
         const facts = mine === null ? null : weaponFacts(mine)
         if (facts === null) return null
-        const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
+        const theirs = baselineFor(cell)
         return { mine: facts, worn: theirs === null ? null : weaponFacts(theirs) }
       },
       // AT BASE ON THE CANDIDATE AND AT ITS OWN TIER ON THE WORN SIDE, which is the same pairing
@@ -220,8 +248,7 @@ export function useGearPlanFold(gearPlan: ReturnType<typeof useGearPlan>['gearPl
       candidateStats: (key: string, cell: PlanSlotId) => {
         const mine = scaledOf({ key, state: ITEM_UPGRADE_BASE }, lookup)
         if (mine === null) return null
-        const theirs = worn === null ? null : scaledOf(worn.gearPlan.cells[cell], lookup)
-        return { mine, worn: theirs }
+        return { mine, worn: baselineFor(cell), against: againstFor(cell) }
       },
       facts,
       totals,
