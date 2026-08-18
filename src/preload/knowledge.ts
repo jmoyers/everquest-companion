@@ -14,6 +14,8 @@
 import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { ItemKnowledge, MobKnowledge, SpellCatalog } from '../shared/types'
+import type { MobResistCell, MobResistProfile, ResistAxis } from '../shared/resistTypes'
+import type { ResistPrefs } from '../shared/resistPrefs'
 import type { LevelUnlockData } from '../shared/levelUnlocks'
 // The rich spell card's record (JOS-293) — one definition for main's join, this bridge and the card.
 import type { SpellDetail } from '../shared/spellDetail'
@@ -49,5 +51,28 @@ export const knowledgeBridge = {
    * Mob knowledge (Task #63): "what does this thing drop" — your own loot history + the local
    * quest catalog first, then a cached, politely-throttled wiki lookup. Never rejects.
    */
-  lookupMob: (name: string): Promise<MobKnowledge> => ipcRenderer.invoke(IPC.mobsLookup, name)
+  lookupMob: (name: string): Promise<MobKnowledge> => ipcRenderer.invoke(IPC.mobsLookup, name),
+  /**
+   * Resist knowledge (JOS-382): "what does this thing shrug off" — the five axis rows for one mob,
+   * derived on the spot from the shipped baseline plus whatever this user's own logs have taught.
+   * Null for a name main will not accept; a profile with `spellDataAvailable: false` when the
+   * player's EverQuest install has no `spells_us.txt` behind it. Never rejects.
+   *
+   * THE LEDGER ITSELF NEVER CROSSES. What comes back is the answer to the question the screen
+   * asked, never the ~700 kB register those answers are derived from — which is also why there is
+   * no subscription here: the resist module is read by pulling (shared/ipc.ts states why).
+   */
+  resistProfile: (mob: string): Promise<MobResistProfile | null> =>
+    ipcRenderer.invoke(IPC.resistProfile, mob),
+  /** The evidence behind ONE axis row: the estimate, its per-spell lines, and the rows. */
+  resistCell: (mob: string, axis: ResistAxis): Promise<MobResistCell | null> =>
+    ipcRenderer.invoke(IPC.resistCell, mob, axis),
+  /**
+   * Which casters teach those profiles (JOS-385). One boolean today; a blob so the feature can
+   * grow one without a second schema shape.
+   */
+  getResistPrefs: (): Promise<ResistPrefs> => ipcRenderer.invoke(IPC.resistPrefsGet),
+  /** Merge-patch it. Returns what was actually stored, after the shared normalizer had its say. */
+  setResistPrefs: (patch: Partial<ResistPrefs>): Promise<ResistPrefs> =>
+    ipcRenderer.invoke(IPC.resistPrefsSet, patch)
 }

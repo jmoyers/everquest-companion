@@ -88,9 +88,15 @@ resource "aws_apigatewayv2_stage" "default" {
   }
 
   # Telemetry gets its OWN budget, deliberately a little wider than feedback's: a
-  # client flushes on a 60s timer and every install in the field is a caller,
+  # client flushes on a 5-minute timer and every install in the field is a caller,
   # where a feedback submit is a human pressing a button. It is still a per-route
   # ceiling, so a telemetry flood cannot consume feedback's share of the stage.
+  #
+  # MEASURED 2026-08-16 (JOS-394): 4.5 RPS steady on this route — ~1,350 requests
+  # per 5 minutes — which left about 10% headroom under the old 5 RPS ceiling, so
+  # it went to 10. The stage ceiling above has to stay above the sum of what the
+  # routes are allowed to do, or the stage throttles a route that is inside its own
+  # budget; that is why both numbers moved in one commit.
   route_settings {
     route_key              = aws_apigatewayv2_route.telemetry.route_key
     throttling_rate_limit  = var.telemetry_route_rate_limit

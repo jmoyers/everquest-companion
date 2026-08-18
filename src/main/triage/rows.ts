@@ -31,7 +31,12 @@ import type {
   Severity
 } from '../../shared/feedback'
 import { validatePerf, type FeedbackPerf } from '../../shared/feedbackPerf'
-import { sanitizeAndFlag, sanitizeMultiline, sanitizeOneLine } from '../../shared/sanitizeText'
+import {
+  sanitizeAndFlag,
+  sanitizeMultiline,
+  sanitizeOneLine,
+  sanitizeTabbedAndFlag
+} from '../../shared/sanitizeText'
 import { scrubLines } from '../../shared/logScrub'
 
 /** A DSQL row as node-postgres hands it over: every column is `unknown` until proven. */
@@ -286,15 +291,31 @@ export function rescrubNotes(re: SliceRescrub): string[] {
  * ESC in a "row" of a forged dump is an escape sequence in the owner's shell. `cleaned` is
  * therefore "lines that carried something no real dump has ever contained", and for an honest
  * upload it is ZERO.
+ *
+ * AND THE SANITIZER IS `sanitizeTabbedLine`, NOT `sanitizeOneLine` (JOS-404). A dump is
+ * TAB-SEPARATED — `Location<TAB>Name<TAB>ID<TAB>Count<TAB>Slots` — so the one-line fold counted
+ * every honest row as "carried a control character" (1079 of 1080 on report
+ * 01M081TPHPGB173YCC4YH7AMZB) and the local copy lost the columns the app's own dump parser reads.
+ * A warning that fires on every genuine dump is a warning nobody reads, which is exactly what the
+ * silence in `inventoryNotes` is for. The shared helper's header carries the full argument for why
+ * TAB survives here and in no other display path.
+ *
+ * THE LINE TERMINATORS ARE PRESERVED BYTE FOR BYTE, hence the capturing split rather than
+ * `split(/\r?\n/).join('\n')`: a real dump is CRLF (both committed fixtures are), and the claim
+ * this module lets the CLI make about an honest upload is that the local copy is IDENTICAL to the
+ * S3 object. Normalizing newlines would quietly falsify it. A stray CR *inside* a row is not a
+ * terminator, is not content either, and is still stripped and counted.
  */
 export function sanitizeInventory(raw: string): { text: string; cleaned: number } {
   let cleaned = 0
-  const out = raw.split(/\r?\n/).map((line) => {
-    const s = sanitizeAndFlag(line)
+  const parts = raw.split(/(\r\n|\n)/)
+  const out = parts.map((part, i) => {
+    if (i % 2 === 1) return part // the captured terminator, passed through untouched
+    const s = sanitizeTabbedAndFlag(part)
     if (s.changed) cleaned++
     return s.text
   })
-  return { text: out.join('\n'), cleaned }
+  return { text: out.join(''), cleaned }
 }
 
 /** What the owner-side read of a dump found, as `store.ts downloadInventory` reports it. */

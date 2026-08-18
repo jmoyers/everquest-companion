@@ -125,7 +125,12 @@ export async function stepGearClassFilter(page: Page): Promise<void> {
   check('clearing the Classes picker returns the whole corpus', all > 0, `${String(all)} items`)
 
   // A CLASS THE FIXTURE ROW CANNOT BE: Thelvorn's page states PAL and nothing else.
-  await pickIn(page, CLASSES, 'ROG')
+  //
+  // TYPED AS A WHOLE CLASS NAME since JOS-402: the control's options are still the /who codes and
+  // still what the filter stores, but the words it offers and matches on are `Rogue` and `Paladin`
+  // now, so a spec that typed `ROG` would filter the listbox to nothing and pick whatever was
+  // highlighted. Typing what the user sees is also the only way this step proves the relabel.
+  await pickIn(page, CLASSES, 'Rogue')
   const narrowed = await until(async () => (await shownCount(page)) < all, 15_000)
   const shown = await shownCount(page)
   check(
@@ -138,7 +143,7 @@ export async function stepGearClassFilter(page: Page): Promise<void> {
   check(
     'a PAL-only weapon is GONE from a rogue`s table (the owner`s report, as an assertion)',
     !(await thelvornShown(page)),
-    'the row is still listed while the class filter says ROG'
+    'the row is still listed while the class filter says Rogue'
   )
   // THE DELETED CHIP. `planner-mismatch-chip` still exists and two other surfaces still draw it;
   // what must never happen again is a gear SEARCH row wearing one.
@@ -146,9 +151,16 @@ export async function stepGearClassFilter(page: Page): Promise<void> {
 
   // The class it CAN be, on the same search — so the narrowing is a filter and not a lost row.
   await clearPicks(page, CLASSES)
-  await pickIn(page, CLASSES, 'PAL')
+  await pickIn(page, CLASSES, 'Paladin')
   const back = await until(() => thelvornShown(page), 15_000)
   check('…and it comes straight back for the class whose page names it', back)
+  // THE WORDS ON THE CONTROL (JOS-402). The pick above went in as `Paladin`, so the chip the user is
+  // left holding must be the class, not the code — the same claim the Sky filter has always made.
+  check(
+    'the picked class wears its whole name, never the /who code',
+    (await chipsIn(page, CLASSES)).join() === 'Paladin',
+    (await chipsIn(page, CLASSES)).join()
+  )
 
   await clearPicks(page, CLASSES)
   await search(page, '')

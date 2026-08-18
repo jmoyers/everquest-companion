@@ -153,7 +153,10 @@
 //   `Your <Item> (Exaltation) shimmers briefly.` (+3 sibling emotes, 6433× total)
 //        — a socketed click/proc exaltation FIRING; names the SOURCE item, not the host,
 //        and carries no tier. NOT parsed: it identifies nothing we can attribute.
-//   `You successfully destroyed 1 <Item> +N.` — the item is gone. NOT parsed.
+//   `You successfully destroyed <N> <Item>[ +N].` (356×) — the item is gone. PARSED since
+//        JOS-401 as a loot event with disposition 'destroyed', which is how held counts learn
+//        about it; it still retires NO tier evidence, because a tier is a fact about an item
+//        that was observed once and never a claim about current inventory.
 // Nothing reports item exp, socket contents, or the tier of an item we merely hold — so
 // the ItemWindow still draws tier POSITION only, never an exp fill, and observed tiers come
 // exclusively from merge evidence (main/modules/itemTiers.ts).

@@ -31,9 +31,27 @@ import { applySpellCorrections } from './spellCorrections'
 // nothing. Invigor reached three of his levels (PAL 22, SHM 24, RNG 30) that way. Applied BEFORE
 // the corrections overlay, the load order `spellDb.ts` states.
 import { applySpellRemovals } from './spellRemovals'
+// The ERA JOIN (JOS-393), applied here for the reason this module applies the other two: every row
+// here becomes a CARD telling the player what this level just gave them, and `Sloths Healing` —
+// `{{Kunark Era}}`, `Shaman - Level 50+` — is not a spell a level-50 shaman can go and buy on a
+// server that has not opened Kunark. The verdict rides the row (`UnlockSpell.outOfEra`) rather than
+// removing it: the row is real and the SEARCH still answers for it (shared/levelUnlocks.ts folds it
+// out of the level lists only).
+import { applySpellEra } from './spellEra'
+// THE SEARCH SURFACE (JOS-392), built by the function the alerts catalog is built with. Two
+// datasets searched by one matcher (`shared/spellSearch.ts`) must be folded by one surface builder,
+// or the box goes quietly deaf on one of them — the same argument `searchTextFor`'s own header
+// makes about the query side.
+import { searchTextFor } from './spellDb'
 import { parseSpellClasses } from '../../shared/spellLevels'
 import { isClassAbbr, type ClassAbbr } from '../../shared/classCombo'
 import type { LevelUnlockData, UnlockSkill, UnlockSpell } from '../../shared/levelUnlocks'
+import { spellMetricsAt } from '../../shared/spellMetrics'
+// The CLIENT'S hitpoint slots (JOS-396), threaded in from the IPC handler rather than imported:
+// `spellTable.ts` is an Electron module and this one is node-tested. See clientSpellHp.ts.
+import { clientHpFor } from './clientSpellHp'
+import { replacedBy } from './spellLineLookup'
+import type { SpellResistTable } from '../../shared/resistTypes'
 import type { SpellDbFile } from '../../shared/types'
 
 interface RawUnlock {
@@ -137,29 +155,82 @@ function skillsFor(
   return out.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
 }
 
-/** Every spell the DB places for at least one class at a stated level, with its card fields. */
-function unlockSpells(): UnlockSpell[] {
+/**
+ * WHAT THE SPELL REPLACES, per class that gains it (JOS-391).
+ *
+ * Asked once per (spell, class) at fold time rather than per render: the lookup is a map read, but
+ * this runs over 2,001 (spell, class) pairs and the answer is a compile-time constant — there is
+ * nothing for it to become later. A class with no line for the spell contributes no entry, so the
+ * field is absent rather than a list of nulls.
+ */
+function replacesFor(name: string, at: readonly { cls: ClassAbbr }[]): UnlockSpell['replaces'] {
+  const out: { name: string; cls: ClassAbbr }[] = []
+  for (const cls of new Set(at.map((p) => p.cls))) {
+    const place = replacedBy(name, cls)
+    if (place.replaces !== null) out.push({ name: place.replaces, cls })
+  }
+  return out.length > 0 ? out.sort((a, b) => a.cls.localeCompare(b.cls)) : undefined
+}
+
+/**
+ * Every spell the DB places for at least one class at a stated level, with its card fields, its
+ * figures and what it replaces.
+ *
+ * THE METRICS ARE READ AT THE LOWEST LEVEL ANY CLASS GAINS IT, and that is the level the row is
+ * about: "New at this level" draws a spell at the level it becomes yours, so a ramp evaluated
+ * anywhere else would describe a spell you cannot cast yet. One dataset serves every loadout, so
+ * it cannot be per-class — and it does not need to be, because a spell's own gain level is the
+ * only level at which the panel ever introduces it. (The browsing case reads the SAME row: a
+ * cleric stepping to 30 sees the spells that unlock at 30, evaluated at 30.)
+ */
+function unlockSpells(client: SpellResistTable | null): UnlockSpell[] {
   const file = spellsJson as SpellDbFile
   const out: UnlockSpell[] = []
-  for (const s of applySpellCorrections(applySpellRemovals(file.spells).spells).spells) {
+  for (const s of applySpellCorrections(applySpellEra(applySpellRemovals(file.spells).spells).spells).spells) {
     const at = parseSpellClasses(s.classes)
     if (at.length === 0) continue
     const spell: UnlockSpell = { name: s.name, at }
+    // `true` or absent, never `false` — the field's own law (`SpellEntry.outOfEra`), carried across
+    // the wire unchanged so the renderer has nothing to decide.
+    if (s.outOfEra === true) spell.outOfEra = true
     if (typeof s.castTimeMs === 'number') spell.castTimeMs = s.castTimeMs
     if (typeof s.mana === 'number') spell.mana = s.mana
     if (s.targetType) spell.targetType = s.targetType
     if (s.spellType) spell.spellType = s.spellType
     if (typeof s.durationMs === 'number') spell.durationMs = s.durationMs
+    // The RANK NAMES are deliberately not part of this surface: the catalog folds a line's ranks
+    // onto one row and has them to hand, while this dataset is one row per DB page and would have
+    // to rebuild the rank index to say the same thing. The name and the three sentences the game
+    // prints are what a player searching for a spell types.
+    spell.searchText = searchTextFor(s, undefined)
+    if (s.illusion) spell.illusion = true
+    const metrics = spellMetricsAt(s, Math.min(...at.map((p) => p.level)), clientHpFor(client, s.name))
+    if (metrics) spell.metrics = metrics
+    const replaces = replacesFor(s.name, at)
+    if (replaces) spell.replaces = replaces
     out.push(spell)
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 let cached: LevelUnlockData | null = null
+/** Was `cached` built with the client table in hand? See `buildLevelUnlocks`. */
+let cachedWithClient = false
 
-/** The whole dataset, built once. */
-export function buildLevelUnlocks(): LevelUnlockData {
-  if (cached) return cached
+/**
+ * The whole dataset, built once — and REBUILT ONCE MORE if the client's spell table shows up after
+ * the first build (JOS-396).
+ *
+ * The inputs used to be compile-time constants, so "cached forever" was the whole story. The client
+ * table is not: it is parsed on a worker (`src/main/resist/spellTable.ts`), takes a moment on a cold
+ * launch, and a player who opens the Leveling tab in that moment would otherwise be handed a dataset
+ * with Odium's damage permanently missing — for the rest of the run, because the cache would never
+ * be asked again. One boolean fixes it: a dataset folded WITHOUT the table is provisional and is
+ * rebuilt the first time a read arrives with one. The rebuild costs the same ~2,000-row fold the
+ * first one did and happens at most once per run, because the table never becomes null again.
+ */
+export function buildLevelUnlocks(client: SpellResistTable | null = null): LevelUnlockData {
+  if (cached && (cachedWithClient || !client)) return cached
   const skillTable = classesJson.skillUnlocks as Record<string, RawUnlock[]>
   const discTable = classesJson.discUnlocks as Record<string, RawUnlock[]>
   const disputed: string[] = classesJson.disputed
@@ -168,8 +239,15 @@ export function buildLevelUnlocks(): LevelUnlockData {
     if (!isClassAbbr(code)) continue
     skills[code] = skillsFor(code, skillTable[code] ?? [], discTable[code] ?? [], disputed)
   }
-  cached = { spells: unlockSpells(), skills, scrapedAt: classesJson.scrapedAt }
+  cached = { spells: unlockSpells(client), skills, scrapedAt: classesJson.scrapedAt }
+  cachedWithClient = client !== null
   return cached
+}
+
+/** Test seam: forget the folded dataset so the next call re-reads its inputs. */
+export function resetLevelUnlocksCache(): void {
+  cached = null
+  cachedWithClient = false
 }
 
 /**

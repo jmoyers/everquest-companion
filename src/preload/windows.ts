@@ -15,8 +15,11 @@ import { IPC } from '../shared/ipc'
 import type { ToastRequest } from '../shared/toast'
 import type { AlertBannerPayload } from '../shared/alertBanner'
 import type { ScopeSelection } from '../shared/scopeSelection'
+import type { BuffAllowPatch, BuffAllowPrefs } from '../shared/buffAllow'
 import type { CloseToTrayPrefs } from '../shared/closeToTray'
 import type { OverlayConfig, OverlayKind } from '../shared/types'
+import type { OverlayTextSizePrefs } from '../shared/overlayTextScale'
+import type { OverlayBgAlphaPrefs } from '../shared/overlayBgAlpha'
 
 export const windowsApi = {
   // ---- frameless window controls (Task #23) ----
@@ -100,6 +103,27 @@ export const windowsApi = {
     return () => ipcRenderer.removeListener(IPC.onScopeSelection, listener)
   },
 
+  // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168) ----
+  // WHICH of your spells the two timer overlays may draw: the opt-in mode switch that lives on the
+  // Buffs tab, and the tri-state verdict per spell line behind it. It lives in THIS slice for the
+  // scope selection's reason directly above — it is a CROSS-WINDOW fact, main holds it precisely so
+  // two renderer processes can agree about it, and the overlay bridge carries the same READERS
+  // under the same names so ONE renderer hook (`useBuffAllow`) drives the tab's checkboxes and the
+  // windows' filter alike. The difference from the two facts above it: this one is PERSISTED, since
+  // which spells you track is not a thing you re-choose every launch.
+  /** The persisted allow-list. Default mode with no verdicts — everything draws — until set. */
+  getBuffAllow: (): Promise<BuffAllowPrefs> => ipcRenderer.invoke(IPC.buffAllowGet),
+  /** Apply a PARTIAL: the mode, some verdicts, or both. Resolves to what was ACTUALLY stored, and
+   *  main fans the result out — so a box checked here reaches an already-open overlay window. */
+  setBuffAllow: (patch: BuffAllowPatch): Promise<BuffAllowPrefs> =>
+    ipcRenderer.invoke(IPC.buffAllowSet, patch),
+  /** Subscribe to changes made anywhere. Payload is the whole preference. */
+  onBuffAllow: (cb: (p: BuffAllowPrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: BuffAllowPrefs): void => cb(p)
+    ipcRenderer.on(IPC.onBuffAllow, listener)
+    return () => ipcRenderer.removeListener(IPC.onBuffAllow, listener)
+  },
+
   // ---- celebration toasts (docs/plans/celebration-toasts.md) ----
   /**
    * "Celebrate this." Called by the app's EXISTING always-mounted celebration detectors — the
@@ -146,5 +170,95 @@ export const windowsApi = {
     ipcRenderer.invoke(IPC.overlaySetConfig, 'alertBanner', patch),
   /** Lock (click-through) / unlock (position it). APPLIED to the live window as well as stored. */
   setAlertBannerLocked: (locked: boolean): void =>
-    ipcRenderer.send(IPC.overlaySetLocked, 'alertBanner', locked)
+    ipcRenderer.send(IPC.overlaySetLocked, 'alertBanner', locked),
+
+  // ---- the con card (JOS-383, shared/conCard.ts) --------------------------------------
+  //
+  // THREE DOORS, NOT FOUR: there is no `showConCard` twin of `showAlertBanner`, because this
+  // feature has no renderer producer at all — the trigger is a log line and main owns the log.
+  /** Read the con card overlay's persisted config (its auto-hide, its lock). Kind-first, like the
+   *  two cards above it, for the reason stated there. */
+  getConCardConfig: (): Promise<OverlayConfig> => ipcRenderer.invoke(IPC.overlayGetConfig, 'conCard'),
+  /** Patch the con card's config (Preferences owns the auto-hide). Main clamps; 0 means never. */
+  setConCardConfig: (patch: Partial<OverlayConfig>): Promise<OverlayConfig> =>
+    ipcRenderer.invoke(IPC.overlaySetConfig, 'conCard', patch),
+  /** Lock (click-through) / unlock (position it). APPLIED to the live window as well as stored. */
+  setConCardLocked: (locked: boolean): void => ipcRenderer.send(IPC.overlaySetLocked, 'conCard', locked),
+
+  // ---- the overlays' TEXT SIZE (JOS-405; shared/overlayTextScale.ts) ------------------------
+  //
+  // IN THIS SLICE rather than a module of its own, and the reason is the ceiling that put the
+  // three cards above here: src/preload/index.ts is AT 400 code lines, so a new spread there
+  // costs two lines it does not have. This is the honest home anyway — the members right above
+  // are "Preferences' door to an overlay's config", and the twelve-row list is exactly that door
+  // opened on one more field.
+  //
+  // THE OVERLAY WINDOWS HAVE THEIR OWN TWO (preload/overlay.ts), under the same names. Not
+  // duplication to tidy away later: it is the fight-selection trio's arrangement, for the same
+  // reason — two very different windows decide one thing with this value, and a second NAME for
+  // one signal is how they end up disagreeing about it.
+  /** The shared size and whether it is in force. `{ 1, false }` on an install that never chose. */
+  getOverlayTextSize: (): Promise<OverlayTextSizePrefs> =>
+    ipcRenderer.invoke(IPC.overlayTextSizeGet),
+  /** Merge-patch it; every open overlay window is resized before this resolves. Main re-validates
+   *  through the same normalizer the store reader uses, so the reply is what will ACTUALLY happen. */
+  setOverlayTextSize: (patch: Partial<OverlayTextSizePrefs>): Promise<OverlayTextSizePrefs> =>
+    ipcRenderer.invoke(IPC.overlayTextSizeSet, patch),
+  /** Main's push, for the presses this window did not make. Twelve overlay windows carry an
+   *  A− / A+ that moves the shared size, so a Preferences pane left open while somebody scales
+   *  their fight meter would otherwise print a stale percentage. */
+  onOverlayTextSize: (cb: (p: OverlayTextSizePrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: OverlayTextSizePrefs): void => cb(p)
+    ipcRenderer.on(IPC.onOverlayTextSize, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayTextSize, listener)
+  },
+  /** Every kind's OWN scale, in ONE read — the per-overlay list is twelve rows, not twelve round
+   *  trips. Values are what each window would draw at IF independent sizes were on. */
+  getOverlayTextScales: (): Promise<Record<OverlayKind, number>> =>
+    ipcRenderer.invoke(IPC.overlayTextScalesGet),
+  /** Write ONE kind's own scale, through the very door that kind's own A− / A+ uses, so a row and
+   *  a footer button are the same write and main routes both by the same rule. */
+  setOverlayTextScale: (kind: OverlayKind, textScale: number): Promise<OverlayConfig> =>
+    ipcRenderer.invoke(IPC.overlaySetConfig, kind, { textScale }),
+  /** Main's push for a per-kind value moved on a WINDOW while the list was open. */
+  onOverlayTextScales: (cb: (m: Record<OverlayKind, number>) => void): (() => void) => {
+    const listener = (_e: unknown, m: Record<OverlayKind, number>): void => cb(m)
+    ipcRenderer.on(IPC.onOverlayTextScales, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayTextScales, listener)
+  },
+
+  // ---- the overlays' BACKGROUND TRANSPARENCY (JOS-407; shared/overlayBgAlpha.ts) ------------
+  //
+  // THE FIVE MEMBERS ABOVE, ONE FIELD OVER, under names that differ only in what they name. The
+  // two settings are separate on purpose — they are linked and unlinked by two switches, because a
+  // player who wants one size everywhere and a fainter respawn window is asking for exactly that —
+  // so they are separate on the bridge too rather than one widened call carrying a pair.
+  /** The shared alpha and whether it is in force. `{ 0.72, false }` on an install that never chose,
+   *  and `{ …, true }` on one whose overlays already disagreed when this shipped. */
+  getOverlayBgAlpha: (): Promise<OverlayBgAlphaPrefs> => ipcRenderer.invoke(IPC.overlayBgAlphaGet),
+  /** Merge-patch it; every open overlay window is repainted before this resolves. Main re-validates
+   *  through the same normalizer the store reader uses, so the reply is what will ACTUALLY happen. */
+  setOverlayBgAlpha: (patch: Partial<OverlayBgAlphaPrefs>): Promise<OverlayBgAlphaPrefs> =>
+    ipcRenderer.invoke(IPC.overlayBgAlphaSet, patch),
+  /** Main's push, for the drags this window did not make — twelve overlay windows carry a `bg`
+   *  slider that moves the shared alpha. */
+  onOverlayBgAlpha: (cb: (p: OverlayBgAlphaPrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: OverlayBgAlphaPrefs): void => cb(p)
+    ipcRenderer.on(IPC.onOverlayBgAlpha, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayBgAlpha, listener)
+  },
+  /** Every kind's OWN alpha, in ONE read — the per-overlay list is twelve rows, not twelve round
+   *  trips. Values are what each window would paint with IF independent transparency were on. */
+  getOverlayBgAlphas: (): Promise<Record<OverlayKind, number>> =>
+    ipcRenderer.invoke(IPC.overlayBgAlphasGet),
+  /** Write ONE kind's own alpha, through the very door that kind's own slider uses, so a row and a
+   *  footer slider are the same write and main routes both by the same rule. */
+  setOverlayBgAlphaFor: (kind: OverlayKind, bgAlpha: number): Promise<OverlayConfig> =>
+    ipcRenderer.invoke(IPC.overlaySetConfig, kind, { bgAlpha }),
+  /** Main's push for a per-kind value moved on a WINDOW while the list was open. */
+  onOverlayBgAlphas: (cb: (m: Record<OverlayKind, number>) => void): (() => void) => {
+    const listener = (_e: unknown, m: Record<OverlayKind, number>): void => cb(m)
+    ipcRenderer.on(IPC.onOverlayBgAlphas, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayBgAlphas, listener)
+  }
 }

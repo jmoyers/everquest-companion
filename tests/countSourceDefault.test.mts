@@ -63,6 +63,10 @@ const CLAW: PoskyQuest = {
 const QUESTS = [CLAW]
 const CLAW_KEY = questKey(CLAW)
 
+/** Instants far enough apart that "before" and "after" are never a rounding question. */
+const T0 = 1_700_000_000_000
+const HOUR = 3_600_000
+
 // =============================================================================
 // 1. The default, and what it leaves alone
 // =============================================================================
@@ -170,6 +174,28 @@ test('WITHOUT A DUMP, `both` reduces to `log` byte-identically — rows, order a
     )
   }
   assert.equal(space.length, 48, 'the space actually ran')
+})
+
+test('…and it still reduces with the DUMP WINDOWS switched on (JOS-401/JOS-403)', () => {
+  // The reduction has to survive the two discounts the dump witness owes, because they are computed
+  // under `both` (which reads the file) and skipped under `log` (which does not) — so the two
+  // sources now take genuinely different paths through `reconcile` for an install with no dump.
+  // They still land on the same answer, and for the same reason as before: with `inv = {}` the dump
+  // witness is 0, so `max(0, 0 - destroyed - consumed)` is 0 and `max(0, fromLog)` is `fromLog`.
+  const claw = itemCountKey('Sphinx Claw')
+  const windows = {
+    turnInInstants: { [CLAW_KEY]: [T0 - HOUR, T0 + HOUR] },
+    rebaselineAt: T0,
+    destroyedSinceDump: { [claw]: 2 }
+  }
+  for (const turnIns of [{}, { [CLAW_KEY]: 1 }, { [CLAW_KEY]: 2 }]) {
+    const input = { log: { [claw]: 4 }, inv: {}, lootNames: {}, turnIns, quests: QUESTS, ...windows }
+    assert.deepEqual(
+      reconcile({ ...input, countSource: 'both' }),
+      reconcile({ ...input, countSource: 'log' }),
+      `turnIns=${JSON.stringify(turnIns)}: no dump, no discount, no difference`
+    )
+  }
 })
 
 test('…and the reduction is the count source ALONE: one dumped item and they diverge', () => {

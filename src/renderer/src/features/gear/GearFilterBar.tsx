@@ -52,6 +52,7 @@ import { CLASS_ABBRS } from '@shared/classCombo'
 import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import { EQUIP_SLOTS } from '@shared/planner/types'
 import { WEAPON_PICKS, WEAPON_PICK_LABEL } from '@shared/planner/weaponType'
+import { classDisplayName } from '@shared/spellLevels'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
 import { SOCKET_LABEL } from '../planner/plannerGroups'
@@ -194,6 +195,7 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
           onChange={classes.set}
           label="Classes"
           placeholder="every class"
+          optionLabel={classDisplayName}
           minWidth={190}
           testId="gear-classes"
         />
@@ -228,7 +230,7 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
           size="small"
           color="warning"
           variant="outlined"
-          label={`detected: ${classes.offer.join(' ')}`}
+          label={`detected: ${classes.offer.map(classDisplayName).join(', ')}`}
           data-testid="gear-class-offer"
           title="What the app currently infers you are running. Click to read the table for it."
           onClick={classes.adopt}

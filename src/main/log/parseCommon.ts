@@ -85,6 +85,39 @@ export function spellCanonKey(spell: string): string {
   return key
 }
 
+/**
+ * THE RANK THE KEY THROWS AWAY (JOS-387): `Scorching Arrow IV` -> 4, `Frost Shard VI` -> 6, a name
+ * with no numeral -> 0.
+ *
+ * It reads the SAME trailing token `spellCanonKey` strips, off the same raw display name, and it is
+ * deliberately a second function rather than a change to that one: every consumer of the canonical
+ * key — the buffs model's cast/fade pairing, the ledger's pooling, the proc analytics — depends on
+ * a rank-IV and a rank-0 cast of a spell being ONE spell, and only the resist model needs to know
+ * that they carry different resist adjusts (-15 a rank). So the rank is parsed BEFORE canonising,
+ * beside the strip, and the key is untouched.
+ *
+ * The numerals are the same closed I-X ladder `RANK_TAIL_RE` accepts, which is what EQ Legends
+ * prints; anything else answers 0 rather than guessing.
+ */
+const RANK_VALUES: Record<string, number> = {
+  I: 1,
+  II: 2,
+  III: 3,
+  IV: 4,
+  V: 5,
+  VI: 6,
+  VII: 7,
+  VIII: 8,
+  IX: 9,
+  X: 10,
+}
+
+export function spellRank(spell: string): number {
+  const m = RANK_TAIL_RE.exec(spell.trim())
+  if (!m) return 0
+  return RANK_VALUES[m[0].trim()] ?? 0
+}
+
 export function cleanMob(s?: string): string | undefined {
   if (!s) return undefined
   return s.replace(/['`’]s$/i, '').trim() || undefined

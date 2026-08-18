@@ -42,6 +42,7 @@ import {
   lootModule,
   outputFilesModule,
   registry,
+  resistModule,
   rosterModule,
   sendWorldRebuilt,
   sessionDetector,
@@ -260,6 +261,10 @@ function resetWorldFor(ref: CharacterRef): void {
   // what doubled every count on every launch). Before the scan, and per character, because the
   // bucket key is the character.
   buffsModule.beginOverlaySource(characterId(ref))
+  // Same law, same instant, for the same reason (JOS-382). What a mob resists is game knowledge
+  // and survives `reset()`; the counts THIS character's log accounts for are about to be
+  // re-stated in full, so its bucket is discarded and re-filed rather than added to.
+  resistModule.beginSource(characterId(ref))
   epoch.reset()
   // The offline-gap detector is per-LOG state (a rolling window of recent timestamps + the
   // pending camp), so it resets alongside the epoch detector: a new character's first login

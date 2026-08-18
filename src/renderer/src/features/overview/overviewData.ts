@@ -14,9 +14,11 @@
 //   isTradeskillOnly   — lib/itemKnowledgeView.ts (lives in lib/ precisely so the MUI-free
 //                        overlay bundle can use it too)
 //   itemCountKey       — lib/itemName.ts (the `+N`-stripping counting key)
+//   isDestroyed        — src/shared/lootDisposition.ts (what a destroy row means to a reader)
 
 import type { ItemKnowledge, LootDisposition, LootEvent } from '@shared/types'
 import { isNotableKnowledge } from '../../../../shared/itemKnowledge'
+import { isDestroyed } from '../../../../shared/lootDisposition'
 import { isTradeskillOnly } from '../../lib/itemKnowledgeView'
 import { itemCountKey } from '../../lib/itemName'
 
@@ -100,6 +102,13 @@ export function buildDropRows(
   const rows: DropRow[] = []
   for (let i = history.length - 1; i >= first; i--) {
     const e = history[i]
+    // THIS FEED IS CALLED RECENT DROPS AND MEANS IT (JOS-401, the census). A destroy rides the
+    // loot lane so held counts can subtract it; it is not a drop, it names no mob, and putting
+    // one at the top of the landing tab would read as an item you just picked up. The cap is
+    // applied to the raw tail rather than to the surviving rows on purpose: the feed shows the
+    // last DROP_FEED_CAP things that happened, and a window full of bag cleanup is honestly a
+    // window with few drops in it.
+    if (isDestroyed(e)) continue
     const key = itemCountKey(e.item)
     const posky = poskyKeys.has(key)
     const knowledge = knowledgeByKey.get(key)

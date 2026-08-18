@@ -32,6 +32,14 @@
  * invocation and is then garbage; what persists is counters. Nothing here logs an analyticsId,
  * and the function's own CloudWatch log (14 days) carries counts only.
  *
+ * THE COUNTER TABLES ARE SHARDED SINCE JOS-394, AND THE SHARD IS RANDOM. `usage_daily_sharded`
+ * and `perf_daily_sharded` carry a `shard` column drawn from `Math.random()` once per request,
+ * which spreads a hot counter over 32 rows so that DSQL's optimistic writers stop racing each
+ * other on one. It is NOT a hash of the analyticsId and must never become one — a hash is a
+ * function of the install id, and a stable per-install shard would partition a day's counters
+ * into per-install buckets, rebuilding in the counter tables the very trail this file refuses
+ * to keep. Readers never see the column: they read the merged views.
+ *
  * ONE BOUNDED EXCEPTION SINCE JOS-100, and it is bounded by the KEY rather than by a promise:
  * `error_report` keeps at most one EXEMPLAR per (day, cohort, version, fingerprint), first
  * wins. That is a per-ISSUE store, not a per-user one — the row a hundred installs write is one
@@ -80,6 +88,39 @@ const FALLBACK_MAX_EVENTS_PER_DAY = Number(process.env.MAX_EVENTS_PER_DAY ?? '20
 const UPSERT_CHUNK = 100
 /** Funnel-step EMF documents per invocation. A dimension value is a billed metric. */
 const MAX_FUNNEL_EMF = 20
+
+/**
+ * COUNTER SHARDS (JOS-394) — how many rows one hot counter is spread across.
+ *
+ * THE PROBLEM, MEASURED on the live stack 2026-08-16: every install increments the SAME rows —
+ * `usage_daily`'s (day, cohort, 'sessionHeartbeat', '-') and the small closed set of `perf_daily`
+ * buckets — so at ~1,350 requests per 5 minutes (4.5 RPS, 3-4 concurrent Lambdas) about 5% of
+ * writes lost a commit-time race and came back 40001. DSQL takes no locks, so that rate is a
+ * function of how many writers meet on one ROW, and it only grows with the install base.
+ *
+ * THE ARITHMETIC. Two concurrent writers collide when they pick the same counter AND the same
+ * shard, so the conflict rate falls roughly linearly in the shard count: 32 shards turn a ~5%
+ * conflict rate into ~0.2%, which is comfortably inside "the system working" and leaves the
+ * retry ladder for genuine bursts. Why not 4 (too little headroom for a fleet twice this size),
+ * and why not 512: a shard costs a ROW PER DAY PER COUNTER — 32 keeps a day's counters in the
+ * hundreds of rows, where a read is still one bounded scan, and the merge view sums them anyway.
+ * At 3-4 concurrent Lambdas, 32 is ample by an order of magnitude.
+ *
+ * THE SHARD IS RANDOM PER REQUEST, AND IT MAY NEVER BE A FUNCTION OF THE analyticsId. That is
+ * this file's oldest law (see the header, and the long note over `usage_daily` in
+ * infra/schema.sql): NO function of the install id reaches a counter table, because a stable
+ * per-install shard would let anyone holding these rows partition a day's counters into per-
+ * install buckets — the per-user trail the aggregate-on-arrival design exists to not keep.
+ * `Math.random()` spreads writes exactly as well and carries no information about the sender.
+ * It is drawn ONCE per invocation, not once per row: one batch's rows then land in one shard,
+ * which is fewer distinct rows for one transaction to hold and no worse for spreading.
+ */
+const SHARD_COUNT = 32
+
+/** A shard for THIS request. Random, never derived from anything the client sent. */
+function pickShard(): number {
+  return Math.floor(Math.random() * SHARD_COUNT)
+}
 
 type TelemetryErrorCode =
   | 'too_large'
@@ -350,15 +391,37 @@ function tuples(rows: number, columns: number, shared: number): string {
 /** The day and the cohort, in that order — `tuples`'s `shared` count and these must agree. */
 const SHARED_PARAMS = 2
 
+/**
+ * The day, the cohort AND THE SHARD, for the two sharded tables (JOS-394). A third shared
+ * parameter rather than a per-row one because the shard is drawn once per request, and it is a
+ * SEPARATE constant from `SHARED_PARAMS` because the funnel and error statements below are NOT
+ * sharded: their rows are rare (a funnel step is a user action, an error row is a distinct
+ * fingerprint) and were not in the measured contention. They ride in the same transaction, so
+ * if either ever becomes hot it gets exactly this treatment rather than a wider retry budget.
+ */
+const SHARDED_PARAMS = 3
+
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = []
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
 }
 
-const COUNTER_HEAD = 'INSERT INTO usage_daily (day, cohort, metric, dim, n) VALUES '
+/**
+ * THE COUNTERS GO TO THE SHARDED TABLE (JOS-394), and the column order is not cosmetic: the
+ * first three columns are `tuples`'s SHARED parameters, so (day, cohort, shard) must lead
+ * whatever order the table was declared in. The conflict target is the sharded PRIMARY KEY —
+ * it has to be exactly the key or postgres answers 42P10 and the UPSERT resolves against
+ * nothing.
+ *
+ * `usage_daily` IS NOT WRITTEN ANY MORE and is not dropped either: it freezes at cutover and
+ * `usage_daily_all` adds it back to every read. infra/schema.sql carries the whole argument.
+ */
+const COUNTER_HEAD =
+  'INSERT INTO usage_daily_sharded (day, cohort, shard, metric, dim, n) VALUES '
 const COUNTER_TAIL =
-  ' ON CONFLICT (day, cohort, metric, dim) DO UPDATE SET n = usage_daily.n + EXCLUDED.n'
+  ' ON CONFLICT (shard, day, cohort, metric, dim) DO UPDATE' +
+  ' SET n = usage_daily_sharded.n + EXCLUDED.n'
 
 const FUNNEL_HEAD =
   'INSERT INTO usage_funnel_daily (day, cohort, funnel, step, outcome, app_version, n) VALUES '
@@ -385,17 +448,19 @@ const ERROR_TAIL =
   ' exemplar = COALESCE(error_report.exemplar, EXCLUDED.exemplar)'
 
 /**
- * THE PERF CUBE (JOS-372). Additive like every counter here, and keyed on all five dims plus the
- * day and the cohort — the whole row IS the primary key, which is what makes the `ON CONFLICT`
- * target legal and what stops one day's fullscreen rows colliding with its windowed
- * ones. `src/shared/telemetryPerfCube.ts` holds the vocabulary and the cardinality argument.
+ * THE PERF CUBE (JOS-372, sharded by JOS-394). Additive like every counter here, and keyed on
+ * all five dims plus the day, the cohort and now the shard — the whole row IS the primary key,
+ * which is what makes the `ON CONFLICT` target legal and what stops one day's fullscreen rows
+ * colliding with its windowed ones. `src/shared/telemetryPerfCube.ts` holds the vocabulary and
+ * the cardinality argument; the shard multiplies that ceiling by 32 and the merge view sums it
+ * back down, which is the trade the OCC-conflict measurement bought.
  */
 const PERF_HEAD =
-  'INSERT INTO perf_daily (day, cohort, window_mode, machine_class, locked,' +
+  'INSERT INTO perf_daily_sharded (day, cohort, shard, window_mode, machine_class, locked,' +
   ' stall_bucket, tail_bucket, n) VALUES '
 const PERF_TAIL =
-  ' ON CONFLICT (day, cohort, window_mode, machine_class, locked, stall_bucket, tail_bucket)' +
-  ' DO UPDATE SET n = perf_daily.n + EXCLUDED.n'
+  ' ON CONFLICT (shard, day, cohort, window_mode, machine_class, locked, stall_bucket,' +
+  ' tail_bucket) DO UPDATE SET n = perf_daily_sharded.n + EXCLUDED.n'
 
 /**
  * Every counter for this batch, in ONE transaction so a batch is counted completely or not at
@@ -405,8 +470,15 @@ const PERF_TAIL =
  * The UPSERTs are additive (`n = existing + EXCLUDED.n`), so a retried transaction after a
  * commit-time abort re-adds nothing: the aborted attempt never committed. That is the only
  * at-most-once property this path needs, and it is the database's, not a flag's.
+ *
+ * ONE SHARD FOR THE WHOLE TRANSACTION (JOS-394), drawn here rather than per row or per chunk:
+ * this is the unit that either commits or aborts, so spreading its rows over several shards
+ * would widen the set of rows a racer could collide with for no gain. A retry re-runs this
+ * function's body with the SAME shard — the retry lives in `withRetry` one level up — which is
+ * what keeps the UPSERT additive rather than scattering a re-added count across shards.
  */
 async function writeCounters(day: string, cohort: UsageCohort, roll: RollupResult): Promise<void> {
+  const shard = pickShard()
   const counterChunks = chunk<UsageCounter>(roll.counters, UPSERT_CHUNK)
   const funnelChunks = chunk<FunnelCounter>(roll.funnels, UPSERT_CHUNK)
   const errorChunks = chunk<ErrorReportRow>(roll.errors, UPSERT_CHUNK)
@@ -422,10 +494,10 @@ async function writeCounters(day: string, cohort: UsageCohort, roll: RollupResul
   await withRetry('counters', () =>
     transaction(async (c) => {
       for (const rows of counterChunks) {
-        const params: unknown[] = [day, cohort]
+        const params: unknown[] = [day, cohort, shard]
         for (const r of rows) params.push(r.metric, r.dim, r.n)
         await c.query(
-          `${COUNTER_HEAD}${tuples(rows.length, 3, SHARED_PARAMS)}${COUNTER_TAIL}`,
+          `${COUNTER_HEAD}${tuples(rows.length, 3, SHARDED_PARAMS)}${COUNTER_TAIL}`,
           params
         )
       }
@@ -451,11 +523,11 @@ async function writeCounters(day: string, cohort: UsageCohort, roll: RollupResul
       // very `liveStallP95` histogram the counters above carry, so a batch that landed one and
       // not the other would make the panel's cross-tab disagree with its own fleet-wide totals.
       for (const rows of perfChunks) {
-        const params: unknown[] = [day, cohort]
+        const params: unknown[] = [day, cohort, shard]
         for (const r of rows) {
           params.push(r.windowMode, r.machineClass, r.locked, r.stallBucket, r.tailBucket, r.n)
         }
-        await c.query(`${PERF_HEAD}${tuples(rows.length, 6, SHARED_PARAMS)}${PERF_TAIL}`, params)
+        await c.query(`${PERF_HEAD}${tuples(rows.length, 6, SHARDED_PARAMS)}${PERF_TAIL}`, params)
       }
     })
   )

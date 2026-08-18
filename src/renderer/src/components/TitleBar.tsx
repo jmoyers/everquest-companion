@@ -10,6 +10,9 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import type { CharacterRef, OverlayKind } from '@shared/types'
 import type { CloseToTrayPrefs } from '@shared/closeToTray'
 import { OVERLAY_KINDS } from '@shared/types'
+// The ONE kind-label map (JOS-405). This menu's wording is what it says, because this menu is
+// where a user meets the window in the first place.
+import { OVERLAY_KIND_LABEL } from '@shared/overlayLabels'
 import { track } from '../lib/telemetry'
 import PerfChip from './PerfChip'
 import { isDragSurfaceDoubleClick } from './titleBarDrag'
@@ -105,19 +108,33 @@ function CaptionButton({
  *   respawn                    JOS-194 — the respawn clocks, and the window this feature is
  *                              actually read in: the Timers tab is where you choose what to clock.
  *
- * Every kind from `buffs` onward ships DEFAULT OFF and this menu is the ONLY way to meet it. The
- * 'toast' kind is deliberately absent: it is a notifier, not a window a user places.
+ *   conCard                    JOS-383 — the card that appears when you `/con` a creature.
+ *
+ * Every kind from `buffs` through `respawn` ships DEFAULT OFF and this menu is the ONLY way to meet
+ * it; `conCard` is the exception in both directions — it ships ON, so this row is how you turn it
+ * OFF without going through Preferences. The 'toast' kind is deliberately absent: it is a notifier,
+ * not a window a user places.
  */
-const OVERLAY_MENU_ROWS: readonly (readonly [OverlayKind, string, string])[] = [
-  ['fight', 'Fight meter', 'Current fight + fight selector'],
-  ['overall', 'Zone meter', 'Zone total + zone selector'],
-  ['heal-fight', 'Fight healing', 'Healing + absorption, current fight'],
-  ['heal-overall', 'Zone healing', 'Healing + absorption, zone total'],
-  ['events', 'Event log', 'Alerts, notable loot, quest completions'],
-  ['buffs', 'Buffs', 'Buffs you have running, with timers'],
-  ['debuffs', 'Debuffs', 'Debuffs and mez you are holding, per target'],
-  ['xp', 'XP', 'XP per hour, next level, motes per hour'],
-  ['respawn', 'Respawn', 'Countdowns started by your own kills']
+// THE NAMES COME FROM shared/overlayLabels.ts (JOS-405); only the DESCRIPTIONS live here. There
+// used to be two label maps in this repo — this menu and shareMerge.ts — and they disagreed about
+// two windows, so an imported settings bundle offered to change something whose name appeared
+// nowhere in the menu you open to find it. The descriptions stay because they are this menu's own
+// job: a row here has to say what the window is FOR, and nowhere else needs that sentence.
+const OVERLAY_MENU_ROWS: readonly (readonly [OverlayKind, string])[] = [
+  ['fight', 'Current fight + fight selector'],
+  ['overall', 'Zone total + zone selector'],
+  ['heal-fight', 'Healing + absorption, current fight'],
+  ['heal-overall', 'Healing + absorption, zone total'],
+  ['events', 'Alerts, notable loot, quest completions'],
+  ['buffs', 'Buffs you have running, with timers'],
+  ['debuffs', 'Debuffs and mez you are holding, per target'],
+  ['xp', 'XP per hour, next level, motes per hour'],
+  ['respawn', 'Countdowns started by your own kills'],
+  // JOS-383, and the first row here for a kind that ships ON. It is in this menu on the owner's
+  // instruction (2026-08-16, the JOS-139 mirroring precedent): a window that appears by itself
+  // needs its off switch within reach of the place you are already looking when you want it gone.
+  // The 'toast' kind stays absent for its own stated reason — nobody places a celebration strip.
+  ['conCard', 'Resists, drops and level when you con']
 ]
 
 /**
@@ -218,10 +235,10 @@ function OverlayMenu({ overlayState }: { overlayState: Record<OverlayKind, boole
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        {OVERLAY_MENU_ROWS.map(([kind, primary, secondary]) => (
+        {OVERLAY_MENU_ROWS.map(([kind, secondary]) => (
           <MenuItem dense key={kind} data-testid={`overlay-menu-${kind}`} onClick={() => { toggle(kind) }}>
             <Checkbox size="small" edge="start" checked={overlayState[kind]} tabIndex={-1} disableRipple />
-            <ListItemText primary={primary} secondary={secondary} />
+            <ListItemText primary={OVERLAY_KIND_LABEL[kind]} secondary={secondary} />
           </MenuItem>
         ))}
         <Divider />

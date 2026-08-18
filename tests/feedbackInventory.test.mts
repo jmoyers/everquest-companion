@@ -33,6 +33,7 @@ import {
   MAX_DUMP_READ_BYTES,
   previewOfDump
 } from '../src/main/feedback/inventory'
+import { inventoryNotes, sanitizeInventory } from '../src/main/triage/rows'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
 const REAL_DUMP = join(FIXTURES, 'Primitive_freeport-Inventory.txt')
@@ -285,4 +286,42 @@ test('THE FORMAT SWEEP: the committed dumps carry nothing the log scrubber would
       assert.ok(cols >= 2 && cols <= 5, `${where} a row with ${String(cols)} columns: ${row}`)
     }
   }
+})
+
+// ---- THE OWNER SIDE OF THE SAME BYTES (JOS-404) -------------------------------------------------
+//
+// The client packages the dump verbatim (the round trip above). The OWNER then downloads it and
+// sanitizes it on the way to disk (`src/main/triage/rows.ts sanitizeInventory`) — the third leg
+// named in this module's header. Those two facts only compose if the sanitize is a NO-OP on a real
+// dump, and for a while it was not: it folded every TAB to a space, so the CLI accused all 1080
+// rows of report 01M081TPHPGB173YCC4YH7AMZB of not coming from the game and the local copy lost the
+// columns the app's own parser reads. The committed dumps are the only honest witness to that, so
+// the assertion lives here, beside the format sweep, rather than in a hand-built string.
+
+test('the owner-side sanitize is a NO-OP on a real dump — no warning, no lost columns', async () => {
+  const res = await buildInventoryAttachment(REAL_DUMP, 'Primitive_freeport-Inventory.txt')
+  assert.equal(res.ok, true)
+  if (!res.ok) return
+
+  // Exactly what `downloadInventory` does with the S3 object: ungzip, then sanitize.
+  const downloaded = gunzipSync(res.gz).toString('utf8')
+  const clean = sanitizeInventory(downloaded)
+  assert.equal(clean.cleaned, 0, 'a genuine dump has NO row that needs cleaning')
+  assert.equal(clean.text, readFileSync(REAL_DUMP, 'utf8'), 'the local copy is byte-identical')
+  // …so the CLI says nothing at all about it, which is what makes the warning worth reading.
+  const path = '.triage/inventory/01K1P6Q8ZJ7X4M2N9V5B3C6D7E.txt'
+  assert.deepEqual(inventoryNotes({ path, cleaned: clean.cleaned, fromLegacyCache: false }), [])
+
+  // And the structure the app's dump parser needs is intact, column for column.
+  const rows = dumpLines(clean.text)
+  assert.equal(rows[0].split('\t')[1], 'Name')
+  assert.ok(rows.every((r) => r.length === 0 || r.split('\t').length >= 2), 'a row lost its tabs')
+})
+
+test('the keyring dump survives the owner-side sanitize too, blank separator and all', () => {
+  const onDisk = readFileSync(KEYRING_DUMP, 'utf8')
+  const clean = sanitizeInventory(onDisk)
+  assert.equal(clean.cleaned, 0)
+  assert.equal(clean.text, onDisk)
+  assert.ok(clean.text.split(/\r?\n/).includes(''), 'the section separator survived')
 })

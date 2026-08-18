@@ -37,6 +37,18 @@
  *      (a window inside another can never count more), and come back BYTE-IDENTICAL at `All`;
  *   6. the "New at this level" panel is mounted with its stepper — and, once the combo module
  *      has resolved a loadout, draws real unlock rows for it (floors, never today's counts);
+ *   6a. (JOS-391) and each spell row says what the spell is WORTH: compact damage/heal figures per
+ *      mana, the `already yours (CLS N)` claim naming a level below the one on screen, the spell it
+ *      replaces from the shipped line research, and the word `directional` said exactly ONCE on
+ *      the panel rather than footnoted per row. Step 6a lives in `unlockRowSteps.mts`;
+ *   6c. (JOS-392) the spell a row says it REPLACES is a hover target of its own, and the card that
+ *      opens is that spell's - carrying the figures main read for it;
+ *   6d. (JOS-392) and typing `27-28 cleric shaman` turns the panel into the matching spells, each
+ *      row's chips stating the level each class gets it at, in any word order - then clearing the
+ *      box gives the level view back. Steps 6c/6d live in `unlockRowSteps.mts` too;
+ *   6e. (JOS-393) and a spell the wiki badges out of era is FOUND by that search and MARKED - the
+ *      chip on the row, the same words on its card - while its in-era sibling one rung down the
+ *      same ladder wears nothing;
  *   7. (JOS-289) THE WHOLE PAGE SCROLLS AND NO PANEL DOES: the window itself never scrolls, no
  *      panel on the tab shows an internal vertical scrollbar except the drops list whose row count
  *      earns one, and the deepest panel is reached by scrolling the PAGE. No renderer console
@@ -84,8 +96,7 @@ import {
   waitHydrated
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
-import { playWho } from './gameplay.mjs'
-import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
+import { launchOnFixture } from './logFixture.mjs'
 // The in-window drops panel and its round trip into the item drill-down (JOS-78) — next door
 // because this spec sits AT the repo max-lines budget; see that file's header.
 import { stepDrops } from './dropSteps.mjs'
@@ -102,6 +113,11 @@ import { stepDragCost } from './dragPerfSteps.mjs'
 // …and (JOS-339) THE CAMERA beside them: three PNGs of the chart column at three window shapes,
 // for an owner who has to rule on how the plots LOOK. Same file — same two plots.
 import { stepChartShots, stepLevelCurve } from './curveSteps.mjs'
+// THE "NEW AT THIS LEVEL" PANEL, both halves — the join (step 6) and what a row is WORTH beside
+// it (step 6a, JOS-391: the figures, `already yours`, `replaces`, and the one `directional` in
+// the header). Next door for the same line-budget reason; the pair is one question about one
+// panel, and this spec still owns the order and the launch.
+import { shootUnlockPanel, stepNewAtLevel, stepUnlockEra, stepUnlockSearch } from './unlockRowSteps.mjs'
 
 const NAV = '[data-testid="nav-leveling"]'
 const VIEW = '[data-testid="leveling-view"]'
@@ -115,12 +131,7 @@ const PANEL = '[data-testid="leveling-range-stats"]'
 /** The panel's stated stretch — the two instants its numbers cover (JOS-75). */
 const PANEL_RANGE = '[data-testid="leveling-range-window"]'
 const AA_PACE = '[data-testid="leveling-aa-pace"]'
-const NEW_AT_LEVEL = '[data-testid="new-at-level"]'
-const LEVEL_VALUE = '[data-testid="new-at-level-value"]'
-const LEVEL_NEXT = '[data-testid="new-at-level-next"]'
-const UNLOCK_ROW = '[data-testid="unlock-row"]'
-const COMBO_CHIP = '[data-testid="new-at-level-combo-chip"]'
-const UNKNOWN_COMBO = '[data-testid="new-at-level-unknown"]'
+// The "New at this level" selectors moved with steps 6/6a into `unlockRowSteps.mts`.
 // The app-wide TIMESLICE control (JOS-130) — it absorbed the tab's own timescale, so the duration
 // rungs are four ids among nine and the testid prefix names the surface rather than the feature.
 const TIMESCALE = '[data-testid="leveling-slice"]'
@@ -577,52 +588,6 @@ async function stepTimescale(page: Page, chart: string): Promise<void> {
 }
 
 /**
- * 6. "NEW AT THIS LEVEL" (docs/plans/levelup-whats-new.md) — the panel the level-up toast links
- * to, and the one surface here that does NOT depend on the log having any dings in it: it is
- * computed from the committed spells.json + classes.json against the inferred loadout.
- *
- * FLOORS, and the honest branch. With a resolved loadout the panel must draw class chips and
- * find SOME level with an unlock (stepping up to 10 always crosses one — every class in the game
- * gains skills at 1 and again by 10). With no loadout inferred yet it must say so in words
- * instead of drawing empty lists, which is the same claim from the other side.
- */
-async function stepNewAtLevel(page: Page, log: FixtureLog): Promise<void> {
-  const mounted = await page.waitForSelector(NEW_AT_LEVEL, { timeout: 20_000 }).then(
-    () => true,
-    () => false
-  )
-  if (!check('the "New at this level" panel is mounted on the Leveling tab', mounted)) return
-  const label = await textOf(page, LEVEL_VALUE)
-  check('…with a level stepper that states the level it is showing', /Level \d+/.test(label), label)
-
-  // The loadout comes from a `/who`, and a fixture cut for the CHART carries one from five days
-  // before its last event. So the harness types `/who` — the append driver plays the row live and
-  // the combo module folds it like any other evidence. This is the difference between asserting
-  // the unlock join and noting that it could not be asserted.
-  playWho(log)
-  await settleGone(page, UNKNOWN_COMBO, { timeoutMs: 15_000 })
-  if ((await countOf(page, UNKNOWN_COMBO)) > 0) {
-    note('the combo module resolved no classes even after a live /who — the panel states that instead of drawing empty lists, which is the honest surface')
-    return
-  }
-  check('…and chips naming the loadout it computed against', (await countOf(page, COMBO_CHIP)) > 0)
-
-  // Walk up to level 10 and take the best reading: SOME level in 1..10 unlocks something for
-  // every class in the game, so a walk that finds nothing means the join is broken — not that
-  // this character is unusual. The exact level and count are deliberately not asserted.
-  let rows = await countOf(page, UNLOCK_ROW)
-  for (let i = 0; i < 10 && rows === 0; i++) {
-    const label = await textOf(page, LEVEL_VALUE)
-    await page.click(LEVEL_NEXT, { timeout: 10_000 })
-    // The step's own condition: the stepper is showing a DIFFERENT level. Reading the unlock
-    // rows before that lands would be reading the level we just left.
-    await settle(() => textOf(page, LEVEL_VALUE), (t) => t !== label, { timeoutMs: 8_000 })
-    rows = await countOf(page, UNLOCK_ROW)
-  }
-  check('…and at least one unlock row across the first ten levels', rows > 0, `${String(rows)} rows at ${await textOf(page, LEVEL_VALUE)}`)
-}
-
-/**
  * 6b. THE AA LEDGER — and the one assertion no unit test can make: the panel's reconciliation
  * footer and the AA-points-spent HERO CARD are two components rendering the same identity
  * (Σ per-ability invested == `computeAAAccounting().allocated`), so the app is only honest if the
@@ -732,6 +697,18 @@ async function main(): Promise<void> {
       // Deliberately OUTSIDE the chart branch: the unlock panel is computed from the committed
       // DBs, so it must be there whether or not this log has enough dings to draw a chart.
       await stepNewAtLevel(page, log)
+      // …and the OTHER question the same panel answers (JOS-392): typing turns it into a spell
+      // finder. It runs here because the step above has resolved the loadout and walked to a level
+      // with rows on it, which is the state "clearing restores the level view" is a claim about;
+      // it puts the box back empty itself, so everything below still sees the level view.
+      await stepUnlockSearch(page)
+      // …and (JOS-393) the era verdict on the rows that search returns: `Sloths Healing` is found
+      // and MARKED out of era, its card says the same, and `Snails Healing` one rung down the same
+      // ladder wears nothing. It runs on the search rather than the level list because the loadout
+      // here is whatever this machine's log resolved and a shaman is not guaranteed; the fold
+      // itself is pinned over the committed data by tests/spellEra.test.mts. It leaves the box
+      // empty, like the step above it.
+      await stepUnlockEra(page)
       // Straight after it, on the level that step walked to: the readout's spell names now carry
       // the full card (JOS-293's `SpellTooltip`), which is only usable because the list stopped
       // being a 120px porthole — the two halves of JOS-289 proving each other.
@@ -740,6 +717,10 @@ async function main(): Promise<void> {
       // LAST, because it moves the window: it puts the size and the minimum back before it
       // returns, but nothing after it should have to trust that.
       await stepNarrowLayout(app, page)
+      // AFTER EVEN THAT (JOS-391): the camera SHOWS the window, and showing it moves the scroll
+      // position and stalls compositing — measured, it broke three of the layout checks above
+      // when it sat in place after step 6a. It asserts nothing, so it costs nothing here.
+      await shootUnlockPanel(app, page)
     }
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))

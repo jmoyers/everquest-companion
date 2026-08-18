@@ -72,7 +72,7 @@ Once, when the app finishes starting up.
 
 ### `sessionHeartbeat`
 
-Every 10 minutes while the app is open — the "is anyone using it right now" signal. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, and which of its windows and switches were on. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
+Every 10 minutes while the app is open — the "is anyone using it right now" signal. Which moment in those ten minutes it falls on is picked fresh each time the app starts, and every one is nudged a few seconds either way, so that many copies of this app started at the same time do not all call home in the same second — the ten minutes itself never changes. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, and which of its windows and switches were on. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
 
 | Field | Values | What it means |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ When you open or close a floating meter.
 
 | Field | Values | What it means |
 | --- | --- | --- |
-| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` | Which overlay. |
+| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` | Which overlay. |
 | `open` | true / false | Opened or closed. |
 
 ### `featureUse`
@@ -196,7 +196,7 @@ Once per session: what a typical install looks like.
 | `charCountBucket` | bucket index | How many character logs the app can see. |
 | `logSizeBucket` | bucket index | How big the log it reads is. |
 | `alertCountBucket` | bucket index | How many alerts you keep. |
-| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` | Which floating meters are open. |
+| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` | Which floating meters are open. |
 | `cursorRing` | true / false | Is the cursor ring on. |
 | `autoHide` | true / false | Is overlay auto-hide on. |
 | `voiceEngine` | `system` · `kokoro` · `off` | Which speech tier your spoken alerts use — off when no alert is set to speak. |

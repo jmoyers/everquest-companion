@@ -219,11 +219,16 @@ test('consumption never drives a count negative', () => {
   assert.equal(net['sphinx claw'], 0)
 })
 
-test('THE WINDOW IS BY SOURCE: a DUMP already reflects every turn-in, so it is never discounted', () => {
+test('THE WINDOW: a DUMP already reflects the turn-ins made BEFORE it, so those are never taken off', () => {
   // The story, in order: two claws looted and handed in. `/outputfile inventory` afterwards, with
   // the bank open this time, and the dump lists the ONE claw you refarmed since. Subtracting the
   // turn-in from that observation would be double-subtraction: the two it ate are already not in
   // the file, and the answer would be zero for a claw sitting in the player's bag.
+  //
+  // THIS CASE HANDS OVER NO INSTANTS AT ALL, which is what makes it the pre-dump case AND the
+  // undatable-dump case in one. JOS-403 narrowed the rule rather than restoring JOS-131's: a dump
+  // owes the turn-ins recorded strictly AFTER it (tests/skyItemOverrides.test.mts section 6), and
+  // with nothing to date either side there is no window and nothing is discounted — exactly this.
   const shared = {
     log: { 'sphinx claw': 3, 'wind rune geza': 1 },
     inv: { 'sphinx claw': 1 },

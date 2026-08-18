@@ -30,14 +30,34 @@ import {
   spellClassLine,
   spellEffectClassLabels,
   spellFactsAreForLine,
-  spellLineageLine,
+  spellLineageLine,
   spellStatRows
 } from '@shared/spellDetail'
+import { spellMetricsParts } from '@shared/spellMetrics'
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, CardSection, LABEL_STYLE, MoreLine, TEXT_STYLE } from './hoverCards'
 import { Tooltip } from './Tooltip'
 
 /** How many effect lines / rank members the card lists before collapsing to "+N more". */
 const MAX_LISTED = 8
+
+/**
+ * THE OUT-OF-ERA PILL (JOS-393) — the words the item rows already wear (`PlannerChips.EraChip`
+ * says `out of era` in MUI's warning outline), drawn in this card's own MUI-free vocabulary.
+ *
+ * It sits beside the NAME rather than in the stat block, because it is not a property of the spell
+ * the way its mana is: it is a statement about whether this server has the content at all, and that
+ * governs everything under it. `true`-or-absent (see `SpellDetail.outOfEra`), so an unclassified
+ * page draws nothing at all rather than an "in era" claim nobody made.
+ */
+const ERA_PILL: React.CSSProperties = {
+  color: '#e0b070',
+  border: '1px solid #e0b07066',
+  borderRadius: 3,
+  fontSize: 9,
+  lineHeight: 1.4,
+  padding: '0 3px',
+  whiteSpace: 'nowrap'
+}
 
 /** The header colour says what KIND of spell it is - the same question the row's chip answers. */
 const NATURE_COLOR: Record<SpellDetail['nature'], string> = {
@@ -92,6 +112,32 @@ function StatRows({ detail }: { detail: SpellDetail }): JSX.Element | null {
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * WHAT IT IS WORTH — the row's own figures, on the card (JOS-392, owner addition).
+ *
+ * `dmg 143 · dps 48 · 2.1 dmg/mana`, `heal 250 · hps 83 · 3.6 heal/mana`, and the `over 24s` a DoT
+ * or HoT earns: the SAME `spellMetricsParts` the unlock row prints, over metrics MAIN read off the
+ * effect list. Nothing here re-reads an effect string — two formatters would be two opinions about
+ * what `2.1` means, and two readers would be two answers.
+ *
+ * The level is stated in the label because a ramp's numbers mean nothing without one, and because
+ * this is the card: the panel's one quiet `directional` covers the caveat, and this covers the
+ * WHERE. It sits above the effect list, which is the sentence these numbers were read out of.
+ */
+function Figures({ detail }: { detail: SpellDetail }): JSX.Element | null {
+  if (detail.metrics === undefined) return null
+  const parts = spellMetricsParts(detail.metrics)
+  if (parts.length === 0) return null
+  const at = detail.metricsLevel === undefined ? '' : ` at level ${String(detail.metricsLevel)}`
+  return (
+    <CardSection label={`Worth${at}:`}>
+      <div style={TEXT_STYLE} data-testid="spell-card-figures">
+        {parts.join(' · ')}
+      </div>
+    </CardSection>
   )
 }
 
@@ -216,7 +262,14 @@ export function SpellCard({ name }: { name: string }): JSX.Element {
         boxShadow: '0 6px 20px rgba(0,0,0,0.6)'
       }}
     >
-      <div style={{ color: accent, fontSize: 12, fontWeight: 700 }}>{name}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ color: accent, fontSize: 12, fontWeight: 700 }}>{name}</div>
+        {data?.outOfEra === true && (
+          <span style={ERA_PILL} data-testid="spell-card-out-of-era">
+            out of era
+          </span>
+        )}
+      </div>
       {classLine !== null && (
         <div style={LABEL_STYLE} data-testid="spell-card-classes-levels">
           {classLine}
@@ -224,6 +277,7 @@ export function SpellCard({ name }: { name: string }): JSX.Element {
       )}
       {data && <EffectClasses detail={data} />}
       {data && <StatRows detail={data} />}
+      {data && <Figures detail={data} />}
       {data && <Effects effects={data.effects} />}
       {data && <Lineage detail={data} />}
       {data && <Messages detail={data} />}

@@ -138,9 +138,11 @@ const CC_FAMILIES: Record<string, string> = {
   // the sentence still cannot be routed, and never could.
   "Someone 's eyes glaze over.": "bard mez (Pixie Strike 28, Sionachie's Dreams 40)",
   "Someone 's head nods.": "bard mez (Kelin's Lucid Lullaby 15)"
-  // The two `… bound in/by strands of solid music.` families used to sit here, claimed as "bard
-  // root" (Largo's Melodic Binding 20 and its direct upgrade, Assonant Binding 51). JOS-225
-  // WITHDREW that claim — they are movement debuffs and hold nothing. See NOT_A_HOLD below.
+  // The `… bound in/by strands of solid music.` families used to sit here, claimed as "bard root"
+  // (Largo's Melodic Binding 20 and its direct upgrade, Assonant Binding 51). JOS-225 WITHDREW
+  // that claim — they are movement debuffs and hold nothing. See NOT_A_HOLD below. They were TWO
+  // families then and are ONE since JOS-384, which corrected the level-20 song's sentence to the
+  // `by` form the shipped game prints; neither of them belongs here either way.
 }
 
 /**

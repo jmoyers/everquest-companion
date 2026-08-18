@@ -105,18 +105,32 @@ export function buildSuggestResults(
  * A query carrying ANY spell-only token (`level:`, `class:`, `type:`, a bare number) hides the
  * section outright: those facets are statements about spells, and a set that matched them by
  * accident would be a wrong answer, not a bonus one.
+ *
+ * A BARE CLASS WORD IS NOT SPELL-ONLY (JOS-392). It became a class TOKEN when the grammar learned
+ * to read `cleric` as a class, but it keeps a text half by design (shared/spellSearch.ts's header
+ * says why), and this section reads exactly that half. MEASURED, and the reason this is not a
+ * detail: the shipped `You died` set quotes a line carrying the word `magician`, so treating the
+ * whole token as spell-only would have made a set unreachable by a word printed on it. The
+ * DECLARED spelling `class:mag` still stands the section down — a prefix is a statement about
+ * spells whatever it names.
  */
 export function filterAlertGroups(
   groups: readonly AlertGroup[],
   tokens: readonly SpellSearchToken[]
 ): AlertGroup[] {
   if (tokens.length === 0) return [...groups]
-  if (tokens.some((t) => t.kind !== 'text')) return []
-  const texts = tokens.map((t) => (t.kind === 'text' ? t.text : ''))
+  const texts = tokens.map(groupText)
+  if (texts.some((t) => t === null)) return []
   return groups.filter((g) => {
     const hay = [g.title, g.subtitle, ...g.defs.map((d) => `${d.name} ${d.line}`)]
       .join(' ')
       .toLowerCase()
-    return texts.every((t) => hay.includes(t))
+    return texts.every((t) => t !== null && hay.includes(t))
   })
+}
+
+/** The words a token contributes to a SET's text, or null when it says nothing about sets. */
+function groupText(token: SpellSearchToken): string | null {
+  if (token.kind === 'text') return token.text
+  return token.kind === 'class' ? token.text ?? null : null
 }

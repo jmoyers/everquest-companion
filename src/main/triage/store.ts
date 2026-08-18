@@ -55,6 +55,10 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import type { TriageReport } from '../../../scripts/triageCluster.mjs'
 import type { AppChannelTag, FeedbackType, ReportStatus, Severity } from '../../shared/feedback'
 import { sanitizeMultiline } from '../../shared/sanitizeText'
+// `applySchema` below needs the binding, and the re-export further down is what keeps every
+// existing `import { splitStatements } from '…/store'` working. A bare `export … from` creates no
+// local binding, which is why both lines exist.
+import { splitStatements } from '../../shared/analyticsSchema'
 import { INFRA_DIR, TRIAGE_DIR } from './paths'
 import type { InventoryDownload, SliceRescrub } from './rows'
 
@@ -100,6 +104,8 @@ export interface Stack {
   triage_role_arn: string
   lambda_role_arn: string
   telemetry_lambda_role_arn: string
+  /** JOS-398: the nightly export function's role, mapped to the read-only `analytics_export`. */
+  export_lambda_role_arn: string
   api_url: string
 }
 
@@ -128,6 +134,10 @@ const STACK_KEYS = [
   // it — the cache is read back without re-validating, deliberately (it is a cache, not a
   // contract), so `migrate` checks for an unsubstituted placeholder and says `--refresh`.
   'telemetry_lambda_role_arn',
+  // Added by JOS-398, on the same terms as the key above it: a stack.json cached before this
+  // output existed simply has no value for it, and `migrate` catches the unsubstituted
+  // `${EXPORT_LAMBDA_ROLE_ARN}` and says `--refresh` rather than mapping a role to nothing.
+  'export_lambda_role_arn',
   'api_url',
 ] as const
 
@@ -293,26 +303,15 @@ export function makeClients(stack: Stack, options: AccessOptions): Clients {
 // ---- schema ------------------------------------------------------------------------
 
 /**
- * Statement splitter for infra/schema.sql: a statement ends at the first line whose
- * last character is `;`. That is enough because the file is authored for it (no
- * string literal ends a line with a semicolon, and DSQL has no PL/pgSQL to
- * dollar-quote) — the rule is written down at the top of schema.sql.
+ * The statement splitter MOVED to `src/shared/analyticsSchema.ts` (JOS-398) and is re-exported
+ * here BY NAME, so every existing import path is unchanged. It moved because a third caller
+ * appeared that cannot reach this module: the nightly S3 export Lambda needs the same statement
+ * count for its manifest, and importing this file into a Lambda would bundle S3 clients, IAM role
+ * assumption and a `terraform` shell-out into a function that only reads rows. The rule it
+ * implements — a statement ends at the first line whose last character is `;` — is unchanged and
+ * is written down at the top of schema.sql.
  */
-export function splitStatements(sql: string): string[] {
-  const out: string[] = []
-  let buffer: string[] = []
-  for (const line of sql.split(/\r?\n/)) {
-    const code = line.replace(/^\s*--.*$/, '')
-    if (code.trim().length === 0) continue
-    buffer.push(code)
-    if (code.trimEnd().endsWith(';')) {
-      out.push(buffer.join('\n').trimEnd().replace(/;$/, ''))
-      buffer = []
-    }
-  }
-  if (buffer.join('').trim().length > 0) throw new Error('schema.sql ends mid-statement')
-  return out
-}
+export { splitStatements } from '../../shared/analyticsSchema'
 
 /**
  * Already-exists codes: duplicate_table (also index), duplicate_object (role/grant),

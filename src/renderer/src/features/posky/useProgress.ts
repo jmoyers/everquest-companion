@@ -13,6 +13,8 @@ import type {
 import { getPoskyData } from '../../data'
 import { itemCountKey, normalizeItemName } from '../../lib/itemName'
 import {
+  computeDestroyedAfter,
+  computeDestroyedAfterPerKey,
   computeHeldCounts,
   computeHeldCountsAfter,
   computeHeldCountsAfterPerKey,
@@ -79,6 +81,10 @@ function loadCountSource(): CountSource {
  * reconcile rows (keyed by counting key) resolve a name. We prefer the BASE
  * (un-suffixed) display when we've seen it, so a `Sphinx Claw` + `Sphinx Claw +1`
  * pool reads as "Sphinx Claw" (the quest item), not the variant.
+ *
+ * A DESTROY ROW IS A NAME LIKE ANY OTHER (JOS-401, the census). This map is about SPELLING, not
+ * about holdings — `You successfully destroyed 1 Efreeti Belt.` carries the game's own capitals
+ * for that item exactly as a loot line does, which is the only thing being read here.
  */
 function deriveLootNames(lootHistory: LootEvent[]): Record<string, string> {
   const m: Record<string, string> = {}
@@ -301,11 +307,17 @@ interface HeldItems {
  * downstream (reconcile) operates on these held counts, so excluding sold there also keeps it
  * from ever subtracting an item that was never held.
  *
- * NOTHING IS WINDOWED BY THE DUMP ANY MORE (JOS-141). JOS-128 folded a SECOND held-count map here,
- * narrowed to loot after `inventorySource.generatedAt`, because a dump load reset the model and
- * the log accumulated from that instant. The owner reverted that after field-testing: a dump only
- * covers what was open when it was written, so the reset was eating banked Sky items. The fold is
- * the all-time one again, and the combination rule (reconcile.ts) is fully additive.
+ * THE HELD-COUNT FOLD IS NOT WINDOWED BY THE DUMP (JOS-141). JOS-128 folded a SECOND held-count map
+ * here, narrowed to loot after `inventorySource.generatedAt`, because a dump load reset the model
+ * and the log accumulated from that instant. The owner reverted that after field-testing: a dump
+ * only covers what was open when it was written, so the reset was eating banked Sky items. The fold
+ * is the all-time one again, and the combination rule (reconcile.ts) is fully additive.
+ *
+ * WHAT THE DUMP'S INSTANT DOES WINDOW is the two DISCOUNTS reconcile applies to the dump witness
+ * itself — the destroys recorded after it (JOS-401) and the turn-ins recorded after it (JOS-403).
+ * Both are computed for every source that reads the file, both are zero without an instant to date
+ * it, and neither touches the baseline the reverted ticket was about. The turn-in half needs no fold
+ * here at all: `turnIns.instants` is already the ledger's own list and reconcile windows it.
  */
 function useHeldItems(x: {
   lootHistory: LootEvent[]
@@ -324,6 +336,11 @@ function useHeldItems(x: {
   // THE TWO FORWARD WINDOWS (JOS-186). Each is the same loot fold over fewer rows: what has
   // dropped since the dump was generated (only asked for under `rebaseline`, so an unused mode
   // costs nothing), and what has dropped since each hand statement was made.
+  //
+  // `rebaselineAt` ITSELF IS COMPUTED UNDER EVERY SOURCE and passed unconditionally — it is the
+  // DUMP'S instant, and reconcile reads it for the two discounts every dump-reading source owes
+  // (JOS-401's destroys, JOS-403's turn-ins), not only for the rebaseline baseline it was named
+  // after. Only the LOOT fold below stays gated on the mode that consumes it.
   const rebaselineAt = rebaselineInstant(progress?.inventorySource)
   const lootSinceRebaseline = useMemo(
     () =>
@@ -334,6 +351,18 @@ function useHeldItems(x: {
   )
   const lootSinceOverride = useMemo(
     () => computeHeldCountsAfterPerKey(lootHistory, itemOverrideInstants(overrides)),
+    [lootHistory, overrides]
+  )
+  // THE DESTROY DISCOUNTS (JOS-401) — what the log says left your bags after each witness spoke.
+  // The dump one is computed under EVERY count source, not only `rebaseline`: 'inventory' and
+  // 'both' read the file as a witness too, and it is exactly as stale. Undatable dump ⇒ no window
+  // ⇒ no discount, which is the same degradation `rebaseline` makes rather than a guessed instant.
+  const destroyedSinceDump = useMemo(
+    () => (rebaselineAt === null ? {} : computeDestroyedAfter(lootHistory, rebaselineAt)),
+    [lootHistory, rebaselineAt]
+  )
+  const destroyedSinceOverride = useMemo(
+    () => computeDestroyedAfterPerKey(lootHistory, itemOverrideInstants(overrides)),
     [lootHistory, overrides]
   )
   // Reconcile held items (log + inventory), subtracting anything consumed by quests that have
@@ -351,7 +380,9 @@ function useHeldItems(x: {
         overrides: itemOverridesByKey(overrides),
         lootSinceOverride,
         rebaselineAt,
-        lootSinceRebaseline
+        lootSinceRebaseline,
+        destroyedSinceDump,
+        destroyedSinceOverride
       }),
     [
       logCounts,
@@ -362,7 +393,9 @@ function useHeldItems(x: {
       overrides,
       lootSinceOverride,
       rebaselineAt,
-      lootSinceRebaseline
+      lootSinceRebaseline,
+      destroyedSinceDump,
+      destroyedSinceOverride
     ]
   )
   return { net, inventoryRows, lastLootedAt }

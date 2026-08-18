@@ -23,6 +23,7 @@ import {
   Typography
 } from '@mui/material'
 import { MAX_COMBO_SLOTS, resolvedClasses, type ClassAbbr, type ComboInterval } from '@shared/classCombo'
+import { classDisplayName } from '@shared/spellLevels'
 import { spanText } from './ClassComboLabels'
 import ClassPicker, { togglePicked } from './ClassPicker'
 
@@ -72,7 +73,7 @@ function EditorBody({ interval, onClose }: { interval: ComboInterval; onClose: (
           <Typography variant="caption" color="text.secondary">
             {picked.length === 0
               ? 'Pick 1 to 3 classes.'
-              : `${picked.join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
+              : `${picked.map(classDisplayName).join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
           </Typography>
           {error && <Alert severity="warning">{error}</Alert>}
         </Stack>

@@ -34,6 +34,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import { MAX_COMBO_SLOTS, resolvedClasses, type ClassAbbr, type ComboInterval } from '@shared/classCombo'
+import { classDisplayName } from '@shared/spellLevels'
 import { ProvenanceChip, SlotChips } from './ClassComboChips'
 import { loadoutSourceText, overruledText } from './ClassComboLabels'
 import ClassPicker, { togglePicked } from './ClassPicker'
@@ -93,7 +94,7 @@ function OverrideDialog({
           <Typography variant="caption" color="text.secondary" data-testid="loadout-override-count">
             {picked.length === 0
               ? 'Pick 1 to 3 classes.'
-              : `${picked.join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
+              : `${picked.map(classDisplayName).join(' / ')} - ${picked.length} of ${MAX_COMBO_SLOTS} slots.`}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             This applies from the start of your current loadout onward and stays until you change

@@ -21,6 +21,14 @@
 //        `--You have looted 2 Bone Chips …--` (kept, counts 2) and sold
 //        `You looted 2 Phosphorous Powder … and sold it …` (the old regex swallowed the
 //        digits into the item name, minting a bogus "2 Phosphorous Powder" counting key).
+//   W33  (Aug  4 21:35–21:37, raw 1315000–1315060, JOS-401): the DESTROY — `You successfully
+//        destroyed <N> <Item>.` → disposition:'destroyed', which SUBTRACTS. Three Prayers of
+//        Life off Lord Nagafen and one destroyed (held 2); a `Blight, Hammer of the Scourge
+//        +1` looted and destroyed on the same counting key; and two destroys of things the
+//        window never saw arrive, which floor at 0 instead of going negative.
+//   W34  (Aug 12 00:36–00:38, raw 1608330–1608460, JOS-401): destroy meets the stack rule —
+//        a `2 Bone Chips` stack, two singles and one auto-SOLD copy (never held) followed by
+//        two destroys, all on one counting key inside one zone.
 //
 // Run: `npm test`.
 
@@ -170,4 +178,64 @@ test('W21 stacked counts: the digits are a stack size, not part of the item name
   assert.equal(held['bone chips'], 10, 'stacked kept loots count their stack size')
   assert.equal(held['phosphorous powder'] ?? 0, 0, 'sold stacks never count')
   assert.equal(held['spider silk'] ?? 0, 0)
+})
+
+// ---- W33 / W34: the destroy, which is the one row on this lane that subtracts (JOS-401) -------
+
+test('W33 destroy: the line parses as a loot row that SUBTRACTS, with no mob in it', () => {
+  const rows = replayLoot(readFixture('w33-destroy.log'))
+
+  const destroyed = rows.filter((r) => r.disposition === 'destroyed')
+  assert.equal(destroyed.length, 4, 'four destroy lines in the window')
+  for (const r of destroyed) {
+    assert.equal(r.source, undefined, 'a destroy names no corpse - it happened in your bags')
+    assert.equal(r.count, 1, 'the count is always stated, even when it is one')
+    assert.ok(!/^\d/.test(r.item), 'the count never leaks into the item name')
+  }
+  // The ` +N` suffix is kept VERBATIM on the row, exactly as the loot family keeps it; the fold
+  // below is where it meets the base name.
+  const blight = destroyed.find((r) => r.item === 'Blight, Hammer of the Scourge +1')
+  assert.ok(blight, 'the +N suffix survives onto the row')
+  // The zone rides along like it does on every other loot row - the destroy happened somewhere.
+  assert.ok(rows.every((r) => r.zone === undefined), 'this window opens before any zone line')
+
+  const held = computeHeldCounts(rows)
+  assert.equal(held['prayers of life'], 2, 'three looted, one destroyed')
+  assert.equal(held['blight, hammer of the scourge'], 0, 'looted and destroyed on ONE counting key')
+  // A DESTROY CAN ONLY TAKE WHAT THE LOG SAW YOU HOLDING. Both of these were carried in from
+  // before this window, so the key floors at 0 rather than going negative and eating the next one.
+  assert.equal(held['backpack'] ?? 0, 0, 'a destroy with no loot behind it floors at 0')
+  assert.equal(held['diamond dust'] ?? 0, 0)
+  // Untouched neighbours in the same window.
+  assert.equal(held['red dragon scales'], 1)
+  assert.equal(held['torn, burnt book'], 1)
+})
+
+test('W34 destroy meets the stack rule: kept stacks add, sold never counted, destroys subtract', () => {
+  const rows = replayLoot(readFixture('w34-destroy-stacks.log'))
+
+  const chips = rows.filter((r) => r.item === 'Bone Chips')
+  assert.equal(chips.length, 6, 'four loot rows (one of them sold) and two destroys')
+  assert.equal(chips.filter((r) => r.count === 2).length, 1, 'one dashed 2-stack')
+  assert.equal(chips.filter((r) => r.disposition === 'sold').length, 1, 'one auto-vendored copy')
+  const gone = chips.filter((r) => r.disposition === 'destroyed')
+  assert.equal(gone.length, 2)
+  assert.ok(gone.every((r) => r.zone === 'The Southern Plains of Karana 2 (Adaptive)'))
+
+  // 2 + 1 + 1 kept, the sold copy never held, then two destroyed.
+  const held = computeHeldCounts(rows)
+  assert.equal(held['bone chips'], 2, 'four held minus two destroyed')
+})
+
+test('the floor is applied PER ROW, so a later loot is a fresh copy and owes an old destroy nothing', () => {
+  // Synthetic on purpose, and the header says why the shape is real: it is W33's floor case with
+  // one more loot after it. The claim is about the ORDER of the arithmetic, which no single real
+  // window in this log happens to spell out, and the rows are the exact shape the parser emits.
+  const rows: LootEvent[] = [
+    { ts: 1, item: 'Bone Chips' },
+    { ts: 2, item: 'Bone Chips', disposition: 'destroyed', count: 3 },
+    { ts: 3, item: 'Bone Chips', count: 2 }
+  ]
+  assert.equal(computeHeldCounts(rows)['bone chips'], 2, 'floor at the destroy, then count forward')
+  // max(0, 1 - 3 + 2) would read 0 here, which would silently eat a copy the player just farmed.
 })

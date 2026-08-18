@@ -6,7 +6,11 @@ import { questKey } from '../posky/keys'
 export interface InventoryRow {
   key: string
   name: string
-  /** times looted (from the log) */
+  /**
+   * What the LOG says you hold: everything looted, less everything destroyed (JOS-401 — the fold
+   * is `computeHeldCounts`). It was "times looted" until the destroy line was parsed; the field is
+   * still the log's whole answer for this item, which is what every reader uses it as.
+   */
   log: number
   /** count in the inventory export */
   inv: number
@@ -64,12 +68,29 @@ export interface ReconcileInput {
   lootSinceOverride?: Record<string, number>
   /**
    * JOS-186 — the instant the loaded dump was GENERATED, or null when nothing can anchor a
-   * rebaseline (no dump, or a dump whose age this app could not establish). Read only under the
-   * `rebaseline` source; null there makes it behave exactly as `both`.
+   * rebaseline (no dump, or a dump whose age this app could not establish).
+   *
+   * READ UNDER EVERY SOURCE THAT CONSULTS THE DUMP, not just `rebaseline` (JOS-403). It started as
+   * the rebaseline anchor and it is now simply THE DUMP'S INSTANT: `inventory` and `both` read the
+   * file as a witness too, so they need to know when it was written in order to tell a turn-in the
+   * file already reflects from one made after it. Null keeps every dump-reading source undiscounted
+   * — `rebaseline` then behaves exactly as `both`, and the two windowed discounts (destroys,
+   * turn-ins) simply do not apply. The field name is unchanged on purpose: it is `useProgress`'s
+   * prop and one rename would be the whole diff.
    */
   rebaselineAt?: number | null
   /** JOS-186 — loot folded counting ONLY drops after `rebaselineAt` (`computeHeldCountsAfter`). */
   lootSinceRebaseline?: Record<string, number>
+  /**
+   * JOS-401 — what the log says you DESTROYED after the dump was generated
+   * (`computeDestroyedAfter`), by counting key. Read under EVERY source that consults the dump,
+   * not just `rebaseline`: 'inventory' and 'both' read the file as a witness too, and a destroy
+   * stamped after it makes that witness stale by exactly this much. Absent (or an undatable dump)
+   * means no discount — never a guessed one.
+   */
+  destroyedSinceDump?: Record<string, number>
+  /** JOS-401 — the same discount per key, after each key's own hand statement. */
+  destroyedSinceOverride?: Record<string, number>
 }
 
 export interface ReconcileResult {
@@ -112,16 +133,58 @@ function foldInventoryByKey(
  * an all-time subtraction.
  */
 interface Witnesses {
-  /** all-time looted (`computeHeldCounts`) */
+  /** all-time looted, NET of every destroy the log recorded (`computeHeldCounts`) */
   log: number
   /** the dump, as written */
   inv: number
   /** what every turn-in ever recorded ate of this item */
   consumed: number
+  /**
+   * What the log says you DESTROYED after the dump was generated (JOS-401). Zero when nothing can
+   * date the dump — the same degradation `rebaseline` makes, and for the same reason: a window
+   * with no instant is not a window, and guessing one would discount a witness by destroys that
+   * may well predate it.
+   */
+  invDestroyed: number
+  /**
+   * What the turn-ins recorded strictly AFTER the dump's instant ate of this item (JOS-403). Zero
+   * when nothing can date the dump, for the same reason `invDestroyed` is: a window with no instant
+   * is not a window. It sits BESIDE the base rather than inside it (see `witnessNet`), because a
+   * turn-in is a subtraction the ledger owns and reports on the row — the row's `consumed` has to be
+   * able to name the quest that took the copy.
+   */
+  invConsumed: number
   /** the dump-anchored baseline, present only under `rebaseline` with an instant to anchor to */
   rebaseline?: { base: number; consumed: number }
   /** the hand-stated baseline, present only where the user has stated this item's count */
   override?: { statement: ItemCountOverride; base: number; consumed: number }
+}
+
+/**
+ * The DUMP witness, discounted by the destroys the log recorded after it (JOS-401).
+ *
+ * `since` is the loot that landed after the same instant, which is 0 for every source but
+ * `rebaseline` — so this one expression is both "the dump, less what you destroyed since" and
+ * "the dump plus what dropped since, less what you destroyed since". Floored, because a destroy
+ * of a stack the dump never saw (a bank window that was shut) must not drive the row negative.
+ */
+function dumpWitness(inv: number, since: number, destroyed: number): number {
+  return Math.max(0, inv + since - destroyed)
+}
+
+/**
+ * The dump witness NET of the turn-ins recorded after the dump was generated (JOS-403) — the whole
+ * of `max(0, D - d - c_after)`, which is what `inventory` answers and what `both` maxes against the
+ * log.
+ *
+ * It is a SECOND expression rather than another argument to `dumpWitness` because the two callers
+ * want different halves of it: the row's `base` is the dump discounted by destroys only (a destroy
+ * is a subtraction the WITNESS owes — the number the file printed was already wrong), and the row's
+ * `net` is that less the turn-ins, so `consumed = base - net` stays the ledger's own answer. The
+ * `rebaseline` witness is built the same way for the same reason and keeps its two fields.
+ */
+function dumpNet(w: Witnesses): number {
+  return Math.max(0, dumpWitness(w.inv, 0, w.invDestroyed) - w.invConsumed)
 }
 
 /**
@@ -149,12 +212,40 @@ interface Witnesses {
  * witnesses — each source is a lower bound on what you hold, and the count is the best lower
  * bound anyone can prove.
  *
- * THE ACCEPTED COST, stated rather than hidden (report P1EY74): a deletion is INVISIBLE. Destroy
- * an item in game and no count goes down, because the log records the loot and never records the
- * destruction (there is no such line — world-model law 6), and a dump that omits it cannot be
- * told apart from a dump that never looked. The owner weighed that against banked items vanishing
- * and chose this one: a count that is too high is a wrong number the user can see and reason
- * about, and a count that is too low is work the user redoes for nothing.
+ * THE COST THAT USED TO BE ACCEPTED HERE, AND THE HALF OF IT THAT WAS NEVER TRUE (JOS-401).
+ *
+ * This paragraph read: "a deletion is INVISIBLE … because the log records the loot and never
+ * records the destruction (there is no such line — world-model law 6)". The first clause was a
+ * real trade-off; the second clause was WRONG, and it was wrong in the file that decides what the
+ * app counts. The line exists — `You successfully destroyed <N> <Item>.`, 356 of them in the
+ * owner's live log, four in a committed fixture the parser sweep had already read — and it was
+ * simply not parsed, because the sweep that catalogued it was asking about item TIERS, which it
+ * genuinely retires nothing of. So the app inherited "the log cannot see a destroy" from an
+ * argument that was never about held counts, and shipped a button asking the player to state by
+ * hand a fact the log had been stating all along.
+ *
+ * WHAT IS TRUE NOW: the log states destroys, and this module subtracts them — each witness
+ * discounted by the destroys recorded strictly AFTER its own instant, which is the JOS-186 rule
+ * below applied to a second kind of subtraction. The all-time log witness owes every destroy ever
+ * recorded (`computeHeldCounts` nets them in the fold). The dump owes those recorded after it was
+ * generated. A hand statement owes those recorded after it was made.
+ *
+ * WHAT IS STILL TRUE: a dump that OMITS an item still cannot be told apart from a dump that never
+ * looked, so the combination stays fully ADDITIVE — the 2026-08-09 ruling is untouched, and a
+ * destroy is an explicit subtraction the log stated, never an inference from silence. And the
+ * off-camera losses the log genuinely cannot see (a trade, a bank deposit into a window the dump
+ * never opened) are still invisible, still by design, and still what the pencil override is for.
+ *
+ * ONE SEMANTICS CHANGE THE OWNER SHOULD KNOW ABOUT: 'inventory' used to mean "the dump, exactly as
+ * written" and now means "the dump, less what you have destroyed since it was written". It is
+ * argued as the owner's own ask (JOS-401 verbatim: destroy shows up in the log, so why are we
+ * asking); if he wants that mode literal again, it is the `dumpWitness` call in `witnessBase` and
+ * `witnessNet` and nothing else.
+ *
+ * AND SINCE JOS-403 IT IS ALSO "LESS WHAT YOU HANDED IN SINCE IT WAS WRITTEN" — the same window,
+ * the same instant, the other kind of subtraction. That half is stated where it belongs, beside
+ * `consumed` in the turn-in block below, because a turn-in is a subtraction the LEDGER owns and the
+ * row has to be able to name the quest.
  *
  * ============================================================================
  * AND SINCE JOS-186 THERE ARE TWO WAYS TO SAY "NO, IT IS GONE" — BOTH OPT-IN.
@@ -180,9 +271,10 @@ interface Witnesses {
 function witnessBase(w: Witnesses, countSource: CountSource): number {
   if (w.override) return w.override.base
   if (countSource === 'log') return w.log
-  if (countSource === 'inventory') return w.inv
+  const dump = dumpWitness(w.inv, 0, w.invDestroyed)
+  if (countSource === 'inventory') return dump
   if (countSource === 'rebaseline' && w.rebaseline) return w.rebaseline.base
-  return Math.max(w.log, w.inv)
+  return Math.max(w.log, dump)
 }
 
 /**
@@ -294,11 +386,38 @@ function questItemNames(quests: PoskyQuest[]): Record<string, string> {
  *   dump-derived count owes NOTHING. Subtracting there is double-subtraction, and it fails in the
  *   exact direction this ticket exists to stop: items the player still owns, quietly gone.
  *
+ * ============================================================================
+ * "BECAUSE THE FILE WAS WRITTEN AFTER ALL OF THEM" WAS ONLY HALF TRUE (JOS-403).
+ * ============================================================================
+ *
+ * Read that clause again: it is a statement about TIME wearing the clothes of a statement about
+ * SOURCE. A dump owes nothing to the turn-ins that happened BEFORE it — the game itself took those
+ * items out of the file — and it owes every one made AFTER it, because the player kept playing and
+ * the file did not. JOS-141 was arguing against the pre-dump half (JOS-131 subtracted the whole
+ * history from a dump and ate the copy you refarmed), won that argument, and then threw away the
+ * window rather than narrowing it. The post-dump half went with it, and stayed gone for nine
+ * releases because the dump was UNDATED and there was nothing to window against.
+ *
+ * The report that found it (v1.4.0, feedback 01M081TPHPGB173YCC4YH7AMZB): a dump at 10:15 listing
+ * three Efreeti War Bows, a Ranger turn-in at 10:17 eating one, two destroys at 10:19. Truth is
+ * zero. The app read 1 — the destroys came off the witness (JOS-401) and the turn-in did not — so
+ * the tracker kept counting a bow the player had handed over and the Cleanup tab kept listing it.
+ *
+ * WHAT MAKES THE NARROW WINDOW POSSIBLE NOW: JOS-186 dated the dump (`rebaselineAt`, from
+ * countSource.ts `rebaselineInstant`) and JOS-401 proved the shape by applying exactly this
+ * windowed subtraction to destroys. A turn-in after the dump is the same shape against the same
+ * witness at the same instant. Pre-dump turn-ins stay un-subtracted — JOS-141's ruling is intact,
+ * and it is the ONLY thing standing between a banked item and disappearing.
+ *
  * So each witness is discounted on its own terms and the sources combine as they always do:
  *
- *   'log'        max(0, log - consumed)
- *   'inventory'  dump, untouched
- *   'both'       max(dump, max(0, log - consumed))
+ *   'log'        max(0, log - consumed)          [log is already net of every destroy]
+ *   'inventory'  max(0, dump - destroyed since the dump - turn-ins recorded since the dump)
+ *   'both'       max(that dump reading, max(0, log - consumed))
+ *
+ * With no instant to date the dump, both windowed discounts are zero and the two lines above read
+ * exactly as they did before either ticket — never a guessed instant, which would discount a
+ * witness by events that may well predate it.
  *
  * WHY DISCOUNT-THEN-MAX RATHER THAN MAX-THEN-DISCOUNT: the second is not monotone in your own
  * loot. With a dump of 5, a quest that ate 2 and a log of 4, `max(4,5) - 2` reads 3; loot one more
@@ -322,9 +441,24 @@ function questItemNames(quests: PoskyQuest[]): Record<string, string> {
  * "I hold two claws" is telling us what is in the bag right now, turn-ins and all. Subtracting the
  * whole history from either would be double-subtraction — the failure this rule exists to stop.
  *
- *   'rebaseline'  max(0, (dump + looted since it) - turn-ins recorded since it)
- *   an OVERRIDE   max(0, (stated + looted since it) - turn-ins recorded since it), and it WINS
- *                 over the selected source, because it is the only witness that is a person.
+ *   'rebaseline'  max(0, (dump + looted since it) - destroyed since it) - turn-ins recorded since it
+ *   an OVERRIDE   max(0, (stated + looted since it) - destroyed since it) - turn-ins recorded
+ *                 since it, and it WINS over the selected source, because it is the only witness
+ *                 that is a person.
+ *
+ * THE DESTROY DISCOUNT IS THE SAME SHAPE AS THE TURN-IN ONE (JOS-401) and is stated in the base
+ * rather than beside `consumed` for one reason: a turn-in is a subtraction the ledger owns and
+ * reports on the row (`consumedBy` names the quest), while a destroy is a subtraction the WITNESS
+ * owes — the number the dump printed was already wrong by then. Folding it into the base is what
+ * keeps `consumed` an honest answer to "what did the quests take off this row".
+ *
+ * WHICH IS WHY THE DUMP'S TURN-IN WINDOW (JOS-403) IS ON THE OTHER SIDE OF THAT LINE. The dump
+ * witness now has BOTH discounts, and they are placed by that same rule: `witnessBase` reports the
+ * dump less its destroys, `witnessNet` takes the post-dump turn-ins off it (`dumpNet`), so the row
+ * reads `base 3, consumed 1, net 2` and `consumedBy` names the quest that ate the copy — including
+ * on a row the log has never seen, which is the case the reporter was looking at. `net === base -
+ * consumed` still holds by construction, and every witness stays monotone in loot: the new
+ * subtraction is a constant in the player's own farming, exactly like the destroy one.
  *
  * The override wins over a NEWER DUMP too, and that is deliberate rather than overlooked: a hand
  * statement sits at the top of the provenance ladder (the `RosterEdit` precedent — a later log
@@ -336,11 +470,30 @@ function witnessNet(w: Witnesses, countSource: CountSource): number {
   if (w.override) return Math.max(0, w.override.base - w.override.consumed)
   const fromLog = Math.max(0, w.log - w.consumed)
   if (countSource === 'log') return fromLog
-  if (countSource === 'inventory') return w.inv
   if (countSource === 'rebaseline' && w.rebaseline) {
     return Math.max(0, w.rebaseline.base - w.rebaseline.consumed)
   }
-  return Math.max(w.inv, fromLog)
+  const dump = dumpNet(w)
+  if (countSource === 'inventory') return dump
+  return Math.max(dump, fromLog)
+}
+
+/**
+ * DID THE DUMP EXPLAIN THIS ROW'S SUBTRACTION — the question `blameFor` has to answer once the dump
+ * witness can be discounted by turn-ins (JOS-403).
+ *
+ * `inventory` reads nothing else, so it always did. Under `both` the dump explains the row only when
+ * it won BOTH maxima: the base (`max(log, dump)`) and the net (`max(dumpNet, fromLog)`). Where the
+ * log won either, the subtraction on the row is the all-time one and the all-time pass is what names
+ * it. The mixed case — the log vouching for a bigger base while the dump answers the net — is
+ * blamed all-time as it always was: `spent` is then a difference between two witnesses that no
+ * single pass authored, and the all-time list is the superset that at least names every quest
+ * involved.
+ */
+function dumpAnsweredRow(w: Witnesses, countSource: CountSource): boolean {
+  if (countSource === 'inventory') return true
+  if (countSource !== 'both') return false
+  return dumpWitness(w.inv, 0, w.invDestroyed) >= w.log && dumpNet(w) >= Math.max(0, w.log - w.consumed)
 }
 
 /** Everything the row build reads, gathered so it travels as one argument. */
@@ -356,8 +509,44 @@ interface RowInputs {
   /** the hand-stated counts and the loot that landed after each of them */
   overrides: Record<string, ItemCountOverride>
   overrideSince: Record<string, number>
+  /** JOS-401 — the destroys recorded after the dump, and after each hand statement */
+  destroyedSinceDump: Record<string, number>
+  destroyedSinceOverride: Record<string, number>
+  /**
+   * JOS-403 — the turn-ins recorded after the DUMP was generated, for every source that reads the
+   * dump as a witness. Null when nothing can date the dump (no discount), and null under `log`,
+   * which consults the file for nothing at all and would only be paying for a pass it never reads.
+   * Under `rebaseline` it is the same memoized `Consumption` object as `rebaseline.consumption` —
+   * same instant, one pass — and that path reads it through the rebaseline witness instead.
+   */
+  dumpWindow: Consumption | null
   /** consumption windowed to any instant, memoized (`windowedConsumption`) */
   windowed: (at: number) => Consumption
+}
+
+/**
+ * THE HAND-STATED WITNESS for one key — the statement, plus what the log has seen happen to the
+ * item since it was made.
+ *
+ * Its own function because it is the one witness with three forward rules on it (loot adds,
+ * destroys subtract, turn-ins subtract) and `witnessesFor` sits under the measured complexity
+ * ceiling. The statement is a witness like any other, so it is discounted the same way — by what
+ * the log recorded you destroying after you made it, floored (JOS-401). Saying "I hold 3" and then
+ * destroying 5 leaves 0, not -2.
+ */
+function overrideWitness(
+  k: string,
+  statement: ItemCountOverride,
+  x: RowInputs
+): NonNullable<Witnesses['override']> {
+  return {
+    statement,
+    base: Math.max(
+      0,
+      statement.count + (x.overrideSince[k] ?? 0) - (x.destroyedSinceOverride[k] ?? 0)
+    ),
+    consumed: x.windowed(statement.setAt).consumed[k] ?? 0
+  }
 }
 
 /** Gather one key's witnesses, building only the windows that actually apply to it. */
@@ -365,22 +554,18 @@ function witnessesFor(k: string, x: RowInputs): Witnesses {
   const w: Witnesses = {
     log: x.log[k] ?? 0,
     inv: x.invByKey[k] ?? 0,
-    consumed: x.all.consumed[k] ?? 0
+    consumed: x.all.consumed[k] ?? 0,
+    invDestroyed: x.destroyedSinceDump[k] ?? 0,
+    invConsumed: x.dumpWindow?.consumed[k] ?? 0
   }
   if (x.rebaseline) {
     w.rebaseline = {
-      base: w.inv + (x.rebaseline.since[k] ?? 0),
+      base: dumpWitness(w.inv, x.rebaseline.since[k] ?? 0, w.invDestroyed),
       consumed: x.rebaseline.consumption.consumed[k] ?? 0
     }
   }
   const statement = x.overrides[k]
-  if (statement) {
-    w.override = {
-      statement,
-      base: statement.count + (x.overrideSince[k] ?? 0),
-      consumed: x.windowed(statement.setAt).consumed[k] ?? 0
-    }
-  }
+  if (statement) w.override = overrideWitness(k, statement, x)
   return w
 }
 
@@ -388,6 +573,10 @@ function witnessesFor(k: string, x: RowInputs): Witnesses {
 function blameFor(k: string, w: Witnesses, x: RowInputs): string[] {
   if (w.override) return x.windowed(w.override.statement.setAt).consumedBy[k] ?? []
   if (w.rebaseline && x.rebaseline) return x.rebaseline.consumption.consumedBy[k] ?? []
+  // JOS-403 — a dump-answered row was discounted by the POST-DUMP turn-ins, so the post-dump pass is
+  // what names them. The all-time list would name the same quests plus the ones whose turn-ins the
+  // file already reflects, and its `x2` captions would count runs this row never paid for.
+  if (x.dumpWindow && dumpAnsweredRow(w, x.countSource)) return x.dumpWindow.consumedBy[k] ?? []
   return x.all.consumedBy[k] ?? []
 }
 
@@ -452,6 +641,22 @@ function buildRows(x: RowInputs): ReconcileResult {
 }
 
 /**
+ * THE DUMP'S INSTANT, AND THE TURN-IN WINDOW IT ANCHORS (JOS-403).
+ *
+ * `log` reads the file for nothing at all, so it never pays for the pass. Null means the dump is
+ * undatable (or there is no dump) and no window can be computed — the no-discount degradation the
+ * destroy window already makes, rather than a guessed instant that would discount the witness by
+ * turn-ins that may well predate it.
+ */
+function dumpTurnInWindow(
+  input: ReconcileInput,
+  windowed: (at: number) => Consumption
+): { at: number | null; window: Consumption | null } {
+  const at = input.countSource === 'log' ? null : (input.rebaselineAt ?? null)
+  return { at, window: at === null ? null : windowed(at) }
+}
+
+/**
  * Reconcile held items from the loot log and the inventory export, then subtract
  * everything consumed by the quest turn-ins — so a drop that was handed in for one quest no
  * longer counts toward another quest that needs it, and a quest handed in twice has eaten its
@@ -476,9 +681,11 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
 
   const windowed = windowedConsumption(quests, input.turnInInstants ?? {})
   const all = questConsumption(quests, (k) => input.turnIns[k] ?? 0)
+  const { at: dumpAt, window: dumpWindow } = dumpTurnInWindow(input, windowed)
   // Anchored only where the user asked for it AND something can date the dump. `null` there is the
-  // fallback to `both` the base/net rules spell out, never a baseline of zero.
-  const at = countSource === 'rebaseline' ? (input.rebaselineAt ?? null) : null
+  // fallback to `both` the base/net rules spell out, never a baseline of zero. Same instant as
+  // `dumpAt` under `rebaseline`, and `windowed` is memoized, so this is one pass and not two.
+  const at = countSource === 'rebaseline' ? dumpAt : null
   const rebaseline =
     at === null ? null : { since: input.lootSinceRebaseline ?? {}, consumption: windowed(at) }
 
@@ -491,6 +698,9 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     rebaseline,
     overrides,
     overrideSince: input.lootSinceOverride ?? {},
+    destroyedSinceDump: input.destroyedSinceDump ?? {},
+    destroyedSinceOverride: input.destroyedSinceOverride ?? {},
+    dumpWindow,
     windowed
   })
 }
