@@ -94,6 +94,18 @@ export function timerPinText(t: TimerPin, nowMs: number): string {
   return `${t.display} - killed ${formatRespawnDuration(r.elapsedMs / 1000)} ago, no respawn estimate`
 }
 
+/**
+ * The clock ALONE — the label a timer pin wears all the time (user ask, 2026-08-18: the time
+ * until it spawns, on the mob), where the hover still tells the whole `timerPinText` story.
+ * "due" when it is; "?" when the clock only knows when it started — a duration would be a guess,
+ * and the hover already says why.
+ */
+export function timerPinClock(t: TimerPin, nowMs: number): string {
+  const r = respawnReading(t.row, nowMs)
+  if (r.due) return 'due'
+  return r.remainingMs === undefined ? '?' : formatRespawnDuration(r.remainingMs / 1000)
+}
+
 /** The drawable subset, in row order. Split out so the surface and the tests share the gate. */
 export function placeableTimerPins(timers: readonly TimerPin[]): TimerPin[] {
   return timers.filter((t) => t.pins.length > 0)

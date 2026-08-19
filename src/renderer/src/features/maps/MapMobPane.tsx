@@ -108,14 +108,15 @@ export interface MapMobPaneProps {
 }
 
 /** The pin affordance: present exactly when the row has a real coordinate behind it. `wished`
- *  swaps it into the user-stated lane (`info.main`) — the same rule the surface's pins paint by. */
+ *  swaps it into the wish lane (`success.main`) — the same rule the surface's pins paint by,
+ *  and its own tone because the /loc crosshair owns `info` (MapMobPins.tsx header). */
 function PinMark({ locatable, wished }: { locatable: boolean; wished?: boolean }): JSX.Element {
   return (
     <Box sx={{ width: 18, display: 'flex', justifyContent: 'center', flexShrink: 0, pt: 0.25 }}>
       {locatable ? (
         <PlaceIcon
           data-testid="maps-pane-pin"
-          sx={{ fontSize: 15, color: wished === true ? 'info.main' : 'warning.main' }}
+          sx={{ fontSize: 15, color: wished === true ? 'success.main' : 'warning.main' }}
         />
       ) : (
         // Deliberately EMPTY, not a greyed pin: a dimmed marker still reads as "there is a

@@ -15,6 +15,7 @@ import type { MobEntry } from '../src/shared/types'
 import type { RespawnRow } from '../src/shared/respawn'
 import {
   placeableTimerPins,
+  timerPinClock,
   timerPinRows,
   timerPinText
 } from '../src/renderer/src/features/maps/respawnPins'
@@ -95,4 +96,14 @@ test('the clock text: counting down, due, and the honest no-estimate form', () =
     timerPinText(untimed, base + 120_000),
     'Fippy Darkpaw - killed 2m ago, no respawn estimate'
   )
+})
+
+test('the always-on clock label: the duration alone, "due", and "?" when nothing is estimated', () => {
+  const base = 1_000_000
+  const timed = { ...timerPinRows([row('Fippy Darkpaw', { estimateMs: 60_000 })], 'qeytoqrg', 'Qeynos Hills', CATALOG)[0] }
+  assert.equal(timerPinClock(timed, base + 15_000), '45s')
+  assert.equal(timerPinClock(timed, base + 90_000), 'due')
+  const untimed = { ...timerPinRows([row('Fippy Darkpaw')], 'qeytoqrg', 'Qeynos Hills', CATALOG)[0] }
+  // No estimate ⇒ no invented duration; the hover's full sentence says why.
+  assert.equal(timerPinClock(untimed, base + 120_000), '?')
 })

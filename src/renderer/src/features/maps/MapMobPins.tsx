@@ -20,13 +20,20 @@
 // REACH the one selection, never a second copy of it. The clicked pin itself is passed as the
 // target, so a mob with eight spawn points rings the one under the cursor, not its first.
 //
-// A pin whose page drops a wish-list item paints `info.main` — the user-stated colour lane
-// (MapLocMarker.tsx) — and the pane's rows read the same `wishes` derivation, so list and map agree.
+// A pin whose page drops a wish-list item paints `success.main` — its own lane, because the /loc
+// crosshair already owns the user-stated `info` tone (MapLocMarker.tsx) and two different marks
+// on one surface must never share a colour and differ only by shape. The pane's rows read the
+// same `wishes` derivation, so list and map agree.
+//
+// DOUBLE-CLICK OPENS THE MOB'S PAGE (user ruling, 2026-08-18). Single click stays the pane's
+// `select` — the ring and the row highlight — and the page door needed a second gesture because
+// the hover card is deliberately inert (JOS-143 bans interactive poppers on this surface).
 
 import { useMemo, useState, type JSX } from 'react'
 import { useTheme } from '@mui/material'
 import { mobPortraitUrl } from './mobArt'
 import type { MobPin, MobPaneRow, PlacedPin } from './mobPins'
+import type { MobTarget } from '../mobs/mobTarget'
 import type { MapViewport } from './useMapViewport'
 
 /** Pin body size in CSS pixels. Does not scale with zoom, for the same reason label text doesn't. */
@@ -61,9 +68,11 @@ export interface MapMobPinsProps {
   wishes: ReadonlyMap<string, readonly string[]>
   /** The pane's `select`, with the clicked pin as the position to centre and ring. */
   onSelect: (row: MobPaneRow, at: { x: number; y: number }) => void
+  /** Double-click's door to the mob's page. Absent ⇒ the pin has one gesture, as before. */
+  onOpenMob?: (target: MobTarget) => void
 }
 
-export function MapMobPins({ pins, vp, selectedId, wishes, onSelect }: MapMobPinsProps): JSX.Element {
+export function MapMobPins({ pins, vp, selectedId, wishes, onSelect, onOpenMob }: MapMobPinsProps): JSX.Element {
   const { toScreen } = vp
   // The hovered pin's key. Its text is drawn INSTANTLY as DOM beside the pin — the same deferred
   // -text gesture the label layer's dots use, and for the same reason the surface bans poppers
@@ -74,8 +83,8 @@ export function MapMobPins({ pins, vp, selectedId, wishes, onSelect }: MapMobPin
   // rather than spelled as a hex literal so a theme change can never leave the two disagreeing.
   const { palette } = useTheme()
   const pinColor = palette.warning.main
-  // The user-stated lane (see header): a pin the wish list lights up.
-  const wishColor = palette.info.main
+  // The wish lane (see header): its own tone, never the /loc crosshair's `info`.
+  const wishColor = palette.success.main
   // Keyed on the pin array and the projection, exactly like the label layer's declutter memo:
   // this recomputes per view CHANGE, not per frame.
   const placed = useMemo(() => pins.map((p) => ({ ...p, at: toScreen(p.pin.x, p.pin.y) })), [pins, toScreen])
@@ -108,6 +117,9 @@ export function MapMobPins({ pins, vp, selectedId, wishes, onSelect }: MapMobPin
             }}
             onClick={() => {
               onSelect(row, { x: pin.x, y: pin.y })
+            }}
+            onDoubleClick={onOpenMob == null ? undefined : () => {
+              onOpenMob({ mob: row.name, entry: row.entry })
             }}
             style={{
               position: 'absolute',

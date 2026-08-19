@@ -173,7 +173,8 @@ function MapSurface({
   pane,
   timers,
   zones,
-  onJump
+  onJump,
+  onOpenMob
 }: {
   data: MapData
   vp: MapViewport
@@ -193,6 +194,8 @@ function MapSurface({
   zones: readonly ZoneShort[]
   /** The search jump — a clicked connection label opens its zone with no position to centre on. */
   onJump: (to: JumpTarget) => void
+  /** A double-clicked mob pin's door to its page (MapMobPins). */
+  onOpenMob?: (target: MobTarget) => void
 }): JSX.Element {
   // A `to_…` label the zone table resolves to an INSTALLED map becomes a link (zoneLinks.ts).
   const linkFor = useMemo(() => {
@@ -245,6 +248,7 @@ function MapSurface({
           selectedId={pane.selectedId}
           wishes={pane.wishes}
           onSelect={pane.select}
+          onOpenMob={onOpenMob}
         />
       )}
       {timers.length > 0 && <MapTimerPins timers={timers} vp={vp} />}
@@ -329,6 +333,7 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           timers={timers}
           zones={zones}
           onJump={onJump}
+          onOpenMob={onOpenMob}
         />
       ) : (
         empty

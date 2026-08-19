@@ -25,7 +25,7 @@ import { useTheme } from '@mui/material'
 import type { ZoneShort } from '@shared/maps'
 import { MOB_CATALOG } from '../mobs/mobSearch'
 import { useRespawnSnap, useSecondsClock } from '../timers/useRespawn'
-import { placeableTimerPins, timerPinRows, timerPinText, type TimerPin } from './respawnPins'
+import { placeableTimerPins, timerPinClock, timerPinRows, timerPinText, type TimerPin } from './respawnPins'
 import type { MapViewport } from './useMapViewport'
 
 /** Diamond edge in CSS pixels — under the teardrop's 9, so a shared spawn point shows both. */
@@ -98,6 +98,29 @@ export function MapTimerPins({ timers, vp }: { timers: readonly TimerPin[]; vp: 
             zIndex: 2
           }}
         />
+      ))}
+      {/* THE CLOCK, WORN ALL THE TIME (user ask, 2026-08-18): the whole point of watching a mob
+          is knowing when, and a clock behind a hover is a clock you have to go and read. Just the
+          duration — the mob's name and the full sentence stay on the hover, where they were. */}
+      {placed.map(({ t, key, at }) => (
+        <span
+          key={`clock-${key}`}
+          data-testid="maps-timer-pin-clock"
+          style={{
+            position: 'absolute',
+            left: at.px,
+            top: at.py + PIN_PX,
+            transform: 'translate(-50%, 0)',
+            pointerEvents: 'none',
+            zIndex: 3,
+            font: '11px/1.1 inherit',
+            color: pinColor,
+            textShadow: HALO,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {timerPinClock(t, now)}
+        </span>
       ))}
       {placed
         .filter((pp) => pp.key === hover)
