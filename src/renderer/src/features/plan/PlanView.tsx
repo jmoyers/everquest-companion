@@ -52,6 +52,7 @@ import { type JSX, useMemo } from 'react'
 import { Box, Chip, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { CLASS_ABBRS } from '@shared/classCombo'
 import { ITEM_UPGRADE_BASE } from '@shared/itemUpgrade'
+import type { ZoneShort } from '@shared/maps'
 import type { GearRole } from '@shared/planner/progressionPlan'
 import type { ProgressionDelta, ProgressionSnap } from '@shared/types'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
@@ -261,9 +262,15 @@ export interface PlanViewProps {
    * every other item name in this app travels, so a drill's Back arrow comes home here.
    */
   onOpenLoot?: (item: string) => void
+  /**
+   * Open the Maps tab pointed at a zone this route names (App's `openMapZone`) — the exp-zone
+   * chips and the run headings are trips, and a trip's name should open the map to make it.
+   * Absent, they stay the plain text they were.
+   */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
-export default function PlanView({ onOpenLoot }: PlanViewProps = {}): JSX.Element {
+export default function PlanView({ onOpenLoot, onOpenMapZone }: PlanViewProps = {}): JSX.Element {
   const { rows, ready } = useGearIndex()
   const classes = useGearClasses()
   const ownership = useGearOwnership()
@@ -313,6 +320,7 @@ export default function PlanView({ onOpenLoot }: PlanViewProps = {}): JSX.Elemen
             onAdd={wishes.addBracket}
             compare={compare}
             onOpenLoot={onOpenLoot}
+            onOpenMapZone={onOpenMapZone}
           />
         ))}
         {route.length === 0 && (

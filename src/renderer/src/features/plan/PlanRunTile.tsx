@@ -58,11 +58,15 @@
 // and put the page back into the sideways scroll the standing law forbids.
 
 import { useState, type JSX } from 'react'
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import MapIcon from '@mui/icons-material/Map'
 import type { ConBand } from '@shared/conBands'
 import type { GearRun, GearTarget } from '@shared/planner/progressionPlan'
+import type { ZoneShort } from '@shared/maps'
+// The catalog-spelling fold, refuse-over-guess: only a zone the table resolves becomes a door.
+import { zoneShortNameFromCatalog } from '@shared/zones'
 import { itemIconUrl } from '../../lib/ItemWindow'
 // THE ONE DOOR a compare card may reach any surface through (JOS-344). Its header states the three
 // guarantees and the measured geometry that made the anchoring law what it is.
@@ -211,6 +215,8 @@ export interface PlanRunTileProps {
   /** the Gear tab's comparison seam; ABSENT means no card, the `GearTable` house rule */
   compare?: GearCompareData
   onOpenLoot?: (item: string) => void
+  /** this trip's door to its map (App's `openMapZone`); absent, the heading stands alone */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /**
@@ -228,8 +234,12 @@ export interface PlanRunTileProps {
  * tell a rich trip from a thin one without opening every tile. It is rendered as its own node so the
  * chevron and the count cannot be mistaken for part of the place's name.
  */
-export default function PlanRunTile({ run, compare, onOpenLoot }: PlanRunTileProps): JSX.Element {
+export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone }: PlanRunTileProps): JSX.Element {
   const [collapsed, setCollapsed] = useState(false)
+  // The trip's door to its map (user ruling, 2026-08-18) — its own button BESIDE the heading,
+  // because the heading IS the fold button and a control inside a control answers to neither.
+  // Present exactly when the table resolves the base zone's spelling and the host routes it.
+  const stem = onOpenMapZone === undefined ? null : zoneShortNameFromCatalog(run.zone)
   return (
     <Box
       data-testid="plan-run"
@@ -255,50 +265,65 @@ export default function PlanRunTile({ run, compare, onOpenLoot }: PlanRunTilePro
           It is also the FOLD CONTROL: a real <button> element, so the keyboard and a screen reader
           reach it the same way the pointer does, with the MUI button reset undone by `sx` because a
           heading that looked like a button would shout on a page of eight of them. */}
-      <Stack
-        component="button"
-        type="button"
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        data-testid="plan-run-head"
-        aria-expanded={!collapsed}
-        title={collapsed ? 'Show what is worth getting here' : 'Fold this trip down to its heading'}
-        onClick={() => {
-          setCollapsed((v) => !v)
-        }}
-        sx={{
-          flexWrap: 'nowrap',
-          minWidth: 0,
-          width: '100%',
-          font: 'inherit',
-          color: 'inherit',
-          textAlign: 'left',
-          background: 'none',
-          border: 0,
-          p: 0,
-          cursor: 'pointer'
-        }}
-      >
-        {/* An SVG affordance rather than a text glyph, deliberately: the specs read this node's
-            `innerText` and assert the zone name is in it, so the chevron must contribute no text. */}
-        {collapsed ? (
-          <ChevronRightIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
-        ) : (
-          <ExpandMoreIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
-        )}
-        <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
-          {runLabel(run)}
-        </Typography>
-        <BandChip band={run.band} plus={run.plus} />
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ flexShrink: 0 }}
-          title={`${String(run.targets.length)} listed here - the fold caps a run at three.`}
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
+        <Stack
+          component="button"
+          type="button"
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          data-testid="plan-run-head"
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Show what is worth getting here' : 'Fold this trip down to its heading'}
+          onClick={() => {
+            setCollapsed((v) => !v)
+          }}
+          sx={{
+            flexWrap: 'nowrap',
+            minWidth: 0,
+            flexGrow: 1,
+            font: 'inherit',
+            color: 'inherit',
+            textAlign: 'left',
+            background: 'none',
+            border: 0,
+            p: 0,
+            cursor: 'pointer'
+          }}
         >
-          {run.targets.length}
-        </Typography>
+          {/* An SVG affordance rather than a text glyph, deliberately: the specs read this node's
+              `innerText` and assert the zone name is in it, so the chevron must contribute no text. */}
+          {collapsed ? (
+            <ChevronRightIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
+          ) : (
+            <ExpandMoreIcon fontSize="small" sx={{ flexShrink: 0, opacity: 0.7 }} />
+          )}
+          <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
+            {runLabel(run)}
+          </Typography>
+          <BandChip band={run.band} plus={run.plus} />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ flexShrink: 0 }}
+            title={`${String(run.targets.length)} listed here - the fold caps a run at three.`}
+          >
+            {run.targets.length}
+          </Typography>
+        </Stack>
+        {stem !== null && onOpenMapZone !== undefined && (
+          <IconButton
+            size="small"
+            data-testid="plan-run-map"
+            title="Open this zone's map"
+            onClick={() => {
+              onOpenMapZone(stem)
+            }}
+            sx={{ flexShrink: 0, p: 0.25 }}
+          >
+            <MapIcon sx={{ fontSize: 15 }} />
+          </IconButton>
+        )}
       </Stack>
       {!collapsed &&
         run.targets.map((target) => (

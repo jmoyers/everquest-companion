@@ -46,6 +46,9 @@
 import type { JSX } from 'react'
 import { Box, Button, Chip, Stack, Typography } from '@mui/material'
 import type { PlanBracket, ZonePick } from '@shared/planner/progressionPlan'
+import type { ZoneShort } from '@shared/maps'
+// The catalog-spelling fold, refuse-over-guess: only a zone the table resolves becomes a door.
+import { zoneShortNameFromCatalog } from '@shared/zones'
 import type { GearCompareData } from '../gear/gearData'
 import { bracketTargets } from './planData'
 import PlanRunTile from './PlanRunTile'
@@ -67,7 +70,10 @@ const RUN_TILE_MIN = 320
  * carries the spread and the sample size — because a zone with a level-6 entrance and a level-40
  * basement has a median that describes neither, and the fold says so in as many words.
  */
-function ZoneChip({ pick }: { pick: ZonePick }): JSX.Element {
+function ZoneChip({ pick, onOpenMapZone }: { pick: ZonePick; onOpenMapZone?: ((zone: ZoneShort) => void) | undefined }): JSX.Element {
+  // A trip's name opens the map to make it (user ruling, 2026-08-18) — exactly when the table
+  // resolves the spelling and the host routes it; otherwise the chip is the plain fact it was.
+  const stem = onOpenMapZone === undefined ? null : zoneShortNameFromCatalog(pick.zone)
   return (
     <Chip
       size="small"
@@ -75,6 +81,7 @@ function ZoneChip({ pick }: { pick: ZonePick }): JSX.Element {
       data-testid="plan-zone"
       label={`${pick.zone} · ${pick.band}`}
       title={`Median mob level ${String(pick.median)}, lowest ${String(pick.low)} - from ${String(pick.sampled)} stated mob levels. A median is a coarse stand-in for a zone, not its range.`}
+      onClick={stem === null || onOpenMapZone === undefined ? undefined : () => { onOpenMapZone(stem) }}
       sx={{ flexShrink: 0, maxWidth: 320 }}
     />
   )
@@ -87,6 +94,8 @@ export interface PlanBracketCardProps {
   /** the Gear tab's hover-comparison seam, passed straight through to the item rows */
   compare?: GearCompareData
   onOpenLoot?: (item: string) => void
+  /** the route's zone names' door to the Maps tab (App's `openMapZone`); absent, plain text */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /**
@@ -102,7 +111,7 @@ export interface PlanBracketCardProps {
  * rows STAY afterwards, wearing the `wished` flag: rule 9 flags rather than filters, so pressing
  * this does not make the answer disappear.
  */
-export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot }: PlanBracketCardProps): JSX.Element {
+export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, onOpenMapZone }: PlanBracketCardProps): JSX.Element {
   const addable = bracketTargets(bracket).length
   return (
     <Box
@@ -116,7 +125,7 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot }:
         </Typography>
         <Box sx={{ display: 'flex', gap: 0.5, minWidth: 0, flexGrow: 1, overflow: 'hidden' }}>
           {bracket.expZones.map((pick) => (
-            <ZoneChip key={pick.zone} pick={pick} />
+            <ZoneChip key={pick.zone} pick={pick} onOpenMapZone={onOpenMapZone} />
           ))}
           {bracket.expZones.length === 0 && (
             <Typography variant="caption" color="text.secondary" noWrap>
@@ -157,6 +166,7 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot }:
             run={run}
             compare={compare}
             onOpenLoot={onOpenLoot}
+            onOpenMapZone={onOpenMapZone}
           />
         ))}
       </Box>

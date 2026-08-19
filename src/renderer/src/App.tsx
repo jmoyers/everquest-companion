@@ -154,7 +154,9 @@ function PlainView({
           every wish name links OUT to that item's Loot drill-down, the same contract the
           Exaltations tab's donor names use, so the drill's Back arrow comes home here. */}
       {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} />}
-      {view === 'plan' && <PlanView key={viewKey} onOpenLoot={routing.openLoot} />}
+      {/* The Plan's second route out (user ruling, 2026-08-18): its zone chips and run headings
+          open the Maps tab on that zone, the same pick the toolbar's selector writes. */}
+      {view === 'plan' && <PlanView key={viewKey} onOpenLoot={routing.openLoot} onOpenMapZone={routing.openMapZone} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived
