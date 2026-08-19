@@ -34,9 +34,11 @@ import AlertsView from './features/alerts/AlertsView'
 import BuffsView from './features/buffs/BuffsView'
 import TimersView from './features/timers/TimersView'
 import PreferencesView from './features/preferences/PreferencesView'
-// ONE symbol, for ONE preference (JOS-139): the tray menu can change what the X does while the
-// Preferences pane is closed, and the pane's warm snapshot has to hear about it. See the effect.
-import { recordPref } from './features/preferences/prefsSnapshot'
+// TWO FACTS THE PREFERENCES SNAPSHOT CANNOT LEARN FROM A CARD: what the X does (JOS-139 — the tray
+// menu carries the same checkbox) and WHICH OVERLAYS ARE OPEN (JOS-408 — the title bar's Overlay
+// menu opens them, and the Appearance rows tag a closed one). Both are recorded HERE, at the root.
+// See the effect.
+import { peekPrefsSnapshot, recordPref } from './features/preferences/prefsSnapshot'
 import FeedbackDialog from './features/feedback/FeedbackDialog'
 // OWNER-ONLY. `devTriage` holds the single `DEV_TOOLS ? lazy(() => import(…)) : null` — the
 // STRIP, which is a compile-time question and stays on `DEV_TOOLS`; in a build without the flag
@@ -476,6 +478,38 @@ function applyDeepLink(focus: AppFocus | null, open: DeepLinkOpeners): void {
   else open.selectView('mobs')
 }
 
+/**
+ * THE TWO PREFERENCES FACTS THAT CHANGE WHERE THE PREFERENCES PANE CANNOT SEE THEM.
+ *
+ * The pane's cards seed from a warm snapshot (JOS-340, features/preferences/prefsSnapshot.ts) and
+ * that cache is otherwise only ever written by a card's OWN reply — so anything moved from another
+ * surface would be invisible in the pane until the next launch. Two things are:
+ *
+ *   * WHAT THE X DOES (JOS-139). The tray icon's menu carries the same checkbox, and it is used
+ *     precisely while this window is hidden.
+ *   * WHICH OVERLAYS ARE OPEN (JOS-408). The Appearance section's rows tag a row whose window is
+ *     closed — the one control there whose honest answer to "what does pressing this change on
+ *     screen" is "nothing yet" — and the thing that opens those windows is the TITLE BAR's Overlay
+ *     menu, used with Preferences nowhere in sight. The card subscribes too, for a pane that is
+ *     already open; this is what makes the NEXT mount right.
+ *
+ * Its own function rather than two more `const off…`s inside App's effect: that component is at the
+ * repo's 100-code-line-per-function ceiling, and these two subscriptions are one idea.
+ */
+function keepPrefsSnapshotCurrent(): () => void {
+  const offTray = window.eq.onCloseToTray((p) => {
+    recordPref('closeToTray', p)
+  })
+  const offOverlays = window.eq.onOverlayState((s) => {
+    const cur = peekPrefsSnapshot()?.overlayOpen
+    if (cur) recordPref('overlayOpen', { ...cur, [s.kind]: s.open })
+  })
+  return () => {
+    offTray()
+    offOverlays()
+  }
+}
+
 export default function App(): JSX.Element {
   const [view, setView] = useState<View>(loadView)
   const [character, setCharacter] = useState<CharacterRef | null>(null)
@@ -553,20 +587,13 @@ export default function App(): JSX.Element {
     const offFocus = window.eq.onFocusView((focus) =>
       applyDeepLink(focus, { openMob, openQuest, openLeveling, selectView })
     )
-    // WHAT THE X DOES CAN CHANGE WHERE THIS PANE CANNOT SEE IT (JOS-139). The tray icon's menu
-    // carries the same checkbox, and it is used precisely while this window is hidden — so the
-    // Preferences pane's warm snapshot is kept current HERE, at the root, rather than only by the
-    // card. Without it a tray-side flip would be invisible until the next launch: the card seeds
-    // from the cache (JOS-340) and the cache is only ever written by a card's own reply.
-    const offTray = window.eq.onCloseToTray((p) => {
-      recordPref('closeToTray', p)
-    })
+    const offPrefs = keepPrefsSnapshotCurrent()
     return () => {
       offDelta()
       offChar()
       offEqConfig()
       offFocus()
-      offTray()
+      offPrefs()
     }
   }, [openMob, openQuest, openLeveling, selectView])
 

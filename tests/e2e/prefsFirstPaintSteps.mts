@@ -29,8 +29,12 @@
  *              expresses a later flip as a `Mui-checked` class swap, which a property write alone
  *              would not announce.)
  *   'toggle' — a `ToggleButtonGroup`'s lit member, by the `data-testid` of whatever carries
- *              `aria-pressed="true"`. The ladder in Text size is the non-boolean half of the
- *              ticket: a five-stop selector flashes exactly the same way a switch does.
+ *              `aria-pressed="true"`. Nothing in Preferences uses one at the moment; the reader
+ *              stays because it is the shape of control this kind of watching is FOR and the next
+ *              one to arrive should not have to reinvent it.
+ *   'text'   — what a readout SAYS, trimmed. The Appearance section's steppers print their value
+ *              (JOS-408 replaced the five-stop ladder with an A− / A+), and a percentage flashes
+ *              exactly the same way a switch does — the law is not about checkboxes.
  */
 import type { Page } from 'playwright-core'
 import { check, settle, settleStable } from './appHarness.mjs'
@@ -38,7 +42,7 @@ import { check, settle, settleStable } from './appHarness.mjs'
 /** One control the recorder watches, named by its testid and by how to read its value. */
 export interface Watch {
   id: string
-  kind: 'switch' | 'toggle'
+  kind: 'switch' | 'toggle' | 'text'
 }
 
 /**
@@ -50,8 +54,15 @@ export interface Watch {
  * build that flashes would flash them in opposite directions, and a fix that only cured one
  * direction would leave exactly one of them red.
  *
- * The Text size ladder is the non-boolean, because "a control never paints a value it does not
- * know" is not a rule about checkboxes.
+ * The Appearance section's in-app text size is the non-boolean, because "a control never paints a
+ * value it does not know" is not a rule about checkboxes. It is watched as TEXT since JOS-408: the
+ * five-stop ladder became an A− / A+ with a percentage between them, so the value the control is
+ * born with is a string rather than a lit button.
+ *
+ * And the OVERLAYS switch is the fourth: it is the one control in the pane whose stored value can
+ * be decided by a MIGRATION rather than by a click (JOS-407's least-harm rule, reconciled onto both
+ * flags by JOS-408), and it also decides which SHAPE the card below it has — so a flash there is
+ * not one wrong control but a whole card mounting the wrong way round.
  *
  * The Alert banner switch is the REGRESSION (owner, hands-on, 2026-08-16): a card written after
  * JOS-340 that mounted on its default anyway, on the argument that the banner ships OFF so OFF is
@@ -63,7 +74,8 @@ export const WATCHED: Watch[] = [
   { id: 'pref-hide-when-not-running', kind: 'switch' },
   { id: 'pref-hide-when-unfocused', kind: 'switch' },
   { id: 'pref-banner-enabled', kind: 'switch' },
-  { id: 'pref-text-size', kind: 'toggle' }
+  { id: 'pref-text-size-value', kind: 'text' },
+  { id: 'pref-overlay-independent', kind: 'switch' }
 ]
 
 /** What the page exposes once the recorder is armed. Declared for the in-page casts below. */
@@ -104,6 +116,12 @@ function recorderSource(spec: Watch[]): string {
       const input = root.querySelector('input');
       return input === null ? 'no-input' : (input.checked ? 'on' : 'off');
     }
+    if (w.kind === 'text') {
+      // A readout's own words. An EMPTY one is treated as an absence rather than as a value: a
+      // node that exists with nothing in it is a frame mid-commit, not a control painting a guess.
+      const said = (root.textContent || '').trim();
+      return said === '' ? null : said;
+    }
     const lit = root.querySelector('[aria-pressed="true"]');
     return lit === null ? 'none' : (lit.getAttribute('data-testid') || 'unnamed');
   }
@@ -121,6 +139,10 @@ function recorderSource(spec: Watch[]): string {
     childList: true,
     subtree: true,
     attributes: true,
+    // A READOUT changes by having its text node rewritten, which is neither a childList nor an
+    // attribute mutation — without this a percentage could flash and the recorder would see one
+    // entry, which is the failure mode this whole file exists to make impossible.
+    characterData: true,
     attributeFilter: ['class', 'aria-pressed']
   });
   window.__jos340 = {

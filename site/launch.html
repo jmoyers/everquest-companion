@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The launch, in numbers — EQ Legends Companion</title>
+    <meta
+      name="description"
+      content="How the EverQuest Legends Companion's first two weeks went: installs, daily actives, retention, feedback, build cadence and the launch log, day by day."
+    />
+    <meta name="theme-color" content="#0f1017" />
+    <link rel="icon" href="assets/icon.png" />
+    <link rel="stylesheet" href="style.css" />
+    <meta property="og:title" content="EQ Legends Companion — the launch, in numbers" />
+    <meta
+      property="og:description"
+      content="Fourteen days from the first public release: installs, actives, retention, feedback and every release, day by day."
+    />
+    <meta property="og:type" content="article" />
+    <style>
+
+  .launch {
+    --page: var(--bg);
+    --surface: var(--panel);
+    --ink: var(--fg);
+    --ink-2: var(--fg-dim);
+    --muted: var(--fg-faint);
+    --grid: var(--line-soft);
+    --baseline: var(--line);
+    --border: var(--line);
+    --series-1: var(--gold);
+    --series-2: #6fb3d2;
+    --accent: var(--gold);
+    --flag: #a98fe0;
+  }
+
+  .launch .page { max-width: 980px; margin: 0 auto; padding: 44px 24px 72px; }
+  .launch .eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 10px; }
+  .launch h1 { font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; font-size: clamp(30px, 5vw, 44px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.12; margin: 0 0 12px; text-wrap: balance; background: none; color: var(--fg); -webkit-background-clip: initial; background-clip: initial; }
+  .launch .lede { color: var(--ink-2); max-width: 64ch; margin: 0 0 8px; font-size: 16px; }
+  .launch .asof { color: var(--muted); font-size: 13px; margin: 0 0 32px; max-width: 72ch; }
+  .launch h2 { font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 23px; font-weight: 600; margin: 52px 0 6px; text-wrap: balance; }
+  .launch .section-sub { color: var(--ink-2); font-size: 14.5px; margin: 0 0 16px; max-width: 70ch; }
+
+  .launch .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .launch .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px 12px; }
+  .launch .tile .k { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .launch .tile .v { font-size: 30px; font-weight: 650; line-height: 1.15; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .launch .tile .d { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+
+  .launch .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 18px 18px 10px; margin-top: 14px; }
+  .launch .card h3 { font-size: 15px; font-weight: 650; margin: 0 0 2px; }
+  .launch .card .sub { font-size: 13px; color: var(--ink-2); margin: 0 0 10px; }
+  .launch .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 6px; }
+  .launch .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .launch .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .launch .swatch.line { height: 2px; width: 14px; border-radius: 1px; }
+  .launch .swatch.flag { width: 2px; height: 12px; border-radius: 1px; }
+  .launch .chart-holder { position: relative; }
+  .launch .chart-holder svg { display: block; width: 100%; height: auto; }
+  .launch .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
+  .launch .grid2 .card { margin-top: 0; }
+
+  .launch .tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,0.18); border-radius: 6px; padding: 8px 11px; font-size: 12.5px; line-height: 1.5; min-width: 150px; z-index: 5; display: none; color: var(--ink); }
+  .launch .tooltip .tt-day { font-weight: 650; margin-bottom: 2px; }
+  .launch .tooltip .row { display: flex; justify-content: space-between; gap: 14px; }
+  .launch .tooltip .row .n { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .launch .tooltip .evt { color: var(--accent); margin-top: 4px; font-size: 12px; }
+
+  .launch .log { list-style: none; margin: 14px 0 0; padding: 0; border-left: 2px solid var(--grid); }
+  .launch .log li { position: relative; padding: 0 0 18px 22px; }
+  .launch .log li::before { content: ''; position: absolute; left: -6px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--baseline); border: 2px solid var(--page); }
+  .launch .log li.public::before { background: var(--flag); }
+  .launch .log li.ship::before { background: var(--accent); }
+  .launch .log .when { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+  .launch .log .what { font-weight: 600; }
+  .launch .log .what .chip { display: inline-block; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--flag); border: 1px solid var(--flag); border-radius: 999px; padding: 0 8px; margin-left: 8px; vertical-align: 1px; }
+  .launch .log .what .chip.ship { color: var(--accent); border-color: var(--accent); text-transform: none; }
+  .launch .log .note { color: var(--ink-2); font-size: 13.5px; max-width: 68ch; }
+
+  .launch .table-scroll { overflow-x: auto; margin-top: 14px; }
+  .launch table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+  .launch th, .launch td { padding: 7px 12px; text-align: right; white-space: nowrap; }
+  .launch th:first-child, .launch td:first-child { text-align: left; }
+  .launch thead th { font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--grid); font-weight: 650; }
+  .launch tbody td { border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .launch tbody tr:last-child td { border-bottom: none; }
+  .launch td .dlbar { display: inline-block; height: 8px; border-radius: 2px; background: var(--series-1); vertical-align: middle; margin-right: 8px; }
+  .launch td .rbar { display: inline-block; height: 8px; border-radius: 2px; background: var(--series-2); vertical-align: middle; margin-right: 8px; }
+  .launch .footnotes { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--grid); color: var(--muted); font-size: 12.5px; max-width: 78ch; }
+  .launch .footnotes p { margin: 0 0 8px; }
+  /* Pull quotes: what players said, set quietly in the gutters beside the section they speak to. */
+  .launch .page { position: relative; }
+  .launch .pull { position: absolute; width: 196px; margin: 0; font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; font-style: normal; font-size: 16.5px; line-height: 1.42; color: var(--fg); border-top: 1px solid var(--gold); padding-top: 12px; }
+  .launch .pull.left { left: -236px; }
+  .launch .pull.right { right: -236px; }
+  .launch .pull.lower { margin-top: 150px; }
+  .launch .pull cite { display: block; margin-top: 9px; font-style: normal; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--fg-dim); }
+  .launch .pull-band { display: none; }
+  @media (max-width: 1499px) {
+    .launch .pull { position: static; width: auto; margin: 0; }
+    .launch .pull.lower { margin-top: 0; }
+    .launch .pull-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px 28px; margin: 40px 0 8px; }
+  }
+  .launch a { color: var(--accent); }
+    </style>
+  </head>
+  <body id="top" class="launch">
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="index.html" aria-label="EQ Legends Companion home">
+          <img class="brand-mark" src="assets/icon.png" alt="" width="24" height="24" />
+          <span>EQ Legends Companion</span>
+        </a>
+        <nav class="topnav">
+          <a href="index.html#features">Features</a>
+          <a href="index.html#author">Author</a>
+          <a href="launch.html" aria-current="page">Launch</a>
+          <a href="https://github.com/jmoyers/everquest-companion">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+<div class="page">
+  <p class="eyebrow">EverQuest Legends Companion</p>
+  <h1>Launch and engagement: the first two weeks</h1>
+<aside class="pull right"><p style="margin:0">“It’s literally the best made tool for EQ I’ve seen in my 25 years of playing the game.”</p><cite>in-app feedback · Aug 13</cite></aside>
+<aside class="pull left lower"><p style="margin:0">“This is a quality product that is being well run and managed.” <span style="color:var(--fg-dim)">— the developer of a similar tool</span></p><cite>r/EQLegends · Aug 10</cite></aside>
+  <p class="lede">
+    The Companion went public on the evening of August 4, 2026 with a GitHub release, a video and a
+    Reddit post. Fourteen days later it has been installed <strong>8,172</strong> times, is used by
+    <strong>4,000</strong> people on a good day, and runs alongside the game for hours at a time.
+    This page is the record of how that happened, day by day.
+  </p>
+  <p class="asof">
+    Figures are as of August 18, 2026, 03:30 UTC. Every figure comes from the app's own anonymous usage counters, which any install can turn off
+    in Preferences (nothing from a game log ever leaves a player's machine), plus the GitHub
+    releases API and the project's git history. Days are UTC. Our own installs are excluded from
+    every count. Where a number is a point-in-time reading rather than a daily total, it says so.
+  </p>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Installs, all time</div><div class="v">8,172</div><div class="d">from 1 on Aug 4</div></div>
+    <div class="tile"><div class="k">Best day of actives</div><div class="v">4,093</div><div class="d">Aug 17 · Aug 18 already at 3,678 with most of the day left</div></div>
+    <div class="tile"><div class="k">In the app right now</div><div class="v">2,116</div><div class="d">at time of writing · sessions average 8+ hours old</div></div>
+    <div class="tile"><div class="k">Sessions to date</div><div class="v">38,336</div><div class="d">median 2–4 h · mean 5.1 h</div></div>
+    <div class="tile"><div class="k">Feedback reports</div><div class="v">490</div><div class="d">346 feature requests · 144 bug reports</div></div>
+    <div class="tile"><div class="k">Releases</div><div class="v">39</div><div class="d">v0.3.3 → v1.5.0 in 14 days</div></div>
+  </div>
+
+  <h2 id="s-installs">Installs and daily actives</h2>
+<aside class="pull right"><p style="margin:0">“This game has been fun and you managed to make it even funner.”</p><cite>YouTube · Update #2</cite></aside>
+  <p class="section-sub">
+    New installs per day as bars, people active per day as the line, with the three public moments
+    flagged and every release marked as a faint vertical. The launch video and Reddit post went up
+    together on the night of August 4–5; a second video and a thank-you post went up together late
+    on August 9, and the next day was the biggest install day of the launch — 1,220 new installs,
+    more than the first five days combined; a third video and post landed in the first hours of
+    August 15, and that day and the next were the second- and third-biggest install days. Actives have risen every single day since launch and passed 4,000 for the first time on August 17.
+  </p>
+  <div class="card">
+    <h3>New installs and daily active installs, per UTC day</h3>
+    <p class="sub">Aug 4 – Aug 17, the fourteen full days since launch. Faint verticals mark the 38 releases published in that span.</p>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--series-1)"></span>New installs</span>
+      <span><span class="swatch line" style="background:var(--series-2)"></span>Daily active installs</span>
+      <span><span class="swatch flag" style="background:var(--flag)"></span>Public post / video</span>
+      <span><span class="swatch flag" style="background:var(--baseline);height:7px"></span>Release</span>
+    </div>
+    <div class="chart-holder" id="mainChart"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Total installs</h3>
+      <p class="sub">Cumulative new installs, Aug 4 – Aug 17 · 7,834 by the end of Aug 17.</p>
+      <div class="chart-holder" id="cumChart"></div>
+    </div>
+    <div class="card">
+      <h3>Sessions per UTC day</h3>
+      <p class="sub">35,478 sessions across the fourteen days · peak 5,818 on Aug 16.</p>
+      <div class="chart-holder" id="sessChart"></div>
+    </div>
+  </div>
+
+  <h2 id="s-retention">Who came back</h2>
+<aside class="pull left"><p style="margin:0">“Couldn’t go back to playing without this.”</p><cite>YouTube · Update #3</cite></aside>
+<aside class="pull right lower"><p style="margin:0">“Thank you for getting me away from ACT!”</p><cite>in-app feedback · Aug 16</cite></aside>
+  <p class="section-sub">
+    Retention by the day people installed. The founding cohorts — the players who came from the
+    launch post itself — came back at very high rates: 93–97% the next day and 82–86% a week
+    later. The larger cohorts that arrived after the update posts settle at roughly 52–60% the
+    next day and 41–48% a week later, which is where the app now lives. Retention counts an install
+    as returned if it was active on that later day; a player who plays every other day reads as
+    absent on the days between.
+  </p>
+  <div class="table-scroll" id="retTable"></div>
+  <div class="pull-band" id="pullBand" aria-label="What players said"></div>
+
+  <h2 id="s-feedback">What people asked for</h2>
+<aside class="pull left"><p style="margin:0">“This is by far the best program out there for parsing, tracking sky quests. The only feature I wish it had was an inventory clean up.”</p><cite>r/EQLegends · Aug 15</cite></aside>
+<aside class="pull right lower"><p style="margin:0">“OMG, I just found the cleanup menu! I love you!”</p><cite>in-app feedback · Aug 18</cite></aside>
+  <p class="section-sub">
+    490 reports through the app's own feedback dialog in fourteen days: 346 feature requests and 144
+    bug reports, as the reporter classified them. Feature requests outnumber bug reports on every day but two (Aug 4 and Aug 6, when they tied), and the biggest feedback days follow the biggest install days.
+    A large share of the launch's fixes and features trace to a specific report; the release notes
+    inside the app mark those with a small "player report" chip.
+  </p>
+  <div class="card">
+    <h3>Feedback reports per UTC day</h3>
+    <p class="sub">Feature requests and bug reports, stacked · releases as faint verticals.</p>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--series-1)"></span>Feature requests</span>
+      <span><span class="swatch" style="background:var(--series-2)"></span>Bug reports</span>
+      <span><span class="swatch flag" style="background:var(--flag)"></span>Public post / video</span>
+    </div>
+    <div class="chart-holder" id="fbChart"></div>
+  </div>
+
+  <h2 id="s-build">The build behind it</h2>
+<aside class="pull left"><p style="margin:0">“The buff/debuff timer learning mechanism is CRAZY forethought.”</p><cite>YouTube · Update #2</cite></aside>
+  <p class="section-sub">
+    The repository has been public since launch. 1,322 commits and 341 merged branches landed on
+    main in the fourteen days — one merged branch an hour, around the clock — and 39 releases were
+    published, roughly three a day. Every release is tagged from main, built and published by CI,
+    and carries release notes that the app shows in its What's-new panel.
+  </p>
+  <div class="card">
+    <h3>Commits and merges per UTC day</h3>
+    <p class="sub">Every merge is a branch landing on main. Releases as faint verticals.</p>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--series-1)"></span>Commits</span>
+      <span><span class="swatch" style="background:var(--series-2)"></span>Merges</span>
+    </div>
+    <div class="chart-holder" id="commitChart"></div>
+  </div>
+
+  <h2 id="s-releases">Releases</h2>
+<aside class="pull right"><p style="margin:0">“I cannot believe the rate you are putting out these updates.”</p><cite>in-app feedback · Aug 12</cite></aside>
+  <p class="section-sub">
+    All 39 releases, in order. Installer downloads are shown for shape only: the auto-updater
+    re-fetches the installer on every update it applies, so the column mostly counts the fleet
+    updating itself; the install figures above are the real audience numbers.
+  </p>
+  <div class="table-scroll" id="releaseTable"></div>
+
+  <h2 id="s-log">The launch log</h2>
+<aside class="pull left"><p style="margin:0">“I just found the cursor highlighter and, as an older man with vision issues, this really helps me.”</p><cite>in-app feedback · Aug 13</cite></aside>
+  <p class="section-sub">Public moments in violet, feature arrivals in gold, milestones in gray. Times UTC.</p>
+  <ul class="log">
+    <li><div class="when">Aug 2–4 · before launch</div><div class="what">v0.1.0 – v0.3.2 tagged privately</div><div class="note">Fourteen tags in two days of hardening — signing, auto-update plumbing — before anything was published.</div></li>
+    <li class="ship"><div class="when">Aug 4, 00:32</div><div class="what">The core surfaces <span class="chip ship">v0.2.0</span></div><div class="note">The first stable build: an Overview with live DPS and recent drops, a Maps tab with zone search, proc analytics, class-loadout inference and leveling stats.</div></li>
+    <li class="ship"><div class="when">Aug 4, 07:53</div><div class="what">Alerts learn to speak <span class="chip ship">v0.3.0</span></div><div class="note">Spoken alerts in system or downloadable natural voices, the cursor ring, and in-app feedback with a scrubbed log attached — the channel most of the launch's fixes arrived through.</div></li>
+    <li><div class="when">Aug 4, 23:45</div><div class="what">v0.3.3 — first public GitHub release</div></li>
+    <li class="public"><div class="when">Aug 4, 23:46</div><div class="what">Launch video published <span class="chip">YouTube</span></div><div class="note"><a href="https://www.youtube.com/watch?v=LVFTHQjHxT4">"EverQuest Legends Companion launch"</a> — 7,078 views as of Aug 18.</div></li>
+    <li class="public"><div class="when">Aug 5, 00:36</div><div class="what">"Sharing a companion app" <span class="chip">r/EQLegends</span></div><div class="note"><a href="https://www.reddit.com/r/EQLegends/comments/1vfs5df/sharing_a_companion_app/">The launch post</a> — 20 points, 62 comments as of Aug 18. First day after: 101 installs.</div></li>
+    <li class="ship"><div class="when">Aug 5, 10:43</div><div class="what">The exaltation planner arrives <span class="chip ship">v0.4.0</span></div><div class="note">Plan sets over a class-filtered effect browser and see which zones drop the missing pieces. Celebration cards over the game and healing meters landed in the same cut.</div></li>
+    <li class="ship"><div class="when">Aug 5–6</div><div class="what">Groups, and the Wine players <span class="chip ship">v0.6.0–0.6.3</span></div><div class="note">Your group appears in the meters, the Maps sidebar becomes one search box, overlay text scales — and the installer runs under Wine and CrossOver, which brought the Linux and Mac players in.</div></li>
+    <li class="ship"><div class="when">Aug 7</div><div class="what">Raid lockouts and farm math <span class="chip ship">v0.9.0 · v0.10.0</span></div><div class="note">A "This week" view tracks every lockout you hold with countdowns to the Tuesday reset, and every item shows your own per-zone drop rates. Custom alert sounds and the What's-new panel came along.</div></li>
+    <li class="ship"><div class="when">Aug 9, 04:40</div><div class="what">Buff and debuff overlays with live timers <span class="chip ship">v0.14.0</span></div><div class="note">Two floating windows track what's on you and what you've landed, with durations learned from your own log — and alerts can speak what the log said.</div></li>
+    <li><div class="when">Aug 9, ~15:00</div><div class="what">1,000 installs</div><div class="note">Five days in. 449 new installs on Aug 9 alone — word of mouth was already outrunning the original post.</div></li>
+    <li class="ship"><div class="when">Aug 9, 21:45 · 23:53</div><div class="what">The accessibility and Sky wave <span class="chip ship">v0.15.0 · v0.16.0</span></div><div class="note">App-wide text scaling, a colorable cursor ring, time-sliced loot and leveling stats, Plane of Sky refarming with a Ready tab, class-unlock tracking, and per-boss difficulty ladders.</div></li>
+    <li class="public"><div class="when">Aug 9, 23:11</div><div class="what">Update #2 video published <span class="chip">YouTube</span></div><div class="note"><a href="https://www.youtube.com/watch?v=UJljqXfksnE">Update #2</a> — 6,964 views as of Aug 18.</div></li>
+    <li class="public"><div class="when">Aug 9, 23:57</div><div class="what">"Thank you to community" <span class="chip">r/EQLegends</span></div><div class="note"><a href="https://www.reddit.com/r/EQLegends/comments/1vk59oa/everquest_legends_companion_thank_you_to_community/">The thank-you post</a> carrying the release notes — 144 points, 92 comments as of Aug 18; the community post outscored the launch post seven to one.</div></li>
+    <li><div class="when">Aug 10</div><div class="what">Biggest install day of the launch</div><div class="note">1,220 new installs. Daily actives jumped from 1,029 to 2,014, and the feedback stream had its biggest day too: 64 reports.</div></li>
+    <li class="ship"><div class="when">Aug 11</div><div class="what">Icons offline, XP on screen, the Timers tab <span class="chip ship">v0.19.0 · v0.21.0</span></div><div class="note">Every item icon and boss portrait ships inside the app; a floating XP overlay reads experience per hour and time to level; respawn clocks are built from your own kills, with a Respawn overlay that follows the zone you're in.</div></li>
+    <li><div class="when">Aug 11</div><div class="what">3,000 installs</div></li>
+    <li class="ship"><div class="when">Aug 12–13</div><div class="what">Early warnings, charm mastery, the Wish list <span class="chip ship">v0.23.0 – v0.27.0</span></div><div class="note">Alerts can warn before a tracked debuff drops, every charm in the game binds and speaks when it breaks, and Exaltations, Gear and your character move into one place with a wish list that groups what you're after by the zone that feeds it.</div></li>
+    <li class="ship"><div class="when">Aug 14, 23:01</div><div class="what">Mitigation, {target}, and Sky by hand <span class="chip ship">v0.28.0</span></div><div class="note">A Mitigation tab on the meter card, alert phrases that name the mob a spell landed on, Plane of Sky counts you can state by hand, and heal-over-time alerts.</div></li>
+    <li class="public"><div class="when">Aug 15, 01:00</div><div class="what">Update #3 video published <span class="chip">YouTube</span></div><div class="note"><a href="https://www.youtube.com/watch?v=oV_oEN9Nhcw">"EverQuest Legends Companion (Update #3)"</a> — 2,692 views as of Aug 18.</div></li>
+    <li class="public"><div class="when">Aug 15, 01:26</div><div class="what">"EQ Legends Companion Update #3" <span class="chip">r/EQLegends</span></div><div class="note"><a href="https://www.reddit.com/r/EQLegends/comments/1vophv6/eq_legends_companion_update_3/">The third post</a>, carrying the update's release notes — 41 points, 43 comments as of Aug 18.</div></li>
+    <li><div class="when">Aug 15</div><div class="what">5,000 installs · 928 new that day</div><div class="note">The second-biggest install day of the launch, the day after the third video and post.</div></li>
+    <li class="ship"><div class="when">Aug 15, 23:52</div><div class="what">Performance, and 1.0 <span class="chip ship">v1.0.0</span></div><div class="note">The companion yields the CPU to EverQuest by default, reads the log through one open handle in small slices, and every bug report carries a ten-minute performance timeline so "it hitched" can be diagnosed.</div></li>
+    <li class="ship"><div class="when">Aug 16</div><div class="what">The Alert banner and the tray <span class="chip ship">v1.1.0 · v1.2.0</span></div><div class="note">Alerts as large text on screen for the moments a voice line is lost under Discord, and closing the window can keep the companion running in the system tray.</div></li>
+    <li><div class="when">Aug 16</div><div class="what">Busiest day so far: 5,818 sessions · 3,994 actives</div></li>
+    <li class="ship"><div class="when">Aug 17</div><div class="what">Resists, the mob card, and Sky Cleanup <span class="chip ship">v1.3.0 · v1.4.0</span></div><div class="note">Every mob's page shows what it resists, mined from your own log over a shipped baseline; /con a creature and a small card names the resists that would change what you cast; Plane of Sky gains a Cleanup tab and counts destroys from the log; the buff windows can track only what you check.</div></li>
+    <li><div class="when">Aug 17</div><div class="what">Best day of actives: 4,093</div></li>
+    <li class="ship"><div class="when">Aug 18, 03:20</div><div class="what">Appearance <span class="chip ship">v1.5.0</span></div><div class="note">Text size and transparency for every overlay in one Preferences section, shared or independent per overlay; the mob card, toasts and banner grow with their text.</div></li>
+  </ul>
+
+  <h2>Day by day</h2>
+  <div class="table-scroll" id="dayTable"></div>
+
+  <div class="footnotes">
+    <p><strong>What is counted.</strong> An install is one copy of the app reporting anonymous usage counters; a daily active install is one that ran on that UTC day; a session is one run of the app. Counters can be turned off in Preferences, so every figure is a floor. Our own installs are excluded throughout.</p>
+    <p><strong>Retention</strong> is by install day: of the installs first seen on a given day, how many were active exactly one day and seven days later. Cohorts younger than seven days have no day-7 figure yet.</p>
+    <p><strong>Feedback</strong> counts every report received through the in-app dialog, typed as the reporter chose (feature request or bug report). Nothing is excluded or reclassified here.</p>
+    <p><strong>Contribution counts</strong> come from git history on main, UTC days, and exclude nothing.</p>
+    <p><strong>Concurrent sessions</strong> exist only as a point-in-time reading; the counters hold per-day facts, so daily actives and sessions per day are the daily proxies above.</p>
+  </div>
+</div>
+
+<script>
+  // Aug 4 – Aug 17 UTC: fourteen full days since the first public release.
+  const DAYS = [
+    { day: 'Aug 4',  iso: '2026-08-04', installs: 1,    dau: 1,    sessions: 2,    feat: 1,  bugs: 1,  commits: 2,   merges: 0  },
+    { day: 'Aug 5',  iso: '2026-08-05', installs: 101,  dau: 106,  sessions: 335,  feat: 5,  bugs: 1,  commits: 57,  merges: 0  },
+    { day: 'Aug 6',  iso: '2026-08-06', installs: 149,  dau: 239,  sessions: 423,  feat: 14, bugs: 14, commits: 142, merges: 33 },
+    { day: 'Aug 7',  iso: '2026-08-07', installs: 192,  dau: 410,  sessions: 644,  feat: 26, bugs: 7,  commits: 64,  merges: 27 },
+    { day: 'Aug 8',  iso: '2026-08-08', installs: 242,  dau: 599,  sessions: 1002, feat: 23, bugs: 4,  commits: 78,  merges: 24 },
+    { day: 'Aug 9',  iso: '2026-08-09', installs: 449,  dau: 1029, sessions: 1291, feat: 18, bugs: 9,  commits: 142, merges: 34 },
+    { day: 'Aug 10', iso: '2026-08-10', installs: 1220, dau: 2014, sessions: 2571, feat: 37, bugs: 27, commits: 129, merges: 33 },
+    { day: 'Aug 11', iso: '2026-08-11', installs: 979,  dau: 2346, sessions: 3010, feat: 34, bugs: 9,  commits: 88,  merges: 25 },
+    { day: 'Aug 12', iso: '2026-08-12', installs: 749,  dau: 2587, sessions: 3662, feat: 26, bugs: 24, commits: 149, merges: 44 },
+    { day: 'Aug 13', iso: '2026-08-13', installs: 585,  dau: 2684, sessions: 3662, feat: 29, bugs: 9,  commits: 177, merges: 51 },
+    { day: 'Aug 14', iso: '2026-08-14', installs: 638,  dau: 2947, sessions: 3553, feat: 23, bugs: 8,  commits: 81,  merges: 23 },
+    { day: 'Aug 15', iso: '2026-08-15', installs: 928,  dau: 3502, sessions: 4454, feat: 35, bugs: 7,  commits: 46,  merges: 11 },
+    { day: 'Aug 16', iso: '2026-08-16', installs: 953,  dau: 3994, sessions: 5818, feat: 30, bugs: 12, commits: 70,  merges: 14 },
+    { day: 'Aug 17', iso: '2026-08-17', installs: 648,  dau: 4093, sessions: 5051, feat: 27, bugs: 8,  commits: 97,  merges: 22 },
+  ];
+  // Retention: installs first seen that day, and how many were active 1 and 7 days later.
+  const RETENTION = [
+    { day: 'Aug 5',  n: 101,  d1: 94,  d7: 83 },
+    { day: 'Aug 6',  n: 149,  d1: 145, d7: 124 },
+    { day: 'Aug 7',  n: 192,  d1: 181, d7: 159 },
+    { day: 'Aug 8',  n: 242,  d1: 232, d7: 207 },
+    { day: 'Aug 9',  n: 449,  d1: 258, d7: 214 },
+    { day: 'Aug 10', n: 1220, d1: 688, d7: 552 },
+    { day: 'Aug 11', n: 979,  d1: 581, d7: 402 },
+    { day: 'Aug 12', n: 749,  d1: 446, d7: null },
+    { day: 'Aug 13', n: 585,  d1: 339, d7: null },
+    { day: 'Aug 14', n: 638,  d1: 330, d7: null },
+    { day: 'Aug 15', n: 928,  d1: 502, d7: null },
+    { day: 'Aug 16', n: 953,  d1: 501, d7: null },
+    { day: 'Aug 17', n: 648,  d1: 334, d7: null },
+  ];
+  const EVENTS = [
+    { t: 0 + 23.77 / 24, label: 'Launch video + Reddit post' },
+    { t: 5 + 23.55 / 24, label: 'Update #2 + thank-you post' },
+    { t: 11 + 1.2 / 24, label: 'Update #3 video + post' },
+  ];
+  const RELEASES = [
+    { tag: 'v0.3.3',  at: '2026-08-04T23:45Z', dl: 5 },
+    { tag: 'v0.3.4',  at: '2026-08-05T01:26Z', dl: 7 },
+    { tag: 'v0.3.5',  at: '2026-08-05T03:16Z', dl: 18 },
+    { tag: 'v0.4.0',  at: '2026-08-05T10:43Z', dl: 112 },
+    { tag: 'v0.5.0',  at: '2026-08-05T17:36Z', dl: 123 },
+    { tag: 'v0.6.0',  at: '2026-08-05T20:19Z', dl: 120 },
+    { tag: 'v0.6.1',  at: '2026-08-05T23:25Z', dl: 174 },
+    { tag: 'v0.6.2',  at: '2026-08-06T05:06Z', dl: 74 },
+    { tag: 'v0.6.3',  at: '2026-08-06T07:53Z', dl: 590 },
+    { tag: 'v0.7.0',  at: '2026-08-07T01:20Z', dl: 146 },
+    { tag: 'v0.8.0',  at: '2026-08-07T02:38Z', dl: 226 },
+    { tag: 'v0.9.0',  at: '2026-08-07T05:01Z', dl: 100 },
+    { tag: 'v0.10.0', at: '2026-08-07T07:04Z', dl: 763 },
+    { tag: 'v0.11.0', at: '2026-08-08T01:55Z', dl: 96 },
+    { tag: 'v0.11.1', at: '2026-08-08T02:42Z', dl: 367 },
+    { tag: 'v0.12.0', at: '2026-08-08T07:10Z', dl: 682 },
+    { tag: 'v0.13.0', at: '2026-08-08T18:29Z', dl: 960 },
+    { tag: 'v0.14.0', at: '2026-08-09T04:40Z', dl: 1244 },
+    { tag: 'v0.15.0', at: '2026-08-09T21:45Z', dl: 473 },
+    { tag: 'v0.16.0', at: '2026-08-09T23:53Z', dl: 1024 },
+    { tag: 'v0.17.0', at: '2026-08-10T04:21Z', dl: 438 },
+    { tag: 'v0.18.0', at: '2026-08-10T07:02Z', dl: 2452 },
+    { tag: 'v0.19.0', at: '2026-08-11T01:06Z', dl: 527 },
+    { tag: 'v0.20.0', at: '2026-08-11T02:40Z', dl: 2047 },
+    { tag: 'v0.21.0', at: '2026-08-11T18:17Z', dl: 1993 },
+    { tag: 'v0.22.0', at: '2026-08-12T01:59Z', dl: 1210 },
+    { tag: 'v0.23.0', at: '2026-08-12T08:00Z', dl: 1634 },
+    { tag: 'v0.24.0', at: '2026-08-12T18:35Z', dl: 1607 },
+    { tag: 'v0.25.0', at: '2026-08-13T00:26Z', dl: 1250 },
+    { tag: 'v0.26.0', at: '2026-08-13T04:57Z', dl: 3230 },
+    { tag: 'v0.27.0', at: '2026-08-14T02:25Z', dl: 3264 },
+    { tag: 'v0.28.0', at: '2026-08-14T23:01Z', dl: 4224 },
+    { tag: 'v1.0.0',  at: '2026-08-15T23:52Z', dl: 874 },
+    { tag: 'v1.0.1',  at: '2026-08-16T01:39Z', dl: 1764 },
+    { tag: 'v1.1.0',  at: '2026-08-16T07:00Z', dl: 3028 },
+    { tag: 'v1.2.0',  at: '2026-08-16T18:52Z', dl: 3120 },
+    { tag: 'v1.3.0',  at: '2026-08-17T05:28Z', dl: 731 },
+    { tag: 'v1.4.0',  at: '2026-08-17T08:03Z', dl: 4362 },
+    { tag: 'v1.5.0',  at: '2026-08-18T03:20Z', dl: 2515 },
+  ];
+
+  const fmt = (n) => n.toLocaleString('en-US');
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (name, attrs, parent) => { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const relT = RELEASES.map((r) => { const d = new Date(r.at); const idx = DAYS.findIndex((x) => x.iso === r.at.slice(0, 10)); return idx < 0 ? null : idx + (d.getUTCHours() + d.getUTCMinutes() / 60) / 24; }).filter((t) => t !== null);
+
+  function niceTicks(max, count) {
+    const raw = max / count; const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+    const out = []; for (let v = 0; v <= max + 1e-9; v += step) out.push(v); return out;
+  }
+  function frame(holderId, H, m, yMax, opts = {}) {
+    const holder = document.getElementById(holderId); holder.innerHTML = '';
+    const W = Math.max(holder.clientWidth, 320); const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': opts.label || '' }, holder);
+    const slot = iw / DAYS.length; const g = { svg, W, H, m, iw, ih, slot, yMax, x: (i) => m.l + slot * (i + 0.5), y: (v) => m.t + ih - (v / yMax) * ih };
+    for (const v of niceTicks(yMax, 4)) { const yy = g.y(v); el('line', { x1: m.l, x2: W - m.r, y1: yy, y2: yy, stroke: 'var(--grid)', 'stroke-width': 1 }, svg); el('text', { x: m.l - 6, y: yy + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)' }, svg).textContent = fmt(v); }
+    if (opts.releases !== false) for (const t of relT) { const x = m.l + slot * (t + 0.5); el('line', { x1: x, x2: x, y1: m.t, y2: m.t + ih, stroke: 'var(--baseline)', 'stroke-width': 1, opacity: 0.4 }, svg); }
+    if (opts.events) for (const e of EVENTS) { const x = m.l + slot * (e.t + 0.5); el('line', { x1: x, x2: x, y1: m.t - 14, y2: m.t + ih, stroke: 'var(--flag)', 'stroke-width': 1.5, 'stroke-dasharray': '3 3' }, svg); const late = e.t > DAYS.length / 2; const tx = el('text', { x: late ? x - 4 : x + 4, y: m.t - 4, 'text-anchor': late ? 'end' : 'start', 'font-size': 11, fill: 'var(--flag)', 'font-weight': 600 }, svg); tx.textContent = e.label; }
+    const every = W < 560 ? 2 : 1;
+    DAYS.forEach((d, i) => { if (i % every !== 0 && i !== DAYS.length - 1) return; el('text', { x: g.x(i), y: H - 10, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)' }, svg).textContent = d.day; });
+    // tooltip plumbing
+    const tip = document.createElement('div'); tip.className = 'tooltip'; holder.appendChild(tip);
+    if (opts.tip) {
+      const hit = el('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' }, svg);
+      const cursor = el('line', { x1: 0, x2: 0, y1: m.t, y2: m.t + ih, stroke: 'var(--ink-2)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none' }, svg);
+      hit.addEventListener('mousemove', (ev) => {
+        const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * (W / r.width);
+        const i = Math.max(0, Math.min(DAYS.length - 1, Math.floor((px - m.l) / slot)));
+        cursor.setAttribute('x1', g.x(i)); cursor.setAttribute('x2', g.x(i)); cursor.setAttribute('opacity', 0.35);
+        tip.innerHTML = opts.tip(DAYS[i], i); tip.style.display = 'block';
+        const hx = (g.x(i) / W) * r.width; tip.style.left = `${Math.min(hx + 12, r.width - 190)}px`; tip.style.top = `${Math.max(8, (ev.clientY - r.top) - 20)}px`;
+      });
+      hit.addEventListener('mouseleave', () => { tip.style.display = 'none'; cursor.setAttribute('opacity', 0); });
+      svg.appendChild(hit);
+    }
+    return g;
+  }
+  const evtFor = (i) => EVENTS.filter((e) => Math.floor(e.t) === i).map((e) => `<div class="evt">${e.label} (${String(Math.round((e.t % 1) * 24)).padStart(2, '0')}:00 UTC)</div>`).join('');
+
+  function drawMain() {
+    const H = 360, m = { t: 46, r: 12, b: 34, l: 48 };
+    const yMax = niceTicks(Math.max(...DAYS.map((d) => d.dau)) * 1.05, 4).pop();
+    const g = frame('mainChart', H, m, yMax, { events: true, label: 'Daily new installs and daily active installs', tip: (d) => `<div class="tt-day">${d.day} (UTC)</div><div class="row"><span>New installs</span><span class="n">${fmt(d.installs)}</span></div><div class="row"><span>Daily active</span><span class="n">${fmt(d.dau)}</span></div>${evtFor(DAYS.indexOf(d))}` });
+    const bw = g.slot * 0.62;
+    DAYS.forEach((d, i) => { const yy = g.y(d.installs); el('rect', { x: g.x(i) - bw / 2, y: yy, width: bw, height: g.y(0) - yy, fill: 'var(--series-1)', rx: 2 }, g.svg); });
+    const pts = DAYS.map((d, i) => `${g.x(i)},${g.y(d.dau)}`).join(' ');
+    el('polyline', { points: pts, fill: 'none', stroke: 'var(--series-2)', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, g.svg);
+    DAYS.forEach((d, i) => el('circle', { cx: g.x(i), cy: g.y(d.dau), r: 3, fill: 'var(--series-2)' }, g.svg));
+    const last = DAYS.length - 1; el('text', { x: g.x(last) - 6, y: g.y(DAYS[last].dau) - 8, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--series-2)', 'font-weight': 600 }, g.svg).textContent = fmt(DAYS[last].dau);
+    const mx = DAYS.reduce((a, d, i) => (d.installs > DAYS[a].installs ? i : a), 0);
+    el('text', { x: g.x(mx), y: g.y(DAYS[mx].installs) - 6, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--series-1)', 'font-weight': 600 }, g.svg).textContent = fmt(DAYS[mx].installs);
+  }
+  function drawCum() {
+    const H = 240, m = { t: 20, r: 12, b: 30, l: 48 };
+    let acc = 0; const cum = DAYS.map((d) => (acc += d.installs));
+    const yMax = niceTicks(acc * 1.05, 4).pop();
+    const g = frame('cumChart', H, m, yMax, { label: 'Cumulative installs', tip: (d, i) => `<div class="tt-day">${d.day} (UTC)</div><div class="row"><span>Total installs</span><span class="n">${fmt(cum[i])}</span></div>` });
+    const pts = cum.map((v, i) => `${g.x(i)},${g.y(v)}`);
+    el('polygon', { points: [`${g.x(0)},${g.y(0)}`, ...pts, `${g.x(cum.length - 1)},${g.y(0)}`].join(' '), fill: 'var(--series-1)', opacity: 0.12 }, g.svg);
+    el('polyline', { points: pts.join(' '), fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, g.svg);
+    el('circle', { cx: g.x(cum.length - 1), cy: g.y(acc), r: 3.5, fill: 'var(--series-1)' }, g.svg);
+    el('text', { x: g.x(cum.length - 1) - 6, y: g.y(acc) - 8, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--series-1)', 'font-weight': 600 }, g.svg).textContent = fmt(acc);
+  }
+  function drawSess() {
+    const H = 240, m = { t: 20, r: 12, b: 30, l: 48 };
+    const yMax = niceTicks(Math.max(...DAYS.map((d) => d.sessions)) * 1.05, 4).pop();
+    const g = frame('sessChart', H, m, yMax, { label: 'Sessions per day', tip: (d) => `<div class="tt-day">${d.day} (UTC)</div><div class="row"><span>Sessions</span><span class="n">${fmt(d.sessions)}</span></div>` });
+    const bw = g.slot * 0.62;
+    DAYS.forEach((d, i) => { const yy = g.y(d.sessions); el('rect', { x: g.x(i) - bw / 2, y: yy, width: bw, height: g.y(0) - yy, fill: 'var(--series-2)', rx: 2 }, g.svg); });
+  }
+  function drawFb() {
+    const H = 260, m = { t: 40, r: 12, b: 30, l: 40 };
+    const yMax = niceTicks(Math.max(...DAYS.map((d) => d.feat + d.bugs)) * 1.1, 4).pop();
+    const g = frame('fbChart', H, m, yMax, { events: true, label: 'Feedback reports per day', tip: (d) => `<div class="tt-day">${d.day} (UTC)</div><div class="row"><span>Feature requests</span><span class="n">${fmt(d.feat)}</span></div><div class="row"><span>Bug reports</span><span class="n">${fmt(d.bugs)}</span></div><div class="row"><span>Total</span><span class="n">${fmt(d.feat + d.bugs)}</span></div>${evtFor(DAYS.indexOf(d))}` });
+    const bw = g.slot * 0.62;
+    DAYS.forEach((d, i) => {
+      const y1 = g.y(d.feat); el('rect', { x: g.x(i) - bw / 2, y: y1, width: bw, height: g.y(0) - y1, fill: 'var(--series-1)' }, g.svg);
+      const y2 = g.y(d.feat + d.bugs); el('rect', { x: g.x(i) - bw / 2, y: y2, width: bw, height: y1 - y2, fill: 'var(--series-2)' }, g.svg);
+    });
+  }
+  function drawCommits() {
+    const H = 240, m = { t: 20, r: 12, b: 30, l: 40 };
+    const yMax = niceTicks(Math.max(...DAYS.map((d) => d.commits)) * 1.1, 4).pop();
+    const g = frame('commitChart', H, m, yMax, { label: 'Commits and merges per day', tip: (d) => `<div class="tt-day">${d.day} (UTC)</div><div class="row"><span>Commits</span><span class="n">${fmt(d.commits)}</span></div><div class="row"><span>Merges</span><span class="n">${fmt(d.merges)}</span></div>` });
+    const bw = g.slot * 0.34;
+    DAYS.forEach((d, i) => {
+      const y1 = g.y(d.commits); el('rect', { x: g.x(i) - bw - 1, y: y1, width: bw, height: g.y(0) - y1, fill: 'var(--series-1)', rx: 1.5 }, g.svg);
+      const y2 = g.y(d.merges); el('rect', { x: g.x(i) + 1, y: y2, width: bw, height: g.y(0) - y2, fill: 'var(--series-2)', rx: 1.5 }, g.svg);
+    });
+  }
+  function drawRetTable() {
+    const pct = (a, b) => (a === null ? '—' : `${Math.round((a / b) * 100)}%`);
+    const bar = (a, b) => (a === null ? '' : `<span class="rbar" style="width:${Math.round((a / b) * 60)}px"></span>`);
+    const rows = RETENTION.map((r) => `<tr><td>${r.day}</td><td>${fmt(r.n)}</td><td>${bar(r.d1, r.n)}${pct(r.d1, r.n)}</td><td>${bar(r.d7, r.n)}${pct(r.d7, r.n)}</td></tr>`).join('');
+    document.getElementById('retTable').innerHTML = `<table><thead><tr><th>Installed on</th><th>Installs</th><th>Active next day</th><th>Active a week later</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function drawReleaseTable() {
+    const max = Math.max(...RELEASES.map((r) => r.dl));
+    const rows = RELEASES.map((r) => { const d = new Date(r.at); const when = `${d.getUTCDate()} Aug ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; return `<tr><td>${r.tag}</td><td>${when}</td><td><span class="dlbar" style="width:${Math.round((r.dl / max) * 120)}px"></span>${fmt(r.dl)}</td></tr>`; }).join('');
+    document.getElementById('releaseTable').innerHTML = `<table><thead><tr><th>Release</th><th>Published (UTC)</th><th>Installer downloads</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function drawDayTable() {
+    let acc = 0;
+    const rows = DAYS.map((d) => { acc += d.installs; return `<tr><td>${d.day}</td><td>${fmt(d.installs)}</td><td>${fmt(acc)}</td><td>${fmt(d.dau)}</td><td>${fmt(d.sessions)}</td><td>${fmt(d.feat)}</td><td>${fmt(d.bugs)}</td><td>${fmt(d.commits)}</td><td>${fmt(d.merges)}</td></tr>`; }).join('');
+    document.getElementById('dayTable').innerHTML = `<table><thead><tr><th>Day (UTC)</th><th>New installs</th><th>Total installs</th><th>Daily active</th><th>Sessions</th><th>Feature requests</th><th>Bug reports</th><th>Commits</th><th>Merges</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function drawAll() { drawMain(); drawCum(); drawSess(); drawFb(); drawCommits(); }
+  drawAll(); drawRetTable(); drawReleaseTable(); drawDayTable();
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawAll, 120); });
+  // The pull quotes live in the gutters when there is room and fold into one band when there is not -
+  // the same ten nodes, moved, so nothing is ever shown twice. Each remembers where it came from.
+  const pulls = [...document.querySelectorAll('.pull')].map((el) => ({ el, home: el.nextSibling, parent: el.parentNode }));
+  const band = document.getElementById('pullBand');
+  let folded = null;
+  function foldPulls() {
+    const want = window.innerWidth < 1500;
+    if (want === folded) return; folded = want;
+    for (const p of pulls) { if (want) band.appendChild(p.el); else p.parent.insertBefore(p.el, p.home); }
+  }
+  foldPulls(); window.addEventListener('resize', foldPulls);
+</script>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <p class="footer-links">
+          <a href="index.html">Home</a>
+          <span class="dot">·</span>
+          <a href="https://github.com/jmoyers/everquest-companion">Source on GitHub</a>
+          <span class="dot">·</span>
+          <a href="https://github.com/jmoyers/everquest-companion/releases">Releases</a>
+          <span class="dot">·</span>
+          <a href="https://github.com/jmoyers/everquest-companion/blob/main/LICENSE">FSL-1.1-MIT license</a>
+        </p>
+        <p class="footer-fine">
+          Not affiliated with, endorsed by, or associated with Daybreak Game Company. EverQuest is a
+          trademark of its respective owner.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -181,10 +181,11 @@ export function AlertBannerSetting(): JSX.Element {
             ? 'Alerts marked Show on screen appear as large text over the game, then fade. Point at a line to keep it up. Each alert says whether it appears here, in the Alerts tab.'
             : 'Off. Your alerts still play their sound and speak - nothing appears over the game.'}
         </Typography>
-        {/* JOS-405: same as the toast and the con card — the strip's own A− / A+ lives in a drag
-            frame you have to unlock to see, so this says where else the size is. */}
+        {/* JOS-405: same as the toast and the con card — the strip's own A− / A+ and bg slider live
+            in a drag frame you have to unlock to see, so this says where else they are. The section
+            is called Appearance since JOS-408, and both controls are in its one Overlays card. */}
         <Typography variant="caption" color="text.secondary" data-testid="pref-banner-text-size-note">
-          Its text size is Text size → Overlay text size.
+          Its text size and transparency are Appearance → Overlays.
         </Typography>
       </Stack>
 

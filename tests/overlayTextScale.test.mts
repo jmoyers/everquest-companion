@@ -336,10 +336,11 @@ test('EXACTLY ONE function decides what a window draws at, and every surface ask
   // different number from the window beside it.
   const chrome = code('../src/renderer/src/overlay/useOverlayChrome.ts')
   assert.match(chrome, /effectiveOverlayTextScale\(textSize, cfg\?\.textScale\)/)
-  // The twelve-row list moved to its own file in JOS-407, because each row now carries a size AND
-  // a transparency and belongs to neither setting alone.
-  const rows = code('../src/renderer/src/features/preferences/PerOverlaySetting.tsx')
-  assert.match(rows, /effectiveOverlayTextScale\(sizePrefs, scales\[kind\]\)/)
+  // The twelve-row list moved to its own file in JOS-407 (each row carries a size AND a
+  // transparency, so it belongs to neither setting alone) and then INTO the one Overlays card in
+  // JOS-408, which also owns the single switch both halves now read.
+  const rows = code('../src/renderer/src/features/preferences/OverlaysAppearanceSetting.tsx')
+  assert.match(rows, /effectiveOverlayTextScale\(size, scales\[kind\]\)/)
   // …and nobody re-derives it with a ternary of their own.
   for (const path of [...Object.values(SURFACES), FLOOR, SCALE]) {
     assert.doesNotMatch(code(path), /independent\s*\?/, `${path} decides the rule for itself`)

@@ -80,7 +80,10 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     // reversal) — and the one with TWO other controls (the tray menu's checkbox and the title bar's
     // overlay-menu row) that can move it while this pane is closed.
     getCloseToTray: answer('getCloseToTray', { enabled: true, noticeAcknowledged: true }),
-    getOverlayState: answer('getOverlayState', { toast: true, alertBanner: true, conCard: false }),
+    // The open-state map. THREE fields of it become the toast / banner / con-card cards' seeds, and
+    // since JOS-408 the WHOLE map is also kept, for the Overlays rows' `closed` tag — one read,
+    // four readers, which is the point of a batch.
+    getOverlayState: answer('getOverlayState', { toast: true, alertBanner: true, conCard: false, fight: true }),
     getToastConfig: answer('getToastConfig', { locked: false }),
     // The banner ships OFF and its first card mounted on that default; stored ON here, with an
     // off-default hold, so the seed has to carry both (owner, hands-on, 2026-08-16).
@@ -265,10 +268,12 @@ test('every Preferences card seeds from the gate, and none of them re-reads main
     'BuffTrustSetting.tsx',
     'ResistEvidenceSetting.tsx',
     'TextSizeSetting.tsx',
-    // JOS-405's two: the shared overlay size + the switch, and the twelve-row list. The list is
-    // the one this rule is sharpest about — twelve rows that painted a default first would be the
-    // JOS-340 defect twelve times over on one card.
-    'OverlayTextSizeSetting.tsx',
+    // The Appearance section's second item: the ONE Overlays card (JOS-408), which folded in
+    // JOS-405's shared size, JOS-407's transparency and the twelve-row list. The list is the part
+    // this rule is sharpest about — twelve rows that painted a default first would be the JOS-340
+    // defect twelve times over on one card — and the card now seeds FIVE things from the snapshot,
+    // including which of those windows are open.
+    'OverlaysAppearanceSetting.tsx',
     'ToastSetting.tsx',
     'VoiceSetting.tsx',
     'TelemetrySetting.tsx',
