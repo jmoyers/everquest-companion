@@ -109,6 +109,10 @@ function PlainView({
    *  links there when the banner overlay is off. */
   onOpenOverlayPrefs: () => void
 }): JSX.Element {
+  // The cross-view doors the gear area's views take together (the drop trio's contracts) — one
+  // object so each mount stays a one-liner: this file sits at its 400-code-line ceiling and every
+  // mount added pays from it.
+  const doors = { onOpenLoot: routing.openLoot, onOpenMob: routing.openMob, onOpenMapZone: routing.openMapZone }
   return (
     <>
       {/* The Loot tab stays MOUNTED across a deep link (no `key` churn on item change) —
@@ -154,13 +158,11 @@ function PlainView({
           every wish name links OUT to that item's Loot drill-down, the same contract the
           Exaltations tab's donor names use, so the drill's Back arrow comes home here. */}
       {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} />}
-      {/* The Plan's other routes out (user rulings, 2026-08-18): its zone chips and run headings
-          open the Maps tab on that zone (the same pick the toolbar's selector writes), and a
-          named witness mob's name opens the mob's own page. */}
-      {view === 'plan' &&
-        <PlanView key={viewKey} onOpenLoot={routing.openLoot} onOpenMapZone={routing.openMapZone}
-          onOpenMob={routing.openMob} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
+      {/* The Plan tab (its place in the gear area's tab bar comes from appViews, not this list).
+          Its routes out (user rulings, 2026-08-18): item names to the Loot drill-down, zone chips
+          and run headings to the Maps tab, and a named witness mob's name to the mob's own page. */}
+      {view === 'plan' && <PlanView key={viewKey} {...doors} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived
           by the fold the character switch kicks off. */}
