@@ -173,7 +173,7 @@ When you switch away from a tab.
 
 | Field | Values | What it means |
 | --- | --- | --- |
-| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `gear` · `wishlist` · `character` · `preferences` · `triage` | Which tab. A fixed list of tab names. |
+| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `gear` · `wishlist` · `character` · `preferences` · `triage` · `ai` | Which tab. A fixed list of tab names. |
 | `ms` | whole number | How long it was on screen. |
 
 ### `overlayToggle`
@@ -182,7 +182,7 @@ When you open or close a floating meter.
 
 | Field | Values | What it means |
 | --- | --- | --- |
-| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` | Which overlay. |
+| `kind` | `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` · `ai` | Which overlay. |
 | `open` | true / false | Opened or closed. |
 
 ### `featureUse`
@@ -212,7 +212,7 @@ Once per session: what a typical install looks like.
 | `charCountBucket` | bucket index | How many character logs the app can see. |
 | `logSizeBucket` | bucket index | How big the log it reads is. |
 | `alertCountBucket` | bucket index | How many alerts you keep. |
-| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` | Which floating meters are open. |
+| `overlaysEnabled` | list of `fight` · `overall` · `heal-fight` · `heal-overall` · `events` · `toast` · `buffs` · `debuffs` · `xp` · `respawn` · `alertBanner` · `conCard` · `ai` | Which floating meters are open. |
 | `cursorRing` | true / false | Is the cursor ring on. |
 | `autoHide` | true / false | Is overlay auto-hide on. |
 | `voiceEngine` | `system` · `kokoro` · `off` | Which speech tier your spoken alerts use — off when no alert is set to speak. |
@@ -280,7 +280,7 @@ When the app hits an error: the technical details of the failure, so it can be f
 | `componentPath` | at most 8 names joined with > | For an error in the app’s own interface, which of the app’s screen components it came through — the names in this app’s source code, and nothing from the game. |
 | `fingerprint` | 16 hex characters | A hash used to group identical errors together. |
 | `breadcrumbs` | at most 10 × (kind, offset) | What KINDS of log line the app had just read — `damage`, `loot`, `zone` and so on, from a fixed list — and how long before the error each was. The kind only: not the line, not who or what was in it. |
-| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `gear` · `wishlist` · `character` · `preferences` · `triage` · `unknown` | Which tab was open. A fixed list. |
+| `view` | `overview` · `combat` · `mobs` · `maps` · `bosses` · `posky` · `alerts` · `leveling` · `loot` · `planner` · `buffs` · `timers` · `gear` · `wishlist` · `character` · `preferences` · `triage` · `ai` · `unknown` | Which tab was open. A fixed list. |
 | `sessionAgeBucket` | bucket index | How long the app had been running. |
 | `mode` | `live` · `replay` | Was it reading your log history, or following it live. |
 | `count` | whole number | How many times this same error happened since the last report. It stops at a hundred per error per run of the app: something that goes wrong over and over reports itself a hundred times and then goes quiet, so one repeating fault cannot bury everything else. |

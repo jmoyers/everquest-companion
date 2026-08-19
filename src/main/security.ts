@@ -66,6 +66,10 @@ export interface ExternalLinkRule {
  *                          every build of this app already comes from (the updater's own feed,
  *                          src/main/updater.ts). github.com's ROOT, and every other owner and
  *                          repo on it, is refused like any host that is not on this list.
+ *   openrouter.ai        — TWO PATHS, not the host: `/keys` (paste a key) and
+ *                          `/collections/free-models` (what [Free] actually means). The rest of
+ *                          OpenRouter (arbitrary model cards, account billing, someone else's
+ *                          collection) stays shut.
  *
  * Adding an entry here is a deliberate decision to let renderer-supplied text cause the OS to
  * open something, and the narrowest entry that serves the link is the one to write. Deliberately
@@ -77,10 +81,19 @@ export const EXTERNAL_LINK_ALLOWLIST: readonly ExternalLinkRule[] = [
   { host: 'eqlwiki.com' },
   { host: 'www.eqlwiki.com' },
   { host: 'wiki.project1999.com' },
-  { host: 'github.com', pathPrefix: '/jmoyers/everquest-companion' }
+  { host: 'github.com', pathPrefix: '/jmoyers/everquest-companion' },
+  { host: 'openrouter.ai', pathPrefix: '/keys' },
+  { host: 'openrouter.ai', pathPrefix: '/collections/free-models' }
 ]
 
-const ALLOWED_LINK_RULES = new Map(EXTERNAL_LINK_ALLOWLIST.map((r) => [r.host, r] as const))
+function matchingLinkRule(hostname: string, pathname: string): ExternalLinkRule | undefined {
+  for (const rule of EXTERNAL_LINK_ALLOWLIST) {
+    if (rule.host !== hostname) continue
+    if (rule.pathPrefix === undefined) return rule
+    if (isUnderPathPrefix(pathname, rule.pathPrefix)) return rule
+  }
+  return undefined
+}
 
 /**
  * Is `pathname` the allowed subtree itself, or something inside it?
@@ -138,9 +151,7 @@ export function allowedExternalUrl(raw: unknown): string | null {
   if (u.protocol !== 'https:') return null
   if (u.username !== '' || u.password !== '') return null
   if (u.port !== '') return null
-  const rule = ALLOWED_LINK_RULES.get(u.hostname)
-  if (!rule) return null
-  if (rule.pathPrefix !== undefined && !isUnderPathPrefix(u.pathname, rule.pathPrefix)) return null
+  if (!matchingLinkRule(u.hostname, u.pathname)) return null
   return u.toString()
 }
 

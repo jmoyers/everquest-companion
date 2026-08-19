@@ -93,9 +93,9 @@ export type { LootDisposition, ItemStatBlock }
  * tests/overlayLayout.test.mts pins both halves.
  */
 // prettier-ignore
-export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn' | 'alertBanner' | 'conCard'
+export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn' | 'alertBanner' | 'conCard' | 'ai'
 // prettier-ignore
-export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn', 'alertBanner', 'conCard']
+export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn', 'alertBanner', 'conCard', 'ai']
 
 /** True for the two HEALING overlay kinds (they render HealMeter, not OverlayMeter). */
 export function isHealOverlayKind(kind: OverlayKind): boolean {

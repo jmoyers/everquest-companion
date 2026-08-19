@@ -9,6 +9,7 @@ import ConCardOverlay from './ConCardOverlay'
 import BuffsOverlay from './BuffsOverlay'
 import XpOverlay from './XpOverlay'
 import RespawnOverlay from './RespawnOverlay'
+import AiOverlay from './AiOverlay'
 import { isHealOverlayKind } from '@shared/types'
 import { isTimerOverlayKind } from '@shared/buffTimers'
 import { installOverlayPointerExit } from './pointerExit'
@@ -42,6 +43,8 @@ import { installOverlayPointerExit } from './pointerExit'
 //   'respawn'                         → the respawn clocks (JOS-194): one countdown per watched
 //                                       mob that has died, started by the death message and
 //                                       numbered from your own kills
+//   'ai'                              → last assistant answer + (unlocked) ask box; shares the
+//                                       main tab's thread via localStorage
 //   everything else                   → the damage meter (fight / zone selection lives inside)
 const kind = window.eqOverlay?.kind ?? 'fight'
 
@@ -52,6 +55,7 @@ function Surface(): React.JSX.Element {
   if (kind === 'conCard') return <ConCardOverlay />
   if (kind === 'xp') return <XpOverlay />
   if (kind === 'respawn') return <RespawnOverlay />
+  if (kind === 'ai') return <AiOverlay />
   if (isTimerOverlayKind(kind)) return <BuffsOverlay kind={kind} />
   if (isHealOverlayKind(kind)) return <HealMeter />
   return <OverlayMeter />

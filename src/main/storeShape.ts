@@ -294,4 +294,17 @@ export interface StoreShape {
    * importing a friend's answer to that is not a setting anyone wanted.
    */
   uiScale?: number
+  /**
+   * AI Assistant configuration. Additive, no migration.
+   * `apiKey` is stored as an encrypted base64 string using Electron's safeStorage.
+   */
+  aiConfig?: {
+    authType?: 'apikey' | 'subscription'
+    apiKey?: string
+    consent: boolean
+    model?: string
+    personalStyle?: string
+    /** Opt-in live tips. Absent = off. */
+    proactive?: boolean
+  }
 }

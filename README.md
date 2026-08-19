@@ -137,6 +137,20 @@ left. The id it uses is deliberately **not** your feedback install id: the two d
 can't be joined, by us or by anyone else. [`SECURITY.md`](SECURITY.md#usage-analytics) has
 the retention details.
 
+## AI Assistant
+
+Optional helper on the **AI Assistant** tab (Preferences → API key from
+[openrouter.ai/keys](https://openrouter.ai/keys)). Ask about items, spells, this fight,
+this zone, buffs, or loot. It uses data already in the app - not Live EQ, not P99.
+[Free] models cost $0 (rate limits; the list can change -
+[openrouter.ai/collections/free-models](https://openrouter.ai/collections/free-models)).
+
+If it has not seen your bags, type `/outputfile inventory` **in EverQuest** (not in the
+chat). An overlay (Overlay menu → AI, off by default) shows the last answer over the
+game.
+
+More detail: [`docs/plans/ai-assistant.md`](docs/plans/ai-assistant.md).
+
 ## Development
 
 Contributions welcome. Everything about building, testing, and the architecture lives in

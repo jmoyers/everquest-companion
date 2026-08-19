@@ -20,6 +20,7 @@ import type { BuffAllowPrefs } from '../shared/buffAllow'
 import type { ToastPayload } from '../shared/toast'
 import type { AlertBannerPayload } from '../shared/alertBanner'
 import type { ConCardPayload } from '../shared/conCard'
+import type { AiChatTurn, AiLiveStatus, AiPromptResult, AiStreamChunk, AiUsageSnap } from '../shared/aiChat'
 
 export type { CombatSnapshot, SnapshotOpts, OverlayConfig, OverlayDrill, OverlayKind, MobKnowledge }
 
@@ -396,7 +397,31 @@ const overlayApi = {
   fitHeight: (height: number): void => ipcRenderer.send(IPC.overlayFitHeight, KIND, height),
 
   /** Close this overlay from its own close button (interactive mode only). */
-  close: (): void => ipcRenderer.send(IPC.overlayClose, KIND)
+  close: (): void => ipcRenderer.send(IPC.overlayClose, KIND),
+
+  // ---- AI overlay (kind 'ai') — the main window's AI bridge is `window.eq`, which this
+  // bundle does not get. Same channels, same names, so one send path cannot drift.
+  sendAiPrompt: (prompt: string, history: AiChatTurn[]): Promise<AiPromptResult> =>
+    ipcRenderer.invoke(IPC.aiSendPrompt, prompt, history),
+  getAiStatus: (): Promise<AiLiveStatus> => ipcRenderer.invoke(IPC.aiStatusGet),
+  getAiUsage: (): Promise<AiUsageSnap> => ipcRenderer.invoke(IPC.aiUsageGet),
+  onAiUsage: (cb: (u: AiUsageSnap) => void): (() => void) => {
+    const listener = (_e: unknown, u: AiUsageSnap): void => cb(u)
+    ipcRenderer.on(IPC.aiUsage, listener)
+    return () => ipcRenderer.removeListener(IPC.aiUsage, listener)
+  },
+  onAiProactive: (cb: (text: string) => void): (() => void) => {
+    const listener = (_e: unknown, p: { text?: string }): void => {
+      if (typeof p?.text === 'string' && p.text.length > 0) cb(p.text)
+    }
+    ipcRenderer.on(IPC.aiProactive, listener)
+    return () => ipcRenderer.removeListener(IPC.aiProactive, listener)
+  },
+  onAiChunk: (cb: (c: AiStreamChunk) => void): (() => void) => {
+    const listener = (_e: unknown, c: AiStreamChunk): void => cb(c)
+    ipcRenderer.on(IPC.aiChunk, listener)
+    return () => ipcRenderer.removeListener(IPC.aiChunk, listener)
+  }
 }
 
 export type EqOverlayApi = typeof overlayApi

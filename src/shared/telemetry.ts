@@ -126,7 +126,7 @@ export const TELEMETRY_VIEWS = [
   // once, which is exactly what JOS-327 did.
   'character',
   'preferences',
-  'triage'
+  'triage', 'ai'
 ] as const
 export type TelemetryView = (typeof TELEMETRY_VIEWS)[number]
 
@@ -163,7 +163,7 @@ export const TELEMETRY_OVERLAY_KINDS = [
   // reason: the enum is CLOSED, the ingest Lambda validates through this module, and a batch
   // carrying a value the server has not learned yet is refused WHOLE with a 400 the client classes
   // as permanent and drops. The server ships first.
-  'conCard'
+  'conCard', 'ai'
 ] as const
 export type TelemetryOverlayKind = (typeof TELEMETRY_OVERLAY_KINDS)[number]
 

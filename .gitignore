@@ -101,3 +101,8 @@ crash.*.log
 # any log slice `triage-feedback show` downloads. Those slices are a user's own
 # game log; they are read locally and never enter git or a public issue.
 .triage/
+
+# Local Grok workflow + session snapshot. Never ship these; AGENTS.md is Josh's.
+AGENTS.local.md
+HANDOFF.md
+
