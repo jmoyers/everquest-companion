@@ -59,6 +59,8 @@ import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
 import { useModule } from '../../lib/useModule'
+import { CellLink } from '../../lib/CellLink'
+import { dropZoneTarget } from '../gear/dropLinks'
 import { MobPage } from './MobPage'
 import { RecentlyConsidered, applyConsiderDelta } from './RecentlyConsidered'
 import { MOB_CATALOG, searchMobs } from './mobSearch'
@@ -89,10 +91,14 @@ function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): Chara
 function MobResultRow({
   entry,
   kills,
-  onOpen
+  onOpen,
+  onOpenMapZone
 }: {
   entry: MobEntry
   kills: KillMap
+  /** a zone spelling's door to its map (user ruling, 2026-08-18: cross-link things); the row's
+   *  own click still opens the mob — CellLink stops the propagation */
+  onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
   onOpen: (t: MobTarget) => void
 }): JSX.Element {
   const drops = entry.drops?.length ?? 0
@@ -129,7 +135,19 @@ function MobResultRow({
         </Typography>
       )}
       <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
-        {entry.zones?.join(', ')}
+        {(entry.zones ?? []).map((z, i) => {
+          const stem = onOpenMapZone === undefined ? null : dropZoneTarget(z)
+          return (
+            <Box key={z} component="span">
+              {i > 0 && ', '}
+              {stem === null || onOpenMapZone === undefined ? (
+                z
+              ) : (
+                <CellLink text={z} onOpen={() => { onOpenMapZone(stem) }} />
+              )}
+            </Box>
+          )
+        })}
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
       {kill && kill.count > 0 && (
@@ -405,7 +423,8 @@ export default function MobsView({
                 {hits.length} of {MOB_CATALOG.length} mobs
               </Typography>
               {hits.map((h) => (
-                <MobResultRow key={h.entry.page} entry={h.entry} kills={kills} onOpen={openNative} />
+                <MobResultRow key={h.entry.page} entry={h.entry} kills={kills} onOpen={openNative}
+                  onOpenMapZone={onOpenMapZone} />
               ))}
             </>
           ) : (
