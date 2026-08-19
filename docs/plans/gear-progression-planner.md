@@ -2,7 +2,8 @@
 
 Design doc. Library-first: one learned con-band table in `src/shared`, one pure plan fold in
 `src/shared/planner`, one new renderer surface in the gear area, and one seeding door into the
-wish list that already exists. Nothing here is implemented yet.
+wish list that already exists. Status: **DONE — shipped on this branch** (implementation-time
+addenda are marked inline; see §0.3, §2.1, §5).
 
 Grounded in a read-only sweep of the real log on this machine
 (`…\EverQuest Legends\Logs\eqlog_Drywrought_oggok.txt`, 134,695 lines, 2026-08-15) and the

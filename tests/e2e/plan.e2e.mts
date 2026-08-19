@@ -83,6 +83,9 @@ const REACH = '[data-testid="plan-reach"]'
 /** The comparison pair, by the testid the Gear tab's own spec reads — reuse is the claim. */
 const PAIR = '[data-testid="gear-compare-pair"]'
 const PAIR_ITEM = '[data-testid="gear-compare-card"]'
+/** The Loot drill-down, by the testids the wish list's own deep-link step reads (planner.e2e). */
+const LOOT_DETAIL = '[data-testid="loot-detail"]'
+const LOOT_TITLE = '[data-testid="loot-detail-title"]'
 
 /** One target row, and the name inside it that carries both affordances (Loot link, hover pair). */
 const targetOf = (key: string): string => `${TARGET}[data-item-key="${key}"]`
@@ -351,6 +354,23 @@ async function stepHoverCompare(page: Page, keys: readonly string[]): Promise<vo
   await page.mouse.move(2, 2)
 }
 
+/**
+ * 8. EVERY TARGET NAME OPENS THE LOOT DRILL-DOWN — the same `openLoot` contract the wish list's
+ * names state (wishlistSteps.mts step 7). The claim is the ROUTE, not the drill: a plan whose
+ * names were inert would be the one gear-area surface where an item name is not a link. It runs
+ * LAST because the click leaves the Plan tab, and the overflow measurement is about Plan's box.
+ */
+async function stepLootDeepLink(page: Page, keys: readonly string[]): Promise<void> {
+  const key = keys[0]
+  if (key === undefined) return
+  const name = (await textOf(page, nameOf(key))).replace(/\s+/g, ' ').trim()
+  await page.click(nameOf(key), { timeout: 15_000 })
+  const landed = await until(async () => (await countOf(page, LOOT_DETAIL)) > 0, 20_000)
+  if (!check("clicking a plan target's name opens the Loot tab's item drill-down", landed, `target "${name}"`)) return
+  const drilled = (await textOf(page, LOOT_TITLE)).replace(/\s+/g, ' ').trim()
+  check('…on the item that was clicked, not on the ledger', drilled === name, `"${drilled}" vs "${name}"`)
+}
+
 /** Watch a page for the console errors this spec fails on. */
 function watch(page: Page, into: string[]): void {
   page.on('console', (m) => {
@@ -376,12 +396,14 @@ async function main(): Promise<void> {
     watch(page, consoleErrors)
     if (await stepMount(page)) {
       await stepUnstated(page)
+      let keys: readonly string[] = []
       if (await stepDing(page, log)) {
         await stepRuns(page)
         // The hover claim runs on rows the add step has already written to the wish list, which
         // costs it nothing (the pair is about the ITEM, not about its wish state) and saves a
         // second read of the route.
-        await stepHoverCompare(page, await stepAddBracket(page))
+        keys = await stepAddBracket(page)
+        await stepHoverCompare(page, keys)
       }
       const over = await pageOverflow(page)
       check(
@@ -389,6 +411,7 @@ async function main(): Promise<void> {
         over.doc === 0 && over.content === 0,
         `document +${String(over.doc)}px · content area +${String(over.content)}px`
       )
+      await stepLootDeepLink(page, keys)
     }
     await dumpArtifacts(page, failures.length ? 'plan-FAIL' : 'plan-pass')
   } finally {

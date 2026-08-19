@@ -208,8 +208,8 @@ export interface PlanBracket {
   /**
    * The same bracket's admitted items as ONE flat top-`TARGET_CAP` list.
    *
-   * KEPT SO THE RENDERER CAN MIGRATE at its own pace: `runs` is additive, and both fields are built
-   * from the identical admitted pool, so a row here is a row there.
+   * The renderer reads `runs` only; this stays as the fold's pool assertion — the tests read it
+   * to pin the admitted set independently of how the runs carve it up.
    */
   targets: GearTarget[]
 }
@@ -503,7 +503,7 @@ function admittedFor(ctx: PlanCtx, bracket: Bracket, used: ReadonlySet<string>):
 
 /** The grouping key: one run per (base zone, tier). See `GearRun`. */
 function runKey(target: GearTarget): string {
-  return `${zoneLevelKey(target.zone)} ${target.plus ?? 0}`
+  return `${zoneLevelKey(target.zone)}\u0000${target.plus ?? 0}`
 }
 
 /** A base run's band is the zone-median reading `expZones` would print; a +N run has none (rule 2). */
