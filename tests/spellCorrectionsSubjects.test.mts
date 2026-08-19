@@ -605,3 +605,47 @@ test('JOS-103`s type-less line has a typed event now: Spirit of the Puma', () =>
   assert.equal(ev?.kind, 'buffApply')
   assert.equal(ev.kind === 'buffApply' ? ev.spell : '', 'Spirit of the Puma')
 })
+
+// ---------------------------------------------------------------------------------------------
+// 7 — THE SIXTH REPORT: Curse, the level-34 rank of the line Odium already proved (issue #43)
+// ---------------------------------------------------------------------------------------------
+
+test('issue #43: a Curse cast plus the live landing opens a DEBUFF bar', () => {
+  // THE REPORTED DEFECT (github.com/jmoyers/everquest-companion issue #43, a shaman): "the shaman
+  // spell Curse level 34 isnt showing on the debuff tracker overlay". The report carries no log,
+  // so no reporter bytes exist to quote: the cast line is the game's standard shape for the DB's
+  // own spell name, and the landing is the wiki's own sentence with the subject restored — the
+  // same one token this sweep exists to restore. The DB corroborates the sentence from inside the
+  // entry itself: `msgCastOnYou` is its exact first-person half, `You have been cursed.`
+  const r = replay([[0, 'You begin casting Curse.'], [3, 'a rock golem has been cursed.']], 10)
+  const row = r.rows.find((x) => x.target === 'a rock golem')
+  assert.ok(row, `no Curse row: ${r.rows.map((x) => `${x.name}@${x.target ?? 'self'}`).join(', ') || '(none)'}`)
+  assert.equal(row.name, 'Curse')
+  assert.equal(row.kind, 'debuff', 'spellType `Curse` folds detrimental (spellDb.ts DETRIMENTAL_TYPES)')
+  assert.equal(row.mode, 'countdown', 'a bar with a duration, which is the whole report')
+  assert.equal(row.durationMs, 30_000, 'the committed DB states 30 seconds')
+  assert.ok(rowsForSurface(r.rows, 'debuffs').includes(row), 'and it belongs to the DEBUFFS window')
+  assert.ok(r.active.some((a) => a.spell === 'Curse' && a.target === 'a rock golem'), 'the held instance under the row')
+})
+
+test('…and WITHOUT the sweep the Curse landing matches nothing at all, which is the defect', () => {
+  // The wiki writes `Target has been cursed.`, subject `Target`, so the spell yields no suffix and
+  // is in no table — the Odium defect exactly, one rank down the same shaman line.
+  const bare = buildSpellDb(applySpellCorrections(RAW, HAND_DERIVED).spells)
+  assert.equal(matchCastOnOtherSuffix('a rock golem has been cursed.', bare), null)
+  assert.equal(castOnOtherSuffix(bare.byKey.get('curse')?.msgCastOnOther ?? ''), null)
+})
+
+test('the Curse landing resolves to Curse alone, and Magi Curse keeps its own tail', () => {
+  // The near-neighbour the mint must NOT collide with: `Someone has been Magi cursed.` ends in the
+  // same two words but neither tail is a suffix of the other (` has been cursed.` vs ` has been
+  // Magi cursed.`), so each line has exactly one owner. Invariant 2 pins the general rule; this
+  // pins the one concrete pair a reader would worry about.
+  const db = loadSpellDb()
+  const hit = matchCastOnOtherSuffix('a rock golem has been cursed.', db)
+  assert.ok(hit, 'the live sentence must resolve at all')
+  assert.equal(hit.target, 'a rock golem')
+  assert.deepEqual(hit.entry.cands.map((c) => c.name), ['Curse'], 'no other spell writes this sentence')
+  const magi = matchCastOnOtherSuffix('a rock golem has been Magi cursed.', db)
+  assert.deepEqual(magi?.entry.cands.map((c) => c.name), ['Magi Curse'])
+})

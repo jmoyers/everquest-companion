@@ -427,6 +427,14 @@ const SUBJECT_DRIFTS: readonly SubjectDrift[] = [
     attribution: 'cast',
     evidence:
       'THE REPORTED DEFECT (01KZSR4HQVWJKDG0NCDGZ01928, v0.21.0, a druid): Vengeance of the Wild does not appear in debuff tracking. THE OWNER`S LOG CANNOT WITNESS IT — 1,608,490 lines measured 2026-08-12 hold 0 of the restored shape, 0 of the wiki form, 0 of the self landing, 0 of the wear-off and not one line naming the spell at all — so the evidence log is the reporter`s slice, cited by id (see THE ROW THE OWNER`S LOG CANNOT WITNESS in this file`s header). That slice, 3,405 lines through the real parser: 7 `You begin casting Vengeance of the Wild VI.` casts, 6 lines of `<mob> has been consumed in the flames of the wild.`, one per cast at EXACTLY +2 s, and the 7th cast is the one it shows interrupted. 0 of the wiki form. The tail is new to the suffix table and no other DB message mentions the flames of the wild, so nothing else could be meant either.'
+  },
+  {
+    spells: ['Curse'],
+    from: 'Target has been cursed.',
+    to: 'Someone has been cursed.',
+    hits: 0,
+    evidence:
+      'THE REPORTED DEFECT (GitHub issue #43, a shaman): "the shaman spell Curse level 34 isnt showing on the debuff tracker overlay". The Odium defect exactly, one rank down the same shaman curse line — that row (above) proved the drift for this line`s 43. THE REPORT CARRIES NO LOG, so there is no slice to count and `hits: 0` here means UNMEASURED BY THE CONTRIBUTOR, not witnessed-absent: this row was authored outside the owner`s tree and the owner-log pass (count of `<T> has been cursed.`, wiki form, and the tripwire replay) still needs the owner`s log. What IS measured, against the committed DB: the tail is minted — no other spell writes this sentence; `Magi Curse` owns `has been Magi cursed.`, and neither tail is a suffix of the other (tests/spellCorrectionsSubjects.test.mts pins the pair); `Vexing Mordinia` and `Odium` write different curse sentences — and the entry corroborates itself: `msgCastOnYou` is the exact first-person half, `You have been cursed.` The sentence matches neither emote regex (feels/looks/seems verbs only) and no poison-proc suffix, so nothing is taken from any classifier below.'
   }
 ]
 
