@@ -17,18 +17,21 @@ import CloseIcon from '@mui/icons-material/Close'
 import { itemBaseName } from '@shared/itemStats'
 import { hasWish } from '@shared/planner/wishlist'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
+import type { ZoneShort } from '@shared/maps'
 import type { Timeslice } from '@shared/timeslice'
 import { isAcquisition } from '@shared/lootDisposition'
 import { formatDate } from '../../lib/formatDate'
 import { sourceItemKey } from '../../lib/itemSources'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
 import { ObservedItemWindow } from '../../lib/ObservedItemWindow'
+import type { MobTarget } from '../mobs/mobTarget'
 // THE ONE WISH CONTROL (JOS-343/346) and the ONE gear-wish builder (wishSearch.ts) — the drill-down
 // writes the same bytes the Gear table's row control writes, through the same shared document.
 import { useWishlist } from '../wishlist/useWishlist'
 import WishToggle from '../wishlist/WishToggle'
 import { wishFromGear } from '../wishlist/wishSearch'
-import { ItemDbSources, ObservedChip } from './ItemDbSources'
+import { ItemDbSources } from './ItemDbSources'
+import { DroppedByColumn, type LootTally } from './ItemDroppedBy'
 import { ItemZoneTable } from './ItemZoneTable'
 import { KnowledgeSection } from './KnowledgeSection'
 import { useItemZoneRates, type ItemZoneRates } from './useItemZoneRates'
@@ -88,35 +91,6 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   )
 }
 
-function Bar({
-  label,
-  value,
-  max,
-  right
-}: {
-  label: string
-  value: number
-  max: number
-  right: string
-}): JSX.Element {
-  const pct = max > 0 ? (value / max) * 100 : 0
-  return (
-    <Box sx={{ mb: 0.75 }}>
-      <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.25 }}>
-        <Typography variant="caption" noWrap sx={{ maxWidth: 220 }}>
-          {label}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {right}
-        </Typography>
-      </Stack>
-      <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: 1 }}>
-        <Box sx={{ height: 8, width: `${pct}%`, bgcolor: 'secondary.main', borderRadius: 1 }} />
-      </Box>
-    </Box>
-  )
-}
-
 interface TimelineBins {
   counts: number[]
   from: number
@@ -170,11 +144,6 @@ function Timeline({ events }: { events: LootEvent[] }): JSX.Element {
       </Stack>
     </Box>
   )
-}
-
-interface LootTally {
-  name: string
-  count: number
 }
 
 interface LootBreakdown {
@@ -263,36 +232,6 @@ function ItemWindowColumn({
   )
 }
 
-/* The observed columns are YOUR loot history — chipped `observed` since 2026-08-04, because the
-   `db` columns below them answer the same question from the committed wiki data and the two must
-   never read as one list. "You have never looted this" is now a statement about you, not about
-   the item. */
-function ObservedHead({ title, hint }: { title: string; hint?: string }): JSX.Element {
-  return (
-    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5 }}>
-      <Typography variant="subtitle2">{title}</Typography>
-      {hint !== undefined && (
-        <Typography component="span" variant="caption" color="text.secondary">
-          {hint}
-        </Typography>
-      )}
-      <ObservedChip />
-    </Stack>
-  )
-}
-
-function DroppedByColumn({ sources, max }: { sources: LootTally[]; max: number }): JSX.Element {
-  return (
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <ObservedHead title="Dropped by" hint="(times seen)" />
-      {sources.length === 0 && <Typography variant="caption">You have not looted this yet.</Typography>}
-      {sources.map((s) => (
-        <Bar key={s.name} label={s.name} value={s.count} max={max} right={`${s.count}× seen`} />
-      ))}
-    </Box>
-  )
-}
-
 /* Everything BELOW/BESIDE the game block is OUR knowledge — what the live log and the local
    dataset add that the in-game window can't tell you.
 
@@ -306,7 +245,9 @@ function ObservedColumn({
   knowledge,
   item,
   zoneRates,
-  owned
+  owned,
+  onOpenMob,
+  onOpenMapZone
 }: {
   events: LootEvent[]
   agg: LootBreakdown
@@ -314,6 +255,8 @@ function ObservedColumn({
   item: string
   zoneRates: ItemZoneRates
   owned?: number
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
   return (
     <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
@@ -338,11 +281,16 @@ function ObservedColumn({
       {/* WHO drops it beside WHERE — and the where half is a RATE now (JOS-78), because a zone's
           count alone cannot tell eleven-in-an-evening from eleven-over-a-fortnight. */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-        <DroppedByColumn sources={agg.sources} max={agg.sources[0]?.count ?? 1} />
-        <ItemZoneTable rows={zoneRates.rows} clipped={zoneRates.clipped} looted={events.length > 0} />
+        <DroppedByColumn sources={agg.sources} max={agg.sources[0]?.count ?? 1} onOpenMob={onOpenMob} />
+        <ItemZoneTable
+          rows={zoneRates.rows}
+          clipped={zoneRates.clipped}
+          looted={events.length > 0}
+          onOpenMapZone={onOpenMapZone}
+        />
       </Stack>
 
-      <ItemDbSources item={item} knowledge={knowledge.data} />
+      <ItemDbSources item={item} knowledge={knowledge.data} onOpenMob={onOpenMob} onOpenMapZone={onOpenMapZone} />
 
       <Divider sx={{ my: 2 }} />
       <Typography variant="subtitle2" gutterBottom>
@@ -394,8 +342,16 @@ export function ItemDetailContent({
   stats,
   active,
   slice,
-  owned
-}: Omit<ItemDetailProps, 'isQuestItem'> & { active: boolean }): JSX.Element {
+  owned,
+  onOpenMob,
+  onOpenMapZone
+}: Omit<ItemDetailProps, 'isQuestItem'> & {
+  active: boolean
+  /** the source and dropped-by mobs' door to their pages (App's `openMob`); absent, plain text */
+  onOpenMob?: (t: MobTarget) => void
+  /** the stated and observed zones' door to the Maps tab (App's `openMapZone`); absent, plain text */
+  onOpenMapZone?: (zone: ZoneShort) => void
+}): JSX.Element {
   /**
    * EVERY NUMBER BELOW IS ABOUT LOOTING, so the destroys come out here (JOS-401, the census).
    * `Times looted`, `Distinct mobs`, `Zones seen`, the mob breakdown, the per-zone rates and the
@@ -422,6 +378,8 @@ export function ItemDetailContent({
         item={item}
         zoneRates={zoneRates}
         owned={owned}
+        onOpenMob={onOpenMob}
+        onOpenMapZone={onOpenMapZone}
       />
     </Stack>
   )

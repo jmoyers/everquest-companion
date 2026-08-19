@@ -7,9 +7,9 @@
 // SEARCH-BOX TOKENS, which honours what that ruling was actually about: toolbar real estate.
 // gearFilter.ts's header carries the full argument. The claims pinned here:
 //
-//   1. THE PARSER lifts `key op number` tokens out and leaves the words as ONE substring needle —
-//      and a token naming no known key stays a WORD, so a typo shows itself in an empty table
-//      rather than silently filtering on nothing.
+//   1. THE PARSER lifts `key op number` tokens out and leaves each run of words as one substring
+//      needle — and a token naming no known key stays a WORD, so a typo shows itself in an empty
+//      table rather than silently filtering on nothing.
 //   2. A THRESHOLD READS THE SCALED VECTOR through `sortValue` — `ratio>=0.9` under the slider
 //      keeps the weapons that reach 0.9 AT that plus.
 //   3. ABSENT FAILS EVERY OPERATOR, `<` included (law 1): an item that stated no HASTE line is not
@@ -83,12 +83,18 @@ function filters(over: Partial<GearFilters> = {}): GearFilters {
 
 const names = (rows: readonly GearRow[]): string[] => rows.map((r) => r.name)
 
-test('parseGearQuery lifts threshold tokens out and leaves the words as ONE needle', () => {
-  assert.deepEqual(parseGearQuery('blade of light'), { needle: 'blade of light', thresholds: [] })
-  assert.deepEqual(parseGearQuery('ac>=20'), { needle: '', thresholds: [{ key: 'AC', op: '>=', value: 20 }] })
+test('parseGearQuery lifts threshold tokens out and leaves each run of words as one needle', () => {
+  assert.deepEqual(parseGearQuery('blade of light'), { needles: ['blade of light'], thresholds: [] })
+  assert.deepEqual(parseGearQuery('ac>=20'), { needles: [], thresholds: [{ key: 'AC', op: '>=', value: 20 }] })
   assert.deepEqual(parseGearQuery('club haste>5'), {
-    needle: 'club',
+    needles: ['club'],
     thresholds: [{ key: 'HASTE', op: '>', value: 5 }]
+  })
+  // A threshold typed BETWEEN words splits the runs rather than fusing "blade light" into a
+  // phrase nothing spells — each run matches on its own.
+  assert.deepEqual(parseGearQuery('blade of ac>=20 light'), {
+    needles: ['blade of', 'light'],
+    thresholds: [{ key: 'AC', op: '>=', value: 20 }]
   })
   // The underscore-free fold and the derived keys are both real spellings.
   assert.deepEqual(parseGearQuery('svmagic>=20').thresholds, [{ key: 'SV_MAGIC', op: '>=', value: 20 }])
@@ -102,7 +108,7 @@ test('parseGearQuery lifts threshold tokens out and leaves the words as ONE need
   // The displayed word is a spelling too: the header says BEST (columnLabel), so `best` parses.
   assert.deepEqual(parseGearQuery('best>1').thresholds, [{ key: 'BIS', op: '>', value: 1 }])
   // A token that LOOKS like a threshold but names no key stays a WORD.
-  assert.deepEqual(parseGearQuery('foo>=3'), { needle: 'foo>=3', thresholds: [] })
+  assert.deepEqual(parseGearQuery('foo>=3'), { needles: ['foo>=3'], thresholds: [] })
   assert.deepEqual(parseGearQuery('weight<2.5').thresholds, [{ key: 'WEIGHT', op: '<', value: 2.5 }])
 })
 

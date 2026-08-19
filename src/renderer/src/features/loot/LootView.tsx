@@ -32,7 +32,9 @@
 import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Snackbar, Stack } from '@mui/material'
 import type { LootEvent } from '@shared/types'
+import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
+import type { MobTarget } from '../mobs/mobTarget'
 import { useBackTarget } from '../../appBack'
 import { useWindowedRows } from '../../lib/useWindowedRows'
 import { itemCountKey } from '../../lib/itemName'
@@ -72,6 +74,9 @@ export interface LootViewProps {
    *  returns to whatever tab deep-linked here (the Planner, the Overview, a Sky quest); absent or
    *  empty ⇒ it means the ledger, exactly as it always did. */
   nav?: NavBack
+  /** The drill-down's routes out (ItemDetailContent): a source mob's page, a zone's map. */
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /** Which item the pane has taken over for, and the two ways in and out of it. */
@@ -142,6 +147,8 @@ interface TakeoverProps {
   nav?: NavBack
   /** countKey → reconciled inventory row, so the pane can state what the export vouches for. */
   invByKey: Map<string, InventoryRow>
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 function LootDetailTakeover(p: TakeoverProps): JSX.Element {
@@ -175,6 +182,8 @@ function LootDetailTakeover(p: TakeoverProps): JSX.Element {
       onBack={back}
       onList={detail.close}
       origin={nav?.origin?.label ?? null}
+      onOpenMob={p.onOpenMob}
+      onOpenMapZone={p.onOpenMapZone}
     />
   )
 }
@@ -284,7 +293,7 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
   const selected = detail.selected
   if (selected !== null) {
     const p = { item: selected, events: sliced, slice, detail, nav: props.nav, invByKey }
-    return <LootDetailTakeover {...p} />
+    return <LootDetailTakeover {...p} onOpenMob={props.onOpenMob} onOpenMapZone={props.onOpenMapZone} />
   }
 
   return (

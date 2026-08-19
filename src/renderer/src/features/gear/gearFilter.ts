@@ -232,8 +232,10 @@ export interface StatThreshold {
 
 /** The search box's text, split into its two jobs: words to match, and numbers to reach. */
 export interface GearQuery {
-  /** what is left after the threshold tokens are lifted out, matched as ONE substring as before */
-  needle: string
+  /** what is left after the threshold tokens are lifted out: each contiguous RUN of words is one
+   *  substring to match (a lone run is the whole text, as before), so a threshold typed between
+   *  words never fuses the words around it into a phrase nothing spells */
+  needles: string[]
   thresholds: StatThreshold[]
 }
 
@@ -264,25 +266,34 @@ const THRESHOLD_TOKEN = /^([a-z_]+)(>=|<=|>|<|=)(-?\d+(?:\.\d+)?)$/
  */
 export function parseGearQuery(text: string): GearQuery {
   const thresholds: StatThreshold[] = []
-  const words: string[] = []
+  const needles: string[] = []
+  let run: string[] = []
+  const flush = (): void => {
+    if (run.length > 0) {
+      needles.push(run.join(' '))
+      run = []
+    }
+  }
   for (const token of text.trim().toLowerCase().split(/\s+/)) {
     if (token === '') continue
     const m = THRESHOLD_TOKEN.exec(token)
     const key = m === null ? undefined : THRESHOLD_KEYS.get(m[1])
     if (m !== null && key !== undefined) {
       thresholds.push({ key, op: m[2] as StatThreshold['op'], value: Number(m[3]) })
+      flush()
     } else {
-      words.push(token)
+      run.push(token)
     }
   }
-  return { needle: words.join(' '), thresholds }
+  flush()
+  return { needles, thresholds }
 }
 
 // ONE-ENTRY CACHE, not a memo library: the filter asks the same question 6,814 times per keystroke
 // and the text only changes between keystrokes. Pure in effect — same text, same answer. Exported
 // for the view's per-render reads (the haste-chip gate), which want the cache for the same reason.
 let lastQueryText: string | null = null
-let lastQuery: GearQuery = { needle: '', thresholds: [] }
+let lastQuery: GearQuery = { needles: [], thresholds: [] }
 export function queryOf(text: string): GearQuery {
   if (text !== lastQueryText) {
     lastQueryText = text
@@ -378,7 +389,7 @@ export function effectMatches(row: GearRow, effect: EffectFilter): boolean {
  */
 function matchesIdentity(row: GearRow, filters: GearFilters): boolean {
   const query = queryOf(filters.text)
-  if (query.needle !== '' && !row.searchKey.includes(query.needle)) return false
+  if (!query.needles.every((n) => row.searchKey.includes(n))) return false
   const opts = derivedOpts(filters)
   if (!query.thresholds.every((t) => meetsThreshold(row, t, opts))) return false
   if (!slotMatches(row, filters.slots)) return false

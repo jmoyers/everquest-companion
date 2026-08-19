@@ -46,9 +46,9 @@
 // the name cell below records that JOS-325 took the sets `+` away and left the table with no
 // per-row action at all, while the Exaltations donor rows kept theirs (JOS-326 re-aimed that button
 // at the wish list). This restores the parity: same door (`useWishlist`), same document, same
-// dedupe. What it deliberately does NOT restore is a COLUMN — the control shares the item name's
-// cell exactly as the `+` did, because `gearTableLayout` states the width of every other column and
-// a new one would be a change to the layout contract for one small control.
+// dedupe. JOS-335 deliberately did NOT restore a COLUMN — the control shared the item name's cell
+// exactly as the `+` did — but the user overruled that too (2026-08-15): the name paid for the
+// lodger at every narrow pane, so the control now has the narrow `wish` column below.
 //
 // …AND SINCE JOS-343 THAT GESTURE IS THE DONOR ROW'S CONTROL, WORD FOR WORD, AND IT TOGGLES (owner
 // ruling 2026-08-13, one day after the heart shipped). Two JOS-335 arguments were overruled and
@@ -70,6 +70,7 @@ import { type JSX, memo, useMemo } from 'react'
 import { Box, Stack, Table, TableBody, TableCell, TableRow } from '@mui/material'
 import type { WindowedRows } from '../../lib/useWindowedRows'
 import { itemIconUrl } from '../../lib/ItemWindow'
+import { CellLink } from '../../lib/CellLink'
 import { EraChip, DonorName } from '../planner/PlannerChips'
 import { NUMERIC_PAD, defaultColumnPx, gearColumnIds, gearTableLayout, statText, type GearColumn } from './gearColumns'
 import type { GearColumnWidths } from './gearPrefs'
@@ -103,41 +104,6 @@ const FIXED_ROW = {
     textOverflow: 'ellipsis'
   }
 } as const
-
-/**
- * The link affordance the Sky dropper cell wears (posky/DropperCell.tsx `DropperName`): a span
- * that reads as a link, keyboard-reachable, click stopped so the row's own hover card machinery
- * never sees it. Same idiom on purpose — the drop trio's names are the third surface to become
- * doors, and a reader should not have to learn a second spelling of "this name opens".
- */
-function CellLink({ text, onOpen }: { text: string; onOpen: () => void }): JSX.Element {
-  const open = (e: { stopPropagation: () => void }): void => {
-    e.stopPropagation()
-    onOpen()
-  }
-  return (
-    <Box
-      component="span"
-      role="button"
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e: React.KeyboardEvent) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return
-        e.preventDefault()
-        open(e)
-      }}
-      sx={{
-        cursor: 'pointer',
-        textDecoration: 'underline dotted',
-        textUnderlineOffset: 2,
-        '&:hover': { color: 'primary.main' },
-        '&:focus-visible': { outline: '1px solid', outlineColor: 'primary.main', borderRadius: 0.5 }
-      }}
-    >
-      {text}
-    </Box>
-  )
-}
 
 /**
  * The first entry with a `+N` admitting how many more the hover title holds — and the first
@@ -194,7 +160,7 @@ export interface GearTableProps {
   onOpenLoot?: (item: string) => void
   /**
    * OPEN A DROP-MOB'S PAGE (user ask, 2026-08-17) — the Mob cell's first name becomes the same
-   * door the Sky dropper cell and the Maps pane already open, `App`'s `openMob`. The target is
+   * door the Sky dropper cell and Overview's kill cards already open, `App`'s `openMob`. The target is
    * pinned by the catalog page the witness carried (`dropPages`, dropLinks.ts) so an ambiguous
    * name lands on the page the drop was stated on. Absent, the cell is the plain text it was.
    */
@@ -410,8 +376,8 @@ const GearLine = memo(function GearLine({
         </Stack>
       </TableCell>
       {/* THE WISH CONTROL'S OWN COLUMN (user ruling, 2026-08-15) — it shared the Item cell from
-          JOS-335 until today, and the name paid for it at every narrow pane. The header (`WL`)
-          carries the words, so the button can be the compact pair. Empty until the document has
+          JOS-335 until today, and the name paid for it at every narrow pane. The header ("Wish
+          list") carries the words, so the button can be the compact pair. Empty until the document has
           loaded — the same absent-not-disabled rule the cell followed inside the Item column. */}
       {/* Slim padding: the column is the narrowest in the table and the button needs the room. */}
       <TableCell sx={{ px: 0.5 }}>

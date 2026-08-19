@@ -55,6 +55,7 @@ import type {
   MobEntry
 } from '@shared/types'
 import { killIndex, killsBaselineStale, killsFor, mergeKillsDelta } from '@shared/kills'
+import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
 import { useModule } from '../../lib/useModule'
@@ -266,7 +267,8 @@ function MobDrill({
   kills,
   nav,
   onClose,
-  onOpenLoot
+  onOpenLoot,
+  onOpenMapZone
 }: {
   target: MobTarget
   kills: KillMap
@@ -274,6 +276,8 @@ function MobDrill({
   onClose: () => void
   /** the drop dialog's route to the Loot tab (user ask, 2026-08-17) — MobPage passes it through */
   onOpenLoot?: (item: string) => void
+  /** the page's zone line's route to the Maps tab — MobPage passes it through the same way */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
   // ONE expression, read by TWO things (JOS-201): the button below, and the mouse's Back button,
   // which registers it for as long as this page is on screen. The browse surface behind it
@@ -291,7 +295,13 @@ function MobDrill({
         </Button>
       </Box>
       <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-        <MobPage key={`${target.mob}#${target.entry?.page ?? ''}`} target={target} kills={kills} onOpenLoot={onOpenLoot} />
+        <MobPage
+          key={`${target.mob}#${target.entry?.page ?? ''}`}
+          target={target}
+          kills={kills}
+          onOpenLoot={onOpenLoot}
+          onOpenMapZone={onOpenMapZone}
+        />
       </Box>
     </Stack>
   )
@@ -316,7 +326,8 @@ export default function MobsView({
   targetNonce,
   onTargetConsumed,
   nav,
-  onOpenLoot
+  onOpenLoot,
+  onOpenMapZone
 }: {
   target?: MobTarget | null
   targetNonce?: number
@@ -328,6 +339,8 @@ export default function MobsView({
    * knows nothing about the router, only that a page it shows may hand an item onward.
    */
   onOpenLoot?: (item: string) => void
+  /** The page's zone line's route to the Maps tab — App's `openMapZone`, same posture. */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
@@ -363,7 +376,14 @@ export default function MobsView({
 
   if (drill)
     return (
-      <MobDrill target={drill} kills={kills} nav={nav} onClose={() => setDrill(null)} onOpenLoot={onOpenLoot} />
+      <MobDrill
+        target={drill}
+        kills={kills}
+        nav={nav}
+        onClose={() => setDrill(null)}
+        onOpenLoot={onOpenLoot}
+        onOpenMapZone={onOpenMapZone}
+      />
     )
 
   return (

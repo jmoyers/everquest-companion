@@ -33,7 +33,9 @@
 import type { JSX } from 'react'
 import { Box, Breadcrumbs, Chip, IconButton, Link, Stack, Typography } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import type { ZoneShort } from '@shared/maps'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
+import type { MobTarget } from '../mobs/mobTarget'
 import { ItemDetailContent, type ItemDetailProps } from './ItemDetailDialog'
 
 export interface ItemDetailPaneProps extends ItemDetailProps {
@@ -44,6 +46,9 @@ export interface ItemDetailPaneProps extends ItemDetailProps {
   /** The tab a deep link arrived from ("Planner"), or null/absent when this drill was opened from
    *  the list itself. Names the back ARROW; the breadcrumb never changes what it says. */
   origin?: string | null
+  /** The body's two routes out (ItemDetailContent): the source mobs' pages and the zones' maps. */
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /** "Loot › <item>". The root is a control; the leaf is the item, in the game's own item colour so
@@ -82,6 +87,7 @@ function Breadcrumb({
 
 export function ItemDetailPane(props: ItemDetailPaneProps): JSX.Element {
   const { item, events, stats, isQuestItem, onBack, onList, origin, slice, owned } = props
+  const { onOpenMob, onOpenMapZone } = props
   // The arrow's ACCESSIBLE NAME, which the e2e reads to prove it knows where it is going.
   const backLabel = origin ? `Back to ${origin}` : 'Back to the loot list'
   return (
@@ -95,7 +101,8 @@ export function ItemDetailPane(props: ItemDetailPaneProps): JSX.Element {
       {/* The pane owns its own scroll for the same reason every panel in this app does: the
           content area must never grow the document (AGENTS.md's fixed-height law). */}
       <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto', pr: 0.5 }}>
-        <ItemDetailContent item={item} events={events} stats={stats} active slice={slice} owned={owned} />
+        <ItemDetailContent item={item} events={events} stats={stats} active slice={slice} owned={owned}
+          onOpenMob={onOpenMob} onOpenMapZone={onOpenMapZone} />
       </Box>
     </Stack>
   )
