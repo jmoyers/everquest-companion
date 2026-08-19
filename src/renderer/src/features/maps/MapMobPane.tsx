@@ -41,7 +41,7 @@
 // MapBody floats over the map, because a control that hides a panel has to live somewhere the
 // panel is not.
 
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import {
   Box,
   Chip,
@@ -67,6 +67,10 @@ import {
   type MobPaneRow,
   type PaneCounts
 } from './mobPins'
+import type { MobTarget } from '../mobs/mobTarget'
+// The app's one item-name link span (dotted underline, hand only when routed) — the same node the
+// gear table, the wish list and the plan draw, so a wished drop here reads and routes like theirs.
+import { DonorName } from '../planner/PlannerChips'
 import { Tooltip } from '../../lib/Tooltip'
 
 /** The pane's width. Fixed and `flexShrink:0` so the map, not the list, absorbs a window resize. */
@@ -93,8 +97,11 @@ export interface MapMobPaneProps {
   onHit: (to: JumpTarget) => void
   /** Row id → the wish-list drops that mob carries — the surface's pins read the SAME map. */
   wishes: ReadonlyMap<string, readonly string[]>
-  /** Open the mob's own page (the Mobs tab drill-in). Absent ⇒ the rows carry no page button. */
-  onOpenMob?: (row: MobPaneRow) => void
+  /** Open the mob's own page (the Mobs tab drill-in). Absent ⇒ no mob row carries a page button —
+   *  neither this zone's rows nor the cross-zone hits, which are the same catalog rows. */
+  onOpenMob?: (target: MobTarget) => void
+  /** Open an item's Loot drill-down. Absent ⇒ a wished drop's name is plain text, no affordance. */
+  onOpenLoot?: (name: string) => void
   /** The drawn pin set hit its ceiling — said out loud rather than quietly trimmed. */
   pinsCapped: boolean
   onClose: () => void
@@ -125,16 +132,75 @@ function PinMark({ locatable, wished }: { locatable: boolean; wished?: boolean }
  * The two "no pin" reasons are DIFFERENT FACTS and are said differently: a page that stated
  * nothing, and a page that stated a position but named several zones so it cannot be attributed
  * to this map. Collapsing them into one message would misreport the second as missing data.
- * The wish-list line joins whatever else the row knows — both facts fit on one caption.
+ * The wish-list clause joins it on the same caption, but is built in `Row` — its item names are
+ * links, so it is a node, not a string.
  */
-function rowNote(row: MapPaneRow, wished?: readonly string[]): string | null {
+function rowNote(row: MapPaneRow): string | null {
   if (row.kind !== 'mob') return null
-  const notes: string[] = []
-  if (row.unattributable) notes.push(`position stated, but the page lists ${String(row.zoneCount)} zones`)
-  else if (row.pins.length === 0) notes.push('no location on the wiki page')
-  else if (row.pins.length > 1) notes.push(`${String(row.pins.length)} spawn points`)
-  if (wished != null && wished.length > 0) notes.push(`drops ${wished.join(', ')} (wish list)`)
-  return notes.length === 0 ? null : notes.join(' · ')
+  if (row.unattributable) return `position stated, but the page lists ${String(row.zoneCount)} zones`
+  if (row.pins.length === 0) return 'no location on the wiki page'
+  if (row.pins.length > 1) return `${String(row.pins.length)} spawn points`
+  return null
+}
+
+/**
+ * The wish-list clause of a row's caption: "drops X, Y (wish list)" with each name a Loot link.
+ *
+ * `stopPropagation` (only when routed) so the click opens the item, not the row's pin — and
+ * `pointerEvents:'auto'` because an unlocatable mob's row button is DISABLED, which turns pointer
+ * events off for the whole subtree: the mob has no spot on this map, but its drop still has a page.
+ */
+function WishDrops({ names, onOpenLoot }: { names: readonly string[]; onOpenLoot?: ((name: string) => void) | undefined }): JSX.Element {
+  return (
+    <Box
+      component="span"
+      onClick={onOpenLoot == null ? undefined : (e) => { e.stopPropagation() }}
+      sx={onOpenLoot == null ? undefined : { pointerEvents: 'auto' }}
+    >
+      {'drops '}
+      {names.map((n, i) => (
+        <Box component="span" key={n}>
+          {i > 0 && ', '}
+          <DonorName name={n} onOpen={onOpenLoot} />
+        </Box>
+      ))}
+      {' (wish list)'}
+    </Box>
+  )
+}
+
+/** The caption under a row's name: the facts note, the wish clause, both, or nothing. */
+function rowCaption(
+  row: MapPaneRow,
+  wished: readonly string[] | undefined,
+  onOpenLoot: ((name: string) => void) | undefined
+): ReactNode {
+  const note = rowNote(row)
+  const hasWish = wished != null && wished.length > 0
+  if (note == null && !hasWish) return null
+  return (
+    <>
+      {note}
+      {note != null && hasWish && ' · '}
+      {hasWish && <WishDrops names={wished} onOpenLoot={onOpenLoot} />}
+    </>
+  )
+}
+
+/** Wraps a row's button with the mob-page door — OUTSIDE the button, so a row whose jump or pin
+ *  is disabled (no map, no stated spot) still offers the page, which is live regardless. */
+function WithPageDoor({ onOpen, children }: { onOpen: () => void; children: ReactNode }): JSX.Element {
+  return (
+    <ListItem disablePadding secondaryAction={
+      <Tooltip title="Open this mob's page">
+        <IconButton size="small" edge="end" data-testid="maps-pane-open-mob" onClick={onOpen}>
+          <OpenInNewIcon sx={{ fontSize: 15 }} />
+        </IconButton>
+      </Tooltip>
+    }>
+      {children}
+    </ListItem>
+  )
 }
 
 function Row({
@@ -142,13 +208,15 @@ function Row({
   selected,
   wished,
   onSelect,
-  onOpenMob
+  onOpenMob,
+  onOpenLoot
 }: {
   row: MapPaneRow
   selected: boolean
   wished?: readonly string[]
   onSelect: (row: MapPaneRow) => void
-  onOpenMob?: ((row: MobPaneRow) => void) | undefined
+  onOpenMob?: ((target: MobTarget) => void) | undefined
+  onOpenLoot?: ((name: string) => void) | undefined
 }): JSX.Element {
   const locatable = isLocatable(row)
   const level = row.kind === 'mob' ? row.level : undefined
@@ -166,7 +234,7 @@ function Row({
       <PinMark locatable={locatable} wished={wished != null && wished.length > 0} />
       <ListItemText
         primary={row.name}
-        secondary={rowNote(row, wished)}
+        secondary={rowCaption(row, wished, onOpenLoot)}
         slotProps={{ primary: { variant: 'body2', noWrap: true }, secondary: { variant: 'caption' } }}
       />
       {level !== undefined && level !== '' && (
@@ -177,24 +245,8 @@ function Row({
     </ListItemButton>
   )
   if (row.kind !== 'mob' || onOpenMob == null) return button
-  // Outside the row button so it still works when an unlocatable row is disabled.
   return (
-    <ListItem disablePadding secondaryAction={
-      <Tooltip title="Open this mob's page">
-        <IconButton
-          size="small"
-          edge="end"
-          data-testid="maps-pane-open-mob"
-          onClick={() => {
-            onOpenMob(row)
-          }}
-        >
-          <OpenInNewIcon sx={{ fontSize: 15 }} />
-        </IconButton>
-      </Tooltip>
-    }>
-      {button}
-    </ListItem>
+    <WithPageDoor onOpen={() => { onOpenMob({ mob: row.name, entry: row.entry }) }}>{button}</WithPageDoor>
   )
 }
 
@@ -221,6 +273,7 @@ function Section({
   onSelect,
   wishes,
   onOpenMob,
+  onOpenLoot,
   empty
 }: {
   title: string
@@ -229,7 +282,8 @@ function Section({
   selectedId: string | null
   onSelect: (row: MapPaneRow) => void
   wishes?: ReadonlyMap<string, readonly string[]>
-  onOpenMob?: ((row: MobPaneRow) => void) | undefined
+  onOpenMob?: ((target: MobTarget) => void) | undefined
+  onOpenLoot?: ((name: string) => void) | undefined
   empty: string
 }): JSX.Element {
   return (
@@ -245,6 +299,7 @@ function Section({
               wished={wishes?.get(r.id)}
               onSelect={onSelect}
               onOpenMob={onOpenMob}
+              onOpenLoot={onOpenLoot}
             />
           ))}
         </List>
@@ -265,9 +320,17 @@ function Section({
  * one, so a row that cannot take you anywhere says why on the same line rather than by being
  * mysteriously dead.
  */
-function HitRow({ row, onHit }: { row: CrossZoneRow; onHit: (to: JumpTarget) => void }): JSX.Element {
+function HitRow({
+  row,
+  onHit,
+  onOpenMob
+}: {
+  row: CrossZoneRow
+  onHit: (to: JumpTarget) => void
+  onOpenMob?: ((target: MobTarget) => void) | undefined
+}): JSX.Element {
   const to = jumpTarget(row)
-  return (
+  const button = (
     <ListItemButton
       dense
       disabled={to == null}
@@ -297,6 +360,13 @@ function HitRow({ row, onHit }: { row: CrossZoneRow; onHit: (to: JumpTarget) => 
       )}
     </ListItemButton>
   )
+  if (row.kind !== 'mob' || row.entry == null || onOpenMob == null) return button
+  // The same page door the this-zone rows carry: a mob in a zone with no installed map has a
+  // dead jump but a live page.
+  const entry = row.entry
+  return (
+    <WithPageDoor onOpen={() => { onOpenMob({ mob: row.name, entry }) }}>{button}</WithPageDoor>
+  )
 }
 
 /**
@@ -316,11 +386,13 @@ function HitRow({ row, onHit }: { row: CrossZoneRow; onHit: (to: JumpTarget) => 
 function HitSection({
   query,
   hits,
-  onHit
+  onHit,
+  onOpenMob
 }: {
   query: string
   hits: readonly CrossZoneRow[]
   onHit: (to: JumpTarget) => void
+  onOpenMob?: ((target: MobTarget) => void) | undefined
 }): JSX.Element | null {
   if (query.trim().length === 0) return null
   return (
@@ -329,7 +401,7 @@ function HitSection({
       {hits.length > 0 ? (
         <List dense disablePadding>
           {hits.map((row) => (
-            <HitRow key={row.id} row={row} onHit={onHit} />
+            <HitRow key={row.id} row={row} onHit={onHit} onOpenMob={onOpenMob} />
           ))}
         </List>
       ) : (
@@ -343,7 +415,7 @@ function HitSection({
 
 export default function MapMobPane(props: MapMobPaneProps): JSX.Element {
   const { zoneName, hasMap, mobs, labels, hits, counts, query, onQuery } = props
-  const { selectedId, onSelect, onHit, wishes, onOpenMob, pinsCapped, onClose } = props
+  const { selectedId, onSelect, onHit, wishes, onOpenMob, onOpenLoot, pinsCapped, onClose } = props
   return (
     <Paper
       variant="outlined"
@@ -410,6 +482,7 @@ export default function MapMobPane(props: MapMobPaneProps): JSX.Element {
           onSelect={onSelect}
           wishes={wishes}
           onOpenMob={onOpenMob}
+          onOpenLoot={onOpenLoot}
           empty={
             zoneName == null
               ? 'No zone is open.'
@@ -432,7 +505,7 @@ export default function MapMobPane(props: MapMobPaneProps): JSX.Element {
                 : 'No label matches.'
           }
         />
-        <HitSection query={query} hits={hits} onHit={onHit} />
+        <HitSection query={query} hits={hits} onHit={onHit} onOpenMob={onOpenMob} />
       </Box>
     </Paper>
   )

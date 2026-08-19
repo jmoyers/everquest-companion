@@ -36,7 +36,7 @@ import { MapTimerPins, useTimerPins } from './MapTimerPins'
 import type { TimerPin } from './respawnPins'
 import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
-import type { MobPaneRow } from './mobPins'
+import type { MobTarget } from '../mobs/mobTarget'
 import { paneOverlay, type PaneOverlay, type ZonePaneState } from './useMapPane'
 import { connectionTarget } from './zoneLinks'
 import { mapFromLoc, type EqLoc, type LayerMask } from './mapGeometry'
@@ -301,13 +301,15 @@ export interface MapBodyProps {
   onJump: (to: JumpTarget) => void
   /** Every stem an installed pack provides — gates which connection labels become links. */
   zones: readonly ZoneShort[]
-  /** Open a mob row's page on the Mobs tab. */
-  onOpenMob?: (row: MobPaneRow) => void
+  /** Open a mob row's page on the Mobs tab — this zone's rows and the cross-zone hits alike. */
+  onOpenMob?: (target: MobTarget) => void
+  /** Open a wished drop's Loot drill-down from the pane's captions. */
+  onOpenLoot?: (name: string) => void
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
-  const { locMarker, zones, onOpenMob } = props
+  const { locMarker, zones, onOpenMob, onOpenLoot } = props
   // The respawn-timer join for the map ON SCREEN (`data.zone`, like every overlay). Subscribed
   // here rather than in MapsView so the view above stays ignorant of the respawn module.
   const timers = useTimerPins(data?.zone ?? null, zoneName)
@@ -346,6 +348,7 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           onHit={onJump}
           wishes={pane.wishes}
           onOpenMob={onOpenMob}
+          onOpenLoot={onOpenLoot}
           pinsCapped={pane.pinsCapped}
           onClose={() => {
             pane.setOpen(false)

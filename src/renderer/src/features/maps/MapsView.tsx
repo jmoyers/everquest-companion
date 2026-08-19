@@ -48,7 +48,6 @@ import type { CharacterDelta, CharacterSnap } from '@shared/types'
 import type { MapBounds, MapData, MapPackPrefs, ZoneShort } from '@shared/maps'
 import { zoneShortName } from '@shared/zones'
 import type { MobTarget } from '../mobs/mobTarget'
-import type { MobPaneRow } from './mobPins'
 import { useModule } from '../../lib/useModule'
 import { trackFeature } from '../../lib/telemetry'
 import MapBody, { useSearchJump } from './MapBody'
@@ -361,7 +360,13 @@ function useMapOpenTracking(data: MapData | null): void {
   }, [loaded])
 }
 
-export default function MapsView({ onOpenMob }: { onOpenMob: (t: MobTarget) => void }): JSX.Element {
+export default function MapsView({
+  onOpenMob,
+  onOpenLoot
+}: {
+  onOpenMob: (t: MobTarget) => void
+  onOpenLoot: (name: string) => void
+}): JSX.Element {
   // WHERE YOU ARE. The character module owns the raw display zone off the `zone` log event; it
   // is undefined until the log prints one, and that absence is a state this view renders.
   const raw = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)?.zone
@@ -400,14 +405,6 @@ export default function MapsView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
   // filtered rows are derived ONCE and read by both the list and the surface's pins.
   const zoneName = zoneLongName(zone, raw)
   const pane = useZonePane({ vp, data, zoneName, prefs, zones })
-
-  // A pane row's page button → the Mobs tab, with the catalog row pinning identity (mobTarget.ts).
-  const openMobRow = useCallback(
-    (row: MobPaneRow) => {
-      onOpenMob({ mob: row.name, entry: row.entry })
-    },
-    [onOpenMob]
-  )
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%' }}>
@@ -461,7 +458,8 @@ export default function MapsView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
         locMarker={loc.marker}
         onJump={onJump}
         zones={zones}
-        onOpenMob={openMobRow}
+        onOpenMob={onOpenMob}
+        onOpenLoot={onOpenLoot}
       />
       {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}
       <MapCredits data={data} reserve={reserve} />
