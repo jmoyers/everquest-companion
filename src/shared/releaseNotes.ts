@@ -125,6 +125,26 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.5.0',
+    date: '2026-08-17',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Preferences has an Appearance section. In-app text size steps with A- / A+. Below it, the overlays: one text size and one transparency for all of them, or turn on Independent per overlay and set each window - the meters, the buffs and debuffs, XP, respawn, the event log, the celebration toasts, the alert banner and the mob card - on its own row. Every overlay\'s own A- / A+ and background slider still work and stay in step with the page, and the toasts, banner and mob card get a transparency slider for the first time. Whatever sizes and transparency you have today are exactly what you have after the update.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'The mob card, the celebration toasts and the alert banner grow with their text size: at 200% the mob card is the same card, twice as big, instead of the same width with the text crammed into it. Its resist chips wrap into rows when there is not room for them across, rather than squeezing.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Plane of Sky counts after an inventory export: handing a quest in after the export now lowers the count and the Cleanup row, the same way destroying an item does. Before, an item the export had seen stayed counted until you exported again.',
+        fromReport: true
+      }
+    ]
+  },
+  {
     version: '1.4.0',
     date: '2026-08-17',
     entries: [

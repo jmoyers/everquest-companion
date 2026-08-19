@@ -26,6 +26,7 @@ import {
   UI_SCALE_MIN,
   UI_SCALE_STEPS,
   normalizeUiScale,
+  stepUiScale,
   uiScalePercent
 } from '../src/shared/uiScale'
 
@@ -103,6 +104,51 @@ test('every stop survives itself, and normalizing twice changes nothing', () => 
   }
 })
 
+// ---- stepping the ladder (JOS-408) --------------------------------------------------------
+
+test('A+ / A− move ONE RUNG, and the rungs are the ladder — not a fixed increment', () => {
+  // THE CLAIM THE TICKET MAKES BY NAME: A+ from 110% goes to 125%. A stepper that added a fixed
+  // amount would land between two stops, and `normalizeUiScale` would drag it back to one — which
+  // reads as a button that sometimes does nothing.
+  assert.equal(stepUiScale(1.1, 1), 1.25)
+  assert.equal(stepUiScale(1.25, 1), 1.5)
+  assert.equal(stepUiScale(1, 1), 1.1)
+  assert.equal(stepUiScale(0.9, 1), 1)
+  assert.equal(stepUiScale(1.5, -1), 1.25)
+  assert.equal(stepUiScale(1.25, -1), 1.1)
+  assert.equal(stepUiScale(1, -1), 0.9)
+  // Every rung is one press from its neighbours, stated over the whole ladder rather than as the
+  // seven cases above — so adding a stop cannot leave this rule half-checked.
+  for (let i = 0; i < UI_SCALE_STEPS.length - 1; i++) {
+    const here = UI_SCALE_STEPS[i] as number
+    const next = UI_SCALE_STEPS[i + 1] as number
+    assert.equal(stepUiScale(here, 1), next, `${String(here)} does not step up to ${String(next)}`)
+    assert.equal(stepUiScale(next, -1), here, `${String(next)} does not step down to ${String(here)}`)
+  }
+})
+
+test('the ends are FIXED POINTS, which is the only disabled button on the page', () => {
+  // The control disables the button rather than relying on this, but a press that arrived anyway
+  // (a keyboard repeat, a test) must not walk out of range or throw.
+  assert.equal(stepUiScale(UI_SCALE_MAX, 1), UI_SCALE_MAX)
+  assert.equal(stepUiScale(UI_SCALE_MIN, -1), UI_SCALE_MIN)
+})
+
+test('an off-ladder or malformed value is SNAPPED before it is stepped', () => {
+  // A hand-edited 1.19 snaps to 1.25 and then steps from there, so the answer is always a rung.
+  assert.equal(stepUiScale(1.19, 1), 1.5)
+  assert.equal(stepUiScale(1.19, -1), 1.1)
+  // Not a number at all is the default rung — never a throw, never NaN reaching `zoomFactor`.
+  assert.equal(stepUiScale(NaN, 1), 1.1)
+  assert.equal(stepUiScale(Number.POSITIVE_INFINITY, -1), 0.9)
+  // …and every answer is on the ladder, whatever went in.
+  for (const v of [-5, 0, 0.83, 1.07, 3, 1000]) {
+    for (const dir of [1, -1] as const) {
+      assert.ok(UI_SCALE_STEPS.includes(stepUiScale(v, dir)), `${String(v)} ${String(dir)} left the ladder`)
+    }
+  }
+})
+
 // ---- the store seam ---------------------------------------------------------------------
 
 test('the store normalizes the scale on the way OUT as well as in', () => {
@@ -172,7 +218,38 @@ test('the renderer neither zooms nor clamps on its own', () => {
   // ONE thing decides how big this window is, and it is main. A renderer-side zoom would paint at
   // 100% first on every launch and then correct itself.
   assert.doesNotMatch(card, /webFrame|document\.body\.style\.zoom/)
-  // …and the card renders the ladder rather than a second copy of it.
-  assert.match(card, /UI_SCALE_STEPS\.map/, 'the buttons must come from the shared ladder')
+  // …and the card steps the shared ladder rather than carrying a second copy of it. The five
+  // buttons became one A− / A+ in JOS-408; what did not change is where the rungs come from.
+  assert.match(card, /stepUiScale\(scale, dir\)/, 'the press must walk the shared ladder')
+  assert.doesNotMatch(card, /scale [-+] |\* 0\.1/, 'and never by an increment of its own')
   assert.match(card, /window\.eq\.setUiScale/, 'and the press must go through the bridge')
+})
+
+test('the in-app card is ONE STEPPER, and its ends are the ladder’s own (JOS-408)', () => {
+  const card = src('../src/renderer/src/features/preferences/TextSizeSetting.tsx')
+  // The uniform control the owner asked for: the same component the overlays' rows use, so the
+  // whole Appearance page is one interaction model rather than three.
+  assert.match(card, /<PrefStepper/, 'the in-app size is the page’s one stepper')
+  assert.doesNotMatch(card, /ToggleButtonGroup|ToggleButton/, 'the five-button ladder is gone')
+  // Disabled ONLY at the clamps, and named from the shared ladder rather than typed here.
+  assert.match(card, /atMin=\{scale <= UI_SCALE_MIN\}/)
+  assert.match(card, /atMax=\{scale >= UI_SCALE_MAX\}/)
+  // The testid the deep links and the e2e steps address, kept across the control swap.
+  assert.match(card, /testid="pref-text-size"/)
+})
+
+test('the section is called Appearance, and its id is NOT renamed with it', () => {
+  const card = src('../src/renderer/src/features/preferences/TextSizeSetting.tsx')
+  // The label is the owner's (2026-08-17). The id is what the rail testid, the deep link and every
+  // e2e step address the section by — renaming an id to match a label is how a working route
+  // breaks for a cosmetic reason.
+  assert.match(card, /id: 'textsize'/, 'the section id must not move')
+  assert.match(card, /label: 'Appearance'/)
+  assert.match(card, /label: 'In-app text size'/, 'the first item is about the app window only')
+  // …and the overlays are ONE item, not three.
+  const items = card.match(/^ {6}\{$/gm) ?? []
+  assert.equal(items.length, 2, 'the section carries exactly two items')
+  assert.match(card, /<OverlaysAppearanceSetting \/>/)
+  const view = src('../src/renderer/src/features/preferences/PreferencesView.tsx')
+  assert.match(view, /appearanceSection\(\)/, 'and the pane builds it under that name')
 })

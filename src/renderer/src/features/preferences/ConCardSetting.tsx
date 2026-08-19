@@ -125,7 +125,7 @@ export function ConCardSetting(): JSX.Element {
             text size options did not affect it - and this card's own Preferences entry is where
             they looked. One sentence, state not process, pointing at the control that moves it. */}
         <Typography variant="caption" color="text.secondary" data-testid="pref-con-card-text-size-note">
-          Its text size is Text size → Overlay text size.
+          Its text size and transparency are Appearance → Overlays.
         </Typography>
       </Stack>
 

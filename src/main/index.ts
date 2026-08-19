@@ -59,6 +59,9 @@ import { topmostStats } from './topmost'
 // The notification-area icon and the close interceptor (JOS-139). Its own module beside windows.ts
 // for the reason stated in its header; the composition root only decides WHEN it is armed.
 import { installCloseToTray } from './tray'
+// The overlays' two independent-mode flags, made to agree before any window can read either of
+// them (JOS-408). See storeOverlayIndependent.ts for why it runs here and nowhere else.
+import { reconcileOverlayIndependentOnce } from './storeOverlayIndependent'
 import { initUpdater } from './updater'
 import {
   createMainWindow,
@@ -290,6 +293,14 @@ if (!gotSingleInstanceLock) {
       onError: (msg, err) => logError('main:speechCache', { message: msg, err })
     })
     markStartupPhase('protocols')
+    // ONE SWITCH NOW GOVERNS BOTH OVERLAY APPEARANCE FLAGS (JOS-408), so the two of them have to
+    // agree before anything reads either. BEFORE the first window, deliberately: the reconcile
+    // writes the store and broadcasts nothing, which is only safe while there is nobody to tell.
+    // It changes nothing on screen by construction — the direction it resolves in seeds the twelve
+    // per-kind sizes from what every window is already drawing (shared/overlayIndependent.ts).
+    if (reconcileOverlayIndependentOnce()) {
+      logInfo('[everquest-companion] Overlay appearance: the two independent flags disagreed and are now both on')
+    }
     createMainWindow()
     markStartupPhase('windowCreated')
     // THE TRAY, AND WHAT THE X MEANS (JOS-139). Straight after the window exists, because the

@@ -20,13 +20,17 @@
  * One entry means it was born right; two means it flashed, and the failure prints which way.
  * The recorder and its reasoning live in ./prefsFirstPaintSteps.mts.
  *
- * THE THREE THINGS IT WATCHES, and the reason each is not redundant:
+ * WHAT IT WATCHES, and the reason each is not redundant:
  *   * `hideWhenNotRunning` is stored OFF against a `true` default, and
  *   * `hideWhenUnfocused` is stored ON against a `false` default — the two directions, because a
  *     "fix" that merely flipped a default would cure exactly one of them, and the ticket asks
  *     about the reverse direction explicitly.
- *   * the Text size ladder is stored at 110% against a 100% default — the non-boolean, because a
- *     five-stop selector flashes the same way a checkbox does and the law is not about checkboxes.
+ *   * the in-app text size is stored at 110% against a 100% default — the non-boolean, because a
+ *     readout flashes the same way a checkbox does and the law is not about checkboxes. It is a
+ *     stepper's printed percentage since JOS-408 rather than a lit rung.
+ *   * `pref-overlay-independent` is stored ON against a shipped OFF (JOS-408) — the switch that
+ *     decides which SHAPE the Overlays card has. A flash there is not one control painting a guess
+ *     but a whole card mounting the wrong way round: two shared steppers where twelve rows belong.
  *
  * AND IT ASSERTS TWO MOUNTS, because the pane has two ways of being born:
  *   1. A SECTION SWITCH. The rail is a switcher — one section mounted at a time — so every rail
@@ -65,15 +69,16 @@ import { uiScalePercent } from '../../src/shared/uiScale'
 
 /** The section markers each rail click waits for. */
 const OVERLAYS = '[data-testid="pref-overlay-autohide"]'
-const TEXTSIZE = '[data-testid="pref-text-size"]'
+const APPEARANCE = '[data-testid="pref-text-size"]'
 const GAME = '[data-testid="eq-folder-path"]'
 
 /**
  * A middle rung, and NOT the default. An end of the ladder would also be reached by a control that
- * could only ever go to its own limit, and the default would make the whole claim vacuous.
+ * could only ever go to its own limit, and the default would make the whole claim vacuous. It is
+ * ONE press of A+ from the shipped 100%, because the stepper walks the ladder's own rungs.
  */
 const CHOSEN_SCALE = 1.1
-const CHOSEN_STOP = `pref-text-size-${uiScalePercent(CHOSEN_SCALE).replace('%', '')}`
+const CHOSEN_LABEL = uiScalePercent(CHOSEN_SCALE)
 
 /** The first-run analytics bar sits over the content area; every other spec clears it the same way. */
 async function dismissFirstRunNotice(page: Page): Promise<void> {
@@ -104,8 +109,13 @@ async function stepArrange(page: Page): Promise<void> {
   const c = await setSwitch(page, 'pref-banner-enabled', true)
   check('the alert banner switch takes ON against its shipped OFF', c)
 
-  await openSection(page, 'textsize', TEXTSIZE)
-  await page.click(`[data-testid="${CHOSEN_STOP}"]`, { timeout: 15_000 })
+  await openSection(page, 'textsize', APPEARANCE)
+  await page.click('[data-testid="pref-text-size-plus"]', { timeout: 15_000 })
+  // …and the Overlays card's one switch, ON against its shipped OFF (JOS-408). It is what decides
+  // whether that card is two shared steppers or twelve rows, so a first paint that gets it wrong
+  // shows the reader the wrong card and then swaps it under them.
+  const ind = await setSwitch(page, 'pref-overlay-independent', true)
+  check('the overlays’ Independent switch takes ON against its shipped OFF', ind)
 
   const stored = await storedAutoHide(page)
   check(
@@ -151,13 +161,19 @@ async function stepSectionSwitch(page: Page): Promise<void> {
   )
 
   await resetRecorder(page)
-  await openSection(page, 'textsize', TEXTSIZE)
-  const ladder = await recorded(page)
+  await openSection(page, 'textsize', APPEARANCE)
+  const appearance = await recorded(page)
   checkFirstPaint(
-    ladder,
-    'pref-text-size',
-    CHOSEN_STOP,
-    'the text-size ladder lights the STORED rung first, never 100% (the non-boolean half)'
+    appearance,
+    'pref-text-size-value',
+    CHOSEN_LABEL,
+    'the in-app stepper prints the STORED rung first, never 100% (the non-boolean half)'
+  )
+  checkFirstPaint(
+    appearance,
+    'pref-overlay-independent',
+    'on',
+    '…and the overlays’ switch is born ON, so the card mounts as the twelve rows rather than swapping shape'
   )
 }
 
