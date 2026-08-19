@@ -260,5 +260,20 @@ export const windowsApi = {
     const listener = (_e: unknown, m: Record<OverlayKind, number>): void => cb(m)
     ipcRenderer.on(IPC.onOverlayBgAlphas, listener)
     return () => ipcRenderer.removeListener(IPC.onOverlayBgAlphas, listener)
-  }
+  },
+
+  // ---- ONE SWITCH OVER BOTH (JOS-408; shared/overlayIndependent.ts) -------------------------
+  //
+  // The two settings above keep every one of their ten members — they are how the values travel,
+  // and an overlay window still reads its own feature's prefs and nothing else. What the owner's
+  // review changed is the CONTROL: Preferences has one `Independent per overlay`, so it needs one
+  // write that moves both flags. A single call rather than two from here because the two writes
+  // must land before either is broadcast (src/shared/ipc.ts states the case).
+  /** Turn per-overlay sizes AND transparencies on or off together. Resolves to both prefs as
+   *  main actually stored them, seeds included, so the pane renders the answer rather than the
+   *  request. */
+  setOverlayIndependent: (
+    on: boolean
+  ): Promise<{ text: OverlayTextSizePrefs; bg: OverlayBgAlphaPrefs }> =>
+    ipcRenderer.invoke(IPC.overlayIndependentSet, on)
 }

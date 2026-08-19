@@ -23,6 +23,7 @@ import {
   BG_ALPHA_DEFAULT,
   BG_ALPHA_MAX,
   BG_ALPHA_MIN,
+  BG_ALPHA_PREF_STEP,
   BG_ALPHA_STEP,
   DEFAULT_OVERLAY_BG_ALPHA,
   clampBgAlpha,
@@ -30,6 +31,7 @@ import {
   effectiveOverlayBgAlpha,
   mergeOverlayBgAlpha,
   normalizeOverlayBgAlpha,
+  stepBgAlpha,
   storedSharedBgAlpha
 } from '../src/shared/overlayBgAlpha'
 // The SHARE half lives here rather than in tests/shareProfiles.test.mts, which is at the
@@ -83,6 +85,58 @@ test('in-range values survive, and float dust does not accumulate', () => {
   assert.equal(v, 0.8)
   for (let i = 0; i < 50; i++) v = clampBgAlpha(v - BG_ALPHA_STEP)
   assert.equal(v, BG_ALPHA_MIN, 'walking down past the floor stops AT the floor')
+})
+
+// ---- the 5% GRID the Preferences stepper walks (JOS-408) -----------------------------------
+//
+// The slider in Preferences became a − / + stepper when the whole Appearance page did, and a
+// stepper needs a bigger notch than a slider: twenty presses to cross the range, printing 72, 74,
+// 76, is not a control anyone reads. The grid is what makes 5% possible on a store full of numbers
+// a 0.02 slider left behind — the shipped default is 0.72, which is on no multiple of five.
+
+test('the grid is coarser than the slider, and a whole number of percent', () => {
+  assert.equal(BG_ALPHA_PREF_STEP, 0.05)
+  assert.ok(BG_ALPHA_PREF_STEP > BG_ALPHA_STEP, 'a stepper notch must be bigger than a slider notch')
+  // The overlays' own sliders are untouched: this is a second, coarser way to move the same value.
+  assert.equal(BG_ALPHA_STEP, 0.02)
+})
+
+test('AN OFF-GRID VALUE SNAPS TO THE GRID, in the direction pressed — the ticket’s own example', () => {
+  // 72 -> 75 -> 80 going up …
+  assert.equal(stepBgAlpha(0.72, 1), 0.75)
+  assert.equal(stepBgAlpha(0.75, 1), 0.8)
+  // … and 72 -> 70 -> 65 going down. NOT 0.77 and 0.67: an increment would carry the offset
+  // forever, which is the whole reason this is a grid walk rather than an addition.
+  assert.equal(stepBgAlpha(0.72, -1), 0.7)
+  assert.equal(stepBgAlpha(0.7, -1), 0.65)
+})
+
+test('a value ALREADY on the grid moves a whole step, in both directions', () => {
+  // The failure a `round` would produce: one of the two buttons becomes a no-op for every on-grid
+  // value, i.e. a live control that does nothing — the exact pattern this ticket removes.
+  for (const v of [0.15, 0.3, 0.5, 0.65, 0.9]) {
+    assert.equal(stepBgAlpha(v, 1), Math.round((v + 0.05) * 100) / 100, `${String(v)} up`)
+    assert.equal(stepBgAlpha(v, -1), Math.round((v - 0.05) * 100) / 100, `${String(v)} down`)
+  }
+  // 0.7 is the float trap this is written against: `0.7 / 0.05` is 13.999999999999998, so without
+  // the epsilon stepping up from 70% would land back on 70%.
+  assert.equal(stepBgAlpha(0.7, 1), 0.75)
+})
+
+test('both ends CLAMP, so the stepper and the range agree about where the road stops', () => {
+  assert.equal(stepBgAlpha(BG_ALPHA_MAX, 1), BG_ALPHA_MAX)
+  assert.equal(stepBgAlpha(0.98, 1), BG_ALPHA_MAX, 'the last step up is short, not over')
+  assert.equal(stepBgAlpha(BG_ALPHA_MIN, -1), BG_ALPHA_MIN)
+  assert.equal(stepBgAlpha(0.12, -1), BG_ALPHA_MIN, 'and the last step down likewise')
+  // Garbage in is the default, stepped — never NaN reaching an `rgba()`.
+  assert.equal(stepBgAlpha(undefined, 1), 0.75)
+  assert.equal(stepBgAlpha(NaN, -1), 0.7)
+  // Walking either way from anywhere stays inside the range, forever.
+  let v = 0.72
+  for (let i = 0; i < 40; i++) v = stepBgAlpha(v, 1)
+  assert.equal(v, BG_ALPHA_MAX)
+  for (let i = 0; i < 40; i++) v = stepBgAlpha(v, -1)
+  assert.equal(v, BG_ALPHA_MIN)
 })
 
 // ---- the preference: one transparency, or twelve -----------------------------------------
@@ -257,8 +311,10 @@ test('A SYNCED DRAG IS A ROUTE, NOT A FAN-OUT — and the per-kind value survive
 test('EXACTLY ONE function decides what a window paints with, and every surface asks it', () => {
   const chrome = src('../src/renderer/src/overlay/useOverlayChrome.ts')
   assert.match(chrome, /effectiveOverlayBgAlpha\(bgPrefs, cfg\?\.bgAlpha\)/)
-  const rows = src('../src/renderer/src/features/preferences/PerOverlaySetting.tsx')
-  assert.match(rows, /effectiveOverlayBgAlpha\(alphaPrefs, alphas\[kind\]\)/)
+  // The twelve rows moved AGAIN in JOS-408, into the one Overlays card that now holds both
+  // settings and the single switch over them. Same call, same rule, one file fewer.
+  const rows = src('../src/renderer/src/features/preferences/OverlaysAppearanceSetting.tsx')
+  assert.match(rows, /effectiveOverlayBgAlpha\(alpha, alphas\[kind\]\)/)
   // …and the surfaces that PAINT with it do not re-derive the rule with a ternary of their own.
   for (const path of [
     '../src/renderer/src/overlay/OverlayMeter.tsx',

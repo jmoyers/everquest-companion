@@ -108,7 +108,7 @@ export function ToastSetting(): JSX.Element {
         {/* JOS-405: the strip's own A− / A+ is in a drag frame you have to unlock to see, so this
             says where else the size lives. One sentence, state not process. */}
         <Typography variant="caption" color="text.secondary" data-testid="pref-toast-text-size-note">
-          Its text size is Text size → Overlay text size.
+          Its text size and transparency are Appearance → Overlays.
         </Typography>
       </Stack>
 

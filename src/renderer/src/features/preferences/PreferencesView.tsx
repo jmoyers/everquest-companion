@@ -29,13 +29,18 @@
 //   Game     — EverQuest install-folder discovery/override (effective path + how it
 //             resolved + a folder picker + character-log validation). Lives in
 //             ./EqFolderSetting.tsx, like Updates does — this file only names it.
-//   Text size — how big the MAIN window draws everything (JOS-123): a five-stop ladder from 90%
-//             to 150%, applied on the press and remembered. Second in the rail on purpose. Lives
-//             in ./TextSizeSetting.tsx, descriptor and all. SINCE JOS-405 IT IS BOTH SIZES: the
-//             overlays' shared size, the opt-in switch that unpins them from each other, and a
-//             persistent row per overlay window (./OverlayTextSizeSetting.tsx). The steppers on
-//             the overlays themselves are unchanged and write the same value — this is where a
-//             player who pinned their meters can reach it at all.
+//   Appearance — how big things are drawn and how see-through the floating windows are (JOS-123,
+//             JOS-405, JOS-407, named and reshaped by JOS-408). TWO items: `In-app text size`, the
+//             main window's zoom as an A− / A+ over the five-stop ladder, applied on the press; and
+//             `Overlays`, ONE card carrying a single `Independent per overlay` switch and then
+//             EITHER two shared steppers (text size, transparency) OR the twelve per-overlay rows —
+//             never both, because a control that is on screen while it governs nothing is the
+//             pattern the owner's 2026-08-17 review threw out. Second in the rail on purpose. Lives
+//             in ./TextSizeSetting.tsx (descriptor and the in-app card) plus
+//             ./OverlaysAppearanceSetting.tsx; the section id is still `textsize`, because it is
+//             what the rail testid, the deep link and the e2e steps address it by. The steppers and
+//             sliders on the overlays themselves are unchanged and write the same values — this is
+//             where a player who pinned their meters can reach them at all.
 //   Combat   — the meters' two shaping choices: WHOSE damage they show (You / Group / Everyone,
 //             default Everyone since JOS-229 — JOS-115 moved it here off every combat surface,
 //             JOS-229 changed which way it opens) and where the
@@ -116,9 +121,9 @@ import { graphicsSection } from './GraphicsSetting'
 // Same arrangement (JOS-140): the buff externals allowlist names its own section beside the card
 // that renders it. See ./BuffTrustSetting.tsx.
 import { buffTrustSection } from './BuffTrustSetting'
-// Same arrangement again (JOS-123): the main window's text size names its own section beside the
-// card that renders it. See ./TextSizeSetting.tsx.
-import { textSizeSection } from './TextSizeSetting'
+// Same arrangement again (JOS-123): the Appearance section names itself beside the card that
+// renders its first item. See ./TextSizeSetting.tsx.
+import { appearanceSection } from './TextSizeSetting'
 // Same arrangement again (JOS-139): what the X does — the app keeps running in the tray, or it
 // quits — names its own section beside the card that renders it. See ./CloseToTraySetting.tsx.
 import { windowSection } from './CloseToTraySetting'
@@ -315,7 +320,7 @@ function buildSections({ version, status, onSendFeedback, onWhatsNew }: SectionI
     // SECOND IN THE RAIL, ahead of everything about the game (JOS-123). A person who opens
     // Preferences because they can barely read the app has to find this one, and the rail is
     // itself drawn at the size they are complaining about.
-    textSizeSection(),
+    appearanceSection(),
     combatSection(),
     overlaysSection(),
     // Right after the overlays, because the promise this switch makes is about them: closing the

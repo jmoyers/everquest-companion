@@ -81,6 +81,26 @@ export function normalizeUiScale(value: unknown): number {
 }
 
 /**
+ * ONE RUNG UP OR DOWN THE LADDER (JOS-408).
+ *
+ * The five buttons became an A− / A+ stepper, and the LADDER DID NOT CHANGE: it is still the
+ * detents, so A+ from 110% lands on 125% rather than on 115%. That is the whole reason this is a
+ * function on the ladder rather than an addition in the card — a stepper that added a fixed amount
+ * would walk off the stops and `normalizeUiScale` would drag it back to one, which reads as a
+ * button that sometimes does nothing.
+ *
+ * THE ENDS ARE FIXED POINTS, not an error: the control disables its own button there
+ * (`PrefStepper`'s `atMin` / `atMax`), and a caller that presses anyway gets the value it had. An
+ * off-ladder input is snapped first, so a hand-edited 1.19 steps up from 1.25 like everything else.
+ */
+export function stepUiScale(scale: number, dir: 1 | -1): number {
+  const cur = normalizeUiScale(scale)
+  const at = UI_SCALE_STEPS.indexOf(cur)
+  const want = Math.min(UI_SCALE_STEPS.length - 1, Math.max(0, at + dir))
+  return UI_SCALE_STEPS[want] ?? cur
+}
+
+/**
  * How a scale is SAID: "125%". The factor is a number nobody asked for in those terms, and every
  * surface that names one (the buttons, the caption, a test's expectation) goes through here so
  * they cannot round it differently.

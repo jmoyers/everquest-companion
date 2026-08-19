@@ -307,6 +307,17 @@ export const IPC = {
   // main -> renderer(main app): a per-kind value moved (a window's own `bg` slider while
   // independent transparency is on). Payload Record<OverlayKind, number>.
   onOverlayBgAlphas: 'overlayBgAlpha:kindsChanged',
+  // ---- ONE SWITCH OVER BOTH OF THEM (JOS-408; shared/overlayIndependent.ts) ----
+  // renderer(main app) -> main: `independent`, for the text size AND the transparency together.
+  // Resolves to BOTH prefs objects, because both may have moved and the pane draws both.
+  //
+  // A CHANNEL OF ITS OWN rather than two calls from the renderer, and the reason is atomicity a
+  // renderer cannot provide: the two writes must land before either is broadcast, or an overlay
+  // window is told about half a flip and re-resolves its size against a transparency flag that has
+  // not moved yet. It is also where the ONE seed order lives — text first, then transparency —
+  // which is what keeps "opting in changes nothing on screen" true for both features at once.
+  // The eight channels above are untouched: they are still how each value actually travels.
+  overlayIndependentSet: 'overlayIndependent:set',
   // ---- closing the window keeps the companion running (JOS-139; shared/closeToTray.ts) ----
   // renderer(main app) -> main: read / patch the close-to-tray preference. Returns
   // CloseToTrayPrefs, re-validated at the handler through the same normalizer the store uses.

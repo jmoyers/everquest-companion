@@ -18,6 +18,19 @@ export const BG_ALPHA_MIN = 0.1
 export const BG_ALPHA_MAX = 1
 /** One notch of the slider. Fine on purpose: this is an aiming-at-a-shade control, not a ladder. */
 export const BG_ALPHA_STEP = 0.02
+/**
+ * ONE PRESS OF THE PREFERENCES STEPPER — a 5% grid, and deliberately COARSER than the slider's
+ * notch (JOS-408).
+ *
+ * The overlays' own `bg` sliders keep their 0.02, because a slider is an aiming control and you
+ * are choosing a shade against the game behind it. Preferences no longer has a slider: the whole
+ * page is steppers now, and a stepper that moved 2% a press would need twenty presses to cross the
+ * range and would print percentages nobody can hold in their head (72, 74, 76…). Five is a number
+ * a person reads as a step.
+ *
+ * IT IS A GRID, NOT AN INCREMENT, and `stepBgAlpha` is why that distinction is written down.
+ */
+export const BG_ALPHA_PREF_STEP = 0.05
 /** What every overlay has painted itself with since the first one existed. */
 export const BG_ALPHA_DEFAULT = 0.72
 
@@ -38,6 +51,34 @@ export const BG_ALPHA_DEFAULT = 0.72
 export function clampBgAlpha(v: unknown): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return BG_ALPHA_DEFAULT
   return Math.min(BG_ALPHA_MAX, Math.max(BG_ALPHA_MIN, Math.round(v * 100) / 100))
+}
+
+/**
+ * WALK TO THE NEXT POINT ON THE 5% GRID IN THAT DIRECTION (JOS-408).
+ *
+ * NOT `value + 0.05`. Every overlay in this app has carried a 0.02 slider since the first one
+ * existed, so a real store is full of numbers that are not multiples of five — the shipped default
+ * is 0.72 — and an increment would carry that offset forever (72 → 77 → 82). The grid instead
+ * SNAPS: 72 → 75 → 80 going up, 72 → 70 → 65 going down. The value shown is still the exact
+ * in-force one, so a stepper reads 72% and steps cleanly, which is the whole ask.
+ *
+ * ALREADY ON THE GRID MOVES A WHOLE STEP: from 0.70, up is 0.75 and not 0.70. That is what the
+ * floor/ceil pair buys over a round — a round would make one of the two directions a no-op for
+ * every on-grid value, which is a button that does nothing.
+ *
+ * The epsilon is float hygiene, not a fudge: `0.7 / 0.05` is 13.999999999999998 in IEEE-754, and
+ * without it stepping up from 70% would land back on 70%. Both ends clamp to the slider's range,
+ * so the control's disabled ends and this function agree about where the road stops.
+ */
+export function stepBgAlpha(value: unknown, dir: 1 | -1): number {
+  const cur = clampBgAlpha(value)
+  const cells = cur / BG_ALPHA_PREF_STEP
+  const eps = 1e-9
+  const next =
+    dir > 0
+      ? (Math.floor(cells + eps) + 1) * BG_ALPHA_PREF_STEP
+      : (Math.ceil(cells - eps) - 1) * BG_ALPHA_PREF_STEP
+  return clampBgAlpha(next)
 }
 
 // ---------------------------------------------------------------------------------------------

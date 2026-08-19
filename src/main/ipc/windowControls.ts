@@ -14,6 +14,7 @@ import { getOverlayTextSize, setOverlayTextSize } from '../storeOverlayTextSize'
 import type { OverlayTextSizePrefs } from '../../shared/overlayTextScale'
 import { getOverlayBgAlpha, setOverlayBgAlpha } from '../storeOverlayBgAlpha'
 import { BG_ALPHA_DEFAULT, type OverlayBgAlphaPrefs } from '../../shared/overlayBgAlpha'
+import { applyOverlayIndependent } from '../storeOverlayIndependent'
 import { getCloseToTray } from '../storeCloseToTray'
 import { applyCloseToTray } from '../tray'
 import { noteCurrentView } from '../telemetry/errorReports'
@@ -359,6 +360,33 @@ export function registerWindowIpc(): void {
     // window would otherwise hear about.
     echoOverlayConfigs()
     return prefs
+  })
+
+  // ---- ONE SWITCH OVER BOTH (JOS-408) ----
+  // Preferences carries a single `Independent per overlay`, because the owner's review found two
+  // identical-looking switches governing different halves of the same twelve rows unreadable. The
+  // two STORES are unchanged and so are the two setters above; this handler is the seam that moves
+  // both flags in one call and then tells everyone once.
+  //
+  // THE ORDER MATTERS AND IT IS THE ONE THE TWO SETTERS ALREADY IMPLY: both writes land first
+  // (`applyOverlayIndependent`, which runs each feature's seed-on-first-opt-in), and only then does
+  // anything broadcast. A renderer making two calls could not promise that — an overlay window
+  // would hear about the size flip and re-resolve against a transparency flag that had not moved.
+  ipcMain.handle(IPC.overlayIndependentSet, (_e, on: unknown) => {
+    applyOverlayIndependent(on === true)
+    const text = getOverlayTextSize()
+    const bg = getOverlayBgAlpha()
+    // The same five sends both setters make, once each rather than twice: the two prefs, the two
+    // per-kind maps the seed just wrote, and every window's own config (a change no window made).
+    broadcastOverlayTextSize(text)
+    broadcastOverlayBgAlpha(bg)
+    broadcastOverlayTextScales()
+    broadcastOverlayBgAlphas()
+    echoOverlayConfigs()
+    // …and the strips are re-placed at the size they now draw at (JOS-406), last, on the store this
+    // write leaves behind.
+    refitStripsForTextScale()
+    return { text, bg }
   })
 
   // ---- what the X does (JOS-139) ----

@@ -122,6 +122,16 @@ export interface PrefsSnapshot {
    *  argument: a row states a value, and one that states the wrong one for a frame is this gate's
    *  whole subject. */
   overlayBgAlphas: Record<OverlayKind, number>
+  /**
+   * …and WHICH OF THOSE WINDOWS ARE OPEN (JOS-408), for the rows' `closed` tag.
+   *
+   * The only non-stored fact in this object, and it is here rather than read on mount for the
+   * reason everything else is: the tag is a SENTENCE about a row, and a row that says `closed`
+   * for a frame about a window the user has open is the same defect as a switch that flashes.
+   * It costs no extra IPC — `getOverlayState` is already in the batch for the toast, banner and
+   * con-card cards; this keeps the whole map instead of three fields out of it.
+   */
+  overlayOpen: Record<OverlayKind, boolean>
   /** Window — what the X does (JOS-139). OFF by default (owner reversal, 2026-08-16), and it has
    *  TWO other controls (the tray menu's checkbox and the title bar's overlay-menu row), so this
    *  entry is kept current by main's pushes as well as by the card's own writes — see App.tsx. */
@@ -279,6 +289,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     // alpha the slider could not express.
     overlayBgAlpha: normalizeOverlayBgAlpha(overlayBgAlpha),
     overlayBgAlphas,
+    overlayOpen: overlayState,
     closeToTray,
     toast: { open: overlayState.toast, locked: toastConfig.locked },
     // The knobs go through the same normalizer main's store reads with, so the cache can never
