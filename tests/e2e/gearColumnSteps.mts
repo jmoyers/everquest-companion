@@ -222,10 +222,13 @@ async function stepPick(page: Page): Promise<boolean> {
     missing.length === 0,
     missing.length === 0 ? `${String(PICK.length)} picked, all sortable` : `no header for ${missing.join(' ')}`
   )
-  // The chip says the choice is now the user's, not the app's.
+  // The chip says the choice is now the user's, not the app's. The drop trio's headers are
+  // sortable too (2026-08-18) but they are the Drop-columns chip's, not this one's — so they and
+  // the name header come off the sortable-header count before it must match the chip.
+  const trio = (await countOf(page, '[data-testid="gear-sort-zone"]')) * 3
   check(
     'the Columns chip counts what is drawn',
-    (await textOf(page, COLUMNS_TOGGLE)).includes(String(after - 1)),
+    (await textOf(page, COLUMNS_TOGGLE)).includes(String(after - 1 - trio)),
     (await textOf(page, COLUMNS_TOGGLE)).replace(/\s+/g, ' ').trim()
   )
   return missing.length === 0

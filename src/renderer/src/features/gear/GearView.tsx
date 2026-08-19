@@ -184,10 +184,10 @@ function parseStateKey(key: string): ItemUpgradeState {
 /** Flip the direction when the same column is clicked again; a new column opens on its natural end. */
 function nextSort(sort: GearSort, key: GearSortKey): GearSort {
   if (sort.key === key) return { key, dir: sort.dir === 'desc' ? 'asc' : 'desc' }
-  // Names read A→Z; every number reads best-first, which for WEIGHT and DELAY is still "most" —
-  // this table states what an item HAS, and inverting two columns' defaults would be a preference
-  // the user can express in one click anyway.
-  return { key, dir: key === 'name' ? 'asc' : 'desc' }
+  // Names read A→Z — the item's, the zone's and the mob's alike; every number reads best-first,
+  // which for WEIGHT and DELAY is still "most" — this table states what an item HAS, and inverting
+  // two columns' defaults would be a preference the user can express in one click anyway.
+  return { key, dir: key === 'name' || key === 'zone' || key === 'mob' ? 'asc' : 'desc' }
 }
 
 interface TableState {
@@ -218,13 +218,13 @@ function useTableRows(
   rows: readonly GearViewRow[],
   state: ItemUpgradeState,
   filters: GearFilters,
-  opts: { sort: GearSort; deps: GearFilterDeps; chosen: GearSortKey[] | null }
+  opts: { sort: GearSort; deps: GearFilterDeps; chosen: GearSortKey[] | null; showDrops: boolean }
 ): TableState {
-  const { sort, deps, chosen } = opts
+  const { sort, deps, chosen, showDrops } = opts
   const scaled = useMemo(() => scaleAll(rows, state), [rows, state])
   const filtered = useMemo(() => filterGearRows(scaled, filters, deps), [scaled, filters, deps])
   const columns = useMemo(() => columnsFor(chosen, sort), [chosen, sort])
-  const inForce = useMemo(() => sortWithin(sort, columns), [sort, columns])
+  const inForce = useMemo(() => sortWithin(sort, columns, showDrops), [sort, columns, showDrops])
   // `derivedOpts` returns one of two constants, so this memo moves only when the flag actually flips.
   const sorted = useMemo(() => sortGearRows(filtered, inForce, derivedOpts(filters)), [filtered, inForce, filters])
   // WHY THE LIST IS EMPTY, when it is (the JOS-67 law: a filter that can hide everything must be
@@ -522,7 +522,7 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
   const era = useEraHidden()
   const owned = useOwnedOrLooted(ownership.map)
   const deps = useMemo(() => ({ ...era, ...owned }), [era, owned])
-  const table = useTableRows(rows, state, filters, { sort, deps, chosen: prefs.columns })
+  const table = useTableRows(rows, state, filters, { sort, deps, chosen: prefs.columns, showDrops: prefs.dropCols })
   // JOS-338. The hover card's data, and it is deliberately OUTSIDE the three-memo pipeline above:
   // what you are wearing is not a filter, not a sort and not a scale, so no keystroke and no slider
   // tick can reach it. It takes the UNSCALED corpus (the card joins an equipped item by key and

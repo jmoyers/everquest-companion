@@ -430,7 +430,30 @@ export function filterGearRows<T extends GearRow>(
  * never will. Nothing indexes it, nothing scales it, and nothing stores it — it is computed from the
  * vector at the moment somebody asks, which is exactly why the plus-state moves it for free.
  */
-export type GearSortKey = 'name' | 'RATIO' | 'EFF_HP' | 'EFF_DMG' | 'BIS' | GearStatKey
+export type GearSortKey = 'name' | GearDropSortKey | 'RATIO' | 'EFF_HP' | 'EFF_DMG' | 'BIS' | GearStatKey
+
+/**
+ * The drop trio's own axes (user ask, 2026-08-18: *I'd be in a zone like Unrest and want to see
+ * all gear in there* — the word filter answers that, and the sort is how the answer reads as a
+ * roster). Named by the trio's COLUMN ids (gearColumnIds), so the stored widths, the `data-col`
+ * handles and the sort key are one vocabulary.
+ */
+export type GearDropSortKey = 'zone' | 'zoneLevel' | 'mob'
+
+export function isDropSortKey(key: GearSortKey): key is GearDropSortKey {
+  return key === 'zone' || key === 'zoneLevel' || key === 'mob'
+}
+
+/**
+ * What the drop sorts read. Optional on purpose: `sortGearRows` stays callable on a bare
+ * `GearRow` (the planner's rows carry no drop columns), where a drop sort simply files
+ * everything as unstated. `GearViewRow` carries all three.
+ */
+interface DropSortFields {
+  dropZones?: readonly string[]
+  dropMobs?: readonly string[]
+  dropLevels?: readonly string[]
+}
 
 export interface GearSort {
   key: GearSortKey
@@ -450,7 +473,7 @@ export const DEFAULT_GEAR_SORT: GearSort = { key: 'AC', dir: 'desc' }
  * never learn that two of the keys are not vector fields.
  */
 export function sortValue(row: GearRow, key: GearSortKey, opts: GearDerivedOpts = {}): number | undefined {
-  if (key === 'name') return undefined
+  if (key === 'name' || isDropSortKey(key)) return undefined
   if (key === 'RATIO') return gearRatio(row.stats)
   if (key === 'EFF_HP') return gearEffectiveHp(row.stats)
   if (key === 'EFF_DMG') return gearEffectiveDamage(row.stats, opts)
@@ -482,10 +505,20 @@ export function readsDerivedOpts(key: GearSortKey): boolean {
  * called it n·log n times paid ~25 evaluations per row per keystroke on the 6,814-row corpus.
  * Decorating first makes every key one evaluation per row, and the comparator a number compare.
  */
-export function sortGearRows<T extends GearRow>(rows: readonly T[], sort: GearSort, opts: GearDerivedOpts = {}): T[] {
+export function sortGearRows<T extends GearRow & DropSortFields>(
+  rows: readonly T[],
+  sort: GearSort,
+  opts: GearDerivedOpts = {}
+): T[] {
   const sign = sort.dir === 'asc' ? 1 : -1
   if (sort.key === 'name') return [...rows].sort((a, b) => sign * a.name.localeCompare(b.name))
-  const decorated = rows.map((row) => ({ row, value: sortValue(row, sort.key, opts) }))
+  if (sort.key === 'zone' || sort.key === 'mob') return sortByDropText(rows, sort.key, sign)
+  // `zoneLevel` decorates like the numeric keys — the value is just read from the trio, not the
+  // vector — so the once-per-row rule and the unstated-sorts-last rule hold without restatement.
+  const decorated = rows.map((row) => ({
+    row,
+    value: sort.key === 'zoneLevel' ? dropLevelMin(row) : sortValue(row, sort.key, opts)
+  }))
   decorated.sort(({ row: a, value: av }, { row: b, value: bv }) => {
     if (av === undefined || bv === undefined) {
       if (av === bv) return a.name.localeCompare(b.name)
@@ -494,6 +527,38 @@ export function sortGearRows<T extends GearRow>(rows: readonly T[], sort: GearSo
     return av === bv ? a.name.localeCompare(b.name) : sign * (av - bv)
   })
   return decorated.map(({ row }) => row)
+}
+
+/**
+ * The two TEXT axes of the trio, by the FIRST entry — the name the cell actually shows (the rest
+ * live on hover, and ranking by an invisible value would make the order look broken). A row with
+ * no stated source sorts last both ways, the same rule the numeric path applies to `undefined`.
+ */
+function sortByDropText<T extends GearRow & DropSortFields>(rows: readonly T[], key: 'zone' | 'mob', sign: number): T[] {
+  const first = (r: T): string | undefined => {
+    const v = key === 'zone' ? r.dropZones?.[0] : r.dropMobs?.[0]
+    return v === '' ? undefined : v
+  }
+  return [...rows].sort((a, b) => {
+    const av = first(a)
+    const bv = first(b)
+    if (av === undefined || bv === undefined) {
+      if (av === bv) return a.name.localeCompare(b.name)
+      return av === undefined ? 1 : -1
+    }
+    return av === bv ? a.name.localeCompare(b.name) : sign * av.localeCompare(bv)
+  })
+}
+
+/**
+ * The first stated drop level's LOW end — "36-40" ranks as 36, "~53" as 53. The level cell shows
+ * the FIRST mob's text verbatim, so the rank reads off the same mob; a range ranks by where it
+ * starts because "gear you could start camping at your level" is the question a level sort asks.
+ * Unstated (`''`) is `undefined`, which files the row last both ways (absent is not a value).
+ */
+function dropLevelMin(row: DropSortFields): number | undefined {
+  const m = /\d+/.exec(row.dropLevels?.[0] ?? '')
+  return m === null ? undefined : Number(m[0])
 }
 
 // ---- the plus-state stage -------------------------------------------------------------------

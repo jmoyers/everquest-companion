@@ -50,7 +50,7 @@
 // and `tests/gearColumnPrefs.test.mts` that a chosen set of thirty overflows on purpose.
 
 import { GEAR_PERCENT_STAT_KEYS, GEAR_STAT_KEYS, isGearStatKey, type GearStatKey } from '../../../../shared/planner/gear'
-import type { GearSort, GearSortKey } from './gearFilter'
+import { isDropSortKey, type GearSort, type GearSortKey } from './gearFilter'
 
 /**
  * The columns that are always there: armour, the two pools every class reads, and the weapon
@@ -260,7 +260,9 @@ export const PICKABLE_COLUMNS: readonly GearSortKey[] = [
  */
 export function visibleColumns(sort: GearSort): GearColumn[] {
   const keys: GearSortKey[] = [...CORE_COLUMNS]
-  if (sort.key !== 'name' && !keys.includes(sort.key)) keys.push(sort.key)
+  // A drop-trio sort names no NUMERIC column — its three columns are the `showDrops` trio, drawn
+  // by the table itself — so it seeds nothing here.
+  if (sort.key !== 'name' && !isDropSortKey(sort.key) && !keys.includes(sort.key)) keys.push(sort.key)
   return keys.map(column)
 }
 
@@ -285,8 +287,11 @@ export function columnsFor(chosen: readonly GearSortKey[] | null, sort: GearSort
  * IDENTITY-PRESERVING when the sort is already on a drawn column, so the memo chain downstream
  * re-runs when the sort MOVES and never merely because it rendered.
  */
-export function sortWithin(sort: GearSort, columns: readonly GearColumn[]): GearSort {
+export function sortWithin(sort: GearSort, columns: readonly GearColumn[], showDrops: boolean): GearSort {
   if (sort.key === 'name' || columns.some((c) => c.key === sort.key)) return sort
+  // A drop-trio sort's column is the trio itself — valid exactly while the trio is drawn, and it
+  // falls with the trio for the same reason a removed numeric column takes its sort down.
+  if (isDropSortKey(sort.key) && showDrops) return sort
   const first = columns[0]
   return first === undefined ? { key: 'name', dir: 'asc' } : { key: first.key, dir: 'desc' }
 }

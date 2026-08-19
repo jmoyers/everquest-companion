@@ -229,8 +229,8 @@ export function sanitizeGearForm(raw: unknown): GearFormMemory {
   }
 }
 
-/** Every axis the table can sort on: the item column, plus every column the picker can draw. */
-const SORT_KEYS: readonly GearSortKey[] = ['name', ...PICKABLE_COLUMNS]
+/** Every axis the table can sort on: the item column, the drop trio, plus every pickable column. */
+const SORT_KEYS: readonly GearSortKey[] = ['name', 'zone', 'zoneLevel', 'mob', ...PICKABLE_COLUMNS]
 
 /**
  * The stored sort. Both halves are checked independently, so a build that renamed a stat key gives

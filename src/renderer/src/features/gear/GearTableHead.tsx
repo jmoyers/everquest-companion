@@ -154,6 +154,7 @@ function SortHeader({
   sort,
   width,
   align,
+  title,
   onSort,
   onWidths
 }: {
@@ -161,6 +162,8 @@ function SortHeader({
   sort: GearSort
   width?: string
   align?: 'right'
+  /** the hover sentence a wordy column carries (the drop trio); the stat headers say it in data */
+  title?: string
   onSort: (key: GearSortKey) => void
   onWidths: (next: GearColumnWidths | null) => void
 }): JSX.Element {
@@ -168,6 +171,7 @@ function SortHeader({
   return (
     <TableCell
       align={align}
+      title={title}
       data-col={column.key}
       // A right-aligned label ends where the GRIP sits, so the numeric headers state extra right
       // padding to clear it (user report, 2026-08-15: `STR` read `STI` at a narrow width). Body
@@ -277,30 +281,33 @@ export const GearHead = memo(function GearHead({
             the full story either way. */}
         {showDrops && (
           <>
-            <PlainHeader
-              id="zone"
+            {/* Sortable since 2026-08-18 (user ask: standing in a zone and reading its roster).
+                Text axes sort by the FIRST entry — the name the cell shows — and Level by the
+                first mob's stated LOW end; unstated rows file last (gearFilter's drop sorts). */}
+            <SortHeader
+              column={{ key: 'zone', label: 'Zone' }}
+              sort={sort}
               width={w('zone', layout.zone)}
               title="Where the item is known to drop - the first zone, with the rest on hover"
+              onSort={onSort}
               onWidths={onWidths}
-            >
-              Zone
-            </PlainHeader>
-            <PlainHeader
-              id="zoneLevel"
+            />
+            <SortHeader
+              column={{ key: 'zoneLevel', label: 'Level' }}
+              sort={sort}
               width={w('zoneLevel', layout.zoneLevel)}
-              title="The stated level of the first drop mob - a range as often as a number. Hover for every mob's level."
+              title="The stated level of the first drop mob - a range as often as a number, ranked by its low end. Hover a cell for every mob's level."
+              onSort={onSort}
               onWidths={onWidths}
-            >
-              Level
-            </PlainHeader>
-            <PlainHeader
-              id="mob"
+            />
+            <SortHeader
+              column={{ key: 'mob', label: 'Mob' }}
+              sort={sort}
               width={w('mob', layout.mob)}
               title="Who drops it - the first known mob, with the rest on hover"
+              onSort={onSort}
               onWidths={onWidths}
-            >
-              Mob
-            </PlainHeader>
+            />
           </>
         )}
         {columns.map((c) => (

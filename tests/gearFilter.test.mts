@@ -413,6 +413,22 @@ test('the sort is TOTAL — name is the tiebreak, so nothing re-shuffles under t
   assert.deepEqual(names(sortGearRows([a, b], { key: 'name', dir: 'desc' })), ['B Ring', 'A Ring'])
 })
 
+test('the drop trio sorts: text by the FIRST shown entry, level by its LOW end, unstated LAST', () => {
+  const a = { ...row({ key: 'a', name: 'A Blade' }), dropZones: ['Unrest'], dropMobs: ['a ghoul'], dropLevels: ['36-40'] }
+  const b = { ...row({ key: 'b', name: 'B Club' }), dropZones: ['Befallen'], dropMobs: ['the zombie'], dropLevels: ['~12'] }
+  const c = { ...row({ key: 'c', name: 'C Cap' }), dropZones: [], dropMobs: [], dropLevels: [] }
+  // Text axes rank the first entry — the name the cell shows — and a row naming nothing files
+  // last in BOTH directions, the numeric path's own absent-is-not-a-value rule.
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zone', dir: 'asc' })), ['B Club', 'A Blade', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zone', dir: 'desc' })), ['A Blade', 'B Club', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([c, b, a], { key: 'mob', dir: 'asc' })), ['A Blade', 'B Club', 'C Cap'])
+  // A range ranks by where it STARTS ("36-40" is 36) and "~12" reads its number.
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zoneLevel', dir: 'asc' })), ['B Club', 'A Blade', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zoneLevel', dir: 'desc' })), ['A Blade', 'B Club', 'C Cap'])
+  // A bare GearRow carries no trio — a drop sort files everything as unstated, name-ordered.
+  assert.deepEqual(names(sortGearRows(ALL, { key: 'zone', dir: 'asc' })), names(sortGearRows(ALL, { key: 'name', dir: 'asc' })))
+})
+
 test('ratio is a sort key of its own, and it is gearRatio - never a second opinion', () => {
   const sorted = sortGearRows(ALL, { key: 'RATIO', dir: 'desc' })
   assert.deepEqual(names(sorted).slice(0, 2), ['Thelvorn, Blade of Light', 'Wooden Club'])
