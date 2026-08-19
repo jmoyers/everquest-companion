@@ -141,19 +141,15 @@ function PlainView({
           remount `key` is the whole character contract. The one prop it takes is the app's own
           router — every donor name in the pane links OUT to that item's Loot drill-down. */}
       {view === 'planner' && <PlannerView key={viewKey} onOpenLoot={routing.openLoot} />}
-      {/* GEAR (JOS-284) takes the same one prop and for the same reason: the table reads the
+      {/* GEAR (JOS-284) keys on the character contract for the same reason: the table reads the
           committed corpus, which is character-independent, so the remount `key` is the whole
           character contract and every item name links OUT to that item's Loot drill-down — which
-          is where the per-item tier block is drawn. */}
+          is where the per-item tier block is drawn. The drop trio's doors (user ask, 2026-08-17):
+          the Mob cell opens the mob's page, the Zone cell opens that zone's map — GearTable
+          states both contracts. */}
       {view === 'gear' && (
-        <GearView
-          key={viewKey}
-          onOpenLoot={routing.openLoot}
-          // The drop trio's doors (user ask, 2026-08-17): the Mob cell opens the mob's page, the
-          // Zone cell opens that zone's map — GearTable states both contracts.
-          onOpenMob={routing.openMob}
-          onOpenMapZone={routing.openMapZone}
-        />
+        <GearView key={viewKey} onOpenLoot={routing.openLoot}
+          onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />
       )}
       {/* WISH LIST (JOS-324's tab, JOS-326's feature) — one flat list of items this character has
           decided they want, grouped by where to go and get them. Keyed like the rest because a
