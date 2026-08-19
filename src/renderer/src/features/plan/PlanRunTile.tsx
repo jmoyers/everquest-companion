@@ -72,7 +72,10 @@ import { itemIconUrl } from '../../lib/ItemWindow'
 // guarantees and the measured geometry that made the anchoring law what it is.
 import { GearRowCompare } from '../gear/GearCompareCard'
 import type { GearCompareData } from '../gear/gearData'
+import type { MobTarget } from '../mobs/mobTarget'
 import { DonorName } from '../planner/PlannerChips'
+import { CellLink } from '../../lib/CellLink'
+import { isCommonMob } from './planData'
 
 /** What each band means for a plan, said once — the chip's hover wherever one is drawn. */
 const BAND_HINT: Record<ConBand, string> = {
@@ -146,15 +149,22 @@ function TargetRow({
   target,
   runBand,
   compare,
-  onOpenLoot
+  onOpenLoot,
+  onOpenMob
 }: {
   target: GearTarget
   /** the band its RUN heading already printed — see the chip rule below */
   runBand: ConBand | null
   compare?: GearCompareData
   onOpenLoot?: (item: string) => void
+  /** the witness mob's door to its page (App's `openMob`); absent, the plain text it was */
+  onOpenMob?: ((t: MobTarget) => void) | undefined
 }): JSX.Element {
   const name = <DonorName name={target.name} bold onOpen={onOpenLoot} />
+  // NAMED, BASE-ZONE witnesses only (owner ruling, 2026-08-18): a `+N` witness names a creature
+  // the catalog has no row for (planData header), and a common's bare name can mean nine pages —
+  // both stay the plain text they were rather than linking to a guess.
+  const mobLinked = onOpenMob !== undefined && target.plus === null && !isCommonMob(target.mob)
   const row = compare?.byKey.get(target.key)
   return (
     <Stack
@@ -195,7 +205,14 @@ function TargetRow({
           name
         )}
         <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
-          {mobText(target)}
+          {mobLinked ? (
+            <>
+              <CellLink text={target.mob} onOpen={() => { onOpenMob({ mob: target.mob }) }} />
+              {target.mobLevel === null ? '' : ` (Lvl ${String(target.mobLevel)})`}
+            </>
+          ) : (
+            mobText(target)
+          )}
         </Typography>
       </Box>
       {target.wished && <WishedChip />}
@@ -217,6 +234,8 @@ export interface PlanRunTileProps {
   onOpenLoot?: (item: string) => void
   /** this trip's door to its map (App's `openMapZone`); absent, the heading stands alone */
   onOpenMapZone?: (zone: ZoneShort) => void
+  /** a named witness mob's door to its page (App's `openMob`) — TargetRow states the gate */
+  onOpenMob?: (t: MobTarget) => void
 }
 
 /**
@@ -234,7 +253,7 @@ export interface PlanRunTileProps {
  * tell a rich trip from a thin one without opening every tile. It is rendered as its own node so the
  * chevron and the count cannot be mistaken for part of the place's name.
  */
-export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone }: PlanRunTileProps): JSX.Element {
+export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone, onOpenMob }: PlanRunTileProps): JSX.Element {
   const [collapsed, setCollapsed] = useState(false)
   // The trip's door to its map (user ruling, 2026-08-18) — its own button BESIDE the heading,
   // because the heading IS the fold button and a control inside a control answers to neither.
@@ -333,6 +352,7 @@ export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone }:
             runBand={run.band}
             compare={compare}
             onOpenLoot={onOpenLoot}
+            onOpenMob={onOpenMob}
           />
         ))}
     </Box>

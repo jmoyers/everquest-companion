@@ -91,6 +91,22 @@ export function mobLevelOf(name: string): number | null {
   return mobLevels().get(mobKey(name)) ?? null
 }
 
+/**
+ * `a skeleton` / `an orc pawn` — the game's own convention for a COMMON spawn is the leading
+ * article, and the named mobs go without one. The catalog carries no rarity field, so the article
+ * is the one signal the data itself states; case-insensitive because the wiki capitalizes some
+ * articles. The same rule the Maps pane applies to its pin roster — kept per-feature because each
+ * branch of this fork must stand alone against main (PR 35 spells it in maps/mobPins.ts).
+ *
+ * HERE it gates the mob-page link (owner ruling, 2026-08-18: *only for named mobs*): a common's
+ * bare name can mean nine different pages ("a bandit"), so a link on one would land on a guess.
+ */
+const COMMON_NAME_RE = /^(a|an)\s/i
+
+export function isCommonMob(name: string): boolean {
+  return COMMON_NAME_RE.test(name)
+}
+
 // ---- the corpora ------------------------------------------------------------------------------
 
 /**

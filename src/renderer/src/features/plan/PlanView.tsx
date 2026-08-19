@@ -75,6 +75,7 @@ import { useRemembered } from '../gear/useAreaMemory'
 import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
 import { useStatedLevel, type StatedLevel } from '../leveling/useStatedLevel'
 import { CURRENT_ERA_LABEL, useEraOnly } from '../planner/plannerData'
+import type { MobTarget } from '../mobs/mobTarget'
 import PlanBracketCard from './PlanBracketCard'
 import { usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
 
@@ -268,9 +269,11 @@ export interface PlanViewProps {
    * Absent, they stay the plain text they were.
    */
   onOpenMapZone?: (zone: ZoneShort) => void
+  /** Open a witness mob's page (App's `openMob`) — named, base-zone witnesses only (TargetRow). */
+  onOpenMob?: (t: MobTarget) => void
 }
 
-export default function PlanView({ onOpenLoot, onOpenMapZone }: PlanViewProps = {}): JSX.Element {
+export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanViewProps = {}): JSX.Element {
   const { rows, ready } = useGearIndex()
   const classes = useGearClasses()
   const ownership = useGearOwnership()
@@ -321,6 +324,7 @@ export default function PlanView({ onOpenLoot, onOpenMapZone }: PlanViewProps = 
             compare={compare}
             onOpenLoot={onOpenLoot}
             onOpenMapZone={onOpenMapZone}
+            onOpenMob={onOpenMob}
           />
         ))}
         {route.length === 0 && (

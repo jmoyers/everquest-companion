@@ -50,6 +50,7 @@ import type { ZoneShort } from '@shared/maps'
 // The catalog-spelling fold, refuse-over-guess: only a zone the table resolves becomes a door.
 import { zoneShortNameFromCatalog } from '@shared/zones'
 import type { GearCompareData } from '../gear/gearData'
+import type { MobTarget } from '../mobs/mobTarget'
 import { bracketTargets } from './planData'
 import PlanRunTile from './PlanRunTile'
 
@@ -96,6 +97,8 @@ export interface PlanBracketCardProps {
   onOpenLoot?: (item: string) => void
   /** the route's zone names' door to the Maps tab (App's `openMapZone`); absent, plain text */
   onOpenMapZone?: (zone: ZoneShort) => void
+  /** a named witness mob's door to its page (App's `openMob`); absent, plain text */
+  onOpenMob?: (t: MobTarget) => void
 }
 
 /**
@@ -111,7 +114,7 @@ export interface PlanBracketCardProps {
  * rows STAY afterwards, wearing the `wished` flag: rule 9 flags rather than filters, so pressing
  * this does not make the answer disappear.
  */
-export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, onOpenMapZone }: PlanBracketCardProps): JSX.Element {
+export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, onOpenMapZone, onOpenMob }: PlanBracketCardProps): JSX.Element {
   const addable = bracketTargets(bracket).length
   return (
     <Box
@@ -167,6 +170,7 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, o
             compare={compare}
             onOpenLoot={onOpenLoot}
             onOpenMapZone={onOpenMapZone}
+            onOpenMob={onOpenMob}
           />
         ))}
       </Box>
