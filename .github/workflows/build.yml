@@ -16,6 +16,15 @@
 #                         can never ship a mismatched package.json version and
 #                         "remember to bump after tagging" is no longer a rule.
 #
+#   pull_request        → typecheck + lint + test + a bare `npm run build`, and
+#                         NOTHING else: no installer, no artifacts, no secrets
+#                         touched. Until this job existed a PR got no CI at all —
+#                         the checks lived on the main-branch push AFTER a merge,
+#                         which is the wrong side of the decision they inform.
+#                         GitHub hands a fork PR a read-only token and withholds
+#                         repo secrets by design; this job is shaped so that even
+#                         that token has nothing to write.
+#
 # THOSE TWO PATHS ARE TWO SEPARATE JOBS, and that split is a SECURITY boundary,
 # not cosmetics. GITHUB_TOKEN permissions are per-job and static — they cannot be
 # made conditional inside a job — so a single job covering both paths had to hold
@@ -66,6 +75,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 # Least privilege at the top: no job gets a token scope it does not name.
@@ -75,10 +85,54 @@ permissions: {}
 
 jobs:
   # =========================================================================
-  # NON-TAG REFS: verify + build. Read-only token. Publishes NOTHING.
+  # PULL REQUESTS: the verify gate and nothing else. Read-only token, no
+  # secrets, no artifacts — a fork's code runs here, so the job is shaped to
+  # have nothing worth taking. The prelude is duplicated on purpose (header).
+  # =========================================================================
+  verify:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (v4.4.0)
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 (v4.4.0)
+        with:
+          node-version: 24 # see the build job for why not 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Electron binary
+        run: npm run deps:electron
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # See the build job for what this gate is and why it is green.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # The bare electron-vite build (NOT electron-builder): catches a PR that
+      # typechecks but cannot bundle, in ~30s, without minting an installer
+      # nobody will run from a PR.
+      - name: Build
+        run: npm run build
+
+  # =========================================================================
+  # MAIN-BRANCH PUSHES: verify + build. Read-only token. Publishes NOTHING.
   # =========================================================================
   build:
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
     permissions:
       contents: read
