@@ -7,7 +7,7 @@
 // it, and PreferencesView only names the three exports in its section table.
 
 import { type JSX, useCallback, useEffect, useState } from 'react'
-import { Box, Button, Chip, LinearProgress, Link, Stack, Typography } from '@mui/material'
+import { Box, Button, Chip, FormControlLabel, LinearProgress, Link, Stack, Switch, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import type { UpdateStatus } from '@shared/types'
@@ -88,6 +88,43 @@ function chipLook(status: UpdateStatus, ui: UpdateChipState): ChipLook {
   if (status.disabled) return { label: 'dev build - updates off', color: 'default' }
   if (ui.kind === 'quiet' && status.state === 'ready') return STATE_CHIP.idle
   return STATE_CHIP[status.state]
+}
+
+/**
+ * THE AUTO-UPDATE SWITCH. On by default; the ONLY thing that lets the app check, download or install
+ * on its own — the two buttons below work regardless. Optimistic: the switch moves on click, then
+ * `status.auto` (pushed back by main) confirms it.
+ *
+ * It reflects `status.auto` rather than owning the value, so the nav chip and this switch can never
+ * disagree — the same discipline the rest of this card follows.
+ */
+function AutoUpdateToggle({ status }: { status: UpdateStatus }): JSX.Element {
+  const [on, setOn] = useState(status.auto ?? false)
+  useEffect(() => setOn(status.auto ?? false), [status.auto])
+  const toggle = useCallback((next: boolean) => {
+    setOn(next)
+    void window.eq.setAutoUpdate(next)
+  }, [])
+  return (
+    <Stack spacing={0.5} data-testid="pref-auto-update">
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            data-testid="pref-auto-update-switch"
+            checked={on}
+            onChange={(e) => toggle(e.target.checked)}
+          />
+        }
+        label={<Typography variant="body2">Update automatically</Typography>}
+      />
+      <Typography variant="caption" color="text.secondary">
+        {on
+          ? 'The app checks for updates in the background, downloads them, and installs the next time you close it.'
+          : 'Updates are manual - the app never checks, downloads, or installs on its own. Use “Check for updates” below, then “Restart to update”.'}
+      </Typography>
+    </Stack>
+  )
 }
 
 /** The headline: state chip + when we last asked. */
@@ -231,6 +268,7 @@ export function UpdateSetting({
 
   return (
     <Stack spacing={1.25}>
+      <AutoUpdateToggle status={status} />
       <UpdateHeadline status={status} chip={chip} busy={busy} />
       <UpdateProgress status={status} downloading={downloading} />
       <UpdateError status={status} />

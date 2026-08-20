@@ -116,6 +116,12 @@ export interface StoreShape {
   /** auto-update release channel (Task #27): 'main' (bleeding edge) | 'stable' */
   updateChannel?: UpdateChannel
   /**
+   * Is AUTOMATIC updating on? ON by default (unchanged behaviour), so absent/undefined reads as ON.
+   * An explicit `false` — the user turned the Preferences toggle off — stops the app polling,
+   * auto-downloading and installing on quit; only the manual buttons act.
+   */
+  autoUpdate?: boolean
+  /**
    * Epoch millis of the last COMPLETED update check (Task #60). Persisted so the
    * left-nav "checked 2h ago" line is TRUTHFUL after a relaunch instead of
    * resetting to "never" — with a 4h cadence, an in-memory-only stamp would read
