@@ -71,15 +71,15 @@ import {
   note,
   reportRun,
   settle,
-  settleGone,
   settleStable,
   waitHydrated
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture } from './logFixture.mjs'
 import { stepLoadoutSectionsAreHonest } from './loadoutSectionSteps.mjs'
+// The tab round trip, out of this file for the ceiling's sake — see its header.
+import { awayAndBack, openBosses } from './bossesNav.mjs'
 
-const NAV_BOSSES = '[data-testid="nav-bosses"]'
 const NAV_OVERVIEW = '[data-testid="nav-overview"]'
 /** The toggle group under test, and its two buttons. */
 const MODE = '[data-testid="boss-mode"]'
@@ -388,30 +388,8 @@ async function stepDefeatedOnlyIsAllTime(page: Page): Promise<number> {
 }
 
 /** Open the Bosses tab and wait for its toolbar. Safe when the tab is already the open one. */
-async function openBosses(page: Page, timeoutMs = 60_000): Promise<boolean> {
-  await page.click(NAV_BOSSES, { timeout: 30_000 })
-  return page.waitForSelector(MODE, { timeout: timeoutMs }).then(
-    () => true,
-    () => false
-  )
-}
 
-/**
- * Leave for another tab, and confirm the Bosses view is really gone. This is the step the bug
- * lived in: the assertion after it means nothing unless `BossView` was actually unmounted here.
- */
-async function leaveBosses(page: Page): Promise<boolean> {
-  await page.click(NAV_OVERVIEW, { timeout: 30_000 })
-  return settleGone(page, MODE, { timeoutMs: 15_000 })
-}
 
-/** Away to the Overview and back to Bosses, with the unmount actually asserted in between. */
-async function awayAndBack(page: Page): Promise<boolean> {
-  if (!check('leaving the Bosses tab unmounts it (the mode toggle is gone)', await leaveBosses(page))) {
-    return false
-  }
-  return check('…and the Bosses tab comes back', await openBosses(page))
-}
 
 /** Click a mode button and wait for the group to report the mode we asked for. */
 async function setMode(page: Page, button: string, want: string): Promise<string | null> {

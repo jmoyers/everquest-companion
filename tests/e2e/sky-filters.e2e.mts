@@ -79,6 +79,9 @@ import {
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture } from './logFixture.mjs'
+// The FIFTH copy of this consolidated away — levelingLayoutSteps' own comment called the fourth
+// "a consolidation ticket, not a reason to skip it".
+import { dismissFirstRunNotice } from './levelingLayoutSteps.mjs'
 // The remount guard (JOS-279) — see `skyMount` below and that module's header for the argument.
 import { mountGuard, type MountGuard } from './viewRemount.mjs'
 
@@ -222,19 +225,6 @@ async function clearPick(page: Page, picker: string): Promise<void> {
   await page.keyboard.press('Escape')
 }
 
-/**
- * Answer the analytics first-run notice, which a FRESH userData always shows and which sits at the
- * BOTTOM CENTRE of the window until it is answered — directly over the list footer JOS-191's steps
- * click. Nothing in this file cares about analytics, so "turn it off" is the quiet answer (the perf
- * and text-size specs make the same call for the same reason).
- */
-async function dismissFirstRunNotice(page: Page): Promise<void> {
-  const notice = '[data-testid="telemetry-notice"]'
-  await page.waitForSelector(notice, { timeout: 30_000 }).catch(() => undefined)
-  if ((await countOf(page, notice)) === 0) return
-  await page.click('[data-testid="telemetry-notice-off"]')
-  check('the analytics first-run notice can be answered out of the way', await settleGone(page, notice, { timeoutMs: 8_000 }))
-}
 
 /** Open the Sky tab and wait for its toolbar. Safe when the tab is already the open one. */
 async function openSky(page: Page, timeoutMs = 60_000): Promise<boolean> {
