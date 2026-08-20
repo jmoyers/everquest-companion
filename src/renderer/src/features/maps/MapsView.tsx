@@ -24,14 +24,15 @@
 // own labels, every other installed map AND the bestiary of every other zone (JOS-135) — so a
 // name you half-remember is findable from wherever you happen to be standing.
 //
-// WHAT THIS VIEW CANNOT DO, AND THE HALF OF IT THE USER CAN (JOS-98). There is no AUTOMATIC "you
-// are here" marker and there cannot be: `Your Location` appears ZERO times in the log — re-measured
-// across the owner's whole 116.8 MB of it for this ticket — because /loc answers in the game window
-// and is never written to the file the app tails. What the viewer can do is take the answer from
-// you: the toolbar's `/loc marker` field accepts the line the game printed, drops a crosshair where
-// it says, and keeps it there per zone until you replace it or clear it. The caption states exactly
-// that pair, because a user hunting for a dot that does not exist is a worse outcome than one quiet
-// line saying so (§10) — and a user who does not know they can place one is the report we got.
+// THE "YOU ARE HERE" MARKER, AND THE TWO WAYS IT GETS SET (JOS-98). The log DOES carry your
+// position — `Your Location is …` is written whenever you type `/loc` (wave 1's zero-occurrence
+// sweep was of a character who never ran the command while logging, not a client that withholds
+// it). So the marker moves itself: the character module carries the last live /loc here, and the
+// effect above drops the crosshair on it, silently, for the zone you are standing in. The toolbar's
+// `/loc marker` field stays for the OTHER position — one you paste off a wiki page, or a spot you
+// are not standing on — and the two share one marker per zone, last write winning. What the log
+// still never says is where you are BETWEEN /loc commands: there is no continuous dot that follows
+// you, only the last place you asked about, so the caption promises exactly that and no more.
 //
 // TWO DENSITY CONTROLS LIVE HERE AND BOTH ARE HONEST ABOUT WHAT THEY ARE. Labels declutter
 // themselves (`labelLayout.ts`) — a label that loses its space becomes a dot and hover raises the
@@ -241,9 +242,10 @@ function MapsHeader({
         </Box>
       </Stack>
       <Typography variant="caption" color="text.disabled">
-        The log states the zone you entered and nothing else positional - so there is no automatic
-        “you are here”. Type <code>/loc</code> in game and paste the line into the toolbar to mark
-        where you are; the mark stays with this zone until you replace or clear it.
+        Type <code>/loc</code> in game and the mark moves to where you are - no paste needed. It
+        updates only when you run the command (there is no dot that follows you), and stays with this
+        zone until it changes. You can still paste a <code>/loc</code> line into the toolbar to mark a
+        spot you are not standing on.
       </Typography>
     </Stack>
   )
@@ -361,8 +363,11 @@ function useMapOpenTracking(data: MapData | null): void {
 
 export default function MapsView(): JSX.Element {
   // WHERE YOU ARE. The character module owns the raw display zone off the `zone` log event; it
-  // is undefined until the log prints one, and that absence is a state this view renders.
-  const raw = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)?.zone
+  // is undefined until the log prints one, and that absence is a state this view renders. It also
+  // carries the last LIVE `/loc` (JOS-98 wave 2) — see the auto-place effect below.
+  const snap = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)
+  const raw = snap?.zone
+  const liveLoc = snap?.loc
   const { zone, auto, mode, pick, followCurrent } = useZoneSelection(raw)
   const [prefs, setPrefs] = useState<MapPackPrefs>(loadPackPrefs)
   const [layers, setLayers] = useState<LayerMask>(DEFAULT_LAYERS)
@@ -393,6 +398,19 @@ export default function MapsView(): JSX.Element {
   // fetched: a marker attributed to a map that has not loaded would be drawn against the previous
   // zone's bounds for a frame — a dot in the wrong place, which is the one thing this must not do.
   const loc = useLocMarker(data?.zone ?? null, vp)
+  // AUTO-`/loc` (JOS-98 wave 2). When a live /loc arrives, the character module carries it here;
+  // drop the crosshair on it WITHOUT moving the view (owner ruling — a position read from the log
+  // is not a search the user just made). The whole correctness of this is one guard: place it only
+  // when the map on screen IS the zone you are standing in (`data.zone === auto`). Pin another
+  // zone's map and /loc, and the reading is for somewhere the drawn map cannot show — so it waits,
+  // and the module has already cleared it by the time you zone anyway. Keyed to `set`, which is
+  // stable per drawn zone, so this fires on a NEW reading and not on every render.
+  const setPlayerLoc = loc.setPlayer
+  useEffect(() => {
+    if (liveLoc == null) return
+    if (data?.zone == null || data.zone !== auto) return
+    setPlayerLoc(liveLoc)
+  }, [liveLoc, data?.zone, auto, setPlayerLoc])
 
   // THE SIDEBAR. Open by default, remembered in `eq.maps.pane`, closed from its own header. Its
   // filtered rows are derived ONCE and read by both the list and the surface's pins.
@@ -425,10 +443,13 @@ export default function MapsView(): JSX.Element {
           setPrefs(p)
           savePackPrefs(p)
         }}
-        locMarker={loc.marker}
+        typedMarkers={loc.typed}
+        playerMarker={loc.player}
         onPlaceLoc={loc.place}
-        onShowLoc={loc.show}
-        onClearLoc={loc.clear}
+        onShowTyped={loc.showTyped}
+        onClearTyped={loc.clearTyped}
+        onShowPlayer={loc.showPlayer}
+        onClearPlayer={loc.clearPlayer}
         zoomedIn={vp.zoomedIn}
         onZoom={vp.zoomBy}
         onFit={vp.fit}
@@ -448,7 +469,8 @@ export default function MapsView(): JSX.Element {
         pane={pane}
         zoneName={zoneName}
         marker={marker}
-        locMarker={loc.marker}
+        typedMarkers={loc.typed}
+        playerMarker={loc.player}
         onJump={onJump}
       />
       {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}

@@ -59,6 +59,39 @@ export interface ZoneEvent extends LogEventBase {
 }
 
 /**
+ * A `/loc` reading as the game printed it: north/south, west/east, elevation — the same three
+ * numbers, in the same order, that `EqLoc` (renderer/features/maps/mapGeometry.ts) holds still.
+ * Serializable and behaviour-free, so it crosses the main↔web boundary as plain data.
+ */
+export interface LocReading {
+  /** first number /loc prints — north/south. */
+  ns: number
+  /** second number /loc prints — west/east. */
+  ew: number
+  /** third number /loc prints — elevation. */
+  z: number
+}
+
+/**
+ * `Your Location is 1467.76, 1141.96, 164.72` — the answer to `/loc`, and the ONLY positional line
+ * the game writes to the log. It is written just when you TYPE the command (there is no continuous
+ * position stream), so this event is how the map's marker moves itself: type /loc, the crosshair
+ * follows, no copy-paste.
+ *
+ * WHY THE APP LONG BELIEVED THIS LINE DID NOT EXIST. The first measurement (JOS-98) swept the
+ * owner's `eqlog_Primitive_freeport.txt` and found `Your Location` ZERO times — but that was a
+ * character who simply never ran /loc while logging, not a client that withholds the line. The
+ * sibling `eqlog_Arcc_freeport.txt` carries it verbatim, in exactly this shape.
+ *
+ * ORDER IS THE TRAP (mapGeometry.ts, JOS-65): the first number is north/south, NOT an x. `loc` names
+ * its fields `ns`/`ew` for that reason and nothing downstream calls them x and y.
+ */
+export interface LocEvent extends LogEventBase {
+  kind: 'loc'
+  loc: LocReading
+}
+
+/**
  * Where a looted-and-routed item went (Tasks #40/#47). The held-vs-gone rule lives in
  * ONE place — `computeHeldCounts` (renderer, features/posky/heldCounts.ts):
  *   'currency' — stored in the currency tab (kept, quest-countable — e.g. Wind Runes)
@@ -1425,6 +1458,12 @@ export interface UnknownEvent extends LogEventBase {
 /** The canonical discriminated union of everything the parser can emit. */
 export type LogEvent =
   | ZoneEvent
+  // The ONE positional line the log carries — `Your Location is …`, written when you type /loc
+  // (JOS-98 wave 2). Beside `zone` because it is the same subject one notch finer: zone says which
+  // map, this says where on it. Deliberately NOT in `alertTypes.ts`'s curated `LogEventKind` — like
+  // `ccWake` it is internal plumbing (the maps marker reads it through the character module), not a
+  // trigger a user composes an alert from.
+  | LocEvent
   | LootEventE
   // The three acquisition families that carry no corpse (JOS-144, ./acquireEvents). They sit
   // beside loot because they answer the same question — how did this reach me — and every line

@@ -124,6 +124,15 @@ const LOOT_COMBINE_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse to 
 const DESTROY_RE = /^You successfully destroyed (\d+) (.+?)\.$/
 
 const ZONE_RE = /^You have entered (.+?)\.$/
+
+// `/loc` — `Your Location is 1467.76, 1141.96, 164.72` (JOS-98 wave 2). The one positional line the
+// log carries, and only when the command is typed. Anchored at both ends and gated on the whole
+// `Your Location is ` prefix: the message reaches this classifier with its `[timestamp] ` already
+// stripped, so a chat line quoting the sentence begins with the speaker's name and can never reach
+// it. Three signed decimals, comma-and-space separated, optional trailing period — the exact shape
+// the game prints and the wiki records (locMarker.ts carries the evidence). NS first, then EW, then
+// elevation (never negated); `mapGeometry.mapFromLoc` owns the transform to map coordinates.
+const LOC_RE = /^Your Location is (-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\.?$/
 // Pseudo-zone notices that share the "You have entered <X>." grammar but are NOT
 // real zone transitions. Emitting a zone event for these wipes the tracked zone
 // (so the kills module computes tier 0 for everything killed inside an instance)
@@ -390,6 +399,18 @@ export function classifyZone({ text, ts, seq, raw }: ClassifyCtx): LogEvent | nu
     if (m && !PSEUDO_ZONE_RE.test(m[1])) return { kind: 'zone', seq, ts, raw, zone: m[1].trim() }
   }
   return null
+}
+
+/**
+ * `/loc` (JOS-98 wave 2). Gated on the `Your Location is ` prefix so the common line pays one
+ * length-guarded compare. Emits the reading in the game's own order (ns, ew, z); the maps feature
+ * moves its marker on it through the character module.
+ */
+export function classifyLoc({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+  if (!text.startsWith('Your Location is ')) return null
+  const m = LOC_RE.exec(text)
+  if (!m) return null
+  return { kind: 'loc', seq, ts, raw, loc: { ns: Number(m[1]), ew: Number(m[2]), z: Number(m[3]) } }
 }
 
 /** Self-loot, including the auto-disposition variants — and the destroy, which is the negative. */

@@ -12,6 +12,7 @@
 
 import type { CharacterRef } from './types'
 import type { LevelStatement } from './currentLevel'
+import type { LocReading } from './logEvents'
 
 /** character module: current character, zone, and the level the log last STATED. */
 export interface CharacterSnap {
@@ -27,6 +28,18 @@ export interface CharacterSnap {
    * projection). See shared/currentLevel.ts for the precedence rules and the wording.
    */
   level?: LevelStatement
+  /**
+   * THE LAST `/loc` YOU TYPED (JOS-98 wave 2) — north/south, west/east, elevation, as the game
+   * printed it. The maps view reads this to move its marker automatically: type /loc in game and
+   * the crosshair follows, no paste.
+   *
+   * TRANSIENT AND LIVE-ONLY, unlike `zone`/`level`. It is set only from a LIVE `loc` event and is
+   * CLEARED the instant you zone (a reading for the zone you just left must never land on the map
+   * you just entered). So the historical replay never resurrects a stale position on launch, and a
+   * `loc: undefined` in a delta means "nothing to place", not "erase the marker" — the marker's own
+   * per-zone persistence is the renderer's, in localStorage.
+   */
+  loc?: LocReading
 }
 
 /** Every field is optional in a delta — the module pushes only what actually moved. */

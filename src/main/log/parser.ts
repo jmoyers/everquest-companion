@@ -66,6 +66,7 @@ import {
   classifyExp,
   classifyItemMerge,
   classifyLevel,
+  classifyLoc,
   classifyLoot,
   classifyAaPotion,
   classifyTurnIn,
@@ -141,6 +142,11 @@ const CLASSIFIERS: readonly Classifier[] = [
   classifyAllyPetLeader,
   classifyDeath,
   classifyZone,
+  // WHERE ON THE MAP (JOS-98 wave 2) — `Your Location is …`. Beside `zone` because it is the same
+  // subject one notch finer, and gated on a `Your Location is ` prefix; the whole log holds a
+  // handful of these and every one was `{kind:'unknown'}` before this entry, so it can neither
+  // shadow nor be shadowed and the position is for legibility.
+  classifyLoc,
   // SESSION frame (login / camp-out / camp-abort). Beside the zone rule because they answer
   // the same question one level up — zone says WHERE you are, these say WHETHER you are in
   // the world at all — and because a Welcome is always followed within 0–1 lines by a zone
