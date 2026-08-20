@@ -28,6 +28,7 @@ import { ambiguousQuestNames, computeSharedItems, type SharedItemsMap } from './
 import { skyDroppersFor, type DropperMob } from './poskyDroppers'
 import { countTurnIns, newlyCompletedTurnIns } from './turnInCelebration'
 import { questDropRecency } from './questSort'
+import { rewardInferredQuests, withRewardInference } from './rewardInference'
 // The turn-in ledger (JOS-131) — the ONE place a turn-in count is decided, shared with main's
 // store so the renderer and the persisted file cannot disagree about what a count means.
 // Relative value import, per the repo's node-tested-module rule.
@@ -159,6 +160,14 @@ export interface QuestProgress {
   /** turned in at least once. Kept as the one-bit reading of `turnIns` for the surfaces that
    *  only need the badge (the Ignored list) and for sorts that predate the count. */
   completed: boolean
+  /**
+   * The count above was INFERRED from the reward item in the loaded inventory export (issue #27),
+   * not read from the log or stated by hand. Present only when that inference is the count's ONLY
+   * source — any ledger evidence wins and leaves this absent — so the UI can say where the
+   * reading came from and the undo control can say why there is nothing to take back
+   * (the classUnlocks.ts observed-vs-derived precedent). Derived on every read, never persisted.
+   */
+  rewardInferred?: true
   /**
    * epoch ms of the NEWEST drop among this quest's required items — the "most recent drop"
    * sort key. Absent when nothing it needs has ever dropped; recency is then unknown, not old.
@@ -630,12 +639,21 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
   })
 
   const overridesByKey = useMemo(() => itemOverridesByKey(itemOverrides), [itemOverrides])
+  // Which quests the loaded export vouches for (issue #27) — read from the RAW dump counts, not
+  // the reconciled `net`, because the inference is about what the export SAW, whatever count
+  // source the user picked for the farming numbers. Derived on every read, never persisted.
+  const rewardVouched = useMemo(
+    () => rewardInferredQuests(posky.quests, progress?.inventory),
+    [progress?.inventory]
+  )
   const quests = useMemo<QuestProgress[]>(() => {
     if (!progress) return []
     const counts = { all: turnIns.all, log: logCounts }
     const facts = { lastLootedAt, overrides: overridesByKey }
-    return posky.quests.map((q) => computeQuestProgress(q, net, counts, facts))
-  }, [progress, net, lastLootedAt, turnIns, logCounts, overridesByKey])
+    return posky.quests.map((q) =>
+      withRewardInference(computeQuestProgress(q, net, counts, facts), rewardVouched)
+    )
+  }, [progress, net, lastLootedAt, turnIns, logCounts, overridesByKey, rewardVouched])
 
   const classes = useMemo(() => [...new Set(posky.quests.map((q) => q.className))].sort(), [])
 
