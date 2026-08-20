@@ -22,9 +22,10 @@ import { getBossData } from '../../data'
 import { useBossKills } from './useBossKills'
 import type { BossKill, TargetStatus } from './bossStatus'
 import { CategorySection, LoadoutSections } from './BossSections'
-import { untilReset } from './lockout'
+import { untilReset, type LockoutWindow, type TierLock } from './lockout'
 import { useLockoutWeek } from './useLockoutWeek'
 import { defeatedThisWeek, everDefeated, filterRoster } from './rosterFilter'
+import { useHiddenRoster } from './useHiddenTargets'
 import type { MobTarget } from '../mobs/mobTarget'
 import Confetti from '../../lib/Confetti'
 
@@ -65,6 +66,25 @@ function loadMode(): Mode {
 
 const bosses = getBossData()
 
+/**
+ * The toolbar's tally line — the denominator every filter is measured against (see the roster
+ * note in BossView), folded outside the component because the view is at the measured
+ * per-function ceiling and this is a pure sentence over inputs the view already owns.
+ */
+function tallyLine(
+  mode: Mode,
+  roster: TargetStatus[],
+  lockOf: (s: TargetStatus) => TierLock[],
+  week: LockoutWindow
+): string {
+  if (mode === 'week') {
+    const locked = roster.filter((s) => lockOf(s).length > 0).length
+    return `${locked} / ${roster.length} locked this week · resets in ${untilReset(week)} · green rung = cleared`
+  }
+  const everKilled = roster.filter((s) => s.killed).length
+  return `${everKilled} / ${roster.length} defeated · badge = highest instance tier`
+}
+
 // Mode / search / defeated-only / grouping / density, plus the running tally on the right.
 function BossToolbar({
   mode,
@@ -80,12 +100,16 @@ function BossToolbar({
   onModeChange: (m: Mode | null) => void
   query: string
   onQueryChange: (q: string) => void
-  /** The two switches, bundled so the toolbar keeps a readable parameter list. */
+  /** The switches, bundled so the toolbar keeps a readable parameter list. */
   filters: {
     defeatedOnly: boolean
     onDefeatedOnlyChange: (v: boolean) => void
     byLoadout: boolean
     onByLoadoutChange: (v: boolean) => void
+    /** How many targets are hidden (issue #32). Zero ⇒ the switch is not drawn at all. */
+    hiddenCount: number
+    showHidden: boolean
+    onShowHiddenChange: (v: boolean) => void
   }
   density: Density
   onDensityChange: (d: Density | null) => void
@@ -138,6 +162,22 @@ function BossToolbar({
         }
         label="By class loadout"
       />
+      {/* THE HIDE FLAG'S PEEK (issue #32): drawn only while something IS hidden, so the toolbar
+          pays nothing until the feature is used, and labelled with the count because the number
+          is the whole reason to flip it — "what am I not seeing". While on, hidden cards render
+          dimmed with their restore control; the set itself moves only on the card's own button. */}
+      {filters.hiddenCount > 0 && (
+        <FormControlLabel
+          control={
+            <Switch
+              data-testid="boss-show-hidden"
+              checked={filters.showHidden}
+              onChange={(e) => filters.onShowHiddenChange(e.target.checked)}
+            />
+          }
+          label={`Hidden (${String(filters.hiddenCount)})`}
+        />
+      )}
       <ToggleButtonGroup
         size="small"
         exclusive
@@ -196,6 +236,9 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
   }, [])
 
   const { statuses } = useBossKills(bosses.targets, { onKill })
+  // Hidden targets (issue #32): the persisted set, the unpersisted peek, and the visible
+  // roster the tally reads. The bundle's doc (useHiddenTargets.ts) carries the rules.
+  const { hidden, showHidden, setShowHidden, roster } = useHiddenRoster(statuses)
 
   const setDensityPersist = (d: Density | null): void => {
     if (!d) return
@@ -219,8 +262,8 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
   )
 
   const filtered = useMemo(
-    () => filterRoster(statuses, { query, defeatedOnly, defeated }),
-    [statuses, query, defeatedOnly, defeated]
+    () => filterRoster(statuses, { query, defeatedOnly, defeated, hidden: hidden.keys, showHidden }),
+    [statuses, query, defeatedOnly, defeated, hidden.keys, showHidden]
   )
 
   const byCategory = useMemo(() => {
@@ -235,19 +278,17 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
     )
   }, [filtered])
 
-  // The tally counts the WHOLE roster, never `filtered` — it is the denominator the filter is
-  // measured against, so it must not move when a switch is flipped.
-  const locked = statuses.filter((s) => lockOf(s).length > 0).length
-  const everKilled = statuses.filter((s) => s.killed).length
-  const tally =
-    mode === 'week'
-      ? `${locked} / ${statuses.length} locked this week · resets in ${untilReset(week)} · green rung = cleared`
-      : `${everKilled} / ${statuses.length} defeated · badge = highest instance tier`
+  // The tally counts the ROSTER, never `filtered` — the denominator the filters are measured
+  // against, so it must not move when a switch is flipped. Since issue #32 the roster is the
+  // VISIBLE one (useHiddenRoster): a hidden target leaves the denominator too.
+  const tally = tallyLine(mode, roster, lockOf, week)
   const section = {
     compact,
     minCol: compact ? 116 : 180,
     flashing,
     onOpenMob,
+    hiddenOf: hidden.has,
+    onToggleHidden: hidden.toggle,
     ...(mode === 'week' ? { lockOf } : {})
   }
 
@@ -269,7 +310,10 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
           defeatedOnly,
           onDefeatedOnlyChange: setDefeatedOnly,
           byLoadout,
-          onByLoadoutChange: setByLoadout
+          onByLoadoutChange: setByLoadout,
+          hiddenCount: hidden.size,
+          showHidden,
+          onShowHiddenChange: setShowHidden
         }}
         density={density}
         onDensityChange={setDensityPersist}

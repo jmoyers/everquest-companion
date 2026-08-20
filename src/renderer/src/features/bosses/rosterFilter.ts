@@ -55,7 +55,7 @@ export function defeatedThisWeek(w: LockoutWindow): DefeatedTest {
   return (s) => tierLocks(s.tiers, w).length > 0
 }
 
-/** The toolbar's two filters, as the view holds them. */
+/** The toolbar's filters, as the view holds them. */
 export interface RosterFilter {
   /** the search box, matched case-insensitively against the target name */
   query: string
@@ -63,17 +63,32 @@ export interface RosterFilter {
   defeatedOnly: boolean
   /** what that switch MEANS in the current view */
   defeated: DefeatedTest
+  /**
+   * Targets the user hid from this tab (issue #32) — LOWERCASED names, the `useQuestFlags`
+   * casing armour (useHiddenTargets.ts owns the set). Optional so the two call shapes that
+   * predate the flag stand unchanged; absent means nothing is hidden.
+   */
+  hidden?: ReadonlySet<string>
+  /**
+   * The "Hidden (n)" toolbar switch: a PEEK, not an un-hide. It stops the drop so the hidden
+   * cards can render (dimmed, carrying the restore control) and consults nothing else.
+   */
+  showHidden?: boolean
 }
 
 /**
- * The roster the view draws: the search box and the defeated switch, in that order of narrowing.
+ * The roster the view draws: the hide flag, then the search box and the defeated switch, in that
+ * order of narrowing. Hidden drops FIRST because it is an identity statement about the roster
+ * ("this card is not my raid week") where the other two are momentary narrowings of it — a
+ * hidden target that matches the search box is still gone.
  *
- * Returns the input array itself when neither filter is on, so an untouched toolbar cannot churn
+ * Returns the input array itself when no filter is on, so an untouched toolbar cannot churn
  * the memoised sectioning below it.
  */
 export function filterRoster(list: TargetStatus[], f: RosterFilter): TargetStatus[] {
   const q = f.query.trim().toLowerCase()
   let out = list
+  if (f.hidden?.size && !f.showHidden) out = out.filter((s) => !f.hidden?.has(s.target.name.toLowerCase()))
   if (f.defeatedOnly) out = out.filter(f.defeated)
   if (q) out = out.filter((s) => s.target.name.toLowerCase().includes(q))
   return out
