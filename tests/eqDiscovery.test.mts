@@ -21,6 +21,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   discoverEqRoot,
+  legendsFirst,
   rootHasLogs,
   countCharacterLogs,
   dirHasCharacterLogs,
@@ -62,6 +63,37 @@ test('discoverEqRoot: an extra candidate (env/registry) wins over the drive swee
   // BOTH have logs; the extra candidate is probed first, so it wins.
   const root = discoverEqRoot(probes(new Set([lc(reg), lc(publicPath)]), ['C:'], [reg]))
   assert.equal(root, reg)
+})
+
+test('discoverEqRoot: a sibling EverQuest with logs never outranks the Legends install', () => {
+  // THE REGRESSION, measured 2026-08-17 on a machine that has three EverQuests installed. The
+  // registry hands back its Uninstall entries in key order, so retail EverQuest arrives BEFORE
+  // EverQuest Legends — and retail had 38 character logs in it. First-hit-wins therefore did not
+  // fail to find a game, it found the WRONG one and would have tailed it confidently. `hasLogs`
+  // cannot break this tie: both directories hold real `eqlog_<Char>_<server>.txt` files, which is
+  // why BOTH are marked as having logs here.
+  const retail = 'D:\\Games\\EverQuest'
+  const legends = 'D:\\Games\\EverQuest Legends'
+  const companion = 'C:\\Users\\u\\AppData\\Local\\Programs\\everquest-companion'
+  const root = discoverEqRoot(
+    probes(new Set([lc(retail), lc(legends)]), ['C:'], [companion, retail, 'D:\\Games\\EverQuest II', legends])
+  )
+  assert.equal(root, legends)
+})
+
+test('legendsFirst: a stable partition — no-op on a machine with one EverQuest', () => {
+  // Stability is the property that keeps this change invisible everywhere it is not needed.
+  assert.deepEqual(legendsFirst(['C:\\A', 'C:\\B', 'C:\\C']), ['C:\\A', 'C:\\B', 'C:\\C'])
+  assert.deepEqual(
+    legendsFirst(['D:\\Games\\EverQuest', 'D:\\Games\\EverQuest II', 'D:\\Games\\EverQuest Legends']),
+    ['D:\\Games\\EverQuest Legends', 'D:\\Games\\EverQuest', 'D:\\Games\\EverQuest II']
+  )
+  // Order among the Legends paths, and among the rest, is untouched.
+  assert.deepEqual(
+    legendsFirst(['A\\EverQuest', 'B\\EverQuest Legends', 'C\\Other', 'D\\EverQuestLegends']),
+    ['B\\EverQuest Legends', 'D\\EverQuestLegends', 'A\\EverQuest', 'C\\Other']
+  )
+  assert.deepEqual(legendsFirst([]), [])
 })
 
 test('discoverEqRoot: returns null when nothing has logs (fresh machine)', () => {
