@@ -60,6 +60,7 @@ import type { SpellDb } from '../data/spellDb'
 import { spellCalmsTarget, spellNature } from '../data/spellDb'
 import type { BuffClass, BuffStat } from '../../shared/types'
 import { learnKey, SELF_CASTER } from '../../shared/buffTrust'
+import { parseSpellRank } from '../../shared/spellLines'
 import type { EstimatorSource } from '../../shared/buffTypes'
 import {
   corroboratedMax,
@@ -89,6 +90,58 @@ function foldWindowMax(best: WindowMax | null, s: DurationSample): WindowMax {
   if (best == null || s.ms > best.ms) return { ms: s.ms, bound }
   if (s.ms === best.ms && !bound) return { ms: best.ms, bound: false }
   return best
+}
+
+/**
+ * WHICH SPELLING OF A LINE THE BUFFS TAB SHOULD SHOW (JOS-411) — the rank question, and the one
+ * place it is answered.
+ *
+ * THE REPORT (C3QVVN, v1.5.0): *I now have the Mesmerization spell levelled up to X (+10). The
+ * buffs section of EQLC, under Debuffs, lists 'Mesmerization VI'.* The record's display name was
+ * written when the (line, caster) row was first minted and never again, so the tab showed the rank
+ * that happened to be equipped the first time a cycle closed — forever, across every upgrade.
+ * The live overlay never had the defect: a hold takes its name from the anchored cast on every
+ * landing (`modules/buffTimers.ts apply`). Only the tab's stats record was frozen.
+ *
+ * HIGHEST RANK WINS — the owner's option A ("update to the highest/most recent level seen") read
+ * the way the rest of the repo reads ranks. LAST-WRITE-WINS was the alternative and is REFUSED for
+ * two reasons that are facts about this store rather than preferences:
+ *   • THE STORE POOLS ACROSS CHARACTERS. Everything on this class is GAME knowledge and the
+ *     rebirth/session-gap clears deliberately leave it standing (see this file's header), so a
+ *     second enchanter on the same log — an alt, a rebirth, a loadout swap — would drag the name
+ *     back down to their rank under last-write. Highest-rank is the only rule that survives the
+ *     pooling the samples already do.
+ *   • IT IS THE DOMAIN LAW ALREADY WRITTEN DOWN (JOS-259, owner ruling 2026-08-12, verbatim: *once
+ *     you upgrade a spell it never downgrades, even on a loadout swap*). A name that walks
+ *     backwards would contradict the rule the alert system is built on.
+ * The two agree in the ordinary case — you upgrade and never cast the old rank again — so this
+ * costs nothing where last-write would have been right.
+ *
+ * A TIE KEEPS THE EXISTING SPELLING, so a re-cast of the same rank never churns the row, and
+ * neither does the DB's casing losing a race with the log's.
+ *
+ * A DIFFERENT BASE IS NOT A RANK COMPARISON, so the newest name simply wins. Two names can share a
+ * line key and still not share a base spelling: a hold that never resolved falls back to its first
+ * candidate or to the bare line key (`buffTimers.ts closeOne`), and the corrections overlay can
+ * RENAME a line outright (JOS-161). Comparing ordinals across those would be arithmetic on
+ * unrelated words.
+ *
+ * THE RANK LADDER STOPS AT X, which is a limit of `parseSpellRank`'s shared RANK_TAIL_RE and not of
+ * this rule. A hypothetical `Mesmerization XI` parses as an UNSUFFIXED name (base
+ * `Mesmerization XI`, rank 1), so it lands in the different-base branch and is taken as the newest
+ * name — the right answer by luck, but a later rank-X cast would then take it back. Extending the
+ * ladder is one shared regex away (`shared/spellLines.ts`, mirrored in `log/parseCommon.ts` and
+ * three more places) and is deliberately NOT done here: the ceiling is the parser's, the fold that
+ * pairs a ranked cast with its rank-less landing line depends on it, and moving it is a change to
+ * the whole rank fold rather than to this display rule.
+ */
+export function preferredDisplayName(prev: string, next: string): string {
+  const candidate = next.trim()
+  if (candidate === '' || candidate === prev.trim()) return prev
+  const before = parseSpellRank(prev)
+  const after = parseSpellRank(candidate)
+  if (before.base.toLowerCase() !== after.base.toLowerCase()) return candidate
+  return after.rank > before.rank ? candidate : prev
 }
 
 export class SpellStats {
@@ -214,15 +267,45 @@ export class SpellStats {
    * no longer the whole of one: `ts` (the event ts of the line that ended the cycle) is the only
    * handle a later line has on this sample — see {@link censorSampleAt} — and every call site
    * already holds it. It is COPIED in, so nobody keeps a mutable handle on the store's contents.
+   *
+   * THE DISPLAY NAME IS RE-READ ON EVERY SAMPLE, not written once at mint (JOS-411) — see
+   * {@link preferredDisplayName} for which spelling wins and why.
    */
   pushSample(key: string, caster: string, spell: string, sample: DurationSample): void {
+    this.row(key, caster, spell).samples.push({ ...sample })
+  }
+
+  /**
+   * A LANDING SAID WHAT THIS LINE IS CALLED (JOS-411) — the same display-name write as
+   * {@link pushSample}, without a sample behind it.
+   *
+   * It exists because a mint is not the only moment the log states a rank, and on the crowd-control
+   * path it is the RARER one: the cast line is the only line in a mez's family that carries the
+   * roman numeral (`modules/buffTimers.ts apply`), while a sample is minted only from a CLEAN cycle
+   * — a mez the player's own nuke broke teaches the tab nothing. Waiting for one would leave the
+   * upgraded rank invisible for as long as the holds keep breaking early, which is precisely the
+   * population this file's censoring rules exist for. The rank the tab shows now follows the cast
+   * that was actually anchored, at the same seam that already records `everFaded`/`lastSeen`.
+   *
+   * A ROW WITH NO SAMPLES IS A LEGAL ROW and always was: `statFor` returns null for one and
+   * `buildStats` falls back to exactly this name (through {@link sampleSpellName}), which is the
+   * path a DB-only line already takes.
+   */
+  noteDisplayName(key: string, caster: string, spell: string): void {
+    this.row(key, caster, spell)
+  }
+
+  /** The (line, caster) row, minted if new, with its display name brought up to date. */
+  private row(key: string, caster: string, spell: string): SpellSamples {
     const lk = learnKey(key, caster)
-    let s = this.samples.get(lk)
+    const s = this.samples.get(lk)
     if (!s) {
-      s = { spell, samples: [] }
-      this.samples.set(lk, s)
+      const fresh: SpellSamples = { spell, samples: [] }
+      this.samples.set(lk, fresh)
+      return fresh
     }
-    s.samples.push({ ...sample })
+    s.spell = preferredDisplayName(s.spell, spell)
+    return s
   }
 
   /**

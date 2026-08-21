@@ -68,7 +68,9 @@ import { applySpellEra } from './spellEra'
 // WHAT THE SPELL DOES, read off the wiki's own effect list (JOS-251). The suggestion catalog uses
 // exactly one class of it — `healOverTime`, which is what makes the `healsOverTime` template a
 // claim about a mechanic rather than about a message somebody typed into a wiki table.
-import { spellHasEffect } from './spellEffectClass'
+// …and `suppressesAggro`, the derived roster behind the polarity ruling (JOS-413), read HERE only
+// by the `fade` template gate — see the note on that flag.
+import { spellHasEffect, suppressesAggro } from './spellEffectClass'
 // The wiki's own duration strings, read by the SAME function the scrape uses (JOS-189). See
 // `fillDerivedDurations` below for why the load path reads them at all.
 import { parseDurationMs } from '../../shared/spellDuration'
@@ -570,7 +572,20 @@ function suggestionTemplates(s: SpellEntry): SpellCatalogEntry['templates'] {
   const detrimental = DETRIMENTAL_TYPES.has(s.spellType ?? '')
   return {
     wearsOff: beneficial && !!s.msgWearsOff,
-    fade: beneficial,
+    // THE FADE, AND THE ONE GATE JOS-413 HAD TO WIDEN. `fade` fires on `buffFade`, which is the
+    // parser's event for `Your <X> spell has worn off of <mob>.` — a sentence printed to YOU about a
+    // spell on somebody ELSE, and therefore the one beneficial-gated flag that is not a claim about
+    // a sentence the mob receives. The owner's ruling moved the lull and memory-wipe families to
+    // `Detrimental` (spellCorrectionsPolarity.ts) and the event did not move with them: measured
+    // 365 such lines for that family in the owner's log, 200 of them `Harmony of Nature` alone, and
+    // not one of the 18 is in `CC_STEMS`/`CHARM_STEMS` — which is the only thing that turns a
+    // `buffFade` into a `cc {refresh:true}` and would make the chip dead. Three of them state no
+    // messages at all, so `fade` is their ONLY template and losing it would have dropped them out of
+    // the catalog entirely (JOS-103's reported defect). ONE NAME WIDE ON PURPOSE: the honest general
+    // form is "every detrimental spell that is not a hold", which would offer this chip to some 700
+    // DoTs and slows — a real question, and an owner call about the wizard rather than a consequence
+    // of a polarity ruling.
+    fade: beneficial || suppressesAggro(s),
     // THE BENEFICIAL LANDING (JOS-318) — the `lands` gate's mirror, one field over. `castOnYou` is
     // an EXACT-TEXT map keyed by this message (buildSpellDb below), so "the DB states one" is the
     // whole of "the parser can emit a buffApply for it"; no suffix question arises, because a

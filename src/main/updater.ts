@@ -145,6 +145,7 @@ import { IPC } from '../shared/ipc'
 import type { UpdateChannel, UpdateStatus } from '../shared/types'
 import {
   MAX_DOWNLOAD_ATTEMPTS,
+  SIGNATURE_BLOCKED_PAUSED_MESSAGE,
   describeUpdateFailure,
   isInterruptedFailure,
   isStaleVersion,
@@ -210,6 +211,17 @@ let consecutiveFailures = 0
 const downloadAttempts = new Map<string, number>()
 /** The version we asked electron-updater to download, while it is in flight. */
 let downloading: string | null = null
+/**
+ * Set once this session's downloads have been failing on THIS PC'S POWERSHELL (JOS-421) — the
+ * code-signature check that answers nothing (shared/update.ts's block reads the source).
+ *
+ * It exists to change ONE sentence: when the bounded automatic retries are spent, the paused
+ * message otherwise says `Download of v1.5.0 failed 3 times - paused`, which is true and tells a
+ * user with an over-eager antivirus nothing they can act on. Sticky rather than per-failure,
+ * because the state it describes is "this session's downloads keep dying that way"; cleared by a
+ * download that actually lands and by a manual check.
+ */
+let downloadBlocked = false
 /**
  * Set when we start a check, cleared by `checkDone` (the verdict) — it both stops
  * two checks overlapping and tells the `catch` in `runCheck` whether the 'error'
@@ -433,7 +445,11 @@ function registerUpdaterEvents(
       push({
         state: 'error',
         version,
-        message: `Download of v${key} failed ${attempts} times - paused. Use "Check for updates" to retry.`
+        // JOS-421: when the reason is this PC's PowerShell, say THAT — the attempt count is the
+        // symptom and the security software is the thing the user can do something about.
+        message: downloadBlocked
+          ? SIGNATURE_BLOCKED_PAUSED_MESSAGE
+          : `Download of v${key} failed ${attempts} times - paused. Use "Check for updates" to retry.`
       })
       return
     }
@@ -469,6 +485,9 @@ function registerUpdaterEvents(
     // `downloading` is set only where we call `downloadUpdate()`, which makes it the exact latch.
     if (downloading !== null) noteUpdate('download')
     downloading = null
+    // A build that landed proves the verification step ran, so the blocked sentence is no longer
+    // the true one (JOS-421).
+    downloadBlocked = false
     if (version) downloadAttempts.delete(version)
     // Belt and braces: a staged build that isn't newer than us is not an offer.
     if (isStaleVersion(version, currentVersion)) {
@@ -520,8 +539,16 @@ function registerUpdaterEvents(
     // `err` before it is called. `logUpdateFailure` decides where it goes — an answer from GitHub
     // is always filed, an unreachable network is bounded to one console line per code per session
     // (updateLog.ts's header argues both).
-    logUpdateFailure(step, 'final', err, LOG_SINKS)
-    consecutiveFailures++
+    const kind = logUpdateFailure(step, 'final', err, LOG_SINKS)
+    // A BLOCKED POWERSHELL IS NOT A REASON TO BACK OFF THE FEED (JOS-421). The check itself
+    // succeeded — GitHub answered, the installer downloaded, and the failure happened afterwards in
+    // a child process on this PC. Walking `consecutiveFailures` out to four hours over it would
+    // punish the feed for the antivirus, and would slow the very re-check that is this failure's
+    // only automatic remedy. The download side stays bounded by `MAX_DOWNLOAD_ATTEMPTS`, which is
+    // what stops a hostile environment re-pulling the same installer forever; the sentence the user
+    // reads when that bound is reached names the cause (see `downloadBlocked` above).
+    if (kind === 'blocked') downloadBlocked = true
+    else consecutiveFailures++
     noteUpdate(step, err ?? 'unknown error')
     checkDone({ state: 'error', message: describeUpdateFailure(err) })
   })
@@ -649,6 +676,9 @@ export function initUpdater(
     if (manual) {
       consecutiveFailures = 0
       downloadAttempts.clear()
+      // The user may have just allowed PowerShell and come back to press the button — an explicit
+      // retry re-asks the environment rather than repeating this session's verdict about it.
+      downloadBlocked = false
     }
     // A staged update is terminal — re-checking cannot improve on it, and the
     // cached download emits no fresh 'update-downloaded', so a check would only

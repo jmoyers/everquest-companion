@@ -97,7 +97,9 @@ test('ONLY the game moves the bounds — the ring must not jump onto one of our 
   // presence.ts updates `eqBounds` on `side === 'eq'` alone, and three of the four sides are
   // EXACTLY the set that must not move it — including the one that is otherwise EQ-side.
   const notTheGame: ForegroundSide[] = ['own-accessory', 'own-app', 'other']
-  assert.deepEqual(notTheGame.map(focusCountsAsEq), [true, false, false])
+  // Explicit lambda: `map(focusCountsAsEq)` would pass the INDEX as the JOS-427 raise-grace
+  // argument, and index 1 is exactly the own-app row.
+  assert.deepEqual(notTheGame.map((s) => focusCountsAsEq(s)), [true, false, false])
 })
 
 // ------------------------------------------------------------------ nothing here moves the focus
@@ -198,7 +200,9 @@ test('THE COMPANION WINDOW IS ASKED OF ELECTRON, and only ever read', () => {
     .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l) && l.includes('mainWindowFocused()'))
     .map((l) => l.trim())
   assert.deepEqual(calls, ['{ pid: process.pid, appWindowFocused: mainWindowFocused() },'])
-  assert.match(presence, /applyFocus\(focusCountsAsEq\(side\)\)/)
+  // Two-argument since JOS-427: the second is the overlay-raise grace, whose lifetime presence.ts
+  // owns; tests/presenceRefocusFlicker.test.mts pins the whole matrix.
+  assert.match(presence, /applyFocus\(focusCountsAsEq\(side, ownWindowRaise\)\)/)
   // Bounds still come from the game alone — an overlay's rectangle must never become the ring's —
   // and they are converted to DIP on the way in (JOS-376; the conversion itself is driven with a
   // fake `screen` in tests/presenceDip.test.mts).

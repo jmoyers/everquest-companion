@@ -285,70 +285,134 @@ export function foregroundSide(
  * Does this side count as "you are in EverQuest" for `PresenceState.eqFocused`?
  *
  * The game itself, and the app's ACCESSORY windows — an unlocked overlay the user is dragging, the
- * cursor ring. Never the Companion window, and never anybody else's.
+ * cursor ring. Never anybody else's window.
+ *
+ * THE COMPANION WINDOW HAS TWO ANSWERS SINCE JOS-427, and `ownRaise` is which one applies. A user
+ * who alt-tabs or clicks INTO the app has said they are looking at something other than the game —
+ * `false`, the JOS-199 reading, unchanged. But a raise the app performed FOR an overlay click (the
+ * con card, a toast — `windowControls.ts focusView`) is the overlays' own feature working, and the
+ * owner's ruling is verbatim: "the overlays are effectively everquest still being the focus
+ * spiritually." Parking them as punishment for using them was the oscillation the narration caught
+ * (raise → park → click back → unpark → next card click → raise …). `presence.ts` owns the flag's
+ * lifetime: set by the raise, cleared by the first foreground record that is not the app window.
  */
-export function focusCountsAsEq(side: ForegroundSide): boolean {
+export function focusCountsAsEq(side: ForegroundSide, ownRaise = false): boolean {
+  if (side === 'own-app') return ownRaise
   return side === 'eq' || side === 'own-accessory'
 }
 
-// ---------------------------------------------------------------- the focus debounce
+// ------------------------------------------------- no focus debounce, by ruling (JOS-427)
+//
+// THERE USED TO BE A DEBOUNCE HERE, and it grew three times (300 ms symmetric; JOS-424 asymmetric
+// 200/1200 ms; JOS-425 born-true) while the flicker it was blamed for kept happening. The
+// narration those tickets added finally produced a clean test: four alt-tab round trips, every
+// committed flip a single truthful edge - and the owner still SAW the flicker. The visible strobe
+// was never in this signal; it was the hide()/show() presentation flash (windows.ts parkOverlays
+// is the fix, and the JOS-120 ring lesson was the precedent all along). OWNER RULING 2026-08-19:
+// remove the debounce machinery outright - eqFocused IS the latest observed foreground, both
+// directions, no timers.
+//
+// WHAT REPLACES TIME IS EVIDENCE, two rules, neither of them a clock:
+//   * A NO-WINDOW SAMPLE IS NOT A DEPARTURE. During window transitions Windows briefly reports no
+//     foreground window at all (pid 0 - presenceWorker.ts NO_WINDOW). Nothing gained focus, so
+//     nothing was left: presence.ts applyRecord keeps the previous answer rather than folding a
+//     moment of nobody into "you are not in EverQuest".
+//   * AN OVERLAY-INITIATED RAISE IS STILL EVERQUEST (owner ruling 2026-08-19: "the overlays are
+//     effectively everquest still being the focus spiritually"). Clicking a con card raises the
+//     Companion window on purpose; that raise must not park the overlays the click came from.
+//     focusCountsAsEq takes the flag; presence.ts owns its lifetime (set by the focusView raise,
+//     cleared by the next non-own-app foreground record).
+//
+// The alt-tab task-switcher case the original debounce was built for is accepted as-is: the
+// switcher is a real foreground window, the overlays park instantly under it and return instantly
+// after - parking is an opacity flip now, so there is no strobe left for a transition to cause.
+
+
+// ------------------------------------------------- what a committed flip says out loud (JOS-424)
+//
+// THE LOGGING EARNED ITS KEEP: it is what proved (JOS-427) that the visible flicker had no
+// committed flip behind it, which retired the debounce and pointed at the presentation layer.
+// It stays for the next mystery. A blink with a flip line names the window that drove it; a blink
+// with NO edge line at all is a z-order or paint question, not a focus one.
+//
+// IT IS A LOG LINE, NOT TELEMETRY, AND THAT IS ENFORCED BY THE SINK. `presence.ts` emits this
+// through `logInfo` — `console.log` and nothing else. It never reaches `errors.log`, never reaches
+// the error store, and therefore never leaves the machine. That matters here specifically because
+// the record carries a WINDOW TITLE, which is arbitrary third-party text (a document name, a
+// browser tab) that nobody consented to have collected. Locally it is the single most useful field
+// for "what took the foreground"; remotely it would be a bright-line violation, so it is only ever
+// printed. It is flattened and capped on the way out for the same reason a title is never trusted
+// anywhere else in this file: a multi-line title must not be able to forge extra lines in dev.log.
+
+/** The foreground record that drove a committed flip, as much of it as a log line wants. */
+export interface FocusTransitionDriver {
+  readonly pid: number
+  readonly exePath: string
+  readonly title: string
+  readonly side: ForegroundSide
+}
+
+/** How much window title one line carries. Long enough to identify a window, short enough that
+ *  the interesting fields (the commit, the pid, the image name) are never scrolled off. */
+export const TRANSITION_TITLE_MAX = 60
 
 /**
- * Alt-tab is not one transition, it is a burst of them: Windows briefly makes the task-switcher
- * (and sometimes the desktop shell) foreground on the way between two apps. Acting on the raw
- * signal would strobe every overlay off and back on. So the raw value must hold STILL for
- * `debounceMs` before it is committed.
+ * One line's worth of a window title: no control characters, no newlines, no quotes, bounded.
  *
- * A state machine rather than a timer wrapper, so the decision is testable without clocks: the
- * caller supplies `now`, and re-runs the step when its own timer fires.
+ * A CODE-POINT SCAN RATHER THAN A REGEX, and not only to keep `no-control-regex` happy: the rule is
+ * pointing at something real. A character class spelling a control range is the one place a raw
+ * control BYTE ends up in a source file by accident (the repo already has a law about that), and it
+ * silently means something else when it does. A comparison cannot be mistyped invisibly.
  */
-export interface FocusDebounce {
-  /** The value everyone downstream sees. */
-  committed: boolean
-  /** A different value we are waiting out, or null when the raw signal agrees with `committed`. */
-  candidate: boolean | null
-  /** When `candidate` was first observed. */
-  since: number
-}
-
-export const FOCUS_DEBOUNCE_MS = 300
-
-export function newFocusDebounce(committed = false): FocusDebounce {
-  return { committed, candidate: null, since: 0 }
-}
-
-export interface FocusDebounceStep {
-  state: FocusDebounce
-  /** True exactly when `state.committed` differs from the input state's. */
-  changed: boolean
-  /** ms until this candidate would commit, or null when nothing is pending. */
-  waitMs: number | null
+function logSafeTitle(title: string): string {
+  let out = ''
+  for (const ch of title) {
+    const code = ch.codePointAt(0) ?? 0
+    // A double quote goes too, so the `"…"` this line is wrapped in cannot be closed early.
+    out += code < 0x20 || code === 0x7f || ch === '"' ? ' ' : ch
+  }
+  const flat = out.replace(/\s+/g, ' ').trim()
+  if (flat.length <= TRANSITION_TITLE_MAX) return flat
+  return `${flat.slice(0, TRANSITION_TITLE_MAX)}…`
 }
 
 /**
- * Fold one observation into the debounce. Idempotent for a steady signal (a repeated
- * observation that already matches `committed` clears any pending candidate and reports no
- * change), which is what makes it safe to call on every single watcher line.
+ * ONE committed `eqFocused` flip, as a sentence — the raw driving record and when it landed.
+ *
+ * Pure and closed over its argument: everything on the line comes from the transition and the
+ * foreground record, so there is no path by which a game event, a log line or any part of the world
+ * model can reach it. `tests/presence.test.mts` pins the exact shape.
  */
-export function focusDebounceStep(
-  state: FocusDebounce,
-  observed: boolean,
-  now: number,
-  debounceMs = FOCUS_DEBOUNCE_MS
-): FocusDebounceStep {
-  if (observed === state.committed) {
-    // The flap resolved back to where we already were: forget the candidate entirely.
-    return { state: { ...state, candidate: null, since: 0 }, changed: false, waitMs: null }
-  }
-  const since = state.candidate === observed ? state.since : now
-  if (now - since >= debounceMs) {
-    return { state: { committed: observed, candidate: null, since: 0 }, changed: true, waitMs: null }
-  }
-  return {
-    state: { ...state, candidate: observed, since },
-    changed: false,
-    waitMs: debounceMs - (now - since)
-  }
+export function describeFocusTransition(t: {
+  readonly committed: boolean
+  readonly at: number
+  readonly driver: FocusTransitionDriver | null
+}): string {
+  const when = new Date(t.at).toISOString()
+  const head = `presence: eqFocused -> ${String(t.committed)} at ${when}`
+  if (t.driver === null) return `${head}; no foreground record yet`
+  const exe = exeBaseName(t.driver.exePath)
+  const image = exe === '' ? '(no image path)' : exe
+  const title = logSafeTitle(t.driver.title)
+  const said = title === '' ? '(untitled)' : `"${title}"`
+  return `${head}; foreground pid ${String(t.driver.pid)} ${image} [${t.driver.side}] ${said}`
+}
+
+/**
+ * The other half of the evidence: an EDGE of real window visibility (`windows.ts
+ * setOverlaysHidden`) — since JOS-427 that is the replay gate and session teardown only, because
+ * presence PARKS instead of hiding. A "hidden" line in dev.log therefore always means the gate.
+ */
+export function describeOverlayVisibility(hidden: boolean, at: number): string {
+  return `presence: overlays ${hidden ? 'hidden' : 'shown'} at ${new Date(at).toISOString()}`
+}
+
+/**
+ * An EDGE of the presence PARK (`windows.ts parkOverlays`, JOS-427) — its own word, so dev.log
+ * tells a park (opacity, presence-driven) from a gate hide (real `hide()`) at a glance.
+ */
+export function describeOverlayPark(parked: boolean, at: number): string {
+  return `presence: overlays ${parked ? 'parked' : 'unparked'} at ${new Date(at).toISOString()}`
 }
 
 // ------------------------------------------------------------------- the gating matrix
@@ -360,13 +424,23 @@ export function focusDebounceStep(
  *
  * With BOTH off this is always false: a user who wants none of it gets the pre-feature behavior
  * exactly, and (via `presenceNeeded`) never even starts the watcher.
+ *
+ * NEVER HIDE ON A GUESS — AND `observed` IS ONLY HALF OF THAT PROMISE (JOS-425). The flag below
+ * covers the gap before the watcher's very first line and the gap after one dies, and it is a
+ * strict fail-OPEN. What it does NOT cover is the instant it flips: `presence.ts applyRecord`
+ * raises `observed` on the first record of ANY kind, and the watcher's first tick sends its
+ * records one at a time, so for one message-pump turn one lane is measured and the others are
+ * still their birth values. That is where the reported startup blink came from and it is why both
+ * `eqRunning` and `eqFocused` are now BORN TRUE (shared/presencePrefs.ts `INITIAL_PRESENCE`).
+ * Every line here therefore hides only on something the watcher SAID — which is the property this
+ * function is supposed to have. (There is no debounce anymore — JOS-427's ruling at the section
+ * above; hiding acts on the latest observed foreground directly.)
  */
 export function overlaysShouldHide(p: PresenceState, prefs: OverlayAutoHidePrefs): boolean {
-  // NEVER HIDE ON A GUESS. Before the watcher's first line `eqRunning:false` means "we have not
-  // looked yet", not "the game is closed" — and the watcher has three system libraries to open
-  // before it can say otherwise. Acting on it would blink every overlay off at launch and back on a second
-  // later on a machine where the game was running the whole time. Fail OPEN, always: the same
-  // rule covers a watcher that died, which is why presence.ts resets this flag on exit.
+  // Before the watcher's first line nothing here is a fact — it has three system libraries to open
+  // before it can say otherwise. Acting on that would blink every overlay off at launch and back
+  // on a second later on a machine where the game was running the whole time. Fail OPEN, always:
+  // the same rule covers a watcher that died, which is why presence.ts resets this flag on exit.
   if (!p.observed) return false
   if (prefs.hideWhenNotRunning && !p.eqRunning) return true
   if (prefs.hideWhenUnfocused && !p.eqFocused) return true

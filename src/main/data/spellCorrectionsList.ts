@@ -96,6 +96,35 @@
 // whose MESSAGES may legitimately differ (`Shock of Frost` has two rows saying two different
 // things) but whose NAME cannot, and a half-renamed pair would put a phantom line in the catalog.
 //
+// THE WRONG POLARITY is the sixth drift class, and it is why `field` may be `spellType` (JOS-413).
+// All five above are about WORDS; this one is about the wiki's TYPE COLUMN. `Pacify` is
+// `spell_type = Beneficial` on eqlwiki and the owner has ruled that a lull is a DEBUFF, so a
+// correction here writes the column rather than a sentence. The evidence bar is read one field
+// over: rules 1 and 2 are the wiki's word against ours (`from`/`to`, idempotent exactly as a
+// sentence is), rule 3's "stated mechanical drift" becomes a stated CATEGORY drift — the wiki filed
+// the spell by who casts it rather than by what it does — and rule 4's `db` route carries it,
+// because the wiki's OWN effect list is the witness against the wiki's own type column. It patches
+// EVERY row of a name, like a name correction and for the same reason: duplicates cannot disagree
+// about whether a spell is a good thing or a bad thing. The ruling, the derived census that keeps it
+// honest and the measured blast radius live in `spellCorrectionsPolarity.ts`.
+//
+// THE WRONG LEVEL is the seventh drift class, and it is why `field` may be `classes` (JOS-415).
+// Like the polarity it is a COLUMN rather than a sentence — the wiki's `classes` bullet list, which
+// `shared/spellLevels.ts` reads into (class, level) pairs and `buildLevelUnlocks` turns into the
+// "new at this level" cards. Reported 6AT44D (v1.5.0), verbatim: *For a necro, on level up to level
+// 12. Shows Leach beting a spell. But leach was learned at lvl 9 for a necro.* He is right, and the
+// wiki is its own witness: `Leach` has TWO pages, and the eqlwiki NECROMANCER SPELL LIST — the
+// wiki's own index of what a necro gets when — carries the spell once, at level 9, linking the page
+// titled `Leech`; its level-12 rows are Bind Affinity, Convoke Shadow and Lifedraw and none of them
+// is this spell. The evidence bar read one column over: rule 1 is "the wiki's own class list does
+// not place the spell at this level", rule 2 "it places it at ours", rule 3 a stated mechanical
+// drift (a duplicate page whose `classes` line carries a note, `Level 12 Recourse Effect`, that the
+// parser reads as the unlock level), rule 4 the `db` route — the DB, and the wiki behind it,
+// contradicting itself. Like a name and a polarity it patches EVERY row of the name, and that
+// matters most here: the two rows are exactly what disagree, `buildLevelUnlocks` emits one row per
+// DB ROW, and the renderer folds by name only within ONE level — so a half-applied correction would
+// leave the phantom level-12 card untouched. See `rowsFor` in spellCorrections.ts.
+//
 // IDEMPOTENCE, IN BOTH DIRECTIONS. Every correction states the text it REPLACES. If a re-scrape
 // leaves the wiki text unchanged the correction applies; if the wiki is fixed upstream the entry
 // is already correct and the correction reports `satisfied` and does nothing; if the wiki changes
@@ -127,6 +156,12 @@ import { SUBJECT_PLACEHOLDER_CORRECTIONS } from './spellCorrectionsSubjects'
 // code-mass ceiling is shared with none of it; that file's header carries the report, the four rungs
 // of the ladder and the reason the fourth rung is deliberately left uncorrected.
 import { HEALING_LADDER_CORRECTIONS } from './spellCorrectionsHealing'
+// THE POLARITY RULING (JOS-413), appended below. The SIXTH drift class and the only one that is not
+// about a sentence: the owner ruled that the lull and memory-wipe families are DEBUFFS, whatever the
+// wiki's type column says. It lives next door for the same reason the two above do — its argument is
+// long, it carries a derived census that this file's code-mass ceiling should not be shared with, and
+// a reader checking the ruling is checking the whole family at once.
+import { POLARITY_CORRECTIONS } from './spellCorrectionsPolarity'
 
 /**
  * The hand-derived overlay. Ordered by the drift it fixes, not by spell name, because the drifts
@@ -630,21 +665,40 @@ const HAND_DERIVED_CORRECTIONS: readonly SpellCorrection[] = [
     attribution: 'sole',
     evidence:
       'The shaman malo ladder`s level-32 rung. Owner log, whole file (2,026,223 lines): 229 lines naming `Malaisement` (123 `<mob> begins casting Malaisement.`, 5 `You begin casting Malaisement.`, the rest interrupts and fades) and 0 naming `Malisement`. One inserted vowel, never a different spell: nothing else in the DB is named Mal*sement, and the entry`s four `Decrease Cold/Magic/Poison/Fire Resist by 36-40` effect lines are exactly the rung between Malaise (15-20) and Malosi (59-60), which the log casts 136 and 63 times under names the catalog already matches. Until this correction `isResistDebuff` (main/resist/world.ts) answered false for all 229 lines, so the debuff was never recorded against a mob and every observation made under it was fitted at an offset 36 to 40 points too small.'
+  },
+  // --- the seventh drift class: the wrong LEVEL (JOS-415) ----------------------------------------
+  // The header's paragraph carries the bar; this is its one entry. The wiki has two pages for this
+  // spell — pageid 46874, titled `Leech`, `{{Classic Era}}`, `* [[Necromancer]] - Level 9`, and
+  // pageid 50162, titled `Leach`, `{{Paineel Era}}`, `* [[Necromancer]] - Level 12 Recourse
+  // Effect` — and BOTH set `spellname = Leach`, so the scrape files two rows under one name. Every
+  // other field the two share is identical (mana 72, cast 2.40, recast 10.00, the same
+  // `Decrease Hitpoints by 8 per tick` slot, the same four vendors in the same four zones), which
+  // is what makes them one spell rather than two. The level-12 row is the one that is wrong.
+  {
+    spells: ['Leach'],
+    field: 'classes',
+    from: '* Necromancer - Level 12 Recourse Effect',
+    to: '* Necromancer - Level 9',
+    attribution: 'db',
+    evidence:
+      'Reported 6AT44D (v1.5.0): `For a necro, on level up to level 12. Shows Leach beting a spell. But leach was learned at lvl 9 for a necro.` Checked against EQ LEGENDS data, not classic EQ: eqlwiki`s own Necromancer spell list places the spell ONCE, at Level 9, as `Leach NEC(9)` linking the page titled `Leech`; its Level 12 rows are Bind Affinity, Convoke Shadow and Lifedraw, and no row anywhere in that list links the page titled `Leach`. The DB is its own witness twice over: our other row for this name already says `* Necromancer - Level 9` (so this correction reports satisfied on it), and the level-12 page`s own description reads `6 ticks @L9 to 9 ticks @L15` while its duration row says `7 ticks @L12` — the page contradicts itself about the floor. `Level 12 Recourse Effect` is a note the wiki hung on the classes bullet; shared/spellLevels.ts`s SEGMENT regex reads the number and ignores the trailing words, which is correct behaviour on a line that is wrong. Blast radius: buildLevelUnlocks emitted a second Leach row at NEC 12 and the panel drew a card there; with both rows at NEC 9 the renderer`s fold-by-name draws one card at 9 and none at 12. spellClasses is unchanged (both rows already said Necromancer).'
   }
 ]
 
 /**
  * THE COMMITTED OVERLAY: the hand-derived entries above, then the subject-placeholder sweep, then
- * the shaman heal-over-time ladder.
+ * the shaman heal-over-time ladder, then the polarity ruling.
  *
  * ORDER IS NOT SIGNIFICANT HERE and the suite proves it: `applySpellCorrections` matches each
  * entry against the CURRENT text of the spell it names, and `tests/spellCorrections.test.mts`
  * refuses two entries that claim the same spell and field — so no entry can ever be reading what
  * another one wrote. The sweep goes last because it is the newer, bulkier half and a diff of it
- * should not push the hand-derived families around.
+ * should not push the hand-derived families around. The polarity block is trivially independent of
+ * all three: it is the only one that writes a field other than a message or a name.
  */
 export const SPELL_CORRECTIONS: readonly SpellCorrection[] = [
   ...HAND_DERIVED_CORRECTIONS,
   ...SUBJECT_PLACEHOLDER_CORRECTIONS,
-  ...HEALING_LADDER_CORRECTIONS
+  ...HEALING_LADDER_CORRECTIONS,
+  ...POLARITY_CORRECTIONS
 ]

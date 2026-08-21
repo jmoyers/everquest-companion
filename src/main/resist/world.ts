@@ -6,6 +6,7 @@
 // needs the client table can be replayed, shipped and re-estimated without one.
 
 import { localMobEntry } from '../mobLookupLocal'
+import { resolveMobIdentity } from '../mobAliases'
 import { idKey, spellCanonKey } from '../log/parseCommon'
 import { isPlayerShapedName } from '../../shared/playerShape'
 import { mobKey } from '../../shared/mobKey'
@@ -45,9 +46,19 @@ export class MobLevels {
     this.conned = new Map()
   }
 
-  /** A `/con` line stated a level. Latest statement wins — the game just said it. */
+  /**
+   * A `/con` line stated a level. Latest statement wins — the game just said it.
+   *
+   * FILED UNDER EVERY SPELLING THE ROSTER STATES FOR THE CREATURE (JOS-422), so a `/con` of
+   * `Innoruuk` answers a row keyed `innoruuk, the prince of hate` and the other way round. The
+   * fold-out happens on the WRITE side on purpose: a session sees a handful of con lines, while
+   * `levelOf` runs on every filed row of a two-million-line replay.
+   */
   note(mobKey: string, level: number): void {
-    if (level > 0) this.conned.set(mobKey, level)
+    if (level <= 0) return
+    const id = resolveMobIdentity(mobKey)
+    if (!id.aliased) this.conned.set(mobKey, level)
+    else for (const key of id.keys) this.conned.set(key, level)
   }
 
   levelOf(mobKey: string, display: string): MobLevelFact | null {
@@ -55,14 +66,42 @@ export class MobLevels {
     if (con !== undefined) return { level: con, lo: con, hi: con, from: 'con' }
     const cached = this.catalog.get(mobKey)
     if (cached !== undefined) return cached
-    const entry = localMobEntry(display)
-    const range = parseCatalogLevel(entry?.level)
-    const fact: MobLevelFact | null = range
-      ? { level: Math.round((range.lo + range.hi) / 2), lo: range.lo, hi: range.hi, from: 'catalog' }
-      : null
+    const fact = catalogLevelOf(display)
     this.catalog.set(mobKey, fact)
     return fact
   }
+}
+
+/**
+ * THE CATALOG IS ASKED UNDER EVERY SPELLING THE ROSTER STATES (JOS-422 — the owner's own bug).
+ *
+ * The committed catalog carries `Innoruuk` (level 60, page `Innoruuk (God)`); every line the game
+ * prints spells him `Innoruuk, the Prince of Hate`. A plain catalog lookup misses, the row files
+ * `mobLevel: null`, and `rowTerm` (shared/resistTerms.ts) drops every levelless row because there
+ * is no `levelMod` without both levels — so the con card read "no data" over three weeks of fights
+ * with ~672 of the owner's own observations dark, including a day his poison went 8/8 resisted.
+ * `mobAliases.ts` is where this tree already STATES the two spellings are one creature (the
+ * roster's own `match` list — world-model law 2's canonicalize-at-a-boundary, never a fuzzy match),
+ * and the READ side used it (`ipc/resist.ts rowsForIdentity`); only the FOLD did not.
+ *
+ * THE KNOWN LIMIT, so nobody reads this as making `droppedNoLevel` a bug counter: its other half is
+ * ANOTHER PLAYER'S casts. Nothing in this app's inputs states a stranger's level (the fold.ts
+ * header argues it), those rows are dropped by design, and no alias table can ever recover them.
+ * That part of the count is correct behaviour and stays.
+ *
+ * Costs one extra lookup per aliased miss and nothing on the hot path: `levelOf` caches the verdict
+ * per mob key, negatives included, so this runs once per distinct creature per fold.
+ */
+function catalogLevelOf(display: string): MobLevelFact | null {
+  let entry = localMobEntry(display)
+  if (!entry) {
+    const id = resolveMobIdentity(display)
+    if (id.aliased) entry = localMobEntry(id.canonical)
+  }
+  const range = parseCatalogLevel(entry?.level)
+  if (!range) return null
+  const level = Math.round((range.lo + range.hi) / 2)
+  return { level, lo: range.lo, hi: range.hi, from: 'catalog' }
 }
 
 /**

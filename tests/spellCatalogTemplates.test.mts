@@ -150,12 +150,26 @@ test('the dead-lands gate actually removed something, and the count is measured 
   // counted for, and the remainder is once again only spells whose message is real and unkeyable.
   // (The wiki page agrees with the pass: FireBomb's own `classes` text reads "There are no messages
   // in chat when the spell is cast/lands.")
+  //
+  // AND IT IS 41 SINCE JOS-412, which is the first move of this number that no report asked for.
+  // The sweep grew a VALIDATOR (src/main/data/spellSubjectAudit.ts) that asks the registry which
+  // spells are in this state at all, and the answer was 153 rows — 71 of them carrying a subject
+  // placeholder that simply is not `Someone`. 41 of those rows were corrected: `Curse` (the shaman
+  // 34, GitHub issue 43 — `Odium` one rank down the same line, and the reason the validator exists)
+  // plus every sentence the family ALREADY owned, where restoring the subject mints no tail and
+  // only adds a candidate. Exactly three of the 41 are Detrimental and so leave this population:
+  // `Beholder Dispel`, `SpectreLifetap` and `Wave of Fire`. `Curse` is not among them and never
+  // could be — its spellType is `Curse`, the same reason Odium was invisible to this gate.
+  //
+  // What remains is what it has always been: sentences no log has evidenced. The difference is that
+  // they are now a pinned CENSUS (tests/spellSubjectAudit.test.mts) rather than a silence, so the
+  // next spell to enter this state fails a build instead of waiting for somebody to notice.
   let dead = 0
   for (const s of db.spells) {
     if (s.spellType !== 'Detrimental' || !s.msgCastOnOther) continue
     if (castOnOtherSuffix(s.msgCastOnOther) === null) dead += 1
   }
-  assert.equal(dead, 44, 'the measured population the `lands` gate now excludes')
+  assert.equal(dead, 41, 'the measured population the `lands` gate now excludes')
 })
 
 test('`landsOnOther` always travels with the pattern it needs', () => {

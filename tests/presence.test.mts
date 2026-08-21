@@ -13,19 +13,19 @@
 // are decided by two exported predicates, so they are pinned here rather than measured by hand
 // on every change. The THIRD rule — "with the ring off we never touch the cursor at all"
 // (JOS-193) — spans a predicate, a worker init and three assignments, so it lives together in
-// tests/cursorRingOff.test.mts rather than being scattered through this one.
+// tests/cursorRingOff.test.mts rather than being scattered through this one. The FOURTH — the
+// asymmetric focus debounce and the transition logging that earns the next fix (JOS-424) — is in
+// tests/presenceRefocusFlicker.test.mts for the same reason: it is one defect's whole story, and
+// this file is a page from its line ceiling.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  FOCUS_DEBOUNCE_MS,
   WATCHER_RESTART_BACKOFF_MS,
   WATCHER_STALE_MS,
   cursorRingActive,
   eqRootPrefix,
-  focusDebounceStep,
   isEqWindow,
-  newFocusDebounce,
   overlaysShouldHide,
   parsePresenceLine,
   watcherIsStale,
@@ -226,71 +226,11 @@ test("this app's own windows never look like EverQuest", () => {
 // window falls on, including the two answers our OWN pid can give — lives in
 // tests/overlayFocusPolicy.test.mts, beside the alt-tab half of the same ticket (JOS-199).
 
-// ------------------------------------------------------------------- the focus debounce
+// ------------------------------------------------------------------- no focus debounce
 
-test('a focus change must hold still for the debounce before it is committed', () => {
-  let s = newFocusDebounce(false)
-  const t0 = 1_000_000
-
-  const early = focusDebounceStep(s, true, t0)
-  assert.equal(early.changed, false, 'the very first observation never commits')
-  assert.equal(early.waitMs, FOCUS_DEBOUNCE_MS)
-  s = early.state
-
-  const midway = focusDebounceStep(s, true, t0 + 200)
-  assert.equal(midway.changed, false)
-  assert.equal(midway.waitMs, 100, 'the wait counts from when the candidate FIRST appeared')
-  s = midway.state
-
-  const done = focusDebounceStep(s, true, t0 + FOCUS_DEBOUNCE_MS)
-  assert.equal(done.changed, true)
-  assert.equal(done.state.committed, true)
-  assert.equal(done.waitMs, null)
-})
-
-test('ALT-TAB FLAP: a value that bounces back never commits, and leaves no residue', () => {
-  // This is the whole reason the debounce exists. Windows makes the task switcher (and
-  // sometimes the shell) foreground on the way between two apps; acting on the raw signal
-  // strobes every overlay off and back on.
-  let s = newFocusDebounce(true)
-  const t0 = 5_000
-
-  s = focusDebounceStep(s, false, t0).state // switcher grabs focus
-  s = focusDebounceStep(s, false, t0 + 80).state
-  const back = focusDebounceStep(s, true, t0 + 140) // …and EQ has it again
-  assert.equal(back.changed, false, 'nothing was ever committed, so nothing changes back')
-  assert.equal(back.state.committed, true)
-  assert.deepEqual(
-    { candidate: back.state.candidate, since: back.state.since },
-    { candidate: null, since: 0 },
-    'the abandoned candidate is forgotten, not left to commit later'
-  )
-
-  // And the very next observation after the flap must not inherit the old clock.
-  const after = focusDebounceStep(back.state, false, t0 + 5_000)
-  assert.equal(after.changed, false)
-  assert.equal(after.waitMs, FOCUS_DEBOUNCE_MS)
-})
-
-test('a repeated steady observation is idempotent — it is called on every watcher line', () => {
-  let s = newFocusDebounce(true)
-  for (const t of [0, 10, 20, 30, 10_000]) {
-    const step = focusDebounceStep(s, true, t)
-    assert.equal(step.changed, false)
-    assert.equal(step.waitMs, null)
-    s = step.state
-  }
-  assert.equal(s.committed, true)
-})
-
-test('a signal that stays flipped commits exactly once, not on every later observation', () => {
-  let s = newFocusDebounce(false)
-  s = focusDebounceStep(s, true, 0).state
-  const commit = focusDebounceStep(s, true, FOCUS_DEBOUNCE_MS)
-  assert.equal(commit.changed, true)
-  const after = focusDebounceStep(commit.state, true, FOCUS_DEBOUNCE_MS + 1)
-  assert.equal(after.changed, false, 'committed is committed; it is not re-announced')
-})
+// JOS-427 removed the debounce outright (owner ruling; the protocol section header carries the
+// story). The fold's remaining focus rules — instant flips, the no-window sample, the raise
+// grace — are pinned in tests/presenceRefocusFlicker.test.mts.
 
 // -------------------------------------------------------------------- the gating matrix
 
@@ -330,10 +270,10 @@ test('each auto-hide switch hides on its own — they are independent, not a mod
 })
 
 test('NOTHING IS HIDDEN BEFORE THE WATCHER HAS REPORTED — never act on a guess', () => {
-  // The watcher opens three system libraries before its first line. `eqRunning:false` in that
-  // gap means "we have not looked", and hiding on it would blink every overlay off at launch and
-  // back on a second later on a machine where the game was running the whole time. The same flag
-  // resets if the watcher dies, so a dead watcher fails OPEN rather than hiding everything.
+  // The watcher opens three system libraries before its first line. Nothing in `INITIAL_PRESENCE`
+  // is a fact in that gap, and hiding on it would blink every overlay off at launch and back on a
+  // second later on a machine where the game was running the whole time. The same flag resets if
+  // the watcher dies, so a dead watcher fails OPEN rather than hiding everything.
   const unobserved = INITIAL_PRESENCE
   for (const prefs of [
     DEFAULT_OVERLAY_AUTO_HIDE,
@@ -341,6 +281,10 @@ test('NOTHING IS HIDDEN BEFORE THE WATCHER HAS REPORTED — never act on a guess
   ]) {
     assert.equal(overlaysShouldHide(unobserved, prefs), false)
   }
+  // AND THE FLAG IS ONLY HALF THE PROMISE (JOS-425): it is raised by the first record of ANY kind,
+  // so the birth values have to survive that instant on their own. The seam, and the whole of
+  // JOS-425's fix, is pinned in tests/presenceRefocusFlicker.test.mts.
+  assert.equal(overlaysShouldHide({ ...INITIAL_PRESENCE, observed: true }, DEFAULT_OVERLAY_AUTO_HIDE), false)
 })
 
 test('the DEFAULT auto-hide posture: hidden with no game, visible the moment one exists', () => {
@@ -419,11 +363,16 @@ test('A DEAD OR WEDGED WATCHER PARKS THE RING AND GIVES THE OVERLAYS BACK', () =
   // The watcher dies here. Freezing `live` is the reported bug — `eqFocused`, `cursorVisible`
   // and `eqBounds` all outlive the pipe, so the ring keeps drawing over whatever the user
   // alt-tabs to. Resetting to INITIAL_PRESENCE is what makes that impossible.
+  // NO KNOWN BOUNDS is what does the work here, and since JOS-425 it is the ONLY thing that does:
+  // `eqFocused` is born TRUE (assume EQ-side until observed otherwise), so a reset that relied on
+  // a born-false focus would have quietly stopped parking the ring. It does not — there is nowhere
+  // to put a halo, and inventing a rectangle is exactly the bug this reset exists to prevent.
   assert.equal(
     cursorRingActive(INITIAL_PRESENCE, on),
     false,
-    'no committed focus and no known bounds ⇒ the ring parks and the cursor stream stops'
+    'no known bounds ⇒ the ring parks and the cursor stream stops'
   )
+  assert.equal(INITIAL_PRESENCE.eqBounds, null, 'and that is the field carrying the property')
   for (const prefs of [
     DEFAULT_OVERLAY_AUTO_HIDE,
     { hideWhenNotRunning: true, hideWhenUnfocused: true }

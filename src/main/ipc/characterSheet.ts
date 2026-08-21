@@ -32,9 +32,9 @@ import {
   type CharacterSheet,
   type SheetCell,
   type SheetCellView,
-  type SheetItemView
+  type SheetItemView,
+  type WornItemBlock
 } from '../../shared/characterSheet'
-import type { ItemStatBlock } from '../../shared/itemStats'
 import { loadInventoryDump } from '../outputs'
 import { getActiveCharacter } from '../session'
 import { buildItemDbIndex, itemKey, type ItemDbEntry, type ItemDbFile } from '../itemsDb'
@@ -59,10 +59,16 @@ function joinCell(cell: SheetCell): SheetCellView {
   return { ...cell, item }
 }
 
-/** The stat block behind a joined cell: `undefined` for an empty cell or an unknown item. */
-function blockOf(cell: SheetCellView): ItemStatBlock | undefined {
-  if (!cell.item) return undefined
-  return itemIndex().get(itemKey(cell.item.baseName))?.stats
+/**
+ * A joined cell, as the gear sum reads it: the DB's block and the ` +N` the dump's name stated.
+ *
+ * BOTH HALVES, ALWAYS (JOS-416). The tier travels with the block because `sumGear` scales by it —
+ * this handler states what is worn and at what level, and the shared fold owns the arithmetic. An
+ * empty cell or an item the corpus does not know contributes no block; the sum counts it.
+ */
+function wornOf(cell: SheetCellView): WornItemBlock {
+  if (!cell.item) return {}
+  return { tier: cell.item.tier, block: itemIndex().get(itemKey(cell.item.baseName))?.stats }
 }
 
 export function registerCharacterSheetIpc(): void {
@@ -82,7 +88,7 @@ export function registerCharacterSheetIpc(): void {
       loadedAt: loaded.loadedAt,
       cells: joined,
       unplaced: joinedUnplaced,
-      totals: sumGear(worn.map(blockOf)),
+      totals: sumGear(worn.map(wornOf)),
       // …and the SAME parse, flattened (JOS-327). No DB join and no second read of the file: the
       // ledger the carry-all table draws is by construction the same bytes the grid above it drew.
       carry: carryAll(loaded.dump)

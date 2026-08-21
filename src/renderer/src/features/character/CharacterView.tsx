@@ -20,13 +20,15 @@
 // empty "AA" card here to explain a permanent absence; the sheet shows what can be known and
 // the gear panel names its own scope in its heading.
 //
-// AND THE TOTALS STAY BASE-COMPUTED (owner ruling, JOS-327: keep character totals initially).
-// `shared/itemUpgrade.ts scaleStatBlock` now ports the wiki's own ItemLevelSlider arithmetic, so
-// the app COULD scale a worn item's block by its ` +N` — and this tab deliberately does not, this
-// release. The gear panel's numbers are the sum of the BASE blocks, labelled as such, exactly as
-// they shipped; the per-item ` +N` stays visible where the dump spelled it, on the item's own name
-// in the slot grid and in the carry-all ledger. One honest number beats a better one that arrives
-// with the panel's caption silently meaning something new.
+// AND THE TOTALS READ EACH ITEM AT ITS ` +N` (owner ruling, JOS-416, 2026-08-19 — reversing
+// JOS-327's "keep character totals base initially"). The gear panel used to sum the item pages'
+// BASE blocks while the rest of the app — the Gear tab's comparison, the wish list, every hover
+// delta — already scaled the same worn item by the same suffix, so this tab was the one surface
+// answering a different number for the same cloak. It now goes through `shared/itemUpgrade.ts
+// scaleStatBlock`, the same algorithm, for EVERY stat that algorithm scales; the caption that used
+// to say `base` says `with +N`, so the panel's meaning moved on purpose and out loud rather than
+// silently. The per-item ` +N` is still visible where the dump spelled it, on the item's own name
+// in the slot grid and in the carry-all ledger.
 //
 // ---------------------------------------------------------------------------
 // THE LAYOUT: A SHEET ON TOP, A LEDGER UNDERNEATH, AND A MEASURED REASON THE PAGE SCROLLS

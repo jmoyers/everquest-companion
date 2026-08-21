@@ -12,6 +12,7 @@
 // second lookup. Law 1: the field exists only when the catalog names rewards.
 
 import { normalizeItemName } from './itemLookupParse'
+import { renameItemName } from '../shared/itemRenames'
 import type { ItemQuestUse, QuestData } from '../shared/types'
 
 /**
@@ -21,9 +22,17 @@ import type { ItemQuestUse, QuestData } from '../shared/types'
  */
 export const MAX_ATTACHED_REWARDS = 4
 
-/** The index's key: the same normalization itemLookup's `cacheKey` applies. */
+/**
+ * The index's key: the same normalization itemLookup's `cacheKey` applies, THROUGH the rename
+ * overlay (JOS-415).
+ *
+ * The rename belongs on the KEY here rather than on the displayed string, because nothing in this
+ * index displays an item name — it displays quests. Folding both spellings onto one key is what
+ * makes the index answer for a looted item whichever name the player's client prints, which is the
+ * whole reason `shared/itemRenames.ts` keeps the old spelling addressable.
+ */
 export function questItemKey(name: string): string {
-  return normalizeItemName(name).toLowerCase()
+  return normalizeItemName(renameItemName(name)).toLowerCase()
 }
 
 /**

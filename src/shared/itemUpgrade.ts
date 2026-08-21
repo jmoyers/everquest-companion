@@ -78,6 +78,24 @@ export function normalizeUpgradeState(state: ItemUpgradeState): ItemUpgradeState
   return { full, fraction: Math.min(max, Math.max(0, Math.trunc(state.fraction) || 0)) }
 }
 
+/**
+ * THE ONE READING OF A ` +N` THE GAME WROTE DOWN (JOS-416).
+ *
+ * An inventory dump — and an item name anywhere else the client prints one — states the TIER and
+ * stops: the `x / y` half of the item window's row is in no file this app can read. So a name that
+ * says ` +5` is `{full: 5, fraction: 0}`, and a name that says nothing at all is the BASE state
+ * rather than a guess. That makes every number derived from it a FLOOR on what the item really
+ * reads, which is the only safe direction, and it is written here — not at each call site — so the
+ * Character sheet's gear sum and the Gear tab's comparison cannot drift into two readings of the
+ * same suffix.
+ *
+ * `undefined` is "the name carried no suffix", NEVER tier 0 arriving by another road; both answer
+ * `ITEM_UPGRADE_BASE` because an un-upgraded item and an item at tier 0 read identically.
+ */
+export function upgradeStateForTier(tier: number | undefined): ItemUpgradeState {
+  return tier === undefined ? ITEM_UPGRADE_BASE : normalizeUpgradeState({ full: tier, fraction: 0 })
+}
+
 /** `full + fraction / 2^full` — the slider's position, and the multiplier every stat reads. */
 export function effectiveLevel(state: ItemUpgradeState): number {
   const s = normalizeUpgradeState(state)

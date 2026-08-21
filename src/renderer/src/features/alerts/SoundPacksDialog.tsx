@@ -109,7 +109,12 @@ function usePackInstall(
           onInstalledChange()
           await load(false)
         } else {
-          setProgress((prev) => ({ ...prev, [name]: { name, phase: 'error', message: res.error } }))
+          // `retryable` rides along (JOS-420) — this reply overwrites the push main already sent,
+          // and dropping the flag here would repaint a rate limit as a red error.
+          setProgress((prev) => ({
+            ...prev,
+            [name]: { name, phase: 'error', message: res.error, retryable: res.retryable }
+          }))
         }
       } finally {
         setBusy((prev) => {

@@ -314,40 +314,57 @@ interface HeldItems {
  * is the all-time one again, and the combination rule (reconcile.ts) is fully additive.
  *
  * WHAT THE DUMP'S INSTANT DOES WINDOW is the two DISCOUNTS reconcile applies to the dump witness
- * itself — the destroys recorded after it (JOS-401) and the turn-ins recorded after it (JOS-403).
- * Both are computed for every source that reads the file, both are zero without an instant to date
- * it, and neither touches the baseline the reverted ticket was about. The turn-in half needs no fold
- * here at all: `turnIns.instants` is already the ledger's own list and reconcile windows it.
+ * itself — the destroys recorded after it (JOS-401) and the turn-ins recorded after it (JOS-403) —
+ * and, since JOS-409, the one CREDIT that balances them under `both`: the loot recorded after it.
+ * All three are zero without an instant to date the dump, and none of them touches the all-time
+ * baseline the reverted ticket was about — `computeHeldCounts` above is still the whole log.
+ *
+ * THE CREDIT IS NOT A SECOND FOLD: it is `lootSinceRebaseline`, the JOS-186 fold that has been here
+ * since the fourth source shipped, asked for under one more mode. The turn-in discount needs no fold
+ * at all — `detectedTurnIns` is already the ledger's own list and reconcile windows it.
  */
 function useHeldItems(x: {
   lootHistory: LootEvent[]
   progress: ProgressState | null
   countSource: CountSource
   turnIns: QuestTurnIns
+  /**
+   * THE LOG'S OWN TURN-IN INSTANTS (JOS-409) — the subset of `turnIns.instants` that came off a
+   * line the game printed, rather than off a click on the hand counter. Only these may window the
+   * DUMP; reconcile.ts's `detectedTurnInInstants` argues why, and `useTurnInLedger` is where the
+   * two provenances part.
+   */
+  detectedTurnIns: TurnInInstants
   /** the hand statements in force, already sanitized (JOS-186) */
   overrides: ItemCountOverride[]
 }): HeldItems {
-  const { lootHistory, progress, countSource, turnIns, overrides } = x
+  const { lootHistory, progress, countSource, turnIns, detectedTurnIns, overrides } = x
   const logCounts = useMemo(() => computeHeldCounts(lootHistory), [lootHistory])
   const lootNames = useMemo(() => deriveLootNames(lootHistory), [lootHistory])
   // Per-item drop recency, same counting key as the held counts — the whole plumbing the
   // "most recent drop" sort needs, folded from the loot history that is already here.
   const lastLootedAt = useMemo(() => computeLastLootedAt(lootHistory), [lootHistory])
   // THE TWO FORWARD WINDOWS (JOS-186). Each is the same loot fold over fewer rows: what has
-  // dropped since the dump was generated (only asked for under `rebaseline`, so an unused mode
-  // costs nothing), and what has dropped since each hand statement was made.
+  // dropped since the dump was generated, and what has dropped since each hand statement was made.
   //
   // `rebaselineAt` ITSELF IS COMPUTED UNDER EVERY SOURCE and passed unconditionally — it is the
   // DUMP'S instant, and reconcile reads it for the two discounts every dump-reading source owes
   // (JOS-401's destroys, JOS-403's turn-ins), not only for the rebaseline baseline it was named
-  // after. Only the LOOT fold below stays gated on the mode that consumes it.
+  // after.
+  //
+  // AND THE LOOT FOLD IS NO LONGER GATED TO `rebaseline` (JOS-409). `both` reads it too, because
+  // its dump witness now earns in the same window it pays in — reconcile.ts carries the whole
+  // argument and the rune report behind it. The gate SHRANK rather than vanished: `inventory` is
+  // "as dumped" on its own label and `log` never opens the file, so neither pays for this pass, and
+  // neither does an install whose dump cannot be dated.
   const rebaselineAt = rebaselineInstant(progress?.inventorySource)
+  const readsDumpForward = countSource === 'rebaseline' || countSource === 'both'
   const lootSinceRebaseline = useMemo(
     () =>
-      countSource === 'rebaseline' && rebaselineAt !== null
+      readsDumpForward && rebaselineAt !== null
         ? computeHeldCountsAfter(lootHistory, rebaselineAt)
         : {},
-    [lootHistory, countSource, rebaselineAt]
+    [lootHistory, readsDumpForward, rebaselineAt]
   )
   const lootSinceOverride = useMemo(
     () => computeHeldCountsAfterPerKey(lootHistory, itemOverrideInstants(overrides)),
@@ -376,6 +393,7 @@ function useHeldItems(x: {
         countSource,
         turnIns: turnIns.all,
         turnInInstants: turnIns.instants,
+        detectedTurnInInstants: detectedTurnIns,
         quests: posky.quests,
         overrides: itemOverridesByKey(overrides),
         lootSinceOverride,
@@ -390,6 +408,7 @@ function useHeldItems(x: {
       progress,
       countSource,
       turnIns,
+      detectedTurnIns,
       overrides,
       lootSinceOverride,
       rebaselineAt,
@@ -404,6 +423,15 @@ function useHeldItems(x: {
 /** What the turn-in ledger hands back: the counts the tab reads, and the two ways to change them. */
 interface TurnInLedger {
   turnIns: QuestTurnIns
+  /**
+   * THE LOG'S OWN INSTANTS, unmerged (JOS-409). `turnIns.instants` is these plus the hand-recorded
+   * ones, and the difference matters to exactly one reader: the dump's turn-in window, which
+   * compares an instant against a file's generation stamp. A hand-recorded instant is `Date.now()`
+   * at the moment of the CLICK (`recordTurnIn` below says so), so it can postdate a dump that
+   * already reflects the turn-in — and windowing it would double-subtract. This list is the half
+   * that is an EVENT time.
+   */
+  detected: TurnInInstants
   /** quest key → how many of its turn-ins the LOG accounts for */
   logCounts: Record<string, number>
   recordTurnIn: (key: string) => Promise<void>
@@ -490,7 +518,13 @@ function useTurnInLedger(
 
   /** One more turn-in, dated NOW. `Date.now()` is the honest instant for a statement the user is
    *  making right now, and dating it is what keeps the ledger a list of events rather than a tally
-   *  (an instant is what dedupes a detected turn-in against the stored one). */
+   *  (an instant is what dedupes a detected turn-in against the stored one).
+   *
+   *  IT IS A CLICK TIME, NOT AN EVENT TIME, and JOS-409 is where that stopped being harmless: a
+   *  player who hands a quest in and records it a day later stamps TOMORROW on YESTERDAY'S event.
+   *  Nothing here can fix that — the user is telling us a thing happened, not when — so the fix is
+   *  on the reader: only `detected` (above) windows the dump. Do not "improve" this to guess an
+   *  earlier instant; a guessed event time is exactly the kind of invention law 1 forbids. */
   const recordTurnIn = useCallback(
     async (key: string): Promise<void> => {
       setProgress(
@@ -518,7 +552,7 @@ function useTurnInLedger(
     [turnIns, detected, setProgress]
   )
 
-  return { turnIns, logCounts, recordTurnIn, undoTurnIn }
+  return { turnIns, detected, logCounts, recordTurnIn, undoTurnIn }
 }
 
 export function useProgress(opts?: UseProgressOptions): UseProgress {
@@ -546,7 +580,7 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
     }
   }, [])
 
-  const { turnIns, logCounts, recordTurnIn, undoTurnIn } = useTurnInLedger(
+  const { turnIns, detected, logCounts, recordTurnIn, undoTurnIn } = useTurnInLedger(
     progress,
     setProgress,
     opts?.onQuestComplete
@@ -591,6 +625,7 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
     progress,
     countSource,
     turnIns,
+    detectedTurnIns: detected,
     overrides: itemOverrides
   })
 

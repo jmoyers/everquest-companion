@@ -6,14 +6,18 @@
 // once, in its heading, in three words. Per the tooltip-and-caveat diet that is the entire
 // disclosure: no footnote about base stats, no lecture about buffs, no asterisks.
 //
-// The `base` chip is the second and last honesty marker: these are the item pages' BASE values,
-// and every one of these items is worn at some ` +N` item level whose uplift we do not
-// distribute per stat (shared/characterSheet.ts says why). Hovering the item shows its own
-// "+N% stats" line, which is where that fact already lives.
+// THE SECOND AND LAST HONESTY MARKER IS THE CHIP, AND IT SAYS THE OPPOSITE OF WHAT IT USED TO
+// (JOS-416, owner ruling 2026-08-19). It read `base` while these totals summed the item pages'
+// BASE blocks and left every ` +N` un-applied; the sum now reads each worn item at the item level
+// its own name states, through the same `scaleStatBlock` the Gear tab's comparison uses, so the
+// chip reads `with +N` — one word about the ONE thing a reader could otherwise get wrong about
+// these numbers. It is a claim about the arithmetic, not a caveat: per the tooltip-and-caveat diet
+// there is still no footnote about base stats, no lecture about buffs, no asterisks.
 //
 // PERCENTAGES ARE STATED, NEVER ADDED. Two worn items in the real dump carry Haste (+36% and
-// +21%). Whether worn haste stacks is a game rule no source in this repo states, so the row
-// shows the values the items state, side by side, and never a total (law 6).
+// +21% at base). Whether worn haste stacks is a game rule no source in this repo states, so the
+// row shows the values the items state, side by side, and never a total (law 6) — at their scaled
+// values now, which is what makes a `Cloak of Flames +5` read `+41%` here and not `+36%`.
 
 import type { JSX } from 'react'
 import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
@@ -50,7 +54,7 @@ export default function GearStats({ totals }: { totals: GearTotals }): JSX.Eleme
     <Paper variant="outlined" sx={{ p: 1.25 }} data-testid="character-gear-stats">
       <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75 }}>
         <Typography variant="subtitle2">Stats from gear</Typography>
-        <Chip size="small" variant="outlined" label="base" sx={{ height: 18, fontSize: 10 }} />
+        <Chip size="small" variant="outlined" label="with +N" sx={{ height: 18, fontSize: 10 }} />
       </Stack>
 
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>

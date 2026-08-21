@@ -316,6 +316,19 @@ export interface BuffTimerRow {
  * whose charm line falls outside the window. A friendly buff on somebody the model has lost track
  * of must never become a debuff. Nothing here reads `group`, `target` or `disposition`.
  *
+ * …AND SINCE JOS-413 THE CALM LINE REACHES THIS WINDOW ON ITS KIND, NOT ON THE EXCEPTION. Report
+ * 6BM6Y5 named the inconsistency the JOS-213 split left behind: this function called a Pacify a
+ * debuffs row while the Buffs SECTION, which groups on `cls`, still listed it under Buffs. The owner
+ * ruled (2026-08-19) that a lull IS a debuff, so `spellCorrectionsPolarity.ts` overrules the wiki's
+ * type column in the registry and `kind` is 'debuff' for the whole family — the first branch below
+ * now answers these rows before the exception is consulted.
+ *
+ * THE EXCEPTION STAYS, and deleting it would be the mistake. It is derived from the landing
+ * sentences and audited every run (`tests/calmLineTimers.test.mts`), it is the guard that caught the
+ * first cut of JOS-213 sending a real `Valor` and a real `Resist Disease` here, and it is still the
+ * right answer for a calm-line spell the polarity ruling has no row for. What changed is that it is
+ * no longer carrying the routing alone.
+ *
  * Exhaustive over `BuffTimerRow['kind']` by construction — a new row kind has to choose a window.
  */
 export function timerRowSurface(row: BuffTimerRow): TimerOverlayKind {

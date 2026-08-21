@@ -159,6 +159,53 @@ test('JOS-161: a NAME correction renames EVERY row of that name, and is idempote
   )
 })
 
+test('JOS-415: a CLASSES correction writes every row, and the already-right twin is satisfied', () => {
+  // The seventh drift class. The scrape files two rows under the name `Leach` because two wiki
+  // pages set `spellname = Leach`: pageid 46874 (titled `Leech`, `* Necromancer - Level 9`) and
+  // pageid 50162 (titled `Leach`, `* Necromancer - Level 12 Recourse Effect`). The wiki's own
+  // Necromancer spell list places the spell once, at level 9.
+  const before = RAW.filter((s) => s.name === 'Leach')
+  assert.equal(before.length, 2, 'the committed scrape still carries both rows')
+  assert.deepEqual(
+    before.map((s) => s.classes).sort(),
+    ['* Necromancer - Level 12 Recourse Effect', '* Necromancer - Level 9'],
+    'and they still disagree — otherwise a re-scrape has fixed it and the entry should go'
+  )
+
+  const { spells, report } = applySpellCorrections(RAW)
+  const after = spells.filter((s) => s.name === 'Leach')
+  assert.deepEqual(
+    after.map((s) => s.classes),
+    ['* Necromancer - Level 9', '* Necromancer - Level 9'],
+    'EVERY row: half of this leaves the phantom level-12 unlock card exactly where it was'
+  )
+  assert.deepEqual(report.stale, [])
+  assert.deepEqual(report.unknownSpells, [])
+
+  // Everything BUT the classes line is untouched — a level correction restates nothing else.
+  assert.deepEqual(
+    after.map((s) => [s.durationText, s.mana, s.castTimeMs, s.msgCastOnYou]),
+    before.map((s) => [s.durationText, s.mana, s.castTimeMs, s.msgCastOnYou])
+  )
+
+  // Idempotent, and the twin that was already right is `satisfied` rather than `stale` — the same
+  // answer a re-scrape adopting level 9 upstream would produce.
+  const again = applySpellCorrections(spells).report
+  assert.equal(again.applied, 0)
+  assert.deepEqual(again.stale, [])
+
+  // And a wiki that moves the line to some THIRD level must fail this suite, not be overwritten.
+  const third = RAW.map((s) =>
+    s.name === 'Leach' && s.classes === '* Necromancer - Level 12 Recourse Effect'
+      ? { ...s, classes: '* Necromancer - Level 14' }
+      : s
+  )
+  assert.ok(
+    applySpellCorrections(third).report.stale.some((e) => e.spell === 'Leach' && e.field === 'classes'),
+    'a moved classes line must report stale'
+  )
+})
+
 test('JOS-161: a MESSAGE correction still writes only the first row of a duplicated name', () => {
   // The other half of the rule, and the reason the two kinds differ. `Shock of Frost` is two rows
   // saying two DIFFERENT things (`Your feel your skin freeze.` and `Your skin goes numb.`), so the

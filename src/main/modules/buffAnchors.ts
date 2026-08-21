@@ -31,6 +31,16 @@ export interface Attribution {
   caster: string
   /** The RANKED display name from the cast line, when the anchor named a spell. */
   display?: string
+  /**
+   * WHEN THE LINE THAT ADMITTED THIS LANDING WAS PRINTED — the cast's own ts, or the Quick Buff
+   * activation's for an `unnamed` one (JOS-410).
+   *
+   * It is here rather than re-derived from {@link CastAnchors.lastCastTs} because that map is the
+   * WEAKER, SELF-ONLY signal (see `everCast`): it is never written for an allowlisted external, so
+   * a reader that ranked anchors by it would silently rank every external cast last. This is the
+   * ts of the anchor the gate actually admitted, whoever cast it.
+   */
+  ts: number
   /** True when the anchor cannot say which rank landed (two ranks inside one window). */
   rankChanged: boolean
   /** True when the anchor named no spell at all (a Quick Buff burst) — so it cannot narrow. */
@@ -143,10 +153,10 @@ export class CastAnchors {
   attribute(spell: string, ts: number): Attribution | null {
     const a = this.byLine.get(spellKey(spell))
     if (a != null && ts >= a.ts && ts - a.ts <= OWN_CAST_WINDOW_MS && casterTrusted(this.trust, a.caster)) {
-      return { caster: a.caster, display: a.display, rankChanged: a.rankChanged, unnamed: false }
+      return { caster: a.caster, display: a.display, ts: a.ts, rankChanged: a.rankChanged, unnamed: false }
     }
     if (this.inQuickBuffBurst(ts)) {
-      return { caster: SELF_CASTER, rankChanged: false, unnamed: true }
+      return { caster: SELF_CASTER, ts: this.quickBuffTs, rankChanged: false, unnamed: true }
     }
     return null
   }

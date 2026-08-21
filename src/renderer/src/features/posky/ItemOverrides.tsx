@@ -21,12 +21,15 @@
 // `title`, which is an OS tooltip with no hit area at all.
 
 import { type JSX, useState } from 'react'
-import { Chip, IconButton, Stack, TextField, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Stack, TextField, Typography } from '@mui/material'
 import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import EditIcon from '@mui/icons-material/Edit'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import type { ItemCountOverride } from '@shared/types'
 import type { ItemProgress } from './useProgress'
+// The one caveat that belongs in this cell without being about a statement (JOS-409) — see below.
+import { DUMP_BLIND_ITEM_NOTE, isDumpBlindItem } from './dumpBlindItems'
 
 /** State this item's count, or take the statement back with `null`. The name is what was drawn. */
 export type SetItemCount = (name: string, count: number | null) => void
@@ -105,6 +108,34 @@ function CountEditor({
 }
 
 /**
+ * WHY THIS ROW CAN READ ZERO WHILE YOU HOLD THE ITEM (JOS-409) — the dump-blind caveat, drawn
+ * beside the count it explains and pointing at the pencil next to it.
+ *
+ * It lives in THIS file, which is otherwise entirely about hand-stated counts, on the same argument
+ * the file's own header makes about where the correction goes: the sentence is about a NUMBER, its
+ * remedy is the control in this cell, and a caveat rendered anywhere else would be a note about a
+ * row the reader has to go and find. It is not about a statement, so it draws whether or not one is
+ * in force — except that a row the user has already spoken about needs no explanation of where its
+ * number came from, which is the one suppression below.
+ *
+ * SHOWN ONLY WHILE THE ROW IS SHORT. A rune reading 1/1 is a rune the log saw and nothing needs
+ * excusing; the caveat exists to explain a shortfall, and drawing it on every satisfied rune row
+ * would put a warning on every quest in the tab.
+ */
+function DumpBlindNote(): JSX.Element {
+  return (
+    <Box
+      component="span"
+      data-testid="posky-item-dump-blind"
+      title={DUMP_BLIND_ITEM_NOTE}
+      sx={{ display: 'inline-flex', color: 'text.secondary' }}
+    >
+      <InfoOutlinedIcon sx={{ fontSize: 14 }} />
+    </Box>
+  )
+}
+
+/**
  * THE HAVE CELL: what you hold toward this item, and the one control that can correct it.
  *
  * The editor is pre-filled with the UNCAPPED held count (`ItemProgress.held`) rather than with the
@@ -140,6 +171,7 @@ export function ItemHaveCell({
       <Typography variant="body2" component="span">
         {it.have}/{it.need}
       </Typography>
+      {it.have < it.need && !it.override && isDumpBlindItem(it.name) && <DumpBlindNote />}
       {it.override && onSetItemCount && (
         <OverrideChip o={it.override} onClear={() => onSetItemCount(it.name, null)} />
       )}

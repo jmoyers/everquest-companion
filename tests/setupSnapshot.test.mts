@@ -23,8 +23,10 @@ import {
   type SetupFacts
 } from '../src/main/telemetry/setupFacts'
 import {
+  GPU_LOSS_ERROR_NAME,
   noteChildProcessGone,
   watchChildProcessGone,
+  type ChildLossReport,
   type ChildProcessGoneEmitter
 } from '../src/main/childProcessGone'
 import { peekHealth, resetHealth } from '../src/main/telemetry/health'
@@ -229,17 +231,99 @@ function fakeApp(): ChildProcessGoneEmitter & { fire(details: unknown): void } {
 
 test('a GPU process loss is COUNTED and files exactly one exemplar', () => {
   resetHealth()
-  const seen: { reason: string; exitCode: number }[] = []
+  const seen: ChildLossReport[] = []
   const app = fakeApp()
   watchChildProcessGone(app, (info) => seen.push(info))
   app.fire({ type: 'GPU', reason: 'crashed', exitCode: 5 })
   assert.equal(peekHealth().gpuProcessGone, 1)
   // The exemplar carries the two things a count cannot: WHY it died and with what code. Both are
   // closed-vocabulary or numeric — there is no shape here that could carry a path or a name.
-  assert.deepEqual(seen, [{ reason: 'crashed', exitCode: 5 }])
+  assert.deepEqual(seen, [
+    {
+      name: GPU_LOSS_ERROR_NAME,
+      message: 'GPU process gone: reason=crashed, exitCode=5',
+      code: 5,
+      reason: 'crashed',
+      exitCode: 5
+    }
+  ])
   app.fire({ type: 'GPU', reason: 'oom', exitCode: 9 })
   assert.equal(peekHealth().gpuProcessGone, 2)
   assert.equal(seen.length, 2)
+  resetHealth()
+})
+
+// ---------------------------------------------------------------------------------------
+// JOS-418 — THE REPORT SAYS WHAT IT KNOWS
+// ---------------------------------------------------------------------------------------
+// For four releases this site handed `logError` a bare `{ reason, exitCode }`. `caughtFields`
+// reads `name`/`message`/`stack`/`code` off a payload and that object has none of them, so the
+// fleet's loudest new family (fingerprint 348550db, 21× on 1.5.0 + 14× on 1.4.0, and the SAME
+// site again as bc8e5df6 at the 1.1.0/1.2.0 bundle lines) was the literal text `Error: `.
+//
+// These pin the three properties that make that impossible: the message is never blank for any
+// input, the error NAME is what gives the diagnosis its own row, and the exit code rides in
+// `code` as well as in the sentence because `redactMessage` folds a ten-digit Windows crash code
+// to `<n>`.
+
+test('THE MESSAGE IS NEVER EMPTY — no payload this site can be handed produces a blank', () => {
+  resetHealth()
+  const seen: ChildLossReport[] = []
+  const report = (info: ChildLossReport): void => {
+    seen.push(info)
+  }
+  // Everything absent; every field the sentence needs has a fallback above it.
+  noteChildProcessGone({ type: 'GPU' }, report)
+  // A reason of the wrong SHAPE is refused rather than repeated — this is the gate that stops an
+  // outside string becoming a free-text channel, and `unknown` is the honest thing to say instead.
+  noteChildProcessGone({ type: 'GPU', reason: 'a rat says hello', exitCode: 0 }, report)
+  noteChildProcessGone({ type: 'GPU', reason: 'crashed', exitCode: 3_221_225_477 }, report)
+  for (const info of seen) {
+    assert.notEqual(info.message.trim(), '', 'a blank message is the whole bug')
+    assert.equal(info.name, GPU_LOSS_ERROR_NAME)
+    assert.equal(info.code, info.exitCode, 'the code field is the exit code, verbatim')
+  }
+  assert.equal(seen[0].message, 'GPU process gone: reason=unknown, exitCode=-1')
+  assert.equal(seen[1].message, 'GPU process gone: reason=unknown, exitCode=0')
+  // The ten-digit access-violation code, whole. It is folded to `<n>` inside the MESSAGE by the
+  // redactor downstream, which is exactly why it also rides in `code`.
+  assert.equal(seen[2].code, 3_221_225_477)
+  resetHealth()
+})
+
+test('WHICH CHILD: Chromium name, then mojo name, and neither if it is not name-shaped', () => {
+  resetHealth()
+  const seen: ChildLossReport[] = []
+  const report = (info: ChildLossReport): void => {
+    seen.push(info)
+  }
+  noteChildProcessGone({ type: 'GPU', reason: 'crashed', exitCode: 1, name: 'GPU Process' }, report)
+  noteChildProcessGone(
+    { type: 'GPU', reason: 'crashed', exitCode: 1, serviceName: 'viz.mojom.VizMain' },
+    report
+  )
+  // The human name wins when both are there: `Audio Service` is what a reader can act on.
+  noteChildProcessGone(
+    { type: 'GPU', reason: 'oom', exitCode: 2, name: 'Audio Service', serviceName: 'audio.mojom.X' },
+    report
+  )
+  // …and a value that is not Chromium-constant-shaped is DROPPED, not repaired. This is the same
+  // bright line `describeChildLoss`'s header states: nothing that could spell a path, a character
+  // name or a line of anyone's log reaches the sentence.
+  noteChildProcessGone(
+    { type: 'GPU', reason: 'crashed', exitCode: 1, name: "C:\\Users\\someone\\'Primitive'" },
+    report
+  )
+  assert.deepEqual(
+    seen.map((i) => i.message),
+    [
+      'GPU process (GPU Process) gone: reason=crashed, exitCode=1',
+      'GPU process (viz.mojom.VizMain) gone: reason=crashed, exitCode=1',
+      'GPU process (Audio Service) gone: reason=oom, exitCode=2',
+      'GPU process gone: reason=crashed, exitCode=1'
+    ]
+  )
+  assert.equal(seen[3].child, undefined, 'the refused name is absent, not blanked')
   resetHealth()
 })
 
@@ -278,9 +362,17 @@ test('an unrecognised payload is ignored rather than counted under a guess', () 
   assert.equal(peekHealth().gpuProcessGone, 0)
   assert.equal(peekHealth().utilityProcessGone, 0)
   // …and a GPU loss with no reason at all still counts, with the reason it can honestly give.
-  const seen: { reason: string; exitCode: number }[] = []
+  const seen: ChildLossReport[] = []
   noteChildProcessGone({ type: 'GPU' }, (info) => seen.push(info))
   assert.equal(peekHealth().gpuProcessGone, 1)
-  assert.deepEqual(seen, [{ reason: 'unknown', exitCode: -1 }])
+  assert.deepEqual(seen, [
+    {
+      name: GPU_LOSS_ERROR_NAME,
+      message: 'GPU process gone: reason=unknown, exitCode=-1',
+      code: -1,
+      reason: 'unknown',
+      exitCode: -1
+    }
+  ])
   resetHealth()
 })

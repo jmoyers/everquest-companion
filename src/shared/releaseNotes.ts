@@ -125,6 +125,81 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.6.0',
+    date: '2026-08-19',
+    entries: [
+      {
+        kind: 'new',
+        text: 'Plane of Sky has a Targets tab: every mob you still need to kill, deduplicated across your open quests, with the items each one drops and doors to the quests that need them. Built on a community pull request - thank you.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The Targets list reads in walk order - grouped by island, lowest first, with mobs whose island the drop data does not state grouped honestly at the bottom. A "first time only" box (on by default) keeps quests you have already handed in off the list; untick it when you are refarming.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Plane of Sky counts: a wind rune looted into your currency tab now counts, even after you have handed that quest in before. The inventory export never lists currency-tab items, and a turn-in was being charged against both your export and your log at once - so refarmed runes read zero. Rune rows now also say when an item can never appear in the export, and point at the hand-count pencil.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Overwriting one mez with another - Dazzle over Mesmerization - now retires the old bar and tracks the new spell under its own name and duration. Before, the old bar squatted at zero and a nameless bar counted up underneath it.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The Buffs tab shows the rank you actually cast. Levelling Mesmerization to X no longer leaves the Debuffs list saying VI forever.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The shaman Curse now reaches the debuff tracker - its landing message lost a word in the wiki import, so the tracker never recognized it. The registry now audits every spell for that defect class at build time, and the sweep repaired 41 more rows. A community contributor found the mechanism - thank you.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Pacify, Reoccurring Amnesia and the rest of the lull and memory-blur families - 18 spells - are debuffs now, not buffs, and reach the debuff overlay.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Rain spells parse by their real mechanics: a fixed number of waves per cast, counted once as spell damage. Lava Storm and its sixteen cousins no longer split into a phantom proc row with an invented procs-per-minute.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The Character tab reads every worn item at its own +N upgrade level, through the same scaling the Gear tab already used. A Cloak of Flames +5 now shows +41% haste, AC 15 and HP 75 instead of the base values - and every other scaled stat moved with it.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Data corrections: North and South Kaladim maps were swapped; Protector of Sky is on island 2, not 7; the Scintillating Bracer of Protection is the Shimmering Bracer; and Leach is the level 9 necromancer spell it always was.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Mobs whose full title differs from their catalog name - Innoruuk, the Prince of Hate - now fold their resist history correctly, so the con card shows what your past fights learned instead of "nothing seen yet". A restart re-reads your whole log, so the history lights up on its own.'
+      },
+      {
+        kind: 'fixed',
+        text: 'The auto-hide overlays no longer flicker when you alt-tab back into EverQuest. They also stop being real hide/show at all: they fade to invisible and back, so there is no stale frame to strobe - and no z-order churn over the game.'
+      },
+      {
+        kind: 'changed',
+        text: 'Clicking a mob card or a celebration toast raises the Companion without hiding your overlays - using an overlay is not leaving the game. Alt-tabbing into the Companion yourself still hides them, as before.'
+      },
+      {
+        kind: 'changed',
+        text: 'When security software on your PC blocks the update check, the app now says exactly that and retries on the next check - instead of blaming the download and backing off for hours. Sound pack downloads that hit a busy download host now wait politely and resume, rather than failing after three fast tries.'
+      },
+      {
+        kind: 'changed',
+        text: 'Under the hood: learned resist data survives a full disk and a torn file, and crash reports name which helper process died instead of arriving blank.'
+      }
+    ]
+  },
+  {
     version: '1.5.0',
     date: '2026-08-17',
     entries: [

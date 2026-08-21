@@ -208,7 +208,9 @@ test('the watch is wired to the ONE place click-through changes, and to every pa
   // and the renderer's own hover sensor all funnel through it, so there is no second opinion about
   // what "captured" means.
   const fn = /export function setOverlayIgnoreMouse[\s\S]*?\n\}/.exec(windows)?.[0] ?? ''
-  assert.match(fn, /watchOverlayPointer\(kind, w, ignore\)/)
+  // `effective`, not `ignore`, since JOS-427: a PARKED overlay is capture-off whatever its queue
+  // asked, so the watch must ride the value the window actually got.
+  assert.match(fn, /watchOverlayPointer\(kind, w, effective\)/)
   // …and the two paths a window leaves by: its own close, and the main window taking it down with
   // the app (which removes the 'closed' handler first).
   assert.equal((windows.match(/stopOverlayPointerWatch\(kind\)/g) ?? []).length, 2)

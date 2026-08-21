@@ -18,12 +18,29 @@
 //
 // THE ONE BEHAVIOUR CHANGE SINCE THE MOVE (JOS-99): `forwardConsoleMessages` no longer writes
 // renderer WARNINGS into errors.log — see its doc comment, and `consoleForward.ts` for the rule.
+//
+// AND THE SECOND (JOS-418): TWO OF THE THREE HANDLERS HERE FILED BLANK REPORTS. Electron hands
+// `render-process-gone` a `{ reason, exitCode }` and `did-fail-load` four fields about a URL, and
+// both were passed to `logError` as-is. `caughtFields` reads `name`, `message`, `stack` and `code`
+// off a payload — a bare details object has none of them — so the error store filed 9 occurrences
+// on 1.5.0 alone (fingerprint 75c31a27) as the literal text `Error: `, with everything Electron
+// had just told us sitting one property away, unread.
+//
+// The two SENTENCES are `./windowGone.ts`, a leaf with no imports — the same split
+// `consoleForward.ts` made in this same handler set, and for the same reason: this file imports
+// `electron`, so nothing in it can be driven by a unit test, and the shape of what the fleet
+// receives is exactly the thing that has to be pinned. That module's header carries the whole
+// argument (the never-empty guarantee, the shape gate on Chromium's strings, and why the exit code
+// rides in `code` as well as in the prose). `preload-error` needed nothing: it already carries a
+// real Error one property down and `caughtFields` unwraps it — `Unable to load preload script:
+// <path>` is that family, and it was never blank.
 
 import { app } from 'electron'
 import { join } from 'path'
 import { consoleForward } from './consoleForward'
 import { logError, logWarn } from './errorLog'
 import { noteRendererCrash } from './telemetry'
+import { DID_FAIL_LOAD_ERROR_NAME, didFailLoadMessage, numericOr, renderGoneReport } from './windowGone'
 
 /** How the capture reaches the window it may need to reload. Injected rather than imported so
  *  this module does not import `windows.ts` back and close a cycle. */
@@ -81,7 +98,9 @@ export function captureMainWindowErrors(wc: Electron.WebContents, window: Window
     // MAIN WINDOW ONLY: overlays get `forwardConsoleMessages` but no crash handler, so an overlay
     // crash is invisible to this counter and `telemetry/health.ts` says so.
     noteRendererCrash()
-    logError('main:render-process-gone', details)
+    // THE DETAILS RIDE ALONG UNDERNEATH the three fields the wire reads, so `errors.log` on the
+    // machine still holds Electron's payload verbatim while the fleet gets a sentence.
+    logError('main:render-process-gone', renderGoneReport(details))
     const win = window()
     if (!renderProcessReloaded && win && !win.isDestroyed()) {
       renderProcessReloaded = true
@@ -98,7 +117,15 @@ export function captureMainWindowErrors(wc: Electron.WebContents, window: Window
     const [errorCode, errorDescription, validatedURL, isMainFrame] = rest
     // errorCode -3 (ABORTED) is a benign navigation cancel; don't spam or retry.
     if (errorCode === -3) return
-    logError('main:did-fail-load', { errorCode, errorDescription, validatedURL, isMainFrame })
+    logError('main:did-fail-load', {
+      name: DID_FAIL_LOAD_ERROR_NAME,
+      message: didFailLoadMessage(errorDescription, errorCode, isMainFrame),
+      code: numericOr(errorCode),
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame
+    })
     const win = window()
     if (isMainFrame && !didFailReloaded && win && !win.isDestroyed()) {
       didFailReloaded = true

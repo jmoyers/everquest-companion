@@ -138,7 +138,31 @@
 // row is earned when a real log shows its sentence firing cast-less inside combat, and when the
 // sentence is unique in the DB so the count can be attributed to one name. One log has, once.
 
+// ── A THIRD CAST-LESS SHAPE THAT IS NOT A PROC: THE RAIN (JOS-414, GitHub issue 39) ──
+//
+// The two shapes above are heals. This one is damage, and it is the join's own instant rule
+// meeting a spell that fires more than once per cast.
+//
+// A rain spell delivers a FIXED NUMBER OF WAVES from ONE cast (owner's ruling and the game's
+// mechanic — src/main/combat/rainSpells.ts carries the measurement). `origin` lets one cast
+// record explain ONE INSTANT, which is exactly right for the AoE it was written for — four
+// `Earthquake` lines in one second, one cast — and exactly wrong for a rain, whose second wave
+// lands three seconds later with the same cast behind it. The first wave scored `cast`, every
+// later wave scored `proc`, and the meter grew a second row wearing a proc rate: 126 of the 452
+// first-person rain lines in the owner's log, 27.6% of their damage.
+//
+// THE GATE IS THE SPELL, NOT THE TIMING, and that is the stronger rule for the reason the DoT
+// gate is: no item, buff or AA in this game fires a rain, so a cast-less rain wave is never a
+// proc — it is a wave whose cast line we did not see (a fold that started mid-cast, a scrubbed
+// span). Widening the claim to "any instant inside the window" would have fixed the reported
+// case and still filed those as procs.
+//
+// WHAT IT COSTS: if a rain ever did proc, this refuses to notice. Nothing in the log or the
+// item DB suggests one can, and the alternative — a phantom proc lane on every rain a caster
+// owns — is the defect that was reported.
+
 import { spellCanonKey } from '../log/parseCommon'
+import { isRainSpell } from './rainSpells'
 import type { DamageType } from '../../shared/combat'
 
 /**
@@ -300,12 +324,20 @@ export function laneCanonKey(lane: string): string {
 }
 
 /**
- * Damage types eligible for cast-less detection. `spell` ONLY — see the DoT gate in the file
- * header. Expressed as a function rather than a Set so the exclusion reads as a rule with a
- * reason attached, not as a list somebody can extend without noticing what it costs.
+ * Damage lines eligible for cast-less detection, and BOTH refusals are rules with a reason:
+ *
+ *   - `spell` ONLY. A DoT tick is cast-DETACHED by construction, so it would misclassify as a
+ *     proc the moment it arrived more than twelve seconds after its cast (the DoT gate, in the
+ *     file header); `melee`/`ds` are not spell effects at all.
+ *   - NEVER A RAIN. A rain spell fires several waves off one cast, so its later waves are
+ *     cast-less by construction too — the same shape as a DoT tick, arriving on the other
+ *     lane (JOS-414; see the rain section of the header and rainSpells.ts).
+ *
+ * A function rather than a Set so neither exclusion can be extended without reading what it
+ * costs.
  */
-export function procEligibleDamage(dtype: DamageType): boolean {
-  return dtype === 'spell'
+export function procEligibleDamage(dtype: DamageType, skill: string): boolean {
+  return dtype === 'spell' && !isRainSpell(skill)
 }
 
 /**

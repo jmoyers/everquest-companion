@@ -9,7 +9,30 @@ Feedback lives in Aurora DSQL, read directly over IAM by
 `npx tsx scripts/triage-feedback.mts` (auth: `--profile eqc`, or `AWS_PROFILE`).
 The loop ends with TWO systems updated: Linear carries the work, and the
 feedback system carries a status + note for every report reviewed. A report
-left `new` after a triage session is an unfinished triage.
+left `new` after a triage session is an unfinished triage — UNLESS it is in
+the parked pool (below).
+
+## The parked pool (owner directive 2026-08-19)
+
+The owner may scope a session ("bugs only"); everything outside the scope, and
+every item the owner did not explicitly rule on, is PARKED: it deliberately
+stays `status=new` so it resurfaces, and the session's JOS-153 ledger comment
+names the parked counts and the notable parked items. Parked reports are NOT
+unfinished triage. Rules:
+
+- A bug-focused session stamps only ruled items; feature requests stay `new`
+  and are re-presented in a DEDICATED FEATURE READOUT when the owner asks
+  (cluster them then as usual — the pool accretes voices between sessions).
+- Every triage's PULL step must therefore separate FRESH-new (arrived since
+  the last session's watermark) from PARKED-new (already read, awaiting an
+  owner ruling). Re-present parked items compactly (one line each, with any
+  new corroborating voices attached); never re-litigate them as if unread,
+  and never dress the pool up as new volume in the stats.
+- The verify step changes accordingly: after stamping, `list --status new`
+  should print exactly the parked pool, and the ledger comment states the
+  expected pool size so the next session can reconcile it.
+- When the owner later rules on a parked item, stamp it then, citing the
+  ruling date.
 
 ## The channels (owner directive 2026-08-09: every triage covers all of them)
 
@@ -32,6 +55,8 @@ left `new` after a triage session is an unfinished triage.
    - https://www.reddit.com/r/EQLegends/comments/1vfs5df/sharing_a_companion_app/?sort=new
    - https://www.reddit.com/r/EQLegends/comments/1vk59oa/everquest_legends_companion_thank_you_to_community/?sort=new
      (added 2026-08-09; the owner's thank-you post — carries the release notes)
+   - https://www.reddit.com/r/EQLegends/comments/1vophv6/eq_legends_companion_update_3/?sort=new
+     (added 2026-08-19; the owner's Update #3 post — first swept 2026-08-19)
    METHOD (proven 2026-08-09): reddit.com is blocked for WebFetch AND the
    Browser pane — use the owner's Chrome (claude-in-chrome, read-only). The
    extension's data filter blocks large/URL-bearing JS returns, so: navigate
@@ -132,7 +157,8 @@ slices never reach a public issue (the CLI enforces this; don't fight it).
    - Declined-for-now: `--status triaged --note "reviewed <date> — <what>,
      not now"`. Reserve `wontfix` for the owner explicitly saying never.
    - Verify done: `list --since <window> --status new --profile eqc` must
-     print `0 report(s)`.
+     print exactly the parked pool (0 when nothing is parked); state the
+     pool size in the ledger comment.
    - External items: one sweep comment on JOS-153 (see The external ledger),
      every new item with its disposition. A sweep that found nothing new still
      gets a one-line comment saying so, dated — that is the watermark.

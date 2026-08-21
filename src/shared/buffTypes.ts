@@ -134,16 +134,22 @@ export interface ActiveBuff {
   /** buff vs debuff — a SPELL property (Task #35), not who it's on. */
   cls: BuffClass
   /**
-   * True when the spell CALMS its target — the calm/lull line (JOS-213): a `cls: 'buff'` whose
-   * effect happens to a MOB's aggression. Absent for every other spell.
+   * True when the spell CALMS its target — the calm/lull line (JOS-213): a spell whose effect
+   * happens to a MOB's aggression. Absent for every other spell.
    *
-   * It is a SECOND, ORTHOGONAL fact about the spell, not a correction to `cls`. A Pacify is a
-   * beneficial spell and the row keeps saying so; what this adds is that the thing it does is a
-   * mob-state effect, which is what routes its timer to the DEBUFFS overlay beside the slows and
-   * the mez holds (shared/buffTimers.ts `timerRowSurface`) instead of leaving an aggro clock among
-   * the player's own buffs. Filled by main from the DB roster (`data/spellDb.ts
-   * spellCalmsTarget`), and — like `cls` since JOS-140 ruling 8 — never resolved by looking at who
-   * the spell landed on.
+   * It is a SECOND, ORTHOGONAL fact about the spell, not a correction to `cls`. What it adds is
+   * that the thing the spell does is a mob-state effect, which is what routes its timer to the
+   * DEBUFFS overlay beside the slows and the mez holds (shared/buffTimers.ts `timerRowSurface`)
+   * instead of leaving an aggro clock among the player's own buffs. Filled by main from the DB
+   * roster (`data/spellDb.ts spellCalmsTarget`), and — like `cls` since JOS-140 ruling 8 — never
+   * resolved by looking at who the spell landed on.
+   *
+   * JOS-213 WROTE THIS FIELD FOR A `cls: 'buff'` ROW AND IT IS NO LONGER ONE. The owner ruled
+   * (JOS-413, 2026-08-19) that a lull is a DEBUFF, so the family's `cls` is 'debuff' now and the
+   * row reaches the debuffs window on its kind. The field is kept because it is a true, derived,
+   * audited statement about the spell, because it is the guard that keeps a friendly buff off that
+   * window, and because it is still the answer for a calm-line spell the polarity ruling has no row
+   * for — not because the routing still depends on it alone.
    */
   calmsTarget?: true
   /**

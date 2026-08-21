@@ -31,6 +31,17 @@
 // membership test on that list. The row is the second JOIN rather than a mint, and the end-to-end
 // acceptance lives with the rung it feeds, in `tests/petBuffBind.test.mts`.
 //
+// JOS-412 ADDED A SIXTH REPORT AND CHANGED HOW THE NEXT ONE ARRIVES. A shaman's level-34 `Curse`
+// never reached the debuff tracker (GitHub issue 43, in-app report 01M0BSTF14C2CHJ3D38BACGDZC) — it
+// is `Odium` one rank down the same line, and it sat unmatchable for ten days after Odium was swept
+// because nothing in the tree ever ASKED which other spells were in that state. Something does now:
+// `src/main/data/spellSubjectAudit.ts`, pinned as a census in `tests/spellSubjectAudit.test.mts`.
+// The wave it produced is 18 rows — `Curse`, the one unkeyable sentence with owner-log evidence,
+// plus all seventeen the family ALREADY owned, where restoring the subject mints nothing and only
+// lets a spell be a candidate for its own landing. Its rows are held to invariants 1 and 2 below
+// like every other; the ACCEPTANCE for the sixth report lives beside the validator, in
+// `tests/spellSubjectAudit.test.mts`, so that ticket reads as one file.
+//
 // FIVE THINGS ARE PINNED HERE:
 //
 //   1. THE SHAPE. Every entry restores a SUBJECT and changes nothing else. Strip the leading
@@ -149,7 +160,31 @@ test('every sweep entry states a measured evidence line and an attribution route
  *
  * ` shrinks.` is the second (JOS-349, Tiny Companion): `Ant Legs` and `Shrink` already own it.
  */
-const JOINS_EXISTING = new Set(['begins to chant.', 'shrinks.'])
+const JOINS_EXISTING = new Set([
+  'begins to chant.',
+  'shrinks.',
+  // THE JOS-412 BLOCK — seventeen sentences the validator found and the family already owned. Each
+  // one is a spell that could never be a candidate for its own landing while a sibling with the
+  // correctly-spelled `Someone` matched the very same line. Named here rather than inferred,
+  // because joining stays a decision somebody made per entry.
+  'staggers.',
+  'is surrounded by a brief lupine aura.',
+  'feels very dispelled.',
+  'screams in pain.',
+  'looks tougher.',
+  'looks stronger.',
+  'looks protected.',
+  "'s skin shimmers with divine power.",
+  'goes berserk.',
+  "'s image shimmers.",
+  'begins to radiate.',
+  'creates a mystic portal.',
+  "'s skin turns hard as diamond.",
+  'turns into a wolf.',
+  'creates a shimmering portal.',
+  'turns into a bear.',
+  "'s skin sears."
+])
 
 test('every restored suffix is NEW to the table, or JOINS one exactly — never partially', () => {
   // The pre-sweep table: the scrape plus the hand-derived corrections, exactly what shipped before

@@ -33,8 +33,22 @@ export { SPELL_CORRECTIONS }
 /** The three message fields a correction can patch. */
 export type SpellMessageField = 'msgCastOnYou' | 'msgCastOnOther' | 'msgWearsOff'
 
-/** Everything a correction can patch: the three messages, and — since JOS-161 — the NAME. */
-export type SpellCorrectionField = SpellMessageField | 'name'
+/**
+ * Everything a correction can patch: the three messages, since JOS-161 the NAME, and since JOS-413
+ * the POLARITY (`spellType`).
+ *
+ * THE POLARITY IS THE SIXTH DRIFT CLASS and it is the only one that is not about a SENTENCE. The
+ * first five all assume the wiki is describing the right spell and getting its words wrong; a
+ * polarity correction says the wiki filed the spell on the wrong SIDE. `spellCorrectionsPolarity.ts`
+ * carries the family, the owner ruling and the derived census that keeps it honest.
+ *
+ * THE WRONG LEVEL IS THE SEVENTH (JOS-415), and it is the polarity's neighbour rather than a
+ * message's: `classes` is the wiki's OTHER column, the one `shared/spellLevels.ts` reads into
+ * (class, level) pairs and `buildLevelUnlocks` turns into "new at this level" cards. A correction
+ * here says the wiki filed the spell at the wrong LEVEL. Its one entry and its argument live in
+ * `spellCorrectionsList.ts`, beside the drift-class paragraph that governs it.
+ */
+export type SpellCorrectionField = SpellMessageField | 'name' | 'spellType' | 'classes'
 
 /** How a correction earned its place — see THE EVIDENCE BAR in `spellCorrectionsList.ts`. */
 export type CorrectionAttribution = 'cast' | 'db' | 'sole'
@@ -139,6 +153,22 @@ export function applySpellCorrections(
  * spell is CALLED. Half a rename is worse than none: `SpellDb.byKey` and `buildSpellCatalog` fold
  * by name, so a renamed row and its un-renamed twin become two lines and the wizard lists a spell
  * that does not exist (JOS-161).
+ *
+ * A POLARITY correction takes ALL of them too, and for the same reason read one field over
+ * (JOS-413): era/rank duplicates of one spell genuinely differ about the sentence they print, but
+ * they cannot differ about whether the spell is a good thing or a bad thing. Half a reclassification
+ * is the worse of the two failures here — `spellNature` is what `classOf` folds into `cls`, so one
+ * corrected row and one untouched twin means the same Pacify is a buff or a debuff depending on
+ * which row a lookup happened to reach, and the two surfaces would disagree about the same bar.
+ *
+ * A CLASSES correction takes ALL of them for the third time, and this is where the rule does the
+ * most work (JOS-415): the defect it exists for IS a duplicate pair that disagrees. `Leach` has two
+ * wiki pages, one saying `Necromancer - Level 9` and one `Necromancer - Level 12 Recourse Effect`,
+ * so the level-up panel announced the same spell at two levels. `buildLevelUnlocks` emits one row
+ * PER DB ROW and `spellRows` folds by name only WITHIN a level, so half a correction leaves the
+ * phantom card exactly where it was. Writing every row makes the two agree and the renderer's fold
+ * draws one card at one level. The already-correct twin costs nothing: `applyOne` sees
+ * `current === to` and reports `satisfied` — the same answer a re-scrape fixing it upstream gives.
  */
 function rowsFor(
   byName: ReadonlyMap<string, number[]>,
@@ -147,7 +177,7 @@ function rowsFor(
 ): number[] {
   const all = byName.get(name)
   if (!all) return []
-  return field === 'name' ? all : [all[0]]
+  return field === 'name' || field === 'spellType' || field === 'classes' ? all : [all[0]]
 }
 
 /** One (correction, spell) pair against the working list. Reports rather than throws. */

@@ -184,17 +184,88 @@
 // wait for a log that prints the pair.
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// THE VALIDATOR AND ITS CENSUS — THE WAVE THAT NOBODY REPORTED (JOS-412).
+//
+// FIVE REPORTS REACHED THIS FILE ONE AT A TIME, and the sixth (GitHub issue 43, in-app report
+// 01M0BSTF14C2CHJ3D38BACGDZC: the shaman `Curse` at 34, which is `Odium` at 43 one rank down the
+// SAME LINE) is the one that says the arrangement was wrong. Odium was swept in JOS-174 and its own
+// junior rank sat unmatchable for ten more days, because nothing in the tree ever asked the
+// question the sweep exists to answer. `src/main/data/spellSubjectAudit.ts` now asks it on every
+// load, and `tests/spellSubjectAudit.test.mts` pins the ANSWER as a census — so a spell in this
+// state is a failing test rather than a report six weeks later.
+//
+// WHAT THE VALIDATOR PROVED, over the effective registry (owner ruling 2026-08-19: fix Curse and
+// sweep the whole class). 153 rows carry a third-person landing the suffix table cannot key, and
+// they are TWO populations, not one:
+//
+//   * 71 rows over 37 sentences carry a WRONG SUBJECT TOKEN — the wiki wrote `Target`, `Player`,
+//     `Soandso` or `Other_Player` where the table keys on `Someone`. The wiki has DECLARED that a
+//     name goes there, so the repair is a one-token swap and nothing about the sentence is guessed.
+//   * 82 rows carry NO SUBJECT AT ALL — the wiki cropped it (`'s wounds fester.`, `fades away.`).
+//     JOS-174's population, restorable only as a CLAIM about a cropped sentence, and 16 of them are
+//     poison procs a classifier above `classifyDbBuff` already owns.
+//
+// AND THE FIRST POPULATION SPLITS AGAIN, along the line JOS-189 drew. 17 of the 37 sentences are
+// JOINS: the family already owns the suffix under a sibling's correctly-spelled `Someone`, so
+// restoring the subject MINTS NOTHING and only adds candidates to lines that already parse. 20 are
+// MINTS, and exactly ONE of those has evidence in the owner's log — `Curse`, at 68 landings.
+//
+// SO THIS WAVE IS 18 ROWS: every join (the safe shape, whose whole cost is a longer candidate list)
+// plus the one evidenced mint. The other 19 mints occur ZERO times in 2,138,726 lines and no report
+// names them, which is the awaiting-sample law verbatim — the same refusal JOS-349 recorded for six
+// pet spells, and it is now a CENSUS ENTRY rather than a silence.
+//
+// MEASURED WHOLE-LOG, the law-8 tripwire (2,140,000 lines of `eqlog_Primitive_freeport.txt` parsed
+// twice in one process, 2026-08-19, the committed DB against the DB minus these 18 rows):
+//
+//   * ONE kind transition, and it is the report: `unknown` 203,934 -> 203,866 and `buffApply`
+//     141,980 -> 142,048. SIXTY-EIGHT lines, every one of them a `<mob> has been cursed.` that had
+//     no owner. All 59 other event kinds byte-identical.
+//   * 31,737 buffApply lines get a LONGER CANDIDATE LIST and nothing else — which is what a join
+//     looks like from the outside. The big one is ` staggers.` at 29,897 lines going 37 candidates
+//     to 38.
+//   * AND 669 LINES CHANGE WHICH NAME LEADS, which JOS-349 did not have to say and this wave does.
+//     `ev.spell` is the parser's best-effort FIRST candidate (JOS-84 — `candidates` carries the
+//     truth and the model resolves against the caster's own casts), and first is decided by
+//     REGISTRY ORDER: `buildSpellDb` walks the spell list, and the first row to claim a suffix
+//     heads its bucket. A joined spell that sorts BEFORE the sibling that used to head it therefore
+//     takes the lead. Six pairs do, all of them within one family:
+//       358  Pillage Enchantment -> Beholder Dispel      (` feels very dispelled.`)
+//       174  Talisman of Altuna  -> Harnessing of Spirit (` looks tougher.`)
+//        60  Skin Like Nature    -> Protection of Nature (`'s skin shimmers with divine power.`)
+//        53  Illusion: Air Elemental -> Bounce           (`'s image shimmers.`)
+//        16  Skin Like Diamond   -> Protection of Diamond
+//         8  Form of the Great Bear -> Form of the Bear
+//     Priced and accepted rather than argued away: nothing the MODEL decides moves — a landing is
+//     still resolved against the cast that anchored it — and five of the six are two ranks of one
+//     line. The odd one is `Beholder Dispel`, an NPC dispel now leading a sentence a player's
+//     `Pillage Enchantment` also writes; that name only surfaces where no cast anchors the line,
+//     which is the case the model already declines to open a bar for.
+//
+// TWO ROWS OF THE JOIN GROUPS ARE DELIBERATELY NOT NAMED, and the reason is the mechanism rather
+// than the evidence: `Illusion: Air Elemental` and `Ring of South Ro` are DUPLICATE rows of a name
+// whose FIRST row already keys, and `rowsFor` (spellCorrections.ts) writes a message correction to
+// the first row of a name only. Naming them would report `satisfied` and change nothing. The
+// validator sees those rows and says so (`spellUnreachable: false` — the SPELL is reachable, the
+// duplicate row is not), which is exactly the distinction a census has to be able to draw.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // WHAT EVERY ROW BELOW IS.
 //
 // The sentence is the WIKI'S OWN, unchanged. Only the subject token is restored, which is why the
 // default attribution is `sole`: no DB message anywhere is closer to the live line (nothing else
 // matches it at all — the tail is new to the table), so no other spell can be meant. `hits` is the
-// whole-log count of the RESTORED shape in `eqlog_Primitive_freeport.txt`, measured 2026-08-10,
-// and every one of those lines had no DB owner before this file existed.
+// whole-log count of the RESTORED shape in `eqlog_Primitive_freeport.txt`, measured 2026-08-10
+// (the JOS-412 block re-measured 2026-08-19 over 2,138,726 lines), and every one of those lines had
+// no DB owner before this file existed.
 //
 // A row may override the attribution when a caster is demonstrably attached to the landing. Odium
 // and the Tuyen chants are the ones here that do: their evidence is a reporter's slice, cited by
 // report id, and that is the same route JOS-161 used for a song the owner never sang.
+//
+// A JOIN row takes `db` instead, which is the evidence bar's own third route and the exact claim a
+// join makes: sibling entries of the same family ALREADY carry the replacement text verbatim, so
+// the DB is its own witness and the odd row out is the typo.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // A ROW MAY ALSO JOIN A SUFFIX INSTEAD OF MINTING ONE (JOS-189), and the two shapes are held to
@@ -218,13 +289,18 @@
 // must either be absent from the table or be byte-identical to one already in it, never in between.
 
 import type { CorrectionAttribution, SpellCorrection } from './spellCorrections'
+// THE TABLE ITSELF IS NEXT DOOR, for the reason `spellCorrections.ts` states about its own list:
+// a data file that grows by one entry per defect should not be counted against a code-mass ceiling
+// shared with the machinery that reads it. The edge is the same shape too — the list imports only
+// the TYPE from here, so it is one-way at runtime.
+import { SUBJECT_DRIFTS } from './spellCorrectionsSubjectsList'
 
 /**
  * One subject restoration. `field` and the sentence itself are implied — a row cannot express
  * anything but "this spell's cast-on-other message names its subject with the wrong token" — so
  * the shape carries only what varies. The full `SpellCorrection` is derived below.
  */
-interface SubjectDrift {
+export interface SubjectDrift {
   /** Exact `SpellEntry.name`s, as the SCRAPE spells them. */
   readonly spells: readonly string[]
   /** The wiki's sentence, verbatim, with whatever subject the scrape left on it. */
@@ -233,9 +309,17 @@ interface SubjectDrift {
   readonly to: string
   /**
    * Whole-log occurrences of the restored shape in the owner's log (see the header). ZERO is
-   * allowed and means exactly one thing: the owner's log cannot witness this spell at all, so the
-   * row's evidence log is a REPORTER'S SLICE and its `evidence` must say which report and what was
-   * counted there (JOS-245). It is never "we did not check".
+   * allowed and means one of exactly two things, and the row's `evidence` must say WHICH — it is
+   * never "we did not check":
+   *
+   *   * A MINT the owner's log cannot witness at all, so the row's evidence log is a REPORTER'S
+   *     SLICE, cited by report id and counted there (JOS-245).
+   *   * A JOIN whose sentence nobody has printed either. A join mints no tail (the family already
+   *     owns the suffix), so its blast radius is provably zero in both directions and the count is
+   *     a fact about the SENTENCE rather than about the correction (JOS-412, `Wave of Fire`).
+   *
+   * For a JOIN the count is the sentence's whole-log frequency under its EXISTING owners — the
+   * lines this row adds a candidate to — not lines that had no owner.
    */
   readonly hits: number
   /** Overrides the default `sole` when a cast is demonstrably attached to the landing. */
@@ -243,192 +327,6 @@ interface SubjectDrift {
   /** Replaces the generated evidence line when there is more to say than a count. */
   readonly evidence?: string
 }
-
-/** Ordered by owner-log frequency, so a reader checking the load-bearing ones reads the top. */
-const SUBJECT_DRIFTS: readonly SubjectDrift[] = [
-  { spells: ['Celestial Echo', 'Echo of Health', 'Echoing Light', 'Sacred Echo'],
-    from: 'Target is embraced by a spirit of healing.',
-    to: 'Someone is embraced by a spirit of healing.',
-    hits: 166 },
-  { spells: ["Forest's Renewal", "Kragg's Salve", 'Spirit Salve'],
-    from: "Target's wounds heal.",
-    to: "Someone's wounds heal.",
-    hits: 84 },
-  { spells: ['Healing Light'],
-    from: "'s wounds heal.",
-    to: "Someone's wounds heal.",
-    hits: 84,
-    evidence:
-      'Owner log: 84 lines of `<T>`s wounds heal.`, which had no DB owner. The same sentence as the entry above, from the OTHER shape of the same drift — this row lost its subject entirely where those three kept a placeholder — so the two land on one suffix and the four spells share it.' },
-  { spells: ['Tangling Weeds'],
-    from: "Target's movements slow as their feet are covered in tangling weeds.",
-    to: "Someone's movements slow as their feet are covered in tangling weeds.",
-    hits: 68 },
-  { spells: ["Elnerick's Entombment of Ice"],
-    from: 'Target is entombed by elemental ice.',
-    to: 'Someone is entombed by elemental ice.',
-    hits: 39 },
-  {
-    spells: ['Tiny Companion'],
-    from: 'Target shrinks.',
-    to: 'Someone shrinks.',
-    hits: 33,
-    attribution: 'cast',
-    evidence:
-      'THE REPORTED DEFECT (01M00ACVVFDRVWBXRDCFPHESNZ, JOS-349, a SHM/WAR/BRD): "Pet is not getting parsed. at the end of the log his name is Zarober." THE SECOND SHAPE OF THE JOIN (see THE PET-BINDING HALF in this file`s header): `Ant Legs` and `Shrink` carry the `Someone` subject for the one sentence all three write, `Tiny Companion` carries `Target`, so the pet-shrink spell was in no table and could not be a CANDIDATE for its own landing. Reporter`s slice through the real parser, 6,544 lines: `You begin casting Guardian Spirit.` 16:15:54 -> `You summon a guardian spirit.` 16:16:08 -> `You begin casting Tiny Companion.` 16:16:21 -> `Zarober shrinks.` 16:16:25, four seconds later and inside the DB`s own 4 s cast time — the JOS-188 pet-only pair, exactly, and the ONLY binding line in the whole slice (zero `… Master.` tells, zero `/pet who leader` answers). Replayed before this row: `petDisplayNames() === []` and 142 Zarober lines attributed to nobody. Owner log: 33 lines of ` shrinks.`, all of them already owned by the two `Someone` siblings, and 0 `You begin casting Tiny Companion.` — he bought and scribed the spell and never cast it, which is why his log cannot witness the pair and the slice carries the count.'
-  },
-  {
-    spells: ['Blooming Heal', 'Blossoming Heal', 'Budding Heal', 'Efflorescing Heal', 'Flowering Heal', 'Sprouting Heal'],
-    from: 'Target is seeded with healing energy.',
-    to: 'Someone is seeded with healing energy.',
-    hits: 28 },
-  {
-    spells: ["Tuyen's Chant of Disease", "Tuyen's Chant of Poison"],
-    from: 'Target begins to chant.',
-    to: 'Someone begins to chant.',
-    hits: 6,
-    attribution: 'cast',
-    evidence:
-      'THE REPORTED DEFECT (01KZN3FSW4BQ519N3TV8CQ1TC1, v0.17.0, a bard): "chant of frost being active when it was not on a mob and NOT showing chant of poison or disease. The only one it had correct was chant of Flame". All four chants share ONE landing sentence and the DB gave it only TWO owners — Flame and Frost carry the `Someone` subject, Disease and Poison carry `Target`, so they were in no table at all. That is the whole report in one line: with only two candidates, `admitLanding` resolves each landing to the most recently cast of THEM, so the disease and poison landings were filed under frost — a frost the slice shows RESISTED on every cast — and the two real debuffs had no row. Restoring the subject makes all four candidates, and the bard`s 3 s chain then resolves each landing to its own cast. The suffix ALREADY EXISTS, so this creates no new tail: it adds two owners to a sentence the cast anchor was already narrowing. Owner log: 6 lines of the shape, with Flame 14 / Disease 12 / Frost 11 third-person casts beside them.'
-  },
-  { spells: ['Odium'],
-    from: 'Target staggers under a dark curse.',
-    to: 'Someone staggers under a dark curse.',
-    hits: 19,
-    attribution: 'cast',
-    evidence:
-      'THE REPORTED DEFECT. Report 01KZMS8NG4FBYCP1P51VK8WP1B (v0.14.0, a shaman): 10 `You begin casting Odium VI.` lines, 7 of them followed within 0-1 s by `<mob> staggers under a dark curse.` and the other 3 by a resist. Owner log: 19 lines of the shape with no DB owner, 0 of the wiki form. Vexing Mordinia writes a different curse sentence, so nothing else can be meant.' },
-  { spells: ["Riftwind's Protection"],
-    from: "'s skin glows with a pale greenish tint.",
-    to: "Someone's skin glows with a pale greenish tint.",
-    hits: 16 },
-  { spells: ['Leviathan Eyes'],
-    from: "Player's eyes fill with the water of the deep.",
-    to: "Someone's eyes fill with the water of the deep.",
-    hits: 12 },
-  { spells: ['Blessing of Faith'],
-    from: 'Target is quickened by the Blessing of Faith.',
-    to: 'Someone is quickened by the Blessing of Faith.',
-    hits: 8 },
-  { spells: ['Blessing of the Knight'],
-    from: "Target's hands gain a pale gold glow.",
-    to: "Someone's hands gain a pale gold glow.",
-    hits: 8 },
-  { spells: ['Guard of Vie'],
-    from: 'has been surrounded in a dull white aura.',
-    to: 'Someone has been surrounded in a dull white aura.',
-    hits: 8 },
-  { spells: ['Blessing of Piety'],
-    from: 'is quickened by the Blessing of Reverence.',
-    to: 'Someone is quickened by the Blessing of Reverence.',
-    hits: 6 },
-  { spells: ['Insidious Retrogression'],
-    from: "'s body is pelted by spores.",
-    to: "Someone's body is pelted by spores.",
-    hits: 6 },
-  { spells: ['Minor Familiar'],
-    from: 'Player summons forth a minor familiar.',
-    to: 'Someone summons forth a minor familiar.',
-    hits: 6 },
-  { spells: ['Spiritual Brawn'],
-    from: 'Target has been filled with spiritual brawn.',
-    to: 'Someone has been filled with spiritual brawn.',
-    hits: 6 },
-  { spells: ['Pack Shrew', 'Spirit of the Shrew'],
-    from: 'Target begins to move more gracefully.',
-    to: 'Someone begins to move more gracefully.',
-    hits: 5 },
-  { spells: ['Spike of Disease'],
-    from: "'s wounds fester.",
-    to: "Someone's wounds fester.",
-    hits: 5 },
-  { spells: ['Laceration'],
-    from: 'Soandso begins to bleed.',
-    to: 'Someone begins to bleed.',
-    hits: 4 },
-  { spells: ["Nature's Precision"],
-    from: 'becomes one with their weapons.',
-    to: 'Someone becomes one with their weapons.',
-    hits: 4 },
-  { spells: ['Blessing of the Page'],
-    from: "Other_Player's hands have a dull gold glow.",
-    to: "Someone's hands have a dull gold glow.",
-    hits: 3 },
-  { spells: ['Promised Renewal'],
-    from: 'Target is promised a divine renewal.',
-    to: 'Someone is promised a divine renewal.',
-    hits: 3 },
-  { spells: ['Ward of the Divine'],
-    from: 'is cloaked in the blessing of a divine touch.',
-    to: 'Someone is cloaked in the blessing of a divine touch.',
-    hits: 3 },
-  { spells: ['Ward of Vie'],
-    from: 'has been surrounded in a faint white aura.',
-    to: 'Someone has been surrounded in a faint white aura.',
-    hits: 3 },
-  { spells: ['Dustdevil'],
-    from: "'s body is crushed by flying debris.",
-    to: "Someone's body is crushed by flying debris.",
-    hits: 2 },
-  { spells: ['Blood of Pain'],
-    from: 'is tormented by the blood of pain.',
-    to: 'Someone is tormented by the blood of pain.',
-    hits: 1 },
-  { spells: ['Dark Soul'],
-    from: 'has been surrounded in cold darkness.',
-    to: 'Someone has been surrounded in cold darkness.',
-    hits: 1 },
-  { spells: ['Dark Temptation'],
-    from: "'s aura grows cold.",
-    to: "Someone's aura grows cold.",
-    hits: 1 },
-  { spells: ['Hawk Eye'],
-    from: "'s eyes sharpen with an aura of avian presence.",
-    to: "Someone's eyes sharpen with an aura of avian presence.",
-    hits: 1 },
-  { spells: ['Mana Detonation'],
-    from: 'Target is pierced by extraplanar energy.',
-    to: 'Someone is pierced by extraplanar energy.',
-    hits: 1 },
-  { spells: ['Mana Ignition'],
-    from: 'Target is pierced by cosmic energy.',
-    to: 'Someone is pierced by cosmic energy.',
-    hits: 1 },
-  {
-    spells: ["Sha's Lethargy"],
-    from: 'feels lethargic.',
-    to: 'Someone feels lethargic.',
-    hits: 4,
-    attribution: 'cast',
-    evidence:
-      'THE SENTENCE JOS-174 REFUSED, and the one that had to be TAKEN rather than added (see THE PRECEDENCE CASE below). Reported by a beastlord (01KZP5B8F9GJ0J0BNCP29DH59J, v0.18.0): "Sha`s Lethargy the Beastlord lvl 50 slow doesn`t show up in the debuff windows". Owner log, 1,557,569 lines: `<T> feels lethargic.` occurs 4 times and ALL FOUR fall within 12 s (p50 3 s) of one of the 33 `<Name> begins casting Sha`s Lethargy.` lines, so every occurrence of the sentence in the whole log is a Sha`s Lethargy landing and no other spell in the DB writes it. The wiki form occurs 0 times, as it must — it has no subject at all.'
-  },
-  { spells: ['Spirit of the Puma'],
-    from: 'Target growls with the spirit of the puma.',
-    to: 'Someone growls with the spirit of the puma.',
-    hits: 1,
-    evidence:
-      'Owner log: 1 line, `Fail growls with the spirit of the puma.` (Sat Aug 01 18:38:10), which had no DB owner. AGENTS.md records this exact line as the one with "NO typed event at all" — JOS-103 shipped a `raw` capture suggestion because there was no typed path for the family. There is one now, and the raw alert is unaffected: a `raw` condition tests `ev.raw` whatever the event`s kind turns out to be.' },
-  { spells: ['Voice of Darkness'],
-    from: 'speaks with the voice of darkness.',
-    to: 'Someone speaks with the voice of darkness.',
-    hits: 1 },
-  { spells: ['Tortoises Healing'],
-    from: 'is healed by the spirit of the tortoise.',
-    to: 'Someone is healed by the spirit of the tortoise.',
-    hits: 1,
-    evidence:
-      'JOS-318, and the row is here for symmetry rather than for its count. The shaman heal-over-time ladder is Snails 14 → Tortoises 28 → Slugs 42 → Sloths 50, and the wiki filled the messages in for this rank only — which is exactly why the reporter of 01KZZXVW888E09C088QBRD5HCD saw Tortoise Healing work and Slugs Healing not. The other two rows are corrected in spellCorrectionsList.ts (their fields are the scrape`s `Someone .` stub, not a subject drift); THIS one lost only its subject, so it belongs in this sweep and its restored tail is byte-identical in shape to the two minted there. Owner log: 1 line of `<T> is healed by the spirit of the tortoise.`, 0 of the wiki form, beside 49 of his own `You begin casting Tortoises Healing.` casts — the count is low because a shaman casting a HoT on HIMSELF prints the first-person landing instead, and that field was never wrong.' },
-  {
-    spells: ['Vengeance of the Wild'],
-    from: 'Target has been consumed in the flames of the wild.',
-    to: 'Someone has been consumed in the flames of the wild.',
-    hits: 0,
-    attribution: 'cast',
-    evidence:
-      'THE REPORTED DEFECT (01KZSR4HQVWJKDG0NCDGZ01928, v0.21.0, a druid): Vengeance of the Wild does not appear in debuff tracking. THE OWNER`S LOG CANNOT WITNESS IT — 1,608,490 lines measured 2026-08-12 hold 0 of the restored shape, 0 of the wiki form, 0 of the self landing, 0 of the wear-off and not one line naming the spell at all — so the evidence log is the reporter`s slice, cited by id (see THE ROW THE OWNER`S LOG CANNOT WITNESS in this file`s header). That slice, 3,405 lines through the real parser: 7 `You begin casting Vengeance of the Wild VI.` casts, 6 lines of `<mob> has been consumed in the flames of the wild.`, one per cast at EXACTLY +2 s, and the 7th cast is the one it shows interrupted. 0 of the wiki form. The tail is new to the suffix table and no other DB message mentions the flames of the wild, so nothing else could be meant either.'
-  }
-]
 
 /**
  * The default evidence line. Every route here is `sole` unless a row says otherwise, and `sole`
