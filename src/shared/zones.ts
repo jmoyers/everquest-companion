@@ -169,7 +169,19 @@ export const ZONES: readonly ZoneEntry[] = [
   // Legends invented — and the player has walked it, so calling it out-of-era would be a lie.
   { short: 'newsebexp', name: 'New Sebilis Expedition' },
   { short: 'freportn', name: 'North Freeport', era: 'classic' },
-  { short: 'kaladima', name: 'North Kaladim', era: 'classic' },
+  // KALADIM'S STEMS RUN THE OTHER WAY, AND BOTH SOURCES SAY SO (JOS-415, reported 8AX84S:
+  // "When I zone into or manually select South Kaladim the North Kaladim map loads and visa
+  // versa"). The `a`/`b` suffixes read like `north`/`south` and the seed table was taken on that
+  // reading; the corpus refutes it twice over. (1) The game's OWN maps carry their zone lines as
+  // labels: `kaladima_1.txt` holds `to_Butcherblock_Mountains` + two `to_North_Kaladim`, so
+  // kaladima is the half that touches Butcherblock and neighbours North — i.e. SOUTH Kaladim;
+  // `kaladimb_1.txt` holds two `to_South_Kaladim` and no outside exit at all, i.e. NORTH.
+  // (2) The NPC rosters agree independently: brewall's `kaladima_1` labels King Kazon
+  // Stormhammer, Tumpy Irontoe, Canloe Nusback, Beno Targnarle, Guard Dinler — every one of
+  // which the mob catalog files under `South Kaladim` (51 rows); brewall's `kaladimb_1` labels
+  // Busey Nehart, Tempia Lauley, Gunlok Jure, Priestess Ghalea, the Everhot and Norkhitter
+  // families — all catalog `North Kaladim` (54 rows). Pinned by tests/zones.test.mts.
+  { short: 'kaladimb', name: 'North Kaladim', era: 'classic' },
   { short: 'qeynos2', name: 'North Qeynos', era: 'classic' },
   { short: 'oggok', name: 'Oggok', era: 'classic' },
   { short: 'paineel', name: 'Paineel', era: 'classic' },
@@ -186,7 +198,8 @@ export const ZONES: readonly ZoneEntry[] = [
     era: 'classic'
   },
   { short: 'qeytoqrg', name: 'Qeynos Hills', era: 'classic' },
-  { short: 'kaladimb', name: 'South Kaladim', era: 'classic' },
+  // The other half of the JOS-415 swap — evidence beside `North Kaladim` above.
+  { short: 'kaladima', name: 'South Kaladim', era: 'classic' },
   { short: 'qeynos', name: 'South Qeynos', era: 'classic' },
   // Guk is TWO zones and the log names them separately (see the header note under DEVIATIONS in
   // tests). Upper: the log's `The City of Guk` killed froglok ton/gaz knights + froglok sentries;

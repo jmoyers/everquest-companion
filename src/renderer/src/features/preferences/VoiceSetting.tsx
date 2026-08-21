@@ -214,6 +214,10 @@ function phaseLabel(prog: SpeechInstallProgress, percent: number | null): string
       return `Downloading ${mb(prog.received)} of ${mb(prog.total)}${percent === null ? '' : ` (${percent}%)`}`
     case 'verifying':
       return 'Verifying the download…'
+    // A rate-limited wait (JOS-420). It carries its own sentence because the length matters:
+    // "retrying in 120s" is a wait, an unexplained frozen bar is a bug report.
+    case 'waiting':
+      return `Waiting - ${prog.message ?? 'retrying shortly'}`
     case 'done':
       return 'Installed.'
     default:

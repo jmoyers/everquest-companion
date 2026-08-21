@@ -396,7 +396,13 @@ export interface ResistEstimate extends ResistFit {
   /** Observations that entered the likelihood, split by where they came from. */
   fromBaseline: number
   fromYou: number
-  /** Observations dropped because no level was known for both sides of `levelMod`. */
+  /**
+   * Observations dropped because no level was known for both sides of `levelMod`. Mostly ANOTHER
+   * PLAYER'S casts, whose level nothing in this app's inputs states — by design, and not
+   * recoverable (main/resist/fold.ts's header argues it). It is NOT where a mob the catalog knows
+   * under another spelling belongs: that was JOS-422, and the fold resolves the alias now
+   * (main/resist/world.ts `catalogLevelOf`).
+   */
   droppedNoLevel: number
   /** Observations held out because their spell's landings are not observable (resistModel.ts). */
   droppedUnobservable: number

@@ -529,3 +529,23 @@ slice(1502972, 1503072, 'w61-twin-mez-prime.log')
 // The window stops at 20:11:59, six seconds before the charm breaks and the pet turns on the
 // owner: everything after that is a different story and none of it is load-bearing here.
 slice(1505971, 1507053, 'w61-twin-mez-skirmish.log')
+
+// ---------------------------------------------------------------------------
+// W71 A RAIN CAST IS ONE CAST, NOT A CAST PLUS TWO PROCS (JOS-414, GitHub issue 39).
+// ---------------------------------------------------------------------------
+// The reporter's screenshot showed `Lava Storm` and `Lava Storm · proc` as two rows of one
+// fight. The owner casts no Lava Storm, but he casts `Poison Storm` 86 times — the same
+// mechanic and the same wave shape — and this is the tightest span carrying one clean cast.
+//
+// Thu Aug 13 14:50:09 → 14:50:30, raw 1668894..1668989. Hand-read beats:
+//   14:50:09  `You have slain a shin ghoul knight!` — the previous kill, so the fight below
+//             provably opens its own encounter.
+//   14:50:19  `You begin casting Poison Storm.`
+//   14:50:20  wave 1 — 61
+//   14:50:23  wave 2 — 61   <- the cast record already claimed 14:50:20, so before JOS-414
+//   14:50:26  wave 3 — 61   <- this pair scored `proc` and opened a `Poison Storm · proc` lane
+//   14:50:30  the knight dies; the span stops before the next pull (14:50:53) and before the
+//             one general-chat line at 14:50:43, which the shared scrub drops anyway.
+// One target throughout, so the three lines are three WAVES and nothing else — the AE breadth
+// half of the mechanic is covered by the synthetic N x M cast in the test.
+slice(1668894, 1668989, 'w71-rain-waves.log')

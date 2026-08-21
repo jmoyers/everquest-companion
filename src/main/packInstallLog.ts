@@ -13,10 +13,19 @@
 //   * SOMEBODY ELSE'S NETWORK IS A WARN, ONCE PER CODE PER SESSION. JOS-266's rule, JOS-295's
 //     application of it, unchanged. `provisionDefaultPacks` runs at EVERY startup, so an install
 //     that can never reach GitHub is a per-launch report forever otherwise.
-//   * AN ANSWER FROM GITHUB IS AN ERROR, EVERY TIME — and now it says which answer. The 404/403/429
+//   * AN ANSWER FROM GITHUB IS AN ERROR, EVERY TIME — and now it says which answer. The 404/403
 //     that the `install <str> failed` family has been hiding since 0.16 is the entire point of the
 //     ticket and is never withheld here. Bounding it is `errorRepeat`/`errorBudget`'s job
 //     downstream, exactly as it is for every other error in the app.
+//   * …WITH ONE ANSWER EXCEPTED, AND IT IS THE 429 (JOS-420). A rate limit is not a fact about the
+//     pack (404: the tag is gone), nor about this machine (ENOTFOUND: no network) — it is a fact
+//     about a shared host at a moment, and it is the ONE failure class where the app already did
+//     the right thing before giving up: honoured the server's own clock and waited it out over
+//     minutes. Filing that as an install failure is how fingerprint 60f5821abd26c594 became 27
+//     reports of a condition nobody can act on and nothing is wrong with. So it lands where
+//     somebody else's network lands: a console warn, ONCE per session — JOS-266's severity
+//     downgrade, third application. The user is not left guessing either way; they are told, in
+//     the row, that the host is busy and the pack is fine (`RATE_LIMITED_MESSAGE`).
 //   * SO IS OUR OWN REFUSAL. `pack has no openpeon.json` means an upstream pack changed shape under
 //     an immutable tag; that is ours to know about and it is not the user's network.
 //
@@ -46,6 +55,10 @@ export const PACK_INSTALL_LOG_PREFIX = '[everquest-companion] [packs]'
 
 /** Distinct unreachable codes one session will warn about — `MAX_WARNED_UPDATE_CODES`'s reason. */
 export const MAX_WARNED_PACK_CODES = 8
+
+/** The warn gate's key for a rate limit. Its own code, not an errno: no `err.code` exists on an
+ *  HTTP answer, and sharing a key with a network errno would let one silence the other. */
+export const RATE_LIMITED_WARN_CODE = 'http-429'
 
 const warnedCodes = new Set<string>()
 
@@ -105,6 +118,17 @@ export function logPackInstallFailure(
       sinks.warn(
         PACK_INSTALL_LOG_PREFIX,
         `${line}; further unreachable installs this session are not logged`
+      )
+    }
+    return kind
+  }
+  // THE DOWNGRADE (JOS-420) — see the header. The gate is the same one-per-session gate, under its
+  // own code so a rate limit and a dead DNS never mask each other.
+  if (kind === 'rate-limited') {
+    if (takePackNetworkWarning(RATE_LIMITED_WARN_CODE)) {
+      sinks.warn(
+        PACK_INSTALL_LOG_PREFIX,
+        `${line}; further rate-limited installs this session are not logged`
       )
     }
     return kind

@@ -338,3 +338,35 @@ export function holdRoster(spells: readonly SpellEntry[], opts?: RosterOptions):
   for (const k of effectRoster(spells, 'root', opts)) out.add(k)
   return out
 }
+
+/**
+ * The two effect classes that do NOTHING to a mob except take its attention away — the lull line's
+ * `pacify` and the memory-wipe line's `memblur`.
+ *
+ * They are one family for the one question `suppressesAggro` answers, and the DB proves they are:
+ * `Rest the Dead` carries both, `Atone` is a memblur the calm-line LANDING SENTENCE claims, and
+ * `Reoccurring Amnesia` is a memblur the owner ruled on beside `Pacify` (JOS-413).
+ */
+const AGGRO_SUPPRESSION: readonly SpellEffectClass[] = ['pacify', 'memblur']
+
+/**
+ * A SPELL WHOSE WHOLE EFFECT IS TO TAKE A MOB'S ATTENTION AWAY (JOS-413) — the derived roster
+ * behind the polarity overlay, and the reason that overlay is a census rather than a hunch.
+ *
+ * `spellCorrectionsPolarity.ts` carries the owner ruling and the argument. What this predicate
+ * carries is the MEMBERSHIP TEST, and it is deliberately the strictest reading of it: EVERY effect
+ * the spell states must be aggro suppression. That is what keeps the mez family out — `Mesmerize`
+ * and its ten siblings all state `Memblur(1%)` beside `Mesmerize (2/55)`, so a spell that also
+ * STOPS the mob fails the `every` and stays where the wiki (correctly) put it. The same `every`
+ * would keep out a hypothetical rescrape that gave a lull a damage component, which is the case a
+ * looser `some` would silently reclassify.
+ *
+ * IT DOES NOT READ `spellType`, on purpose: the whole point is that the wiki's polarity column is
+ * the thing being overruled, so a predicate that consulted it would be circular. It reads the
+ * EFFECT LIST, which is the wiki's own description of what the spell does and which the wiki has
+ * never got wrong for this family.
+ */
+export function suppressesAggro(entry: SpellEntry): boolean {
+  const classes = spellEffectClasses(entry)
+  return classes.length > 0 && classes.every((k) => AGGRO_SUPPRESSION.includes(k))
+}

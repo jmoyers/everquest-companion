@@ -449,6 +449,13 @@ function setReplayGate(running: boolean): void {
     suspendCursorStream()
     return
   }
+  // THE GATE UN-HIDES WHAT THE GATE HID (JOS-427). This used to be the presence pass's job as a
+  // side effect — its every-change `setOverlaysHidden(false)` was what actually re-showed these
+  // windows — but presence PARKS now (opacity on windows that never hide), so real visibility has
+  // exactly one owner again: this gate. The show comes up at the park's opacity
+  // (`setOverlaysHidden`'s show path reads it), so an auto-hide user who is alt-tabbed away when
+  // the fold ends still sees nothing — never a flash of five overlays.
+  setOverlaysHidden(false)
   refreshPresenceEffects()
 }
 

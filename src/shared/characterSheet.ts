@@ -39,24 +39,40 @@
 // why every number this file produces is labelled "from gear" at the surface, and why
 // `GearTotals` counts the items it could NOT find rather than quietly totalling 21 of 22.
 //
-// TWO THINGS IT REFUSES TO DO:
-//   * It does not apply the ` +N` item-level uplift. The wiki states an item's BASE block,
-//     and ItemWindow already prints "+N% stats" on the item itself.
-//     THE REASON HAS CHANGED, THE BEHAVIOUR HAS NOT (JOS-281, 2026-08-13). It used to be
-//     that no source here stated how the uplift distributes across individual stats, so a
-//     per-stat multiplication would have been arithmetic we invented (law 1). One does now:
-//     `shared/itemUpgrade.ts scaleStatBlock` is the exact port of the wiki's own
-//     ItemLevelSlider calculator. What still blocks this file is EVIDENCE, not arithmetic —
-//     an inventory dump names an item, and only a ` +N` suffix says which state it is in.
-//     Wiring it in is the Gear planner's job, not this sum's.
+// AND IT READS EACH ITEM AT THE ` +N` THE DUMP SPELLED (JOS-416, owner ruling 2026-08-19 —
+// verbatim: *we're not using our algorithm that scales the items based on levels. I think we
+// should fix that on our Character tab*). This reverses JOS-327's "keep character totals base
+// initially", and the reversal is GENERAL rather than about the stat that reported it: a player
+// wearing `Cloak of Flames +5` read `Haste +36%` here while the Gear tab's comparison, the wish
+// list and every hover-card delta already read `+41%` off the SAME suffix — and haste was merely
+// the visible one, because DEX, AGI, HP and SV FIRE were understated on that one cloak too.
+//
+// ONE ALGORITHM, NO PER-STAT FORKS. Nothing about upgrade arithmetic is written in this file. Each
+// worn item's block goes through `shared/itemUpgrade.ts scaleStatBlock` — the exact port of the
+// wiki's own ItemLevelSlider calculator, the same function the gear paths call — at the state
+// `upgradeStateForTier` reads off its name, and the sum then folds whatever comes back. A stat this
+// repo has never classified is left alone by the SCALER (`upgradeStatClass` defaults to
+// `unchanged`), which is one decision in one table rather than a fork per row here. So the
+// synthetic `SV VOID` line an upgraded item gains appears in these totals too — it is part of what
+// the item reads, not a decoration of the item window.
+//
+// WHAT THE TIER IS, AND WHAT IT IS NOT: the dump prints ` +5` and stops, so the state is
+// `{full: 5, fraction: 0}` and every number here is a FLOOR on what the player actually wears
+// (`upgradeStateForTier` argues it, in one place). A name with NO suffix is the base block
+// unchanged — not tier 0 arriving by another road, and byte-identically the numbers this panel
+// printed before this ticket.
+//
+// ONE THING IT STILL REFUSES TO DO:
 //   * It does not SUM percentage values. Two worn items in the real dump carry Haste (+36%
 //     and +21%) and whether worn haste stacks is a game rule no source in this repo states —
 //     so percent-valued stats are reported as the individual values the items state, joined,
-//     and never added together (law 6: say what the sources cannot say).
+//     and never added together (law 6: say what the sources cannot say). Those stated values are
+//     the SCALED ones now; what is refused is the addition, which no ruling has touched.
 
 import type { CarryAll } from './carryAll'
 import type { ItemStat, ItemStatBlock } from './itemStats'
 import { statLabel } from './itemStats'
+import { scaleStatBlock, upgradeStateForTier } from './itemUpgrade'
 import {
   parseItemName,
   PRIMARY_ITEM_SECTION,
@@ -346,10 +362,37 @@ function ordered(sums: Map<string, GearStat>): GearStat[] {
 }
 
 /**
- * Sum the worn items' stat blocks. `undefined` is an item the committed DB had nothing for —
- * counted as `unknown` and contributing to nothing, so the panel can say so out loud.
+ * One worn item, as the sum needs to read it: the item level its NAME stated, and the committed
+ * DB's block behind it.
+ *
+ * THE TIER IS PART OF THE ARGUMENT ON PURPOSE (JOS-416). This used to be a bare list of blocks, so
+ * a caller could sum an upgraded character's gear without ever mentioning the ` +N` — which is
+ * exactly the defect the ticket reports. Now a caller cannot state a worn item without stating what
+ * state it is worn at, and the scaling happens in here, once.
  */
-export function sumGear(blocks: readonly (ItemStatBlock | undefined)[]): GearTotals {
+export interface WornItemBlock {
+  /** the ` +N` the dump's name spelled; `undefined` means the name carried none, NOT tier 0 */
+  tier?: number | undefined
+  /** the committed DB's stat block; `undefined` is an item the DB had nothing for */
+  block?: ItemStatBlock | undefined
+}
+
+/**
+ * What one worn item reads at its own ` +N` — the ONE call into the upgrade algorithm on this path.
+ *
+ * A DB miss stays a miss (`undefined`), and an item with no suffix goes through the scaler at the
+ * base state, which `scaleStatBlock` answers with an equal block (a copy, never a rewrite).
+ */
+export function wornBlock(worn: WornItemBlock): ItemStatBlock | undefined {
+  return worn.block ? scaleStatBlock(worn.block, upgradeStateForTier(worn.tier)) : undefined
+}
+
+/**
+ * Sum the worn items' stat blocks, each read at its own ` +N` (see the header, and `wornBlock`).
+ * A `block` of `undefined` is an item the committed DB had nothing for — counted as `unknown` and
+ * contributing to nothing, so the panel can say so out loud.
+ */
+export function sumGear(worn: readonly WornItemBlock[]): GearTotals {
   const stats = new Map<string, GearStat>()
   const saves = new Map<string, GearStat>()
   const unsummed = new Map<string, GearUnsummed>()
@@ -357,7 +400,8 @@ export function sumGear(blocks: readonly (ItemStatBlock | undefined)[]): GearTot
   let counted = 0
   let unknown = 0
 
-  for (const block of blocks) {
+  for (const item of worn) {
+    const block = wornBlock(item)
     if (!block) {
       unknown += 1
       continue

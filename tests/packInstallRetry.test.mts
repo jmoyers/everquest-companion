@@ -84,8 +84,16 @@ test('AN ANSWER HAS A NUMBER, and both spellings of it are readable', () => {
   for (const status of [403, 404, 408, 429, 500, 502, 503]) {
     assert.equal(packInstallHttpStatus(statusError(status)), status, `property: ${String(status)}`)
     assert.equal(packInstallHttpStatus(stringifiedStatusError(status)), status, `text: ${String(status)}`)
-    assert.equal(classifyPackInstallFailure(statusError(status)), 'http')
+    // 429 is an answer with a number like any other — and its own KIND (JOS-420), because it is
+    // the only status that is a statement about the clock rather than about the pack.
+    assert.equal(
+      classifyPackInstallFailure(statusError(status)),
+      status === 429 ? 'rate-limited' : 'http',
+      String(status)
+    )
   }
+  // …and it reads the same when the properties were lost in a log line.
+  assert.equal(classifyPackInstallFailure(stringifiedStatusError(429)), 'rate-limited')
   // builder-util-runtime's spelling reads too, so one function covers both downloaders.
   assert.equal(packInstallHttpStatus(new Error('HttpError: HTTP_ERROR_429 rate limited')), 429)
   // A redirect is not a failure status, and a number that is not a status is not one either.
@@ -167,7 +175,7 @@ test('THE DEFAULT IS NO, and the exceptions are the ones a retry could fix', () 
 
 test('the retry budget is bounded and backs off', () => {
   assert.equal(MAX_INSTALL_ATTEMPTS, 3)
-  const delays = [1, 2, 3].map(packInstallRetryDelayMs)
+  const delays = [1, 2, 3].map((n) => packInstallRetryDelayMs(n))
   assert.ok(delays[0] < delays[1] && delays[1] < delays[2], 'exponential')
   assert.ok(delays[0] > 0)
   // A person is watching the registry browser's install: the whole retry budget has to fit inside
@@ -277,9 +285,11 @@ test('THE WIRING: ONE retry loop, and BOTH callers take it', () => {
   // The asymmetry this ticket deletes: startup provisioning retried and the registry browser did
   // not, and they logged differently about the same failure.
   const runner = read('src/main/packInstallRun.ts')
-  assert.match(runner, /isTransientPackInstallFailure\(err\)/)
+  // The loop itself is the pure one this file drives (JOS-420) — the runner is the I/O around it.
+  assert.match(runner, /runPackInstallAttempts\(\{/)
+  assert.match(runner, /install: \(\) => installPack\(pack, onProgress/)
   assert.match(runner, /logPackInstallFailure\(/)
-  assert.match(runner, /final: !more/)
+  assert.match(runner, /final: info\.final/)
 
   const ipc = read('src/main/ipc/sounds.ts')
   assert.match(ipc, /await installPackWithRetry\(pack, emit\)/)
@@ -294,6 +304,11 @@ test('THE WIRING: ONE retry loop, and BOTH callers take it', () => {
 })
 
 test('THE WIRING: the status rides on the error as a PROPERTY, not just in the words', () => {
-  const src = read('src/main/packRegistry.ts')
-  assert.match(src, /Object\.assign\(new Error\(`GET \$\{url\} → \$\{status\}`\), \{ statusCode: status \}\)/)
+  // The construction moved into `shared/packInstall.ts` (JOS-420) — beside the readers, and shared
+  // so a second downloader cannot spell it differently — but the fact is the same one: the number
+  // is a PROPERTY, and the sentence is the fallback for a copy that lost it.
+  assert.match(read('src/main/packRegistry.ts'), /reject\(packInstallHttpError\(url, status/)
+  const shared = read('src/shared/packInstall.ts')
+  assert.match(shared, /statusCode: status,/)
+  assert.match(shared, /new Error\(`GET \$\{url\} → \$\{String\(status\)\}`\)/)
 })

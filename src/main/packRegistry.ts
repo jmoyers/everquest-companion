@@ -16,13 +16,7 @@
 
 import { get as httpsGet } from 'node:https'
 import { gunzipSync } from 'node:zlib'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { app } from 'electron'
 import { logError } from './errorLog'
@@ -34,6 +28,7 @@ import {
   type CespManifest
 } from './sounds'
 import { USER_SOUNDS_PACK_ID } from '../shared/userSounds'
+import { packInstallHttpError } from '../shared/packInstall'
 import { isSafePackId, isSafeSourceRepo, isSafeSourceRef, isSafeSourcePath } from './security'
 import type {
   PackInstallProgress,
@@ -174,12 +169,12 @@ function httpGetBuffer(
       }
       if (status < 200 || status >= 300) {
         res.resume()
-        // `statusCode` RIDES ALONG, and it is not decoration (JOS-307). `shared/packInstall.ts`
-        // reads it to decide whether another attempt could change the answer — 408/429/5xx yes,
-        // 403/404 no — and to name the class in what the fleet's error store files. Parsing the
-        // number back out of this sentence is the FALLBACK for a copy that lost its properties in
-        // a log line; a property is what the code in this process should be reading.
-        reject(Object.assign(new Error(`GET ${url} → ${status}`), { statusCode: status }))
+        // THE STATUS AND THE SERVER'S CLOCK BOTH RIDE ALONG, and neither is decoration (JOS-307,
+        // JOS-420). `shared/packInstall.ts` decides from them whether another attempt could change
+        // the answer (408/5xx yes, 403/404 no) and, for a 429, WHEN — and this response is the only
+        // place `Retry-After` exists at all. `packInstallHttpError` builds the whole thing, beside
+        // the code that reads it, so the second downloader cannot spell it differently.
+        reject(packInstallHttpError(url, status, res.headers['retry-after']))
         return
       }
       const totalHeader = res.headers['content-length']

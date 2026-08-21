@@ -43,6 +43,33 @@ const SRC_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
  */
 const NOT_CODE = new Set(['shared/releaseNotes.ts'])
 
+/**
+ * THE SECOND EXEMPTION, AND IT IS THREE SENTENCES RATHER THAN A FILE (JOS-421).
+ *
+ * The guard above is about what this app RUNS, and nothing here changes that answer: the app still
+ * starts no process, which the second test in this file is what actually proves. What changed is
+ * that a process somebody ELSE starts can now be described. electron-updater verifies the
+ * downloaded installer's Authenticode signature by shelling out to PowerShell from inside its own
+ * module, and on machines whose security software guts that call it comes back empty and the
+ * update dies — ~330 error reports across every version since 0.28.0, the fleet's largest family
+ * (src/shared/update.ts's JOS-421 block reads the library source).
+ *
+ * The user is the only person who can fix that, so the app has to be able to say what was blocked.
+ * It is the releaseNotes argument exactly: a message that cannot name the thing it is about
+ * explains nothing to the player whose antivirus is shouting at them.
+ *
+ * WHY EXACT SENTENCES AND NOT `NOT_CODE`. `shared/update.ts` IS code, and the pressure this file
+ * exists to resist is a new `execFile` — so the file must stay under the guard. An allowlist of
+ * literal texts keeps every unwritten string in it (and everywhere else) failing, and the
+ * reached-assertion below means a reworded sentence comes back here to be re-argued rather than
+ * silently inheriting the exemption.
+ */
+const SAYS_POWERSHELL = new Set([
+  "Security software on this PC blocked the update's PowerShell signature check, so the new version could not be verified. Nothing is wrong with your install - the next check will try again.",
+  "Security software on this PC keeps blocking the update's PowerShell signature check. Automatic updates are paused - allow PowerShell, or install the new version by hand.",
+  "security software or policy is blocking this PC's PowerShell signature check - the next check retries, and the user is told"
+])
+
 /** A path relative to src/, spelled the same way on every platform. */
 function key(file: string): string {
   return relative(SRC_ROOT, file).replace(/\\/g, '/')
@@ -85,21 +112,33 @@ test('NO SHIPPED CODE CAN NAME POWERSHELL — the watcher launches nothing at al
   assert.ok(files.length > 100, 'the walk found the tree, or this test proves nothing')
   const offenders: string[] = []
   let exempted = 0
+  const saidPowerShell = new Set<string>()
   for (const file of files) {
     if (NOT_CODE.has(key(file))) {
       exempted++
       continue
     }
     for (const text of literalText(file)) {
-      if (/powershell|pwsh/i.test(text)) {
-        offenders.push(`${key(file)}: ${JSON.stringify(text.slice(0, 80))}`)
+      if (!/powershell|pwsh/i.test(text)) continue
+      // The narrow exemption: the three sentences that TELL THE USER their security software
+      // blocked electron-updater's own signature check (see `SAYS_POWERSHELL`). Every other
+      // literal, in this file or any other, is still an offender.
+      if (SAYS_POWERSHELL.has(text)) {
+        saidPowerShell.add(text)
+        continue
       }
+      offenders.push(`${key(file)}: ${JSON.stringify(text.slice(0, 80))}`)
     }
   }
   assert.deepEqual(offenders, [], 'a string literal names PowerShell')
-  // The exemption must still be REACHED, or a rename would silently turn it into a second guard
-  // over nothing while looking exactly as green as it does today.
+  // The exemptions must still be REACHED, or a rename would silently turn them into guards over
+  // nothing while looking exactly as green as they do today.
   assert.equal(exempted, NOT_CODE.size, 'every exempt file is still there to be exempted')
+  assert.deepEqual(
+    [...saidPowerShell].sort(),
+    [...SAYS_POWERSHELL].sort(),
+    'every exempt sentence is still shipped verbatim — reword one and re-argue it here'
+  )
 })
 
 /**

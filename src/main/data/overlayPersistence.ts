@@ -28,8 +28,9 @@
 // counts are unattributable, which is the defect, not a loss the migration caused.
 
 import { app } from 'electron'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileDurable } from '../telemetry/durableWrite'
 import type { MessageOverlay } from '../../shared/types'
 import {
   BASELINE_SOURCE,
@@ -70,7 +71,18 @@ export function loadUserSources(): OverlaySourceCounts[] {
   }
 }
 
-/** Persist the user's register to userData (best-effort; a write error is swallowed). */
+/**
+ * Persist the user's register to userData (best-effort; a write error is swallowed).
+ *
+ * ATOMIC SINCE JOS-419, and it was the last in-place truncating write of a user-knowledge store in
+ * the app. `writeFileSync` onto the live path truncates it FIRST: a process killed mid-write — an
+ * update's force-quit, a full disk, the power going — left a half-written register, and
+ * `loadUserSources` reads a file that will not parse as an EMPTY one. Every message this install
+ * had ever learned, silently gone, with nothing on disk to say so. `writeFileDurable` is the same
+ * temp+fsync+rename the telemetry ring (JOS-265), the settings store (JOS-272) and the resist
+ * ledger (JOS-419) write through, so the file on disk is either the last complete register or the
+ * new one and never a half of either.
+ */
 export function saveUserOverlay(register: OverlayRegister): void {
   const file: OverlayRegisterFile = {
     version: OVERLAY_REGISTER_VERSION,
@@ -78,7 +90,7 @@ export function saveUserOverlay(register: OverlayRegister): void {
     sources: persistableSources(register)
   }
   try {
-    writeFileSync(userOverlayPath(), JSON.stringify(file), 'utf8')
+    writeFileDurable(app.getPath('userData'), userOverlayPath(), JSON.stringify(file))
   } catch {
     // Non-fatal — the overlay is a nicety, not required state.
   }

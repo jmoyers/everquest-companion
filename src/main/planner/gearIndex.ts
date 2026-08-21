@@ -30,6 +30,7 @@
 // quietly dropping a column out of the gear table (law 1).
 
 import { itemKey, type ItemDbEntry, type ItemDbFile } from '../itemsDb'
+import { renamedItems } from '../../shared/itemRenames'
 import {
   ITEMS_RESEARCH,
   knowledgeWithResearch,
@@ -397,7 +398,9 @@ export function buildGearIndex(
   spells: SpellFactsIndex = COMMITTED_SPELL_FACTS
 ): GearIndexPayload {
   const acc = newAcc(buildEraDerivations(file))
-  for (const entry of Object.values(file.items ?? {})) addPage(acc, entry, research, spells)
+  // Through the rename overlay (JOS-415) — same reasoning as `buildPlannerIndex`: a gear row is a
+  // DISPLAYED name, and `addPage`'s page dedupe already absorbs the alias key.
+  for (const entry of Object.values(renamedItems(file.items ?? {}))) addPage(acc, entry, research, spells)
   // The census is taken from the KEPT rows, after dedupe (see `countRow`).
   for (const row of acc.rows.values()) countRow(acc, row)
   return {

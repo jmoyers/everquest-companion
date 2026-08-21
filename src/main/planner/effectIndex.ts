@@ -68,6 +68,7 @@
 // and "you cannot pull an effect off this" is not "this does not exist". See `excludedDonor`.
 
 import { itemKey, type ItemDbEntry, type ItemDbFile } from '../itemsDb'
+import { renamedItems } from '../../shared/itemRenames'
 // The committed spell DB, for V6's one-liners. Imported here rather than injected from the
 // handler for the same reason the curated research layer is (below): it is committed data with
 // one right answer, and a builder that only gets its facts when a caller remembers to pass them
@@ -426,7 +427,10 @@ export function buildPlannerIndex(
   spells: SpellFactsIndex = SPELL_FACTS
 ): PlannerIndex {
   const acc = newAcc()
-  for (const entry of Object.values(file.items ?? {})) addPage(acc, entry, research, spells)
+  // Through the rename overlay (JOS-415), so a donor's row carries the name the wiki uses now.
+  // The alias key it adds costs nothing here: `addPage` already dedupes by `entry.page`, which is
+  // exactly the mechanism items.json's own two-keys-per-page shape relies on.
+  for (const entry of Object.values(renamedItems(file.items ?? {}))) addPage(acc, entry, research, spells)
   const donors = [...acc.donors.values()]
   return {
     donors,

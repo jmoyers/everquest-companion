@@ -300,14 +300,16 @@ export type SpeechInstallResult =
  */
 export interface SpeechInstallProgress {
   engine: SpeechEngine
-  phase: 'checking' | 'downloading' | 'verifying' | 'done' | 'failed'
+  /** `waiting` is a rate-limited backoff (JOS-420) — minutes long, and a bar that is waiting looks
+   *  exactly like a bar that is stuck unless it says which it is. */
+  phase: 'checking' | 'downloading' | 'verifying' | 'waiting' | 'done' | 'failed'
   /** File currently being worked on, when one is ('kokoro-v1.0.int8.onnx'). */
   asset?: string
   /** Bytes secured across the whole install so far. */
   received: number
   /** Total bytes the install will move (0 while unknown). */
   total: number
-  /** Human-readable detail for a 'failed' phase. Never shown for the others. */
+  /** Human-readable detail for a 'failed' or 'waiting' phase. Never shown for the others. */
   message?: string
 }
 
@@ -673,16 +675,23 @@ export interface RegistryListResult {
 /** Progress push over `packs:progress` while a pack installs. */
 export interface PackInstallProgress {
   name: string
-  phase: 'downloading' | 'extracting' | 'converting' | 'done' | 'error'
+  /** `waiting` is a retry's backoff (JOS-420) — a stopped bar and a bar waiting out a rate limit
+   *  look identical, so the wait says so and names its own length in `message`. */
+  phase: 'downloading' | 'extracting' | 'converting' | 'waiting' | 'done' | 'error'
   /** 0..100 during downloading, when a content-length is known. */
   percent?: number
   message?: string
+  /** This is a "later", not a "broken" — the row reads it as ordinary text rather than an error
+   *  (JOS-420: a rate limit is the host being busy, and the pack is fine). */
+  retryable?: boolean
 }
 
 /** Reply of packs:install / packs:uninstall. */
 export interface PackMutationResult {
   ok: boolean
   error?: string
+  /** The install can simply be clicked again — set when a rate limit ended the run (JOS-420). */
+  retryable?: boolean
 }
 
 // ----- Registry pack PREVIEW (Task #31) -----

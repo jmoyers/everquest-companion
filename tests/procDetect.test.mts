@@ -153,10 +153,14 @@ test('a new cast line drops any pending suspension — casting is serial', () =>
 test('THE DoT GATE — only `spell` damage is eligible for cast-less detection', () => {
   // A DoT tick is cast-DETACHED by construction: it arrives minutes after its cast and would
   // misclassify as a proc every single time. This is the gate that keeps the inference honest.
-  assert.equal(procEligibleDamage('spell'), true)
-  assert.equal(procEligibleDamage('dot'), false)
-  assert.equal(procEligibleDamage('melee'), false)
-  assert.equal(procEligibleDamage('ds'), false)
+  assert.equal(procEligibleDamage('spell', 'Anarchy'), true)
+  assert.equal(procEligibleDamage('dot', 'Venom of the Snake'), false)
+  assert.equal(procEligibleDamage('melee', 'Kick'), false)
+  assert.equal(procEligibleDamage('ds', 'thorns'), false)
+  // …and its sibling on the same line of reasoning (JOS-414): a RAIN spell's later waves are
+  // cast-detached too, so the spell is refused whatever the type says. The rain roster and the
+  // measurement behind it live in tests/rainSpellWaves.test.mts.
+  assert.equal(procEligibleDamage('spell', 'Lava Storm'), false)
 })
 
 test('pruning drops only casts that can no longer explain anything', () => {

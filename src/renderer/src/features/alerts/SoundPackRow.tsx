@@ -45,10 +45,16 @@ function phaseLabel(p: PackInstallProgress): string {
       return 'Extracting…'
     case 'converting':
       return 'Converting…'
+    // A backoff between attempts (JOS-420). The message carries the length and the reason; without
+    // one it is still worth saying that the row is waiting rather than stuck.
+    case 'waiting':
+      return p.message ?? 'Waiting to retry…'
     case 'done':
       return 'Installed'
     case 'error':
-      return `Error: ${p.message ?? 'install failed'}`
+      // A RETRYABLE END IS NOT AN "Error:" (JOS-420). "Error: Rate limited by the download host"
+      // reads as a broken pack; the sentence itself already says what happened and what to do.
+      return p.retryable ? (p.message ?? 'Not installed - try again shortly') : `Error: ${p.message ?? 'install failed'}`
     default:
       return ''
   }
@@ -64,9 +70,11 @@ function PackProgress({
 }): JSX.Element | null {
   if (!prog) return null
   const installing = isBusy && prog.phase !== 'done' && prog.phase !== 'error'
+  // Red is reserved for something that went WRONG. A rate limit did not (JOS-420).
+  const isError = prog.phase === 'error' && prog.retryable !== true
   return (
     <Box sx={{ mt: 0.75 }}>
-      <Typography variant="caption" color={prog.phase === 'error' ? 'error' : 'text.secondary'}>
+      <Typography variant="caption" color={isError ? 'error' : 'text.secondary'}>
         {phaseLabel(prog)}
       </Typography>
       {installing && (

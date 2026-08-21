@@ -28,17 +28,21 @@ import { filterByQuery } from './questSearch'
 // has-every-item-now, JOS-145 for has-ever-turned-in). Two lines of code, a page of reasoning, and
 // a node test — so they live in their own pure module.
 import { everTurnedIn, firstTimeReady, hasEveryItem, readyQuests } from './questCompletion'
+// The Targets tab's whole model (issue #30) — pure, node-tested, and fed the VISIBLE set below so
+// ignoring a quest takes its wants out of the kill list by the same one rule every tab obeys.
+import { skyTargets, type SkyTargetsModel } from './skyTargets'
 
 export type { SortKey }
 
 /**
- * Quests · Ready · Cleanup · Classes · Ignored. `ready` is JOS-147's turn-in list (rule in
- * questCompletion); `cleanup` is JOS-389's spare-items list (rule in cleanup.ts); `classes` is
- * JOS-148's per-class unlock progress (rule in classUnlocks.ts). None of them reads any of the
- * filter state below — they are derivations over the same quests, which is why the tab key is the
- * only thing each of them adds to this hook.
+ * Quests · Ready · Targets · Cleanup · Classes · Ignored. `ready` is JOS-147's turn-in list (rule
+ * in questCompletion); `targets` is issue #30's kill list (rule in skyTargets.ts); `cleanup` is
+ * JOS-389's spare-items list (rule in cleanup.ts); `classes` is JOS-148's per-class unlock
+ * progress (rule in classUnlocks.ts). None of them reads any of the filter state below — they are
+ * derivations over the same quests, which is why the tab key is the only thing each of them adds
+ * to this hook.
  */
-export type TabKey = 'quests' | 'ready' | 'cleanup' | 'classes' | 'ignored'
+export type TabKey = 'quests' | 'ready' | 'targets' | 'cleanup' | 'classes' | 'ignored'
 
 // How many Accordions to render before the "show more" cap kicks in. Exported because the LIST'S
 // FOOTER has to know it too (PoskyView.ListFooter): once "show all" is on there is no cap left to
@@ -53,6 +57,9 @@ const ISLANDS_KEY = 'eq.posky.islands'
 const BOSSES_KEY = 'eq.posky.bosses'
 /** JOS-155's Ready-tab toggle. Absent means ON — see the `useStoredFlag` default below. */
 const READY_FIRST_TIME_KEY = 'eq.posky.readyFirstTimeOnly'
+/** JOS-417's Targets-tab toggle — its OWN key, on JOS-155's rule that a user who wants one
+ *  reading of one tab is never handed the other by an upgrade. Absent means ON. */
+const TARGETS_FIRST_TIME_KEY = 'eq.posky.targetsFirstTimeOnly'
 /** JOS-191's "show all quests at once". Absent means OFF — a fresh install still pages. */
 const SHOW_ALL_KEY = 'eq.posky.showAll'
 
@@ -258,6 +265,41 @@ function useReadySet(allReady: QuestProgress[]): {
 }
 
 
+/**
+ * The Targets tab's model (issue #30), derived from the VISIBLE quests and from nothing else —
+ * not the class filter, not the facets, not the hide-boxes, on the Ready tab's exact argument:
+ * the controls are not drawn on this tab, so no invisible state can be narrowing it. Its own
+ * hook, like `useReadySet` above, so `useQuestList`'s body stays under the measured per-function
+ * ceiling. The tab's COUNT reads `targets.mobs.length` — the same array the pane draws.
+ *
+ * ITS ONE CONTROL IS `useReadySet`'S, DOWN TO THE DEFAULT (JOS-417): a stored first-time-only flag
+ * under its own key, ON when absent. Same reasoning as JOS-155, and the same reason the count of
+ * what it holds back comes back with it — a toggle that can empty a tab has to be able to SAY it
+ * did. The held-back number is quests, not mobs: mobs are what the pane draws, but "3 you have run
+ * before still want items" is the sentence a player can act on, and counting the mobs behind the
+ * box would need a second full fold on every render to produce a number nobody asked for.
+ */
+function useTargetsModel(visible: QuestProgress[]): {
+  targets: SkyTargetsModel
+  targetsFirstTimeOnly: boolean
+  setTargetsFirstTimeOnly: (v: boolean) => void
+  targetsRefarmCount: number
+} {
+  const [targetsFirstTimeOnly, setTargetsFirstTimeOnly] = useStoredFlag(TARGETS_FIRST_TIME_KEY, true)
+  const targets = useMemo(
+    () => skyTargets(visible, targetsFirstTimeOnly),
+    [visible, targetsFirstTimeOnly]
+  )
+  // A quest the box is holding back AND that still wants something — `missing` is
+  // computeQuestProgress's own per-quest list, so a refarm sitting at full holdings is not counted
+  // as work the user is being denied a view of.
+  const targetsRefarmCount = useMemo(
+    () => (targetsFirstTimeOnly ? visible.filter((q) => everTurnedIn(q) && q.missing.length > 0).length : 0),
+    [visible, targetsFirstTimeOnly]
+  )
+  return { targets, targetsFirstTimeOnly, setTargetsFirstTimeOnly, targetsRefarmCount }
+}
+
 interface QuestSelection {
   quests: QuestProgress[]
   selectedClasses: string[]
@@ -331,6 +373,20 @@ export interface QuestListState {
    * of the tab's count, because the count IS this array's length.
    */
   ready: QuestProgress[]
+  /**
+   * The Targets tab (issue #30): every mob still worth killing for the quests that still want
+   * something, plus the two honest remainders (the random-drop Wind Runes and the items nothing
+   * committed can source). Derived from `visible` and from the toggle below — the rule and its
+   * arguments live in skyTargets.ts.
+   */
+  targets: SkyTargetsModel
+  /** the Targets tab's own toggle (JOS-417), the Ready tab's shape: ON leaves the quests you have
+   *  already handed in out of the fold. Default ON, stored under its own key. */
+  targetsFirstTimeOnly: boolean
+  setTargetsFirstTimeOnly: (v: boolean) => void
+  /** how many quests that toggle is holding back that still want items — the number the pane needs
+   *  to be able to say there is more behind the box. Zero when the box is unticked. */
+  targetsRefarmCount: number
   /** `visible` after the filters, the sort and the favorite pinning */
   filtered: QuestProgress[]
   selectedClasses: string[]
@@ -485,6 +541,10 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
   // holding back. The tab's COUNT reads the same array the pane draws, so the number on the tab
   // and the rows under it can never disagree.
   const readySet = useReadySet(allReady)
+  // The Targets tab, whole (issue #30). Same shape as the Ready line above, down to the spread:
+  // the derivation is a pure module, the hook owns the tab's one toggle, and the tab count reads
+  // the array the pane draws.
+  const targetSet = useTargetsModel(visible)
 
   // What the two facet pickers can offer. Derived from the VISIBLE quests, so an ignored quest
   // takes its island and its boss out of the pickers along with itself.
@@ -544,6 +604,8 @@ export function useQuestList(quests: QuestProgress[]): QuestListState {
     ignored,
     // `ready`, the toggle and its setter, and the held-back count, all from the one hook above.
     ...readySet,
+    // `targets` and its own toggle, setter and held-back count — the same deal, one tab over.
+    ...targetSet,
     filtered,
     selectedClasses,
     setSelectedClasses,

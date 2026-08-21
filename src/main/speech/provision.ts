@@ -42,6 +42,12 @@ import { existsSync, statSync } from 'node:fs'
 import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { KOKORO_ASSETS, kokoroVoicesFor } from './pinned'
+import {
+  isRateLimitedPackInstall,
+  parseRetryAfterMs,
+  planPackInstallRetry,
+  type PackInstallRetryPlan
+} from '../../shared/packInstall'
 import { scanVoiceIds } from './voicePack'
 import type { FileHandle } from 'node:fs/promises'
 import type { PinnedAsset } from './pinned'
@@ -51,10 +57,16 @@ import type { SpeechInstallResult, SpeechVoice } from '../../shared/types'
 /** Same polite identity every fetcher in this repo sends (AGENTS.md scraper etiquette). */
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
 
-/** Attempts per asset before the install gives up until the user asks again. */
+/** Attempts per asset before the install gives up until the user asks again. A rate limit gets
+ *  more (`planPackInstallRetry` widens it — see `downloadWithRetries`). */
 const MAX_ATTEMPTS = 3
-/** Base backoff between attempts, doubled each retry. */
+/** Base backoff between attempts, doubled each retry. Not used for a 429. */
 const RETRY_BASE_MS = 2_000
+/** What a rate-limited install tells the user. The panel already prefixes "Download failed - ", so
+ *  this continues that sentence, and it says the two things that are true: the download is fine,
+ *  and what was fetched is still on disk for the next try. */
+const RATE_LIMITED_TEXT =
+  'the download host is rate limiting us. Nothing is wrong with the download, and what was fetched is kept - try again in a few minutes'
 /** Spacing between the two assets — one connection, and a beat between them. */
 const BETWEEN_ASSETS_MS = 500
 /** Progress is emitted at most this often while bytes stream (an IPC message per chunk is
@@ -187,6 +199,20 @@ async function seedFromPartial(path: string, hash: ReturnType<typeof createHash>
 }
 
 /**
+ * What a refused response becomes. THE STATUS AND THE SERVER'S CLOCK RIDE ALONG (JOS-420): the
+ * sentence is unchanged — it is what the Voice panel renders — but `downloadWithRetries` cannot
+ * tell a 429 from a 500 by reading English, and `Retry-After` exists on this response and nowhere
+ * after it.
+ */
+function refusedResponse(run: RunState, asset: PinnedAsset, res: Response): Error {
+  const now = (run.opts.now ?? Date.now)()
+  return Object.assign(new Error(`HTTP ${String(res.status)} for ${asset.name}`), {
+    statusCode: res.status,
+    retryAfterMs: parseRetryAfterMs(res.headers.get('retry-after'), now)
+  })
+}
+
+/**
  * Stream one asset to `<name>.part`, hashing as it goes. Returns the number of bytes now in
  * the part file. Throws on any transport failure — the caller owns the retry policy.
  *
@@ -204,7 +230,7 @@ async function streamAsset(
   const headers: Record<string, string> = { 'User-Agent': UA, Accept: 'application/octet-stream' }
   if (from > 0) headers.Range = `bytes=${from}-`
   const res = await doFetch(asset.url, { headers })
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${asset.name}`)
+  if (!res.ok) throw refusedResponse(run, asset, res)
   const restarted = from > 0 && res.status !== 206
   const path = join(run.dir, `${asset.name}.part`)
   const handle = await open(path, restarted || from === 0 ? 'w' : 'a')
@@ -362,23 +388,86 @@ export function provisionKokoro(opts: ProvisionOptions): Promise<SpeechInstallRe
   return provisionAssets({ ...opts, dir: kokoroDir(opts.userData) })
 }
 
-/** Three attempts, exponential backoff. Returns null on success, else the last message. */
+/**
+ * Three attempts, exponential backoff — EXCEPT against a rate limit. Returns null on success, else
+ * the message the panel shows.
+ *
+ * WHY THE 429 IS DIFFERENT (JOS-420, the sound-pack installer's ticket, applied to the second
+ * downloader). Every other failure here is about these bytes: a 404 on a pinned URL, a digest that
+ * does not match, a short read. Three fast attempts is the right answer to all of them, and none of
+ * it changes. A 429 is about the CLOCK, and three attempts inside six seconds cannot outlast a
+ * window measured in minutes — so it borrows the policy that was written for exactly this:
+ * `Retry-After` when the host sent one, an equal-jitter backoff over minutes when it did not, six
+ * attempts inside a fifteen-minute horizon, and then an honest sentence.
+ *
+ * The wait is ANNOUNCED, because this download is 120 MB behind a bar somebody is watching and a
+ * bar that is waiting looks exactly like a bar that is stuck. Nothing is lost meanwhile: the
+ * partial `.part` is still there and the next attempt resumes onto it.
+ */
 async function downloadWithRetries(
   run: RunState,
   asset: PinnedAsset,
   sleep: (ms: number) => Promise<void>
 ): Promise<string | null> {
-  let last = 'unknown error'
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      await attemptAsset(run, asset)
-      return null
-    } catch (err) {
-      last = err instanceof Error ? err.message : String(err)
-      if (attempt < MAX_ATTEMPTS) await sleep(RETRY_BASE_MS * 2 ** (attempt - 1))
+  let attempts = MAX_ATTEMPTS
+  let waitedMs = 0
+  for (let attempt = 1; ; attempt++) {
+    const failure = await attemptOnce(run, asset)
+    if (failure === null) return null
+    const plan = nextAssetAttempt(failure.err, attempt, attempts, waitedMs)
+    attempts = plan.attempts
+    if (!plan.retry) return assetFailureMessage(failure.err)
+    if (plan.rateLimited) {
+      emit(run, {
+        engine: 'kokoro',
+        phase: 'waiting',
+        asset: asset.name,
+        received: run.base,
+        total: run.total,
+        message: `the download host is busy; retrying in ${String(Math.round(plan.delayMs / 1_000))}s`
+      })
     }
+    waitedMs += plan.delayMs
+    await sleep(plan.delayMs)
   }
-  return last
+}
+
+/** One attempt: null when the asset landed, the failure boxed when it did not. */
+async function attemptOnce(
+  run: RunState,
+  asset: PinnedAsset
+): Promise<{ readonly err: unknown } | null> {
+  try {
+    await attemptAsset(run, asset)
+    return null
+  } catch (err) {
+    return { err }
+  }
+}
+
+/** The general schedule — three attempts, 2s then 4s, unchanged — EXCEPT against a rate limit,
+ *  which hands the decision to the shared policy (its own clock, budget and horizon). */
+function nextAssetAttempt(
+  err: unknown,
+  attempt: number,
+  attempts: number,
+  waitedMs: number
+): PackInstallRetryPlan {
+  if (isRateLimitedPackInstall(err)) return planPackInstallRetry({ err, attempt, waitedMs, attempts })
+  const retry = attempt < attempts
+  return {
+    retry,
+    delayMs: retry ? RETRY_BASE_MS * 2 ** (attempt - 1) : 0,
+    attempts,
+    rateLimited: false
+  }
+}
+
+/** The sentence for one asset's final failure. A rate limit says the true thing — nothing is wrong
+ *  with the download and the bytes already fetched are kept — instead of `HTTP 429 for <file>`. */
+function assetFailureMessage(err: unknown): string {
+  if (isRateLimitedPackInstall(err)) return RATE_LIMITED_TEXT
+  return err instanceof Error ? err.message : String(err)
 }
 
 function failed(run: RunState, message: string): SpeechInstallResult {

@@ -316,6 +316,10 @@ test('a failed asset is retried exactly MAX_ATTEMPTS times, then stops (no storm
   assert.deepEqual(waits, [2000, 4000]) // exponential, and none after the last attempt
 })
 
+// A 429 against this same downloader is JOS-420's, and it lives with the rest of that policy in
+// tests/packInstallRateLimit.test.mts — including the assertion that a non-429 failure still
+// behaves exactly as the MAX_ATTEMPTS test above proves it does.
+
 test('a wrong-digest file already on disk is re-fetched, not trusted', async () => {
   const root = tempRoot()
   mkdirSync(kokoroDir(root), { recursive: true })

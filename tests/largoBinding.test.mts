@@ -210,6 +210,8 @@ const SENTENCE_LITERALS_ALLOWED = new Set([
   'src/main/data/spellCorrections.ts',
   'src/main/data/spellCorrectionsList.ts',
   'src/main/data/spellCorrectionsSubjects.ts',
+  // …and the table it owns, split out under the same rule the list file above follows (JOS-412).
+  'src/main/data/spellCorrectionsSubjectsList.ts',
   'src/main/data/spellCorrectionsHealing.ts',
   'src/main/data/spellRemovalsList.ts',
   // family rosters, keyed on sentences the catalog owns as written

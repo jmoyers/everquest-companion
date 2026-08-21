@@ -12,6 +12,22 @@
 // player's own Clarity — while the thing they are actually watching is how long that giant stays
 // calm, which is a mob-state timer like every other one on the debuffs surface.
 //
+// ─────────────────────────────────────────────────────────────────────────────
+// AND SINCE JOS-413 THE SPELL IS A DEBUFF, WHICH CHANGES THE ANSWER TO ONE ASSERTION HERE AND
+// NOTHING ELSE IN THE FILE.
+//
+// Report 6BM6Y5 said the same inconsistency from the other side: Pacify reaches the debuffs OVERLAY
+// and the Buffs SECTION still lists it under Buffs, because JOS-213 deliberately left `kind` alone
+// and routed on a second, orthogonal fact. The owner ruled (2026-08-19) that a lull IS a debuff, so
+// `spellCorrectionsPolarity.ts` writes `spellType: Detrimental` into the registry and `cls`/`kind`
+// are 'debuff' now — the row reaches this window on its KIND, the way every other mob timer does.
+//
+// THE ROUTING FACT AND ITS AUDIT STAY, and this file is why. `calmsTarget` is still derived, still
+// true for the family, and still the thing that keeps a friendly buff OFF the debuffs window — the
+// last two tests are that guard and they are the reason the first cut of JOS-213 was caught. It is
+// also the answer that would still be right for a calm-line spell the polarity ruling has no row
+// for. What changed is that it is no longer carrying the routing alone.
+//
 // WHAT THE FIX READS, AND THE CUT IT REPLACED. The SPELL, via a roster spells.json's landing
 // messages DERIVE (src/main/data/spellDb.ts `spellCalmsTarget`) — the same oracle `ccSpell`,
 // `charmSpell` and the slow group are built from. The first cut of this ticket routed on the
@@ -47,11 +63,15 @@ test('a Pacify on a mob is a DEBUFFS-window row, not a buff on your own bar', ()
   assert.equal(pacify.length, 1, `expected one Pacify row, got ${pacify.map((r) => r.target ?? '?').join(', ')}`)
   const row = pacify[0]
 
-  // The spell is still what spells.json says it is — the fix does not relabel the spell's nature,
-  // it adds a second, orthogonal fact beside it.
-  assert.equal(row.kind, 'buff', 'Pacify is a Beneficial spell and the row must keep saying so')
-  assert.equal(buffs.active.find((a) => a.spell === 'Pacify')?.cls, 'buff')
-  assert.equal(row.calmsTarget, true, 'the row must state the evidence its routing rests on')
+  // JOS-413: the spell is what the OWNER says it is. `spells.json` says `Beneficial` and the
+  // polarity overlay overrules it, so the row and the instance both call a Pacify a debuff — which
+  // is the half of report 6BM6Y5 the JOS-213 split could not answer.
+  assert.equal(row.kind, 'debuff', 'the owner ruled a lull is a debuff, and the row must say so')
+  assert.equal(buffs.active.find((a) => a.spell === 'Pacify')?.cls, 'debuff')
+  // …and the routing fact is still derived and still stated, because it is still the guard that
+  // keeps a friendly buff off this window (the last two tests) and still the answer for a calm-line
+  // spell the polarity ruling has no row for.
+  assert.equal(row.calmsTarget, true, 'the row must still state the evidence JOS-213 routes on')
   assert.equal(row.target, 'a fire giant warrior')
   assert.equal(timerRowSurface(row), 'debuffs')
 

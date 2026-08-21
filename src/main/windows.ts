@@ -26,7 +26,7 @@ import { IPC } from '../shared/ipc'
 // scope argument (window-scoped, focused-only, no forward, no global hook) lives in its header.
 import { installBackButton } from './appBack'
 import { E2E } from './e2e'
-import { logError } from './errorLog'
+import { logError, logInfo } from './errorLog'
 import { OVERLAY_MIN_SIZE, OVERLAY_TITLE, isStripKind, overlayDefaultSize } from './overlayLayout'
 // WHERE AN OVERLAY IS, HOW TALL IT IS, AND WHICH OF THAT IS WRITTEN DOWN (JOS-187 + JOS-386). Its
 // own module for the reason overlaySnapDrag.ts and OVERLAY_TITLE are: this file is at the
@@ -79,6 +79,9 @@ import { OVERLAY_KINDS, type OverlayKind } from '../shared/types'
 // ScreenRect lives in shared/presencePrefs.ts, not shared/types.ts — see the note at the
 // bottom of types.ts (that file is at its factoring ceiling).
 import type { ScreenRect } from '../shared/presencePrefs'
+// The overlay-visibility EDGE line (JOS-424). Pure, and it lives beside the focus transition it is
+// read next to — presenceProtocol.ts imports nothing but types, so this cannot close a cycle.
+import { describeOverlayPark, describeOverlayVisibility } from './presenceProtocol'
 
 let mainWindow: BrowserWindow | null = null
 // The floating overlays (Task #52; kinds in Task #54, more in Task #59): separate transparent,
@@ -554,10 +557,22 @@ export function createMainWindow(): void {
 export function setOverlayIgnoreMouse(kind: OverlayKind, ignore: boolean): void {
   const w = overlayWindows[kind]
   if (!w || w.isDestroyed()) return
-  if (ignore) w.setIgnoreMouseEvents(true, { forward: overlayMouseForward(kind) })
-  else w.setIgnoreMouseEvents(false)
+  // THE PARK IS A HARD GATE ON CAPTURE (JOS-427). A parked overlay is on screen at opacity 0 —
+  // invisible, but still a real window in the topmost band — so any capture ask that lands while
+  // parked (a strip whose card is still alive, a hover-pin flip in flight) would turn an invisible
+  // rectangle into a click-eater over whatever the user switched to. The DESIRED value is
+  // remembered instead, and `parkOverlays` re-derives from it on the way back, so a strip with a
+  // live card takes the mouse again the moment the user is back in the game. While parked nothing
+  // forwards either: the WH_MOUSE_LL hook is main-process cost for a window nobody can see.
+  overlayDesiredIgnore[kind] = ignore
+  const effective = overlaysParkedNow || ignore
+  if (!effective) w.setIgnoreMouseEvents(false)
+  // Parked takes the HOOKLESS form (the cursor ring's own): nobody forwards for a window nobody
+  // can see. The forwarding call below therefore stays the app's ONE hook site.
+  else if (overlaysParkedNow) w.setIgnoreMouseEvents(true)
+  else w.setIgnoreMouseEvents(true, { forward: overlayMouseForward(kind) })
   applyOpaqueStripVisibility(kind, ignore)
-  watchOverlayPointer(kind, w, ignore)
+  watchOverlayPointer(kind, w, effective)
 }
 
 /**
@@ -587,8 +602,12 @@ function applyOpaqueStripVisibility(kind: OverlayKind, idle: boolean): void {
   if (!w || w.isDestroyed()) return
   if (idle && w.isVisible()) w.hide()
   // Idle is done here; and nothing shows while a window may not be shown at all — E2E (the whole
-  // test mode, src/main/e2e.ts) or a historical replay in flight (replayGate.ts).
-  if (idle || !windowsMayShow() || w.isVisible()) return
+  // test mode, src/main/e2e.ts), a historical replay in flight (replayGate.ts), or a PARK
+  // (JOS-427): an opaque strip is a solid rectangle, and a card arriving while the user is out of
+  // the game must not paint one over whatever they switched to. `parkOverlays` re-applies the
+  // remembered capture state on the way back, which re-runs this with the same `idle` — so a card
+  // still alive brings its strip up the moment the game is back.
+  if (idle || !windowsMayShow() || overlaysParkedNow || w.isVisible()) return
   w.showInactive()
   assertTopmost(w)
   raiseCursorRing()
@@ -817,6 +836,10 @@ export function createOverlayWindow(kind: OverlayKind): void {
     }
     // showInactive so opening the overlay never steals focus from the game.
     w.showInactive()
+    // A window born while the overlays are PARKED (JOS-427) is born invisible the same way its
+    // siblings are — the user opened it from the Companion menu, and it appears when they land
+    // back in the game, exactly as the already-open ones will.
+    w.setOpacity(parkedOpacity())
     assertTopmost(w)
     applyOverlayLocked(kind, getOverlayConfig(kind).locked)
     raiseCursorRing()
@@ -886,6 +909,63 @@ export function overlayStateMap(): Record<OverlayKind, boolean> {
 // never a second opinion about it.
 
 /**
+ * The visibility this app last ASSERTED, so `setOverlaysHidden` narrates edges rather than every
+ * idempotent re-statement (JOS-424). Null until the first call: a session that never auto-hides
+ * says nothing at all. It is deliberately not a source of truth about any window — each window's
+ * `isVisible()` remains that, and this is only ever compared against the argument.
+ */
+let overlaysHiddenNow: boolean | null = null
+
+// ---- overlay PARK — presence's half of visibility, without hide() (JOS-427) --------------------
+//
+// THE FLICKER THAT SURVIVED THREE FIXES WAS `hide()` ITSELF. JOS-120 measured it on the ring: a
+// hidden window stops compositing, so `showInactive()` re-presents its last STALE surface, which
+// Windows then clears and repaints — on a transparent overlay that is a visible on→off→on strobe,
+// once per re-show, with the focus signal provably clean the whole time (the owner's narrated
+// alt-tab test: four round trips, eight single edges, and the strobe still visible). The ring's
+// cure was to never hide for the frequent case; this is the same cure for the overlays.
+//
+// PARKED means: on screen, opacity 0, capture forced off (see `setOverlayIgnoreMouse`), hover
+// watches off, forwarding off. The window never leaves the compositor, so un-parking is ONE
+// opacity flip — no stale frame, no SetWindowPos, no z-order churn, nothing for an eye to catch.
+// `setOverlaysHidden` below still exists and still really hides: the replay gate and session
+// teardown want windows GONE (the fold owns the message loop), and E2E never shows one at all.
+// Presence simply stopped being one of its callers.
+let overlaysParkedNow = false
+
+/** The opacity the park state implies for a window being shown or un-parked right now. */
+function parkedOpacity(): 0 | 1 {
+  return overlaysParkedNow ? 0 : 1
+}
+
+/** What each kind last ASKED the mouse mode to be (its queue/hover truth), replayed on un-park. */
+const overlayDesiredIgnore: Partial<Record<OverlayKind, boolean>> = {}
+
+/**
+ * Park or un-park every open overlay (presence's auto-hide, JOS-427 — see the block above).
+ * Idempotent by edge: presence calls this on every state change, and only a real park-state change
+ * does any work. Narrated like every other visibility edge, under its own word so dev.log can
+ * tell a park from a replay-gate hide at a glance.
+ */
+export function parkOverlays(parked: boolean): void {
+  if (overlaysParkedNow === parked) return
+  overlaysParkedNow = parked
+  logInfo('[everquest-companion]', describeOverlayPark(parked, Date.now()))
+  for (const kind of OVERLAY_KINDS) {
+    const w = overlayWindows[kind]
+    if (!w || w.isDestroyed()) continue
+    w.setOpacity(parkedOpacity())
+    // Replay the kind's own last capture ask through the park gate: parked forces ignore+no-hook;
+    // un-parked restores exactly what the queue/hover state wanted (a strip with a live card takes
+    // the mouse again, an idle one stays pass-through). Falls back to the persisted lock for a
+    // kind that has never asked. No topmost re-assert and no ring re-raise here, on purpose: the
+    // window never hid and its z-order never moved, so there is nothing to restore — that absence
+    // IS the fix.
+    setOverlayIgnoreMouse(kind, overlayDesiredIgnore[kind] ?? getOverlayConfig(kind).locked)
+  }
+}
+
+/**
  * Show or hide every open overlay window.
  *
  * `showInactive`, not `show`: the same reason the first open uses it. An overlay must never
@@ -913,6 +993,15 @@ export function overlayStateMap(): Record<OverlayKind, boolean> {
  * locked mode from the persisted config rather than remembering anything of its own.
  */
 export function setOverlaysHidden(hidden: boolean): void {
+  // THE EDGE IS NARRATED, THE RE-STATEMENTS ARE NOT (JOS-424). This function is called on every
+  // presence change and is idempotent by design, so only a genuine change of the visibility this
+  // app is asserting is worth a line — that is what makes dev.log readable as "the overlays went
+  // down here and came back here" rather than as a transcript of the watcher. Console only
+  // (`logInfo`), like every other narration in this app; it names no overlay's contents.
+  if (overlaysHiddenNow !== hidden) {
+    overlaysHiddenNow = hidden
+    logInfo('[everquest-companion]', describeOverlayVisibility(hidden, Date.now()))
+  }
   for (const kind of OVERLAY_KINDS) {
     const w = overlayWindows[kind]
     if (!w || w.isDestroyed()) continue
@@ -932,6 +1021,10 @@ export function setOverlaysHidden(hidden: boolean): void {
     // visibility belongs to its queue, and the next card brings it up (JOS-40).
     if (isStripKind(kind) && opaqueStripWindow[kind] === true && opaqueStripIdle[kind] !== false) continue
     w.showInactive()
+    // A gate restore can land while presence has the overlays PARKED (JOS-427) — the user may be
+    // alt-tabbed away while a character-switch fold ends. The show must come up at the park's
+    // opacity, or the restore itself would flash five windows over whatever they switched to.
+    w.setOpacity(parkedOpacity())
     assertTopmost(w)
     applyOverlayLocked(kind, getOverlayConfig(kind).locked)
   }

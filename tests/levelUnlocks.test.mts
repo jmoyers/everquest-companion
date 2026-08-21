@@ -245,6 +245,29 @@ test('a caster loadout gains real spells at real levels, with the card fields th
   assert.ok(withDetail >= 50, `spell rows carrying card fields: ${String(withDetail)}`)
 })
 
+test('JOS-415: a necro gets Leach at 9 and NOT at 12 — the duplicate page no longer places it twice', () => {
+  // Reported 6AT44D (v1.5.0): "For a necro, on level up to level 12. Shows Leach beting a spell.
+  // But leach was learned at lvl 9 for a necro." The wiki carries TWO pages whose `spellname` is
+  // `Leach` — pageid 46874 (titled `Leech`, `Necromancer - Level 9`) and pageid 50162 (titled
+  // `Leach`, `Necromancer - Level 12 Recourse Effect`) — so `buildLevelUnlocks` emitted a row at
+  // each level and the panel drew a card at both. eqlwiki's OWN Necromancer spell list places the
+  // spell once, at level 9; its level-12 rows are Bind Affinity, Convoke Shadow and Lifedraw.
+  //
+  // The correction (spellCorrectionsList.ts, the seventh drift class) writes EVERY row of the name,
+  // which is what makes this assertion possible: half of it would leave the level-12 card exactly
+  // where it was. Both halves are pinned, because "it shows at 9" and "it does not show at 12" are
+  // the two different things that were reported.
+  const nec = comboClassesOf(interval(0, null, [slot(['NEC']), slot(['NEC'])]))
+  const nine = unlocksAtLevel(REAL, nec, 9).spells.map((r) => r.name)
+  const twelve = unlocksAtLevel(REAL, nec, 12).spells.map((r) => r.name)
+  assert.ok(nine.includes('Leach'), `level 9: ${nine.join(', ')}`)
+  assert.ok(!twelve.includes('Leach'), `level 12 must not list Leach: ${twelve.join(', ')}`)
+  // ONE card, not two: the renderer folds by name within a level, and both DB rows now say 9.
+  assert.equal(nine.filter((n) => n === 'Leach').length, 1)
+  // The level-12 card is not empty — the wiki's own list for that level survives untouched.
+  assert.ok(twelve.length > 0, 'level 12 should still carry the necro spells the wiki does place there')
+})
+
 test('the innates the structure derived are placed: PAL Lay on Hands @1, SHD Harm Touch @1', () => {
   const pal = comboClassesOf(interval(0, null, [slot(['PAL']), slot(['SHD'])]))
   const u = unlocksAtLevel(REAL, pal, 1)

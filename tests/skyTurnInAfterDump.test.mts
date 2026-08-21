@@ -31,6 +31,15 @@
 // The Cleanup tab's half of the same report is pinned next door, in tests/skyCleanup.test.mts —
 // that tab's only holdings input is `ItemProgress.held`, which IS the `net` computed here.
 //
+// READ tests/skyCurrencyRuneWitness.test.mts BESIDE THIS FILE (JOS-409). The window pinned here was
+// only HALF a window: the dump witness paid the post-dump turn-ins and destroys and earned nothing
+// in the same period, which under-counts whenever the two witnesses are not looking at the same
+// physical copies — the Plane of Sky currency rune, by construction. `both`'s dump reading is now
+// `max(0, D + looted_after - destroyed_after - turnedIn_after)`, and every case below still holds
+// unchanged because none of them loots anything after the dump (`lootSinceRebaseline` is absent
+// throughout, which IS that state). The bow case in particular is a JOS-409 golden and is re-pinned
+// there. `inventory` is untouched by that ticket and stays literal.
+//
 // Run: `npm test`.
 
 import { test } from 'node:test'

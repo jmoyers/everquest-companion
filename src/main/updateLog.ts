@@ -37,6 +37,21 @@
 //     because the two are the same claim: this failure is about the machine, and the second copy
 //     adds nothing. What is NOT the same is what happens next — `updater.ts` re-anchors the cadence
 //     instead of counting a failure, which is the "retry on resume" half of the ruling.
+//   * AND SO DOES A POWERSHELL THIS PC WILL NOT LET RUN (JOS-421). The fleet's single biggest
+//     error family is electron-updater's code-signature check shelling out to PowerShell and
+//     getting nothing back — ~330 occurrences, every version since 0.28.0, filed as `parse`
+//     (a bare `SyntaxError` from `JSON.parse('')`) or as `other` (`Command failed: … powershell.exe
+//     …`). shared/update.ts's JOS-421 block reads the library source and shows the mechanism; what
+//     matters HERE is that it is a statement about security software on the user's machine, the
+//     second copy says nothing the first did not, and while it sat at the top of the store it was
+//     the noise floor every real updater regression had to be found above. Same door, same budget.
+//     WHAT IS DIFFERENT FROM THE OTHER TWO, said out loud because it is the reason to hesitate:
+//     this one does not heal. An install in this state can never auto-update. That is precisely why
+//     the demotion is paired with a SENTENCE — `SIGNATURE_BLOCKED_MESSAGE` in the chip and in
+//     Preferences — instead of a silence: a permanent, user-fixable condition belongs in front of
+//     the user, not in a fleet report they will never see. The fleet-side count survives as
+//     `updateOutcome { step: 'download', ok: false }`, one bounded event per attempt, which is the
+//     query that answers "is a cohort frozen".
 //   * AN ANSWER FROM GITHUB IS AN ERROR, EVERY TIME. A 403/429/451/5xx and the parse-masked
 //     failure that hides one are the entire point of the ticket and are never withheld here. What
 //     bounds THEM is what bounds every other error in the app: `errorRepeat`'s five identical
@@ -57,6 +72,7 @@
 // are written for, and the only way anything on this path has ever been testable.
 
 import {
+  SIGNATURE_BLOCKED_WARN,
   classifyUpdateFailure,
   updateFailureCode,
   updateHttpStatus,
@@ -104,6 +120,14 @@ export const UPDATER_LOG_PREFIX = '[everquest-companion] [updater]'
  * anybody spends — `imageCache.ts`'s `MAX_WARNED_READ_CODES`, for its reason.
  */
 export const MAX_WARNED_UPDATE_CODES = 8
+
+/**
+ * The warn-budget key for a blocked PowerShell (JOS-421). A synthetic code because the real errors
+ * carry none worth keying on — the `SyntaxError` has no `code` at all and the cousin family's is a
+ * numeric exit status — and one key is what we want anyway: the two shapes are one condition, so
+ * the second of them says nothing the first did not.
+ */
+export const BLOCKED_WARN_CODE = 'SIGNATURE_CHECK_BLOCKED'
 
 /** Unreachable codes already warned about this session. Bounded by the constant above. */
 const warnedCodes = new Set<string>()
@@ -179,6 +203,17 @@ export function logUpdateFailure(
   sinks: UpdateLogSinks
 ): UpdateFailureKind {
   const kind = classifyUpdateFailure(err)
+  if (kind === 'blocked') {
+    // THIS PC'S OWN SECURITY SOFTWARE (JOS-421). One line per session, console only. The user is
+    // told by the chip and by Preferences, which is where a condition only they can fix belongs.
+    if (takeUnreachableWarning(BLOCKED_WARN_CODE)) {
+      sinks.warn(
+        UPDATER_LOG_PREFIX,
+        `update ${step} failed its code-signature check (${BLOCKED_WARN_CODE}); ${SIGNATURE_BLOCKED_WARN}`
+      )
+    }
+    return kind
+  }
   if (kind === 'unreachable' || kind === 'interrupted') {
     // SOMEBODY ELSE'S NETWORK, OR A MACHINE THAT MOVED. One line per code per session, on the
     // console only; the per-check signal that survives is `updateOutcome`'s failureClass, which the

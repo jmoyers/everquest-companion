@@ -35,6 +35,10 @@ silenceStdioErrors()
 // and does not own — the GPU process, the audio and network utilities — and losing one is
 // invisible everywhere else in the codebase (JOS-364). Installed from module scope, so the
 // listener exists before `ready`, before the first window, and before anything can die unheard.
+// The reporter is a straight hand-off, and everything a reader will see was decided in
+// `childProcessGone.ts`: the error NAME, the sentence, and the exit code in `code`. That split is
+// what lets the whole report shape be driven from a unit test with no Electron in the process —
+// this file cannot be, because importing it installs process-level handlers.
 watchChildProcessGone(app, (info) => {
   logError('main:gpu-process-gone', info)
 })

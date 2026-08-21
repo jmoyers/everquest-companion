@@ -182,7 +182,12 @@ export function isFeedParseError(err: unknown): boolean {
  * retrying a 404 twice as fast helps nobody.
  */
 export function shouldRetryCheck(err: unknown, attempts: number): boolean {
-  return attempts < 1 && isFeedParseError(err)
+  // AND NEVER THE SIGNATURE CHECK'S OWN SyntaxError (JOS-421). It satisfies `isFeedParseError` by
+  // name and is not a feed failure at all; an immediate re-check would re-download an installer to
+  // hand it to the same PowerShell. It cannot reach this predicate today (it is thrown on the
+  // download path, and this gate is asked only for `step === 'check'`), and the guard is here so a
+  // future call site cannot make it reachable by accident.
+  return attempts < 1 && isFeedParseError(err) && !isSignatureCheckBlocked(err)
 }
 
 /** What the user reads when the feed came back unreadable twice. */
@@ -206,6 +211,9 @@ function failureText(err: unknown): string {
  */
 export function describeUpdateFailure(err: unknown): string {
   if (err == null) return 'unknown error'
+  // BEFORE the parse arm, for the same reason the classifier asks it there: the blocked shape IS a
+  // `SyntaxError`, and answering it with FEED_PARSE_MESSAGE blames GitHub for this PC's PowerShell.
+  if (isSignatureCheckBlocked(err)) return SIGNATURE_BLOCKED_MESSAGE
   if (isFeedParseError(err)) return FEED_PARSE_MESSAGE
   const oneLine = failureText(err).split('\n')[0].trim()
   if (oneLine.length === 0) return 'unknown error'
@@ -221,7 +229,7 @@ export function describeUpdateFailure(err: unknown): string {
 // process can decide whether it belongs in errors.log (and therefore in the fleet's error store)
 // or is somebody else's outage that must not be allowed to file one line per check.
 //
-// FIVE KINDS, AND THE ORDER THEY ARE ASKED IN IS THE DESIGN:
+// SIX KINDS, AND THE ORDER THEY ARE ASKED IN IS THE DESIGN:
 //
 //   'interrupted' THE MACHINE MOVED UNDER AN IN-FLIGHT REQUEST (JOS-307). Asked FIRST, because it
 //                 is the one kind that is not a failure of anything: Chromium tears down network
@@ -237,6 +245,11 @@ export function describeUpdateFailure(err: unknown): string {
 //                 settle and ask again — even though only the first has a `powerMonitor` event to
 //                 hang that on (there is no main-process network-change event in Electron, so the
 //                 network case re-anchors on the same short timer and nothing more).
+//   'blocked'     THIS PC'S OWN POWERSHELL ANSWERED NOTHING (JOS-421). Asked SECOND, and it has to
+//                 be asked before 'parse' because its commonest shape IS a `SyntaxError` — see the
+//                 block below, which carries the source read. Same argument as 'interrupted': it is
+//                 not a failure of ours, of GitHub's, or of the network's, and the fleet was
+//                 reporting ~330 of them as if it were.
 //   'http'        GitHub answered, and it answered 4xx/5xx. THE THING THAT MUST ALWAYS LAND.
 //                 A 403/429 is a throttle we can act on, a 404 means our feed is wrong, a 5xx is
 //                 an outage worth knowing the date of. `HttpError` (builder-util-runtime) carries
@@ -258,8 +271,116 @@ export function describeUpdateFailure(err: unknown): string {
 //                 A TLS/certificate failure is deliberately in here and not in 'unreachable': a
 //                 MITM proxy or an expired root is diagnosable and is not "the network is away".
 
-/** Which of the five kinds a failed check/download was. */
-export type UpdateFailureKind = 'interrupted' | 'http' | 'parse' | 'unreachable' | 'other'
+/** Which of the six kinds a failed check/download was. */
+export type UpdateFailureKind =
+  | 'interrupted'
+  | 'blocked'
+  | 'http'
+  | 'parse'
+  | 'unreachable'
+  | 'other'
+
+// ------------------------------------------- A POWERSHELL THAT ANSWERS NOTHING (JOS-421)
+//
+// THE TOP LINE OF THE WHOLE FLEET'S ERROR STORE, and it is not about this app.
+//
+//   `SyntaxError: update download failed (final, parse): Unexpected end of JSON input`
+//     at parseOut (node_modules/electron-updater/out/windowsExecutableCodeSignatureVerifier.js:104)
+//     at <anonymous> (…/windowsExecutableCodeSignatureVerifier.js:55)
+//     at ChildProcess.exithandler (node:child_process:410)
+//
+// ~330 occurrences across every version since 0.28.0, on many installs, plus a smaller cousin
+// family reading `update download failed (final, other): Command failed: set "PSModulePath=" &
+// chcp 65001 >NUL & powershell.exe -NoProfile …`. Both come from ONE call site.
+//
+// WHAT THE SOURCE SAYS (read out of the installed electron-updater@6.8.9 —
+// windowsExecutableCodeSignatureVerifier.js + NsisUpdater.js, not the docs). After the installer
+// is downloaded, `NsisUpdater.doDownloadUpdate` awaits `verifySignature(destinationFile)`, which
+// shells out through cmd:
+//
+//     set "PSModulePath=" & chcp 65001 >NUL & powershell.exe -NoProfile -NonInteractive
+//       -InputFormat None -Command "Get-AuthenticodeSignature -LiteralPath '<exe>' | ConvertTo-Json -Compress"
+//
+// and then, in the `execFile` callback:
+//
+//     if (error != null || stderr) { handleError(…); resolve(null); return }
+//     const data = parseOut(stdout)          // parseOut = JSON.parse(out)
+//
+// So the reported family is the case where PowerShell EXITED 0 WITH NO STDOUT AND NO STDERR —
+// `ChildProcess.exithandler` in the frames is the clean-exit path, and `parseOut` only runs when
+// `error == null && !stderr`. `JSON.parse('')` throws, and the catch calls `handleError(logger, e,
+// null, reject)` and then `resolve(null)`.
+//
+// AND `handleError` IS THE TRAP. It probes the environment with a SECOND PowerShell call
+// (`execFileSync(… "ConvertTo-Json test")`) and only skips verification when that probe THROWS:
+//
+//   * PowerShell missing/denied outright ⇒ the probe throws ⇒ warn, return, `resolve(null)` ⇒
+//     verification is SKIPPED and the update installs fine.
+//   * PowerShell present but answering nothing ⇒ the probe exits 0 too, so it does NOT throw ⇒
+//     `reject(error)` runs BEFORE the `resolve(null)` on the line after ⇒ the promise REJECTS.
+//
+// A rejection there rejects `doDownloadUpdate`, which becomes an `error` event with our
+// `downloading` latch set — a FAILED DOWNLOAD. So the answer to "does electron-updater fall
+// through?" is NO, and the answer is the wrong way round: the harder PowerShell is blocked, the
+// more likely the update succeeds. These installs can never auto-update, they re-download the
+// whole installer up to `MAX_DOWNLOAD_ATTEMPTS` times per session, and every attempt wiped the
+// pending dir on the way (research §6f in main/updater.ts).
+//
+// WHAT WE DO ABOUT IT. Nothing in the message names the cause: the user was told "the update
+// service sent an unreadable response", which blames GitHub for a local PowerShell. So this
+// classifier learns the shape, `describeUpdateFailure` says what actually happened, and
+// `main/updateLog.ts` demotes it to a console warn (the 'interrupted'/'unreachable' door) so that
+// a real updater regression is visible above it. The per-check `updateOutcome` telemetry is
+// untouched and still counts every failed download, which is where a frozen cohort stays
+// countable — JOS-310's rule that a demotion needs an honest home for the count.
+
+/**
+ * THE MARKERS, and every one of them is a string this call site OWNS.
+ *
+ * `windowsExecutableCodeSignatureVerifier` and `at parseOut` come from the STACK (the module is
+ * externalized, so the real path survives into the report — measured in the error store; the
+ * function name is the belt for a future build that bundles it). `powershell.exe` and
+ * `Get-AuthenticodeSignature` come from the MESSAGE of the cousin family, whose `Command failed:`
+ * text quotes the whole command line, and from `err.cmd`, which `child_process` sets beside it.
+ *
+ * Nothing else in the update path can produce any of the four: a feed failure is three plain
+ * github.com GETs and never shells out.
+ */
+const SIGNATURE_CHECK_RE =
+  /windowsExecutableCodeSignatureVerifier|\bat parseOut\b|powershell\.exe|Get-AuthenticodeSignature/i
+
+/** Message + stack + `cmd`, joined. The commonest shape is a bare `SyntaxError` whose message says
+ *  only `Unexpected end of JSON input`, so the STACK is the only thing that identifies it. */
+function blockedText(err: unknown): string {
+  const e = err as { message?: unknown; stack?: unknown; cmd?: unknown } | null | undefined
+  return [e?.message, e?.stack, e?.cmd].filter((v) => typeof v === 'string').join('\n')
+}
+
+/**
+ * True when the failure came out of electron-updater's PowerShell code-signature check rather than
+ * out of the network — i.e. security software, a policy, or a gutted PowerShell on THIS PC.
+ */
+export function isSignatureCheckBlocked(err: unknown): boolean {
+  if (err == null) return false
+  return SIGNATURE_CHECK_RE.test(blockedText(err))
+}
+
+/** What the user reads while the environment is blocking the verification step. */
+export const SIGNATURE_BLOCKED_MESSAGE =
+  "Security software on this PC blocked the update's PowerShell signature check, so the new version could not be verified. Nothing is wrong with your install - the next check will try again."
+
+/** …and what they read once the bounded automatic retries are spent for this session. */
+export const SIGNATURE_BLOCKED_PAUSED_MESSAGE =
+  "Security software on this PC keeps blocking the update's PowerShell signature check. Automatic updates are paused - allow PowerShell, or install the new version by hand."
+
+/**
+ * …and the console line, which lives HERE rather than in `main/updateLog.ts` for one reason:
+ * `tests/noChildProcess.test.mts` forbids any shipped string literal from naming PowerShell, and
+ * keeping every sentence that has to name it in ONE module keeps that guard's exemption to a short
+ * list in a single file (its header carries the argument).
+ */
+export const SIGNATURE_BLOCKED_WARN =
+  "security software or policy is blocking this PC's PowerShell signature check - the next check retries, and the user is told"
 
 /**
  * THE INTERRUPTION CODES, and the list is TWO long because two is what the owner named.
@@ -436,6 +557,10 @@ export function classifyUpdateFailure(err: unknown): UpdateFailureKind {
   // is in the parse patterns — and asking it first means a future widening of the other arms cannot
   // quietly start reporting sleeps and Wi-Fi handovers again.
   if (isInterruptedFailure(err)) return 'interrupted'
+  // SECOND, and BEFORE 'parse' — the shape it has to beat is a bare `SyntaxError` thrown by
+  // `JSON.parse('')`, which is character for character the JOS-211 feed failure and is a completely
+  // different fact about the machine (JOS-421's block above reads the source).
+  if (isSignatureCheckBlocked(err)) return 'blocked'
   if (isHttpFailure(err)) return 'http'
   if (isFeedParseError(err)) return 'parse'
   if (isUnreachableFailure(err)) return 'unreachable'

@@ -293,8 +293,9 @@ function mitigationLine(ev: MitigationEvent): string {
  *   - SWING = a melee or slay HIT (misses are added by the miss path). Slay counts because a
  *     Slay Undead proc rides an ordinary swing — it IS a swing.
  *   - PROC = a `dtype: 'spell'` line with no own cast behind it. `dot` is never eligible (its
- *     ticks are cast-detached by construction), which is the one gate that keeps this
- *     inference honest.
+ *     ticks are cast-detached by construction), and neither is a RAIN spell (its later waves
+ *     are cast-detached the same way — JOS-414). Those two gates are what keep this inference
+ *     honest.
  */
 interface DamageAnalytics {
   /** Attributed to YOU (not a pet, not incoming). */
@@ -320,7 +321,7 @@ interface DamageAnalytics {
  */
 function damageOrigin(st: EngineState, ev: DamageEvent): SpellOrigin | null {
   if (ev.amount <= 0) return null
-  if (!procEligibleDamage(ev.dtype)) return null
+  if (!procEligibleDamage(ev.dtype, ev.skill)) return null
   if (idKey(ev.attacker) !== 'you') return null
   if (verdict(st, ev).kind !== 'out-you') return null
   return st.recentCasts.origin(ev.skill, ev.ts)

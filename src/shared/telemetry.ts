@@ -829,7 +829,11 @@ export interface EvHealthCounters {
    * process, so the app survives, but every window it was compositing goes through a black frame
    * and an overlay show around that moment is the ~1 s freeze this app has field reports of and
    * no evidence for. The matching `logError('main:gpu-process-gone')` gives the fleet's error
-   * store an exemplar carrying the reason and the exit code, which a count cannot.
+   * store an exemplar carrying the reason and the exit code, which a count cannot — and since
+   * JOS-418 it actually SAYS them: for four releases that exemplar was a bare `{ reason, exitCode }`
+   * with no `message` on it, so the store filed the whole family as the text `Error: `. It now
+   * arrives under its own error name (`GpuProcessGone`), which also means the rows filed before
+   * that fix keep their old fingerprint and are not silently merged with the readable ones.
    *
    * A CLEAN EXIT IS NOT COUNTED. The GPU process also goes away when the app is shutting down,
    * and a counter that included that would report one loss on every ordinary quit.
