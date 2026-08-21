@@ -48,6 +48,8 @@ import {
 import { reconcile, type ReconcileInput } from '../src/renderer/src/features/inventory/reconcile'
 import { rebaselineInstant } from '../src/renderer/src/features/inventory/countSource'
 import {
+  computeDestroyedAfter,
+  computeDestroyedAfterPerKey,
   computeHeldCounts,
   computeHeldCountsAfter,
   computeHeldCountsAfterPerKey
@@ -155,6 +157,25 @@ test('a windowed fold keeps the disposition rule it inherited', () => {
     { ts: T0 + HOUR, item: 'Sphinx Claw', disposition: 'hoard' }
   ]
   assert.deepEqual(computeHeldCountsAfter(history, T0), { [claw]: 1 }, 'sold is gone, hoarded is held')
+})
+
+test('THE WINDOWED LOOT FOLDS COUNT DROPS, GROSS - the destroys are their own window (JOS-401)', () => {
+  const history: LootEvent[] = [
+    drop(T0 - HOUR, 'Sphinx Claw'),
+    { ts: T0 + HOUR, item: 'Sphinx Claw', disposition: 'destroyed', count: 2 },
+    drop(T0 + 2 * HOUR, 'Sphinx Claw', 3)
+  ]
+  // The all-time fold nets: 1 looted, 2 destroyed (floors at 0), 3 looted = 3.
+  assert.deepEqual(computeHeldCounts(history), { [claw]: 3 })
+  // The WINDOW counts what dropped since, and nothing else: netting here as well as discounting
+  // the witness in `reconcile` would subtract every destroy twice.
+  assert.deepEqual(computeHeldCountsAfter(history, T0), { [claw]: 3 })
+  assert.deepEqual(computeHeldCountsAfterPerKey(history, { [claw]: T0 }), { [claw]: 3 })
+  // …and the discount is the other map, on the same instants and the same strictly-after rule.
+  assert.deepEqual(computeDestroyedAfter(history, T0), { [claw]: 2 })
+  assert.deepEqual(computeDestroyedAfter(history, T0 + HOUR), {}, 'strictly after, like every window here')
+  assert.deepEqual(computeDestroyedAfterPerKey(history, { [claw]: T0 }), { [claw]: 2 })
+  assert.deepEqual(computeDestroyedAfterPerKey(history, {}), {}, 'a key nobody spoke about is absent')
 })
 
 // =============================================================================
@@ -269,6 +290,69 @@ test('a turn-in AFTER the statement subtracts; one BEFORE it does not', () => {
     1,
     'the blame names the quest that ate it, from the WINDOWED pass rather than the all-time one'
   )
+})
+
+// ---- JOS-401: the destroy discounts every witness, in the witness's own window ---------------
+
+test('A DESTROY AFTER THE DUMP LOWERS THE COUNT; ONE BEFORE IT DOES NOT', () => {
+  const inv = { 'sphinx claw': 3 }
+  // The dump vouched for three. The log then says two were destroyed. Under every source that
+  // reads the file, the file is stale by exactly that much.
+  for (const s of ['inventory', 'both'] as const) {
+    assert.equal(run({ countSource: s, inv }).net[claw], 3, `${s}: the dump, unchallenged`)
+    assert.equal(
+      run({ countSource: s, inv, destroyedSinceDump: { [claw]: 2 } }).net[claw],
+      1,
+      `${s}: less what the log says you destroyed since it was written`
+    )
+  }
+  // A destroy BEFORE the dump is already reflected in it — and it never reaches this map, because
+  // `computeDestroyedAfter` is windowed strictly after the generation instant. The empty map IS
+  // that case, and it must leave the dump exactly as written.
+  assert.equal(run({ countSource: 'inventory', inv, destroyedSinceDump: {} }).net[claw], 3)
+  // Floored: destroying more than the file ever saw (a bank window that was shut) reads 0.
+  assert.equal(run({ countSource: 'inventory', inv, destroyedSinceDump: { [claw]: 9 } }).net[claw], 0)
+})
+
+test('under `both` the discounted dump and the log-derived count still take the MAX', () => {
+  // The log witness arrives already net of every destroy (`computeHeldCounts`), so `both` is a max
+  // of two independently-discounted witnesses — the monotone shape reconcile.ts argues for.
+  const args = { inv: { 'sphinx claw': 3 }, log: { [claw]: 4 }, destroyedSinceDump: { [claw]: 2 } }
+  assert.equal(run({ countSource: 'both', ...args }).net[claw], 4, 'the log can still vouch for more')
+  assert.equal(run({ countSource: 'log', ...args }).net[claw], 4, '`log` never consults the dump at all')
+})
+
+test('a rebaseline is discounted too: dump, plus what dropped since, less what was destroyed since', () => {
+  const base = {
+    countSource: 'rebaseline' as const,
+    inv: { 'sphinx claw': 3 },
+    rebaselineAt: T0,
+    lootSinceRebaseline: { [claw]: 4 }
+  }
+  assert.equal(run(base).net[claw], 7, 'three in the file and four dropped since')
+  assert.equal(run({ ...base, destroyedSinceDump: { [claw]: 2 } }).net[claw], 5, 'less two destroyed')
+  assert.equal(run({ ...base, destroyedSinceDump: { [claw]: 99 } }).net[claw], 0, 'and floored')
+})
+
+test('a hand statement is discounted by the destroys made after it, and never below zero', () => {
+  const overrides = stated(claw, 3, T0)
+  assert.equal(run({ overrides }).net[claw], 3, 'the statement, unchallenged')
+  assert.equal(
+    run({ overrides, destroyedSinceOverride: { [claw]: 2 } }).net[claw],
+    1,
+    'you said three and the log then watched two of them go'
+  )
+  assert.equal(run({ overrides, destroyedSinceOverride: { [claw]: 5 } }).net[claw], 0, 'floored')
+  // The forward rules compose: loot after the statement adds, destroys after it subtract, and a
+  // turn-in after it eats one more.
+  const both = run({
+    overrides,
+    lootSinceOverride: { [claw]: 4 },
+    destroyedSinceOverride: { [claw]: 2 },
+    turnIns: { [CLAW_KEY]: 1 },
+    turnInInstants: { [CLAW_KEY]: [T0 + HOUR] }
+  })
+  assert.equal(both.net[claw], 4, '3 stated + 4 looted - 2 destroyed - 1 turned in')
 })
 
 test('the statement WINS over every source, including a dump that disagrees', () => {
@@ -402,7 +486,12 @@ test('passing the new inputs EMPTY is byte-identical to omitting them', () => {
         lootSinceOverride: {},
         turnInInstants: {},
         rebaselineAt: null,
-        lootSinceRebaseline: {}
+        lootSinceRebaseline: {},
+        // JOS-401 joins the same contract: a caller that hands over no destroy windows - an
+        // install with no dump to date them against, or a log with no destroy line in it - gets
+        // the arithmetic that shipped before, key for key and row order included.
+        destroyedSinceDump: {},
+        destroyedSinceOverride: {}
       }),
       run({ ...base, countSource }),
       `${countSource}: the three shipped sources are untouched by the machinery around them`

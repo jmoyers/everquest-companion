@@ -34,6 +34,7 @@
 // going away, and "sometimes a hover re-opens it" is a worse contract than "the card left".
 
 import { useEffect, useRef } from 'react'
+import { onOverlayPointerExit } from './pointerExit'
 
 /** Enter animation (slide + fade). The reducer does not time it — CSS does — but the components
  *  need the same number, and one definition is how they stay equal. */
@@ -162,6 +163,42 @@ export function useQueueMouseCapture(ready: boolean, locked: boolean, hasCards: 
     const ignore = !ready ? true : locked ? !hasCards : false
     window.eqOverlay.setIgnoreMouse(ignore)
   }, [ready, locked, hasCards])
+}
+
+/**
+ * A PIN IS ALSO A CAPTURE, SO A LOST LEAVE STRANDS A STRIP TOO (JOS-381).
+ *
+ * The strips cannot reach the stuck state the ticket is about by its own route: their capture is
+ * QUEUE-driven (`useQueueMouseCapture` above), never hover-driven, so there is no capture reason
+ * here for a swallowed `mouseleave` to leave behind. But there is a second door to the same room.
+ * A card under the pointer is PINNED — its clock stops — and the only thing that unpins it is the
+ * DOM leave the Windows task switcher can eat exactly as it eats the meters'. A pin that never
+ * ends is a card that never ages out, and while a card is on screen a locked strip is holding the
+ * mouse: chrome-free, but not click-through, over the game, forever.
+ *
+ * So the strips ride the SAME signal rather than growing a rule of their own: an exit unpins every
+ * card, the clocks resume (with the ordinary grace floor — leaving is leaving, however we heard
+ * about it), the last card leaves on its own time and the queue hands the mouse back. Nothing here
+ * dismisses a card early: the pointer having left is not the user having read it.
+ *
+ * The cards are read through a REF so the subscription is made once per window rather than rebuilt
+ * whenever the queue moves — `useCardTick`'s arrangement, for the same reason.
+ */
+export function useUnpinOnPointerExit<P extends QueuedPayload>(
+  cards: readonly CardState<P>[],
+  dispatch: (a: { type: 'hover'; id: string; over: boolean }) => void
+): void {
+  const latest = useRef(cards)
+  latest.current = cards
+  useEffect(
+    () =>
+      onOverlayPointerExit(() => {
+        for (const c of latest.current) {
+          if (c.pinned) dispatch({ type: 'hover', id: c.payload.id, over: false })
+        }
+      }),
+    [dispatch]
+  )
 }
 
 /**

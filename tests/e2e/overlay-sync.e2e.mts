@@ -64,6 +64,9 @@ import { stepOverlayScope, stepTitleBarRoom } from './overlayScopeSteps.mjs'
 import { stepTotalOnPanel } from './overlayTotalSteps.mjs'
 // …and the pinned pane's scroll grip (JOS-138), in its own module for the same reason.
 import { stepPinnedScroll } from './overlayScrollSteps.mjs'
+// …and JOS-381's: the capture that has to end itself when the cursor walks off under the alt-tab
+// switcher, plus the timer that may only exist while it is held.
+import { stepPointerWatch } from './overlayPointerWatchSteps.mjs'
 // THE FLOOR A WINDOW CAN BE DRAGGED DOWN TO (JOS-278) — its own module, beside the other steps,
 // because the claim is about the window rather than about this spec's subject.
 import { stepMinimumSize } from './overlayMinSizeSteps.mjs'
@@ -655,6 +658,7 @@ async function main(): Promise<void> {
     await stepOverlayDrill(ov)
     await stepLockedSelector(ov)
     await stepPinnedScroll(app, ov, setLocked)
+    await stepPointerWatch(app, ov, setLocked)
     await stepOverlayScope(page, ov, setLocked)
     // Unlocked is a precondition of the measurement (a locked window has no drag region at all),
     // and stepOverlayScope leaves it that way.

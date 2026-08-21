@@ -41,6 +41,7 @@ import { type JSX, useEffect, useMemo } from 'react'
 import { Box, Chip, IconButton, Stack } from '@mui/material'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, resolvedClasses, type ClassAbbr } from '@shared/classCombo'
+import { classDisplayName } from '@shared/spellLevels'
 import { useComboSnap } from '../profiles/ClassComboData'
 import { useWishlist } from '../wishlist/useWishlist'
 import { wishFromDonor } from '../wishlist/wishSearch'
@@ -75,6 +76,7 @@ function ClassFilter({ classes }: { classes: BrowseClassesApi }): JSX.Element {
       onChange={(next) => classes.set(next)}
       label="Classes"
       placeholder="All classes"
+      optionLabel={classDisplayName}
       max={MAX_COMBO_SLOTS}
       minWidth={240}
       testId="planner-classes"
@@ -83,7 +85,9 @@ function ClassFilter({ classes }: { classes: BrowseClassesApi }): JSX.Element {
 }
 
 /**
- * THE DISAGREE CHIP (V2) — "detected: PAL ENC MNK — apply".
+ * THE DISAGREE CHIP (V2) — "detected: Paladin, Enchanter, Monk - apply". It says the CLASSES, not
+ * the /who codes, since JOS-402: the control it sits beside picks by full name now, and a chip that
+ * answered it in a second vocabulary would read as a different kind of thing.
  *
  * Shown only while the filter is PINNED and live inference has resolved a different trio. It never
  * changes anything on its own: the whole point of the chip idiom here is that the app states what
@@ -101,7 +105,7 @@ function DetectedChip({ offer, onApply }: { offer: ClassAbbr[]; onApply: () => v
       variant="outlined"
       data-testid="planner-detected-chip"
       title="Use the combo detected from your log"
-      label={`detected: ${offer.join(' ')} - apply`}
+      label={`detected: ${offer.map(classDisplayName).join(', ')} - apply`}
       onClick={onApply}
       sx={{ flexShrink: 0 }}
     />

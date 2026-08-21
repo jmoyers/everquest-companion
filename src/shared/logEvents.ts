@@ -20,6 +20,12 @@ import type { ConsiderFaction } from './considerFaction'
 // `@shared/logEvents`, and the union below carries the three new members.
 import type { CoinEvent, ItemReceivedEvent, PurchaseEvent } from './acquireEvents'
 
+// WHAT IS IN YOUR GEMS (JOS-391) — the memorize / forget / spell-set shapes, out in
+// ./gemEvents for the same file-mass reason as the two imports above. Re-exported verbatim.
+import type { SpellForgetEvent, SpellMemorizeEvent, SpellSetEvent } from './gemEvents'
+
+export type { SpellForgetEvent, SpellMemorizeEvent, SpellSetEvent } from './gemEvents'
+
 export type { ConsiderFaction }
 export type {
   Coins,
@@ -61,8 +67,12 @@ export interface ZoneEvent extends LogEventBase {
  *   'depot'    — stored in the tradeskill depot (bank-type storage — HELD)
  *   'combined' — consumed on pickup to create an upgraded `<item> +N` (see `created`;
  *      net-ZERO for held counts — the looted copy and a held copy merge into one)
+ *   'destroyed' — the ONE member of this family that is a SUBTRACTION (JOS-401). It rides the
+ *      loot lane rather than a kind of its own because everything a destroy has to reach
+ *      already reads loot rows (the module, the snapshot, the deltas, every held-count fold);
+ *      what it means to each reader is `shared/lootDisposition.ts`.
  */
-export type LootDisposition = 'currency' | 'sold' | 'hoard' | 'depot' | 'combined'
+export type LootDisposition = 'currency' | 'sold' | 'hoard' | 'depot' | 'combined' | 'destroyed'
 
 /** `--You have looted a <item> from <mob>'s corpse.--` (self-loot). */
 export interface LootEventE extends LogEventBase {
@@ -638,6 +648,14 @@ export interface PetSayEvent extends LogEventBase {
 export interface CastBeginEvent extends LogEventBase {
   kind: 'castBegin'
   spell: string
+  /**
+   * The line said SINGING, not casting (JOS-382). A bard song re-checks resistance on every
+   * 6-second pulse while a cast rolls once, so the resist engine has to tell them apart — and the
+   * log is the only place the answer exists in this app: the wiki catalog carries no such column,
+   * and the client's own `spells_us.txt` is not ours to redistribute. Additive and optional, so
+   * every consumer that existed before this rides unchanged.
+   */
+  sung?: boolean
 }
 
 /**
@@ -1464,6 +1482,12 @@ export type LogEvent =
   | OfflineGapEvent
   | StanceChangeEvent
   | InvocationChangeEvent
+  // WHAT IS IN YOUR GEMS (JOS-391). Beside the stance/invocation pair because it is the same
+  // level of statement — the player operating their own character sheet — and, like them,
+  // MEASURED `{kind:'unknown'}` before it existed (4,321 + 4,285 + 4,232 + 474 lines).
+  | SpellMemorizeEvent
+  | SpellForgetEvent
+  | SpellSetEvent
   | SelfWhoEvent
   | SkillUpEvent
   | SpecialAttackEvent

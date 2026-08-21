@@ -596,7 +596,6 @@ export default function App(): JSX.Element {
         character={character}
         characters={characters}
         onSelectCharacter={(logPath) => void selectCharacter(logPath, onCharacterSwitched)}
-        onOpenPreferences={() => selectView('preferences')}
       />
 
       {/* Everything below the bar: nav drawer + main content, side by side. */}

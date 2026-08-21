@@ -86,6 +86,56 @@ export function knownClassDisplayNames(): string[] {
   return [...ABBR_BY_DISPLAY_NAME.keys()]
 }
 
+/**
+ * `Shadow Knight` -> SHD. The SAME table the `classes` field is read with, exported for the one
+ * other place a class arrives as a display name: the spell-lines research files, whose thirteen
+ * agents each wrote `"class": "Cleric"` at the top (scripts/gen-spell-lines.ts, JOS-391). A second
+ * copy of this map in a generator is a second opinion about how the wiki spells Shadowknight.
+ */
+export function classAbbrForDisplayName(name: string): ClassAbbr | undefined {
+  return ABBR_BY_DISPLAY_NAME.get(name.trim().toLowerCase())
+}
+
+/**
+ * /who code -> the class's name as a person says it, in the wiki's own capitalization.
+ *
+ * THE OTHER DIRECTION, and it exists for the UI (JOS-402, owner: *anywhere in the app that we have
+ * the class filter, it should be the whole class name*). Every class-SELECTION control now labels
+ * its options and chips through this — the Gear and Exaltations class filters, their detected-combo
+ * offer chips, and the loadout class picker — while the values they store, compare and validate stay
+ * the three-letter codes. A renderer-local copy of this table would be a second opinion about how
+ * this app spells Shadow Knight, which is exactly what the map above already refuses.
+ *
+ * It is written out rather than inverted from `ABBR_BY_DISPLAY_NAME`: that map is keyed by the
+ * LOWERCASED wiki spelling and holds two keys for SHD, so an inversion would have to both pick a
+ * winner and re-capitalize it. `tests/spellLevels.test.mts` pins every entry against classes.json's
+ * `names` and pins the round trip through `classAbbrForDisplayName`, so the two tables here cannot
+ * drift from each other or from the scrape.
+ */
+const DISPLAY_NAME_BY_ABBR: Readonly<Record<ClassAbbr, string>> = {
+  BER: 'Berserker',
+  BRD: 'Bard',
+  BST: 'Beastlord',
+  CLR: 'Cleric',
+  DRU: 'Druid',
+  ENC: 'Enchanter',
+  MAG: 'Magician',
+  MNK: 'Monk',
+  NEC: 'Necromancer',
+  PAL: 'Paladin',
+  RNG: 'Ranger',
+  ROG: 'Rogue',
+  SHD: 'Shadow Knight',
+  SHM: 'Shaman',
+  WAR: 'Warrior',
+  WIZ: 'Wizard'
+}
+
+/** `SHD` -> `Shadow Knight`. The ONE abbr-to-words function; see the table's header. */
+export function classDisplayName(abbr: ClassAbbr): string {
+  return DISPLAY_NAME_BY_ABBR[abbr]
+}
+
 /** `Enchanter - Level 37 (Autogranted)` -> ENC 37. Trailing notes are ignored, not required. */
 const SEGMENT = /^([A-Za-z][A-Za-z ]*?)\s*-\s*Level\s*(\d+)\b/
 

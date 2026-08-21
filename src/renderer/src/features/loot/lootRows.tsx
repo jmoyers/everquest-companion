@@ -38,12 +38,17 @@ function fmtTime(ts: number): string {
 // A subtle disposition chip (Tasks #40/#47): where a looted-and-routed item went.
 // Dense, low-emphasis — no chip for ordinary kept loot. Kept storage (currency/hoard/
 // depot) reads info-blue; 'sold' (gone) is dimmed; 'combined' (merged into an upgrade)
-// reads success-green.
+// reads success-green; 'destroyed' (JOS-401) reads warning, because it is the one row on
+// this ledger that says an item LEFT — the strongest thing a bag-history row can say, and
+// the only one the held counts subtract for.
 function DispositionChip({ disposition }: { disposition?: LootDisposition }): JSX.Element | null {
   if (!disposition) return null
   const sx = { height: 18, fontSize: 11 } as const
   if (disposition === 'sold') {
     return <Chip size="small" variant="outlined" color="default" label="sold" sx={{ ...sx, opacity: 0.7 }} />
+  }
+  if (disposition === 'destroyed') {
+    return <Chip size="small" variant="outlined" color="warning" label="destroyed" sx={sx} />
   }
   if (disposition === 'combined') {
     return <Chip size="small" variant="outlined" color="success" label="combined" sx={sx} />

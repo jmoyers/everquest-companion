@@ -26,13 +26,50 @@
 // carry. `SpellTooltip` (lib/SpellCard) asks MAIN for the whole record on open — the effect list
 // in the wiki's own words, the derived rosters, the rank, the sentences the game prints — so the
 // readout answers "should I memorize this" instead of restating the row.
+//
+// AND THE ROW NOW ANSWERS THE QUESTION WITHOUT THE HOVER (JOS-391). A list of names and class
+// chips told a player WHAT unlocked and nothing about whether it was worth the trip to the vendor.
+// Four statements were added, and each of them is a fact this app already holds:
+//
+//   the figures     `dmg 143 · dps 48 · 2.1 dmg/mana`, read off the wiki's own effect lines
+//                   (shared/spellMetrics.ts) at the level the spell becomes yours
+//   already yours   a class in YOUR loadout bought this six levels ago (shared/levelUnlocks.ts)
+//   replaces        the rung below it in that class's upgrade line (the shipped research)
+//   memorized       whether the spell it replaces is in your bar right now, and which of your
+//                   saved sets would put it back (the spellSets module)
+//
+// A ROW GROWS A SECOND LINE ONLY WHEN IT HAS SOMETHING TO SAY. `ROW_H` still governs the name
+// line, so a list of bare skill rows keeps exactly the rhythm JOS-289 kept it for; a spell with
+// figures gets a quiet second line beneath its name rather than a wider first one, because the
+// left column is narrow at the app's minimum width and the name is what a reader scans.
+//
+// NO CAVEATS PER ROW (AGENTS.md, the tooltip and caveat diet). The word `directional` is said ONCE
+// in the panel header and nowhere else; no row footnotes where its number came from.
+//
+// AND THE ERA VERDICT IS DRAWN THE WAY THE MOB PAGE DRAWS IT (JOS-393). eqlwiki badges a link to
+// `Sloths Healing` — `{{Kunark Era}}`, `Shaman - Level 50+` — out of era, and this list offered it
+// to a level-50 shaman as a spell newly his. Two treatments, one rule:
+//   A LEVEL LIST folds them behind a `+N out of era` disclosure — `outOfEraLabel`, the mob page's
+//   own phrase, IMPORTED rather than re-typed so the two surfaces cannot drift — because a level
+//   list answers "what is new for me now" and an unopened expansion is not part of that answer.
+//   A SEARCH RESULT is shown plainly with an `out of era` chip, because a search answers the
+//   question the player typed and hiding the row would answer a different one.
+// A spell the era sidecar has no verdict for wears nothing and is folded nowhere: silence is not a
+// verdict (law 1), and the drops list made the same call for the same reason.
 
-import { type JSX } from 'react'
-import { Box, Chip, Stack, Typography } from '@mui/material'
+import { type JSX, useState } from 'react'
+import { Box, Chip, Collapse, Stack, Typography } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { ClassAbbr } from '@shared/classCombo'
-import type { UnlockRow } from '@shared/levelUnlocks'
+import { ownershipPhrase, replacesEntries, replacesPhrase, type UnlockRow } from '@shared/levelUnlocks'
+import { spellMetricsParts } from '@shared/spellMetrics'
+import { memorizedClause, type SpellSetsSnap } from '@shared/spellSets'
+import { classLevelLabel } from '@shared/unlockSearch'
 import { Tooltip } from '../../lib/Tooltip'
 import { SpellTooltip } from '../../lib/SpellCard'
+// ONE PHRASE FOR "+N out of era", owned by the surface that first drew it (JOS-377) and imported
+// here the way `CurrentMobCard` imports it — a second copy would be a second wording.
+import { outOfEraLabel } from '../mobs/dropEra'
 
 /** Row height in px — fixed, which is what keeps a scanned list on a rhythm. */
 const ROW_H = 26
@@ -51,17 +88,34 @@ const KIND_COLOR: Record<UnlockRow['kind'], string> = {
   innate: '#d9b25f'
 }
 
-/** The class chips: FILLED for a class we know is in the loadout, outlined for a candidate. */
-function ClassChips({ classes, resolved }: { classes: ClassAbbr[]; resolved: ReadonlySet<string> }): JSX.Element {
+/**
+ * The class chips: FILLED for a class we know is in the loadout, outlined for a candidate.
+ *
+ * A SEARCH ROW'S CHIPS CARRY THE LEVEL (JOS-392, `row.levels`) — `CLR 24 · PAL 30` said as chips,
+ * because that row is drawn at no level and a bare `CLR` would be a fact withheld. A LEVEL row's
+ * chips stay bare: the level is stated once, for the whole panel, by the stepper.
+ */
+function ClassChips({
+  row,
+  resolved
+}: {
+  row: UnlockRow
+  resolved: ReadonlySet<string>
+}): JSX.Element {
+  const chips: { cls: ClassAbbr; label: string }[] =
+    row.levels === undefined
+      ? row.classes.map((c) => ({ cls: c, label: c }))
+      : row.levels.map((p) => ({ cls: p.cls, label: classLevelLabel(p) }))
   return (
     <>
-      {classes.map((c) => (
+      {chips.map((c) => (
         <Chip
-          key={c}
+          key={c.cls}
           size="small"
-          label={c}
+          label={c.label}
           data-testid="unlock-class-chip"
-          variant={resolved.has(c) ? 'filled' : 'outlined'}
+          data-class={c.cls}
+          variant={resolved.has(c.cls) ? 'filled' : 'outlined'}
           color="secondary"
           sx={{ height: 17, fontSize: 10, '& .MuiChip-label': { px: 0.6 } }}
         />
@@ -70,7 +124,151 @@ function ClassChips({ classes, resolved }: { classes: ClassAbbr[]; resolved: Rea
   )
 }
 
-function Row({ row, resolved }: { row: UnlockRow; resolved: ReadonlySet<string> }): JSX.Element {
+/** One clause of the detail line. `dim` is for the ones that are context rather than the answer. */
+function Note({ text, testid, dim }: { text: string; testid: string; dim?: boolean }): JSX.Element {
+  return (
+    <NoteLine testid={testid} dim={dim}>
+      {text}
+    </NoteLine>
+  )
+}
+
+/** The same clause, when part of it is a hover target rather than a string (see `NoteSpell`). */
+function NoteLine({
+  children,
+  testid,
+  dim
+}: {
+  children: React.ReactNode
+  testid: string
+  dim?: boolean
+}): JSX.Element {
+  return (
+    <Typography
+      variant="caption"
+      data-testid={testid}
+      sx={{ fontSize: 10.5, color: dim === true ? 'text.disabled' : 'text.secondary' }}
+      noWrap
+    >
+      {children}
+    </Typography>
+  )
+}
+
+/**
+ * A spell NAME inside a note, as a hover target (JOS-392, owner addition).
+ *
+ * The `replaces` and `memorized` clauses both name a spell that is not this row's — the rung below
+ * it, and where that rung currently sits — and a player choosing whether to buy the upgrade wants
+ * to read BOTH cards without leaving the panel. So the name inside the sentence gets the same
+ * `SpellTooltip` the row's own name has. The rest of the sentence stays plain text: `(CLR)` is a
+ * class and `is memorized now` is a state, and neither is a thing to open.
+ */
+function NoteSpell({ name }: { name: string }): JSX.Element {
+  return (
+    <SpellTooltip name={name} placement="top">
+      <Box component="span" data-testid="unlock-note-spell" sx={{ textDecoration: 'underline dotted', cursor: 'help' }}>
+        {name}
+      </Box>
+    </SpellTooltip>
+  )
+}
+
+/**
+ * `replaces Minor Healing (CLR)`, with the replaced NAME hoverable.
+ *
+ * The sentence is `shared/levelUnlocks.ts`'s (`replacesEntries` — the same list `replacesPhrase`
+ * joins), so the words here and the words a test pins cannot drift; this only decides which span
+ * of it opens a card.
+ */
+function ReplacesNote({ row }: { row: UnlockRow }): JSX.Element | null {
+  const entries = replacesEntries(row)
+  if (entries.length === 0) return null
+  return (
+    <NoteLine testid="unlock-replaces" dim>
+      replaces{' '}
+      {entries.map((e, i) => (
+        <Box component="span" key={`${e.name}|${e.cls}`}>
+          {i > 0 && ', '}
+          <NoteSpell name={e.name} /> ({e.cls})
+        </Box>
+      ))}
+    </NoteLine>
+  )
+}
+
+/**
+ * Where the spell THIS row replaces currently lives, or null.
+ *
+ * The replaced spell is the one this row's own classes retire — a trio row can carry two, and the
+ * first is the one the note is about, because the alternative is a sentence that names two bars.
+ */
+function MemorizedNote({ row, sets }: { row: UnlockRow; sets: SpellSetsSnap }): JSX.Element | null {
+  const mine = (row.spell?.replaces ?? []).find((r) => row.classes.includes(r.cls))
+  const clause = mine === undefined ? null : memorizedClause(sets, mine.name)
+  if (mine === undefined || clause === null) return null
+  return (
+    <NoteLine testid="unlock-memorized" dim>
+      <NoteSpell name={mine.name} />
+      {clause}
+    </NoteLine>
+  )
+}
+
+/**
+ * THE SECOND LINE: figures, ownership, what it replaces, and where that replaced spell is.
+ *
+ * The order is the order a buying decision reads in — what it does, whether you already have it,
+ * what it retires, and whether the thing it retires is loaded right now. Returns null when the row
+ * has none of them, and the row stays exactly the height JOS-289 gave it.
+ *
+ * THE MEMORIZED CLAUSE HANGS OFF THE REPLACED SPELL, not this one — you cannot have memorized a
+ * spell you unlock at this level. It appears only when the log has WATCHED that spell go into a
+ * gem (shared/spellSets.ts rule 1: presence only, never a claim of absence), so a fresh log says
+ * nothing here rather than telling a player their bar is empty.
+ */
+function RowDetail({
+  row,
+  resolved,
+  sets
+}: {
+  row: UnlockRow
+  resolved: ReadonlySet<string>
+  sets: SpellSetsSnap
+}): JSX.Element | null {
+  const metrics = row.spell?.metrics
+  const figures = metrics === undefined ? [] : spellMetricsParts(metrics)
+  const owned = ownershipPhrase(row, resolved)
+  const replaces = <ReplacesNote row={row} />
+  const memorized = <MemorizedNote row={row} sets={sets} />
+  if (figures.length === 0 && owned === null && replacesPhrase(row) === null) return null
+  return (
+    <Stack
+      direction="row"
+      spacing={0.75}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+      data-testid="unlock-detail"
+      sx={{ pl: 0.25, mt: -0.5, mb: 0.25, minWidth: 0 }}
+    >
+      {figures.length > 0 && <Note text={figures.join(' · ')} testid="unlock-figures" />}
+      {owned !== null && <Note text={owned} testid="unlock-already-yours" />}
+      {replaces}
+      {memorized}
+    </Stack>
+  )
+}
+
+function Row({
+  row,
+  resolved,
+  sets
+}: {
+  row: UnlockRow
+  resolved: ReadonlySet<string>
+  sets: SpellSetsSnap
+}): JSX.Element {
   const name =
     row.kind === 'spell' ? (
       <SpellTooltip name={row.name}>
@@ -84,12 +282,11 @@ function Row({ row, resolved }: { row: UnlockRow; resolved: ReadonlySet<string> 
       </Typography>
     )
   return (
+    <Box data-testid="unlock-row" data-kind={row.kind} sx={{ minWidth: 0 }}>
     <Stack
       direction="row"
       spacing={0.75}
       alignItems="center"
-      data-testid="unlock-row"
-      data-kind={row.kind}
       sx={{ height: ROW_H, minWidth: 0 }}
     >
       {row.kind !== 'spell' && (
@@ -119,8 +316,83 @@ function Row({ row, resolved }: { row: UnlockRow; resolved: ReadonlySet<string> 
           />
         </Tooltip>
       )}
-      <ClassChips classes={row.classes} resolved={resolved} />
+      {/* THE ERA CHIP — the item card's own label and colour (`PlannerChips.EraChip`'s warning
+          outline), on the rows that are drawn rather than folded: every search result, and the
+          level rows once the disclosure has been opened. */}
+      {row.spell?.outOfEra === true && (
+        <Tooltip title="The wiki marks this spell's page out of era: it belongs to an expansion this server has not opened.">
+          <Chip
+            size="small"
+            label="out of era"
+            data-testid="unlock-out-of-era"
+            color="warning"
+            variant="outlined"
+            sx={{ height: 17, fontSize: 10, '& .MuiChip-label': { px: 0.6 } }}
+          />
+        </Tooltip>
+      )}
+      <ClassChips row={row} resolved={resolved} />
     </Stack>
+      <RowDetail row={row} resolved={resolved} sets={sets} />
+    </Box>
+  )
+}
+
+/**
+ * THE DISCLOSURE (JOS-393) — `+N out of era`, and the rows behind it.
+ *
+ * `MobDropsSection.OutOfEraDrops`'s shape, deliberately: same phrase, same one-click cost, same
+ * chevron, because a player who has learned what that line means on a mob page has learned it here
+ * too. A DISCLOSURE AND NOT A DELETION — the wiki states these spells at this level and that stays
+ * sayable; what stops happening is a level list quietly promising a trip to the vendor.
+ *
+ * Nothing folded ⇒ nothing drawn, never an empty disclosure.
+ */
+function OutOfEraRows({
+  rows,
+  resolved,
+  sets
+}: {
+  rows: UnlockRow[]
+  resolved: ReadonlySet<string>
+  sets: SpellSetsSnap
+}): JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  if (rows.length === 0) return null
+  return (
+    <Box>
+      <Stack
+        direction="row"
+        alignItems="center"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setOpen(!open)
+        }}
+        data-testid="unlock-era-toggle"
+        sx={{
+          display: 'inline-flex',
+          cursor: 'pointer',
+          color: 'text.secondary',
+          '&:hover': { color: 'primary.main' }
+        }}
+      >
+        <Typography variant="caption" sx={{ fontSize: 10.5 }}>
+          {outOfEraLabel(rows.length)}
+        </Typography>
+        <ExpandMoreIcon
+          fontSize="inherit"
+          sx={{ transition: 'transform 120ms', transform: open ? 'rotate(180deg)' : undefined }}
+        />
+      </Stack>
+      <Collapse in={open} unmountOnExit>
+        {rows.map((r) => (
+          <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} />
+        ))}
+      </Collapse>
+    </Box>
   )
 }
 
@@ -133,26 +405,50 @@ export function UnlockList({
   title,
   rows,
   resolved,
-  empty
+  empty,
+  sets,
+  count,
+  outOfEra = []
 }: {
   title: string
   rows: UnlockRow[]
   resolved: ReadonlySet<string>
   empty: string
+  /** The live gem/spell-set state, for the "is what this replaces loaded right now" clause. */
+  sets: SpellSetsSnap
+  /**
+   * What the heading counts, when that is not the number of rows drawn — the search results are
+   * CAPPED (JOS-392), and a heading that counted the mounted rows would quietly restate the cap as
+   * the answer. Absent everywhere else, where the two numbers are the same by construction.
+   */
+  count?: number
+  /**
+   * Rows the wiki badges OUT OF ERA, folded behind the disclosure (JOS-393). Absent on every list
+   * that has no such rows — the search results, where the chip does the same job in place, and the
+   * skills list, which the era join says nothing about.
+   *
+   * The heading counts the SHOWN rows; the disclosure counts its own. Two numbers because they are
+   * two claims, and a heading of `Spells (4)` over three visible rows would be neither.
+   */
+  outOfEra?: UnlockRow[]
 }): JSX.Element {
   return (
     <Box sx={{ flex: 1, minWidth: 0 }} data-testid="unlock-list">
       <Typography variant="caption" color="text.secondary" sx={{ mb: 0.25 }}>
-        {title} ({rows.length})
+        {title} ({count ?? rows.length})
       </Typography>
       <Box>
-        {rows.length === 0 ? (
+        {/* THE DISJUNCTION MATTERS (the mob page's own): a level whose every spell is out of era
+            has spells, so the empty sentence must not claim otherwise — the disclosure is what it
+            has to say. */}
+        {rows.length === 0 && outOfEra.length === 0 ? (
           <Typography variant="caption" color="text.disabled">
             {empty}
           </Typography>
         ) : (
-          rows.map((r) => <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} />)
+          rows.map((r) => <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} />)
         )}
+        <OutOfEraRows rows={outOfEra} resolved={resolved} sets={sets} />
       </Box>
     </Box>
   )

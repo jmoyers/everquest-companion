@@ -39,7 +39,7 @@
  * this install has been TOLD what the X now does.
  */
 export interface CloseToTrayPrefs {
-  /** Does closing the main window keep the companion running? Default ON. */
+  /** Does closing the main window keep the companion running? Default OFF (owner, 2026-08-16). */
   enabled: boolean
   /**
    * Has the user acknowledged the "still running in the tray" card?
@@ -53,13 +53,18 @@ export interface CloseToTrayPrefs {
 }
 
 /**
- * ON, and never shown to anybody as a choice they had to make.
+ * OFF: the X quits, exactly as every build before this one did, until somebody asks otherwise.
  *
- * The owner's design says the X keeps the companion alive on a fresh install, so an ABSENT key,
- * a hand-edited file and an upgrade from a build that predates this all mean the same thing. The
- * cost of that default is exactly one popover, once, which is what the notice exists to pay.
+ * The first cut shipped this ON (the owner's 2026-08-16 design), and the owner reversed it the same
+ * day after hands-on: "default it to off. it should close by default. then if somebody checks that
+ * preference, it goes to this new experience." So an ABSENT key, a hand-edited file and an upgrade
+ * from a build that predates this all mean what they always meant - closing the window ends the
+ * app - and the tray, the popover and the whole hide path are OPT-IN through any of the three
+ * mirrors (Preferences → Window, the title bar's overlay menu, the tray icon's own checkbox). The
+ * popover still explains itself on the first close that hides, which is now always a close made
+ * by somebody who chose it.
  */
-export const DEFAULT_CLOSE_TO_TRAY: CloseToTrayPrefs = { enabled: true, noticeAcknowledged: false }
+export const DEFAULT_CLOSE_TO_TRAY: CloseToTrayPrefs = { enabled: false, noticeAcknowledged: false }
 
 /**
  * The prefs, defaulted field by field.

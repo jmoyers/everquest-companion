@@ -50,29 +50,30 @@ const read = (rel: string): string => readFileSync(new URL(rel, import.meta.url)
 
 // ---- 1 + 2. the preference ---------------------------------------------------------------------
 
-test('THE DEFAULT IS ON, and every unreadable store lands on it', () => {
-  assert.deepEqual(DEFAULT_CLOSE_TO_TRAY, { enabled: true, noticeAcknowledged: false })
+test('THE DEFAULT IS OFF (owner reversal, 2026-08-16), and every unreadable store lands on it', () => {
+  assert.deepEqual(DEFAULT_CLOSE_TO_TRAY, { enabled: false, noticeAcknowledged: false })
   for (const junk of [undefined, null, 'yes', 42, [true], { enabled: 'yes' }]) {
     assert.deepEqual(
       normalizeCloseToTray(junk),
-      { enabled: true, noticeAcknowledged: false },
+      { enabled: false, noticeAcknowledged: false },
       `${JSON.stringify(junk)} reads as the shipped behaviour`
     )
   }
 })
 
 test('a stored answer is kept, in both directions and field by field', () => {
-  assert.deepEqual(normalizeCloseToTray({ enabled: false, noticeAcknowledged: true }), {
-    enabled: false,
+  assert.deepEqual(normalizeCloseToTray({ enabled: true, noticeAcknowledged: true }), {
+    enabled: true,
     noticeAcknowledged: true
   })
   // The half-written store an older build (or a hand edit) can leave behind.
-  assert.deepEqual(normalizeCloseToTray({ enabled: false }), {
-    enabled: false,
+  assert.deepEqual(normalizeCloseToTray({ enabled: true }), {
+    enabled: true,
     noticeAcknowledged: false
   })
+  // …and a missing switch falls to the shipped OFF, whatever the notice flag says.
   assert.deepEqual(normalizeCloseToTray({ noticeAcknowledged: true }), {
-    enabled: true,
+    enabled: false,
     noticeAcknowledged: true
   })
 })
@@ -98,7 +99,7 @@ test('A PATCH KEEPS WHAT IT DOES NOT NAME — one merge for both writers', () =>
 
 test('THE WHOLE CLOSE POLICY, as a table', () => {
   const table: { enabled: boolean; quitting: boolean; trayAvailable: boolean; want: string; why: string }[] = [
-    { enabled: true, quitting: false, trayAvailable: true, want: 'hide', why: 'the feature, on a fresh install' },
+    { enabled: true, quitting: false, trayAvailable: true, want: 'hide', why: 'the feature, once opted into' },
     { enabled: false, quitting: false, trayAvailable: true, want: 'close', why: 'the user asked for the X to quit' },
     { enabled: true, quitting: true, trayAvailable: true, want: 'close', why: 'the app is already quitting' },
     { enabled: true, quitting: false, trayAvailable: false, want: 'close', why: 'nothing could bring it back' },

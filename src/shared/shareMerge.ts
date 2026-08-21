@@ -226,7 +226,11 @@ const OVERLAY_KIND_LABEL: Record<OverlayKind, string> = {
   // id. The PER-ALERT half of this feature (`showOnScreen` / `bannerText` / `bannerColor`) does
   // travel in a shared bundle, because it lives on the alert def and an alert def is the thing
   // sharing exists for.
-  alertBanner: 'Alert banner'
+  alertBanner: 'Alert banner',
+  // And the con card (JOS-383). Same story a sixth time: no shared field today — `src/main/
+  // share.ts`'s KINDS list does not include it — but the map is keyed by the whole union on
+  // purpose, so it is named here rather than letting a future shared field render as a raw kind id.
+  conCard: 'Mob card on con'
 }
 
 /**

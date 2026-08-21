@@ -124,10 +124,25 @@ default**. Everything below is checkable rather than promised:
 
 | Data | Kept |
 | --- | --- |
-| `usage_daily`, `usage_funnel_daily` — the day-by-day counters | **indefinitely**, and they are anonymous by construction: a day, a metric name, a fixed dimension value, and a number. There is no id in these tables and nothing in them can be traced to an install. |
+| `usage_daily`, `usage_funnel_daily` — the day-by-day counters | **indefinitely**, and they are anonymous by construction: a day, a metric name, a fixed dimension value, and a number. There is no id in these tables and nothing in them can be traced to an install. The counter rows now also carry a **shard number**, which is a random integer drawn per request purely so that concurrent writes stop colliding on one row: it is never derived from your anonymous id, and it says nothing about who sent the count. |
 | `analytics_install` — first seen, last seen, days seen, version, channel | one row per anonymous id, kept while the id is in use. **This is the entire per-id footprint of the whole feature**, and deleting the row is the whole deletion path (`analytics wipe --id`). |
 | The ingest function's own log | **14 days**, counts only — it never logs an analytics id, and the counters it reports cannot reconstruct a batch. |
 | API gateway access logs, which include your source IP | **14 days**, exactly as for feedback below, and never joined to anything. |
+
+**There is a backup, and it is a copy of the same data rather than more of it.** Once a
+night the database is copied to a private S3 bucket in the same account — every table,
+the same columns, as gzipped JSON — and AWS Backup separately keeps point-in-time copies
+of the whole database (one a day for 35 days, one a month for a year). This exists
+because a bad migration or a mistyped command can lose data that replication would
+faithfully lose with it.
+
+What matters for this section is what a backup **is not**: nothing new is gathered, no
+field is added, nothing is derived, and no identifier appears in a copy that was not
+already in the table. The bucket blocks all public access, nothing outside the account
+can read it, and the one thing that writes to it can only add objects — it cannot read
+one back, cannot delete one, and has no internet-facing trigger of any kind. The whole
+stack is in this repo under [`infra/`](infra/), including the exact list of columns that
+gets copied.
 
 **Asking us to delete it.** Preferences shows your anonymous id; quote it in a
 [GitHub issue](https://github.com/jmoyers/everquest-companion/issues) and the install
@@ -163,6 +178,28 @@ deletes the object outright and stamps the row so we can tell it was done. The
 description itself stays unless you ask for the whole report to go, in which case the
 report and its slice both go — that is what the `wipe` path in the triage tool exists
 for.
+
+**And here is the part most projects leave you to discover: backups.** Since the database
+started being backed up (a nightly copy to a private bucket, plus point-in-time copies of
+the whole database), deleting a report removes it from the live database **immediately**
+and from the backups **within a bounded window** rather than instantly — because a backup
+you can edit is not a backup. Concretely:
+
+| Copy | When a deleted report is gone from it |
+| --- | --- |
+| The live database | immediately, when you ask |
+| The attached log slice in S3 | immediately (the object is deleted outright; that bucket is unversioned on purpose) |
+| The nightly copies of the reports table | **within 90 days** — the same window the attached slice already had. Reports are archived under their own storage prefix, separate from the counters, for exactly this reason: it is the only part of the archive that expires, and it expires *because* it is the only part holding anything anyone wrote |
+| The whole-database point-in-time copies | **within 12 months**, when the last monthly one carrying it rolls off |
+
+The counters are not on this list because there is nothing in them to delete: they are
+anonymous daily sums with no identifier in them, in a backup exactly as in the live
+database.
+
+If a 90-day or 12-month window is not acceptable for something you sent, say so in the
+request — the practical answer is usually that the report should not have contained it,
+and the honest fix is to say what it was so it can be handled deliberately rather than
+promised away.
 
 Two things about how the collected data is handled, because they bound the damage a
 mistake could do: **a log slice is never pasted into a public GitHub issue** (the repo

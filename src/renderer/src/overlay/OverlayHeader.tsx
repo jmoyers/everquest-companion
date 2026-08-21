@@ -100,7 +100,24 @@ const TAIL_COLOR = 'rgba(255,255,255,0.7)'
 type HeaderCapture = (reason: CaptureReason, active: boolean) => void
 const NO_CAPTURE: HeaderCapture = () => undefined
 
-/** Lock/close, shown when interactive or while a locked overlay has captured the mouse. */
+/** The IconButton's box (IconButton.tsx: 20 x 20), so the slot below can hold its shape. */
+const CONTROL_PX = 20
+
+/**
+ * Lock/close, shown when interactive or while a locked overlay has captured the mouse.
+ *
+ * THE SLOT KEEPS ITS SIZE WHEN THE CONTROLS ARE HIDDEN (owner, hands-on, 2026-08-16: "the locked
+ * title bar should not adjust the size when the lock appears"). Returning `null` here made the
+ * unlock pin the tallest thing in the header row, so a locked overlay's title bar grew by the
+ * button's overhang the moment the pointer arrived and shrank when it left - a jump on the exact
+ * gesture that is supposed to feel like nothing. The hidden state is therefore an empty box of the
+ * one control a locked header ever reveals (the unlock pin; the close ✕ is unlocked-only), with the
+ * same margin, so the row's height and the title's width are the same hovered or not.
+ *
+ * A PLACEHOLDER, NOT A HIDDEN BUTTON. `visibility:hidden` would keep the shape too, but the e2e
+ * (overlay-sync) proves the reveal by counting `<button>`s from zero, and a control that cannot be
+ * pressed has no business being a button in the DOM: the placeholder is `aria-hidden` and inert.
+ */
 function HeaderControls({
   chrome,
   iconAccentBg
@@ -109,11 +126,13 @@ function HeaderControls({
   iconAccentBg: string
 }): JSX.Element | null {
   const { locked, hovering, noDrag, toggleLock } = chrome
-  if (locked && !hovering) return null
+  if (locked && !hovering) {
+    return <div aria-hidden style={{ width: CONTROL_PX, height: CONTROL_PX, marginLeft: 2, flexShrink: 0 }} />
+  }
   return (
     <div style={{ ...noDrag, display: 'flex', alignItems: 'center', gap: 2, marginLeft: 2 }}>
       <IconButton
-        title={locked ? 'Unlock (interactive)' : 'Lock (click-through)'}
+        label={locked ? 'Unlock (interactive)' : 'Lock (click-through)'}
         onClick={toggleLock}
         accent={locked}
         accentBg={iconAccentBg}
@@ -122,7 +141,7 @@ function HeaderControls({
       </IconButton>
       {!locked && (
         <IconButton
-          title="Close overlay"
+          label="Close overlay"
           onClick={() => window.eqOverlay.close()}
           danger
           accentBg={iconAccentBg}
@@ -177,7 +196,7 @@ function HeaderBody({
           gets to use (JOS-158). */}
       {tail !== undefined && tail !== '' && (
         <span
-          title={tailTitle}
+          aria-label={tailTitle}
           style={{ color: tailColor, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}
         >
           {tail}
@@ -191,7 +210,7 @@ function HeaderBody({
 function LiveDot({ live }: { live: boolean }): JSX.Element {
   return (
     <span
-      title={live ? 'In combat' : 'Idle'}
+      aria-label={live ? 'In combat' : 'Idle'}
       style={{
         width: 8,
         height: 8,
@@ -254,7 +273,6 @@ function DragGutter(): JSX.Element {
   return (
     <div
       data-testid="overlay-drag-gutter"
-      title="Drag to move this overlay"
       // IT IS THE FIRST THING TO GO ON A NARROW WINDOW (JOS-278): 20px of deliberate emptiness
       // is exactly the right thing to spend when the alternative is the lock/close pair leaving
       // the window. `minWidth: 0` is what makes the shrink real — a flex item's default floor is
@@ -317,7 +335,7 @@ function HeaderTrigger({
         onMouseLeave={() => setHot(false)}
         // The disambiguation timing the popup rows carry, on the closed state too — the header
         // shows the name, the tooltip says WHICH one.
-        title={current ? `${current.label} · ${current.timing}` : undefined}
+        aria-label={current ? `${current.label} · ${current.timing}` : undefined}
         style={{
           ...noDrag,
           display: 'flex',

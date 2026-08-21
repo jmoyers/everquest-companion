@@ -42,7 +42,14 @@ import {
 import type { OverlayConfig } from '@shared/types'
 import { BannerLine } from './BannerLine'
 import { ScaledContent } from './overlayScale'
-import { cardReduce, useCardTick, useQueueMouseCapture, type CardAction, type CardState } from './cardQueue'
+import {
+  cardReduce,
+  useCardTick,
+  useQueueMouseCapture,
+  useUnpinOnPointerExit,
+  type CardAction,
+  type CardState
+} from './cardQueue'
 import { TextScaleStepper } from './TextScaleStepper'
 import { useOverlayChrome, type OverlayChrome } from './useOverlayChrome'
 
@@ -182,6 +189,9 @@ export default function AlertBannerOverlay(): JSX.Element {
   useBannerFeed(cfg, dispatch)
   useCardTick(lines.length > 0, () => dispatch({ type: 'tick', dtMs: 100 }))
   useQueueMouseCapture(chrome.ready, chrome.locked, lines.length > 0)
+  // A pointer that left without saying so must not leave a line pinned forever (JOS-381) — the
+  // strip's own route into the stuck state, argued at `useUnpinOnPointerExit`.
+  useUnpinOnPointerExit(lines, dispatch)
 
   return (
     <div

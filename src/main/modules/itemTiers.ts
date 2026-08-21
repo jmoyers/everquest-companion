@@ -23,6 +23,14 @@
 // distinction visible: four `Kitchen Toolbelt +4` drops were looted post-launch and all four
 // were destroyed minutes later.
 //
+// AND A DESTROY RETIRES NOTHING HERE (JOS-401, the census). The destroy line is parsed now
+// (`disposition: 'destroyed'`), and this module still folds only 'combined' loot rows, on the same
+// reasoning the parser's sweep gave it: `tier` is the HIGHEST tier ever OBSERVED for a base name,
+// which is a fact about a merge that happened and never a claim about what is in your bags today.
+// Destroying the Kitchen Toolbelt +4 does not un-observe the merge that made it. The counting
+// surfaces that DO claim current inventory (posky/heldCounts.ts, inventory/reconcile.ts) are where
+// the subtraction lives.
+//
 // WHAT IT NEVER CLAIMS. Item exp WITHIN a tier is unobservable (no log line reports it), so
 // nothing here models progress toward the next tier — the UI draws position only. An item we
 // have never merged has NO row: absent means UNKNOWN, never tier 0.

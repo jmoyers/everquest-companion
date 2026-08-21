@@ -54,6 +54,8 @@ export {
   peekPrefsSnapshot,
   recordPref,
   resetPrefsSnapshotForTests,
+  type AlertBannerSeed,
+  type ConCardSeed,
   type PrefsSnapshot,
   type ToastSeed
 } from './prefsSnapshot'

@@ -69,6 +69,10 @@ import { normalizeGraphicsPrefs } from '../shared/graphicsPrefs'
 // pure, ZERO-IMPORT contract, and its normalizer is the one answer to "what is a valid
 // process-priority pref block" that the store, the IPC handler and this migration all share.
 import { normalizeProcessPriorityPrefs } from '../shared/processPriority'
+// The SEVENTH, and identical in kind to the third through sixth: shared/resistPrefs.ts is a pure,
+// ZERO-IMPORT contract, and its normalizer is the one answer to "what is a valid resist-evidence
+// pref block" that the store, the IPC handler and this migration all share.
+import { normalizeResistPrefs } from '../shared/resistPrefs'
 
 /** A store file, parsed. Deliberately untyped: a migration's INPUT is a shape the current
  *  code no longer describes, so `StoreShape` would be a lie at every step but the last. */
@@ -81,7 +85,7 @@ export const SCHEMA_VERSION_KEY = 'schemaVersion'
  * The schema the code running right now expects. Bump by exactly one whenever a persisted
  * shape changes, and add the matching MIGRATIONS entry in the same commit.
  */
-export const CURRENT_SCHEMA_VERSION = 13
+export const CURRENT_SCHEMA_VERSION = 14
 
 export interface Migration {
   /** Version this step produces. Steps run in ascending `to` order, contiguously. */
@@ -609,6 +613,37 @@ const migrateToV13: Migration = {
   }
 }
 
+// ------------------------------- 13 → 14: which casters teach the resist profiles (JOS-385)
+//
+// ONE new top-level blob, holding one boolean:
+//
+//   `resists` {includeNpcCasters:true}
+//
+// ON IS THE POLICY, and it was MEASURED rather than assumed — which is the whole reason this
+// switch exists at all. JOS-382 refused NPC-on-NPC evidence outright; the owner's worry when he
+// reopened it was specific and testable (a player's fire spells get resisted where a charmed pet's
+// do not, because pets are tuned differently, so folding pet casts in would quietly drag a mob's
+// fire number down). The `--compare` mode of scripts/gen-resist-baseline.ts put both populations
+// through the same estimator on the owner's log, and the skew the worry describes is not there.
+// So the family ships on, and the switch stays because the answer is the kind that can change.
+//
+// EXISTING INSTALLS GET `true` TOO, deliberately, and for the 11 → 12 step's reason verbatim: an
+// absent key normalizes to the default anyway, nobody has ever expressed a preference here because
+// there was no control to express it with, and after this step a stored `false` is a decision that
+// no future step gets to reinterpret.
+//
+// NOTHING ABOUT THE LEDGER MOVES. The switch is read when a card is DRAWN, never when a log is
+// folded (shared/resistPrefs.ts says why at length), so this step changes what a number weighs and
+// not one byte of what was observed. There is no data to rewrite and nothing to invalidate.
+const migrateToV14: Migration = {
+  to: 14,
+  describe: 'add the resists prefs blob (NPC and pet casters count as evidence, on by default)',
+  migrate(data) {
+    data.resists = normalizeResistPrefs(data.resists)
+    return data
+  }
+}
+
 /**
  * The chain, ascending. APPEND ONLY — never renumber, never edit a shipped step (a store
  * out there was migrated by the old text and will never run it again), never delete one:
@@ -626,7 +661,8 @@ export const MIGRATIONS: readonly Migration[] = [
   migrateToV10,
   migrateToV11,
   migrateToV12,
-  migrateToV13
+  migrateToV13,
+  migrateToV14
 ]
 
 /** Version recorded in `data`; anything absent, non-integer or < 1 means "pre-framework" ⇒ 1. */

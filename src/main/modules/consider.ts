@@ -32,6 +32,7 @@ import type { EqModule } from './types'
 import type { LogEvent } from '../../shared/logEvents'
 import type { ConsiderDelta, ConsiderRow, ConsiderSnap, MobKnowledge } from '../../shared/types'
 import { MobLootIndex, mobKey } from '../mobLookupParse'
+import { isDestroyed } from '../../shared/lootDisposition'
 
 /** How many considered mobs the ring keeps. Oldest fall off the front. */
 export const CONSIDER_CAP = 50
@@ -89,7 +90,28 @@ export class ConsiderModule implements EqModule<ConsiderSnap, ConsiderDelta> {
   /** the first live tick has run ⇒ the historical replay is over (see the header). */
   private backfilled = false
 
+  /**
+   * THE CON-CARD SEAM (JOS-383). One callback, called for LIVE cons only, with the event and the
+   * zone this module is already tracking.
+   *
+   * A SEAM INSTALLED AFTER CONSTRUCTION rather than a constructor dep, for the reason
+   * `alerts.setTimerRows` and `combat.setRoster` are: the consumer (main/conCard.ts) reads the
+   * kill counts and the resist ledger off `pipeline.ts`, and a constructor dep would mean the
+   * pipeline importing the consumer that imports the pipeline. `modules/wiring.ts` also has to stay
+   * Electron-free — `npm run bench:replay` builds these modules under plain node — and a seam that
+   * is simply never installed there costs that bench nothing.
+   *
+   * It is the module's ONLY outward call, and it is on the live path on purpose: a startup replay
+   * of a month of logs folds hundreds of cons into the ring and must draw not one card.
+   */
+  private conCardHook: ((ev: Extract<LogEvent, { kind: 'consider' }>, zone: string | undefined) => void) | null = null
+
   constructor(private deps: ConsiderDeps = {}) {}
+
+  /** Install the con-card seam (see `conCardHook`). Idempotent; the last caller wins. */
+  setConCardHook(hook: (ev: Extract<LogEvent, { kind: 'consider' }>, zone: string | undefined) => void): void {
+    this.conCardHook = hook
+  }
 
   reset(): void {
     this.ring = []
@@ -120,6 +142,13 @@ export class ConsiderModule implements EqModule<ConsiderSnap, ConsiderDelta> {
     }
     if (ev.kind === 'loot') {
       // Historical loot counts — it IS the history. Stacked loots add their count, not 1.
+      //
+      // A DESTROY IS NEVER A DROP (JOS-401, the census). This index answers "what has this MOB
+      // handed me", so a row with no mob in the sentence has nothing to say to it. `MobLootIndex.
+      // note` already refuses a source-less row, which makes the mob knowledge and every drop-rate
+      // surface built on it structurally immune — the explicit refusal here is so the rule is
+      // stated where the decision is made rather than inferred from a guard two files away.
+      if (isDestroyed(ev)) return
       this.deps.ownLoot?.note(ev.item, ev.source, ev.ts, ev.count ?? 1)
       return
     }
@@ -160,6 +189,9 @@ export class ConsiderModule implements EqModule<ConsiderSnap, ConsiderDelta> {
     // LIVE cons enrich immediately; historical ones wait for the bounded backfill below, so a
     // startup replay of a 1M-line log never becomes a burst of wiki traffic.
     if (live) this.probe(row)
+    // …and a LIVE con is also the moment the card over the game is owed (JOS-383). After the fold,
+    // so the ring is already true if anything the hook calls reads it back.
+    if (live) this.conCardHook?.(ev, this.zone)
   }
 
   /**

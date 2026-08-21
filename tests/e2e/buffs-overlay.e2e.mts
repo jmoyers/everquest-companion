@@ -46,7 +46,7 @@ import {
 } from './appHarness.mjs'
 import { mainWindow, makeUserData, overlayWindow, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture } from './logFixture.mjs'
-import { stepRowsHoverNothing, stepTitleBarOnlyTooltips } from './overlayTooltipSteps.mjs'
+import { stepNoTooltipsAnywhere, stepRowsHoverNothing } from './overlayTooltipSteps.mjs'
 // THE COLD START WITH THE WINDOW ALREADY OPEN (JOS-172) — a second launch with a narrative of its
 // own, so it lives beside the other step modules rather than inside this one's.
 import { seedRestart, stepRestartRehydrate } from './buffRestartSteps.mjs'
@@ -62,6 +62,10 @@ import {
 import { stepDismissBar } from './buffDismissSteps.mjs'
 // THE BUFFS THAT NEVER EXPIRE (JOS-215) — hidden by default, revealed by a per-window preference.
 import { stepPermanentRows } from './buffPermanentSteps.mjs'
+// THE TRACKING ALLOW-LIST (JOS-168) — the mode switch and the boxes on the Buffs TAB, filtering
+// what this window draws. Its own narrative, and the only step here that drives both windows at
+// once (the controls are in the app, the rows are over the game).
+import { stepAllowList } from './buffAllowSteps.mjs'
 // HOW SMALL THESE TWO WINDOWS GO (JOS-278). The report that lowered the floor was about the DEBUFF
 // window specifically — a player magnifying the screen with Lossless Scaling — and these two carry
 // the busiest footer of any kind, so they are where the floor is proved.
@@ -574,7 +578,7 @@ async function main(): Promise<void> {
       // JOS-358, on the two rows that step just raised and before anything clears them. One of them
       // is the ambiguous shape whose shared-landing candidate list used to BE the row's hover.
       await stepRowsHoverNothing(debuffsOverlay, 'buff-timer-row')
-      await stepTitleBarOnlyTooltips(debuffsOverlay, 'the debuffs window')
+      await stepNoTooltipsAnywhere(debuffsOverlay, 'the debuffs window')
       await stepBreakClearsOneTarget(debuffsOverlay, log)
       // …and the bar the break line SPARED is the one the user clears by hand (JOS-203).
       await stepDismissBar(debuffsOverlay, log)
@@ -588,6 +592,11 @@ async function main(): Promise<void> {
       // set of notices in front of it if the epoch guard ever regressed — which is a thing this
       // step should FAIL on, not a thing it should hide from the step next door.
       await stepPermanentRows(buffsOverlay, log)
+      // AFTER the permanent step, for its own reason: that step leaves `showPermanent` back OFF,
+      // so the rows this one counts are the ordinary timed ones. It also runs after the drop flash
+      // deliberately — this step's quiet-window claim is that IT raised no notices, and it reads
+      // the ones already on screen as its baseline rather than requiring an empty one.
+      await stepAllowList(page, buffsOverlay, log)
     } else {
       note('the buffs overlay window never appeared — the self-buff assertions could not run')
     }

@@ -16,6 +16,7 @@
 //      by construction: it is evidence about one mob on one server, not the drop table.
 //   3. QUESTS that name this mob, from the local catalog.
 //   4. KILLS — what the kills module knows, when the caller has it.
+//   5. RESISTS — what it shrugs off, mined from your logs over the shipped baseline (JOS-382).
 //
 // HONESTY (law 1) — every section states which of those three things happened: a source said
 // something, a source said nothing, or we could not ask. "No wiki page for this mob" and "the
@@ -54,6 +55,9 @@ import { ItemDrillDown, type OpenItem } from './MobDropRow'
 // the sections that had to invent it, and the quest/kill sections below borrow the one definition.
 import { AlsoLootedSection, DropsSection, dropSections, Quiet } from './MobDropsSection'
 import { knowledgeFromEntry } from './mobSearch'
+// The Resists card (JOS-382). Its own feature directory, not this one, because the con-tooltip
+// overlay mounts the very same component - see features/resists/ResistProfile.tsx.
+import { ResistProfile } from '../resists/ResistProfile'
 import type { MobConsiderContext, MobTarget } from './mobTarget'
 
 /** What the calling surface knew about your kills on this mob, when it knew anything. */
@@ -386,6 +390,8 @@ export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }
       <AlsoLootedSection extraSeen={extra} kills={kill?.count} onOpenItem={openItem} />
       <QuestsSection quests={quests} />
       <KillsSection kill={kill} />
+      {/* ---- 5. RESISTS ---- what it shrugs off and what it does not, mined from the logs. */}
+      <ResistProfile mob={mob} />
       <WikiSourceLine wikiUrl={wikiUrl} />
 
       {/* One hop deep: the item's own dialog. Mounted only on demand (see ItemDrillDown). */}

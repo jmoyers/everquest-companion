@@ -95,15 +95,15 @@ export function windowsMayShow(): boolean {
  * Does this kind's click-through mode install the WH_MOUSE_LL forwarding hook? PURE.
  *
  * TWO reasons not to, and they are independent:
- *   * neither STRIP forwards at all — the celebration toast and the alert banner (JOS-378) drive
- *     their capture from their QUEUE, not from a hover sensor, so either would pay for a
- *     system-wide hook over a window that is empty almost all of the time (JOS-40; the rule was
- *     already here for the toast, and the banner is the same window with different words in it).
+ *   * no STRIP forwards at all — the celebration toast, the alert banner (JOS-378) and the con card
+ *     (JOS-383) drive their capture from their QUEUE, not from a hover sensor, so each would pay
+ *     for a system-wide hook over a window that is empty almost all of the time (JOS-40; the rule
+ *     was already here for the toast, and the other two are the same window with different words).
  *   * NOBODY forwards during a replay — the hook's cost lands on the user's own mouselook, and
  *     the window it exists for is not even on screen (JOS-62).
  */
 export function overlayForwardsMouse(kind: OverlayKind, replayRunning: boolean): boolean {
-  return kind !== 'toast' && kind !== 'alertBanner' && !replayRunning
+  return kind !== 'toast' && kind !== 'alertBanner' && kind !== 'conCard' && !replayRunning
 }
 
 /** Should this kind's ignore-mouse call forward? (Bound form of `overlayForwardsMouse`.) */

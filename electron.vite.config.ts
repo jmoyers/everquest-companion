@@ -60,6 +60,10 @@ export default defineConfig({
         //     its 5 s process scan is a measured 8.4 ms of `EnumProcesses`, which main cannot
         //     spend. It replaced a `powershell.exe` child, and this entry is what lets that
         //     child's job move in-process without moving onto main's thread.
+        //   * resistTableWorker — the client's spells_us.txt (JOS-382). 38 MB and 73,963 rows,
+        //     parsed once per game patch. Same rule as speechWorker's: the thread that tails the
+        //     log cannot spend a few hundred milliseconds of uninterruptible splitting, and
+        //     JOS-371 says so in general terms.
         //   * perfProbeWorker — the SECOND CLOCK (JOS-367). Not offloaded work: it is a 250 ms
         //     timer measuring its own lateness, and its whole value is that it runs somewhere
         //     main does not. Two threads late in the same half second means the MACHINE stalled;
@@ -69,7 +73,8 @@ export default defineConfig({
           index: resolve(__dirname, 'src/main/index.ts'),
           speechWorker: resolve(__dirname, 'src/main/speech/worker.ts'),
           presenceWorker: resolve(__dirname, 'src/main/presenceWorker.ts'),
-          perfProbeWorker: resolve(__dirname, 'src/main/perfProbeWorker.ts')
+          perfProbeWorker: resolve(__dirname, 'src/main/perfProbeWorker.ts'),
+          resistTableWorker: resolve(__dirname, 'src/main/resistTableWorker.ts')
         }
       }
     }

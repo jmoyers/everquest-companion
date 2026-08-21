@@ -29,6 +29,7 @@ import { DEFAULT_TOAST_CONFIG, introToastPayload, type ToastPayload } from '@sha
 import type { OverlayConfig } from '@shared/types'
 import { ToastCard } from './ToastCard'
 import { ScaledContent } from './overlayScale'
+import { useUnpinOnPointerExit } from './cardQueue'
 import { toastReduce, type ToastAction, type ToastCardState } from './toastQueue'
 import { TextScaleStepper } from './TextScaleStepper'
 import { useOverlayChrome, type OverlayChrome } from './useOverlayChrome'
@@ -168,6 +169,9 @@ export default function ToastOverlay(): JSX.Element {
   }, [])
 
   useMouseCapture(chrome.ready, chrome.locked, cards.length > 0)
+  // A pointer that left without saying so must not leave a card pinned forever (JOS-381) — the
+  // strip's own route into the stuck state, argued at `useUnpinOnPointerExit` (cardQueue.ts).
+  useUnpinOnPointerExit(cards, dispatch)
 
   return (
     <div

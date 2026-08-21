@@ -205,11 +205,16 @@ function rawLine(text: string): AlertTrigger {
  * fires "Slow wore off a mob" instead of nothing.
  *
  * THE PROVENANCE IS AN OWNER RULING, NOT THE MESSAGE ORACLE, and that distinction is the whole
- * reason for two lists. The DB groups spells by LANDING message, and each Largo's landing sentence
- * (`Someone is bound in/by strands of solid music.`) is its own one-member family — so the oracle
- * that enumerates the enchanter and shaman ladders has nothing to say here in either direction.
- * A message family is not an effect family (the law JOS-200 and JOS-225 each learned the hard
- * way), which cuts both ways: it cannot put these songs in, and it cannot keep them out.
+ * reason for two lists. The DB groups spells by LANDING message, and the two Largo's songs share
+ * ONE — `Someone is bound by strands of solid music.`, which since JOS-384 is what the corrections
+ * overlay gives the level-20 song as well (the wiki wrote `in` and the shipped game prints `by`).
+ * Before that correction each had a one-member family of its own, and the note here said the
+ * landing-message oracle had nothing to say about them in either direction; now it has a family to
+ * say it about, and the answer is the same, because a message family is not an effect family (the
+ * law JOS-200 and JOS-225 each learned the hard way). That cuts both ways: the oracle cannot put
+ * these songs in, and it cannot keep them out. What the shared sentence DOES change is the mob
+ * side's arithmetic — see the on-you paragraph below, which was already written for exactly this
+ * shape and is why the two sides take different rosters.
  *
  * THE WIDER BARD BINDING LINE STAYS OUT — `Selo's Consonant Chain` (23), `Selo's Chords of
  * Cessation` (48) and `Selo's Assonant Strain` (54) are the same shape of song and are EXPLICITLY

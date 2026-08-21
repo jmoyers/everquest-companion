@@ -99,6 +99,7 @@ import { OverlaySnapSetting } from './OverlaySnapSetting'
 import { SNAP_RELEASE_HOLD } from '@shared/overlaySnap'
 import { ToastSetting } from './ToastSetting'
 import { AlertBannerSetting } from './AlertBannerSetting'
+import { ConCardSetting } from './ConCardSetting'
 // Cursor ring: another descriptor that lives beside its own card, same ceiling, same answer.
 import { cursorRingSection } from './CursorRingSetting'
 import { TelemetrySetting } from './TelemetrySetting'
@@ -240,6 +241,16 @@ function overlaysSection(): PrefSection {
         keywords:
           'alert alerts banner on screen onscreen text overlay big large popup message discord hear miss show display warning countdown colour color position move lines hold seconds',
         content: <AlertBannerSetting />
+      },
+      {
+        id: 'con-card',
+        label: 'Mob card on con',
+        // Written for the person who saw a card appear over their game and came here to find out
+        // what it was: this kind ships ON, so the search terms have to include what they SAW (a
+        // card, a popup, resists, drops) as well as what it is called.
+        keywords:
+          'con consider mob card popup tooltip creature resists resist chips drops loot level zone respawn faction overlay top centre center hide auto hide seconds close',
+        content: <ConCardSetting />
       }
     ]
   }

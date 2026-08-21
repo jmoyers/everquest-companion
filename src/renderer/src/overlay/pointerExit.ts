@@ -17,7 +17,14 @@
 //   2. the WINDOW loses focus, or the page is hidden — the alt-tab / click-into-the-game case;
 //   3. the overlay RELEASES its capture (useOverlayChrome): the last named reason letting go is
 //      this window saying "nothing here needs the mouse any more", which is exactly the moment a
-//      pinned overlay stops being able to observe a leave for itself.
+//      pinned overlay stops being able to observe a leave for itself;
+//   4. MAIN WATCHED THE CURSOR WALK OFF (JOS-381) — the only one that does not come from this
+//      window, and the one for the case where NONE of the first three can ever fire. While the
+//      Windows task switcher is up it owns input: the forwarded move that captured this window
+//      arrived, nothing arrives afterwards, and by the time the switcher closes the pointer is
+//      elsewhere. There is no blur (the overlay never had the foreground), no visibility change,
+//      no leave, and no reason letting go — so main watches the cursor for the seconds a locked
+//      overlay is capturing and says so (src/main/pointerWatch.ts).
 //
 // HOW A NATIVE TOOLTIP IS DISMISSED. There is no API for it. What there is: removing the `title`
 // attribute takes the popup down, because the widget re-reads the attribute it is drawing from.
@@ -95,25 +102,42 @@ export function onOverlayPointerExit(fn: () => void): () => void {
   }
 }
 
+/** Is an exit being delivered right now? See the re-entrancy note in `overlayPointerExited`. */
+let firing = false
+
 /**
  * The pointer has left. Dismiss the native tooltip and tell every hover surface.
  *
  * Safe to call repeatedly and from anywhere: a second call while the first restore is pending
  * finds no live titles and does nothing, and the pending restore is unaffected.
+ *
+ * AND SAFE TO CALL FROM INSIDE ITSELF, which is not the same property (JOS-381). One subscriber —
+ * the chrome hook — answers an exit by RELEASING its capture, and releasing a capture is itself
+ * leave signal 3, so the plain version of this function would call every listener a second time
+ * for one departure. The guard makes the fan-out single: a nested call returns, and the outer one
+ * finishes telling everybody. It never suppresses a LATER exit (the flag is cleared before this
+ * returns), which is the only thing a second call could legitimately be.
  */
 export function overlayPointerExited(): void {
-  const restore = stripTitles(liveTitles())
-  // The NEXT TASK, not this one: the strip has to reach the widget before the attribute comes
-  // back, and a microtask runs before the browser has done anything with it.
-  setTimeout(restore, 0)
-  for (const fn of [...listeners]) fn()
+  if (firing) return
+  firing = true
+  try {
+    const restore = stripTitles(liveTitles())
+    // The NEXT TASK, not this one: the strip has to reach the widget before the attribute comes
+    // back, and a microtask runs before the browser has done anything with it.
+    setTimeout(restore, 0)
+    for (const fn of [...listeners]) fn()
+  } finally {
+    firing = false
+  }
 }
 
 let installed = false
 
 /**
- * Install the three leave signals. Idempotent — the overlay entry calls it once, and calling it
- * again (a hot reload, a second entry) must not double-fire every exit.
+ * Install the leave signals this window can hear for itself, plus main's. Idempotent — the overlay
+ * entry calls it once, and calling it again (a hot reload, a second entry) must not double-fire
+ * every exit.
  */
 export function installOverlayPointerExit(): void {
   if (installed) return
@@ -131,4 +155,10 @@ export function installOverlayPointerExit(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) overlayPointerExited()
   })
+  // 3. the last named capture reason letting go is raised by useOverlayChrome itself, not here.
+  // 4. main's cursor watchdog — the case where none of the above can fire (JOS-381). No payload and
+  //    nothing to filter: the push already went to this kind's window and nowhere else, and it
+  //    means exactly what the three above mean. The subscription is never torn down; this module
+  //    lives as long as the window does.
+  window.eqOverlay.onPointerExit(overlayPointerExited)
 }

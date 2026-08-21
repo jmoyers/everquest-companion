@@ -56,6 +56,7 @@ import {
 import { E2E } from './e2e'
 import { logError } from './errorLog'
 import { getCloseToTray, setCloseToTray } from './storeCloseToTray'
+import { raiseTopmost } from './topmost'
 import { WEB_PREFERENCES, getMainWindow, sendToMain } from './windows'
 
 /**
@@ -187,14 +188,16 @@ export function syncTrayMenu(prefs: CloseToTrayPrefs): void {
 }
 
 /**
- * Store a patch made OUTSIDE the app window — the menu's checkbox, the popover's buttons — and
- * tell both surfaces what was stored.
+ * Store a patch — from the tray menu's checkbox, the popover's buttons, OR the app window's own
+ * controls (ipc/windowControls.ts routes the renderer's set through here too) — and tell every
+ * surface what was stored.
  *
- * The echo is not decoration: the Preferences pane reads this value once and keeps it warm, so
- * without a push the switch would still be showing the old answer the next time the window came
- * back. A hidden window's renderer still receives IPC, which is what makes one push enough.
+ * The echo is not decoration: the Preferences pane reads this value once and keeps it warm, the
+ * title bar's overlay menu carries a second checkbox for it (2026-08-16), and neither knows the
+ * other exists. One push after every write is what keeps three controls one answer. A hidden
+ * window's renderer still receives IPC, which is what makes one push enough.
  */
-function applyCloseToTray(patch: Partial<CloseToTrayPrefs>): CloseToTrayPrefs {
+export function applyCloseToTray(patch: unknown): CloseToTrayPrefs {
   const next = setCloseToTray(patch)
   syncTrayMenu(next)
   sendToMain(IPC.onCloseToTray, next)
@@ -224,6 +227,16 @@ function showTrayNotice(t: Tray): void {
   // `show`, not `showInactive`: the card has buttons, and its own blur is one of the two ways it
   // goes away. A window that never takes focus can never lose it.
   w.show()
+  // ABOVE THE GAME, EVERY TIME IT SHOWS (owner, hands-on, 2026-08-16). The card appears at the
+  // moment the app window was just closed - which is very often the moment the game is about to
+  // be the foreground window again - and at Electron's default always-on-top level it sat UNDER a
+  // borderless-fullscreen EverQuest: measured on the owner's machine, the card's rectangle showed
+  // nothing but the game (screenshots in the JOS-139 trail). The overlays solved this in JOS-375
+  // with the 'screen-saver' level, and this is the same call on the same level, unconditional for
+  // the cursor ring's reason: a re-show has to be the MOST RECENT assertion to win the level, and
+  // "already topmost" is exactly the state in which the game has since been raised over it. One
+  // SetWindowPos per showing of a card that shows once per install is not a hitch anybody can feel.
+  raiseTopmost(w)
   armNoticeTimer()
 }
 
@@ -266,10 +279,16 @@ function destroyTrayNotice(): void {
  * catch-alls (`web-contents-created` → hardenWebContents, index.ts).
  *
  * OPAQUE and FOCUSABLE, which is where it differs from every other accessory window in this app:
- * it is drawn over the desktop beside the taskbar rather than over the game, it has to be
+ * it is drawn beside the taskbar, over whatever is there - the desktop or the game - it has to be
  * readable, and it has three buttons to press. It stays out of the taskbar and out of Alt-Tab
  * (`skipTaskbar` + `type:'toolbar'`) because it is a notice with a fifteen-second life, not a
  * window anybody should have to switch to.
+ *
+ * OPAQUE IS STATED THREE TIMES OVER, on purpose (owner, hands-on, 2026-08-16: "the notification
+ * when we close-to-tray should not be transparent"): no `transparent` flag, a solid
+ * `backgroundColor`, and `backgroundMaterial: 'none'` so Windows 11's DWM never elects a Mica or
+ * acrylic backdrop for a frameless tool window on its own ('auto', the default, leaves that
+ * decision to the compositor). The page paints the same solid colour under its own card.
  *
  * NO `setFocusable` CALL ANYWHERE (JOS-199): focusability is a window STYLE, so it is set in the
  * constructor and never re-stated.
@@ -285,6 +304,8 @@ function createTrayNoticeWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     type: 'toolbar',
+    transparent: false,
+    backgroundMaterial: 'none',
     // The app's own background, so the first frame is never a white rectangle beside the taskbar.
     backgroundColor: '#0f1115',
     title: 'EQ Legends Companion',

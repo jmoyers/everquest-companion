@@ -92,6 +92,8 @@ export interface ParserConfig {
  *
  *   "Someone 's head nods."                          Kelin's Lucid Lullaby        Bard 15
  *   "Someone is bound in strands of solid music."    Largo's Melodic Binding      Bard 20  (was covered)
+ *       — the SCRAPE's wording, quoted as JOS-84 read it. JOS-384 corrected it to the `by` form
+ *         the shipped game prints, which makes this row and the Assonant row below ONE family.
  *   "Someone 's eyes glaze over."                    Solon's Song of the Sirens   Bard 27  (a CHARM — owner, 2026-08-12)
  *   "Someone 's eyes glaze over."                    Crission's Pixie Strike      Bard 28
  *   "Someone 's eyes glaze over."                    Solon's Bewitching Bravura   Bard 39  (a CHARM — JOS-200)
@@ -175,8 +177,9 @@ export interface ParserConfig {
  *   3. IT NEVER APPLIES A HOLD. The four sentences `classifyCcApply` reads — `<mob> has been
  *      mesmerized/enthralled/entranced/ensnared.` — occur 3,116 times in that log (mesmerized
  *      2,889, enthralled 128, entranced 87, ensnared 12) and Largo's cannot be any of them: the
- *      committed DB records its landing as `<mob> is bound in strands of solid music.`, which is
- *      a `buffApply`. So the "hold" this roster claimed to keep alive has no application event
+ *      DB records its landing as `<mob> is bound in strands of solid music.` (the `by` form since
+ *      the JOS-384 correction — a different preposition, the same event shape), which is a
+ *      `buffApply`. So the "hold" this roster claimed to keep alive has no application event
  *      anywhere in the corpus — the wear-off was the only evidence it ever existed, and a
  *      wear-off is what every debuff prints.
  *   4. IT IS A `PB AE` in the committed DB, sung on a 6-second pulse (the slice re-lands it every

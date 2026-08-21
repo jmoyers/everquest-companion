@@ -30,6 +30,12 @@
 // and the height budget is not zero. The tooltip stays anyway: this is a chip's provenance, which
 // is what the tooltip diet is FOR.
 //
+// AND WHAT THIS SERVER HAS NOT OPENED IS NOT NEW AT THIS LEVEL (JOS-393). The spell list folds the
+// rows eqlwiki badges out of era behind a `+N out of era` disclosure — the drops precedent, the same
+// phrase — so a level-50 shaman is no longer told `Sloths Healing` (`{{Kunark Era}}`) is his. The
+// SEARCH below is untouched by the fold and marks those rows instead: a search is a question the
+// player asked, and the honest answer to it includes the spell and says what it is.
+//
 // AND THE LISTS BELOW ARE AS TALL AS THEY NEED TO BE (JOS-289). `UnlockList` was a 120px windowed
 // porthole — the surface the owner named as cramped — and is now plain rows at their honest
 // height, with the full `SpellTooltip` card behind every spell name.
@@ -42,17 +48,21 @@
 // and pulses its edge for two seconds on arrival — on EVERY link, including a repeat of the same
 // level, and on no plain tab switch at all.
 
-import { type JSX, useState } from 'react'
+import { type JSX, useMemo, useState } from 'react'
 import { Box, IconButton, Paper, Stack, Typography, Chip } from '@mui/material'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { comboClassSet, unlocksAtLevel } from '@shared/levelUnlocks'
+import { tokenizeSpellQuery } from '@shared/spellSearch'
+import { EMPTY_UNLOCK_SEARCH, searchUnlockSpells } from '@shared/unlockSearch'
 import { Tooltip } from '../../lib/Tooltip'
 import { ProvenanceChip } from '../profiles/ClassComboChips'
 import { useComboSnap } from '../profiles/ClassComboData'
 import { UnlockList } from './UnlockList'
+import { UnlockSearchField, UnlockSearchResultsList } from './NewAtLevelSearch'
 import { LANDING_PULSE_SX, useFocusLanding } from './useFocusLanding'
 import { useCurrentComboClasses, useLevelUnlocks } from './useLevelUnlocks'
+import { useSpellSets } from './useSpellSets'
 
 /** The band the stepper walks. 1..63 is what the DB states; the ceiling leaves room to grow. */
 const LEVEL_MIN = 1
@@ -60,21 +70,37 @@ const LEVEL_MAX = 65
 
 const clampLevel = (n: number): number => Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, Math.round(n)))
 
-/** −/+ around the level, with the character's own level as the default and the reset. */
+/**
+ * −/+ around the level, with the character's own level as the default and the reset.
+ *
+ * IT GREYS WHILE A SEARCH IS RUNNING (JOS-392) rather than unmounting: the search results are about
+ * the whole game and no level on screen governs them, but the stepper is where the reader came in
+ * and a control that vanishes under a keystroke is a control they have to go looking for. Dimmed
+ * and disabled says "not what you are looking at right now"; gone says "was that ever there".
+ */
 function LevelStepper({
   level,
-  onChange
+  onChange,
+  dimmed
 }: {
   level: number
   onChange: (n: number) => void
+  dimmed: boolean
 }): JSX.Element {
   return (
-    <Stack direction="row" spacing={0.25} alignItems="center">
+    <Stack
+      direction="row"
+      spacing={0.25}
+      alignItems="center"
+      data-testid="new-at-level-stepper"
+      data-dimmed={dimmed ? 'true' : 'false'}
+      sx={{ opacity: dimmed ? 0.4 : 1 }}
+    >
       <IconButton
         size="small"
         aria-label="previous level"
         data-testid="new-at-level-prev"
-        disabled={level <= LEVEL_MIN}
+        disabled={dimmed || level <= LEVEL_MIN}
         onClick={() => onChange(clampLevel(level - 1))}
       >
         <ChevronLeftIcon fontSize="small" />
@@ -86,7 +112,7 @@ function LevelStepper({
         size="small"
         aria-label="next level"
         data-testid="new-at-level-next"
-        disabled={level >= LEVEL_MAX}
+        disabled={dimmed || level >= LEVEL_MAX}
         onClick={() => onChange(clampLevel(level + 1))}
       >
         <ChevronRightIcon fontSize="small" />
@@ -151,12 +177,19 @@ export function NewAtLevelPanel({
 }: NewAtLevelPanelProps): JSX.Element {
   const data = useLevelUnlocks()
   const combo = useCurrentComboClasses()
+  // The live spell bar (JOS-391) — read here rather than inside the row so one subscription
+  // serves both lists, and so a list with no spell rows costs nothing.
+  const sets = useSpellSets()
   // The same OPEN interval `useCurrentComboClasses` reduces to strings — kept whole here for the
   // one thing the strings drop: where the loadout came from.
   const current = useComboSnap().current
   // null = "follow the character" — so the panel keeps tracking dings until the user steps it.
   const [picked, setPicked] = useState<number | null>(null)
   const level = clampLevel(picked ?? currentLevel ?? LEVEL_MIN)
+  // THE SEARCH (JOS-392). An empty box is the level view, byte for byte — the state below is the
+  // only thing that switches the body, and nothing about the level view reads it.
+  const [query, setQuery] = useState('')
+  const searching = query.trim() !== ''
 
   // THE DEEP LINK (appRouting `openLeveling`), and the whole arrival lives in `useFocusLanding`.
   // Keyed on the NONCE and consumed the moment it is applied, so returning to this tab later does
@@ -171,9 +204,22 @@ export function NewAtLevelPanel({
   })
 
   const unlocks = unlocksAtLevel(data, combo, level)
-  const classes = comboClassSet(combo)
+  // Memoized for its IDENTITY as much as its cost: it is a dependency of the search below, and
+  // `comboClassesOf` already hands back one object per combo snapshot.
+  const classes = useMemo(() => comboClassSet(combo), [combo])
   const resolved = new Set<string>(combo.resolved)
   const known = classes.length > 0
+
+  // THE FILTER runs over the ~1,450 already-cached rows, so it is memoized on the query and the
+  // loadout rather than deferred: there is no IPC on this path and nothing to debounce. An empty
+  // box computes nothing at all — the level view must cost exactly what it cost before.
+  const results = useMemo(
+    () =>
+      searching
+        ? searchUnlockSpells(data.spells, tokenizeSpellQuery(query), { classes, currentLevel })
+        : EMPTY_UNLOCK_SEARCH,
+    [searching, data.spells, query, classes, currentLevel]
+  )
 
   return (
     // `position: relative` is the pulse's anchor and nothing else; `data-highlighted` states the
@@ -191,7 +237,13 @@ export function NewAtLevelPanel({
       {landing.seq !== null && <Box key={landing.seq} aria-hidden sx={LANDING_PULSE_SX} />}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
         <Typography variant="subtitle2">New at this level</Typography>
-        <LevelStepper level={level} onChange={(n) => setPicked(n)} />
+        <LevelStepper level={level} onChange={(n) => setPicked(n)} dimmed={searching} />
+        {/* ONE QUIET WORD, ONCE (JOS-391, AGENTS.md's caveat diet). The row figures are base
+            values with no crits, focus or recast in them; that is a property of the whole panel,
+            said here in a word rather than footnoted on twelve rows. */}
+        <Typography variant="caption" color="text.disabled" data-testid="new-at-level-directional">
+          directional
+        </Typography>
         {picked !== null && currentLevel !== null && picked !== currentLevel && (
           <Chip
             size="small"
@@ -206,18 +258,28 @@ export function NewAtLevelPanel({
         {known && current && <ProvenanceChip interval={current} />}
       </Stack>
 
-      {known ? (
+      <UnlockSearchField query={query} onChange={setQuery} />
+
+      {/* THE SEARCH ANSWERS WHETHER OR NOT THE LOADOUT IS KNOWN. The level lists are a claim about
+          YOUR trio and say so when there is no trio; a search is a question about the game, and a
+          player who has not typed `/who` yet can still ask where Complete Heal sits. */}
+      {searching ? (
+        <UnlockSearchResultsList results={results} resolved={resolved} sets={sets} />
+      ) : known ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <UnlockList
             title="Spells"
             rows={unlocks.spells}
+            outOfEra={unlocks.outOfEraSpells}
             resolved={resolved}
+            sets={sets}
             empty={`no new spells at level ${String(level)} for this loadout`}
           />
           <UnlockList
             title="Skills, disciplines & innates"
             rows={unlocks.skills}
             resolved={resolved}
+            sets={sets}
             empty={`no new skills at level ${String(level)} for this loadout`}
           />
         </Stack>

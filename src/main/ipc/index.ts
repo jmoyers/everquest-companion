@@ -14,7 +14,9 @@
 // Every channel name lives in `src/shared/ipc.ts`; nothing here invents one.
 
 import { registerAlertsIpc } from './alerts'
+import { registerBuffAllowIpc } from './buffAllow'
 import { registerBuffTrustIpc } from './buffTrust'
+import { registerResistIpc } from './resist'
 import { registerRespawnIpc } from './respawn'
 import { registerCharacterIpc } from './character'
 import { registerCharacterSheetIpc } from './characterSheet'
@@ -40,6 +42,9 @@ import { registerUiScaleIpc } from './uiScale'
 // rather than in this folder, because everything it does is window fan-out + item resolution.
 import { registerToastIpc } from '../toast'
 import { registerAlertBannerIpc } from '../alertBanner'
+// The con card's close channel and its trigger seam (JOS-383). Beside the window it feeds
+// (src/main/conCard.ts), like the two producer registrations above it.
+import { registerConCardIpc } from '../conCard'
 // The tray popover's three sends (JOS-139). Beside the window they come from (src/main/tray.ts),
 // like the toast's producer channel above, rather than in a fourth file in this folder.
 import { registerTrayIpc } from '../tray'
@@ -68,6 +73,7 @@ export function registerIpc(): void {
   registerWindowIpc()
   registerToastIpc()
   registerAlertBannerIpc()
+  registerConCardIpc()
   registerTrayIpc()
   registerClipboardIpc()
   registerFeedbackIpc()
@@ -75,7 +81,9 @@ export function registerIpc(): void {
   registerPerfIpc()
   registerGraphicsIpc()
   registerBuffTrustIpc()
+  registerBuffAllowIpc()
   registerRespawnIpc()
+  registerResistIpc()
   registerUiScaleIpc()
   registerReleaseNotesIpc()
   // Registered in EVERY build, and a no-op in a packaged one — the refusal lives inside the

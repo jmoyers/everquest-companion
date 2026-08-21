@@ -97,10 +97,13 @@ test('J1 the slow set covers every player-castable slow, not just the one this c
 
 test("J1b the bard's binding songs fire the slow alert on the MOB side only", () => {
   // JOS-233, owner ruling 2026-08-12. These two are the first roster members that do NOT come from
-  // the DB's slow landing-emote oracle: each prints its own one-member landing sentence
-  // (`Someone is bound in/by strands of solid music.`), so the oracle has nothing to say about
+  // the DB's slow landing-emote oracle: they share ONE landing sentence — `Someone is bound by
+  // strands of solid music.`, which since JOS-384 the corrections overlay gives the level-20 song
+  // too — and a message family is not an effect family, so the oracle has nothing to say about
   // them in either direction. The ruling is that the binding slows the mob's SWINGS as well as its
-  // feet, which makes its expiry the same quiet loss this set exists for.
+  // feet, which makes its expiry the same quiet loss this set exists for. This test reaches them
+  // by the WEAR-OFF line, which names the spell outright and carries no candidate list at all, so
+  // the shared landing sentence cannot reach it.
   //
   // JOS-225's regression is the other half of this test and it is asserted on every line: the
   // reporter heard "Mez / root broke" every time the level-20 song lapsed, and neither song may

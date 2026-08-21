@@ -13,6 +13,8 @@ import type {
 import { getPoskyData } from '../../data'
 import { itemCountKey, normalizeItemName } from '../../lib/itemName'
 import {
+  computeDestroyedAfter,
+  computeDestroyedAfterPerKey,
   computeHeldCounts,
   computeHeldCountsAfter,
   computeHeldCountsAfterPerKey,
@@ -79,6 +81,10 @@ function loadCountSource(): CountSource {
  * reconcile rows (keyed by counting key) resolve a name. We prefer the BASE
  * (un-suffixed) display when we've seen it, so a `Sphinx Claw` + `Sphinx Claw +1`
  * pool reads as "Sphinx Claw" (the quest item), not the variant.
+ *
+ * A DESTROY ROW IS A NAME LIKE ANY OTHER (JOS-401, the census). This map is about SPELLING, not
+ * about holdings — `You successfully destroyed 1 Efreeti Belt.` carries the game's own capitals
+ * for that item exactly as a loot line does, which is the only thing being read here.
  */
 function deriveLootNames(lootHistory: LootEvent[]): Record<string, string> {
   const m: Record<string, string> = {}
@@ -336,6 +342,18 @@ function useHeldItems(x: {
     () => computeHeldCountsAfterPerKey(lootHistory, itemOverrideInstants(overrides)),
     [lootHistory, overrides]
   )
+  // THE DESTROY DISCOUNTS (JOS-401) — what the log says left your bags after each witness spoke.
+  // The dump one is computed under EVERY count source, not only `rebaseline`: 'inventory' and
+  // 'both' read the file as a witness too, and it is exactly as stale. Undatable dump ⇒ no window
+  // ⇒ no discount, which is the same degradation `rebaseline` makes rather than a guessed instant.
+  const destroyedSinceDump = useMemo(
+    () => (rebaselineAt === null ? {} : computeDestroyedAfter(lootHistory, rebaselineAt)),
+    [lootHistory, rebaselineAt]
+  )
+  const destroyedSinceOverride = useMemo(
+    () => computeDestroyedAfterPerKey(lootHistory, itemOverrideInstants(overrides)),
+    [lootHistory, overrides]
+  )
   // Reconcile held items (log + inventory), subtracting anything consumed by quests that have
   // been turned in, and letting a hand statement answer for the items it speaks about.
   const { net, rows: inventoryRows } = useMemo(
@@ -351,7 +369,9 @@ function useHeldItems(x: {
         overrides: itemOverridesByKey(overrides),
         lootSinceOverride,
         rebaselineAt,
-        lootSinceRebaseline
+        lootSinceRebaseline,
+        destroyedSinceDump,
+        destroyedSinceOverride
       }),
     [
       logCounts,
@@ -362,7 +382,9 @@ function useHeldItems(x: {
       overrides,
       lootSinceOverride,
       rebaselineAt,
-      lootSinceRebaseline
+      lootSinceRebaseline,
+      destroyedSinceDump,
+      destroyedSinceOverride
     ]
   )
   return { net, inventoryRows, lastLootedAt }

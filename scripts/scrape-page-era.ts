@@ -52,9 +52,20 @@
  * pages ONLY, 50 at a time (46 requests), into its own cache. Either way the enumeration is the
  * shipped parser's `notesLinkTargets`, never a regex written twice.
  *
+ * AND THE SPELL PAGES (JOS-393), which are the same question asked about a third enumeration. The
+ * wiki badges a link to `Sloths Healing` — `{{Kunark Era}}`, `Shaman - Level 50+` — exactly the way
+ * it badges a link to a Velious breastplate, and the committed spell catalog records every field of
+ * that page except the badge, so a level-50 shaman was being told the spell was newly his. The
+ * TARGETS are the spell scrape's own enumeration (`embeddedin Template:Spellpage`, 4 GETs, cached)
+ * UNION the names `spells.json` carries, because those two sets differ on 53 rows — a page's own
+ * `spellname` field sometimes spells the name with a backtick, and a few catalog names are wiki
+ * REDIRECTS, which embed no template and so are in no enumeration — and the catalog's name is the
+ * only handle the loader has to join on. ~2,090 titles is 5 more `eqlmetadata` POSTs at its batch
+ * size, and no wikitext at all: only the OUT direction is read (`pageEraDb.ts` `spells`).
+ *
  * OUTPUT is `src/main/data/pageEra.json` (shape: `src/main/pageEraDb.ts`), keys sorted so a
- * re-fetch diffs cleanly. `items.json` is NOT rewritten — this is a sidecar, and the item corpus
- * is a scrape of a different enumeration on its own schedule.
+ * re-fetch diffs cleanly. `items.json` and `spells.json` are NOT rewritten — this is a sidecar, and
+ * each corpus is a scrape of a different enumeration on its own schedule.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
@@ -63,6 +74,7 @@ import { notesLinkTargets, parsePageEraTag } from '../src/main/itemLookupParse'
 import { itemKey, type ItemDbEntry, type ItemDbFile } from '../src/main/itemsDb'
 import { pageEraKey, type PageEraEntry, type PageEraFile } from '../src/main/pageEraDb'
 import { eraBadge, layeredVerdict, namesEra } from '../src/shared/planner/era'
+import type { SpellDbFile } from '../src/shared/types'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
@@ -72,6 +84,7 @@ const CACHE_DIR = resolve(HERE, 'sources/cache/page-era')
 const ITEM_CACHE_DIR = resolve(HERE, 'sources/cache/items')
 const ITEMS_PATH = resolve(HERE, '../src/main/data/items.json')
 const MOBS_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/mobs.json')
+const SPELLS_PATH = resolve(HERE, '../src/main/data/spells.json')
 const OUT_PATH = resolve(HERE, '../src/main/data/pageEra.json')
 
 const DELAY_MS = 110
@@ -82,7 +95,8 @@ const TITLE_BATCH = 50
 const META_BATCH = 450
 const SOURCE =
   'eqlwiki.com — action=eqlmetadata outOfEra + page era banner/category, for the non-item |notes ' +
-  'link targets of the corpus pages layers 1-2 leave silent'
+  'link targets of the corpus pages layers 1-2 leave silent, the mobs that drop them, and every ' +
+  'spell page the spell catalog enumerates'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -409,6 +423,59 @@ function dropperTitles(file: ItemDbFile, catalog: { mobs: { name: string; drops?
   return [...names.values()].sort((a, b) => a.localeCompare(b))
 }
 
+// ---- step 4: the SPELL pages (JOS-393) ---------------------------------------------------------
+//
+// THE REPORT. `Sloths Healing` was drawn as new at level 50 for a shaman. Its page opens
+// `{{Kunark Era}}` and states `Shaman - Level 50+`, and eqlwiki badges every link to it out of era.
+// The committed catalog holds that page's mana, its messages and its class line, and nothing at all
+// about its era — so this is the same fetch the items and the mobs already get, pointed at the
+// third enumeration.
+//
+// TWO SPELLINGS OF THE SAME SET, and both are asked. The scrape's enumeration is
+// `embeddedin Template:Spellpage` (2,035 pages today); the catalog's rows are keyed by the page's
+// own `| spellname =` field, which `scrape-spells.ts` prefers over the title. MEASURED over the
+// committed corpus: 53 of 1,928 catalog names match no enumerated title (`Atol\`s Spectral
+// Shackles` for `Atol's Spectral Shackles`, `Manicial Strength` for the page the wiki also keeps at
+// `Maniacal Strength`, `Cantana of Soothing`), and 184 enumerated titles are carried by the catalog
+// under a different name. The endpoint answers a redirect as happily as a page, so asking the UNION
+// costs nothing but a few titles and leaves the LOADER able to join on the only handle it has.
+
+/** Every page the spell scrape enumerates, by title. Cached — a re-run asks the wiki nothing. */
+async function spellPageTitles(): Promise<string[]> {
+  const cached = readCache('spell-pages.json') as string[] | null
+  if (cached !== null) return cached
+  const out: string[] = []
+  let eicontinue: string | undefined
+  for (let page = 0; page < 200; page++) {
+    const j = await api<{
+      query?: { embeddedin?: { title: string }[] }
+      continue?: { eicontinue?: string }
+    }>({
+      action: 'query',
+      list: 'embeddedin',
+      eititle: 'Template:Spellpage',
+      einamespace: '0',
+      eilimit: '500',
+      ...(eicontinue === undefined ? {} : { eicontinue })
+    })
+    for (const p of j.query?.embeddedin ?? []) out.push(p.title)
+    eicontinue = j.continue?.eicontinue
+    if (eicontinue === undefined) break
+  }
+  writeCache('spell-pages.json', out)
+  return out
+}
+
+/** The enumeration ∪ the catalog's own names, deduped by key and sorted. */
+function spellTargets(titles: readonly string[], catalog: SpellDbFile): string[] {
+  const byKey = new Map<string, string>()
+  for (const raw of [...titles, ...catalog.spells.map((s) => s.name)]) {
+    const key = pageEraKey(raw)
+    if (key !== '' && !byKey.has(key)) byKey.set(key, raw.trim())
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b))
+}
+
 // ---- main --------------------------------------------------------------------------------------
 
 /** One target's row, folding the three reads into the committed record. */
@@ -428,6 +495,20 @@ function entryFor(
     ...(wikitext === undefined ? { missing: true } : {}),
     by
   }
+}
+
+/**
+ * The boolean tables (`mobs`, `spells`), built the one way: a key per title the endpoint ANSWERED
+ * for, and nothing at all for the ones it did not. Shared by both so the two cannot come to mean
+ * different things about an absent row.
+ */
+function answered(titles: readonly string[], verdicts: ReadonlyMap<string, boolean>): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const title of titles) {
+    const v = verdicts.get(pageEraKey(title))
+    if (v !== undefined) out[pageEraKey(title)] = v
+  }
+  return out
 }
 
 function printCensus(refs: Map<string, string[]>, targets: readonly string[]): void {
@@ -468,21 +549,30 @@ async function main(): Promise<void> {
   console.log(`${String(droppers.length)} distinct dropper mobs (page |dropsfrom ∪ the mob catalog)`)
 
   if (dryRun) {
-    const posts = 1 + Math.ceil(droppers.length / META_BATCH)
-    console.log(`\n--dry-run: nothing sent. A cold run would send ${String(posts)} POSTs + ${String(Math.ceil(titles.length / TITLE_BATCH))} GETs.`)
+    // The spell enumeration is 4 GETs of its own on a cold cache; a dry run states the cost rather
+    // than paying it, so this arm never asks the wiki for the title list either.
+    const posts = 2 + Math.ceil(droppers.length / META_BATCH)
+    console.log(`\n--dry-run: nothing sent. A cold run would send ${String(posts)}+ POSTs + ${String(Math.ceil(titles.length / TITLE_BATCH))}+4 GETs.`)
     return
   }
+
+  const spellCatalog = JSON.parse(readFileSync(SPELLS_PATH, 'utf8')) as SpellDbFile
+  const spellTitles = spellTargets(await spellPageTitles(), spellCatalog)
+  console.log(`${String(spellTitles.length)} distinct spell pages (Template:Spellpage ∪ the ${String(spellCatalog.spells.length)} catalog names)`)
 
   let verdicts: Map<string, boolean>
   let by: 'eqlmetadata' | 'categories' = 'eqlmetadata'
   let mobVerdicts = new Map<string, boolean>()
+  let spellVerdicts = new Map<string, boolean>()
   try {
     verdicts = await fetchMetadata(titles)
     mobVerdicts = await fetchMetadata(droppers)
+    spellVerdicts = await fetchMetadata(spellTitles)
   } catch (err) {
     console.log(`eqlmetadata failed (${String(err)}) — falling back to prop=categories, as the skin module documents`)
     verdicts = await fetchCategories(titles)
     mobVerdicts = await fetchCategories(droppers)
+    spellVerdicts = await fetchCategories(spellTitles)
     by = 'categories'
   }
   const targetText = await fetchWikitext(titles, 'target')
@@ -491,13 +581,10 @@ async function main(): Promise<void> {
   for (const title of titles) {
     pages[pageEraKey(title)] = entryFor(title, targetText.get(title), verdicts.get(pageEraKey(title)), by)
   }
-  // ASKED, not answered: a dropper the endpoint did not name at all stays out of the table, and
-  // the derivation reads its absence as silence rather than as `false` (law 1, and see pageEraDb).
-  const mobs: Record<string, boolean> = {}
-  for (const name of droppers) {
-    const v = mobVerdicts.get(pageEraKey(name))
-    if (v !== undefined) mobs[pageEraKey(name)] = v
-  }
+  // ASKED, not answered: a target the endpoint did not name at all stays out of its table, and the
+  // readers take its absence as silence rather than as `false` (law 1, and see pageEraDb).
+  const mobs = answered(droppers, mobVerdicts)
+  const spells = answered(spellTitles, spellVerdicts)
 
   const out: PageEraFile = {
     scrapedAt: new Date().toISOString(),
@@ -508,7 +595,8 @@ async function main(): Promise<void> {
     ...(eraRevision === undefined ? {} : { eraRevision }),
     pages: Object.fromEntries(Object.entries(pages).sort((a, b) => a[0].localeCompare(b[0]))),
     refs: Object.fromEntries([...refs].sort((a, b) => a[0].localeCompare(b[0]))),
-    mobs: Object.fromEntries(Object.entries(mobs).sort((a, b) => a[0].localeCompare(b[0])))
+    mobs: Object.fromEntries(Object.entries(mobs).sort((a, b) => a[0].localeCompare(b[0]))),
+    spells: Object.fromEntries(Object.entries(spells).sort((a, b) => a[0].localeCompare(b[0])))
   }
   mkdirSync(dirname(OUT_PATH), { recursive: true })
   // Compact, the items.json posture: the `mobs` table alone is 5k rows, so this stopped being a
@@ -519,9 +607,19 @@ async function main(): Promise<void> {
   const outCount = Object.values(out.pages).filter((p) => p.outOfEra).length
   const tagged = Object.values(out.pages).filter((p) => p.eraTag !== undefined).length
   const mobsOut = Object.values(mobs).filter(Boolean).length
-  console.log(`\nWrote ${String(titles.length)} pages + ${String(Object.keys(mobs).length)} mobs → ${OUT_PATH}  (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`)
+  const spellsOut = Object.values(spells).filter(Boolean).length
+  console.log(
+    `\nWrote ${String(titles.length)} pages + ${String(Object.keys(mobs).length)} mobs + ` +
+      `${String(Object.keys(spells).length)} spells → ${OUT_PATH}  (${((Date.now() - startedAt) / 1000).toFixed(1)}s)`
+  )
   console.log(`  pages out of era: ${String(outCount)}   states an era token: ${String(tagged)}   verdict by: ${by}`)
   console.log(`  mobs out of era:  ${String(mobsOut)} of ${String(Object.keys(mobs).length)} answered`)
+  // The three counts a spell reader needs: out, in, and the ones nobody answered for (asked minus
+  // answered — silence, which the loader marks nothing for).
+  console.log(
+    `  spells out of era: ${String(spellsOut)}   in era: ${String(Object.keys(spells).length - spellsOut)}   ` +
+      `unanswered: ${String(spellTitles.length - Object.keys(spells).length)} of ${String(spellTitles.length)} asked`
+  )
   console.log(`  eraRevision: ${String(eraRevision)}   live requests sent this run: ${String(requestsSent)}`)
 }
 

@@ -53,8 +53,6 @@ const MENU_LIST = '.MuiMenu-list'
  *  row that selects nothing when clicked — so double-clicking it changes no character). */
 const PICKER = `${BAR} .MuiSelect-select`
 const PICKER_SUBHEADER = '.MuiListSubheader-root'
-/** The preferences gear: a `data-no-drag` control that really is inside the bar. */
-const GEAR = '[aria-label="Open preferences"]'
 /** The maximize caption button, whose label is main's answer pushed back to the renderer. */
 const MAXIMIZE = '[aria-label="Maximize"]'
 
@@ -182,12 +180,17 @@ async function stepCharacterPicker(app: ElectronApplication, page: Page): Promis
 /**
  * A control that really is inside the bar: `data-no-drag` still wins.
  *
- * The GEAR rather than the overlay trigger — a trigger's second click lands on the open menu's
- * backdrop, which is a different assertion wearing this one's clothes. Its own action (open
- * Preferences, twice) leaves the title bar exactly where it is.
+ * This used to double-click the preferences GEAR - an in-bar control whose own action (open
+ * Preferences, twice) left the bar exactly where it was. The gear is gone (owner, 2026-08-16:
+ * Preferences lives in the left nav), so the overlay trigger stands in: its first click opens the
+ * menu and the second lands on the menu's backdrop, a portal under <body> that React still routes
+ * to this bar's handler. The claim this step makes is therefore the user's-side one - a
+ * double-click that starts on an in-bar control never maximizes - and the pure guard's own steps
+ * below cover the portal mechanics.
  */
 async function stepControlsInBar(app: ElectronApplication, page: Page): Promise<void> {
-  await page.dblclick(GEAR, { timeout: 15_000 })
+  await page.dblclick(OVERLAY_BUTTON, { timeout: 15_000 })
+  await page.keyboard.press('Escape')
   await checkAsks(
     app,
     'double-clicking a control INSIDE the bar never asks either — data-no-drag still holds',

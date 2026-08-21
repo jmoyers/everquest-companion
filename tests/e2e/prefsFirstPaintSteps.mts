@@ -52,10 +52,17 @@ export interface Watch {
  *
  * The Text size ladder is the non-boolean, because "a control never paints a value it does not
  * know" is not a rule about checkboxes.
+ *
+ * The Alert banner switch is the REGRESSION (owner, hands-on, 2026-08-16): a card written after
+ * JOS-340 that mounted on its default anyway, on the argument that the banner ships OFF so OFF is
+ * the honest first guess. Stored ON here, so a card that guesses is caught in the same section as
+ * the two originals — and its switch is not a plain preference but an overlay's OPEN-STATE, which
+ * is the one shape of control the first three do not cover.
  */
 export const WATCHED: Watch[] = [
   { id: 'pref-hide-when-not-running', kind: 'switch' },
   { id: 'pref-hide-when-unfocused', kind: 'switch' },
+  { id: 'pref-banner-enabled', kind: 'switch' },
   { id: 'pref-text-size', kind: 'toggle' }
 ]
 

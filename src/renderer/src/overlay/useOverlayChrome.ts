@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OverlayConfig, OverlayDrill } from '@shared/types'
 import { clampTextScale } from '@shared/types'
-import { overlayPointerExited } from './pointerExit'
+import { onOverlayPointerExit, overlayPointerExited } from './pointerExit'
 
 /**
  * WHY A LOCKED OVERLAY EVER CAPTURES THE MOUSE, and why the reason has a NAME.
@@ -154,6 +154,33 @@ export function useOverlayChrome(): OverlayChrome {
     // again. A native tooltip raised over the title bar would otherwise stay up over the game.
     if (!want) overlayPointerExited()
   }
+
+  /**
+   * THE LEAVE NOBODY IN THIS WINDOW COULD SEE (JOS-381).
+   *
+   * Main watches the cursor for the seconds a LOCKED overlay is capturing and says so when it is
+   * outside the window (src/main/pointerWatch.ts carries the report and the performance contract).
+   * That arrives here as leave signal 4, and the honest reading of it is that every named reason is
+   * wrong AT ONCE: the pointer is not over the header, the selector row, the open popup or the
+   * scroll grip, because it is not over the window. So they all go, and one `applyCapture` hands
+   * the mouse back exactly the way an ordinary `mouseleave` would.
+   *
+   * THE EARLY RETURN IS THE RE-ENTRANCY GUARD'S OTHER HALF. Releasing the last reason is itself
+   * leave signal 3 (`applyCapture` raises an exit), so this handler is called back into — with no
+   * reason held there is nothing to release and it stops there. pointerExit.ts's own `firing` flag
+   * makes the fan-out single regardless; both are cheap and neither alone is sufficient.
+   *
+   * The handler is reached through a REF so the subscription is made once per window instead of
+   * being torn down and rebuilt on every render — `useCardTick`'s arrangement, for its interval.
+   */
+  const releaseAllReasons = (): void => {
+    if (reasonsRef.current.size === 0) return
+    reasonsRef.current.clear()
+    applyCapture()
+  }
+  const releaseRef = useRef(releaseAllReasons)
+  releaseRef.current = releaseAllReasons
+  useEffect(() => onOverlayPointerExit(() => releaseRef.current()), [])
 
   const capture = (reason: CaptureReason, active: boolean): void => {
     // Interactive windows already own the mouse — a sensor firing there must not send anything,

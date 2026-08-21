@@ -62,6 +62,12 @@ export type LogEventKind =
   | 'epoch'
   | 'stanceChange'
   | 'invocationChange'
+  // WHAT IS IN YOUR GEMS (JOS-391). `spellMemorize` carries `{spell, done}` (so
+  // `where:{done:'true'}` is the gem actually loading), `spellForget` `{spell}`, and `spellSet`
+  // `{set, action}` — `where:{action:'loaded'}` is "I just swapped my whole bar".
+  | 'spellMemorize'
+  | 'spellForget'
+  | 'spellSet'
   | 'consider'
   // ROGUE POISONS (docs/plans/poison-slow-alerts.md §1). The parser has emitted these three
   // families since Task #64 and the matcher has always been a plain string compare on `kind`

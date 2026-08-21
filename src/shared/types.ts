@@ -10,6 +10,10 @@ import type { ToastOverlayConfig } from './toast'
 // erased at compile time, and the kind's own vocabulary lives beside the code that gives it
 // meaning rather than in this file, which is at its factoring ceiling.
 import type { AlertBannerOverlayConfig } from './alertBanner'
+// Same posture a third time for the con card's one knob (JOS-383): TYPE-ONLY, so the cycle it
+// closes is erased at compile time, and the kind's own vocabulary (its payload, its suppression
+// window, its chip projection) lives beside the code that gives it meaning.
+import type { ConCardOverlayConfig } from './conCard'
 // TYPE-ONLY, and the cycle it closes (buffTimers.ts imports `OverlayKind` from here) is erased at
 // compile time. The union lives beside the function that applies it, which is where the argument
 // for each value is written down.
@@ -60,6 +64,13 @@ export type { LootDisposition, ItemStatBlock }
  *                 positioned, sized, held and locked independently. Ships DEFAULT OFF (owner
  *                 ruling, 2026-08-15) — it is text over the game nobody asked for until they do.
  *                 Its own knobs (hold, max lines, introduced) live in shared/alertBanner.ts.
+ *   - 'conCard' (JOS-383): the CON CARD — one tooltip-shaped card at the top centre of the screen
+ *                 when you `/con` a creature: its level, its zone, its five resist chips, its top
+ *                 drops and its respawn. A STRIP like the two above (empty and click-through at
+ *                 rest, its own queue of exactly one card), and the FIRST of the three to ship ON
+ *                 (owner, 2026-08-16) — it answers a question the player just asked by typing
+ *                 `/con`, which is what makes it different from text nobody asked for. Its one knob
+ *                 (the auto-hide, 0 = never) lives in shared/conCard.ts.
  * Each kind has its own independently-persisted OverlayConfig (bounds/alpha/lock/text size/drill)
  * and can be open simultaneously. IPC channels + the store are keyed by this.
  *
@@ -82,9 +93,9 @@ export type { LootDisposition, ItemStatBlock }
  * tests/overlayLayout.test.mts pins both halves.
  */
 // prettier-ignore
-export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn' | 'alertBanner'
+export type OverlayKind = 'fight' | 'overall' | 'events' | 'heal-fight' | 'heal-overall' | 'toast' | 'buffs' | 'debuffs' | 'xp' | 'respawn' | 'alertBanner' | 'conCard'
 // prettier-ignore
-export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn', 'alertBanner']
+export const OVERLAY_KINDS: OverlayKind[] = ['fight', 'overall', 'events', 'heal-fight', 'heal-overall', 'toast', 'buffs', 'debuffs', 'xp', 'respawn', 'alertBanner', 'conCard']
 
 /** True for the two HEALING overlay kinds (they render HealMeter, not OverlayMeter). */
 export function isHealOverlayKind(kind: OverlayKind): boolean {
@@ -162,6 +173,13 @@ export interface OverlayConfig {
    * for the same reason.
    */
   alertBanner?: AlertBannerOverlayConfig
+  /**
+   * The 'conCard' kind's own knob (the auto-hide, 0 = never — shared/conCard.ts). Present only on
+   * that kind; `setOverlayConfig` deletes it everywhere else so a malformed patch cannot grow one
+   * on a meter. Optional so every store written before JOS-383 round-trips untouched and
+   * `getOverlayConfig` fills it from the defaults — the two blobs above, arranged the same way.
+   */
+  conCard?: ConCardOverlayConfig
   /**
    * TEXT SIZE for this overlay, as a CSS `zoom` factor on its CONTENT pane (1 = as shipped;
    * owner feedback, 2026-08-05: "text size scaling for overlays. we are old folks now."). It

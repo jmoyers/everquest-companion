@@ -70,6 +70,7 @@ import {
   type Row,
 } from '../src/main/triage/store'
 import { analyticsFailure, runAnalytics, ANALYTICS_USAGE } from './triageAnalytics.mjs'
+import { requireFreshExport } from './analyticsExport.mjs'
 // The error store's own family (JOS-100), a sibling module for the same reason the analytics
 // one is: this file is at the 400-code-line ceiling and a two-verb subcommand family with a
 // symbolication step belongs beside it, not in it.
@@ -106,8 +107,9 @@ const text = (v: unknown, fallback = ''): string =>
 
 const USAGE = `triage-feedback <command> [options]
 
-  migrate                             apply infra/schema.sql to the DSQL cluster
-                                      (idempotent; run once after every apply)
+  migrate                             apply infra/schema.sql to the DSQL cluster (idempotent;
+                                      run after every apply). NEEDS AN \`analytics export\` FROM
+                                      THE LAST 6 HOURS — or --no-export-check, loudly.
   list    [--status S] [--channel prod|dev|all] [--type bug|feature] [--since 7d]
           [--min-score N] [--limit 100] [--json]
   show    <reportId>                  full record; downloads + gunzips the slice
@@ -154,6 +156,11 @@ const OPTIONS = {
   cohort: { type: 'string' },
   profile: { type: 'string' },
   'role-arn': { type: 'string' },
+  // `analytics export --out <dir>`; `analytics import --dry-run`; and the loud override for the
+  // 6-hour export guard on `migrate` and the three backfill commands (JOS-399).
+  out: { type: 'string' },
+  'dry-run': { type: 'boolean' },
+  'no-export-check': { type: 'boolean' },
   json: { type: 'boolean' },
   write: { type: 'boolean' },
   stdin: { type: 'boolean' },
@@ -219,10 +226,16 @@ function shortDate(ms: number): string {
  * is substituted from the terraform output.
  */
 async function cmdMigrate(ctx: Ctx): Promise<void> {
+  // THE EXPORT GUARD (JOS-399), and it is the FIRST thing this command does — before the
+  // connection, before the schema is even read — so a refusal costs no round trip and no IAM
+  // token. `migrate` is idempotent, but it is still DDL against the cluster that holds every
+  // counter this product has, and the owner's ruling is that an offline copy exists first.
+  requireFreshExport(ctx.args, 'migrate', NOW)
   const c = ctx.clients()
   const sql = readFileSync(SCHEMA_FILE, 'utf8')
     .replaceAll('${LAMBDA_ROLE_ARN}', text(c.stack.lambda_role_arn))
     .replaceAll('${TELEMETRY_LAMBDA_ROLE_ARN}', text(c.stack.telemetry_lambda_role_arn))
+    .replaceAll('${EXPORT_LAMBDA_ROLE_ARN}', text(c.stack.export_lambda_role_arn))
   // A CACHED .triage/stack.json written before a new output existed has no value for it, and
   // the cache is deliberately read back without re-validating (it is a cache, not a contract).
   // So the check is on the SUBSTITUTED text: an `AWS IAM GRANT … TO '${…}'` that reached the

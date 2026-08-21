@@ -1,16 +1,19 @@
 // THE OVERLAY TOOLTIP POLICY, AND THE ORPHAN THAT MADE IT URGENT (JOS-358).
 //
-// OWNER RULING, 2026-08-14, from hands-on testing and release-blocking, in his words: remove
-// tooltips on the overlay windows EXCEPT in the window title bar - the unlock control keeps its
-// tooltip, the bars get NONE. And separately: "when your mouse leaves the window its sometimes
-// leaving a tooltip behind".
+// OWNER RULING, 2026-08-14, from hands-on testing and release-blocking: remove tooltips on the
+// overlay windows EXCEPT in the window title bar - the unlock control keeps its tooltip, the bars
+// get NONE. And separately: "when your mouse leaves the window its sometimes leaving a tooltip
+// behind". THEN, 2026-08-16, the exception was withdrawn: "let's drop tooltips in the overlays, even
+// in the title bar". So the sweep below now covers the WHOLE bundle - the title bar's controls keep
+// their words as `aria-label` (a screen reader and the e2e's selectors still find the pin by
+// name), and nothing on any overlay window hands the DOM a `title` at all.
 //
 // Two halves, pinned two different ways:
 //
-//   1. WHERE A TOOLTIP MAY LIVE — a DERIVED sweep, not a list. Every file in the overlay bundle is
-//      read, the `<OverlayHeader …/>` ELEMENT is cut out of each one (its `title` / `tailTitle`
+//   1. THAT NO TOOLTIP LIVES ANYWHERE — a DERIVED sweep, not a list. Every file in the overlay bundle
+//      is read, the `<OverlayHeader …/>` ELEMENT is cut out of each one (its `title` / `tailTitle`
 //      props are the title bar's own text, travelling as props), and what is left may not carry a
-//      `title=` attribute at all. Derived because a hardcoded list is exactly what lets the next
+//      `title=` attribute at all - the title bar's own files included since 2026-08-16. Derived because a hardcoded list is exactly what lets the next
 //      surface arrive already broken — the app has learned this twice on the main window
 //      (tests/tooltipCursor.test.mts, JOS-127 then JOS-143).
 //
@@ -31,10 +34,11 @@ import { stripTitles, type TitleHolder } from '../src/renderer/src/overlay/point
 const OVERLAY = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'renderer', 'src', 'overlay')
 
 /**
- * THE TITLE BAR, as two files. `OverlayHeader.tsx` IS the bar — the lock/unlock pin the owner named,
- * the close ✕ beside it, the drag gutter, the live dot, the selector's disambiguation — and
- * `IconButton.tsx` is the button primitive it draws those controls with, used nowhere else in this
- * bundle. Everything else here is a bar, a row, a card or a footer.
+ * THE TITLE BAR, as two files. `OverlayHeader.tsx` IS the bar — the lock/unlock pin, the close ✕
+ * beside it, the drag gutter, the live dot, the selector's disambiguation — and `IconButton.tsx` is
+ * the button primitive it draws those controls with, used nowhere else in this bundle. Under the
+ * 2026-08-14 ruling these two were EXEMPT from the sweep; under the 2026-08-16 one they are swept
+ * by the test that follows it, by name, because they are where the last tooltips lived.
  */
 const TITLE_BAR = ['OverlayHeader.tsx', 'IconButton.tsx']
 
@@ -68,14 +72,23 @@ test('JOS-358: nothing outside the title bar carries a tooltip', () => {
   )
 })
 
-test('…and the title bar still has one — the unlock control the owner named explicitly', () => {
+test('2026-08-16: …and neither does the title bar — its controls are NAMED, never hovered', () => {
   const header = readFileSync(join(OVERLAY, 'OverlayHeader.tsx'), 'utf8')
-  // The pin, in both of its states. This is the ONE tooltip the ruling names by hand, so it is
-  // asserted by its own words rather than by "the file has a title somewhere".
-  assert.match(header, /title=\{locked \? 'Unlock \(interactive\)' : 'Lock \(click-through\)'\}/)
-  assert.match(header, /title="Close overlay"/)
-  // …and the primitive that renders it still puts the string on the element.
-  assert.match(readFileSync(join(OVERLAY, 'IconButton.tsx'), 'utf8'), /title=\{title\}/)
+  const button = readFileSync(join(OVERLAY, 'IconButton.tsx'), 'utf8')
+  // The primitive puts the string on the element as its accessible NAME and nowhere else: the pin
+  // is still `button[aria-label^="Unlock"]` to the e2e and to a screen reader, and draws no popup.
+  assert.match(button, /aria-label=\{label\}/)
+  assert.doesNotMatch(button, /\btitle=/, 'IconButton still hands its label to the DOM as a tooltip')
+  // The bar's other hover texts - the tail, the live dot, the selector's disambiguation - moved to
+  // aria-label the same way; the drag gutter's hint is simply gone (there is nothing to name).
+  // Only the <HeaderBody title={title}> PROP (the bar's own text) may still spell `title=`.
+  assert.doesNotMatch(
+    header,
+    /^\s+title=(?!\{title\})/m,
+    'OverlayHeader still hands a tooltip to the DOM'
+  )
+  assert.match(header, /aria-label=\{tailTitle\}/)
+  assert.match(header, /aria-label=\{live \? 'In combat' : 'Idle'\}/)
 })
 
 test('the bars mount no tooltip STATE either — the wiring is deleted, not hidden', () => {
@@ -145,7 +158,7 @@ test('…and the restore never fights whoever else owns the DOM', () => {
   assert.equal(empty.title, '', 'an empty title draws no popup — it is left exactly as it was')
 })
 
-test('all three leave signals are wired, and the entry installs them for every KIND', () => {
+test('every leave signal is wired, and the entry installs them for every KIND', () => {
   const exit = readFileSync(join(OVERLAY, 'pointerExit.ts'), 'utf8')
   // 1. the pointer leaves the document — the ordinary case, when the window owns the mouse.
   assert.match(exit, /addEventListener\('mouseleave', overlayPointerExited\)/)
@@ -166,6 +179,16 @@ test('all three leave signals are wired, and the entry installs them for every K
   // tooltip is up.
   const toggle = /const toggleLock = [\s\S]*?\n {2}\}/.exec(chrome)?.[0] ?? ''
   assert.match(toggle, /overlayPointerExited\(\)/, 'locking leaves the pin tooltip stranded')
+
+  // 4. MAIN WATCHED THE CURSOR WALK OFF (JOS-381) — the signal for the case none of the first
+  //    three can cover: while the Windows task switcher owns input, a captured overlay is told
+  //    nothing at all until the pointer comes back. It arrives over IPC and means exactly what the
+  //    others mean, so it is installed beside them. The watchdog itself (and the price it is
+  //    allowed to cost) is pinned in tests/pointerWatch.test.mts.
+  assert.match(exit, /window\.eqOverlay\.onPointerExit\(overlayPointerExited\)/)
+  // …and because signal 3 is raised BY a listener of this very fan-out, the fan-out is guarded
+  // against re-entering itself: one departure, one round of listeners.
+  assert.match(exit, /if \(firing\) return/)
 
   // EVERY KIND, including the celebration toast — which has no OverlayHeader and no chrome hook,
   // so the entry point is the only place that reaches all seven.

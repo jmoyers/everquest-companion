@@ -58,7 +58,10 @@ const SAY_KIND_BY_TEXT = new Map<string, PetSayKind>(PET_SAY_LINES.map(([k, s]) 
 // overlap. "You regain your concentration…" is a recovered cast — never treated as an
 // interrupt; it is its own `castResumed` kind (JOS-167), because a cast that recovers still
 // lands and the proc detector has to be able to put back the record the interrupt took away.
-const CAST_BEGIN_RE = /^You begin (?:casting|singing) (.+?)\.$/
+// The verb is CAPTURED, not discarded (JOS-382): "singing" is the only statement anywhere in this
+// app's inputs that a spell is a bard song, and a song re-rolls resistance every 6-second pulse
+// where a cast rolls once. See CastBeginEvent.sung.
+const CAST_BEGIN_RE = /^You begin (casting|singing) (.+?)\.$/
 // THIRD-PERSON cast (JOS-140): "<Name> begins casting <Spell>." — the only line that says who else
 // is casting what, and therefore the only thing that can ANCHOR a landing sentence to an
 // allowlisted external caster. The subject is a name-shaped token (EQ names carry spaces,
@@ -94,6 +97,22 @@ const AA_ACTIVATE_RE = /^You activate (.+?)\.$/
 // The article ("a"/"an") is dropped from the stance name; names are lowercased.
 const STANCE_RE = /^You assume an? (.+?) stance\.$/
 const INVOCATION_RE = /^You begin reciting the (.+?) invocation\.$/
+
+// ----- WHAT IS IN YOUR GEMS (JOS-391) -----
+// Four shapes, all four MEASURED `{kind:'unknown'}` over the owner's 2,048,450-line log before
+// this existed (4,321 / 4,285 / 4,232 / 474), so this family can neither shadow nor be shadowed:
+//   `Beginning to memorize Heat Blood...`         the gem is being loaded
+//   `You have finished memorizing Heat Blood.`    the gem IS loaded
+//   `You forget Symbol of Transal.`               the gem is empty
+//   `Spell set primary loaded.`  / `saved.` / `deleted.`
+// Each regex is anchored at both ends and the name capture is permissive, because spell names
+// carry apostrophes and commas (`Denon's Disruptive Discord`) and SET names carry spaces and
+// digits (`sham rang buff 2`). The three verbs are an alternation rather than a `(.+?)` so an
+// unknown fifth verb stays `unknown` instead of arriving as a mystery action.
+const MEMORIZE_BEGIN_RE = /^Beginning to memorize (.+?)\.\.\.$/
+const MEMORIZE_DONE_RE = /^You have finished memorizing (.+?)\.$/
+const FORGET_RE = /^You forget (.+?)\.$/
+const SPELL_SET_RE = /^Spell set (.+?) (saved|loaded|deleted)\.$/
 
 // ----- spell-landing emotes (Task #33): the cast-target discriminator -----
 // EQ prints a short flavor line the instant a buff lands. Two forms:
@@ -173,11 +192,29 @@ const POISON_PROC_BY_LAST_WORD = ((): ReadonlyMap<string, PoisonProcDef[]> => {
   return m
 })()
 
+/**
+ * `You begin casting|singing <Spell>.` — the player's own cast, with the VERB kept (JOS-382).
+ * Its own function because the sung/cast branch is one decision too many for the cascade arm it
+ * used to live in, and because "which verb did the log print" is a question worth a name.
+ */
+function ownCastBegin(c: ClassifyCtx): LogEvent | null {
+  const { text, ts, seq, raw } = c
+  const m = CAST_BEGIN_RE.exec(text)
+  if (!m) return null
+  const spell = m[2].trim()
+  // Absent rather than false for a cast: an optional present only when it says something keeps
+  // every existing golden and every existing consumer byte-identical.
+  return m[1] === 'singing'
+    ? { kind: 'castBegin', seq, ts, raw, spell, sung: true }
+    : { kind: 'castBegin', seq, ts, raw, spell }
+}
+
 /** Cast lifecycle (Task #19): begin / fizzle / interrupt (player's own casts). */
-export function classifyCastLifecycle({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+export function classifyCastLifecycle(c: ClassifyCtx): LogEvent | null {
+  const { text, ts, seq, raw } = c
   if (text.startsWith('You begin ')) {
-    const m = CAST_BEGIN_RE.exec(text)
-    if (m) return { kind: 'castBegin', seq, ts, raw, spell: m[1].trim() }
+    const own = ownCastBegin(c)
+    if (own) return own
   }
   if (text.includes(' begins casting ') || text.includes(' begins singing ')) {
     const m = OTHER_CAST_BEGIN_RE.exec(text)
@@ -510,6 +547,40 @@ export function classifyStance({ text, ts, seq, raw }: ClassifyCtx): LogEvent | 
   if (text.startsWith('You begin reciting ')) {
     const m = INVOCATION_RE.exec(text)
     if (m) return { kind: 'invocationChange', seq, ts, raw, invocation: m[1].trim().toLowerCase() }
+  }
+  return null
+}
+
+/**
+ * WHAT IS IN YOUR GEMS (JOS-391) — the memorize / forget / spell-set family.
+ *
+ * ONE CLASSIFIER FOR FOUR SHAPES because they are one subject and one consumer
+ * (`src/main/modules/spellSets.ts`), and because the three cheap prefix probes below run on
+ * every line of a two-million-line replay: the regexes only execute for a line that already
+ * starts with the right words.
+ *
+ * THE MEMORIZE LINES STAY SUPPRESSED WHERE THEY WERE SUPPRESSED (buffsShapes.ts
+ * `CASTING_SYSTEM_RE`). That module is the landing-message MINER and these lines are not spell
+ * landings — a coincidental burst pairing on `You forget Center.` would teach the overlay a
+ * message for a spell that just left the bar. Parsing them into events here and refusing them
+ * there are the same decision from two sides: the miner is not the consumer.
+ */
+export function classifySpellGems({ text, ts, seq, raw }: ClassifyCtx): LogEvent | null {
+  if (text.startsWith('You forget ')) {
+    const m = FORGET_RE.exec(text)
+    return m ? { kind: 'spellForget', seq, ts, raw, spell: m[1].trim() } : null
+  }
+  if (text.startsWith('You have finished memorizing ')) {
+    const m = MEMORIZE_DONE_RE.exec(text)
+    return m ? { kind: 'spellMemorize', seq, ts, raw, spell: m[1].trim(), done: true } : null
+  }
+  if (text.startsWith('Beginning to memorize ')) {
+    const m = MEMORIZE_BEGIN_RE.exec(text)
+    return m ? { kind: 'spellMemorize', seq, ts, raw, spell: m[1].trim(), done: false } : null
+  }
+  if (text.startsWith('Spell set ')) {
+    const m = SPELL_SET_RE.exec(text)
+    if (m) return { kind: 'spellSet', seq, ts, raw, set: m[1].trim(), action: m[2] as 'saved' | 'loaded' | 'deleted' }
   }
   return null
 }

@@ -14,14 +14,15 @@ export const ICON_ACCENT_GREEN = 'rgba(127,209,160,0.2)'
 
 export function IconButton({
   onClick,
-  title,
+  label,
   children,
   danger,
   accent,
   accentBg = ICON_ACCENT_GOLD
 }: {
   onClick: () => void
-  title: string
+  /** The accessible NAME of the button - never a tooltip (owner ruling 2026-08-16: no hover text anywhere on an overlay). */
+  label: string
   children: React.ReactNode
   danger?: boolean
   accent?: boolean
@@ -30,8 +31,7 @@ export function IconButton({
   return (
     <button
       type="button"
-      title={title}
-      aria-label={title}
+      aria-label={label}
       onClick={onClick}
       style={{
         width: 20,

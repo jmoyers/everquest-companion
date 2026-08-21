@@ -39,14 +39,24 @@
  * DSQL takes no locks. Two transactions that touch the same row both proceed,
  * and the second to commit is ABORTED with a serialization error (SQLSTATE
  * 40001). That is not an outage, it is how the database says "you raced" — so
- * every write here runs through `withRetry`, which is bounded, jittered, and
- * gives up rather than hammering. `alarms.tf` watches `OccConflicts` for the
- * case where retries stop being rare.
+ * every write here runs through `withRetry`, which is bounded, FULL-JITTERED,
+ * and gives up rather than hammering.
+ *
+ * AND A CONFLICT COUNT ALONE IS NOT A HEALTH SIGNAL (JOS-394). The raw
+ * `OccConflicts` alarm fired all day at a 5% conflict rate that lost nothing,
+ * because the number that matters is the RATIO of conflicts to writes and the
+ * fact of a retry ladder RUNNING OUT. So `alarms.tf` now watches two things:
+ * conflicts per telemetry invocation (pathology), and the `DbRetryExhausted`
+ * metric this module emits when it gives up (actual loss).
  */
 
 import pg from 'pg'
 import type { Client as PgClient, QueryResultRow } from 'pg'
 import { DsqlSigner } from '@aws-sdk/dsql-signer'
+// The ONE thing this module emits: `DbRetryExhausted`, when a bounded retry gives up. Both
+// handlers bundle this file, so both can raise it, and the namespace is the product's single
+// EMF namespace rather than a second one nobody would think to look in.
+import { emit } from './emf'
 // Explicit builtin imports, not ambient globals: infra/ is outside the repo's two
 // tsconfigs and outside eslint's node-globals patterns, so `process` would be an
 // undeclared identifier here. Importing it is also just more honest.
@@ -74,7 +84,25 @@ const CONNECT_TIMEOUT_MS = 4_000
 /** Four sequential statements at 3s each still fits inside the 10s function timeout. */
 const STATEMENT_TIMEOUT_MS = 3_000
 
-const MAX_ATTEMPTS = 4
+/**
+ * FIVE ATTEMPTS AND FULL JITTER (JOS-394), and both numbers are bounded by the function's own
+ * 10 s timeout rather than chosen for elegance.
+ *
+ * THE OLD LADDER was four attempts of `25 * attempt + random(0, 25)` — i.e. a barely-jittered
+ * step. That is the shape that SYNCHRONISES retriers: two Lambdas that collided at t=0 both
+ * wake within a 25 ms window and collide again. FULL JITTER — `sleep(random(0, BASE * 2^n))` —
+ * is the documented AWS answer (the "Exponential Backoff and Jitter" article's measured
+ * winner): the wake times of two racers are drawn from a widening interval, so the second
+ * collision is already unlikely and the third is rare.
+ *
+ * THE BUDGET. Worst case is 50 + 100 + 200 + 400 = 750 ms of sleeping across four waits, plus
+ * five attempts at a 3 s statement timeout — but the statements this wraps are single-digit
+ * milliseconds and a 40001 is reported at COMMIT, not after a hang, so the realistic worst case
+ * is under a second. The retries are also what the fifth attempt is FOR: with the counters
+ * sharded 32 ways the conflict rate is ~0.2%, so reaching attempt five at all means something
+ * unusual, and that is the case worth spending an extra 400 ms on before giving up.
+ */
+const MAX_ATTEMPTS = 5
 const BACKOFF_MS = 25
 
 /**
@@ -103,15 +131,36 @@ export function sqlState(err: unknown): string | null {
 /** Serialization failure / deadlock: the caller raced and should simply try again. */
 const RETRYABLE = new Set(['40001', '40P01'])
 
+/** Full jitter: a wait drawn uniformly from [0, BASE * 2^attempt). Never a fixed step. */
+function backoffMs(attempt: number): number {
+  return Math.floor(Math.random() * BACKOFF_MS * 2 ** attempt)
+}
+
 export async function withRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await run()
     } catch (err) {
       const code = sqlState(err)
-      if (attempt >= MAX_ATTEMPTS || code === null || !RETRYABLE.has(code)) throw err
+      if (code === null || !RETRYABLE.has(code)) throw err
+      if (attempt >= MAX_ATTEMPTS) {
+        // GIVING UP IS A METRIC, NOT JUST A LOG LINE (JOS-394). A conflict is normal and a
+        // retry is the contract; an EXHAUSTED ladder means a write was LOST — the caller gets a
+        // 500 and the client's batch is buffered for a later flush, so nothing surfaces to a
+        // user and nothing would surface to us either without this. `alarms.tf` alarms on it at
+        // >= 1, because one lost aggregate write is already worth a look.
+        //
+        // NO DIMENSIONS, on purpose: an empty dimension set is the aggregate-only document (see
+        // emf.ts), which is what makes ONE alarm cover both handlers, and a `Label` dimension
+        // would mint a billed metric per statement name to re-answer what the log line beside
+        // it already says. Nothing identifying can reach here — `label` is a compile-time
+        // constant from the call site and is not in the document at all.
+        emit({}, [{ name: 'DbRetryExhausted', value: 1 }], Date.now())
+        log({ msg: 'db.retry.exhausted', label, attempts: attempt, code })
+        throw err
+      }
       log({ msg: 'db.conflict', label, attempt, code })
-      await sleep(BACKOFF_MS * attempt + Math.floor(Math.random() * BACKOFF_MS))
+      await sleep(backoffMs(attempt))
     }
   }
 }

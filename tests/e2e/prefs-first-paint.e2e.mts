@@ -99,6 +99,10 @@ async function stepArrange(page: Page): Promise<void> {
   const a = await setSwitch(page, 'pref-hide-when-not-running', false)
   const b = await setSwitch(page, 'pref-hide-when-unfocused', true)
   check('both auto-hide switches take a value AGAINST their default (one each way)', a && b)
+  // The banner ships OFF; ON is the value its card used to be born wrong for. Its switch is an
+  // overlay's open-state, so the settle here waits on main's own push, not a local echo.
+  const c = await setSwitch(page, 'pref-banner-enabled', true)
+  check('the alert banner switch takes ON against its shipped OFF', c)
 
   await openSection(page, 'textsize', TEXTSIZE)
   await page.click(`[data-testid="${CHOSEN_STOP}"]`, { timeout: 15_000 })
@@ -138,6 +142,12 @@ async function stepSectionSwitch(page: Page): Promise<void> {
     'pref-hide-when-unfocused',
     'on',
     '…and a stored-ON switch whose default is off paints ON, so the fix is not a flipped default'
+  )
+  checkFirstPaint(
+    seen,
+    'pref-banner-enabled',
+    'on',
+    'the alert banner switch, an overlay OPEN-STATE stored ON against its shipped OFF, is born ON (the 2026-08-16 regression)'
   )
 
   await resetRecorder(page)
@@ -182,6 +192,7 @@ async function stepColdRenderer(page: Page): Promise<void> {
     'on',
     '…and the stored-ON one is still born ON'
   )
+  checkFirstPaint(seen, 'pref-banner-enabled', 'on', '…and so is the alert banner switch, from a cold cache')
   check(
     'the pane hydrated rather than giving up: its unreadable-settings ending never appeared',
     (await countOf(page, '[data-testid="prefs-unreadable"]')) === 0

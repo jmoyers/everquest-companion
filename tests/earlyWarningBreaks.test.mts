@@ -138,11 +138,17 @@ const FAMILIES: Family[] = [
   },
   {
     // The bard binding song JOS-233 moved INTO that roster — same def, and it must warn too.
+    //
+    // THE SENTENCE IS `by`, NOT `in`, SINCE JOS-384. The wiki files `bound IN strands` under this
+    // song and the shipped game prints `bound BY`; the app-wide corrections overlay now says so
+    // (`spellCorrectionsList.ts`), which also makes the sentence SHARED with the level-51 upgrade.
+    // The cast line above is what resolves it back to this song — the shared-message machinery
+    // doing exactly the job the correction leans on.
     title: 'SLOW · Largo`s Melodic Binding (JOS-233`s new roster member)',
     spell: "Largo's Melodic Binding",
     mob: 'a lesser mummy',
     cast: "You begin casting Largo's Melodic Binding.",
-    landing: 'a lesser mummy is bound in strands of solid music.',
+    landing: 'a lesser mummy is bound by strands of solid music.',
     sec: 5,
     trigger: groupTrigger('slow', 'group:slow:mob')
   },

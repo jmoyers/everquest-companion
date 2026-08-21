@@ -3,8 +3,9 @@
  *
  * TWO CLAIMS, and they are different kinds of claim:
  *
- *   1. THE PREFERENCE ROUND-TRIPS. Preferences has a `Window` section, its switch is ON before
- *      anybody touches it, flipping it is what MAIN says is stored afterwards, and searching the
+ *   1. THE PREFERENCE ROUND-TRIPS. Preferences has a `Window` section, its switch is OFF before
+ *      anybody touches it (the owner's 2026-08-16 reversal: the X quits until somebody opts in),
+ *      flipping it is what MAIN says is stored afterwards, and searching the
  *      pane for "tray" finds it. That last one is not decoration: every one of the five reports
  *      behind this ticket used a different word for the same thing ("notification icon area",
  *      "system tray", "taskbar", "alt-tab"), so the card is only findable if the keywords are.
@@ -80,7 +81,7 @@ async function dismissFirstRunNotice(page: Page): Promise<void> {
   await settleGone(page, notice, { timeoutMs: 8_000 })
 }
 
-/** CLAIM 1a: the section is in the rail, the card is in it, and it opens ON. */
+/** CLAIM 1a: the section is in the rail, the card is in it, and it opens OFF. */
 async function stepCard(page: Page): Promise<void> {
   await openPrefs(page)
   check(
@@ -89,24 +90,28 @@ async function stepCard(page: Page): Promise<void> {
   )
   await openSection(page, 'window', CARD)
   const on = await page.$eval(`[data-testid="${SWITCH}"] input`, (el) => (el as HTMLInputElement).checked)
-  check('and its switch opens ON, which is the shipped default', on)
-  check('main agrees, on a store that has never been written', (await stored(page)).enabled)
+  check('and its switch opens OFF, which is the shipped default', !on)
+  check('main agrees, on a store that has never been written', !(await stored(page)).enabled)
 }
 
-/** CLAIM 1b: flipping it is what MAIN says is stored, in both directions. */
+/** CLAIM 1b: flipping it is what MAIN says is stored, in both directions. Ends ON, which is what
+ *  the hide claim below needs. */
 async function stepRoundTrip(page: Page): Promise<void> {
-  check('the switch takes OFF', await setSwitch(page, SWITCH, false))
-  const off = await settle(() => stored(page), (p) => !p.enabled, { timeoutMs: 8_000 })
-  check('and main stored it, so the card is rendering the reply rather than its own request', !off.enabled)
+  check('the switch takes ON', await setSwitch(page, SWITCH, true))
+  const on = await settle(() => stored(page), (p) => p.enabled, { timeoutMs: 8_000 })
+  check('and main stored it, so the card is rendering the reply rather than its own request', on.enabled)
   check(
     'the notice flag is untouched by the switch - it is the card’s memory, not a setting',
-    off.noticeAcknowledged === false,
-    JSON.stringify(off)
+    on.noticeAcknowledged === false,
+    JSON.stringify(on)
   )
 
-  check('and it takes ON again', await setSwitch(page, SWITCH, true))
-  const on = await settle(() => stored(page), (p) => p.enabled, { timeoutMs: 8_000 })
-  check('with main agreeing both ways', on.enabled)
+  check('and it takes OFF again', await setSwitch(page, SWITCH, false))
+  const off = await settle(() => stored(page), (p) => !p.enabled, { timeoutMs: 8_000 })
+  check('with main agreeing both ways', !off.enabled)
+
+  check('and ON once more, for the hide claim below', await setSwitch(page, SWITCH, true))
+  await settle(() => stored(page), (p) => p.enabled, { timeoutMs: 8_000 })
 }
 
 /** CLAIM 1c: the words the reports used all lead here. */

@@ -15,6 +15,7 @@ import { IPC } from '../shared/ipc'
 import type { ToastRequest } from '../shared/toast'
 import type { AlertBannerPayload } from '../shared/alertBanner'
 import type { ScopeSelection } from '../shared/scopeSelection'
+import type { BuffAllowPatch, BuffAllowPrefs } from '../shared/buffAllow'
 import type { CloseToTrayPrefs } from '../shared/closeToTray'
 import type { OverlayConfig, OverlayKind } from '../shared/types'
 
@@ -100,6 +101,27 @@ export const windowsApi = {
     return () => ipcRenderer.removeListener(IPC.onScopeSelection, listener)
   },
 
+  // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168) ----
+  // WHICH of your spells the two timer overlays may draw: the opt-in mode switch that lives on the
+  // Buffs tab, and the tri-state verdict per spell line behind it. It lives in THIS slice for the
+  // scope selection's reason directly above — it is a CROSS-WINDOW fact, main holds it precisely so
+  // two renderer processes can agree about it, and the overlay bridge carries the same READERS
+  // under the same names so ONE renderer hook (`useBuffAllow`) drives the tab's checkboxes and the
+  // windows' filter alike. The difference from the two facts above it: this one is PERSISTED, since
+  // which spells you track is not a thing you re-choose every launch.
+  /** The persisted allow-list. Default mode with no verdicts — everything draws — until set. */
+  getBuffAllow: (): Promise<BuffAllowPrefs> => ipcRenderer.invoke(IPC.buffAllowGet),
+  /** Apply a PARTIAL: the mode, some verdicts, or both. Resolves to what was ACTUALLY stored, and
+   *  main fans the result out — so a box checked here reaches an already-open overlay window. */
+  setBuffAllow: (patch: BuffAllowPatch): Promise<BuffAllowPrefs> =>
+    ipcRenderer.invoke(IPC.buffAllowSet, patch),
+  /** Subscribe to changes made anywhere. Payload is the whole preference. */
+  onBuffAllow: (cb: (p: BuffAllowPrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: BuffAllowPrefs): void => cb(p)
+    ipcRenderer.on(IPC.onBuffAllow, listener)
+    return () => ipcRenderer.removeListener(IPC.onBuffAllow, listener)
+  },
+
   // ---- celebration toasts (docs/plans/celebration-toasts.md) ----
   /**
    * "Celebrate this." Called by the app's EXISTING always-mounted celebration detectors — the
@@ -146,5 +168,18 @@ export const windowsApi = {
     ipcRenderer.invoke(IPC.overlaySetConfig, 'alertBanner', patch),
   /** Lock (click-through) / unlock (position it). APPLIED to the live window as well as stored. */
   setAlertBannerLocked: (locked: boolean): void =>
-    ipcRenderer.send(IPC.overlaySetLocked, 'alertBanner', locked)
+    ipcRenderer.send(IPC.overlaySetLocked, 'alertBanner', locked),
+
+  // ---- the con card (JOS-383, shared/conCard.ts) --------------------------------------
+  //
+  // THREE DOORS, NOT FOUR: there is no `showConCard` twin of `showAlertBanner`, because this
+  // feature has no renderer producer at all — the trigger is a log line and main owns the log.
+  /** Read the con card overlay's persisted config (its auto-hide, its lock). Kind-first, like the
+   *  two cards above it, for the reason stated there. */
+  getConCardConfig: (): Promise<OverlayConfig> => ipcRenderer.invoke(IPC.overlayGetConfig, 'conCard'),
+  /** Patch the con card's config (Preferences owns the auto-hide). Main clamps; 0 means never. */
+  setConCardConfig: (patch: Partial<OverlayConfig>): Promise<OverlayConfig> =>
+    ipcRenderer.invoke(IPC.overlaySetConfig, 'conCard', patch),
+  /** Lock (click-through) / unlock (position it). APPLIED to the live window as well as stored. */
+  setConCardLocked: (locked: boolean): void => ipcRenderer.send(IPC.overlaySetLocked, 'conCard', locked)
 }

@@ -30,6 +30,7 @@ import {
 import { normalizeTelemetryPrefs, type TelemetryPrefs } from '../shared/telemetry'
 import { DEFAULT_TOAST_CONFIG, normalizeToastConfig } from '../shared/toast'
 import { DEFAULT_ALERT_BANNER_CONFIG, normalizeAlertBannerConfig } from '../shared/alertBanner'
+import { DEFAULT_CON_CARD_CONFIG, applyConCardKnob } from '../shared/conCard'
 import { normalizePerfHudPrefs, type PerfHudPrefs } from '../shared/perf'
 import { normalizeGraphicsPrefs, type GraphicsPrefs } from '../shared/graphicsPrefs'
 import { normalizeBuffTrustPrefs, type BuffTrustPrefs } from '../shared/buffTrust'
@@ -447,7 +448,20 @@ const DEFAULT_OVERLAY_CONFIG: Record<OverlayKind, OverlayConfig> = {
   // something on (migrateToV9 is the one time this repo flipped a stored default, and its comment
   // says that was a one-time correction and never a policy), so there is none.
   // prettier-ignore
-  alertBanner: { open: false, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, alertBanner: { ...DEFAULT_ALERT_BANNER_CONFIG } }
+  alertBanner: { open: false, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, alertBanner: { ...DEFAULT_ALERT_BANNER_CONFIG } },
+  // THE CON CARD (JOS-383). `locked: true` for the banner's reason: locked is click-through, and
+  // the overlay flips capture on only while a card is actually on screen.
+  //
+  // DEFAULT **ON**, AND STILL NO MIGRATION — which is why this entry breaks the run of five above
+  // rather than continuing it. The policy those restatements defend is "a migration never turns
+  // something on"; a DEFAULT decides the value of an ABSENT key, and `overlays.conCard` has never
+  // been written by any build, so every store on earth reads this line and gets the card. Nothing
+  // is rewritten, nothing stored is reinterpreted, and a user who switches it off writes a `false`
+  // no future step is allowed to overrule (the 8 -> 9 step's promise, kept). The owner's ruling
+  // (2026-08-16) is that this one ships on: it answers a question the player just asked by typing
+  // `/con`, which is exactly what the alert banner's "text over the game nobody asked for" is not.
+  // prettier-ignore
+  conCard: { open: true, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, conCard: { ...DEFAULT_CON_CARD_CONFIG } }
 }
 
 /** Read a kind's overlay config, filling missing fields with the kind's defaults.
@@ -466,6 +480,9 @@ export function getOverlayConfig(kind: OverlayKind): OverlayConfig {
   // relay, which fills a payload's hold from it — must see a complete, clamped one.
   // prettier-ignore
   if (kind === 'alertBanner') cfg.alertBanner = normalizeAlertBannerConfig({ ...DEFAULT_ALERT_BANNER_CONFIG, ...cfg.alertBanner })
+  // The con card's one knob, on the same terms (JOS-383) — in its own file, beside the kind's own
+  // vocabulary, because this one is at the 400-code-line ceiling (`applyTimerOverlayKnobs`' rule).
+  applyConCardKnob(kind, cfg)
   // Text scale postdates every other field, so it is ABSENT in most stores and out of range in a
   // hand-edited one — both answered here rather than repeated six times above, because the
   // default (1) does not differ per kind. Clamped on the way out as well as in: see
@@ -544,6 +561,9 @@ export function setOverlayConfig(kind: OverlayKind, patch: Partial<OverlayConfig
   // prettier-ignore
   if (kind === 'alertBanner') next.alertBanner = normalizeAlertBannerConfig({ ...DEFAULT_ALERT_BANNER_CONFIG, ...next.alertBanner })
   else delete next.alertBanner
+  // The con card's knob is renderer-writable too (Preferences owns the auto-hide), so it is clamped
+  // by its own normalizer rather than trusted — the two blobs above, through one shared applier.
+  applyConCardKnob(kind, next)
   // THE TWO TIMER WINDOWS' OWN KNOBS — the row arrangement (JOS-140) and the permanent-buff switch
   // (JOS-215). Both are rebuilt rather than trusted, on the same argument as the drill above; the
   // rule lives beside `isTimerOverlayKind` in shared/buffTimers.ts, which is what "which kinds

@@ -33,6 +33,7 @@ import type { EqModule } from './types'
 import type { ConsiderFaction, LogEvent } from '../../shared/logEvents'
 import type { FeedDelta, FeedEvent, FeedReport, FeedSnap, ItemKnowledge } from '../../shared/types'
 import { isNotableKnowledge } from '../../shared/itemKnowledge'
+import { isDestroyed } from '../../shared/lootDisposition'
 import { considerDifficultyShort } from '../../shared/logEvents'
 
 /** How many entries the feed keeps. Oldest fall off the back. */
@@ -99,7 +100,12 @@ export class EventFeedModule implements EqModule<FeedSnap, FeedDelta> {
       return
     }
     if (ev.kind !== 'loot' || !ev.item) return
-    this.probeLoot(ev.item, ev.source, ev.ts)
+    // A DESTROY IS ADMITTED AND SAYS SO (JOS-401, the census). The row is still worth noticing —
+    // a lore or quest item leaving your bags is exactly the kind of thing this ring is for — but
+    // it is not a pickup, so it never borrows the `from <mob>` caption a loot row wears. The
+    // detail is the whole difference, because that caption is all a feed row ever says about how
+    // the item moved.
+    this.probeLoot(ev.item, isDestroyed(ev) ? undefined : ev.source, ev.ts, isDestroyed(ev))
   }
 
   /**
@@ -145,7 +151,7 @@ export class EventFeedModule implements EqModule<FeedSnap, FeedDelta> {
    * — the registry's 1s wall-clock tick pushes it even if the log goes quiet. The row keeps the
    * LOOT timestamp, not the resolve time.
    */
-  private probeLoot(item: string, source: string | undefined, ts: number): void {
+  private probeLoot(item: string, source: string | undefined, ts: number, destroyed = false): void {
     const lookup = this.deps.lookupItem
     if (!lookup) return
     const key = item.toLowerCase()
@@ -158,7 +164,7 @@ export class EventFeedModule implements EqModule<FeedSnap, FeedDelta> {
           kind: 'loot',
           ts,
           title: k.name || item,
-          detail: source ? `from ${source}` : undefined,
+          detail: destroyed ? 'destroyed' : source ? `from ${source}` : undefined,
           page: k.page
         })
       })

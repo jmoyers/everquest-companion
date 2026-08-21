@@ -14,8 +14,10 @@ import type {
 } from '../shared/types'
 import { OVERLAY_KINDS } from '../shared/types'
 import type { ScopeSelection } from '../shared/scopeSelection'
+import type { BuffAllowPrefs } from '../shared/buffAllow'
 import type { ToastPayload } from '../shared/toast'
 import type { AlertBannerPayload } from '../shared/alertBanner'
+import type { ConCardPayload } from '../shared/conCard'
 
 export type { CombatSnapshot, SnapshotOpts, OverlayConfig, OverlayDrill, OverlayKind, MobKnowledge }
 
@@ -151,6 +153,25 @@ const overlayApi = {
     return () => ipcRenderer.removeListener(IPC.onScopeSelection, listener)
   },
 
+  // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168) ----
+  // TWO of the three members the app bridge carries (preload/buffAllow.ts), under the SAME names,
+  // for the fight-selection trio's reason: one fact, one name, two windows, and ONE renderer hook
+  // (`useBuffAllow`) driving the Buffs tab's controls and this window's filter alike.
+  //
+  // THE SETTER IS DELIBERATELY ABSENT. The controls are on the Buffs tab — a checkbox on the card
+  // you just cast, and a checkbox on a searchable stats row — and a floating window over the game
+  // has none of them. A bridge member nothing calls is a door somebody later walks through, and
+  // "an overlay may not edit which spells it draws" is worth being structurally true.
+  /** The persisted allow-list, for hydrating this window on mount. */
+  getBuffAllow: (): Promise<BuffAllowPrefs> => ipcRenderer.invoke(IPC.buffAllowGet),
+  /** Subscribe to changes made in the app. Payload is the whole preference — this is what makes a
+   *  box checked on the tab reach a window that is already on screen. */
+  onBuffAllow: (cb: (p: BuffAllowPrefs) => void): (() => void) => {
+    const listener = (_e: unknown, p: BuffAllowPrefs): void => cb(p)
+    ipcRenderer.on(IPC.onBuffAllow, listener)
+    return () => ipcRenderer.removeListener(IPC.onBuffAllow, listener)
+  },
+
   /** Set locked (click-through) vs interactive for this kind. Persisted + applied to the window. */
   setLocked: (locked: boolean): void => ipcRenderer.send(IPC.overlaySetLocked, KIND, locked),
   /**
@@ -160,12 +181,35 @@ const overlayApi = {
    */
   setIgnoreMouse: (ignore: boolean): void => ipcRenderer.send(IPC.overlaySetIgnoreMouse, KIND, ignore),
   /**
+   * "THE CURSOR IS NO LONGER OVER YOU" (JOS-381) — the one leave signal that does not come from
+   * this window.
+   *
+   * A locked overlay that has taken the mouse can stop receiving events entirely: while the
+   * Windows task switcher (or a UAC prompt, or any other system popup) owns input, the pointer can
+   * walk off the window without a single event reaching it, and the capture — chrome showing, game
+   * not click-through — never ends. So main watches the cursor while, and only while, a locked
+   * overlay is capturing (src/main/pointerWatch.ts) and pushes this when it is outside.
+   *
+   * Receive-only and payload-free by design: the renderer treats it exactly as it treats a real
+   * leave (renderer/overlay/pointerExit.ts), so nothing new can be asked of this window over it.
+   */
+  onPointerExit: (cb: () => void): (() => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC.onOverlayPointerExit, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayPointerExit, listener)
+  },
+
+  /**
    * DEEP LINK (Task #64): "take me to this mob in the app". Main raises + focuses the main
    * window and forwards the request to its renderer, which switches to the Mobs tab and opens
    * the mob's page. Fire-and-forget — an overlay never waits on the app it just raised.
    *
-   * Interactive mode only, by the caller's construction: a LOCKED overlay is click-through by
-   * law, so it has no clicks to give.
+   * NOT interactive-mode-only any more (JOS-390). That used to hold for every caller, because a
+   * locked overlay is click-through by law — but a STRIP takes the mouse back for exactly as long
+   * as it has a card on screen (`cardQueue.useQueueMouseCapture`), which is what makes the con
+   * card's × clickable while pinned, and the con card body is now that same click aimed one control
+   * over. The meters' rows still call this only while interactive; the difference is the caller's,
+   * not this bridge's.
    */
   focusMob: (mob: string): void => ipcRenderer.send(IPC.focusView, { view: 'mobs', mob }),
   /**
@@ -222,6 +266,38 @@ const overlayApi = {
    * and has no clicks to give), and main re-validates the key regardless.
    */
   unwatchRespawn: (key: string): Promise<boolean> => ipcRenderer.invoke(IPC.respawnUnwatch, key),
+
+  /**
+   * CON CARD (JOS-383): one finished card for the creature just `/con`ed, pushed by main. Same law
+   * as the two above — the overlay times and dismisses it locally and fetches nothing — and its own
+   * member for the same reason: three separate WINDOWS, and none of them may be handed another's
+   * payload.
+   */
+  onConCard: (cb: (c: ConCardPayload) => void): (() => void) => {
+    const listener = (_e: unknown, c: ConCardPayload): void => cb(c)
+    ipcRenderer.on(IPC.onConCard, listener)
+    return () => ipcRenderer.removeListener(IPC.onConCard, listener)
+  },
+
+  /**
+   * "I closed the card for this mob" (JOS-383). The only thing this window sends: the DISMISSAL is
+   * local (the queue drops the card), and this tells main, which owns the one rule the overlay
+   * cannot — a re-con of the same creature inside a minute must not put the card back up.
+   */
+  closeConCard: (mobKey: string): void => ipcRenderer.send(IPC.conCardClosed, mobKey),
+
+  /**
+   * "WHAT I DREW IS THIS TALL" (JOS-386) — the one thing an overlay says about its own GEOMETRY.
+   *
+   * The con card's window height follows the card rather than being a size anybody chose, and the
+   * measurement can only happen here: the card's height is a layout result at whatever text scale
+   * the user picked, and only this process can read it. Main clamps the request to the work area,
+   * moves nothing but the height, and does not write it down as a chosen size.
+   *
+   * Fire-and-forget, and kind-scoped like every channel on this bridge, so a window can only ever
+   * ask about ITSELF. Main ignores it for a kind whose height is the user's business.
+   */
+  fitHeight: (height: number): void => ipcRenderer.send(IPC.overlayFitHeight, KIND, height),
 
   /** Close this overlay from its own close button (interactive mode only). */
   close: (): void => ipcRenderer.send(IPC.overlayClose, KIND)

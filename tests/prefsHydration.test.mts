@@ -58,11 +58,19 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     getGraphicsEnvironment: answer('getGraphicsEnvironment', { wine: false, auto: { safeMode: false, opaqueOverlays: false } }),
     getOverlayAutoHide: answer('getOverlayAutoHide', { hideWhenNotRunning: false, hideWhenUnfocused: true }),
     getOverlaySnap: answer('getOverlaySnap', { enabled: true }),
-    // The other switch whose compiled-in default is TRUE (JOS-139), stored FALSE — and the one
-    // with a SECOND control (the tray menu's checkbox) that can move it while this pane is closed.
-    getCloseToTray: answer('getCloseToTray', { enabled: false, noticeAcknowledged: true }),
-    getOverlayState: answer('getOverlayState', { toast: true }),
+    // Stored ON against a compiled-in default of OFF (JOS-139; OFF since the owner's 2026-08-16
+    // reversal) — and the one with TWO other controls (the tray menu's checkbox and the title bar's
+    // overlay-menu row) that can move it while this pane is closed.
+    getCloseToTray: answer('getCloseToTray', { enabled: true, noticeAcknowledged: true }),
+    getOverlayState: answer('getOverlayState', { toast: true, alertBanner: true, conCard: false }),
     getToastConfig: answer('getToastConfig', { locked: false }),
+    // The banner ships OFF and its first card mounted on that default; stored ON here, with an
+    // off-default hold, so the seed has to carry both (owner, hands-on, 2026-08-16).
+    getAlertBannerConfig: answer('getAlertBannerConfig', { locked: false, alertBanner: { holdMs: 8000, maxLines: 4, introduced: true } }),
+    // The con card ships ON (JOS-383) — so the value that can be WRONG for somebody is a stored
+    // OFF, which is what this stub carries. Its auto-hide is stored off-default too, and out of
+    // range, so the seed has to normalize rather than pass it through.
+    getConCardConfig: answer('getConCardConfig', { locked: true, conCard: { autoHideMs: 999_999 } }),
     getBuffTrust: answer('getBuffTrust', { externals: ['Faelin'] }),
     getCursorRing: answer('getCursorRing', { enabled: true, sizePx: 60, thicknessPx: 5, color: 'white' }),
     getVoicePrefs: answer('getVoicePrefs', { engine: 'system', voice: 'x', rate: 1, volume: 1 }),
@@ -72,6 +80,9 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     // A switch whose compiled-in default is TRUE (JOS-366), stored FALSE — the flash this gate
     // exists to prevent, in the direction the other switches cannot express.
     getProcessPriority: answer('getProcessPriority', { yieldToGame: false }),
+    // The second of those (JOS-385), and stored FALSE for the same reason: the only person whose
+    // resist-evidence value differs from the shipped one is the person who switched it off.
+    getResistPrefs: answer('getResistPrefs', { includeNpcCasters: false }),
     getAppVersion: answer('getAppVersion', '9.9.9'),
     getUpdateStatus: answer('getUpdateStatus', { state: 'ready' }),
     listAlerts: answer('listAlerts', [{ id: 'a' }, { id: 'b' }, { id: 'c' }])
@@ -85,9 +96,13 @@ test('one read answers every card in the pane, and it snaps the text size to the
   const { reader, calls } = stubReader()
   const snap = await readPrefsSnapshot(reader)
 
-  // NINETEEN reads, one batch. The number is not the claim; the claim is that the gate asks each
+  // TWENTY-TWO reads, one batch. The number is not the claim; the claim is that the gate asks each
   // question exactly once, so a pane that mounts does not stampede the store.
-  assert.equal(calls(), 19, 'every read fires exactly once')
+  assert.equal(calls(), 22, 'every read fires exactly once')
+
+  // The resist-evidence switch (JOS-385), stored against its shipped ON. It is in the batch for
+  // the `processPriority` reason, and it is asserted here for the same one.
+  assert.equal(snap.resists.includeNpcCasters, false)
 
   // A sample across the KINDS of value, because the defect was never boolean-only: two switches
   // that disagree with their defaults, a ladder stop, a slider pair, and two counts.
@@ -95,8 +110,8 @@ test('one read answers every card in the pane, and it snaps the text size to the
   assert.equal(snap.overlayAutoHide.hideWhenUnfocused, true)
   // Another switch whose stored value disagrees with its compiled-in default (JOS-217 ships OFF).
   assert.equal(snap.overlaySnap.enabled, true)
-  // …and the same claim the other way up (JOS-139 ships ON).
-  assert.equal(snap.closeToTray.enabled, false)
+  // …and the tray switch, stored ON against its shipped OFF (JOS-139).
+  assert.equal(snap.closeToTray.enabled, true)
   assert.equal(snap.uiScale, 1.1, 'the ladder value arrives snapped, so the cache cannot hold an off-rung number')
   assert.equal(snap.cursorRing.sizePx, 60)
   assert.equal(snap.alertCount, 3, 'a count, not the list - the Profiles caption is the only reader')
@@ -104,6 +119,16 @@ test('one read answers every card in the pane, and it snaps the text size to the
 
   // The toast's two facts come from two different reads and are one control pair.
   assert.deepEqual(snap.toast, { open: true, locked: false })
+  // The banner's three, likewise — and its knobs arrive normalized, so an off-range hold could
+  // never sit in the cache.
+  assert.deepEqual(snap.alertBanner, {
+    open: true,
+    locked: false,
+    cfg: { holdMs: 8000, maxLines: 4, introduced: true }
+  })
+  // And the con card's three (JOS-383). The switch is the one that ships ON, so a stored OFF is the
+  // flash this gate exists to prevent; the out-of-range auto-hide arrives clamped.
+  assert.deepEqual(snap.conCard, { open: false, locked: true, cfg: { autoHideMs: 120_000 } })
 })
 
 test('an off-ladder text size is snapped rather than stored as it was found', async () => {
@@ -133,7 +158,7 @@ test('two mounts in one frame share ONE batch', async () => {
   resetPrefsSnapshotForTests()
   const { reader, calls } = stubReader()
   const [a, b] = await Promise.all([loadPrefsSnapshot(reader), loadPrefsSnapshot(reader)])
-  assert.equal(calls(), 19, 'not thirty-eight')
+  assert.equal(calls(), 22, 'not forty-four')
   assert.equal(a, b)
   resetPrefsSnapshotForTests()
 })
@@ -199,6 +224,7 @@ test('every Preferences card seeds from the gate, and none of them re-reads main
     'CursorRingSetting.tsx',
     'PerfSetting.tsx',
     'BuffTrustSetting.tsx',
+    'ResistEvidenceSetting.tsx',
     'TextSizeSetting.tsx',
     'ToastSetting.tsx',
     'VoiceSetting.tsx',

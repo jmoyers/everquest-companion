@@ -43,11 +43,7 @@ import {
 } from './appHarness.mjs'
 import { mainWindow, overlayWindow } from './appWindow.mjs'
 import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
-import {
-  stepRowsHoverNothing,
-  stepTitleBarOnlyTooltips,
-  stepTooltipLeavesWithThePointer
-} from './overlayTooltipSteps.mjs'
+import { stepNoTooltipsAnywhere, stepRowsHoverNothing } from './overlayTooltipSteps.mjs'
 
 /** The main window's overlay bridge — the same one the title-bar menu calls. */
 interface OverlayBridge {
@@ -565,11 +561,10 @@ async function main(): Promise<void> {
         if (m.type() === 'error') consoleErrors.push(`xp overlay: ${m.text()}`)
       })
       await stepHydratesFromTheFold(overlay)
-      // AFTER the fold, so there are real rows to have (or not have) a hover, and the orphan test
-      // has a live pin tooltip to dismiss (JOS-358).
+      // AFTER the fold, so there are real rows to have (or not have) a hover (JOS-358; the title
+      // bar's own tooltips went too on 2026-08-16, so there is no longer a pin popup to dismiss).
       await stepRowsHoverNothing(overlay, 'xp-row-xp')
-      await stepTitleBarOnlyTooltips(overlay, 'the XP window')
-      await stepTooltipLeavesWithThePointer(overlay)
+      await stepNoTooltipsAnywhere(overlay, 'the XP window')
       await stepSlice(overlay)
       await stepRateBasis(overlay)
       await stepZoneScope(overlay)

@@ -10,7 +10,14 @@
  * real log scan, the engine, every IPC channel, the renderer bundle — runs untouched, so
  * the test asserts against production behavior.
  *
- * The fourth behavior — `userData` pointed at a fresh temp dir before electron-store is
+ * The fourth is newer and narrower (JOS-381): the overlay cursor watchdog takes its cursor from a
+ * probe object the harness writes (`globalThis.__eqOverlayPointerWatch`, installed only under this
+ * flag — src/main/overlayPointerWatch.ts) instead of from `screen`. A headless run drives
+ * Chromium's SYNTHETIC pointer over windows that are never on screen, so the real OS cursor is
+ * wherever the machine's owner left it and reading it would tell every hover step in the suite
+ * that the pointer had left the window it just entered. Nothing in the product reads the probe.
+ *
+ * The fifth behavior — `userData` pointed at a fresh temp dir before electron-store is
  * constructed, so a run can never read or clobber the user's real store / errors.log —
  * now lives in `channel.ts`, which owns that decision for all three channels (prod / dev
  * / e2e). This module is a pure flag: zero side effects, zero footprint when the env var

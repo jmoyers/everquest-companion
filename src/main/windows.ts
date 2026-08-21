@@ -28,6 +28,16 @@ import { installBackButton } from './appBack'
 import { E2E } from './e2e'
 import { logError } from './errorLog'
 import { OVERLAY_MIN_SIZE, OVERLAY_TITLE, overlayDefaultSize } from './overlayLayout'
+// WHERE AN OVERLAY IS, HOW TALL IT IS, AND WHICH OF THAT IS WRITTEN DOWN (JOS-187 + JOS-386). Its
+// own module for the reason overlaySnapDrag.ts and OVERLAY_TITLE are: this file is at the
+// 400-code-line ceiling, and a persistence policy over pure geometry was never its subject.
+import { RECT_KEYS, applyOverlayBounds, installOverlayBounds, markAppliedBounds } from './overlayBounds'
+// THE CURSOR WATCHDOG, and it is two modules for the reason this one is (JOS-381): the DECISION is
+// electron-free and node-tested (pointerWatch.ts, which also states the whole performance
+// contract), and overlayPointerWatch.ts is the half that reads `screen` and pushes the leave. It
+// is wired to `setOverlayIgnoreMouse` below — the one place this app changes click-through — so
+// the watch can only exist while a locked overlay is really capturing.
+import { stopOverlayPointerWatch, watchOverlayPointer } from './overlayPointerWatch'
 // OPT-IN drag magnetism (JOS-217). Its own module — this file is at the 400-code-line ceiling, and
 // the whole feature is one `will-move` listener over pure geometry. It is handed the registry
 // below rather than importing it back out of here; see that file's header.
@@ -75,14 +85,15 @@ const overlayWindows = Object.fromEntries(OVERLAY_KINDS.map((k) => [k, null])) a
 >
 
 /**
- * THE STRIP KINDS: the two overlays whose resting state is an EMPTY window — the celebration
- * toast and the alert banner (JOS-378). Every other kind is a panel that fills its window.
+ * THE STRIP KINDS: the three overlays whose resting state is an EMPTY window — the celebration
+ * toast, the alert banner (JOS-378) and the con card (JOS-383). Every other kind is a panel that
+ * fills its window.
  *
  * The distinction earns a name because opacity means something different for them (below) and
- * because neither pays for a mouse-forwarding hook (replayGate.ts `overlayForwardsMouse`).
+ * because none pays for a mouse-forwarding hook (replayGate.ts `overlayForwardsMouse`).
  */
 function isStripKind(kind: OverlayKind): boolean {
-  return kind === 'toast' || kind === 'alertBanner'
+  return kind === 'toast' || kind === 'alertBanner' || kind === 'conCard'
 }
 
 /**
@@ -145,10 +156,11 @@ export function getOverlayWindow(kind: OverlayKind): BrowserWindow | null {
   return overlayWindows[kind]
 }
 
-/** Is this kind's overlay open — i.e. does a live, undestroyed window exist for it? */
+/** Is this kind's overlay open — i.e. does a live, undestroyed window exist for it? Spelled the
+ *  way `getMainWindow` above asks the same question: an absent window and a destroyed one are one
+ *  answer, and the window is asked rather than a remembered flag. */
 export function isOverlayOpen(kind: OverlayKind): boolean {
-  const w = overlayWindows[kind]
-  return w !== null && !w.isDestroyed()
+  return overlayWindows[kind]?.isDestroyed() === false
 }
 
 // ---- Electron runtime trust boundary (webPreferences / navigation / permissions) ----
@@ -458,6 +470,9 @@ export function createMainWindow(): void {
       const w = overlayWindows[kind]
       if (!w || w.isDestroyed()) continue
       w.removeAllListeners('closed')
+      // …including the handler that would have stopped its cursor watch, so this path says it
+      // itself (JOS-381). Idempotent, like every other stop.
+      stopOverlayPointerWatch(kind)
       w.destroy()
       overlayWindows[kind] = null
     }
@@ -526,6 +541,13 @@ export function createMainWindow(): void {
  * the seconds the fold owns the message loop, the hook the meters normally pay for would land
  * squarely on the user's own mouselook — and the window it exists to serve is hidden anyway.
  * Click-through itself is unchanged; only its implementation gets cheaper.
+ *
+ * ...AND IT IS ALSO WHERE THE CURSOR WATCHDOG LIVES OR DIES (JOS-381). This function is the ONE
+ * place an overlay's click-through state changes, so it is the only place that can know when a
+ * locked window has taken the mouse — and therefore when the pointer leaving it might never be
+ * observed from inside (the task-switcher case). `watchOverlayPointer` starts a watch on exactly
+ * that transition and stops it on every path back; nothing about forwarding, focus or z-order is
+ * touched by it. See overlayPointerWatch.ts.
  */
 export function setOverlayIgnoreMouse(kind: OverlayKind, ignore: boolean): void {
   const w = overlayWindows[kind]
@@ -533,6 +555,7 @@ export function setOverlayIgnoreMouse(kind: OverlayKind, ignore: boolean): void 
   if (ignore) w.setIgnoreMouseEvents(true, { forward: overlayMouseForward(kind) })
   else w.setIgnoreMouseEvents(false)
   applyOpaqueStripVisibility(kind, ignore)
+  watchOverlayPointer(kind, w, ignore)
 }
 
 /**
@@ -625,34 +648,17 @@ export function applyOverlayLocked(kind: OverlayKind, locked: boolean): void {
   setOverlayFocusable(w, !locked)
 }
 
-// ---- WHAT IS SHOWN vs WHAT IS STORED (JOS-187) ------------------------------------------------
+// ---- WHAT IS SHOWN vs WHAT IS STORED — overlayBounds.ts ---------------------------------------
 //
-// THE STORE KEEPS THE RECTANGLE THE USER CHOSE. THE SCREEN GETS THE ONE THAT FITS. That is the
-// whole policy, and it is what makes a docking round trip lossless: undock the widescreen and the
-// overlay is DRAWN on the laptop panel while `overlays.<kind>.bounds` still says "x: 2600, on the
-// right-hand monitor"; plug the monitor back in and the same fit puts it back where it was, on the
-// display the user actually put it on. Persisting the corrected rectangle instead would silently
-// destroy that layout the first time a cable came out — and it would do it on a laptop screen the
-// user may only be on for the length of a train journey.
-//
-// The mechanism is one remembered rectangle. Every rectangle this file applies to a window ITSELF
-// is recorded here first, and `saveOverlayBounds` refuses to persist the one it recognises as its
-// own — so the only writes that reach the store are the user's own moves and resizes. The marker is
-// dropped the moment a window reports any OTHER rectangle, so a user who later drags a window back
-// onto that exact spot still has it saved. Deliberately not a timer or a re-entrancy flag: Electron
-// may emit 'moved'/'resized' synchronously from `setBounds` or a tick later, and a policy that
-// depended on which would be a policy that worked on one platform.
-//
-// A PIXEL OF SLACK, because `setBounds` is not always an identity: on a scaled display the value
-// makes a round trip through physical pixels and can come back one off. The cost is that a 1px
-// nudge in the instant after a re-placement is not persisted — which is not a position anyone is
-// expressing — and it is paid only until the window next moves anywhere else.
-const appliedBounds = new Map<OverlayKind, Electron.Rectangle>()
-const RECT_KEYS = ['x', 'y', 'width', 'height'] as const
-const sameSpot = (a: Electron.Rectangle, b: Electron.Rectangle): boolean =>
-  RECT_KEYS.every((k) => Math.abs(a[k] - b[k]) <= 1)
-/** The EXACT twin of `sameSpot`, for the ring: it is re-bounded to the EQ window and re-drawn from
- *  that origin, so a pixel of slack here would be a pixel of drift in the halo's offset. */
+// The JOS-187 policy (the store keeps the rectangle the user CHOSE, the screen gets the one that
+// FITS) and JOS-386's amendment to it (…except a con card's height, which is the card's) live
+// together in ./overlayBounds.ts, with the whole argument for both. This file hands that module
+// each window as it is created (`installOverlayBounds`, below) and calls it for the two placements
+// it owns: the first open, and the display-change reconcile.
+
+/** The EXACT twin of `overlayBounds`'s `sameSpot`, for the ring: it is re-bounded to the EQ window
+ *  and re-drawn from that origin, so a pixel of slack here would be a pixel of drift in the halo's
+ *  offset. */
 const sameRect = (a: Electron.Rectangle, b: ScreenRect): boolean =>
   RECT_KEYS.every((k) => a[k] === b[k])
 
@@ -666,16 +672,8 @@ const sameRect = (a: Electron.Rectangle, b: ScreenRect): boolean =>
 function overlayPlacement(kind: OverlayKind) {
   const b = overlayFittedBounds(kind, getOverlayConfig(kind).bounds)
   if (!b) return overlayDefaultSize(kind) // no display info (headless/e2e) — size only
-  appliedBounds.set(kind, b)
+  markAppliedBounds(kind, b)
   return b
-}
-
-/** Move a kind's overlay onto `b` without that move being mistaken for the user's own (see above). */
-export function applyOverlayBounds(kind: OverlayKind, b: Electron.Rectangle): void {
-  const w = overlayWindows[kind]
-  if (!w || w.isDestroyed() || sameSpot(w.getBounds(), b)) return
-  appliedBounds.set(kind, b)
-  w.setBounds(b)
 }
 
 /**
@@ -733,6 +731,17 @@ export function createOverlayWindow(kind: OverlayKind): void {
     // sentences that WRAP, so the window's width is the one thing that decides whether a raid
     // call reads as one glance or three, and the height is how many lines fit before the oldest
     // has to go. Both are the user's business.
+    //
+    // THE CON CARD IS THE THIRD ANSWER (JOS-386): move and WIDTH, never height. Width matters for
+    // the same reason it does on the banner — it is what decides whether a drop line wraps — and
+    // the height that follows from that is arithmetic rather than taste. A user-chosen height on
+    // this kind could only ever be too big (an apron of empty window that still eats the mouse
+    // while a card is up) or too small (a card cut off at the bottom), so the window follows the
+    // card instead: `fitOverlayHeight` above, driven by the renderer's own measurement.
+    //
+    // It stays `resizable` rather than growing a height lock, because Electron's flag is
+    // both-axes-or-neither and the width IS the user's. Dragging the bottom edge is therefore
+    // possible and simply does not stick: the 'resized' handler re-derives (`applyFitHeight`).
     resizable: kind !== 'toast',
     show: false,
     frame: false,
@@ -806,28 +815,23 @@ export function createOverlayWindow(kind: OverlayKind): void {
     raiseCursorRing()
   })
 
-  // Persist position + size so the overlay restores where the user left it — the USER's moves only,
-  // never one of ours (JOS-187; the marker is explained at `appliedBounds`).
-  const saveOverlayBounds = (): void => {
-    if (w.isDestroyed()) return
-    const b = w.getBounds()
-    const applied = appliedBounds.get(kind)
-    if (applied && sameSpot(applied, b)) return
-    appliedBounds.delete(kind)
-    setOverlayConfig(kind, { bounds: b })
-  }
-  w.on('moved', saveOverlayBounds)
-  w.on('resized', saveOverlayBounds)
+  // Hand the window to ./overlayBounds.ts, which persists where the USER leaves it (never one of
+  // our own placements — JOS-187) and keeps a fit kind's height following its content (JOS-386).
+  installOverlayBounds(kind, w)
 
   // A drag that lines this window up with its neighbours and the screen edges — but ONLY for a
   // user who has turned it on in Preferences (JOS-217). Installed for every overlay so the
   // preference takes effect on the next drag rather than the next launch; with it off the
   // listener's first line returns and this window drags exactly as it always has. A snapped
-  // rectangle IS the user's own, so it goes through `saveOverlayBounds` above like any other move.
+  // rectangle IS the user's own, so it is persisted like any other move (overlayBounds.ts).
   installOverlaySnap(w, kind, overlayWindows, getMainWindow)
 
   w.on('closed', () => {
     overlayWindows[kind] = null
+    // A window that is gone is nobody's hover target: the cursor watch would find out on its next
+    // tick anyway (the rectangle it re-reads comes back null), but a closed window should cost
+    // nothing at all, not one more read (JOS-381).
+    stopOverlayPointerWatch(kind)
     setOverlayConfig(kind, { open: false })
     // Tell the main app so the TitleBar overlay menu reflects the closed state.
     sendToMain(IPC.onOverlayState, { kind, open: false })
@@ -855,13 +859,11 @@ export function setOverlayOpen(kind: OverlayKind, open: boolean): boolean {
   return isOpen
 }
 
-/** Current open-state map across all overlay kinds (for the TitleBar menu). */
+/** Current open-state map across all overlay kinds (for the TitleBar menu). Built from
+ *  OVERLAY_KINDS the same way `overlayWindows` above is, so a new kind is never half-covered. */
 export function overlayStateMap(): Record<OverlayKind, boolean> {
-  const out = {} as Record<OverlayKind, boolean>
-  for (const kind of OVERLAY_KINDS) {
-    out[kind] = isOverlayOpen(kind)
-  }
-  return out
+  const open = OVERLAY_KINDS.map((k) => [k, isOverlayOpen(k)] as const)
+  return Object.fromEntries(open) as Record<OverlayKind, boolean>
 }
 
 // ---- overlay AUTO-HIDE (presence-driven; src/main/presence.ts) ----
