@@ -58,7 +58,7 @@
 import { GEAR_STAT_KEYS, type GearStatKey, type GearStats } from '../../../../shared/planner/gear'
 import type { PlannerInventoryHost } from '../../../../shared/planner/inventorySlots'
 import { cellsForSlot, planSlotLabel, type EquipSlot, type PlanSlotId } from '../../../../shared/planner/types'
-import { ITEM_UPGRADE_BASE, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
+import { upgradeStateForTier, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
 import { outputAgeLabel } from '../../lib/outputFreshness'
 import { statText } from './gearColumns'
 
@@ -116,9 +116,14 @@ export function equippedCells(index: EquippedIndex, slots: readonly EquipSlot[])
  * this is a FLOOR on what the equipped item actually reads, which is the safe direction for a
  * comparison whose point is "is the candidate better": it can understate the thing you already own,
  * never overstate it.
+ *
+ * THE READING ITSELF MOVED (JOS-416): `shared/itemUpgrade.ts upgradeStateForTier` is now the one
+ * place that turns a dump's ` +N` into a state, because the Character sheet's gear sum reads the
+ * same suffix and two spellings of it would be two answers. This stays as the GEAR tab's name for
+ * it — the host shape is the planner's — and is byte-identical to what it did before.
  */
 export function equippedState(host: PlannerInventoryHost): ItemUpgradeState {
-  return host.tier === undefined ? ITEM_UPGRADE_BASE : { full: host.tier, fraction: 0 }
+  return upgradeStateForTier(host.tier)
 }
 
 // ---- the numbers -------------------------------------------------------------------------------

@@ -374,16 +374,22 @@ async function stepOverlay(page: Page, app: ElectronApplication): Promise<Page |
   )
   // ROUND 5 MOVED IT TO THE HOVER, and this still has to find it. The two claims this window makes
   // (a clock at zero is our estimate elapsing, UP is the game naming the mob) used to be a standing
-  // legend line under the rows; the owner cut the explanatory text, so the sentence now rides the
-  // header count's title. Read as a TITLE rather than as body text - if it had merely been deleted,
-  // this fails.
-  const titles = await o.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>('[title]')].map((e) => e.title)
+  // legend line under the rows; the owner cut the explanatory text, so the sentence rode the header
+  // count's TITLE - until 1111d8d9 (2026-08-16, owner ruling: no overlay hovers a tooltip, not
+  // even the title bar) converted the chrome's native titles to aria-labels. The sentence still
+  // ships, as the accessibility name (OverlayHeader.tsx `aria-label={tailTitle}`) - so that is the
+  // surface this reads. If it were merely deleted, this fails. (This assertion went stale on
+  // 08-16 and no full sweep ran this spec until 2026-08-20 - the collection was [] because the
+  // chrome carries NO native titles at all now, by design.)
+  const labels = await o.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[aria-label]')].map(
+      (e) => e.getAttribute('aria-label') ?? ''
+    )
   )
   check(
     '…and never claims the mob is standing there',
-    titles.some((t) => t.includes('estimate elapsed, not a sighting')),
-    JSON.stringify(titles)
+    labels.some((t) => t.includes('estimate elapsed, not a sighting')),
+    JSON.stringify(labels)
   )
   const body = await o.evaluate(() => document.body.innerText)
   check(

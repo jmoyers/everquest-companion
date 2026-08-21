@@ -79,8 +79,38 @@ export interface ReconcileInput {
    * prop and one rename would be the whole diff.
    */
   rebaselineAt?: number | null
-  /** JOS-186 — loot folded counting ONLY drops after `rebaselineAt` (`computeHeldCountsAfter`). */
+  /**
+   * JOS-186 — loot folded counting ONLY drops after `rebaselineAt` (`computeHeldCountsAfter`).
+   *
+   * READ UNDER `both` TOO SINCE JOS-409, for the same reason `rebaselineAt` itself outgrew its name:
+   * this is not "the rebaseline baseline's loot", it is THE LOOT THE DUMP DID NOT SEE, and a witness
+   * that is about to be discounted by post-dump destroys and post-dump turn-ins has to be credited
+   * with the post-dump ACQUISITIONS in the same window or it is being charged for a period it is not
+   * allowed to earn in. `inventory` still ignores it (that mode is literally "as dumped", and its
+   * label says so); `log` never reads the file at all. The name stays for the reason above.
+   */
   lootSinceRebaseline?: Record<string, number>
+  /**
+   * THE LOG-DETECTED SUBSET OF `turnInInstants` — the only instants allowed to window the DUMP
+   * (JOS-409).
+   *
+   * A turn-in instant comes from one of two places (useProgress.useTurnInLedger): the LOG, where it
+   * is the stamp on the line the game printed, and the hand counter, where it is `Date.now()` at the
+   * moment the user clicked. Only the first is an EVENT time. The second is a click time, and a
+   * player recording on Friday a hand-in they made on Tuesday would have that Friday instant
+   * compared against the dump's Wednesday stamp and the dump discounted for a turn-in it already
+   * reflects — the double-subtraction JOS-141 exists to prevent, arriving by the back door JOS-403
+   * opened.
+   *
+   * So the dump-anchored window reads THIS list, and `turnInInstants` keeps every other job it has
+   * (the all-time tally's list, and the per-statement windows — a hand statement's `setAt` is a
+   * click time too, so comparing two click times there is comparing like with like).
+   *
+   * ABSENT MEANS "no provenance was stated", which falls back to `turnInInstants` and is exactly the
+   * pre-JOS-409 contract — so every caller that has not been taught the difference reads what it
+   * always did, and the additivity proof in tests/skyItemOverrides.test.mts stays literal.
+   */
+  detectedTurnInInstants?: TurnInInstants
   /**
    * JOS-401 — what the log says you DESTROYED after the dump was generated
    * (`computeDestroyedAfter`), by counting key. Read under EVERY source that consults the dump,
@@ -154,6 +184,15 @@ interface Witnesses {
    * able to name the quest that took the copy.
    */
   invConsumed: number
+  /**
+   * What the log has seen DROP since the dump was generated (JOS-409) — the dump witness's own
+   * forward credit, in the same window as the two discounts above it.
+   *
+   * Zero under every source but `both`, and zero there too when nothing can date the dump: gated at
+   * the input (`reconcile`), so every reader below can simply add it. `rebaseline` carries the same
+   * number inside its own baseline and does not read this field.
+   */
+  invSince: number
   /** the dump-anchored baseline, present only under `rebaseline` with an instant to anchor to */
   rebaseline?: { base: number; consumed: number }
   /** the hand-stated baseline, present only where the user has stated this item's count */
@@ -173,9 +212,21 @@ function dumpWitness(inv: number, since: number, destroyed: number): number {
 }
 
 /**
+ * THE DUMP WITNESS'S BASE — the file, plus what dropped since it was written, less what was
+ * destroyed since it was written (JOS-409).
+ *
+ * `w.invSince` is 0 for every source but `both` (gated at the input, see `reconcile`), so this one
+ * expression is still "the dump, less what you destroyed since" for `inventory` and is now the full
+ * windowed reading for `both`. The whole of JOS-409's first part is that `+ w.invSince`.
+ */
+function dumpBase(w: Witnesses): number {
+  return dumpWitness(w.inv, w.invSince, w.invDestroyed)
+}
+
+/**
  * The dump witness NET of the turn-ins recorded after the dump was generated (JOS-403) — the whole
- * of `max(0, D - d - c_after)`, which is what `inventory` answers and what `both` maxes against the
- * log.
+ * of `max(0, D + l_after - d_after - c_after)`, which is what `inventory` answers (with `l_after`
+ * pinned to 0) and what `both` maxes against the log.
  *
  * It is a SECOND expression rather than another argument to `dumpWitness` because the two callers
  * want different halves of it: the row's `base` is the dump discounted by destroys only (a destroy
@@ -184,7 +235,7 @@ function dumpWitness(inv: number, since: number, destroyed: number): number {
  * `rebaseline` witness is built the same way for the same reason and keeps its two fields.
  */
 function dumpNet(w: Witnesses): number {
-  return Math.max(0, dumpWitness(w.inv, 0, w.invDestroyed) - w.invConsumed)
+  return Math.max(0, dumpBase(w) - w.invConsumed)
 }
 
 /**
@@ -247,6 +298,11 @@ function dumpNet(w: Witnesses): number {
  * `consumed` in the turn-in block below, because a turn-in is a subtraction the LEDGER owns and the
  * row has to be able to name the quest.
  *
+ * AND SINCE JOS-409 THE `both` DUMP READING IS ALSO "PLUS WHAT DROPPED SINCE IT WAS WRITTEN" — the
+ * same window again, the credit side of it. `inventory` is deliberately NOT given that term: its
+ * label is "Export only (as dumped)" and it stays literal. The argument is in the turn-in block
+ * below, under the heading about earning in the window you pay in.
+ *
  * ============================================================================
  * AND SINCE JOS-186 THERE ARE TWO WAYS TO SAY "NO, IT IS GONE" — BOTH OPT-IN.
  * ============================================================================
@@ -271,7 +327,7 @@ function dumpNet(w: Witnesses): number {
 function witnessBase(w: Witnesses, countSource: CountSource): number {
   if (w.override) return w.override.base
   if (countSource === 'log') return w.log
-  const dump = dumpWitness(w.inv, 0, w.invDestroyed)
+  const dump = dumpBase(w)
   if (countSource === 'inventory') return dump
   if (countSource === 'rebaseline' && w.rebaseline) return w.rebaseline.base
   return Math.max(w.log, dump)
@@ -413,11 +469,57 @@ function questItemNames(quests: PoskyQuest[]): Record<string, string> {
  *
  *   'log'        max(0, log - consumed)          [log is already net of every destroy]
  *   'inventory'  max(0, dump - destroyed since the dump - turn-ins recorded since the dump)
- *   'both'       max(that dump reading, max(0, log - consumed))
+ *   'both'       max(0, dump + looted since the dump - destroyed since it - turn-ins since it)
+ *                maxed against max(0, log - consumed)
  *
- * With no instant to date the dump, both windowed discounts are zero and the two lines above read
- * exactly as they did before either ticket — never a guessed instant, which would discount a
+ * With no instant to date the dump, every windowed term is zero and the three lines above read
+ * exactly as they did before any of these tickets — never a guessed instant, which would discount a
  * witness by events that may well predate it.
+ *
+ * ============================================================================
+ * A WITNESS THAT PAYS IN A WINDOW MUST EARN IN THE SAME WINDOW (JOS-409).
+ * ============================================================================
+ *
+ * `both`'s dump line above used to be `max(0, dump - destroyed since - turned in since)` — the
+ * discounts windowed to the dump's instant, the CREDITS not windowed at all, because the credits
+ * were supposed to arrive via the other witness. That works only while the two witnesses are looking
+ * at the same physical copies. Where they are not, one physical turn-in is charged to BOTH of them
+ * and a `max` of two independently-underpaid witnesses under-counts.
+ *
+ * THE CASE THAT PROVED IT is not exotic — it is the Plane of Sky rune refarm, and it is guaranteed
+ * by a game fact this repo already states (shared/outputs/kinds.ts): a Wind Rune is looted straight
+ * into the CURRENCY TAB, and `/outputfile inventory` never lists currency-tab items. So the dump's
+ * reading of a rune is always 0 and the log's is the only one there is. Now hand a rune quest in
+ * once, dump, and farm the rune again:
+ *
+ *   the log witness   1 looted, all-time consumption 1 (the turn-in)      → max(0, 1-1) = 0
+ *   the dump witness  0 in the file, no post-dump turn-in to owe          → 0
+ *   `both`            max(0, 0)                                          → 0
+ *
+ * The player is holding the rune. Three 1.5.0 reports said exactly that, one of them with a log
+ * slice in it (feedback 01M0ATTCXBX3PB8NRSHM8E4EMY, and 01M0CVBWRBXZ3DVDY7CMXQ7SXE /
+ * 01M0DADXKXPN5KJWFSAZNQ3VAA, the last of which named the mechanism: *all my runes are in currency
+ * storage and aren't being reported during an inventory dump*). Nothing was wrong with the parser;
+ * both witnesses were individually defensible; the combination was the bug.
+ *
+ * THE FIX IS ONE TERM: the dump witness accumulates the loot recorded after the dump before paying
+ * the consumption recorded after the dump — `max(0, D + l_after - d_after - c_after)`. It is the
+ * `rebaseline` witness's own arithmetic, which has been in this file since JOS-186 and was simply
+ * gated to the one mode named after it. Under `both` it makes the dump line a complete little world
+ * in its window, exactly as JOS-186 requires of every windowed witness, and the rune above reads 1.
+ *
+ * WHY THIS IS SAFE IN THE DIRECTION THE OWNER RULED ON. The new term is ADDED, so the dump witness
+ * can only rise, so a `max` over it can only rise: no count this app has ever shown can fall because
+ * of JOS-409. That is the 2026-08-09 ruling's direction (a count that is too low is the failure
+ * mode), and it is why the bow case of JOS-403 stays 0 — those bows were in the dump, none were
+ * looted after it, `l_after` is 0, and the whole expression is unchanged. Monotonicity is
+ * unaffected: `l_after` is itself monotone in the player's own loot.
+ *
+ * AND `both` IS NOT `rebaseline` NOW. The dump lines coincide; the modes do not, because `both`
+ * still maxes that line against the ALL-TIME log witness and `rebaseline` throws it away. The
+ * banked item JOS-141 was written to protect — in a bank window that was shut, looted long before
+ * the dump — is answered by the log witness under `both` and still reads 0 under `rebaseline`.
+ * That difference IS the fourth source's stated cost, and it is untouched.
  *
  * WHY DISCOUNT-THEN-MAX RATHER THAN MAX-THEN-DISCOUNT: the second is not monotone in your own
  * loot. With a dump of 5, a quest that ate 2 and a log of 4, `max(4,5) - 2` reads 3; loot one more
@@ -493,7 +595,7 @@ function witnessNet(w: Witnesses, countSource: CountSource): number {
 function dumpAnsweredRow(w: Witnesses, countSource: CountSource): boolean {
   if (countSource === 'inventory') return true
   if (countSource !== 'both') return false
-  return dumpWitness(w.inv, 0, w.invDestroyed) >= w.log && dumpNet(w) >= Math.max(0, w.log - w.consumed)
+  return dumpBase(w) >= w.log && dumpNet(w) >= Math.max(0, w.log - w.consumed)
 }
 
 /** Everything the row build reads, gathered so it travels as one argument. */
@@ -512,6 +614,12 @@ interface RowInputs {
   /** JOS-401 — the destroys recorded after the dump, and after each hand statement */
   destroyedSinceDump: Record<string, number>
   destroyedSinceOverride: Record<string, number>
+  /**
+   * JOS-409 — the loot recorded after the dump, credited to the dump witness under `both`. Already
+   * gated by source and by whether the dump can be dated, so it is `{}` everywhere else and the
+   * witness build can simply read it.
+   */
+  lootSinceDump: Record<string, number>
   /**
    * JOS-403 — the turn-ins recorded after the DUMP was generated, for every source that reads the
    * dump as a witness. Null when nothing can date the dump (no discount), and null under `log`,
@@ -556,7 +664,8 @@ function witnessesFor(k: string, x: RowInputs): Witnesses {
     inv: x.invByKey[k] ?? 0,
     consumed: x.all.consumed[k] ?? 0,
     invDestroyed: x.destroyedSinceDump[k] ?? 0,
-    invConsumed: x.dumpWindow?.consumed[k] ?? 0
+    invConsumed: x.dumpWindow?.consumed[k] ?? 0,
+    invSince: x.lootSinceDump[k] ?? 0
   }
   if (x.rebaseline) {
     w.rebaseline = {
@@ -647,6 +756,9 @@ function buildRows(x: RowInputs): ReconcileResult {
  * undatable (or there is no dump) and no window can be computed — the no-discount degradation the
  * destroy window already makes, rather than a guessed instant that would discount the witness by
  * turn-ins that may well predate it.
+ *
+ * THE WINDOW IS OVER THE LOG-DETECTED INSTANTS ONLY (JOS-409) — `detectedTurnInInstants`, falling
+ * back to the full list when the caller states no provenance. The argument is on that input.
  */
 function dumpTurnInWindow(
   input: ReconcileInput,
@@ -654,6 +766,45 @@ function dumpTurnInWindow(
 ): { at: number | null; window: Consumption | null } {
   const at = input.countSource === 'log' ? null : (input.rebaselineAt ?? null)
   return { at, window: at === null ? null : windowed(at) }
+}
+
+/** Everything anchored to the dump's instant — the three windows the file's own witness owns. */
+interface DumpAnchored {
+  dumpWindow: Consumption | null
+  rebaseline: RowInputs['rebaseline']
+  lootSinceDump: Record<string, number>
+}
+
+/**
+ * THE DUMP-ANCHORED HALF OF THE INPUTS, gathered in one place (JOS-409 factored it out — `reconcile`
+ * was over the measured complexity ceiling with three windows and their degradations inline).
+ *
+ * All three hang off ONE instant and ONE memoized pass, and all three degrade the same way when
+ * that instant is missing: no window is not a guessed window.
+ *
+ * `windowedDetected` is the DETECTED memoizer for both the dump's turn-in discount and the
+ * rebaseline baseline's, because the rebaseline baseline IS the dump at the dump's instant — a
+ * click-time instant is as wrong against one as against the other.
+ */
+function dumpAnchored(input: ReconcileInput, quests: PoskyQuest[], windowed: (at: number) => Consumption): DumpAnchored {
+  const detected = input.detectedTurnInInstants
+  // The same object as `windowed` whenever the caller states no provenance, so the ordinary case
+  // still pays for one pass per instant rather than two.
+  const windowedDetected = detected === undefined ? windowed : windowedConsumption(quests, detected)
+  const { at: dumpAt, window: dumpWindow } = dumpTurnInWindow(input, windowedDetected)
+  const since = input.lootSinceRebaseline ?? {}
+  // The baseline is anchored only where the user asked for it AND something can date the dump.
+  // `null` is the fallback to `both` the base/net rules spell out, never a baseline of zero.
+  const at = input.countSource === 'rebaseline' ? dumpAt : null
+  return {
+    dumpWindow,
+    rebaseline: at === null ? null : { since, consumption: windowedDetected(at) },
+    // JOS-409 — the dump witness earns in its own window under `both`, and only there: `inventory`
+    // means "as dumped" and says so on its label, `rebaseline` carries the same loot inside its own
+    // baseline, and `log` never opens the file. An undatable dump is no window at all, exactly as
+    // for the two discounts.
+    lootSinceDump: input.countSource === 'both' && dumpAt !== null ? since : {}
+  }
 }
 
 /**
@@ -679,15 +830,12 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   const overrides = input.overrides ?? {}
   for (const [k, o] of Object.entries(overrides)) nameByKey[k] ??= o.name
 
+  // The ALL-INSTANTS memoizer. It answers the per-STATEMENT windows: a hand statement's `setAt` is
+  // a click time, and a hand-recorded turn-in's is too, so comparing those two is comparing like
+  // with like. The dump's windows are the ones that need a provenance (`dumpAnchored`).
   const windowed = windowedConsumption(quests, input.turnInInstants ?? {})
   const all = questConsumption(quests, (k) => input.turnIns[k] ?? 0)
-  const { at: dumpAt, window: dumpWindow } = dumpTurnInWindow(input, windowed)
-  // Anchored only where the user asked for it AND something can date the dump. `null` there is the
-  // fallback to `both` the base/net rules spell out, never a baseline of zero. Same instant as
-  // `dumpAt` under `rebaseline`, and `windowed` is memoized, so this is one pass and not two.
-  const at = countSource === 'rebaseline' ? dumpAt : null
-  const rebaseline =
-    at === null ? null : { since: input.lootSinceRebaseline ?? {}, consumption: windowed(at) }
+  const dump = dumpAnchored(input, quests, windowed)
 
   return buildRows({
     log,
@@ -695,12 +843,13 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     nameByKey,
     countSource,
     all,
-    rebaseline,
+    rebaseline: dump.rebaseline,
     overrides,
     overrideSince: input.lootSinceOverride ?? {},
     destroyedSinceDump: input.destroyedSinceDump ?? {},
     destroyedSinceOverride: input.destroyedSinceOverride ?? {},
-    dumpWindow,
+    lootSinceDump: dump.lootSinceDump,
+    dumpWindow: dump.dumpWindow,
     windowed
   })
 }

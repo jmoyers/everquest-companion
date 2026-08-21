@@ -50,8 +50,10 @@ function dropperRoster(droppers: readonly DropperMob[]): string {
 }
 
 /** One clickable mob name. `stopPropagation` matters where this sits inside a row that has its
- *  own click (the accordion summary) — opening a mob must never also toggle the panel. */
-function DropperName({
+ *  own click (the accordion summary) — opening a mob must never also toggle the panel. Exported
+ *  since the Targets tab (issue #30): a mob-major card names the same mobs the same way, and a
+ *  second copy of the click/keyboard handling would be a second thing to keep in step. */
+export function DropperName({
   mob,
   onOpenMob
 }: {

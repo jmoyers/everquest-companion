@@ -227,6 +227,10 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', () => {
     const mainWindow = getMainWindow()
     if (!mainWindow) return
+    // The OTHER deliberate foreground move (JOS-427; its twin is windowControls.ts `focusView`).
+    // Narrated so a foreground steal in dev.log always has an author. No raise grace here: a
+    // second launch is the user asking for the APP, so the overlays parking is correct.
+    logInfo('[everquest-companion] presence: second-instance raise (app relaunched)')
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()

@@ -38,13 +38,26 @@ export interface PresenceState {
    * Has the watcher reported ANYTHING yet? False for the first moments of a launch (the watcher
    * thread has three system libraries to open before its first line) and again if it ever dies.
    *
-   * This exists so the app never acts on a GUESS. `eqRunning:false` before the first report
-   * means "we have not looked", not "the game is closed" — and auto-hide would otherwise blink
-   * every overlay off at startup and back on a second later, on a machine where the game was
-   * running the whole time.
+   * This exists so the app never acts on a GUESS: before the first report every other field below
+   * says "we have not looked", not "the game is closed / you are elsewhere" — and auto-hide would
+   * otherwise blink every overlay off at startup and back on a second later, on a machine where
+   * the game was running the whole time.
+   *
+   * IT IS ONE FLAG OVER FACTS LEARNED AT DIFFERENT MOMENTS, which is the trap JOS-425 fell into:
+   * `applyRecord` raises it on the first record of ANY kind, so at that instant one lane is
+   * measured and the others are still their defaults. That is why the defaults themselves have to
+   * be the fail-open answer, and not merely this flag.
    */
   observed: boolean
-  /** Is an EverQuest process running at all? (5 s cadence — a coarse, cheap fact.) */
+  /**
+   * Is an EverQuest process running at all? (5 s cadence — a coarse, cheap fact.)
+   *
+   * TRUE until the watcher says otherwise, on the same JOS-425 rule as `eqFocused` below — and
+   * it also covers the case the watcher can leave permanently unmeasured: `presenceNative
+   * eqRunning()` answers -1 when the process enumeration itself failed, and the worker then sends
+   * no `R` at all rather than announcing a disappearance nobody observed. An unmeasured `false`
+   * here would hide every overlay for the session on that machine.
+   */
   eqRunning: boolean
   /**
    * Is the EQ window the FOREGROUND window?
@@ -52,6 +65,10 @@ export interface PresenceState {
    * This app's ACCESSORY windows count as EQ-side (an overlay you are dragging, the cursor ring);
    * the COMPANION window does not, so bringing the app to the front reads as "not in EverQuest"
    * (JOS-199 — the whole matrix is `foregroundSide` in main/presenceProtocol.ts).
+   *
+   * TRUE until the watcher says otherwise (JOS-425 — see `INITIAL_PRESENCE`), for the same reason
+   * `cursorVisible` is: a signal that can only ever take something away from the user must never
+   * take it away on a value nobody has measured.
    */
   eqFocused: boolean
   /** Last known EQ window rectangle, or null if we have never seen it foreground. */
@@ -70,13 +87,39 @@ export interface PresenceState {
 /**
  * "Nothing seen yet" — the state before the watcher's first line, and the state it is reset to
  * if the watcher ever dies. Every fact is the one that makes the app do NOTHING on it: no
- * hiding (`observed:false`), no ring (`eqFocused:false`, no bounds) — and `cursorVisible:true`,
- * because a signal that can only ever REMOVE the ring must never remove it unmeasured.
+ * hiding, no ring (no bounds) — and `cursorVisible:true`, because a signal that can only ever
+ * REMOVE the ring must never remove it unmeasured.
+ *
+ * `eqFocused` IS BORN TRUE, AND THAT IS THE SAME RULE `observed:false` ALREADY STATES (JOS-425).
+ * It read `false` for a year and the two disagreed at exactly one seam — the instant `observed`
+ * flips. `overlaysShouldHide` fails OPEN while nothing has been looked at, and then the FIRST
+ * watcher record sets `observed:true`; if `eqFocused` is still the unmeasured `false` at that
+ * moment, `hideWhenUnfocused` hides every overlay on a fact nobody measured, and the focus
+ * debounce shows them again 200 ms later. That is the reported startup blink, and it fires on
+ * every watcher restart too. (The watcher's very first tick emits `C`, `F`, `R` in that order —
+ * presence.ts `applyRecord` — so the cursor line raises `observed` BEFORE any foreground record
+ * exists. There is no ordering in which the old default was safe.)
+ *
+ * "Assume EQ-side until observed otherwise" costs nothing anywhere else: the ring needs
+ * `eqBounds` as well (`cursorRingActive`) and there are none here, so a reset still parks it;
+ * and a hide now requires `FOCUS_HIDE_DEBOUNCE_MS` of OBSERVED non-EQ evidence, which is the
+ * whole point. It is paired with `newFocusDebounce`'s born-true committed state
+ * (main/presenceProtocol.ts) — the two must agree, or one of them is a seam again.
+ *
+ * `eqRunning` IS BORN TRUE FOR THE SAME REASON, and it is the SECOND seam the JOS-425 audit
+ * found rather than a separate idea. `observed` is ONE flag over facts that are learned at
+ * DIFFERENT moments: `applyRecord` raises it on the first record of any kind, and the `F` record
+ * arrives before the `R` record on the watcher's first tick. So with `hideWhenNotRunning` on, an
+ * `F` naming EverQuest itself used to hide every overlay on an `eqRunning` nobody had measured
+ * yet, and the `R` a moment later showed them again. Born true, the same tick hides only when
+ * the `R` actually says the game is gone — identical behavior when it is, no blink when it is
+ * not. Neither default is ever the app's LAST word: the watcher's first tick always sends an
+ * `R` when the enumeration works at all.
  */
 export const INITIAL_PRESENCE: PresenceState = {
   observed: false,
-  eqRunning: false,
-  eqFocused: false,
+  eqRunning: true,
+  eqFocused: true,
   eqBounds: null,
   cursorVisible: true
 }

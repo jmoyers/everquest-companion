@@ -108,6 +108,7 @@ import {
   fingerprintFallback,
   parseComponentPath,
   parseExternalFrames,
+  stampedMessage,
   type CaughtFields
 } from '../../shared/errorReportLocation'
 import {
@@ -223,8 +224,16 @@ function locate(stack: unknown, captureSite: (() => string) | undefined): Locati
  * would turn a logged error into an unlogged crash, so the whole body is guarded.
  *
  * `source` is the tag `logError` already uses (`main:uncaughtException`, `renderer:ErrorBoundary`,
- * …). It is NOT sent: it is free text by nature, and the frames say where far better. It is
- * taken only so this function can refuse the one source that would be circular.
+ * …). It is taken so this function can refuse the one source that would be circular — and, since
+ * JOS-418, as the LAST RESORT for a report whose message came out empty.
+ *
+ * THAT IS A NARROWING OF "it is NOT sent", not an abandonment of it, and the narrowing is the
+ * whole of it: the tag never travels beside a message that says anything, it travels INSTEAD of a
+ * message that says nothing, and it travels only in the tag SHAPE `stampedMessage` enforces
+ * (`shared/errorReportLocation.ts` carries the argument, including why one source in this app is
+ * renderer-supplied and the shape is therefore load-bearing). The old sentence was right that the
+ * frames say where far better — right up to the reports where the frames are all there is and the
+ * message is the empty string, which is exactly the family this ticket came from.
  *
  * `captureSite` IS A THUNK AND IS CALLED AT MOST ONCE, only when the payload turned out to carry
  * no bundle frames of its own. Capturing a stack is the expensive part of this function and the
@@ -255,7 +264,20 @@ export function noteError(
     const f = caughtFields(payload)
     const where = locate(f.stack, captureSite)
     const errorName = errorNameOf(f.name)
-    const redactedMessage = redactMessage(f.message)
+    // THE BELT (JOS-418). A capture site that states nothing used to file the literal text
+    // `Error: ` — three such families were live in the fleet when this was written, and the two
+    // that mattered were fixed at their sites, which is where a SPECIFIC answer can come from.
+    // This is what stops the NEXT one: a message that is empty after the site did its best is
+    // stamped with the app's own name for that site instead of being sent blank.
+    //
+    // IT CANNOT MOVE A FINGERPRINT THAT ALREADY EXISTS, and that is provable rather than hoped
+    // for: `errorFingerprint` reads `fallback` ONLY when `frames` is empty, and every report in
+    // this app has frames — `errorLog` hands over a capture site precisely so that the frameless
+    // ones are not all one row. Where there genuinely are none, the stamp is what the fallback
+    // folds in, and two blank reports from two different sites stop being one row. That is the
+    // same repair JOS-111 made with `messageSkeleton`, applied to the case where there is no
+    // skeleton either because there was no message.
+    const redactedMessage = stampedMessage(redactMessage(f.message), source)
     // The fallback is read only when `where.frames` is empty (errorFingerprint says why), so a
     // report that HAS frames hashes exactly what it hashed before this ticket and keeps the
     // identity the error store already knows it by.

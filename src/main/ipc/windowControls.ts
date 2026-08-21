@@ -5,7 +5,8 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { E2E } from '../e2e'
-import { logError } from '../errorLog'
+import { logError, logInfo } from '../errorLog'
+import { noteOwnWindowRaise } from '../presence'
 import { getFightSelection, setFightSelection } from '../fightSelection'
 import { getScopeSelection, setScopeSelection } from '../scopeSelection'
 import { getOverlayConfig, setOverlayConfig } from '../store'
@@ -178,36 +179,47 @@ function sanitizeFocus(focus: AppFocus): AppFocus {
   return out
 }
 
+// ---- cross-window deep link (Task #64) ----
+// An overlay row says a thing happened; clicking it asks the APP to answer it properly. Main
+// is the only process that can raise a window it doesn't own, so the hop goes through here.
+//
+// The `view` is re-validated against the closed AppFocusView union rather than trusted
+// because today's only caller is the app's own overlay (the same rule `sounds:getData`'s
+// packId follows): a renderer telling another renderer where to navigate is a capability, and
+// its vocabulary is fixed here. The ANCHORS are forwarded on the same terms: `mob` and `quest`
+// only when non-empty strings (pure display/lookup text in the receiving view, never a path),
+// `level` only as a small positive integer. The forwarded object is REBUILT from those fields,
+// so nothing else the asking window attached ever reaches the app's renderer.
+//
+// E2E never shows a window (src/main/e2e.ts is the whole test mode), so the raise is skipped
+// there; the forward still happens, which is the half a test could observe.
+function onFocusViewAsk(focus: AppFocus): void {
+  // The closed vocabulary, restated here on purpose (see above): 'mobs' from the events
+  // overlay's con rows, 'posky' from a celebration toast's reward card (optionally anchored at
+  // ONE quest), 'leveling' from a level-up toast (anchored at the level that just dinged).
+  const views: AppFocusView[] = ['mobs', 'posky', 'leveling']
+  if (!focus || !(views as string[]).includes(focus.view)) return
+  const w = getMainWindow()
+  if (!w || w.isDestroyed()) return
+  if (!E2E) {
+    // THE RAISE IS NARRATED AND GRACED (JOS-427). This is one of exactly two paths in the app
+    // that move the OS foreground on purpose, and it was the silent activator behind the
+    // "flicker" oscillation the narration finally caught: card click → raise → auto-hide parks
+    // the overlays → click back into the game → un-park → next card click → raise… The owner's
+    // ruling is that an overlay-initiated raise is still EverQuest, "spiritually" — so presence
+    // is told before the focus moves, and the overlays stay up while the app is in front FOR
+    // THIS REASON. An ordinary alt-tab into the Companion still parks them (JOS-199).
+    noteOwnWindowRaise()
+    logInfo(`[everquest-companion] presence: focusView raise -> ${focus.view} (overlay deep link)`)
+    if (w.isMinimized()) w.restore()
+    w.show()
+    w.focus()
+  }
+  w.webContents.send(IPC.onFocusView, sanitizeFocus(focus))
+}
+
 export function registerWindowIpc(): void {
-  // ---- cross-window deep link (Task #64) ----
-  // An overlay row says a thing happened; clicking it asks the APP to answer it properly. Main
-  // is the only process that can raise a window it doesn't own, so the hop goes through here.
-  //
-  // The `view` is re-validated against the closed AppFocusView union rather than trusted
-  // because today's only caller is the app's own overlay (the same rule `sounds:getData`'s
-  // packId follows): a renderer telling another renderer where to navigate is a capability, and
-  // its vocabulary is fixed here. The ANCHORS are forwarded on the same terms: `mob` and `quest`
-  // only when non-empty strings (pure display/lookup text in the receiving view, never a path),
-  // `level` only as a small positive integer. The forwarded object is REBUILT from those fields,
-  // so nothing else the asking window attached ever reaches the app's renderer.
-  //
-  // E2E never shows a window (src/main/e2e.ts is the whole test mode), so the raise is skipped
-  // there; the forward still happens, which is the half a test could observe.
-  ipcMain.on(IPC.focusView, (_e, focus: AppFocus) => {
-    // The closed vocabulary, restated here on purpose (see above): 'mobs' from the events
-    // overlay's con rows, 'posky' from a celebration toast's reward card (optionally anchored at
-    // ONE quest), 'leveling' from a level-up toast (anchored at the level that just dinged).
-    const views: AppFocusView[] = ['mobs', 'posky', 'leveling']
-    if (!focus || !(views as string[]).includes(focus.view)) return
-    const w = getMainWindow()
-    if (!w || w.isDestroyed()) return
-    if (!E2E) {
-      if (w.isMinimized()) w.restore()
-      w.show()
-      w.focus()
-    }
-    w.webContents.send(IPC.onFocusView, sanitizeFocus(focus))
-  })
+  ipcMain.on(IPC.focusView, (_e, focus: AppFocus) => onFocusViewAsk(focus))
 
   // ---- frameless window controls (Task #23) ----
   // The React title bar (App.tsx) drives the native window: these mirror the

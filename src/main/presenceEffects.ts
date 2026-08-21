@@ -58,9 +58,9 @@ import {
   createCursorRingWindow,
   destroyCursorRingWindow,
   getCursorRingWindow,
+  parkOverlays,
   setCursorRingBounds,
-  setCursorRingVisible,
-  setOverlaysHidden
+  setCursorRingVisible
 } from './windows'
 import { cursorWatchNeeded, presenceNeeded } from '../shared/presencePrefs'
 import type { CursorPoint, PresenceState, ScreenRect } from '../shared/presencePrefs'
@@ -258,10 +258,12 @@ function sameRect(a: ScreenRect | null, b: ScreenRect | null): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 }
 
-/** The subscriber. Runs on every presence CHANGE (and once on subscribe). */
+/** The subscriber. Runs on every presence CHANGE (and once on subscribe). Presence PARKS the
+ *  overlays rather than hiding them (JOS-427, windows.ts `parkOverlays`) — a hidden window stops
+ *  compositing and its re-show strobes a stale frame; a parked one is an opacity flip. */
 function onPresence(state: PresenceState): void {
   try {
-    setOverlaysHidden(overlaysShouldHide(state, getOverlayAutoHide()))
+    parkOverlays(overlaysShouldHide(state, getOverlayAutoHide()))
     applyRing(state)
   } catch (err) {
     // A window that died between the check and the call must not kill the watcher pump.
@@ -288,7 +290,7 @@ export function refreshPresenceEffects(): void {
     stopStream()
     ringOrigin = null
     destroyCursorRingWindow()
-    setOverlaysHidden(false)
+    parkOverlays(false)
     return
   }
   // THE CURSOR GATE, SET BEFORE THE WATCHER CAN EXIST (JOS-193). This is the only place in the app

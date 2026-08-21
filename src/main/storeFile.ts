@@ -37,6 +37,12 @@ import { basename, dirname, join } from 'path'
 // be a second answer to a question this repo has already answered once and tested (JOS-265,
 // tests/telemetryRingDurability.test.mts).
 import { writeFileDurable } from './telemetry/durableWrite'
+// AND THE TORN-BYTE SCANNER IS SHARED NOW (JOS-419). The salvage below was written here first; the
+// resist ledger then needed the same reasoning about the same failure, so the pure string half —
+// de-padding, the balanced-prefix scan, the parse-if-acceptable wrapper, the `.corrupt.json` name —
+// moved to `tornJson.ts` verbatim and both callers read it from there. The POLICY (what counts as
+// this app's store, and the ladder that falls back to a backup) stayed here, where it belongs.
+import { quarantinePathFor, salvageJsonObject } from './tornJson'
 import {
   CURRENT_SCHEMA_VERSION,
   SCHEMA_VERSION_KEY,
@@ -81,11 +87,9 @@ export function backupPathFor(storePath: string, fromVersion: number): string {
   return `${stem}.v${fromVersion}.backup.json`
 }
 
-/** `…/x.json` → `…/x.corrupt.json`. */
-export function quarantinePathFor(storePath: string): string {
-  const stem = storePath.replace(/\.json$/i, '')
-  return `${stem}.corrupt.json`
-}
+/** `…/x.json` → `…/x.corrupt.json`. Re-exported from `tornJson.ts`, where it moved with the rest of
+ *  the torn-file mechanics (JOS-419); every existing caller and test still reads it from here. */
+export { quarantinePathFor }
 
 /** A store that needs nothing: a fresh install, or one we just quarantined. */
 const startsCurrent = (): MigrationOutcome => ({
@@ -129,19 +133,10 @@ function readStoreBytes(storePath: string, hooks: MigrationHooks): ReadStoreStep
 // THE ONE RULE THIS SECTION IS BUILT AROUND: A SALVAGE THAT HALF-RESTORES IS WORSE THAN DEFAULTS.
 // Defaults are at least a state the user can recognise and rebuild from. A store missing an
 // arbitrary tail of its keys is a store where some settings came back and others silently did not,
-// which is indistinguishable from the app losing them again later. So every repair below is
-// LOSSLESS — it either recovers a COMPLETE object or it recovers nothing:
-//
-//   * BOM and trailing padding are stripped. A torn write on Windows characteristically leaves the
-//     file extended with NUL bytes; NUL is not legal JSON and this app never writes one (AGENTS.md
-//     forbids the byte in source, and `JSON.stringify` escapes it), so its presence at the tail is
-//     evidence of the tear and never of content.
-//   * A BALANCED TOP-LEVEL OBJECT PREFIX is accepted, with whatever follows it discarded. That is
-//     the signature of an in-place rewrite that was SHORTER than the file it replaced: complete new
-//     content, stale old bytes behind it. The prefix is a whole object or the scan fails; there is
-//     no partial answer it can return.
-//   * REFUSED, EXPLICITLY: closing unbalanced brackets to make a truncated file parse. That is the
-//     half-restore, and it is the one repair that looks the most like a fix.
+// which is indistinguishable from the app losing them again later. So every repair is LOSSLESS — it
+// either recovers a COMPLETE object or it recovers nothing. The three mechanics that make it so
+// (de-padding, the balanced top-level prefix, and the refusal to close unbalanced brackets) are
+// `tornJson.ts`'s header now, and the reasoning went with them.
 //
 // And the recovered object is then VALIDATED before it is adopted: a plain object, non-empty,
 // carrying at least one key that identifies it as this app's store in some era it has had, and a
@@ -163,65 +158,9 @@ function looksLikeStore(v: unknown): v is StoreData {
   return typeof version === 'number' && Number.isInteger(version) && version >= 1
 }
 
-/** The padding byte a torn write leaves, SPELLED and never written literally — AGENTS.md's rule
- *  about raw control bytes in source (one in a source file makes git call it binary). */
-const NUL = '\u0000'
-
-/**
- * Drop a leading BOM and any trailing whitespace/NUL padding. Both are lossless: neither can carry
- * content, and NUL at the tail is the fingerprint of a torn write.
- *
- * Trimmed with a loop rather than a regex because a character class containing NUL is a control
- * character in a regular expression, which `no-control-regex` refuses — and rightly: the one
- * legible spelling of that byte is the named constant above.
- */
-function stripTornPadding(raw: string): string {
-  const noBom = raw.replace(/^\uFEFF/, '')
-  let end = noBom.length
-  while (end > 0) {
-    const ch = noBom.charAt(end - 1)
-    if (ch !== NUL && ch.trim() !== '') break
-    end--
-  }
-  return noBom.slice(0, end)
-}
-
-/** `JSON.parse` that answers `undefined` rather than throwing, and only for a value that passes
- *  `looksLikeStore`. Every salvage path funnels through it, so the validation cannot be skipped. */
-function parseStoreObject(text: string): StoreData | undefined {
-  try {
-    const value: unknown = JSON.parse(text)
-    return looksLikeStore(value) ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-const OPENERS = '{['
-const CLOSERS = '}]'
-
-/**
- * The longest prefix of `text` that is a COMPLETE top-level `{…}`, or undefined when the object
- * never closes. String-aware (a brace inside a string value is not structure) and escape-aware.
- * Returning a prefix is the only way this file may discard bytes, and it discards only bytes that
- * come AFTER a finished object.
- */
-function balancedObjectPrefix(text: string): string | undefined {
-  if (!text.startsWith('{')) return undefined
-  let depth = 0
-  let inString = false
-  let escaped = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charAt(i)
-    if (escaped) escaped = false
-    else if (ch === '\\') escaped = inString
-    else if (ch === '"') inString = !inString
-    else if (inString) continue
-    else if (OPENERS.includes(ch)) depth++
-    else if (CLOSERS.includes(ch) && --depth === 0) return text.slice(0, i + 1)
-  }
-  return undefined
-}
+/** THE SCANNER MOVED (JOS-419): `stripTornPadding`, `balancedObjectPrefix` and the parse-if-
+ *  acceptable wrapper are `tornJson.ts`'s now, byte-for-byte, so the resist ledger reads the same
+ *  answer instead of a second copy of them. What stayed here is this app's STORE policy. */
 
 /** What a successful salvage recovered, and how. `detail` is the human half of the log line. */
 interface Salvage {
@@ -230,16 +169,11 @@ interface Salvage {
   detail: string
 }
 
-/** Recover a complete store from torn bytes, or answer undefined. Lossless only — header. */
+/** Recover a complete store from torn bytes, or answer undefined. Lossless only — header. The scan
+ *  is shared; the only thing the STORE adds to it is `looksLikeStore`. */
 function salvageBytes(raw: string): { data: StoreData; residue: number } | undefined {
-  const text = stripTornPadding(raw)
-  if (text === '') return undefined
-  const whole = parseStoreObject(text)
-  if (whole) return { data: whole, residue: 0 }
-  const prefix = balancedObjectPrefix(text)
-  if (prefix === undefined) return undefined
-  const partial = parseStoreObject(prefix)
-  return partial ? { data: partial, residue: text.length - prefix.length } : undefined
+  const found = salvageJsonObject(raw, looksLikeStore)
+  return found === undefined ? undefined : { data: found.value, residue: found.residue }
 }
 
 /** `<name>.v<N>.backup.json` siblings, newest schema version first. Never throws. */

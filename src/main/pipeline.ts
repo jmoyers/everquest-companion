@@ -25,6 +25,9 @@ import { SessionDetector } from './log/sessionDetector'
 import { baselineOverlay, loadUserSources } from './data/overlayPersistence'
 import { BASELINE_SOURCE } from './data/messageOverlay'
 import { spellCorrectionsReport, spellPlaceholdersReport, spellRemovalsReport } from './data/spellDb'
+// The registry VALIDATOR (JOS-412). It is not one of the load passes and reports from here rather
+// than from the loader on purpose — see `spellSubjectAudit.ts`'s header for the one-way edge.
+import { auditSpellSubjects } from './data/spellSubjectAudit'
 // The era join's own census (JOS-393). It reports from `spellEra.ts` rather than from the loader
 // beside its three siblings because the pass has two callers over one catalog — see that file.
 import { spellEraReport } from './data/spellEra'
@@ -244,6 +247,18 @@ logInfo(
       `[everquest-companion] Spell era: ${e.marked} row${e.marked === 1 ? '' : 's'} the wiki badges out of era, ${e.silent} with no verdict (of ${e.table} in the sidecar).`
     )
   }
+}
+// THE SUBJECT VALIDATOR (JOS-412) — the only line here that reports on the registry AS SHIPPED
+// rather than on a pass we ran over it. It answers "which spells can never be resolved to their own
+// landing sentence", which is the question `Odium` and then `Curse` had to be reported for. Run
+// here, over `spellDb.spells` (the effective list), because the edge to spellDb.ts is one-way at
+// runtime — see that module's header. `unreachable` is the number worth watching: the other two
+// count ROWS, and a duplicate era row's wrong subject costs a user nothing.
+{
+  const a = auditSpellSubjects(spellDb.spells)
+  logInfo(
+    `[everquest-companion] Spell subjects: ${a.unreachable.length} spell${a.unreachable.length === 1 ? '' : 's'} unreachable by their landing sentence (${a.wrongSubject} rows with the wrong subject placeholder, ${a.noSubject} with none, ${a.firstPerson.length} first-person fields naming a third party).`
+  )
 }
 logInfo(`[everquest-companion] Spell DB: ${spellDb.spells.length} spells (${spellDb.castOnYou.size} unique cast-on-you msgs).`)
 logInfo(

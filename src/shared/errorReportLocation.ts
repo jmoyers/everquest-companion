@@ -325,6 +325,61 @@ export function messageSkeleton(redacted: string, cap = MAX_MESSAGE_SKELETON): s
     .slice(0, cap)
 }
 
+// ---------------------------------------------------------------- the never-blank belt
+
+/**
+ * WHAT A REPORT SAYS WHEN THE MESSAGE CAME OUT EMPTY (JOS-418).
+ *
+ * Three capture sites shipped blank families to the fleet before this — `main:gpu-process-gone`,
+ * `main:render-process-gone`, and every one of their bundle-line twins across four releases — and
+ * each was fixed AT THE SITE, which is the right place and the only place that can say something
+ * specific. This is the belt behind those braces: it does not make a report diagnosable, it makes
+ * an UNDIAGNOSABLE report say which of the app's eighty-odd `logError` calls produced it, so a
+ * capture site added next year cannot ship the same silent family.
+ */
+export const NO_MESSAGE = '(no message)'
+
+/**
+ * The shape a `logError` source tag must have to be repeated back into a message, and the reason
+ * this is a shape and not a trust decision: ONE `logError` source in the app is renderer-supplied
+ * (`ipc/windowControls.ts` builds `renderer:${report.source}` out of the `error:report` IPC), so
+ * "every call site passes a literal" is false and a belt that assumed it would be a free-text
+ * channel out of an untrusted process.
+ *
+ * `main:render-process-gone`, `renderer:ErrorBoundary`, `cursorRing:preload-error`,
+ * `main:stopTelemetry` — a short identifier, a colon, a short kebab identifier. No spaces, no
+ * quotes, no separators, no digits worth folding: a character name, a zone, an item or a line of
+ * anyone's log cannot be spelled inside it, which is the bright line held by shape exactly as
+ * `alertCaptures.ts` and `classifyExternalFrameFile` hold theirs.
+ *
+ * IT ADDS NO EXPOSURE THAT WAS NOT ALREADY THERE, which is the JOS-353 argument in its other
+ * form: the same renderer already supplies the `message` field outright, and that field is
+ * redacted and transmitted. A 56-character tag-shaped string is strictly less than what it can
+ * already say — and it only rides at all when it has said nothing.
+ */
+const SOURCE_TAG_RE = /^[A-Za-z][A-Za-z0-9]{0,23}:[A-Za-z][A-Za-z0-9-]{0,31}$/
+
+/**
+ * THE MESSAGE A REPORT WILL ACTUALLY CARRY. `redacted` when it has anything to say; otherwise the
+ * stamp — `(no message) [main:render-process-gone]`, or a bare `(no message)` when even the tag
+ * was not tag-shaped.
+ *
+ * IT IS APPLIED AFTER `redactMessage` AND MUST BE A FIXED POINT OF IT, because the server re-runs
+ * the redaction and REFUSES a message that changes (`telemetryValidateError.ts`). Every byte this
+ * can emit is checked against that: no path separators, no quotes, no run of five or more digits,
+ * printable ASCII, no double spaces, and far inside `MAX_REDACTED_MESSAGE`. The suite pins it.
+ *
+ * WHY NOT THE CAPTURE-SITE FRAME. The frames are already ON the report and say it exactly; a
+ * bundle position repeated into the message would be redacted down to `out<path>:<n>` on a deep
+ * renderer frame and to `<n>` for its line number on every frame past 9999, which is a worse
+ * answer than the app's own name for the same site.
+ */
+export function stampedMessage(redacted: string, source: unknown): string {
+  if (redacted.trim() !== '') return redacted
+  const tag = typeof source === 'string' && SOURCE_TAG_RE.test(source) ? source : null
+  return tag === null ? NO_MESSAGE : `${NO_MESSAGE} [${tag}]`
+}
+
 /**
  * WHAT THE FINGERPRINT FALLS BACK ON when `frames` is empty, in the order that prefers a real
  * location to a derived one: the external frames if the stack had any, otherwise the message

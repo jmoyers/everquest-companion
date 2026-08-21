@@ -16,13 +16,19 @@
 //
 // The file is a REGISTER: counts filed under the source that produced them, no verdicts. Every R,
 // every interval and every "nearly immune" is derived on demand in `profile.ts`.
+//
+// AND THE FILE HALF IS NOT HERE (JOS-419). Everything about surviving a full disk or a torn read —
+// the durable write, the backoff after a failure, the once-per-session report, the salvage that
+// keeps the corrupt bytes beside themselves — lives in `ledgerFile.ts`, which imports no Electron
+// and is therefore drivable by a node test. This module is the part that knows the paths and owns
+// the logger: it decides WHAT to write and what a failure is worth saying, never how.
 
 import { app } from 'electron'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { logError } from '../errorLog'
-import { BASELINE_SOURCE_KEY, type ResistLedger, type ResistRow } from '../../shared/resistTypes'
+import { logError, logInfo } from '../errorLog'
+import { BASELINE_SOURCE_KEY, type ResistLedger } from '../../shared/resistTypes'
 import { ResistLedgerStore, type ResistBucket } from './ledger'
+import { createLedgerWriter, loadUserLedgerFile, type LedgerSource } from './ledgerFile'
 import type { ResistLedgerSeam } from './module'
 // Inlined committed baseline (bundled into the main build, like spells.json).
 import baselineJson from '../data/resistBaseline.json'
@@ -42,11 +48,6 @@ import baselineJson from '../data/resistBaseline.json'
  */
 export const RESIST_LEDGER_VERSION = 3
 
-interface UserLedgerFile {
-  version: number
-  sources: { key: string; rows: ResistRow[] }[]
-}
-
 /** The committed baseline, typed. Read-only, re-seeded from the bundle on every launch. */
 export function baselineLedger(): ResistLedger {
   return baselineJson as unknown as ResistLedger
@@ -56,37 +57,49 @@ function userLedgerPath(): string {
   return join(app.getPath('userData'), 'resist-ledger.json')
 }
 
-function loadUserSources(): UserLedgerFile['sources'] {
-  try {
-    const file = JSON.parse(readFileSync(userLedgerPath(), 'utf8')) as UserLedgerFile
-    if (file.version !== RESIST_LEDGER_VERSION || !Array.isArray(file.sources)) return []
-    return file.sources.filter((s) => s.key !== BASELINE_SOURCE_KEY && Array.isArray(s.rows))
-  } catch {
-    return []
-  }
+/**
+ * The user's buckets, and a line in `errors.log` when the file was anything other than ordinary.
+ * A torn file is salvaged and PRESERVED beside itself rather than lost — `ledgerFile.ts` holds the
+ * mechanics and the argument; this is the half that knows where the log is.
+ */
+function loadUserSources(): LedgerSource[] {
+  const load = loadUserLedgerFile(userLedgerPath(), RESIST_LEDGER_VERSION)
+  if (load.notice !== undefined) logError('main:resistLedger', { message: load.notice })
+  return load.sources
 }
 
 /**
- * Persist the user's buckets. Temp file plus rename, because a torn ledger would be a permanently
- * wrong answer rather than a missing one, and rename is atomic within a directory. The shipped
- * baseline's bucket is never written.
+ * Persist the user's buckets. Durable (temp + flush + rename, and no scratch file left behind on a
+ * failure), coalesced (identical bytes are not rewritten), and QUIET ON A FULL DISK: the first
+ * failure of a session is reported, every later one only paces the backoff, and the module carries
+ * on folding either way. The shipped baseline's bucket is never written.
  */
 function saveUserSources(store: ResistLedgerStore): void {
   const sources = store
     .toLedger()
     .sources.filter((s) => s.key !== BASELINE_SOURCE_KEY && s.rows.length > 0)
-  const path = userLedgerPath()
-  const tmp = `${path}.tmp`
-  try {
-    mkdirSync(app.getPath('userData'), { recursive: true })
-    writeFileSync(tmp, JSON.stringify({ version: RESIST_LEDGER_VERSION, sources }), 'utf8')
-    renameSync(tmp, path)
-  } catch (err) {
-    logError('main:resistLedger', { message: 'resist-ledger.json write failed', err })
+  const dir = app.getPath('userData')
+  const out = writer.write(dir, userLedgerPath(), JSON.stringify({ version: RESIST_LEDGER_VERSION, sources }))
+  if (out.status === 'written') {
+    if (out.recovered === true) logInfo('[everquest-companion] resist-ledger.json is writable again; the ledger was persisted')
+    return
   }
+  if (out.status !== 'failed') return
+  // THE PAYLOAD IS BYTE-IDENTICAL TO THE ONE 1.5.0 FILED (fingerprint f491e2052171562f): the error
+  // store aggregates on the message plus the frames, so keeping this string exact keeps the fix's
+  // occurrences aggregating with the ones that motivated it instead of splitting the family in two.
+  // Everything that varies per occurrence — the pause, the count — goes to the console.
+  if (out.report === true) logError('main:resistLedger', { message: 'resist-ledger.json write failed', err: out.err })
+  logInfo(
+    `[everquest-companion] resist-ledger.json is unwritable; pausing the ledger's writes for ${Math.round((out.delayMs ?? 0) / 1000)}s`
+  )
 }
 
 let store: ResistLedgerStore | null = null
+
+/** THE ONE WRITER'S FAILURE STATE. Module-level for the same reason `store` is: one file, one
+ *  process writing it. */
+const writer = createLedgerWriter()
 
 /** The merged ledger, seeded once per app run. */
 export function resistLedger(): ResistLedgerStore {
@@ -134,7 +147,9 @@ export function resistLedgerSeam(): ResistLedgerSeam {
   }
 }
 
-/** Test seam: forget the seeded store so the next call re-reads. */
+/** Test seam: forget the seeded store so the next call re-reads — and the writer's pause,
+ *  fingerprint and once-per-session report with it, or a second test would inherit the first's. */
 export function resetResistLedgerForTests(): void {
   store = null
+  writer.reset()
 }

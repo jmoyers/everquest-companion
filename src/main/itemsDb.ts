@@ -25,6 +25,9 @@
 // Both are restored in ONE place, `knowledgeFromDb`, so no caller ever sees the compact form.
 
 import { itemBaseName } from '../shared/itemStats'
+// The rename overlay (JOS-415) — items.json is a scrape rewritten wholesale, so a name the wiki
+// has since changed is corrected at LOAD, never in the file. Read its header before adding a row.
+import { renamedItems } from '../shared/itemRenames'
 import type { ItemKnowledge } from '../shared/types'
 
 /**
@@ -86,5 +89,8 @@ export function knowledgeFromDb(entry: ItemDbEntry): Omit<ItemKnowledge, 'cached
  * exactly the way the shipped code does.
  */
 export function buildItemDbIndex(file: ItemDbFile): Map<string, ItemDbEntry> {
-  return new Map(Object.entries(file.items ?? {}))
+  // Through the rename overlay, which keeps the OLD key as an alias onto the renamed record — a
+  // loot line or a share bundle spelling the old name still resolves, and resolves to the current
+  // name (shared/itemRenames.ts states why).
+  return new Map(Object.entries(renamedItems(file.items ?? {})))
 }

@@ -16,6 +16,8 @@ import {
   JITTER_FRACTION,
   MAX_UPDATE_MESSAGE_CHARS,
   RESUME_DELAY_MS,
+  SIGNATURE_BLOCKED_MESSAGE,
+  SIGNATURE_BLOCKED_PAUSED_MESSAGE,
   RESUME_JITTER_MS,
   STARTUP_DELAY_MS,
   STARTUP_JITTER_MS,
@@ -307,6 +309,76 @@ test('electron-updater WRAPS some parse failures — those are the same failure'
   )
   assert.ok(isFeedParseError(parsed), 'a parse failure inside the wrapper is still a parse failure')
   assert.ok(!isFeedParseError(missing), 'a genuine 404 must keep its own message')
+})
+
+// ------------------------------------------- the PowerShell signature check (JOS-421)
+//
+// The fleet's biggest error family is not a feed failure at all: electron-updater verifies the
+// downloaded installer by shelling out to PowerShell, and on a machine whose security software
+// guts that call it gets EMPTY STDOUT and `JSON.parse('')` throws — the same `SyntaxError`, to the
+// character, as the JOS-211 case above. shared/update.ts's JOS-421 block reads the library source.
+//
+// The two fixtures are the two shapes the error store actually carries (fingerprints
+// 72bdb3d77ddbc71d and d877b63662b64f60). The FIRST one's message is indistinguishable from a feed
+// failure and its STACK is the only thing that tells them apart, which is why it is set here.
+
+/** The stack the fleet's reports carry, with the module path electron-updater is loaded from. */
+const VERIFIER_FRAMES =
+  '    at parseOut (C:\\Users\\u\\AppData\\Local\\Programs\\eqc\\resources\\app.asar\\node_modules\\' +
+  'electron-updater\\out\\windowsExecutableCodeSignatureVerifier.js:104:23)\n' +
+  '    at C:\\a\\node_modules\\electron-updater\\out\\windowsExecutableCodeSignatureVerifier.js:55:30\n' +
+  '    at ChildProcess.exithandler (node:child_process:410:7)'
+
+/** PowerShell exited 0 and said nothing: a REAL `JSON.parse('')`, carrying the verifier's frames. */
+const blockedParseFailure = (): unknown => {
+  const err = bodyFailure('') as Error
+  err.stack = `${err.name}: ${err.message}\n${VERIFIER_FRAMES}`
+  return err
+}
+
+/** PowerShell exited non-zero (or was killed at the 20s timeout): `child_process`'s own shape —
+ *  `Command failed: <cmd>` plus the `cmd` property it sets beside it. */
+const blockedCommandFailure = (): unknown => {
+  const cmd =
+    'set "PSModulePath=" & chcp 65001 >NUL & powershell.exe -NoProfile -NonInteractive ' +
+    '-InputFormat None -Command "Get-AuthenticodeSignature -LiteralPath \'C:\\x\\installer.exe\'' +
+    ' | ConvertTo-Json -Compress"'
+  return Object.assign(new Error(`Command failed: ${cmd}\n`), { cmd, code: 1 })
+}
+
+test('a blocked PowerShell says SECURITY SOFTWARE, never "GitHub sent an unreadable response"', () => {
+  for (const err of [blockedParseFailure(), blockedCommandFailure()]) {
+    const message = describeUpdateFailure(err)
+    assert.equal(message, SIGNATURE_BLOCKED_MESSAGE)
+    assert.notEqual(message, FEED_PARSE_MESSAGE, 'blaming the feed for this PC is the whole bug')
+    // Actionable: it names the thing on the machine, and not one word of the parser or the feed.
+    assert.match(message, /security software/i)
+    assert.match(message, /powershell/i)
+    assert.ok(!/JSON|token|position|GitHub/i.test(message), `leaked: ${message}`)
+    assert.ok(message.length <= MAX_UPDATE_MESSAGE_CHARS, `${message.length} chars`)
+  }
+  assert.ok(SIGNATURE_BLOCKED_PAUSED_MESSAGE.length <= MAX_UPDATE_MESSAGE_CHARS)
+  assert.match(SIGNATURE_BLOCKED_PAUSED_MESSAGE, /security software/i)
+  // The paused sentence is the one a stuck user sits with, so it has to say what to DO.
+  assert.match(SIGNATURE_BLOCKED_PAUSED_MESSAGE, /allow PowerShell|by hand/i)
+})
+
+test('a blocked PowerShell is NEVER given the feed retry — a re-check re-downloads for nothing', () => {
+  for (const err of [blockedParseFailure(), blockedCommandFailure()]) {
+    assert.equal(shouldRetryCheck(err, 0), false)
+    assert.equal(shouldRetryCheck(err, 1), false)
+  }
+  // …and the feed's own empty body still earns its one retry: the discriminator is the stack, and
+  // widening one of these two must never quietly swallow the other.
+  assert.equal(shouldRetryCheck(bodyFailure(''), 0), true)
+  assert.equal(describeUpdateFailure(bodyFailure('')), FEED_PARSE_MESSAGE)
+})
+
+test('a blocked PowerShell still renders as the QUIET chip state (product rule)', () => {
+  const s = updateChipState({ state: 'error', message: SIGNATURE_BLOCKED_MESSAGE, checkedAt: 7 }, CURRENT)
+  assert.equal(s.kind, 'quiet')
+  assert.equal(s.kind === 'quiet' && s.failed, true)
+  assert.equal(s.kind === 'quiet' && s.message, SIGNATURE_BLOCKED_MESSAGE)
 })
 
 test('a failure that NAMES something actionable keeps its own words', () => {

@@ -20,6 +20,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbFile } from '../src/main/itemsDb'
+// The rename overlay's own audit is tests/itemRenames.test.mts; this suite only needs to know
+// which keys it speaks for, so the key-derivation identity below stays exact.
+import { isRenamedItem, renameItemName } from '../src/shared/itemRenames'
 import itemsJson from '../src/main/data/items.json'
 import poskyJson from '../src/renderer/src/data/eqlegends/posky.json'
 import type { PoskyData } from '../src/shared/types'
@@ -56,7 +59,14 @@ test('every key is canonical, and derived from the record it points at', () => {
     assert.ok(entry.page.length > 0, `entry under ${key} has no page title`)
     const fromTitle = itemKey(entry.page) === key
     const fromName = entry.name != null && itemKey(entry.name) === key
-    assert.ok(fromTitle || fromName, `key ${key} matches neither page ${entry.page} nor name ${entry.name}`)
+    // THE ONE STATED EXCEPTION (JOS-415): the rename overlay keeps a renamed item's OLD key
+    // addressable, pointing at the record under its CURRENT name — a log line or a share bundle
+    // predating the rename must still resolve. Only a key the table names may miss the derivation.
+    const fromRename = isRenamedItem(key) && itemKey(renameItemName(key)) === itemKey(entry.page)
+    assert.ok(
+      fromTitle || fromName || fromRename,
+      `key ${key} matches neither page ${entry.page} nor name ${entry.name}`
+    )
   }
 })
 

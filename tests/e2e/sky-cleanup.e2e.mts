@@ -34,18 +34,32 @@
  * the turn-ins)`, each witness discounted on its own terms). The dump is READ at launch, so its
  * instant precedes everything this spec does and every subtraction below is stamped after it:
  *
- *   after the turn-in   log 0 - 1 turn-in = 0 · dump 1 - 1 turn-in = 0       -> no row
- *   loot 3             log 3 - 1 turn-in = 2 · dump 0                        -> x2
- *   destroy 1           log 3-1 = 2, -1 turn-in = 1 · dump 0                 -> x1
- *   destroy 5 more      log floors at 0 · dump floors at 0                   -> no row
+ *   after the turn-in   log 0 - 1 turn-in = 0 · dump 1 - 1 turn-in = 0            -> no row
+ *   loot 3              log 3 - 1 turn-in = 2 · dump 1 + 3 - 1 turn-in = 3       -> x3
+ *   destroy 1           log 3-1 = 2, -1 turn-in = 1 · dump 1+3-1-1 = 2           -> x2
+ *   destroy 5 more      log floors at 0 · dump floors at 0                       -> no row
+ *
+ * THE SECOND AND THIRD LINES USED TO READ `x2` AND `x1`, AND THAT WAS THE BUG JOS-409 NAMES. The
+ * dump witness was discounted by the post-dump turn-in and credited with NONE of the post-dump loot,
+ * so it collapsed to 0 and the log answered alone — and the log charges the turn-in against the
+ * three copies it watched drop, because it never saw the one the dump vouched for. One physical
+ * turn-in, two witnesses, both charged. The player is holding three skins here, and the tab used to
+ * say two. This spec is the live path agreeing with tests/skyCurrencyRuneWitness.test.mts.
  *
  * THE FIRST LINE IS JOS-403, AND IT USED TO READ `x1`. The spec asserted that a turn-in leaves the
  * dump's copy on the tab, on JOS-141's "a dump owes nothing" — which is true of the turn-ins made
- * BEFORE the file was written and false of the one this spec CLICKS afterwards. That was the
+ * BEFORE the file was written and false of the one this spec plays afterwards. That was the
  * reporter's second complaint verbatim (v1.4.0, feedback 01M081TPHPGB173YCC4YH7AMZB: the Cleanup tab
  * kept listing copies he no longer held), and the tab is now empty until the player farms a copy the
  * turn-in did not eat. The arithmetic is pinned unit-side in tests/skyTurnInAfterDump.test.mts; what
  * this spec adds is that the whole live path agrees.
+ *
+ * AND SINCE JOS-409 THAT TURN-IN IS PLAYED INTO THE LOG RATHER THAN CLICKED. The dump's window is a
+ * comparison against a FILE'S generation stamp, so only an EVENT time may enter it, and the hand
+ * counter's instant is a click time — an upper bound on when the trade happened and nothing more.
+ * Step 2 therefore pins both halves: the click leaves the dump witness alone, and the real trade
+ * lines still spend it. Every number in the table above is unchanged, because the hand-recorded
+ * turn-in is taken back before the real one arrives.
  *
  * The last line is the floor doing its job in public: five destroyed where two were held is not
  * -3, and the row simply ends. Both witnesses are discounted, which is why the last step needs the
@@ -71,7 +85,8 @@ import {
   reportRun,
   settle,
   settleCount,
-  settleGone
+  settleGone,
+  settleStable
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
 import { launchOnFixture, type FixtureLog } from './logFixture.mjs'
@@ -83,6 +98,8 @@ const COUNTS = '[data-testid="posky-counts"]'
 const QUEST_ROW = '[data-testid="posky-quest-row"]'
 const SUMMARY = `${QUEST_ROW} .MuiAccordionSummary-root`
 const RECORD_TURNIN = '[data-testid="posky-record-turnin"]'
+/** The take-back beside it. It can only reach turn-ins the LOG does not also know about. */
+const UNDO_TURNIN = '[data-testid="posky-undo-turnin"]'
 
 const TAB_QUESTS = '[data-testid="posky-tab-quests"]'
 const TAB_CLEANUP = '[data-testid="posky-tab-cleanup"]'
@@ -106,8 +123,18 @@ const GONE = [
 ]
 
 const QUEST = 'Beastlord Test of Azarack'
+const GIVER = 'Animist Kratho'
 const ITEM = 'Azarack Skin'
+const RUNE = 'Wind Rune Heda'
 const REWARD = 'Azarack Skin Wristwraps'
+/** ONE COMPLETED TRADE, as the game prints it: an offer per required item, then the closing line
+ *  (shared/questTurnIns.ts states the shape; sky-turnin.e2e.mts drives the whole arc off it). This
+ *  is what a LOG-DETECTED turn-in is, and since JOS-409 it is the only kind that windows the dump. */
+const TURN_IN = [
+  `You offered 1 ${ITEM} to ${GIVER}.`,
+  `You offered 1 ${RUNE} to ${GIVER}.`,
+  `You complete the trade with ${GIVER}.`
+]
 /** The dump that holds exactly one Sky item — see the header. */
 const DUMP = 'Primitive_freeport-Inventory.txt'
 /** The owner's caveat, in his own words. "There is a warning" is not the assertion; this is. */
@@ -306,21 +333,55 @@ async function stepNothingSpareYet(page: Page): Promise<boolean> {
 }
 
 /**
- * STEP 2 — THE TURN-IN ATE THE DUMP'S COPY (JOS-403), so the tab stays empty.
+ * STEP 2 — THE TURN-IN ATE THE DUMP'S COPY (JOS-403), so the tab stays empty. AND WHICH KIND OF
+ * TURN-IN MAY SAY SO (JOS-409).
  *
  * The copy the file vouched for is the copy the player just handed to Animist Kratho. This spec
  * used to assert the opposite here — one row, x1 — on JOS-141's "a dump is written after every
  * turn-in, so it owes no subtraction". That holds for the turn-ins made BEFORE the file, and the
- * one this step CLICKS is stamped after the app read it: reconcile discounts the dump witness by
- * the turn-ins recorded strictly after its instant, exactly as it already does for destroys.
+ * one played below is stamped after the app read it: reconcile discounts the dump witness by the
+ * turn-ins recorded strictly after its instant, exactly as it already does for destroys.
+ *
+ * WHAT JOS-409 CHANGED, AND WHY THIS STEP NOW HAS TWO HALVES. The window is a comparison between an
+ * INSTANT and a FILE'S GENERATION STAMP, so it may only read instants that are event times. The
+ * hand counter's are not: `recordTurnIn` stamps `Date.now()` at the CLICK, which is an upper bound
+ * on when the trade happened and nothing more, so a player recording on Friday a hand-in made on
+ * Tuesday would have a Wednesday dump discounted for a turn-in it already reflects. That is
+ * JOS-141's double-subtraction arriving through the door JOS-403 opened, and it read as a count
+ * that was too low — the one direction the 2026-08-09 ruling refuses.
+ *
+ * So the click no longer moves the dump witness (first half, asserted as the count HOLDING), and
+ * the real trade lines still do (second half, the JOS-403 claim intact end to end). The hand-recorded
+ * one is taken back before the real one is played, so the ledger below carries exactly one turn-in
+ * and every number in steps 3 to 6 is unchanged. The hand counter's own live arc is
+ * `sky-turnin.e2e.mts`; what this step owes it is only the dump-window rule.
  *
  * Asserted as an ABSENCE THAT SETTLES rather than a bare read, because the empty tab is also what
- * the previous step saw: the click has to travel the store → the ledger → reconcile before this
+ * the previous step saw: the turn-in has to travel the store → the ledger → reconcile before this
  * means anything, and the Quests tab reading 0/1 is the positive half of the same claim.
  */
-async function stepTurnInEatsTheDumpsCopy(page: Page): Promise<boolean> {
+async function stepTurnInEatsTheDumpsCopy(page: Page, log: FixtureLog): Promise<boolean> {
   if (!(await reopenTheQuestPanel(page))) return false
+
+  // (a) THE HAND COUNTER DOES NOT WINDOW THE DUMP. `settleStable` is how an absence of change is
+  // asserted here: the click has to be given time to travel the whole path and then be seen NOT to
+  // have moved this number, which a bare read a millisecond later cannot distinguish from a race.
   await page.click(RECORD_TURNIN, { timeout: 15_000 })
+  const heldOn = await settleStable(() => haveText(page, ITEM), { timeoutMs: 10_000 })
+  check(
+    'A HAND-RECORDED TURN-IN LEAVES THE DUMP ALONE — a click time is not an event time (JOS-409)',
+    heldOn === '1/1',
+    String(heldOn)
+  )
+  // Take it back, so the ledger the rest of this spec reasons about carries the played turn-in and
+  // nothing else. An undo can only reach the turn-ins the log does not also know about, which is
+  // exactly what this one is.
+  await page.click(UNDO_TURNIN, { timeout: 15_000 })
+
+  // (b) THE REAL TRADE, in the tailed log: an offer per required item, then the line that closes
+  // the group (shared/questTurnIns.ts states that shape; sky-turnin.e2e.mts drives it at length).
+  // Its instant is the log's own, and it is stamped after the dump was read.
+  log.append(...TURN_IN)
   const spent = await settle(() => haveText(page, ITEM), (v) => v === '0/1', { timeoutMs: 20_000 })
   if (
     !check(
@@ -344,17 +405,24 @@ async function stepTurnInEatsTheDumpsCopy(page: Page): Promise<boolean> {
 /**
  * STEP 3 — THE REFARM PUTS IT BACK, and the row states everything the decision needs.
  *
- * Three loots arrive in the tailed log. The dump witness stays at 0 (its one copy is spent), so the
- * row is the LOG's answer: three looted less the one the turn-in ate. This is the Sky refarm story
- * on the tab that exists for it — hand it in, farm more, and the spares show up.
+ * Three loots arrive in the tailed log. This is the Sky refarm story on the tab that exists for it —
+ * hand it in, farm more, and the spares show up.
+ *
+ * IT READS x3, WHICH IS WHAT THE PLAYER IS HOLDING (JOS-409). It used to read x2, and the two is
+ * where this ticket's whole argument is visible on a screen: the log charges the turn-in against the
+ * three copies it watched drop, because it never saw the one the dump vouched for, so its answer is
+ * 3 - 1 = 2. The dump saw that fourth copy and has now been credited with the loot that arrived in
+ * its own window, so it answers 1 + 3 - 1 = 3 and wins the max. One physical turn-in used to be
+ * charged to both witnesses at once; a count that was too low is the failure the 2026-08-09 ruling
+ * exists to refuse.
  */
 async function stepRefarmMakesItSpare(page: Page, log: FixtureLog): Promise<boolean> {
   log.append(`--You have looted 3 ${ITEM} from a spiroc guardian's corpse.--`)
-  const listed = await settleCountOf(page, 2)
+  const listed = await settleCountOf(page, 3)
   if (
     !check(
       'A LOOT LINE ARRIVING IN THE TAILED LOG PUTS THE ITEM ON THE TAB — every quest that wants it is done',
-      listed.length === 1 && listed[0].count === 2,
+      listed.length === 1 && listed[0].count === 3,
       listed.map((r) => `${r.item} x${String(r.count)}`).join(', ')
     )
   ) {
@@ -433,17 +501,18 @@ async function stepRewardHovers(page: Page): Promise<void> {
 /**
  * STEP 5 — THE LOG SAYS YOU DESTROYED ONE, AND THE COUNT GOES DOWN. Live, with no button.
  *
- * The refarm left the row at x2 (three looted less the turn-in), so there is something for both
- * witnesses to lose: one destroy line takes it to x1 — the log witness by the fold, the dump
- * witness by the discount reconcile applies for destroys stamped after the file was written.
+ * The refarm left the row at x3, so there is something for both witnesses to lose: one destroy line
+ * takes it to x2 — the log witness by the fold (3 looted less 1 destroyed less the turn-in = 1) and
+ * the dump witness by the discount reconcile applies for destroys stamped after the file was
+ * written (1 + 3 - 1 - 1 = 2, which is what the row reports).
  */
 async function stepDestroyLowersIt(page: Page, log: FixtureLog): Promise<boolean> {
   log.append(`You successfully destroyed 1 ${ITEM}.`)
-  const after = await settleCountOf(page, 1)
+  const after = await settleCountOf(page, 2)
   if (
     !check(
       'A DESTROY LINE LOWERS THE COUNT — the thing the app used to need a button for',
-      after.length === 1 && after[0].count === 1,
+      after.length === 1 && after[0].count === 2,
       after.map((r) => `${r.item} x${String(r.count)}`).join(', ')
     )
   ) {
@@ -499,7 +568,7 @@ async function stepFloorEndsTheRow(page: Page, log: FixtureLog): Promise<void> {
  */
 async function arc(page: Page, app: ElectronApplication, log: FixtureLog): Promise<void> {
   if (!(await stepNothingSpareYet(page))) return
-  if (!(await stepTurnInEatsTheDumpsCopy(page))) return
+  if (!(await stepTurnInEatsTheDumpsCopy(page, log))) return
   if (!(await stepRefarmMakesItSpare(page, log))) return
   // The tab at its most interesting: caveat, source control, one row with its place and its
   // decision line (no verdict chip - owner ruling 2026-08-17, the reader makes their own choice). Taken before anything is destroyed, so the artifact shows the

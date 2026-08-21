@@ -79,13 +79,15 @@ const OBSERVED: readonly (readonly [string, string | null])[] = [
   ['Neriak - Foreign Quarter', 'neriaka'],
   ['New Sebilis Expedition', 'newsebexp'],
   ['North Freeport', 'freportn'],
-  ['North Kaladim', 'kaladima'],
+  // Both Kaladim rows were SWAPPED until JOS-415 — see the dedicated regression test at the
+  // bottom of this file for the evidence that fixed them.
+  ['North Kaladim', 'kaladimb'],
   ['North Qeynos', 'qeynos2'],
   ['Oggok', 'oggok'],
   ['Paineel', 'paineel'],
   ['Permafrost Keep', 'permafrost'],
   ['Qeynos Hills', 'qeytoqrg'],
-  ['South Kaladim', 'kaladimb'],
+  ['South Kaladim', 'kaladima'],
   ['South Qeynos', 'qeynos'],
   ['The City of Guk', 'guktop'],
   ['The Eastern Plains of Karana', 'eastkarana'],
@@ -335,6 +337,37 @@ test('…and it refuses exactly what the log-side lookup refuses', () => {
   }
   assert.equal(zoneShortNameFromCatalog(null), null)
   assert.equal(zoneShortNameFromCatalog(undefined), null)
+})
+
+// ---- Kaladim: the halves were swapped (JOS-415) ------------------------------------------------
+
+test('Kaladim: North is kaladimb and South is kaladima — the a/b suffixes are not north/south', () => {
+  // Reported 8AX84S (1.5.0): "When I zone into or manually select South Kaladim the North Kaladim
+  // map loads and visa versa". The seed table read the `a`/`b` stems as `north`/`south`; the map
+  // corpus refutes that twice, independently, and this test is the pin.
+  //
+  // EVIDENCE 1 — the game's OWN maps carry their zone connections as `_1` labels:
+  //   kaladima_1.txt: `to_Butcherblock_Mountains`, `to_North_Kaladim`, `to_North_Kaladim`
+  //   kaladimb_1.txt: `to_South_Kaladim`, `to_South_Kaladim`   (no exit to the outside world)
+  // Only the SOUTH half touches Butcherblock, and a zone cannot list an exit to itself.
+  //
+  // EVIDENCE 2 — the NPC rosters, joined against the committed mob catalog
+  // (renderer/src/data/eqlegends/mobs.json): brewall's kaladima_1 labels King Kazon Stormhammer,
+  // Tumpy Irontoe, Canloe Nusback, Beno Targnarle and Guard Dinler, every one of which the
+  // catalog files under `South Kaladim`; brewall's kaladimb_1 labels Busey Nehart, Tempia Lauley,
+  // Gunlok Jure, Priestess Ghalea and the Everhot/Norkhitter families, all catalog `North
+  // Kaladim`. Neither list has a single crossover.
+  //
+  // Disk verification cannot BE the test (CI has no EverQuest install — the header says so for
+  // every `short` in the table), so the corpus reading is quoted here and the table pinned.
+  assert.equal(zoneShortName('North Kaladim'), 'kaladimb')
+  assert.equal(zoneShortName('South Kaladim'), 'kaladima')
+  // Stated as a NON-IDENTITY too, so a re-seed that swaps them back fails here loudly rather than
+  // only through the OBSERVED table above.
+  assert.notEqual(zoneShortName('North Kaladim'), zoneShortName('South Kaladim'))
+  // The catalog side reads the same way — a `South Kaladim` mob must not open the north map.
+  assert.equal(zoneShortNameFromCatalog('North Kaladim'), 'kaladimb')
+  assert.equal(zoneShortNameFromCatalog('South Kaladim'), 'kaladima')
 })
 
 test('no mobCatalogName can hijack another zone’s own name — the two indexes never contest', () => {

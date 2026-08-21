@@ -74,11 +74,14 @@ export function registerSoundsIpc(): void {
     // rows of that family across eight builds say nothing about what went wrong. The runner logs
     // (warn while it will retry, error when it will not) and hands back the bounded cause; the only
     // thing left here is what to do with the result.
+    // …and a RATE LIMIT ends the run as a "later" rather than a failure (JOS-420): the runner says
+    // so, the push says so, and the reply says so, because the row's caption and the store's
+    // severity are two readings of the same fact and they must not disagree.
     const res = await installPackWithRetry(pack, emit)
     if (!res.ok) {
       const message = res.error ?? 'install failed'
-      emit({ name, phase: 'error', message })
-      return { ok: false as const, error: message }
+      emit({ name, phase: 'error', message, retryable: res.rateLimited })
+      return { ok: false as const, error: message, retryable: res.rateLimited }
     }
     // INSTALLING IS HOW A DELETION IS TAKEN BACK (JOS-273). Clearing the stone here rather than
     // in installPack keeps the pure installer pure, and covers the only path that matters: the

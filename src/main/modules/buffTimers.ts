@@ -71,6 +71,21 @@
 //      <name>.` marks the sample its wear-off just minted as a broken cycle.
 //   3. the SPLIT WINDOW (buffsStats.ts `observedWindowMaxFor`) — where a censored sample is kept as
 //      a lower bound but can no longer evict a full-length one. The rule is written there.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// WHAT JOS-410 CHANGED: A MEZ CAN BE ENDED BY ANOTHER MEZ, AND THE GAME SAYS SO ONLY ONCE.
+//
+// One report (01M0B6KS9CFPPQ9WG6V8S9R5T1, 1.5.0) held two defects, and they are the two halves of
+// the same sequence — re-mez a held mob with a DIFFERENT mez-line spell:
+//   • THE OLD HOLD NEVER ENDED. EQ prints no wear-off, no `awakened`, nothing at all when one mez
+//     overwrites another, so the previous hold counted down to zero and squatted there until the
+//     unwitnessed cull. The landing sentence is the only evidence there is, and it was unused:
+//     {@link BuffTimersModule.retireOverwritten} is what reads it now.
+//   • THE NEW ONE WAS NEVER NAMED. Both casts sit inside `OWN_CAST_WINDOW_MS` of the second
+//     landing, so both anchored and the row became a FAMILY that agreed on no duration and
+//     therefore counted UP. {@link BuffTimersModule.nearestCast} narrows it the way the buffs half
+//     (`buffLanding.ts namedLanding`) always has.
+// Both are pinned in tests/mezOverwrite.test.mts, which reproduces the reporter's sequence first.
 
 import type { CcVerb, LogEvent } from '../../shared/logEvents'
 import type { BuffTimersDelta, BuffTimersSnap, CcEnd, CcHold } from '../../shared/buffTimers'
@@ -78,7 +93,7 @@ import type { EstimatorSource } from '../../shared/buffTypes'
 import { statedDuration } from '../../shared/buffTimers'
 import { SELF_CASTER } from '../../shared/buffTrust'
 import { idKey } from '../log/parseCommon'
-import { CastAnchors } from './buffAnchors'
+import { CastAnchors, type Attribution } from './buffAnchors'
 import { HoldGroup } from './buffRounds'
 import { learningRecordCapMs, MAX_SAMPLE_MS, SESSION_GAP_MS, spellKey, unwitnessedTimeoutMs } from './buffsShapes'
 import { SpellStats } from './buffsStats'
@@ -426,7 +441,13 @@ export class BuffTimersModule
     const held = this.ensureHold(mob, id, cands, own)
     // The row remembers the strongest thing any of its landings said (`mez` never goes back to
     // false): if one sentence in this family stated a hold damage breaks, a corpse cannot be it.
-    if (verb != null && DAMAGE_BREAKS.has(verb)) held.mez = true
+    if (verb != null && DAMAGE_BREAKS.has(verb)) {
+      held.mez = true
+      // …and a RESOLVED one says the mob's OTHER mez just ended (JOS-410). Only resolved: a family
+      // row cannot name the line it would be overwriting, and "some mez landed" is not evidence
+      // that a different one did.
+      if (id.lineKey !== '') this.retireOverwritten(held, ts)
+    }
 
     // The Buffs TAB lists every line the model has knowledge about, and a mez is now one of them —
     // JOS-126's reporter could not see the learned number anywhere, because the CC path never
@@ -434,6 +455,14 @@ export class BuffTimersModule
     if (id.lineKey !== '') {
       this.stats.everFaded.add(id.lineKey)
       this.stats.touchLastSeen(id.lineKey, ts)
+      // …AND THE RANK THIS CAST NAMED IS THE TAB'S TOO (JOS-411). The hold has always taken its
+      // ranked name from the anchored cast; the tab's stats record used to keep whatever rank was
+      // equipped the first time a cycle happened to close, so an upgraded Mesmerization still read
+      // `VI` there. `noteDisplayName` is the same write a mint does — see
+      // `buffsStats.ts preferredDisplayName` for which spelling wins — and it is done HERE because
+      // the cast line is the only line in a mez's family that carries the numeral at all, and a
+      // broken cycle mints nothing to carry it.
+      this.stats.noteDisplayName(id.lineKey, id.caster, id.display)
       held.spell = id.display
     }
 
@@ -449,20 +478,107 @@ export class BuffTimersModule
   }
 
   /**
-   * Which spell (and whose) this landing is, from the anchored candidates. Exactly ONE anchored
-   * candidate resolves it; anything else leaves an empty `lineKey`, which is this file's spelling
-   * of "a family, not a name" — the honest do-not-know JOS-84 requires.
+   * Which spell (and whose) this landing is, from the anchored candidates. ONE anchored candidate
+   * resolves it outright; several are narrowed by {@link nearestCast}, and only a genuine tie
+   * leaves an empty `lineKey` — this file's spelling of "a family, not a name", the honest
+   * do-not-know JOS-84 requires.
    */
   private resolveCc(own: readonly CcCandidate[], ts: number): CcIdentity {
-    const resolved = own.length === 1 ? own[0] : null
-    if (!resolved) return { resolved: null, lineKey: '', display: '', caster: SELF_CASTER, rankChanged: false }
-    const anchor = this.anchors.namedAnchorFor(resolved.name, ts)
+    const pick = this.nearestCast(own, ts)
+    if (!pick) return { resolved: null, lineKey: '', display: '', caster: SELF_CASTER, rankChanged: false }
     return {
-      resolved,
-      lineKey: spellKey(resolved.name),
-      display: anchor?.display ?? resolved.name,
-      caster: anchor?.caster ?? SELF_CASTER,
-      rankChanged: anchor?.rankChanged === true
+      resolved: pick.cand,
+      lineKey: spellKey(pick.cand.name),
+      display: pick.anchor.display ?? pick.cand.name,
+      caster: pick.anchor.caster,
+      rankChanged: pick.anchor.rankChanged
+    }
+  }
+
+  /**
+   * THE NEAREST COMPLETED CAST WINS (JOS-410, report 01M0B6KS9CFPPQ9WG6V8S9R5T1).
+   *
+   * THE DEFECT IT FIXES. Mez a mob with `Mesmerize` and re-mez it with `Dazzle` eight seconds
+   * later and BOTH casts sit inside `OWN_CAST_WINDOW_MS` of the second `<mob> has been mesmerized.`
+   * — so both candidates anchor, this used to give up on the spot, and the row the reporter got was
+   * a two-candidate FAMILY (`Dazzle / Mesmerize`) whose members state 96 s and 24 s. They disagree,
+   * `statedDuration` therefore states nothing, and the bar rendered as elapsed time COUNTING UP
+   * while the Dazzle he had just cast was never tracked as Dazzle at all.
+   *
+   * WHY RECENCY IS EVIDENCE HERE AND NOT A COIN FLIP. Casting is SERIAL: the game will not begin a
+   * second cast while one is in flight, and a cast that dies (fizzle, interrupt) retracts its own
+   * anchor (`CastAnchors.clearCast`). So the newest anchor at or before a landing is the cast that
+   * just COMPLETED, and every older one in the window is a cast whose own landing sentence has
+   * already been printed. That is a fact about the log's ordering rather than a preference between
+   * two spells — which is exactly the bar JOS-84 sets for narrowing a shared sentence.
+   *
+   * IT IS ALSO THE RULE THE OTHER HALF OF THIS MODEL HAS ALWAYS USED: `buffLanding.ts
+   * namedLanding` picks the most recently cast of several anchored candidates and has since
+   * JOS-140. The CC half was the outlier, and a family row was the whole cost of the divergence.
+   *
+   * A TIE STAYS A FAMILY. Two DIFFERENT spells anchored at the same ts means the log printed both
+   * cast lines in one second, which recency cannot separate — the honest answer is the one this
+   * file already had. (It should be impossible for two distinct completed casts; it is cheap to
+   * say so rather than to pick alphabetically.)
+   */
+  private nearestCast(
+    own: readonly CcCandidate[],
+    ts: number
+  ): { cand: CcCandidate; anchor: Attribution } | null {
+    let best: { cand: CcCandidate; anchor: Attribution } | null = null
+    let tied = false
+    for (const cand of own) {
+      const anchor = this.anchors.namedAnchorFor(cand.name, ts)
+      if (anchor == null) continue
+      if (best == null || anchor.ts > best.anchor.ts) {
+        best = { cand, anchor }
+        tied = false
+      } else if (anchor.ts === best.anchor.ts) {
+        tied = true
+      }
+    }
+    return tied ? null : best
+  }
+
+  /**
+   * A NEW MEZ ON A MOB RETIRES THE OLD ONE (JOS-410, owner ruling 2026-08-19).
+   *
+   * THE DEFECT, reported verbatim: *"Once Mesmerize is overwritten the debuff window still tracks
+   * it."* EQ prints NOTHING when one mez-line spell replaces another on the same mob — no wear-off,
+   * no `awakened`, no notice of any kind — so the old hold counted its stated duration down to zero
+   * and then squatted there until the unwitnessed-expiry cull got to it a minute later. The landing
+   * sentence itself is the only evidence the game gives, and it is enough: a mob holds ONE mez, so a
+   * mez-verb landing that resolved to a different line is that mob's previous mez ending.
+   *
+   * THE VERB IS THE GATE, and it is {@link DAMAGE_BREAKS} — the same set, for the same reason, as
+   * JOS-228's death ruling. Those three sentences describe a hold the game maintains exclusively;
+   * `ensnared` does not (a rooted mob can be mezzed, and a mezzed mob can be rooted), and charm
+   * reaches this module with no verb at all, so neither is touched from either side.
+   *
+   * IT CLOSES ONE LANDING AND CONTAMINATES THE REST, exactly as a death does to a snare row
+   * (JOS-140 ruling 7, restated at {@link onMobDeath}): a name is a name, so an overwrite on `a
+   * spiroc banisher` cannot say WHICH of the three we hold was re-mezzed. Oldest-first is the
+   * likeliest one twice over here — it is the closest to expiring, which is the one a chain-mezzer
+   * re-mezzes on purpose.
+   *
+   * NOTHING IS LEARNED FROM IT. The whole group is contaminated before the close, so the shortened
+   * span mints no duration sample, and the late-join memory of that line on that mob goes too — a
+   * wear-off arriving afterwards is about a hold that is no longer there. This is JOS-228's
+   * `contaminateAll` heritage: the fix is about DISPLAY, and a span cut short by an overwrite was
+   * never a duration.
+   *
+   * AND IT RECORDS NO `CcEnd`, like a death and unlike a break line. The ends ledger exists to
+   * retire an `ActiveBuff` the buffs model never clears, and a hold carrying a mez VERB can never
+   * have one: `classifyCcApply` claims those four sentences ABOVE the DB matcher, so they become
+   * `cc` events and never `buffApply`. There is nothing on the other side to correct.
+   */
+  private retireOverwritten(landed: Held, ts: number): void {
+    for (const [key, held] of [...this.holds]) {
+      if (held === landed || held.entityKey !== landed.entityKey || !held.mez) continue
+      held.group.contaminateAll()
+      held.group.closeOldest(ts)
+      this.culled.delete(`${held.entityKey}|${held.lineKey}`)
+      if (held.group.empty) this.holds.delete(key)
     }
   }
 

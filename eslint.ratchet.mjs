@@ -28,7 +28,11 @@
 
 /** @type {import('eslint').Linter.Config[]} */
 export const ratchet = [
-
+  // JOS-427 (2026-08-19, integrator): windows.ts crossed the 400 code-line ceiling by ~7 taking
+  // the overlay PARK (opacity instead of hide — the refocus-flicker fix). The park belongs beside
+  // the windows it moves; the debt is the next refactor wave's (candidate: the display-reconcile
+  // trio or the opaque-strip block, either of which clears it).
+  { files: ['src/main/windows.ts'], rules: { 'max-lines': 'off' } } // 1
 ]
 
 export default ratchet

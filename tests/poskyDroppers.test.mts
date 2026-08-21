@@ -43,6 +43,10 @@ import {
   type ItemDropRow,
   type KillTargetItem
 } from '../src/renderer/src/features/posky/poskyDroppers'
+// The mob-island overlay's own audit lives in tests/skyMobIslands.test.mts; this suite only needs
+// to know which pages it speaks for, so the "every island came from an item" invariant below stays
+// exact rather than being loosened into uselessness.
+import { skyMobIslandFor } from '../src/renderer/src/features/posky/skyMobIslands'
 import mobsRaw from '../src/renderer/src/data/eqlegends/mobs.json' with { type: 'json' }
 import poskyRaw from '../src/renderer/src/data/eqlegends/posky.json' with { type: 'json' }
 import type { MobEntry, PoskyQuest } from '../src/shared/types'
@@ -433,11 +437,20 @@ test('the caption covers nearly every quest, and states an island for most', () 
     captioned.filter((l) => l.includes('Island')).length >= 82,
     `with island: ${captioned.filter((l) => l.includes('Island')).length}`
   )
-  // Every island a caption states came from a stated `where` on one of that quest's items.
+  // Every island a caption states came from a stated `where` on one of that quest's items — OR
+  // from the mob-island overlay, which is the ONE thing allowed to answer differently and states
+  // per row what it replaces (skyMobIslands.ts, JOS-415). Anything else would be an invention.
   for (const q of QUESTS) {
     const stated = new Set(q.items.map((it) => islandOf(it.where)).filter(Boolean))
-    for (const t of questKillTargets(questRows(q)))
-      for (const i of t.islands) assert.ok(stated.has(i), `${q.name}: ${i} is not stated by any item`)
+    for (const t of questKillTargets(questRows(q))) {
+      const overlay = skyMobIslandFor(t.mob.page)
+      for (const i of t.islands) {
+        assert.ok(
+          overlay ? i === overlay.island : stated.has(i),
+          `${q.name}: ${i} is not stated by any item`
+        )
+      }
+    }
   }
 })
 
