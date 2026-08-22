@@ -319,6 +319,33 @@ test('the melee builds share ONE weights profile except where the game differs �
   assert.deepEqual(ROLE_WEAPON_POLICY.dps, {}, 'the generic stays unconstrained on purpose')
 })
 
+test('RANGED takes a bow or a throwing weapon in the RANGE slot, nothing else there, and leaves both hands open', () => {
+  // Three rows shaped like the corpus states them: a bow (Archery, RANGE), a javelin under one of
+  // the three Throwing spellings the fold collapses, and the short sword from above.
+  const bow = row({ key: 'ashen bow', name: 'Ashen Bow', slots: ['RANGE'], skill: 'Archery', stats: { DMG: 30, DELAY: 50, DEX: 5 } })
+  const javelin = row({ key: 'antonian javelin', name: 'Antonian Javelin', slots: ['RANGE', 'AMMO'], skill: 'Throwingv2', stats: { DMG: 8, DELAY: 30 } })
+  const rock = row({ key: 'a smooth rock', name: 'A Smooth Rock', slots: ['RANGE'], stats: { DMG: 2, DELAY: 30 } })
+  const policy = ROLE_WEAPON_POLICY.range
+  assert.equal(policyAdmits(policy, 'RANGE', bow), true)
+  assert.equal(policyAdmits(policy, 'RANGE', javelin), true, 'Throwingv2 is Throwing')
+  assert.equal(policyAdmits(policy, 'RANGE', SHORT_SWORD), false, 'a sword is not a ranged weapon')
+  assert.equal(policyAdmits(policy, 'RANGE', rock), false, 'a RANGE-slot row stating no skill is not a weapon we can vouch for')
+  // BOTH HANDS OPEN: the ranged player melees when the mob closes, and a constraint there would be
+  // an invention — so the sword and the greataxe are both admitted where they fit.
+  assert.equal(policyAdmits(policy, 'PRIMARY', SHORT_SWORD), true)
+  assert.equal(policyAdmits(policy, 'PRIMARY', GREATAXE), true)
+  assert.equal(policyAdmits(policy, 'SECONDARY', SHIELD), true)
+  // …and no OTHER focus admits a bow into a hand: the kinds are disjoint.
+  assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dps2h, 'PRIMARY', bow), false)
+  assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dualwield, 'PRIMARY', bow), false)
+  // THE WEIGHTS: DEX is the ranged accuracy stat and the one attribute this focus weighs above the
+  // melee's; STR falls below theirs; the bow's ratio reads exactly as an axe's would.
+  assert.equal(roleValue({ DEX: 10 }, 'range'), 20)
+  assert.equal(roleValue({ DEX: 10 }, 'dps'), 10)
+  assert.equal(roleValue({ STR: 10 }, 'range') < roleValue({ STR: 10 }, 'dps'), true)
+  assert.equal(roleValue({ DMG: 30, DELAY: 50 }, 'range'), roleValue({ DMG: 30, DELAY: 50 }, 'dps'))
+})
+
 test('the caster roles read mana and INT where the melee roles read a weapon', () => {
   const staff = { INT: 20, MP: 80, MANA_REGEN: 2 }
   const axe = { DMG: 40, DELAY: 45, STR: 10 }

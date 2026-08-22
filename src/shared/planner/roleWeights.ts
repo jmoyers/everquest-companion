@@ -60,9 +60,14 @@ import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
  * same 8 STR in either hand, but a two-hander's DAMAGE BONUS scales with its delay where a
  * one-hander's does not, so `dps2h` weighs that one stat higher — and cannot backstab at all, so
  * it does not read BACKSTAB. Everything else the builds disagree on is WEAPON-SLOT POLICY
- * (`ROLE_WEAPON_POLICY` below), the SHAPE of a loadout, kept in its own table. A RANGED focus is
- * the one the ruling named that is NOT here: it needs a ranged weapon policy of its own (the RANGE
- * slot taking bows and throwing) and is a feature, not a column — parked, stated.
+ * (`ROLE_WEAPON_POLICY` below), the SHAPE of a loadout, kept in its own table.
+ *
+ * `range` (owner, 2026-08-22: *"I don't see ranger/throwing ... like bows and rock and stuff"*):
+ * the focus that fights from the RANGE slot. The corpus has 126 RANGE-slot weapons (Archery and
+ * the three Throwing spellings, `weaponType.ts`) and they never reached a route, because no focus
+ * weighed DEX as the ranged accuracy stat and no policy said what the RANGE slot takes. Now one
+ * does: `range` takes only bows and throwing weapons there and leaves both hands open, because a
+ * ranger still swings when the mob closes.
  */
 export type GearRole =
   | 'balanced'
@@ -72,6 +77,7 @@ export type GearRole =
   | 'dps1h'
   | 'dps2h'
   | 'dualwield'
+  | 'range'
   | 'dd'
   | 'dot'
 
@@ -278,6 +284,24 @@ const ONE_HAND_DPS: RoleWeights = {
 const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS, DMG_BONUS: 4 } }
 
 /**
+ * THE RANGED PROFILE. DEX is the accuracy and damage stat for archery and throwing in this era,
+ * so it is the one attribute a ranged focus weighs ABOVE the melee's (2 to their 1), and STR falls
+ * to 0.8 because a bow does not read it the way a sword does. ATTACK still counts (the ranged
+ * rolls read it too), haste applies to ranged delay (2, below the melee's 4 — a ranged fight is
+ * rarely a sustained swing), and the damage bonus is the one-hander's 3. Everything else is the
+ * melee profile: a ranger takes hits, drinks, and has a bar. The weapon RATIO is the same 20 and
+ * reads DMG/DELAY off a bow exactly as off an axe — the corpus states both for every bow and
+ * throwing weapon, so nothing here is a ranged-only invention.
+ */
+const RANGED: RoleWeights = {
+  stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2, DMG_BONUS: 3 },
+  manaStat: 0.3,
+  ehp: 0.2,
+  ratio: 20,
+  saves: 0.15
+}
+
+/**
  * THE CASTER PROFILE the two nuker roles share, and the honesty clause that comes with it.
  *
  * DD AND DOT ARE VERY NEARLY THE SAME RANKING, ON PURPOSE. The corpus states AC, attributes, pools
@@ -352,6 +376,7 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
   dps1h: ONE_HAND_DPS,
   dps2h: TWO_HAND_DPS,
   dualwield: ONE_HAND_DPS,
+  range: RANGED,
   dd: { stats: { ...CASTER_STATS, MP: 0.45, MANA_REGEN: 8 }, manaStat: 1.7, ehp: 0.3, ratio: 2, saves: 0.3 },
   dot: { stats: { ...CASTER_STATS, MP: 0.35, MANA_REGEN: 14 }, manaStat: 1.5, ehp: 0.3, ratio: 2, saves: 0.3 },
   healer: {
@@ -511,7 +536,7 @@ function derivedTotal(stats: GearStats, weights: RoleWeights): number {
 // (140 of them PRIMARY+SECONDARY), none of which a tank wants suggested as an offhand.
 
 /** What a slot may be filled with, when a role constrains it at all. */
-export type SlotKind = 'weapon-1h' | 'weapon-2h' | 'shield-like'
+export type SlotKind = 'weapon-1h' | 'weapon-2h' | 'weapon-ranged' | 'shield-like'
 
 /** One role's answer to "where would I take a suggestion, and what". Absent field = no constraint. */
 export interface WeaponSlotPolicy {
@@ -548,12 +573,22 @@ export const ROLE_WEAPON_POLICY: Readonly<Record<GearRole, WeaponSlotPolicy>> = 
   // offhand, so the answer is silence rather than a narrower list.
   dps2h: { closed: ['SECONDARY'], only: { PRIMARY: 'weapon-2h' } },
   dualwield: { only: { PRIMARY: 'weapon-1h', SECONDARY: 'weapon-1h' } },
+  // The RANGE slot takes a bow or a throwing weapon and nothing else; both hands stay OPEN, because
+  // the ranged player melees when the mob closes and a constraint there would be an invention.
+  range: { only: { RANGE: 'weapon-ranged' } },
   dd: {},
   dot: {}
 }
 
 const ONE_HAND: ReadonlySet<string> = new Set<string>(WEAPON_CATEGORY_MEMBERS.ONE_HAND)
 const TWO_HAND: ReadonlySet<string> = new Set<string>(WEAPON_CATEGORY_MEMBERS.TWO_HAND)
+const RANGED_TYPES: ReadonlySet<string> = new Set<string>(WEAPON_CATEGORY_MEMBERS.RANGED)
+
+/** A bow or a throwing weapon, by the folded skill — `weaponType.ts` owns the three Throwing spellings. */
+export function isRangedWeapon(skill: string | undefined): boolean {
+  const type = weaponTypeOf(skill)
+  return type !== null && RANGED_TYPES.has(type)
+}
 
 /**
  * `'1h'` / `'2h'` / `null` — the handedness of a row, from the skill the wiki stated and the fold
@@ -581,6 +616,7 @@ export function isShieldLike(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>): b
 /** Does this row satisfy a slot's stated kind? One dispatch, so the three arms cannot disagree. */
 export function rowIsKind(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>, kind: SlotKind): boolean {
   if (kind === 'shield-like') return isShieldLike(row)
+  if (kind === 'weapon-ranged') return isRangedWeapon(row.skill)
   return gearHandedness(row.skill) === (kind === 'weapon-1h' ? '1h' : '2h')
 }
 

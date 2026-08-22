@@ -90,6 +90,8 @@ const ROLE_LABEL: Record<GearRole, string> = {
   dps1h: '1H DPS',
   dps2h: '2H DPS',
   dualwield: 'Dual wield',
+  // The fifth build (owner, 2026-08-22): bows and throwing, from the RANGE slot.
+  range: 'Ranged',
   dd: 'Caster DD',
   dot: 'Caster DoT'
 }

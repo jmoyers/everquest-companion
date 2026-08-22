@@ -20,7 +20,7 @@ import assert from 'node:assert/strict'
 import { CLASS_ABBRS } from '../src/shared/classCombo'
 import { CLASS_FACTS, roleStatKeys, roleValue, type GearRole } from '../src/shared/planner/roleWeights'
 
-const ROLES: readonly GearRole[] = ['balanced', 'tank', 'healer', 'dps', 'dps1h', 'dps2h', 'dualwield', 'dd', 'dot']
+const ROLES: readonly GearRole[] = ['balanced', 'tank', 'healer', 'dps', 'dps1h', 'dps2h', 'dualwield', 'range', 'dd', 'dot']
 
 test('every class the combo vocabulary names has facts, and the facts are the game\'s', () => {
   for (const abbr of CLASS_ABBRS) assert.ok(abbr in CLASS_FACTS, `${abbr} has a row`)

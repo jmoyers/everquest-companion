@@ -341,6 +341,7 @@ const PLAN_ROLE_KEYS: Record<GearRole, true> = {
   dps1h: true,
   dps2h: true,
   dualwield: true,
+  range: true,
   dd: true,
   dot: true
 }

@@ -167,8 +167,13 @@ the class (`CLASS_FACTS`): which attribute is a class's mana (INT / WIS / none),
 BACKSTAB and endurance do anything for it. `roleValue(stats, role, { ownedHaste, classes })`
 credits a gated stat only when some picked class can use it; an empty trio gates nothing (law 1).
 The melee focuses share one profile except the two-hander's damage bonus (4 vs 3, it scales with
-delay) and backstab (absent on `dps2h`). A RANGED focus is parked: it needs its own weapon policy.
-Rule 13 in `progressionPlan.ts`; pinned in `tests/roleWeightsClassGate.test.mts`.
+delay) and backstab (absent on `dps2h`). Rule 13 in `progressionPlan.ts`; pinned in
+`tests/roleWeightsClassGate.test.mts`.
+
+**Ranged (owner, 2026-08-22 — "bows and rock and stuff").** A tenth role, `range`: DEX 2 (the
+archery/throwing accuracy stat), STR 0.8, haste 2, otherwise the melee profile; its weapon policy
+takes only bows and throwing weapons in the RANGE slot (`weapon-ranged`, off `weaponType.ts`'s
+RANGED category) and leaves both hands open. Pinned in `tests/planRolePolicy.test.mts`.
 
 ### 2.4 `src/shared/planner/progressionPlan.ts` — the fold (NEW, pure)
 

@@ -391,7 +391,7 @@ test('the Plan tab`s two picks round-trip, and their vocabularies come from the 
   // checks. Pinned here so a role added to the union and forgotten in that record goes red.
   assert.deepEqual(
     [...PLAN_ROLES].sort(),
-    ['balanced', 'dd', 'dot', 'dps', 'dps1h', 'dps2h', 'dualwield', 'healer', 'tank']
+    ['balanced', 'dd', 'dot', 'dps', 'dps1h', 'dps2h', 'dualwield', 'healer', 'range', 'tank']
   )
   assert.deepEqual([...PLAN_REACHES].sort(), ['group', 'solo'])
 
@@ -412,7 +412,7 @@ test('the 2026-08-15 role widening did not evict a pick anybody already had stor
 
   // …and every NEW spelling round-trips too, which is the half that proves the widening reached the
   // sanitizer rather than only the union.
-  for (const added of ['dps1h', 'dps2h', 'dualwield', 'dd', 'dot']) {
+  for (const added of ['dps1h', 'dps2h', 'dualwield', 'range', 'dd', 'dot']) {
     assert.equal(sanitizePlanRole(added), added)
   }
 
