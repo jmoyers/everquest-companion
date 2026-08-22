@@ -232,11 +232,11 @@ function ViewContent({
           target={routing.mobTarget}
           targetNonce={routing.mobNonce}
           onTargetConsumed={routing.clearMob}
-          nav={routing.nav}
           // A drop dialog's route onward to the Loot tab (user ask, 2026-08-17) — the same
           // openLoot contract every other item name in the app already deep-links through —
           // and the page's own zone line out to the Maps tab, the drop trio's other door.
-          onOpenLoot={routing.openLoot} onOpenMapZone={routing.openMapZone}
+          // One line with nav on purpose: App.tsx sits at its 400-code-line ceiling.
+          nav={routing.nav} onOpenLoot={routing.openLoot} onOpenMapZone={routing.openMapZone}
         />
       )}
       {view === 'bosses' && <BossView key={viewKey} onOpenMob={routing.openMob} />}
