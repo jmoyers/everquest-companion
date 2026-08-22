@@ -13,6 +13,8 @@
 //      item that does not STRICTLY beat its slot's bar is out however high it scores; a multi-slot
 //      item is judged on its best home.
 //   2. A WISHED ITEM IS FLAGGED, NOT FILTERED — it bypasses the gap test and sorts first.
+//   2b. HASTE IS CREDITED ONLY ABOVE WHAT YOU OWN (rule 12) — the 9%-glove-over-a-36%-sword case —
+//      and the melee dps profile reads NO caster stat (the same day's ruling).
 //   3. RUNS. A +N run groups separately from its base zone; THE BURIAL CASE (a low-scoring Refined
 //      run still gets its line beside raid loot — the bug this shape exists for); the two caps; run
 //      ordering; and that `targets` and `runs` are two views of one admitted pool.
@@ -167,6 +169,20 @@ const TWO_SLOT = row({
   wikiSources: [{ mob: 'a young kobold', zone: 'Crushbone' }]
 })
 
+/**
+ * THE GLOVE THAT STARTED RULE 12 — Sporali Gloves as the corpus states them (AC 2, HASTE 9%, two -2
+ * saves): 36 of its 36.4 dps points are the haste. The bar it was offered against is the owner's
+ * Gargoyle Grips at base (AC 10, STR 5, STA 5, SV MAGIC 5 — 14.25 under dps).
+ */
+const HASTE_GLOVES = row({
+  key: 'sporali gloves',
+  name: 'Sporali Gloves',
+  slots: ['HANDS'],
+  classes: ['WAR'],
+  stats: { AC: 2, HASTE: 9, SV_DISEASE: -2, SV_POISON: -2 },
+  wikiSources: [{ mob: 'a young kobold', zone: 'Crushbone' }]
+})
+const GRIPS_BAR = roleValue({ AC: 10, STR: 5, STA: 5, SV_MAGIC: 5 }, 'dps')
 const GEAR = [PLATE, BLADE, ORPHAN, GREY, DEEP, TIER_CLOAK, TIER_RING]
 
 function corpora(over: Partial<PlanCorpora> = {}): PlanCorpora {
@@ -283,6 +299,43 @@ test('a WISHED item bypasses the gap, is FLAGGED, and sorts FIRST', () => {
   // Everything NOT on the list says so explicitly — `wished` is a boolean on every target, never an
   // absence a reader has to interpret.
   assert.deepEqual(both[0].targets.map((t) => t.wished), [true, false])
+})
+
+// =================================================================================================
+// 2b. HASTE IS CREDITED ONLY ABOVE WHAT YOU OWN, and melee reads no caster stat (owner, 2026-08-22)
+// =================================================================================================
+
+test('a haste item is worth only the haste you do NOT already have — the 9% glove under a 36% sword', () => {
+  // The numbers the ruling was made on. Full credit, the glove "beats" the Grips almost entirely on
+  // haste; with 36% already owned its haste term is 0 and what is left is AC 2 and two penalties.
+  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps'), 36.4)
+  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', 36), 0.4)
+  assert.equal(GRIPS_BAR, 14.25)
+  const bars = new Map([['HANDS', GRIPS_BAR] as const])
+  const plan = (ownedHaste?: number): string[] =>
+    buildProgressionPlan(inputs({ role: 'dps' }), corpora({ gear: [HASTE_GLOVES], ownedBestBySlot: bars, ownedHaste }))
+      .flatMap(names)
+  // NOTHING OWNED: the first haste item is a real upgrade, and the route says so.
+  assert.deepEqual(plan(undefined), ['Sporali Gloves'], 'absent reads as none owned — full credit')
+  assert.deepEqual(plan(0), ['Sporali Gloves'])
+  // THE SWORD: worn haste does not stack, so the glove is out — the case that was wrong.
+  assert.deepEqual(plan(36), [], 'a 9% glove is dead weight beside a 36% sword')
+  assert.deepEqual(plan(9), [], 'at exactly what you own, the term is 0 — not negative, not a tie on haste')
+  // ABOVE WHAT YOU OWN, only the difference counts: 4 points over a 5% belt is 16 + 0.4, still in.
+  assert.deepEqual(plan(5), ['Sporali Gloves'])
+  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', 5), 16.4)
+})
+
+test('melee dps reads NO caster stat — INT, WIS, CHA, mana and mana regen are absent, not small', () => {
+  const plain = { AC: 10, STR: 5 }
+  const caster = { AC: 10, STR: 5, INT: 25, WIS: 25, CHA: 25, MP: 100, MANA_REGEN: 10 }
+  for (const role of ['dps', 'dps1h', 'dps2h', 'dualwield'] as const) {
+    assert.equal(roleValue(caster, role), roleValue(plain, role), `${role}: a caster stat moves nothing`)
+  }
+  // …and the stats the role DOES read still move it, so this is not a profile of zeros.
+  assert.ok(roleValue({ ...plain, DEX: 10, ATTACK: 10 }, 'dps') > roleValue(plain, 'dps'))
+  // AGI is "basically useless" and weighted like it: a tenth of a point per point.
+  assert.equal(roleValue({ AGI: 10 }, 'dps'), 1)
 })
 
 // =================================================================================================

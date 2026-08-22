@@ -85,6 +85,14 @@
 //      today's behaviour written down rather than a new default.
 //  11. NO CAMP TIMERS, NO DROP-RATE CLAIMS, NO COSTING, NO SECOND WISH LIST (plan §8). The plan
 //      SEEDS the wish list; it does not become one.
+//  12. HASTE IS AN AFTERTHOUGHT — CREDITED ONLY ABOVE WHAT YOU OWN (owner ruling, 2026-08-22, after
+//      the route offered a 9% haste glove to a character swinging a 36% haste sword: *"haste should
+//      be an afterthought, only added in if haste doesn't exist"*). Worn haste does not stack, so a
+//      candidate's haste term counts only the part above `PlanCorpora.ownedHaste`, the best haste
+//      the player already has (`roleValue`'s third argument). Absent or 0 means none owned, and the
+//      full percentage counts — the first haste item IS an upgrade. THE BARS STAY AT FULL CREDIT on
+//      purpose: the owned item that IS the haste source keeps its haste in its own slot's bar, so the
+//      route never tells you to swap your haste weapon for a hasteless one that "scores" higher.
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
 //   * §2.4 says exp zones are "era-legal zones". `PlanCorpora` carries no zone-era witness, so the
@@ -248,6 +256,13 @@ export interface PlanCorpora {
    * absent, and an absent slot is a gap.
    */
   ownedBestBySlot?: ReadonlyMap<EquipSlot, number>
+  /**
+   * THE BEST HASTE PERCENTAGE THE PLAYER ALREADY OWNS (rule 12), read by `candidatesOf` so a
+   * candidate's haste is credited only above it. OPTIONAL with the same additive contract as
+   * `ownedBestBySlot`: absent reads as 0 — nothing owned, full credit — which is exactly the answer
+   * the fold gave before the rule existed.
+   */
+  ownedHaste?: number
 }
 
 // ---- the constants, each with the reason it is that number ------------------------------------
@@ -664,7 +679,7 @@ function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
     if (!eraLegal(row, inputs.eraOnly)) continue
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
-    const score = roleValue(row.stats, inputs.role)
+    const score = roleValue(row.stats, inputs.role, corpora.ownedHaste ?? 0)
     // A WISHED ITEM SKIPS THE GAP TEST **AND THE POLICY**. The user declaring they want a thing is
     // the strongest statement about it anywhere in this corpus, and it outranks both a score this
     // file's own header calls invented and a loadout shape inferred from a picker. The policy exists

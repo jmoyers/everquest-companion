@@ -151,6 +151,18 @@ export interface GearDerivedOpts { ignoreHaste?: boolean; classes?: readonly Cla
 healer: mana/WIS/regen up), same one-place weights table, same heuristic honesty clause.
 **Depends on PR #31's `gearScale.ts`** — see §5.
 
+**Haste is an afterthought (owner ruling, 2026-08-22).** Worn haste does not stack, so the plan's
+`roleValue(stats, role, ownedHaste)` credits an item's haste only ABOVE the best haste the player
+already owns (`PlanCorpora.ownedHaste`, folded from the owned set in `planData.ts`). With nothing
+owned the full percentage counts — the first haste item is a real upgrade; beside a 36% sword a 9%
+glove scores its haste at 0. The slot bars keep full credit so the haste source is never displaced
+by a hasteless "higher" score. Rule 12 in `progressionPlan.ts`; pinned in
+`tests/progressionPlanRuns.test.mts` §2b.
+
+**Melee dps reads no caster stat (same ruling).** INT, WIS, CHA, MP and mana regen are absent from
+the melee profile — absent, not small, so a stated caster stat can never tip a melee comparison.
+AGI stays at a token 0.1.
+
 ### 2.4 `src/shared/planner/progressionPlan.ts` — the fold (NEW, pure)
 
 ```ts

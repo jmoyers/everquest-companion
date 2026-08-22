@@ -166,6 +166,21 @@ function ownedBars(
 }
 
 /**
+ * THE HASTE THE PLAYER ALREADY HAS — the production side of `PlanCorpora.ownedHaste` (rule 12): the
+ * best `HASTE` any owned row states, or 0 when none does. Read off the same owned set and the same
+ * unscaled corpus as the bars, for the same base-against-base reason. Haste is a percentage the
+ * `+N` tier does not move, so base is not even an approximation here.
+ */
+function ownedHasteOf(owned: ReadonlySet<string>, byKey: ReadonlyMap<string, GearRow>): number {
+  let best = 0
+  for (const key of owned) {
+    const haste = byKey.get(key)?.stats.HASTE
+    if (haste !== undefined && haste > best) best = haste
+  }
+  return best
+}
+
+/**
  * The fold's whole world, memoized on the things that actually move: the corpus (once per window),
  * the ownership join (a dump re-read or a loot line), the wish list document (a click) and the ROLE
  * (a pick — it re-scores the owned side as well as the candidate side, so the bars move with it).
@@ -192,6 +207,7 @@ export function usePlanCorpora(
   // same map next door for the hover cards and for the same reason.
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
   const ownedBestBySlot = useMemo(() => ownedBars(owned, byKey, role), [owned, byKey, role])
+  const ownedHaste = useMemo(() => ownedHasteOf(owned, byKey), [owned, byKey])
   return useMemo(
     () => ({
       gear: rows,
@@ -200,9 +216,10 @@ export function usePlanCorpora(
       con: conBand,
       owned,
       wished,
-      ownedBestBySlot
+      ownedBestBySlot,
+      ownedHaste
     }),
-    [rows, owned, wished, ownedBestBySlot]
+    [rows, owned, wished, ownedBestBySlot, ownedHaste]
   )
 }
 

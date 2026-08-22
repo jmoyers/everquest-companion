@@ -88,19 +88,22 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  */
 /**
  * THE MELEE DPS PROFILE, shared by `dps`, `dps1h`, `dps2h` and `dualwield` (see `GearRole`).
+ *
+ * NO CASTER STATS AT ALL (owner ruling, 2026-08-22: *"a DPS class doesn't care about INT, CHA, WIS
+ * ... and MP, my melee doesn't care about that"*). INT, WIS, CHA, mana and mana regen are ABSENT
+ * rather than small, because absent is the one weight that cannot tip a tie: a melee row with
+ * `INT: 10` stated is worth exactly what the same row without it is worth. (The 0.8 INT this table
+ * carried before that ruling out-weighed AC, which is how a caster bracer could outrank plate.)
+ * AGI stays, barely: it feeds a sliver of AC and avoidance in this game, which is "basically
+ * useless" at item magnitudes and is weighted like it.
  */
 const MELEE_DPS: RoleWeights = {
   stats: {
     AC: 0.5,
     STR: 1.5,
-    AGI: 0.2,
+    AGI: 0.1,
     DEX: 1.2,
-    WIS: 0.1,
-    INT: 0.8,
-    CHA: 0.1,
-    MP: 0.1,
     HP_REGEN: 3,
-    MANA_REGEN: 3,
     END_REGEN: 1,
     ATTACK: 1.5,
     HASTE: 4,
@@ -228,16 +231,29 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
  * states no relevant stat scores exactly `0`, never `NaN`, and an item that states a PENALTY
  * (`STR: -5`) scores that penalty, because a stated negative is a stated number.
  *
+ * HASTE IS CREDITED ONLY ABOVE WHAT YOU ALREADY OWN (owner ruling, 2026-08-22: *"haste should be
+ * an afterthought, only added in if haste doesn't exist"*). Worn haste does not stack in this game —
+ * one item's percentage applies, the rest are dead weight — so a 9% glove is worth nothing to a
+ * player swinging a 36% sword, and a score that kept crediting it routed exactly that player to
+ * Sporali Gloves over his Gargoyle Grips (36 of the gloves' 36.4 points were haste). `ownedHaste` is
+ * the best haste percentage the player already has; the term counts only the part of the item's
+ * haste ABOVE it, which is 0 for anything at or below. With nothing owned (the default, 0) the full
+ * percentage counts, because the FIRST haste item is a real upgrade — the same line
+ * `gearScale.ts ignoreHaste` draws, made automatic here instead of a toggle. The same weight table
+ * reads it, so "afterthought" is the credit rule, not a quieter coefficient.
+ *
  * Rounded to three decimals so a score is a stable sort key and a stable test expectation rather
  * than an accumulation of float dust — the ranking, not the value, is the answer this returns.
  */
-export function roleValue(stats: GearStats, role: GearRole): number {
+export function roleValue(stats: GearStats, role: GearRole, ownedHaste = 0): number {
   const weights = ROLE_WEIGHTS[role]
   let total = 0
   for (const key of Object.keys(weights.stats) as GearStatKey[]) {
-    const value = stats[key]
+    const stated = stats[key]
     const coefficient = weights.stats[key]
-    if (value !== undefined && coefficient !== undefined) total += value * coefficient
+    if (stated === undefined || coefficient === undefined) continue
+    const value = key === 'HASTE' ? Math.max(0, stated - ownedHaste) : stated
+    total += value * coefficient
   }
   for (const key of SAVE_KEYS) {
     const value = stats[key]
