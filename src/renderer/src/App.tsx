@@ -112,10 +112,6 @@ function PlainView({
    *  links there when the banner overlay is off. */
   onOpenOverlayPrefs: () => void
 }): JSX.Element {
-  // The cross-view doors the gear area's views take together (the drop trio's contracts) — one
-  // object so each mount stays a one-liner: this file sits at its 400-code-line ceiling and every
-  // mount added pays from it.
-  const doors = { onOpenLoot: routing.openLoot, onOpenMob: routing.openMob, onOpenMapZone: routing.openMapZone }
   return (
     <>
       {/* The Loot tab stays MOUNTED across a deep link (no `key` churn on item change) —
@@ -156,8 +152,9 @@ function PlainView({
           character contract and every item name links OUT to that item's Loot drill-down — which
           is where the per-item tier block is drawn. The drop trio's doors (user ask, 2026-08-17):
           the Mob cell opens the mob's page, the Zone cell opens that zone's map — GearTable
-          states both contracts. */}
-      {view === 'gear' && <GearView key={viewKey} {...doors} />}
+          states both contracts. One line on purpose: this file sits at its
+          400-code-line ceiling and every mount pays from it. */}
+      {view === 'gear' && <GearView key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />}
       {/* WISH LIST (JOS-324's tab, JOS-326's feature) — one flat list of items this character has
           decided they want, grouped by where to go and get them. Keyed like the rest because a
           wish list is a CHARACTER's: the rebuild counter is how this app says that, and the
@@ -165,7 +162,7 @@ function PlainView({
           every wish name links OUT to that item's Loot drill-down (the contract the Exaltations
           tab's donor names use, so the drill's Back arrow comes home here), and the route's zone
           headings and camp mobs open the Maps tab and the mob's page, the drop trio's doors. */}
-      {view === 'wishlist' && <WishlistView key={viewKey} {...doors} />}
+      {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived
