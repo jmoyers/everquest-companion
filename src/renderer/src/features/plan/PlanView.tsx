@@ -294,7 +294,7 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   const compare = useGearCompare(rows, ITEM_UPGRADE_BASE)
   // THE ROLE GOES IN TOO: it scores the OWNED side of the gap test as well as the candidate side, so
   // switching role re-reads what you have rather than merely re-sorting what you might get.
-  const corpora = usePlanCorpora(rows, ownership.map, wishes.list, role)
+  const corpora = usePlanCorpora(rows, ownership.map, wishes.list, { role, classes: classes.classes })
   const picks = useMemo(
     () => ({ classes: classes.classes, role, reach, eraOnly }),
     [classes.classes, role, reach, eraOnly]

@@ -150,13 +150,18 @@ function ownedKeys(map: GearOwnershipMap | null): ReadonlySet<string> {
 function ownedBars(
   owned: ReadonlySet<string>,
   byKey: ReadonlyMap<string, GearRow>,
-  role: GearRole
+  role: GearRole,
+  classes: readonly ClassAbbr[]
 ): ReadonlyMap<EquipSlot, number> {
   const bars = new Map<EquipSlot, number>()
   for (const key of owned) {
     const row = byKey.get(key)
     if (row === undefined) continue
-    const score = roleValue(row.stats, role)
+    // THE SAME CLASS GATE THE CANDIDATES ARE READ THROUGH (fold rule 13) — a bar and the item
+    // measured against it must agree on which stats are live, or a warrior's INT glove would set a
+    // bar its own replacement is not allowed to clear. No owned haste on this side: the bars keep
+    // full haste credit on purpose (rule 12).
+    const score = roleValue(row.stats, role, { classes })
     for (const slot of row.slots) {
       const held = bars.get(slot)
       if (held === undefined || score > held) bars.set(slot, score)
@@ -182,8 +187,9 @@ function ownedHasteOf(owned: ReadonlySet<string>, byKey: ReadonlyMap<string, Gea
 
 /**
  * The fold's whole world, memoized on the things that actually move: the corpus (once per window),
- * the ownership join (a dump re-read or a loot line), the wish list document (a click) and the ROLE
- * (a pick — it re-scores the owned side as well as the candidate side, so the bars move with it).
+ * the ownership join (a dump re-read or a loot line), the wish list document (a click), the ROLE
+ * and the CLASS TRIO (a pick — either re-scores the owned side as well as the candidate side, so
+ * the bars move with it; the trio because the class gate decides which stats a bar may count).
  *
  * The two catalog folds and `conBand` are constants, so they are not dependencies — which is what
  * keeps a keystroke on another tab from re-planning a route.
@@ -197,8 +203,10 @@ export function usePlanCorpora(
   rows: readonly GearRow[],
   ownership: GearOwnershipMap | null,
   list: WishList,
-  role: GearRole
+  picks: Pick<PlanPicks, 'role' | 'classes'>
 ): PlanCorpora {
+  // Destructured so the memos key on the two values and not on the pick object's identity.
+  const { role, classes } = picks
   const owned = useMemo(() => ownedKeys(ownership), [ownership])
   const entries = list.entries
   const wished = useMemo(() => new Set(entries.map((e) => e.itemKey)), [entries])
@@ -206,7 +214,7 @@ export function usePlanCorpora(
   // this 6,766-entry map is built once per window and never per pick — `useGearCompare` builds the
   // same map next door for the hover cards and for the same reason.
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
-  const ownedBestBySlot = useMemo(() => ownedBars(owned, byKey, role), [owned, byKey, role])
+  const ownedBestBySlot = useMemo(() => ownedBars(owned, byKey, role, classes), [owned, byKey, role, classes])
   const ownedHaste = useMemo(() => ownedHasteOf(owned, byKey), [owned, byKey])
   return useMemo(
     () => ({

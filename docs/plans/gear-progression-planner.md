@@ -159,9 +159,16 @@ glove scores its haste at 0. The slot bars keep full credit so the haste source 
 by a hasteless "higher" score. Rule 12 in `progressionPlan.ts`; pinned in
 `tests/progressionPlanRuns.test.mts` §2b.
 
-**Melee dps reads no caster stat (same ruling).** INT, WIS, CHA, MP and mana regen are absent from
-the melee profile — absent, not small, so a stated caster stat can never tip a melee comparison.
-AGI stays at a token 0.1.
+**The score is focus × class (owner rulings, 2026-08-22 — "stats need to be weighted based on the
+type of focus" and "build a grid").** `roleWeights.ts` is two layers. LAYER 1, the focus
+(`ROLE_WEIGHTS`): what a stat is worth to somebody playing this way, one column per `GearRole`,
+with an abstract `manaStat` row in place of INT/WIS (no row may name either — pinned). LAYER 2,
+the class (`CLASS_FACTS`): which attribute is a class's mana (INT / WIS / none), and whether CHA,
+BACKSTAB and endurance do anything for it. `roleValue(stats, role, { ownedHaste, classes })`
+credits a gated stat only when some picked class can use it; an empty trio gates nothing (law 1).
+The melee focuses share one profile except the two-hander's damage bonus (4 vs 3, it scales with
+delay) and backstab (absent on `dps2h`). A RANGED focus is parked: it needs its own weapon policy.
+Rule 13 in `progressionPlan.ts`; pinned in `tests/roleWeightsClassGate.test.mts`.
 
 ### 2.4 `src/shared/planner/progressionPlan.ts` — the fold (NEW, pure)
 

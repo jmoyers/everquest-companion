@@ -309,7 +309,7 @@ test('a haste item is worth only the haste you do NOT already have — the 9% gl
   // The numbers the ruling was made on. Full credit, the glove "beats" the Grips almost entirely on
   // haste; with 36% already owned its haste term is 0 and what is left is AC 2 and two penalties.
   assert.equal(roleValue(HASTE_GLOVES.stats, 'dps'), 36.4)
-  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', 36), 0.4)
+  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', { ownedHaste: 36 }), 0.4)
   assert.equal(GRIPS_BAR, 14.25)
   const bars = new Map([['HANDS', GRIPS_BAR] as const])
   const plan = (ownedHaste?: number): string[] =>
@@ -323,15 +323,21 @@ test('a haste item is worth only the haste you do NOT already have — the 9% gl
   assert.deepEqual(plan(9), [], 'at exactly what you own, the term is 0 — not negative, not a tie on haste')
   // ABOVE WHAT YOU OWN, only the difference counts: 4 points over a 5% belt is 16 + 0.4, still in.
   assert.deepEqual(plan(5), ['Sporali Gloves'])
-  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', 5), 16.4)
+  assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', { ownedHaste: 5 }), 16.4)
 })
 
-test('melee dps reads NO caster stat — INT, WIS, CHA, mana and mana regen are absent, not small', () => {
+test('a pure melee reads NO caster stat — INT, WIS, CHA, mana and mana regen are dead, not small', () => {
   const plain = { AC: 10, STR: 5 }
   const caster = { AC: 10, STR: 5, INT: 25, WIS: 25, CHA: 25, MP: 100, MANA_REGEN: 10 }
+  // THROUGH THE CLASS GATE (rule 13): a warrior has no mana bar, no charm and no backstab, so every
+  // caster stat on the item is dead weight to him under every melee focus.
   for (const role of ['dps', 'dps1h', 'dps2h', 'dualwield'] as const) {
-    assert.equal(roleValue(caster, role), roleValue(plain, role), `${role}: a caster stat moves nothing`)
+    assert.equal(roleValue(caster, role, { classes: ['WAR'] }), roleValue(plain, role), `${role}: a caster stat moves nothing for WAR`)
   }
+  // …and a HYBRID on the same focus reads its OWN mana stat at the hybrid weight — INT for a
+  // Shadowknight, never WIS — which is the whole reason the gate is per class and not per focus.
+  assert.equal(roleValue({ INT: 10 }, 'dps', { classes: ['SHD'] }), 3)
+  assert.equal(roleValue({ WIS: 10 }, 'dps', { classes: ['SHD'] }), 0)
   // …and the stats the role DOES read still move it, so this is not a profile of zeros.
   assert.ok(roleValue({ ...plain, DEX: 10, ATTACK: 10 }, 'dps') > roleValue(plain, 'dps'))
   // AGI is "basically useless" and weighted like it: a tenth of a point per point.

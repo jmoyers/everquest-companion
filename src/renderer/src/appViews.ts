@@ -76,9 +76,11 @@ export const VIEW_LABELS: Record<View, string> = {
   // tab is named, so the nav row and a drill's Back button rename together by construction.
   planner: 'Exaltations',
   gear: 'Gear',
-  // One word, and the noun rather than the verb: the tab holds a PLAN you can read, not a planning
-  // mode you enter. "Progression" would have been the doc's word and is three syllables of tab bar.
-  plan: 'Plan',
+  // THE TAB IS CALLED RECOMMENDED (owner, 2026-08-22). "Plan" named the doc's feature; "Recommended"
+  // says what the surface hands you — the items and zones it recommends for your level. The `plan`
+  // view id, its `eq.plan.*` keys, its telemetry value and every `plan-*` testid are unchanged: a
+  // label, not a refactor, exactly as the Exaltations rename above.
+  plan: 'Recommended',
   // JOS-324. Two words, as a player writes it — the tab bar says it and, the day a wish-list row
   // deep-links into Loot, so will that drill's Back button.
   wishlist: 'Wish list',

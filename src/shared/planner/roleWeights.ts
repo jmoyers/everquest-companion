@@ -10,6 +10,7 @@
 //
 // PURE, relative value imports (the shared/planner house rule) so the node test runner loads it.
 
+import type { ClassAbbr } from '../classCombo'
 import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
 import type { EquipSlot } from './types'
 import { gearEffectiveHp, gearRatio } from './gearScale'
@@ -18,8 +19,32 @@ import { gearEffectiveHp, gearRatio } from './gearScale'
 import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
 
 // =================================================================================================
-// ROLE WEIGHTS — one table, openly heuristic
+// ROLE WEIGHTS — two layers: what the FOCUS values, and what the CLASS can even use
 // =================================================================================================
+//
+// REBUILT 2026-08-22 ON THE OWNER'S RULINGS, in the order they arrived: haste is an afterthought;
+// a melee does not care about INT, CHA, WIS, AGI or mana; stats are weighted by the type of focus;
+// and the standing request, *"if you know what stats help which types of classes or caster etc,
+// build a grid so you can create better gear suggestions."* The single table became two:
+//
+//   LAYER 1, THE FOCUS (`ROLE_WEIGHTS`): how much a stat is worth to somebody playing THIS WAY —
+//   a tank's AC, a nuker's mana, a two-hander's damage bonus. One column per `GearRole`.
+//
+//   LAYER 2, THE CLASS (`CLASS_FACTS`): which of those stats are LIVE for the classes picked. The
+//   focus row says "mana stat: 1.7"; the class says "for you that is INT" — or "for you that is
+//   nothing". Four things are class facts and not focus opinions: WHICH attribute is your mana
+//   (INT, WIS, or none), whether CHARISMA does anything in a fight, whether BACKSTAB exists for you,
+//   and whether ENDURANCE feeds anything.
+//
+// WHY TWO LAYERS RATHER THAN MORE COLUMNS: a Shadowknight and a Warrior on "2H DPS" want the same
+// STR, ATK and haste off a glove, and differ only in that one of them has a mana bar. A column per
+// class would restate the focus sixteen times to express one fact each. The gate expresses the fact
+// once and the focus once, and the score is the product.
+//
+// SEVERAL CLASSES PICKED (the Gear area's trio) reads "live for ANY of them" — a stat is credited
+// if somebody in the trio can use it. NO CLASS PICKED reads as UNKNOWN, which is law 1 (an empty
+// class list is "not stated", never "nobody"): everything is live, both mana stats count, and the
+// score is what it was before the gate existed.
 
 /**
  * What the player is gearing FOR — widened 2026-08-15 on the owner's ask, verbatim: *"we should
@@ -30,11 +55,14 @@ import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
  * quietly reset a stored `dps` to `balanced` the moment the union stopped naming it. A vocabulary
  * that has shipped is a vocabulary you extend, not one you re-spell.
  *
- * THREE OF THE NEW MEMBERS SHARE THE DPS WEIGHTS EXACTLY (`dps1h`, `dps2h`, `dualwield`). They are
- * not three opinions about what a stat is worth — the same 8 STR is the same 8 STR in either hand.
- * They differ in WEAPON-SLOT POLICY (`ROLE_WEAPON_POLICY` below), which is a question about the
- * SHAPE of a loadout rather than the value of a stat, and keeping the two questions in two tables is
- * what stops "dual wield" from becoming a third set of coefficients nobody can justify.
+ * THE MELEE MEMBERS SHARE ONE PROFILE EXCEPT WHERE THE GAME ITSELF DIFFERS (owner ruling
+ * 2026-08-22, *"stats need to be weighted based on the type of focus"*): the same 8 STR is the
+ * same 8 STR in either hand, but a two-hander's DAMAGE BONUS scales with its delay where a
+ * one-hander's does not, so `dps2h` weighs that one stat higher — and cannot backstab at all, so
+ * it does not read BACKSTAB. Everything else the builds disagree on is WEAPON-SLOT POLICY
+ * (`ROLE_WEAPON_POLICY` below), the SHAPE of a loadout, kept in its own table. A RANGED focus is
+ * the one the ruling named that is NOT here: it needs a ranged weapon policy of its own (the RANGE
+ * slot taking bows and throwing) and is a feature, not a column — parked, stated.
  */
 export type GearRole =
   | 'balanced'
@@ -47,10 +75,114 @@ export type GearRole =
   | 'dd'
   | 'dot'
 
-/** One role's coefficients. Absent key = that stat contributes NOTHING to this role. */
+// ---- LAYER 2: the class facts -------------------------------------------------------------------
+
+/** The attribute a class draws its mana from. `null` is the four pure melee: no bar at all. */
+export type ManaStat = 'INT' | 'WIS'
+
+/**
+ * WHAT IS LIVE FOR ONE CLASS — game facts, not opinions, and the only per-class input the score
+ * takes. Each is a fact about the class's mechanics in this era of the game; if Legends changes a
+ * mechanic the row changes, not the focus table.
+ */
+export interface ClassFacts {
+  /** INT casters and INT hybrids, WIS casters and WIS hybrids, or none for WAR/ROG/MNK/BER */
+  manaStat: ManaStat | null
+  /** charisma resolves charm, mez and lull for ENC and BRD; it is merchant prices for everyone else */
+  charisma: boolean
+  /** backstab is a rogue skill; the stat is dead on anyone else */
+  backstab: boolean
+  /** endurance feeds disciplines, which the melee and hybrids have and the pure casters do not */
+  endurance: boolean
+}
+
+const MELEE: ClassFacts = { manaStat: null, charisma: false, backstab: false, endurance: true }
+const INT_HYBRID: ClassFacts = { manaStat: 'INT', charisma: false, backstab: false, endurance: true }
+const WIS_HYBRID: ClassFacts = { manaStat: 'WIS', charisma: false, backstab: false, endurance: true }
+const INT_CASTER: ClassFacts = { manaStat: 'INT', charisma: false, backstab: false, endurance: false }
+const WIS_CASTER: ClassFacts = { manaStat: 'WIS', charisma: false, backstab: false, endurance: false }
+
+/** Every class the combo vocabulary names, stated explicitly — `roleWeightsClassGate.test.mts` pins the census. */
+export const CLASS_FACTS: Readonly<Record<ClassAbbr, ClassFacts>> = {
+  WAR: MELEE,
+  MNK: MELEE,
+  BER: MELEE,
+  ROG: { ...MELEE, backstab: true },
+  SHD: INT_HYBRID,
+  BRD: { ...INT_HYBRID, charisma: true },
+  PAL: WIS_HYBRID,
+  RNG: WIS_HYBRID,
+  BST: WIS_HYBRID,
+  ENC: { ...INT_CASTER, charisma: true },
+  MAG: INT_CASTER,
+  NEC: INT_CASTER,
+  WIZ: INT_CASTER,
+  CLR: WIS_CASTER,
+  DRU: WIS_CASTER,
+  SHM: WIS_CASTER
+}
+
+/** The union of what is live across a picked trio — or EVERYTHING when nothing is picked (law 1). */
+interface LiveGate {
+  manaStats: ReadonlySet<ManaStat>
+  charisma: boolean
+  backstab: boolean
+  endurance: boolean
+}
+
+const UNKNOWN_GATE: LiveGate = { manaStats: new Set<ManaStat>(['INT', 'WIS']), charisma: true, backstab: true, endurance: true }
+
+function liveGate(classes: readonly ClassAbbr[]): LiveGate {
+  if (classes.length === 0) return UNKNOWN_GATE
+  const manaStats = new Set<ManaStat>()
+  let charisma = false
+  let backstab = false
+  let endurance = false
+  for (const abbr of classes) {
+    const facts = CLASS_FACTS[abbr]
+    if (facts.manaStat !== null) manaStats.add(facts.manaStat)
+    charisma ||= facts.charisma
+    backstab ||= facts.backstab
+    endurance ||= facts.endurance
+  }
+  return { manaStats, charisma, backstab, endurance }
+}
+
+/**
+ * The concrete stat keys the class layer gates, and the fact each answers to. MP and mana regen
+ * ride on "has a mana bar at all": a warrior's +50 mana is dead weight exactly like his INT.
+ */
+function statIsLive(key: GearStatKey, gate: LiveGate): boolean {
+  switch (key) {
+    case 'MP':
+    case 'MANA_REGEN':
+      return gate.manaStats.size > 0
+    case 'CHA':
+      return gate.charisma
+    case 'BACKSTAB':
+      return gate.backstab
+    case 'END':
+    case 'END_REGEN':
+      return gate.endurance
+    default:
+      return true
+  }
+}
+
+// ---- LAYER 1: the focus weights -----------------------------------------------------------------
+
+/**
+ * One focus's coefficients. Absent key = that stat contributes NOTHING to this focus.
+ *
+ * INT AND WIS ARE NEVER NAMED HERE. A focus states ONE `manaStat` weight and the class layer says
+ * which attribute it lands on — the test pins that no row spells either key, because a row that
+ * did would be a focus pretending to know what class is reading it.
+ */
 interface RoleWeights {
-  /** per-stat coefficients, applied to the STATED value */
+  /** per-stat coefficients, applied to the STATED value (class-independent, see above) */
   stats: Partial<Record<GearStatKey, number>>
+  /** coefficient on whichever of INT/WIS the picked classes cast from; 0 on a pure melee */
+  manaStat: number
   /** coefficient on `gearEffectiveHp` (HP + STA); why HP/STA are not in `stats` is below */
   ehp: number
   /** coefficient on `gearRatio` (weapons only — a non-weapon contributes nothing) */
@@ -70,6 +202,30 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  * defensible, one-place, role-differentiated ORDERING so that a tank's list is not a dps's list.
  * Change a number here and every surface moves together; there is no second table.
  *
+ * WHAT EACH ROW MEANS IN THE GAME, so a number can be argued with rather than guessed at:
+ *   * `ratio` (weapons only) — DMG over DELAY, the foundation of melee damage; nothing on a glove
+ *     competes with it, hence 20 on the melee focuses.
+ *   * HASTE — a straight multiplier on swings, and WORN HASTE DOES NOT STACK, so `roleValue`
+ *     credits it only above what the player already owns (the 2026-08-22 ruling, below).
+ *   * DMG_BONUS — a flat add per hit; for a TWO-HANDER it also grows with delay, which is the one
+ *     cell where the melee focuses differ (4 on `dps2h`, 3 elsewhere).
+ *   * ATTACK — the number the hit and damage rolls actually read; STR feeds it by proxy, so ATTACK
+ *     outweighs STR per point.
+ *   * DEX — proc rate, and the accuracy stat for archery and throwing. It does NOT raise melee hit
+ *     chance in this era, so it is moderate for every melee and special for none of them: a dual
+ *     wielder with two proc weapons gets twice the value, but the table cannot see procs.
+ *   * AGI — a sliver of AC above 75 and a little avoidance; "basically useless" at item
+ *     magnitudes (owner) and weighted like it.
+ *   * AC and `ehp` (HP + STA) — staying alive; every focus reads them, the tank reads them big.
+ *   * HP_REGEN — downtime between fights, which is a solo concern and a tank's.
+ *   * `manaStat`, MP, MANA_REGEN — the caster's damage budget; a hybrid's small one; nothing at
+ *     all for a class with no bar (the class layer zeroes all three together).
+ *   * CHA — charm, mez and lull resolution for ENC and BRD; gated to them, absent from the melee
+ *     and healing focuses because no class that takes those focuses fights with it.
+ *   * BACKSTAB — a rogue skill; gated to ROG and absent from `dps2h` (no backstab with a 2H).
+ *   * END_REGEN — disciplines; gated to classes that have them, absent from the caster focuses.
+ *   * saves — resisting a mob's roots, snares, dots and nukes; situational for everyone.
+ *
  * WHAT IS DELIBERATELY ABSENT, and why each absence is a decision:
  *   * HP and STA. They ride through `ehp` (`gearEffectiveHp`), so listing them in `stats` too would
  *     count them twice — and the derived key is the one that already answers "what if only one of
@@ -81,39 +237,45 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *     no measured strength-to-encumbrance model to price it with; the other two are facts about an
  *     item, not comparisons between items (`gear.ts`'s own census reasoning).
  *
- * The role shapes, in one line each: TANK up-weights AC and effective HP and barely reads a weapon;
- * DPS reads the damage ratio big plus STR/DEX/ATTACK/HASTE and the damage bonus; HEALER reads
- * mana, WIS, CHA and both regens with a moderate EHP; BALANCED reads everything smally. Every role
+ * The focus shapes, in one line each: TANK up-weights AC and effective HP and barely reads a
+ * weapon; the MELEE focuses read the damage ratio big plus STR/DEX/ATTACK/HASTE and the damage
+ * bonus; DD and DOT read mana and their mana stat where the melee read a weapon; HEALER reads mana,
+ * its mana stat and both regens with a moderate EHP; BALANCED reads everything smally. Every focus
  * reads AC, effective HP and saves at some weight, because staying alive is not a role.
  */
+
 /**
- * THE MELEE DPS PROFILE, shared by `dps`, `dps1h`, `dps2h` and `dualwield` (see `GearRole`).
+ * THE MELEE PROFILE, shared by `dps`, `dps1h` and `dualwield` exactly and by `dps2h` except for
+ * the damage bonus and backstab (see `GearRole`).
  *
- * NO CASTER STATS AT ALL (owner ruling, 2026-08-22: *"a DPS class doesn't care about INT, CHA, WIS
- * ... and MP, my melee doesn't care about that"*). INT, WIS, CHA, mana and mana regen are ABSENT
- * rather than small, because absent is the one weight that cannot tip a tie: a melee row with
- * `INT: 10` stated is worth exactly what the same row without it is worth. (The 0.8 INT this table
- * carried before that ruling out-weighed AC, which is how a caster bracer could outrank plate.)
- * AGI stays, barely: it feeds a sliver of AC and avoidance in this game, which is "basically
- * useless" at item magnitudes and is weighted like it.
+ * NO CASTER STAT IS NAMED (owner ruling, 2026-08-22: *"a DPS class doesn't care about INT, CHA, WIS
+ * ... and MP, my melee doesn't care about that"*). INT and WIS cannot appear in any row; MP and
+ * mana regen are here at the hybrid's small weight and the CLASS LAYER zeroes them for a class with
+ * no bar, so a warrior's glove with `INT: 10` on it is worth exactly what the same glove without
+ * it is worth. (The 0.8 INT this table carried before that ruling out-weighed AC, which is how a
+ * caster bracer could outrank plate.)
  */
-const MELEE_DPS: RoleWeights = {
-  stats: {
-    AC: 0.5,
-    STR: 1.5,
-    AGI: 0.1,
-    DEX: 1.2,
-    HP_REGEN: 3,
-    END_REGEN: 1,
-    ATTACK: 1.5,
-    HASTE: 4,
-    DMG_BONUS: 3,
-    BACKSTAB: 2
-  },
+const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
+  AC: 0.5,
+  STR: 1.5,
+  AGI: 0.1,
+  DEX: 1,
+  MP: 0.05,
+  HP_REGEN: 3,
+  MANA_REGEN: 1,
+  END_REGEN: 1,
+  ATTACK: 2,
+  HASTE: 4
+}
+const ONE_HAND_DPS: RoleWeights = {
+  stats: { ...MELEE_STATS, DMG_BONUS: 3, BACKSTAB: 2 },
+  manaStat: 0.3,
   ehp: 0.2,
   ratio: 20,
   saves: 0.15
 }
+/** The two-hander's bonus grows with delay; a two-hander cannot backstab. The rest is the melee profile. */
+const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS, DMG_BONUS: 4 } }
 
 /**
  * THE CASTER PROFILE the two nuker roles share, and the honesty clause that comes with it.
@@ -123,25 +285,23 @@ const MELEE_DPS: RoleWeights = {
  * in a stat block distinguishes a burst caster's gear from a damage-over-time caster's. Inventing a
  * spread would be inventing a fact, so the two tables differ in exactly one axis and are otherwise
  * identical:
- *   * DD leans RAW POOL — INT 1.7, MP 0.45, MANA_REGEN 8. Burst is paid for up front, out of the
- *     bar you walked in with, so what you can spend in ten seconds is what you brought.
- *   * DOT leans REGEN — INT 1.5, MP 0.35, MANA_REGEN 14. A dot fight is long by definition, and a
- *     bar that refills DURING it is worth more than a bar that was bigger at the start.
+ *   * DD leans RAW POOL — mana stat 1.7, MP 0.45, MANA_REGEN 8. Burst is paid for up front, out
+ *     of the bar you walked in with, so what you can spend in ten seconds is what you brought.
+ *   * DOT leans REGEN — mana stat 1.5, MP 0.35, MANA_REGEN 14. A dot fight is long by definition,
+ *     and a bar that refills DURING it is worth more than a bar that was bigger at the start.
  * That is the whole difference, it is a lean and not a claim, and anybody expecting two visibly
  * different lists should expect two nearly identical ones instead.
+ *
+ * CHA is here at 0.5 and the class layer hands it to ENC and BRD only — the two classes whose
+ * spells resolve on it. No END: the pure casters have no disciplines.
  */
 const CASTER_STATS: Partial<Record<GearStatKey, number>> = {
   AC: 0.8,
   STR: 0.1,
   AGI: 0.1,
   DEX: 0.1,
-  WIS: 0.9,
-  INT: 1.6,
-  CHA: 0.2,
-  MP: 0.4,
+  CHA: 0.5,
   HP_REGEN: 3,
-  MANA_REGEN: 10,
-  END_REGEN: 0.2,
   ATTACK: 0.1,
   HASTE: 0.3,
   DMG_BONUS: 0.1
@@ -154,8 +314,6 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       STR: 0.6,
       AGI: 0.2,
       DEX: 0.5,
-      WIS: 0.5,
-      INT: 0.5,
       CHA: 0.2,
       MP: 0.15,
       HP_REGEN: 6,
@@ -166,6 +324,7 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       DMG_BONUS: 1.5,
       BACKSTAB: 0.5
     },
+    manaStat: 0.5,
     ehp: 0.5,
     ratio: 8,
     saves: 0.3
@@ -176,56 +335,64 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       STR: 0.5,
       AGI: 0.4,
       DEX: 0.2,
-      WIS: 0.1,
-      INT: 0.1,
-      CHA: 0.1,
       MP: 0.05,
       HP_REGEN: 10,
       MANA_REGEN: 1,
       END_REGEN: 1,
-      ATTACK: 0.3,
+      ATTACK: 0.5,
       HASTE: 1,
       DMG_BONUS: 0.5
     },
+    manaStat: 0.3,
     ehp: 1.2,
     ratio: 3,
     saves: 0.5
   },
-  dps: MELEE_DPS,
-  // THE SAME OBJECT, not a copy — see the `GearRole` header. A 1H build, a 2H build and a dual-wield
-  // build value an identical stat identically; what differs is which SLOTS they will take a
-  // suggestion for, and that is `ROLE_WEAPON_POLICY`'s question, not this table's. Sharing the
-  // reference is the compile-time version of that claim: they cannot drift apart.
-  dps1h: MELEE_DPS,
-  dps2h: MELEE_DPS,
-  dualwield: MELEE_DPS,
-  dd: { stats: { ...CASTER_STATS, INT: 1.7, MP: 0.45, MANA_REGEN: 8 }, ehp: 0.3, ratio: 2, saves: 0.3 },
-  dot: { stats: { ...CASTER_STATS, INT: 1.5, MP: 0.35, MANA_REGEN: 14 }, ehp: 0.3, ratio: 2, saves: 0.3 },
+  dps: ONE_HAND_DPS,
+  dps1h: ONE_HAND_DPS,
+  dps2h: TWO_HAND_DPS,
+  dualwield: ONE_HAND_DPS,
+  dd: { stats: { ...CASTER_STATS, MP: 0.45, MANA_REGEN: 8 }, manaStat: 1.7, ehp: 0.3, ratio: 2, saves: 0.3 },
+  dot: { stats: { ...CASTER_STATS, MP: 0.35, MANA_REGEN: 14 }, manaStat: 1.5, ehp: 0.3, ratio: 2, saves: 0.3 },
   healer: {
     stats: {
       AC: 1,
       STR: 0.2,
       AGI: 0.1,
       DEX: 0.1,
-      WIS: 1.5,
-      INT: 0.9,
-      CHA: 0.4,
       MP: 0.35,
       HP_REGEN: 6,
       MANA_REGEN: 12,
-      END_REGEN: 0.5,
       ATTACK: 0.1,
       HASTE: 0.5,
       DMG_BONUS: 0.2
     },
+    manaStat: 1.5,
     ehp: 0.4,
     ratio: 3,
     saves: 0.35
   }
 }
 
+/** Every focus's `stats` row, for the test that pins INT and WIS out of all of them. */
+export function roleStatKeys(role: GearRole): readonly GearStatKey[] {
+  return Object.keys(ROLE_WEIGHTS[role].stats) as GearStatKey[]
+}
+
+/** The two inputs the class layer and the haste rule need beside the item and the focus. */
+export interface RoleContext {
+  /**
+   * THE BEST HASTE PERCENTAGE THE PLAYER ALREADY OWNS. Worn haste does not stack, so an item's
+   * haste is credited only ABOVE this; 0 (the default) is "none owned" and the full percentage
+   * counts, because the first haste item is a real upgrade.
+   */
+  ownedHaste?: number
+  /** the picked classes; EMPTY is unknown and gates nothing (law 1), not "nobody" */
+  classes?: readonly ClassAbbr[]
+}
+
 /**
- * ONE ITEM'S WORTH TO ONE ROLE. Heuristic — see `ROLE_WEIGHTS`.
+ * ONE ITEM'S WORTH TO ONE FOCUS, THROUGH THE CLASS GATE. Heuristic — see `ROLE_WEIGHTS`.
  *
  * ABSENT STATS CONTRIBUTE NOTHING (law 1, and it is what keeps the arithmetic total): an item that
  * states no relevant stat scores exactly `0`, never `NaN`, and an item that states a PENALTY
@@ -235,26 +402,54 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
  * an afterthought, only added in if haste doesn't exist"*). Worn haste does not stack in this game —
  * one item's percentage applies, the rest are dead weight — so a 9% glove is worth nothing to a
  * player swinging a 36% sword, and a score that kept crediting it routed exactly that player to
- * Sporali Gloves over his Gargoyle Grips (36 of the gloves' 36.4 points were haste). `ownedHaste` is
- * the best haste percentage the player already has; the term counts only the part of the item's
- * haste ABOVE it, which is 0 for anything at or below. With nothing owned (the default, 0) the full
- * percentage counts, because the FIRST haste item is a real upgrade — the same line
- * `gearScale.ts ignoreHaste` draws, made automatic here instead of a toggle. The same weight table
- * reads it, so "afterthought" is the credit rule, not a quieter coefficient.
+ * Sporali Gloves over his Gargoyle Grips (36 of the gloves' 36.4 points were haste). The term
+ * counts only the part of the item's haste ABOVE `ctx.ownedHaste`, which is 0 for anything at or
+ * below — the same line `gearScale.ts ignoreHaste` draws, made automatic here instead of a toggle.
+ * The same weight table reads it, so "afterthought" is the credit rule, not a quieter coefficient.
+ *
+ * THE CLASS GATE (the file header): INT and WIS count at the focus's `manaStat` weight only for the
+ * attribute the picked classes actually cast from; MP, mana regen, CHA, BACKSTAB and endurance
+ * count only when some picked class can use them. No class picked gates nothing.
  *
  * Rounded to three decimals so a score is a stable sort key and a stable test expectation rather
  * than an accumulation of float dust — the ranking, not the value, is the answer this returns.
  */
-export function roleValue(stats: GearStats, role: GearRole, ownedHaste = 0): number {
+export function roleValue(stats: GearStats, role: GearRole, ctx: RoleContext = {}): number {
   const weights = ROLE_WEIGHTS[role]
+  const gate = liveGate(ctx.classes ?? [])
+  const total =
+    statedTotal(stats, weights, gate, ctx.ownedHaste ?? 0) +
+    manaTotal(stats, weights, gate) +
+    derivedTotal(stats, weights)
+  return Math.round(total * 1000) / 1000
+}
+
+/** The focus row, through the class gate and the haste rule — LAYER 1 × LAYER 2. */
+function statedTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate, ownedHaste: number): number {
   let total = 0
   for (const key of Object.keys(weights.stats) as GearStatKey[]) {
     const stated = stats[key]
     const coefficient = weights.stats[key]
-    if (stated === undefined || coefficient === undefined) continue
+    if (stated === undefined || coefficient === undefined || !statIsLive(key, gate)) continue
     const value = key === 'HASTE' ? Math.max(0, stated - ownedHaste) : stated
     total += value * coefficient
   }
+  return total
+}
+
+/** The mana-stat row, landed on whichever attribute(s) the trio casts from. */
+function manaTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate): number {
+  let total = 0
+  for (const manaStat of gate.manaStats) {
+    const stated = stats[manaStat]
+    if (stated !== undefined) total += stated * weights.manaStat
+  }
+  return total
+}
+
+/** Saves, effective HP and the weapon ratio — the three terms no class gates. */
+function derivedTotal(stats: GearStats, weights: RoleWeights): number {
+  let total = 0
   for (const key of SAVE_KEYS) {
     const value = stats[key]
     if (value !== undefined) total += value * weights.saves
@@ -263,7 +458,7 @@ export function roleValue(stats: GearStats, role: GearRole, ownedHaste = 0): num
   if (ehp !== undefined) total += ehp * weights.ehp
   const ratio = gearRatio(stats)
   if (ratio !== undefined) total += ratio * weights.ratio
-  return Math.round(total * 1000) / 1000
+  return total
 }
 
 // =================================================================================================

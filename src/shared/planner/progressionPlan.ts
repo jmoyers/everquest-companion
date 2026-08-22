@@ -93,6 +93,12 @@
 //      full percentage counts — the first haste item IS an upgrade. THE BARS STAY AT FULL CREDIT on
 //      purpose: the owned item that IS the haste source keeps its haste in its own slot's bar, so the
 //      route never tells you to swap your haste weapon for a hasteless one that "scores" higher.
+//  13. THE SCORE IS FOCUS × CLASS (owner rulings 2026-08-22, `roleWeights.ts` header). The role says
+//      what a stat is WORTH; the picked trio says which stats are LIVE — which attribute is your
+//      mana, whether CHA, BACKSTAB or endurance do anything for you. `PlanInputs.classes` reaches
+//      `roleValue` for the candidates here and for the bars in `planData.ts ownedBars`, the SAME
+//      trio on both sides, so a bar and the item measured against it are read through one gate.
+//      An empty trio gates nothing (law 1: unknown, never "nobody").
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
 //   * §2.4 says exp zones are "era-legal zones". `PlanCorpora` carries no zone-era witness, so the
@@ -109,16 +115,19 @@ import type { GearRow } from './gear'
 import type { EquipSlot } from './types'
 import { layeredVerdict } from './era'
 import {
+  CLASS_FACTS,
   ROLE_WEAPON_POLICY,
   policyAdmits,
   roleValue,
+  type ClassFacts,
   type GearRole,
+  type RoleContext,
   type WeaponSlotPolicy
 } from './roleWeights'
 import { plusSuffix, zoneLevelKey, type PlusName, type ZoneLevels } from './zoneLevels'
 
 // The two names this file used to define and now only passes through — see `roleWeights.ts`.
-export { roleValue, type GearRole }
+export { roleValue, type GearRole, type RoleContext, CLASS_FACTS, type ClassFacts }
 
 // =================================================================================================
 // THE PLAN'S SHAPE
@@ -679,7 +688,7 @@ function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
     if (!eraLegal(row, inputs.eraOnly)) continue
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
-    const score = roleValue(row.stats, inputs.role, corpora.ownedHaste ?? 0)
+    const score = roleValue(row.stats, inputs.role, { ownedHaste: corpora.ownedHaste, classes: inputs.classes })
     // A WISHED ITEM SKIPS THE GAP TEST **AND THE POLICY**. The user declaring they want a thing is
     // the strongest statement about it anywhere in this corpus, and it outranks both a score this
     // file's own header calls invented and a loadout shape inferred from a picker. The policy exists

@@ -297,15 +297,23 @@ test('a CLOSED slot is closed even when the sheet says something is worn there',
 // PART 3 — the new roles' WEIGHTS
 // =================================================================================================
 
-test('the three melee builds share ONE weights profile — they differ by policy, not by value', () => {
-  // The same 8 STR is the same 8 STR in either hand. Anything else would be three sets of invented
-  // coefficients nobody could justify, so the fold shares the object and this pins that it does.
+test('the melee builds share ONE weights profile except where the game differs — the 2H bonus and backstab', () => {
+  // The same 8 STR is the same 8 STR in either hand, and on anything that is not a damage bonus or
+  // a backstab the four melee focuses agree to the decimal.
   for (const stats of [GREATAXE.stats, SHORT_SWORD.stats, SHIELD.stats, HELM.stats]) {
     const generic = roleValue(stats, 'dps')
     for (const role of ['dps1h', 'dps2h', 'dualwield'] as const) {
       assert.equal(roleValue(stats, role), generic)
     }
   }
+  // WHERE THEY DIFFER IS A GAME FACT, NOT AN OPINION (owner ruling 2026-08-22): a two-hander's
+  // damage bonus grows with its delay, so `dps2h` weighs it 4 to the one-handers' 3 — and nobody
+  // backstabs with a two-hander, so that stat is absent from `dps2h` even for a rogue.
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps2h'), 40)
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps1h'), 30)
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dualwield'), 30)
+  assert.equal(roleValue({ BACKSTAB: 5 }, 'dps1h', { classes: ['ROG'] }), 10)
+  assert.equal(roleValue({ BACKSTAB: 5 }, 'dps2h', { classes: ['ROG'] }), 0)
   // What DOES differ is what each will look at, and that is a different table entirely.
   assert.notDeepEqual(ROLE_WEAPON_POLICY.dps2h, ROLE_WEAPON_POLICY.dualwield)
   assert.deepEqual(ROLE_WEAPON_POLICY.dps, {}, 'the generic stays unconstrained on purpose')
