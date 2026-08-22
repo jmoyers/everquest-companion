@@ -6,11 +6,6 @@ Listen, I've traveled every road in this here land...  I've been to Crushbone, B
 </blockquote>
 
 
-===This is a work in progress!  Check back later or make suggestions in Discord (Jaruden)!===
-== TODO / OPEN ISSUES ==
-* All levels need verified for EQL - the level ranges given are from P99
-* get an image
-
 [[File:user_jaruden.png|frame|Jaruden]]
 
 {| class="questTopTable"
@@ -75,8 +70,11 @@ This custom quest is designed to send you to every dungeon in Norrath, granting 
 ** [[The froglok shin lord|froglok shin lord]]
 ** [[a giant heart spider]]
 ** [[the froglok warden]]
-* [[Najena]]
-** [[Najena (NPC)|Najena]]
+* [[The Estate of Unrest]]
+** [[reclusive ghoul magus]]
+** [[an undead barkeep]]
+** [[An undead knight of Unrest|undead knight of Unrest]]
+** [[Garanel Rucksif]]
 * [[Permafrost]]
 ** [[Goblin Preacher]]
 ** [[Goblin Scryer]]
@@ -87,11 +85,8 @@ This custom quest is designed to send you to every dungeon in Norrath, granting 
 ** [[Lord Pickclaw]]
 ** [[The Goblin King]]
 ** [[Goblin Warlord (Clan Runnyeye)|Goblin Warlord]]
-* [[The Estate of Unrest]]
-** [[reclusive ghoul magus]]
-** [[an undead barkeep]]
-** [[An undead knight of Unrest|undead knight of Unrest]]
-** [[Garanel Rucksif]]
+* [[Najena]]
+** [[Najena (NPC)|Najena]]
 {{End}}
 
 : You did all that, did ya?  Eh, so did my grandmother, using nothing but a wooden spoon!  This next set will take you further and farther.  Let's see what you're made of.

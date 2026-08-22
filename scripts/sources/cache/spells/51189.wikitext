@@ -7,7 +7,7 @@
 
 | classes = 
 
-* [[Shaman]] - Level 16
+* [[Shaman]] - Level 16 (Autogranted)
 * [[Beastlord]] - Level 47
 
 | slots = 

@@ -1,7 +1,7 @@
 {{Classic Era}}
 {{Spellpagesmart|
 
-| spellname = Invisibility versus Undead
+| spellname = Invisibility vs. Undead
 | spellicon = 33
 | description = Cloaks your target in a light aura, rendering them invisible to most undead creatures for up to 27 min.
 

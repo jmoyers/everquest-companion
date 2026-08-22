@@ -32,6 +32,7 @@
 
 <ul><li>  {{:Mask of Deception}}
 </li><li> {{:Guise of the Deceiver}}
+</li><li> {{:Essence of Dark Elf (Wormwood)}}
 </li></ul>
 
 | where_to_obtain = 

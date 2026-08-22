@@ -57,15 +57,33 @@ function cleanHeading(s: string): string {
   return s.replace(/\[\s*edit[^\]]*\]/gi, '').trim()
 }
 
-/** The h2/h3/h4 that opens a class's block ("Bard" or "Bard (Cilin Spellsinger)"). */
+/** The h2/h3/h4 that opens a class's block. Three spellings, all live on the page at some point:
+ *  "Bard", "Bard (Cilin Spellsinger)", and — since the 2026-08 restructure — "Bard Tests". */
 function findClassHeading($: cheerio.CheerioAPI, cls: string): AnyNode | null {
   let heading: AnyNode | null = null
+  const want = cls.toLowerCase()
   $('h2,h3,h4').each((_i, el) => {
     if (heading) return
     const t = cleanHeading($(el).text()).toLowerCase()
-    if (t === cls.toLowerCase() || t.startsWith(cls.toLowerCase() + ' (')) heading = el
+    if (t === want || t.startsWith(want + ' (') || t === `${want} tests`) heading = el
   })
   return heading
+}
+
+/**
+ * The giver line the 2026-08 restructure moved out of the heading: a `<p>Quest Giver: Holwin</p>`
+ * between the class heading and its table. Walks the same span `findTableAfter` walks and stops
+ * at the same boundaries, so the giver can never be read off a NEIGHBORING class's block.
+ */
+function findGiverAfter($: cheerio.CheerioAPI, heading: AnyNode): string | undefined {
+  let sib = $(heading).parent().next()
+  for (let steps = 0; sib.length && steps < 15; steps++, sib = sib.next()) {
+    const tag = (sib[0] as unknown as { tagName?: string }).tagName?.toLowerCase()
+    if (tag === 'table' || sib.find('table').length || sib.find('h2,h3,h4').length) return undefined
+    const m = /quest\s+giver:\s*(.+)/i.exec(sib.text())
+    if (m) return dedupeDoubled(m[1]).trim()
+  }
+  return undefined
 }
 
 /** Walk forward from a class heading to its table, stopping at the NEXT class heading. */
@@ -252,7 +270,9 @@ function parseMainPageClass($: cheerio.CheerioAPI, cls: string, source: string):
   if (!heading) return []
 
   const gm = /\(([^)]+)\)/.exec(cleanHeading($(heading).text()))
-  const giverFromHeading = gm?.[1]?.trim()
+  // The heading parenthetical ("Bard (Cilin Spellsinger)") when the page still writes one, else
+  // the `Quest Giver:` paragraph the 2026-08 restructure moved it into.
+  const giverFromHeading = gm?.[1]?.trim() ?? findGiverAfter($, heading)
 
   const table = findTableAfter($, heading)
   if (!table) return []

@@ -1,0 +1,29 @@
+
+<onlyinclude>{{Itempage
+|notes       = {{Item Lore | Once the soul of a servant of Bertoxxulous.. }}
+|itemname    = Burning Soul of the Pestilent
+|lucy_img_ID = 
+|statsblock  = 
+No Trade, Quest<br>
+Size: TINY<br>
+Class: None<br>
+Race: None<br>
+|bookcontents = 
+:After clicked on:
+As you stare into the fading embers within your palm, the feeling of redemption is lost upon you as you bear witness to the visage of Lord Grimrot cursing you from beyond for your sudden betrayal. Within moments you hear laughter in your mind as you are pierced by an overencumbrance of terror that speaks to your very being. "This loathsome soul sought to serve my enemy and deserved such a fate. As for your pitiful plight, if you still live in fear of your regrets, then seek out Jotayi Ibupran. Show them you have served me well, and you may yet prove your worth."
+
+|dropsfrom = 
+
+[[South Karana]]
+
+* [[Lord Grimrot]]
+
+|relatedquests = 
+* [[The Torrid Corruptor]]
+
+}}</onlyinclude>
+
+[[Category:Southern Karana]]
+[[Category:Quests]]
+[[Category:Paladin Quests]]
+[[Category:Shadow Knight Quests]]

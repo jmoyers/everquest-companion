@@ -27,7 +27,7 @@
 | recast_time = 5.00
 | duration = 2 Min 30 Sec
 | target_type = Single
-| spell_type = Slow
+| spell_type = Detrimental
 | resist = Magic
 
 | msg_cast_on_you = You feel lethargic.

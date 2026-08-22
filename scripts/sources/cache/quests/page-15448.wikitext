@@ -70,11 +70,11 @@ You say, 'I am from the Hall of Truth.'
 : Mojax Hikspin says, 'Aaahhhh. Now that is refreshing. Just let me rest for a bit. The note is save and sound in my bedroll inside the inn.'
 
 <div class="facblock">
-* Your faction standing with [[Knights of Truth]] got better.+1
-* Your faction standing with [[Dismal Rage]] got worse.-1
-* Your faction standing with [[The Freeport Militia]] got worse.-1
-* Your faction standing with [[Priests of Marr]] got better.+1
-* Your faction standing with [[Steel Warriors]] got better.+1
+* Your faction standing with [[Knights of Truth]] got better. (+5)
+* Your faction standing with [[Dismal Rage]] got worse. (-1)
+* Your faction standing with [[The Freeport Militia]] got worse. (-?)
+* Your faction standing with [[Priests of Marr]] got better. (+5)
+* Your faction standing with [[Steel Warriors]] got better. (+5)
 </div>
 
 {{YouGainExperience}}

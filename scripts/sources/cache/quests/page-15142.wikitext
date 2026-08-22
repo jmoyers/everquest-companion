@@ -1,6 +1,7 @@
 {{Kunark Era}}
+
 __NOTOC__
-[[File:npc_perrir_zexus.png|frame|Perrir Zexus]]
+[[File:npc_perrir_zexus.png|thumb|Perrir Zexus]]
 {| class="questTopTable"
 !''' Start Zone: '''
 | [[Neriak|Neriak Third Gate]]

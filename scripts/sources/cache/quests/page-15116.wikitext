@@ -11,7 +11,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Strength:'''
 <li>Reward: {{:Back Straps of Mastery}}
   <ul>
-  <li><span style="font-weight: bold">[[wind rune caza]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Caza}}</span>
   <li><span style="font-weight: bold">{{:Silken Strands}}</span> Island 3 - ('''[[Gorgalosk]]''')
   </ul>
 </ul>
@@ -19,7 +19,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Sight:'''
 <li>Reward: {{:Ton Po's Eye Patch}}
   <ul>
-  <li><span style="font-weight: bold">[[wind rune geza]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Geza}}</span>
   <li><span style="font-weight: bold">{{:Cracked Leather Eyepatch}}</span> Island 4 - ('''[[Keeper of Souls]]''')
    </ul>
 </ul>
@@ -27,7 +27,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Speed:'''
 <li>Reward: {{:Sandals of Alacrity}}
 <ul>
-  <li><span style="font-weight: bold">[[wind rune jaka]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Jaka}}</span>
   <li><span style="font-weight: bold">{{:Dove Slippers}}</span> Island 5 - ('''[[The Spiroc Lord]]''')
 </ul>
 </ul>
@@ -35,7 +35,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Tears:'''
 <li>Reward: {{:Ton Po's Shoulder Wraps}}
   <ul>
-  <li><span style="font-weight: bold">[[wind rune beza]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Beza}}</span>
   <li><span style ="font-weight: bold">{{:Silken Wrap}}</span> Island 6 - ('''[[Bazzt Zzzt]]''')
   </ul>
 </ul>
@@ -43,7 +43,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Fists:'''
 <li>Reward: {{:Wu's Fist of Mastery}}
   <ul>
-  <li><span style="font-weight: bold">[[wind rune neza]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Neza}}</span>
   <li>{{:Brass Knuckles}} Islands 1.5, 4 and 8 - ('''[[Noble Dojorn]], [[Overseer of Air]], [[the Hand of Veeshan]]''')
   <li><span style="font-weight: bold">{{:Nebulous Sapphire}}</span> Island 7 -  ('''[[Sister of the Spire]]''')
   </ul>
@@ -52,7 +52,7 @@ Bold item names indicate No Drop items. {{CheckboxList}}<ul>
 '''Test of Tranquility:'''
 <li>Reward: {{:Golden Sash of Tranquility}}
   <ul>
-  <li><span style="font-weight: bold">[[wind rune lena]]</span>
+  <li><span style="font-weight: bold">{{:Wind Rune Lena}}</span>
   <li><span style="font-weight: bold">{{:Tear of Quellious}}</span> Island 8 - ('''[[Eye of Veeshan]]''')
   </ul>
 </ul>
@@ -77,7 +77,7 @@ Holwin says, 'So be it, the test of strength you shall have. Bring to me some si
 ! Item || Who || Where
 |-
 |-
-| [[wind rune caza]] || random drop || Plane of Sky
+| [[Wind Rune Caza]] || random drop || Plane of Sky
 |-
 | [[Silken Strands]] || [[Gorgalosk]] || Island 3
 |}
@@ -92,7 +92,7 @@ Holwin says, 'The test of sight is a test of both body and mind.  The mind will 
 {| class="eoTable3"
 ! Item || Who || Where
 |-
-| [[wind rune geza]] || random drop || Plane of Sky
+| [[Wind Rune Geza]] || random drop || Plane of Sky
 |-
 | [[Cracked Leather Eyepatch]] || [[Keeper of Souls]] || Island 4
 |}
@@ -107,7 +107,7 @@ Holwin says, 'The test of speed.  Every monk must be swift if he is to best his 
 {| class="eoTable3"
 ! Item || Who || Where
 |-
-| [[wind rune jaka]] || random drop || Plane of Sky
+| [[Wind Rune Jaka]] || random drop || Plane of Sky
 |-
 | [[Dove Slippers]] || [[The Spiroc Lord]] || Island 5
 |}
@@ -122,7 +122,7 @@ Holwin says, 'The test of tears involves knowing when to release, and when to pr
 {| class="eoTable3"
 ! Item || Who || Where
 |-
-| [[wind rune beza]] || random drop || Plane of Sky
+| [[Wind Rune Beza]] || random drop || Plane of Sky
 |-
 | [[Silken Wrap]] || [[Bazzt Zzzt]] || Island 6
 |}
@@ -137,7 +137,7 @@ Holwin says, 'A monk must know when to use his or her fists, and when to use the
 {| class="eoTable3"
 ! Item || Who || Where
 |-
-| [[rune neza]] || random drop || Plane of Sky
+| [[Wind Rune Neza]] || random drop || Plane of Sky
 |-
 | [[Brass Knuckles]] || [[Noble Dojorn]], [[Overseer of Air]], [[the Hand of Veeshan]] || Islands 1.5, 4 and 8
 |-
@@ -154,7 +154,7 @@ Holwin says, 'Ah, the test of tranquility.  Only the tranquil monk can achieve e
 {| class="eoTable3"
 ! Item || Who || Where
 |-
-| [[wind rune lena]] || random drop || Plane of Sky
+| [[Wind Rune Lena]] || random drop || Plane of Sky
 |-
 | [[Tear of Quellious]] || [[Eye of Veeshan]] || Island 8 
 |}

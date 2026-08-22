@@ -250,6 +250,39 @@
 // duplicate row is not), which is exactly the distinction a census has to be able to draw.
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// THE CENSUS ANSWERS BACK: `<mob> is covered in a swarm of nifiliks.` (JOS-435).
+//
+// A ranger reported that Swarm of Pain — the level-40 DoT — never tracks in the Debuffs overlay
+// (01M0GR6H8SJH69XS9W2RH61W90, v1.6.0). This is the census working in the direction JOS-412 did NOT
+// design it for and the more useful one: the spell was ALREADY NAMED in
+// `tests/spellSubjectAudit.test.mts`'s `NO_SUBJECT_CENSUS`, sitting in the 82-row cropped-subject
+// population, and the reason it had no correction was stated there in advance — the awaiting-sample
+// law, no log had printed the sentence attached to a cast. A report is that log arriving. The
+// triage question was therefore not "what is wrong with this spell" but "is the row the census
+// already lists now evidenced", which took one measurement instead of one investigation.
+//
+// AND THE EVIDENCE IS THE STRONGEST IN THIS FILE. Unlike `Vengeance of the Wild` (a slice) or
+// `Sha's Lethargy` (four lines), the OWNER'S log holds both halves at volume: 219 of his own casts
+// and 199 landings, 198 of them 0-3 s after one of those casts and the 199th 2 s after one of the
+// 14 third-person casts, over 2,192,979 lines measured 2026-08-20. The row's `evidence` carries the
+// gap histogram.
+//
+// THE MINT IS STRICTLY ADDITIVE, and it was MEASURED rather than argued — the half JOS-189 taught
+// this file to say out loud. The owner's whole log parsed TWICE in one process with and without this
+// one row (2,192,979 lines, 59 event kinds, 2026-08-20): `unknown` 210,432 -> 210,233 and
+// `buffApply` 146,467 -> 146,666, EXACTLY 199 lines, and all 57 other kinds byte-identical. So no
+// classifier loses a line and there is nobody downstream to account for. `Swarm of Pain` is the only
+// registry row that mentions nifiliks in any field, and the minted tail is neither a suffix of an
+// existing one nor has one as a suffix (`tests/spellCorrectionsSubjects.test.mts` proves that
+// invariant for every row here).
+//
+// NOT A DURATION CLAIM, same as JOS-245: the DB states 1 Min and the reporter is casting rank V, so
+// whatever the Legends re-tiering did to the number is `SpellStats.estimateFor`'s question — the DB
+// figure is a FLOOR and a clean observed cycle raises it. This row's job is to make the cycle
+// OBSERVABLE, because before it there was no landing, hence no instance, hence nothing for a
+// wear-off to pair with.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // WHAT EVERY ROW BELOW IS.
 //
 // The sentence is the WIKI'S OWN, unchanged. Only the subject token is restored, which is why the

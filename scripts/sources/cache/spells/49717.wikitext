@@ -33,6 +33,9 @@
 
 |items_with_effect = 
 
+
+<ul><li> {{:Essence of Erudite (Wormwood)}}
+</li></ul>
 {{:Mask of Obtenebration}}
 
 | where_to_obtain = 

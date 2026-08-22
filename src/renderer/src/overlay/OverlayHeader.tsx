@@ -91,6 +91,26 @@ export interface OverlayHeaderSelect {
   accent: string
 }
 
+/**
+ * ONE EXTRA TITLE-BAR CONTROL a kind may ask for (JOS-322). Today's only user is the ZONE meter's
+ * "New session" (owner ruling 2026-08-21: *small, in the title bar*, alongside the Loot bar's own
+ * affordance), and the shape is deliberately the narrowest thing that serves it — one glyph, one
+ * accessible name, one handler.
+ *
+ * IT IS NOT A SLOT. A `ReactNode` here would let a kind hang arbitrary chrome in the one row whose
+ * whole business is the pixels a mob name gets to use (JOS-158/JOS-278), and the shrink order in
+ * this row has already had to be argued twice. A glyph in the existing 20px `IconButton` costs the
+ * title exactly what the close ✕ costs it, and nothing new can appear here without editing this
+ * type.
+ */
+export interface OverlayHeaderAction {
+  /** The accessible NAME — never a tooltip (owner ruling 2026-08-16: no hover text on an overlay). */
+  label: string
+  /** One character. It sits in a 20px box at 11px, beside 📌 and ✕. */
+  glyph: string
+  onClick: () => void
+}
+
 const TAIL_COLOR = 'rgba(255,255,255,0.7)'
 
 /**
@@ -120,10 +140,13 @@ const CONTROL_PX = 20
  */
 function HeaderControls({
   chrome,
-  iconAccentBg
+  iconAccentBg,
+  action
 }: {
   chrome: Pick<OverlayChrome, 'locked' | 'hovering' | 'noDrag' | 'toggleLock'>
   iconAccentBg: string
+  /** The kind's one extra control, drawn UNLOCKED ONLY — see `OverlayHeader`'s `action` prop. */
+  action?: OverlayHeaderAction
 }): JSX.Element | null {
   const { locked, hovering, noDrag, toggleLock } = chrome
   if (locked && !hovering) {
@@ -131,6 +154,12 @@ function HeaderControls({
   }
   return (
     <div style={{ ...noDrag, display: 'flex', alignItems: 'center', gap: 2, marginLeft: 2 }}>
+      {/* UNLOCKED ONLY, exactly like the close ✕ two lines down, and for both of its reasons. A
+          locked meter reveals only the unlock pin, and the placeholder above is sized for exactly
+          that one control — so an action that appeared on hover while pinned would put back the
+          title-bar height jump the owner had removed. It is also an irreversible-ish action on a
+          click-through window: a split you did not mean to make is one you have to press again to
+          live with (the undo is API-only, by ruling). */}
       <IconButton
         label={locked ? 'Unlock (interactive)' : 'Lock (click-through)'}
         onClick={toggleLock}
@@ -139,6 +168,11 @@ function HeaderControls({
       >
         {locked ? '🔓' : '📌'}
       </IconButton>
+      {!locked && action && (
+        <IconButton label={action.label} onClick={action.onClick} accentBg={iconAccentBg}>
+          {action.glyph}
+        </IconButton>
+      )}
       {!locked && (
         <IconButton
           label="Close overlay"
@@ -383,6 +417,7 @@ export function OverlayHeader({
   tailColor = TAIL_COLOR,
   iconAccentBg = ICON_ACCENT_GOLD,
   select,
+  action,
   chrome
 }: {
   /** omit entirely for a kind with no combat state (the event log draws no dot). */
@@ -398,6 +433,9 @@ export function OverlayHeader({
   tailColor?: string
   iconAccentBg?: string
   select?: OverlayHeaderSelect
+  /** ONE extra control beside the lock/close pair, unlocked only (JOS-322). Absent for every kind
+   *  but the zone meter, whose title bar carries "New session". */
+  action?: OverlayHeaderAction
   chrome: Pick<OverlayChrome, 'locked' | 'hovering' | 'dragRegion' | 'noDrag' | 'toggleLock'> & {
     /** P3: opt in to a WORKING selector while locked. Absent ⇒ the old plain locked header. */
     capture?: HeaderCapture
@@ -460,7 +498,7 @@ export function OverlayHeader({
           sentence from the panel floor now (overlay/scopeFloor.tsx); this is where a slice of the
           width it was holding went. */}
       <DragGutter />
-      <HeaderControls chrome={chrome} iconAccentBg={iconAccentBg} />
+      <HeaderControls chrome={chrome} iconAccentBg={iconAccentBg} action={action} />
     </div>
   )
 }

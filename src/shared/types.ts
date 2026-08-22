@@ -290,6 +290,23 @@ export interface CharacterRef {
 }
 
 /**
+ * "ANOTHER CHARACTER'S LOG IS ACTIVE — SWITCH?" (JOS-432), main → the main window.
+ *
+ * Sent at most ONCE per candidate log per app session; the guarantee and the whole argument live in
+ * `src/main/log/quietSwitch.ts`. It is a QUESTION and nothing else — the app never switches by
+ * itself (owner ruling, 2026-08-21: two accounts on one PC must never get yanked between
+ * characters), so the renderer's only powers are to offer `character:set` and to forget the card.
+ */
+export interface LogSwitchNudge {
+  /** The sibling log we watched grow — what the offer is to switch TO. */
+  candidate: CharacterRef
+  /** The character we are attached to, whose log has gone silent. */
+  attached: CharacterRef
+  /** How long that log had been silent when we asked, in ms. */
+  quietMs: number
+}
+
+/**
  * The effective EQ install-dir configuration surfaced to the Settings UI. `root`
  * is the directory in use (override ?? auto-discovery ?? default); `source` says
  * how it was chosen; `characterCount` is how many `eqlog_*.txt` logs were found

@@ -112,8 +112,8 @@ const USAGE = `triage-feedback <command> [options]
                                       THE LAST 6 HOURS — or --no-export-check, loudly.
   list    [--status S] [--channel prod|dev|all] [--type bug|feature] [--since 7d]
           [--min-score N] [--limit 100] [--json]
-  show    <reportId>                  full record; downloads + gunzips the slice
-                                      AND the inventory export, into .triage/
+  show    <reportId>                  full record; downloads + gunzips the slice, the inventory
+                                      export AND the achievements export, into .triage/
   digest  [--since 7d] [--channel C]  the markdown brief a human/Claude reads
   cluster [--since 30d] [--write]     deterministic clusters; --write stamps them
   set     <reportId...> [--status S] [--severity p0..p3] [--cluster ID]
@@ -268,11 +268,13 @@ async function cmdList(ctx: Ctx): Promise<void> {
   for (const row of rows) {
     const r = toTriageReport(row)
     const head = r.description.replace(/\s+/g, ' ').slice(0, 60)
-    // Two fixed-width attachment markers, `log` then `inv` (JOS-296) — blank rather than absent,
-    // so the columns stay aligned and a scan down the list reads which reports can be answered.
+    // Three fixed-width attachment markers, `log`/`inv`/`ach` (JOS-296, JOS-441) — blank rather
+    // than absent, so the columns stay aligned and a scan down the list reads which reports can
+    // be answered.
     console.log(
       `${r.reportId}  ${shortDate(r.receivedAt)}  ${r.type.padEnd(7)} ${r.status.padEnd(9)} ` +
         `${r.appVersion.padEnd(8)} ${r.hasLog ? 'log' : '   '} ${r.hasInventory ? 'inv' : '   '} ` +
+        `${r.hasAchievements ? 'ach' : '   '} ` +
         `${r.spamScore.toString().padStart(3)}  ${head}`,
     )
   }
@@ -376,11 +378,20 @@ function issueBody(row: Row, r: TriageReport): string {
   const facts = ['appVersion', 'channel', 'updateChannel', 'platform', 'osRelease', 'arch', 'electron']
     .map((k) => `- ${k}: ${text(env[k], '?')}`)
     .join('\n')
-  // Both attachments are MENTIONED and neither is reproduced — THE LAW (see the file header):
-  // an attachment never reaches a public issue. An inventory export is not chat, but it is still
-  // a stranger's character laid out item by item, and this repo is public.
-  const kinds = [r.hasLog ? 'a scrubbed log slice' : '', r.hasInventory ? 'an inventory export' : '']
-  const attached = kinds.filter((s) => s.length > 0).join(' and ')
+  // Every attachment is MENTIONED and none is reproduced — THE LAW (see the file header): an
+  // attachment never reaches a public issue. An inventory export is not chat, but it is still a
+  // stranger's character laid out item by item, and an achievements export is that character's
+  // whole play history. This repo is public.
+  const kinds = [
+    r.hasLog ? 'a scrubbed log slice' : '',
+    r.hasInventory ? 'an inventory export' : '',
+    r.hasAchievements ? 'an achievements export' : ''
+  ]
+  const present = kinds.filter((s) => s.length > 0)
+  const attached =
+    present.length <= 1
+      ? (present[0] ?? '')
+      : `${present.slice(0, -1).join(', ')} and ${present[present.length - 1]}`
   const log = attached === '' ? '' : `\n\n${attached[0].toUpperCase()}${attached.slice(1)} was attached and is available to maintainers; it is deliberately not reproduced here.`
   return `### Reported\n\n${r.description}\n\n### Environment\n\n${facts}\n\n_Report ${r.reportId}_${log}\n`
 }

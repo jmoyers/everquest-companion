@@ -1,4 +1,6 @@
-{{Classic Era}}{{Screenshot Needed}}
+{{Classic Era}}
+
+[[File:npc_lumi_stergnon.png|thumb|Lumi Stergnon]]
 {| class="questTopTable"
 !''' Start Zone: '''
 | [[Erudin]]
@@ -25,6 +27,9 @@
 </li></ul>
 
 == Walkthrough ==
+
+<b>Info for EQL: if you are not at least indifferent to Emil Parsini he will not accept the letter! sneak behind is your friend here ;-)</b>
+
 ''[[Lumi Stergnon]] is located at -640, -90 in the Temple of Divine Light.''
 
 You say, 'Hail, Lumi Stergnon'
@@ -108,14 +113,13 @@ You say, 'What favor?'
 {{YouGainExperience}}
 
 '''You receive [[Wooden Shards]]. Return to Emil Parsini and hand it to him.'''<br>
-''(If you are doing this for faction, you MUST only give him ONE Wooden Shards per trade and will only receive one of the LORE resin)''
 
 : Emil Parsini says 'Wonderful work!! These shards will work nicely. Here you are then. I found a few flasks of treant resin in the back. You can have one. Thanks again. It kept me from having to go out and hunt treants.'
 
 <div class='facblock'>
-* Your faction standing with [[Merchants of Erudin]] got better.
-* Your faction standing with [[High Council of Erudin]] got better.
-* Your faction standing with [[High Guard of Erudin]] got better.
+* Your faction standing with [[Merchants of Erudin]] has been adjusted by 5.
+* Your faction standing with [[High Council of Erudin]] has been adjusted by 5.
+* Your faction standing with [[High Guard of Erudin]] has been adjusted by 5.
 </div>
 {{YouGainExperience}}
 

@@ -50,6 +50,13 @@
 
 import type { QuestProgress } from './useProgress'
 import { sortQuests } from './questSort'
+// The derived-evidence ladder (JOS-429) — shared with main's side of the ledger so "which source
+// speaks" has ONE definition. Relative value import, per the repo's node-tested-module rule.
+import {
+  derivedEvidence,
+  DERIVED_EVIDENCE_FLOORS,
+  type DerivedCompletionSource
+} from '../../../../shared/questTurnIns'
 
 /** The part of a quest's progress this rule reads. Structural, so a test needs no whole quest. */
 export interface CompletableQuest {
@@ -136,4 +143,55 @@ export function readyQuests(quests: readonly QuestProgress[]): QuestProgress[] {
  */
 export function firstTimeReady(quests: readonly QuestProgress[]): QuestProgress[] {
   return quests.filter((q) => !everTurnedIn(q))
+}
+
+/**
+ * THE DERIVED FLOOR (issue #27, generalized by JOS-429) — a quest with NO ledger evidence reads
+ * `turnIns: 1 / completed`, LABELLED with which source vouched for it.
+ *
+ * It lives beside `everTurnedIn` on purpose: that predicate is the reading a derived floor has to
+ * satisfy, and the two would be a bug the moment they disagreed about what a count means.
+ *
+ * Applied per row after `computeQuestProgress`, the way `firstTimeReady` narrows `readyQuests` — a
+ * composition, not a rewrite — so every downstream reading of `turnIns` (`everTurnedIn`, the
+ * hide-turned-in box, the class-unlock derivation, the Ready tab's first-time default) agrees
+ * without consulting a second field. `logTurnIns` stays 0: the log's share is a fact about the log,
+ * and none of this is log evidence.
+ *
+ * THE LEDGER WINS OUTRIGHT — `q.turnIns > 0` returns the row untouched, count AND label. A derived
+ * source can only ever say "at least once" and the ledger may already know it happened four times.
+ *
+ * THE COUNT IS max(ledger, 1), STATED AS WHAT IT IS: the best LOWER BOUND any witness can prove
+ * (reconcile.ts makes the same move for held counts, for the same reason). Derived evidence and a
+ * ledger event cannot be told apart or added — the ledger's one recorded turn-in may BE the run
+ * that earned the achievement, or a different run — so a vouched quest whose ledger says 1 reads 1,
+ * not 2. The visible consequence, accepted since issue #27: hand-recording "+1" on a derived quest
+ * converts the floor into a stated event without moving the number (the badge's hover changes
+ * instead), and taking that statement back falls to the floor rather than to zero — the evidence is
+ * still there, and the next read would honestly re-assert it.
+ *
+ * AND TWO DERIVED SOURCES DO NOT ADD EITHER. `derivedEvidence` picks ONE — the highest-ranked
+ * that speaks for this quest — because the achievement and the reward in the bag are two witnesses
+ * to the same turn-in, not two turn-ins. shared/questTurnIns.ts carries the ladder and the argument
+ * for its order.
+ *
+ * AND SINCE JOS-441 A RUNG CAN SPEAK WITHOUT FLOORING. `'class-unlock'` — the cascaded `C` under a
+ * class whose unlock was granted rather than earned — sets `completionEvidence` and moves NOTHING
+ * else, so the row keeps the ledger's count (zero, for the quests this ticket is about) and still
+ * carries what the file claims about it. That is why the label field is no longer named for
+ * completion in spirit: it is "which derived source speaks for this row", and whether it counts is
+ * `DERIVED_EVIDENCE_FLOORS`'s answer, not this function's.
+ */
+export function withDerivedCompletion(
+  q: QuestProgress,
+  sources: readonly DerivedCompletionSource[]
+): QuestProgress {
+  if (q.turnIns > 0) return q
+  const evidence = derivedEvidence(q.key, sources)
+  if (evidence === null) return q
+  // A NON-FLOORING RUNG IS LABELLED AND NOTHING ELSE (JOS-441). `'class-unlock'` lands here: the
+  // row is carried onto the quest so the badge can say what the file claims and why it is not being
+  // counted, while `turnIns` and `completed` are left exactly as the ledger left them.
+  if (!DERIVED_EVIDENCE_FLOORS[evidence]) return { ...q, completionEvidence: evidence }
+  return { ...q, turnIns: 1, completed: true, completionEvidence: evidence }
 }

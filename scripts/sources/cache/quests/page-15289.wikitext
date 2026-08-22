@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_edvard_tommels.png|frame|Edvard Tommels]]
+[[File:npc_edvard_tommels.png|Edvard Tommels|thumb|400x400px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Qeynos|South Qeynos]]

@@ -49,10 +49,10 @@ You say, 'assist the freeport militia.'
 : Guard Valon says, 'You have done well. Keep up the good work and we may trust you to [hunt the dervish cutthroats] which in turn will allow you  to join the Reserve Freeport Militia.'
 
 <div class='facblock'>
-* Your faction standing with [[Coalition of Tradefolk Underground]] has gotten better.
-* Your faction standing with [[Freeport Militia]] has gotten better.
-* Your faction standing with [[Knights of Truth]] has gotten worse.
-* Your faction standing with [[Priests of Marr]] has gotten worse.
+* Your faction standing with [[Coalition of Tradefolk Underground]] has been adjusted by 5.
+* Your faction standing with [[Freeport Militia]] has been adjusted by 5.
+* Your faction standing with [[Knights of Truth]] has been adjusted by -1.
+* Your faction standing with [[Priests of Marr]] has been adjusted by -1.
 </div>
 {{exp}}
 

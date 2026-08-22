@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_plagus_ladeson.png|frame|Plagus Ladeson]]
+[[File:npc_plagus_ladeson.png|thumb|Plagus Ladeson]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Freeport|West Freeport]]

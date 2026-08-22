@@ -26,7 +26,8 @@
  * the category or the template index; the direct-template filter is what makes over-broad
  * enumeration safe, so quest/zone/index pages are dropped by evidence instead of by a guess.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 110ms delay,
+ * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 1s delay
+ * (owner ruling 2026-08-22 — fan-run servers; bulk API batching does the heavy lifting),
  * exponential backoff honouring Retry-After on 429/5xx, a disk cache under
  * scripts/sources/cache/mobs so a re-run is nearly free, and partial runs resume rather than
  * duplicating work. Output is sorted by page title, so a re-scrape produces a clean diff.
@@ -44,7 +45,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/mobs')
 const OUT_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/mobs.json')
 
-const DELAY_MS = 110
+const DELAY_MS = 1000
 const MAX_RETRIES = 5
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -66,7 +67,9 @@ function describeRequest(params: Record<string, string>): string {
 
 /** One serialized GET with exponential backoff on 429/5xx (honours Retry-After). */
 async function api<T>(params: Record<string, string>): Promise<T> {
-  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', ...params }).toString()}`
+  // maxlag=5: MediaWiki's own bot-courtesy contract — the server refuses the request outright
+  // when replication lag exceeds 5s, instead of straining to serve it (owner ruling 2026-08-22).
+  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', maxlag: '5', ...params }).toString()}`
   let wait = 1000
   for (let attempt = 0; ; attempt++) {
     let res: Response
@@ -80,7 +83,14 @@ async function api<T>(params: Record<string, string>): Promise<T> {
     }
     if (res.ok) {
       await sleep(DELAY_MS)
-      return (await res.json()) as T
+      const j = (await res.json()) as T
+      // A maxlag deferral arrives as HTTP 200 with an error body and a Retry-After header.
+      if ((j as { error?: { code?: string } }).error?.code === 'maxlag' && attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(res, wait))
+        wait *= 2
+        continue
+      }
+      return j
     }
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
       await sleep(retryDelayMs(res, wait))
@@ -161,10 +171,64 @@ function writeCache(name: string, data: unknown): void {
   writeFileSync(cachePath(name), JSON.stringify(data), 'utf8')
 }
 
-/** Page wikitext, cached per pageid so a re-run costs no requests. */
+/** MEASURED anonymous multi-value limit (scrape-items.ts header) — 60 ids silently returns nothing. */
+const BATCH = 50
+
+/**
+ * Batched wikitext prefetch — the bulk half of the owner's 2026-08-22 etiquette ruling ("use
+ * their api … to pull in bulk"): one `prop=revisions` request carries 50 pages' wikitext, so the
+ * ~7,900 candidate pages cost ~159 requests instead of 7,900 (the per-page `action=parse` path
+ * this replaces). Each page lands in the SAME per-page cache file the reader below consumes, so
+ * resume granularity is unchanged and a warm re-run still costs zero requests.
+ *
+ * ONE BEHAVIOR CHANGE, deliberate: `action=parse` followed redirects, this does not — a redirect
+ * candidate now carries its own `#REDIRECT` wikitext, which `isMobPage` files as not-mob. The
+ * TARGET page is enumerated in its own right (it is the page carrying the categories and the
+ * template), so nothing is lost; the alias just stops producing a duplicate record — exactly how
+ * scrape-items has always treated redirect pages.
+ */
+interface PrefetchedPage {
+  pageid?: number
+  revisions?: { slots?: { main?: { content?: string } } }[]
+}
+
+/** One batch response → per-page cache files. A page the response carries no revision for
+ *  (deleted between enumeration and fetch) writes nothing and falls to the per-page fallback. */
+function writePrefetched(pages: readonly PrefetchedPage[]): void {
+  mkdirSync(CACHE_DIR, { recursive: true })
+  for (const page of pages) {
+    const wt = page.revisions?.[0]?.slots?.main?.content
+    if (page.pageid === undefined || wt === undefined) continue
+    writeFileSync(cachePath(`page-${page.pageid}.wikitext`), wt, 'utf8')
+  }
+}
+
+async function prefetchWikitexts(pages: Member[]): Promise<void> {
+  const missing = pages.filter((p) => refresh || !existsSync(cachePath(`page-${p.pageid}.wikitext`)))
+  if (missing.length === 0) return
+  const batches = Math.ceil(missing.length / BATCH)
+  console.log(`Prefetching ${missing.length} pages in ${batches} batches of ${BATCH}…`)
+  for (let i = 0; i < batches; i++) {
+    const slice = missing.slice(i * BATCH, (i + 1) * BATCH)
+    const j = await api<{ query?: { pages?: PrefetchedPage[] } }>({
+      action: 'query',
+      prop: 'revisions',
+      rvprop: 'content',
+      rvslots: 'main',
+      pageids: slice.map((p) => p.pageid).join('|')
+    })
+    writePrefetched(j.query?.pages ?? [])
+    if ((i + 1) % 25 === 0 || i + 1 === batches) console.log(`  batch ${i + 1}/${batches}`)
+  }
+}
+
+/** Page wikitext from the prefetched per-page cache; the per-page fetch survives only as the
+ *  fallback for a page the batch response carried no revision for (deleted between enumeration
+ *  and fetch — it answers an error, and the page is counted as skipped). */
 async function fetchWikitext(pageid: number): Promise<string | null> {
   const file = cachePath(`page-${pageid}.wikitext`)
-  if (!refresh && existsSync(file)) return readFileSync(file, 'utf8')
+  // The prefetch already honored --refresh by rewriting these files, so the cache is current.
+  if (existsSync(file)) return readFileSync(file, 'utf8')
   const j = await api<{ parse?: { wikitext?: string }; error?: { code?: string } }>({
     action: 'parse',
     pageid: String(pageid),
@@ -282,7 +346,8 @@ async function main(): Promise<void> {
   const started = Date.now()
   console.log('Enumerating the mob universe…')
   const pages = await collectCandidatePages()
-  console.log(`\nFetching + parsing ${pages.length} candidate pages…`)
+  await prefetchWikitexts(pages)
+  console.log(`\nParsing ${pages.length} candidate pages…`)
 
   const mobs: MobEntry[] = []
   const skipped: { page: string; reason: string }[] = []

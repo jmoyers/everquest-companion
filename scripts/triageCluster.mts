@@ -45,6 +45,9 @@ export interface TriageReport {
   /** Did the report DECLARE an inventory export (JOS-296)? The digest and `list` mark it, for
    *  the same reason they mark the log: it says whether this report can be ANSWERED. */
   hasInventory: boolean
+  /** Did the report DECLARE an achievements export (JOS-441)? On the ticket that built it, this
+   *  is THE column that says whether a class-unlock report can be answered at all. */
+  hasAchievements: boolean
   /** Text of a LOCALLY downloaded slice, when the caller has one. Never rendered. */
   logText?: string
 }
@@ -63,6 +66,8 @@ export interface Cluster {
   /** How many members attached an inventory export (JOS-296) — beside `withLogs`, because
    *  "can this cluster be answered" is now two numbers, not one. */
   withInventory: number
+  /** …and how many attached an achievements export (JOS-441). Three numbers now. */
+  withAchievements: number
   label: string
 }
 
@@ -200,6 +205,7 @@ function summarize(members: TriageReport[], kind: Cluster['kind'], signature?: s
     regression: members.length > 1 && versions.length === 1,
     withLogs: members.filter((m) => m.hasLog).length,
     withInventory: members.filter((m) => m.hasInventory).length,
+    withAchievements: members.filter((m) => m.hasAchievements).length,
     label: label(named),
   }
 }
@@ -286,6 +292,7 @@ export function digestLine(r: TriageReport): string {
   const tail =
     (r.hasLog ? ' · log ✔' : '') +
     (r.hasInventory ? ' · inv ✔' : '') +
+    (r.hasAchievements ? ' · ach ✔' : '') +
     (r.spamScore >= 40 ? ` · spam ${r.spamScore}` : '')
   const room = Math.max(20, DIGEST_LINE_MAX - head.length - tail.length - 2)
   const body = text.length > room ? `${text.slice(0, room - 1)}…` : text
@@ -323,7 +330,8 @@ function clusterBlock(c: Cluster, index: number): string[] {
   const sig = c.signature ? ` · signature \`${c.signature}\`` : ''
   lines.push(
     `   Logs: ${c.withLogs}/${c.reportIds.length} attached · ` +
-      `Inventory: ${c.withInventory}/${c.reportIds.length}${sig}`,
+      `Inventory: ${c.withInventory}/${c.reportIds.length} · ` +
+      `Achievements: ${c.withAchievements}/${c.reportIds.length}${sig}`,
   )
   return lines
 }

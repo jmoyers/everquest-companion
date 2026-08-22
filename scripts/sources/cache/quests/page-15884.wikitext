@@ -1,6 +1,6 @@
 {{Classic Era}}
 {{Disambig3|[[Illegible Scrolls]]}}
-[[File:npc_general_jyleel.png|frame|General Jyleel]]
+[[File:npc_general_jyleel.png|General Jyleel|thumb|600x600px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Felwithe|Northern Felwithe]]

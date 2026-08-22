@@ -20,6 +20,7 @@
 | items_with_effect = 
 
 <ul><li> Potion of Heat
+</li><li> {{:Potion of Frosty Insurgency}}
 </li></ul>
 
 | slots = 

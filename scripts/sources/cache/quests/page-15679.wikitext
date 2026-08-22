@@ -40,10 +40,10 @@ You say, 'Hail, Armorer Dellin'
 : Armorer Dellin says, 'Welcome to the Freeport Militia. As a reserve member we require you to wear this tunic and fight whomever, whenever, and wherever Sir Lucan commands, no questions asked!! There is no turning back!! Remember to keep clear of North Freeport. You have made a wise decision. Hail Sir Lucan!!' 
 
 <div class="facblock">
-* Your faction standing with [[The Freeport Militia]] got better.
-* Your faction standing with [[Coalition of Tradefolk Underground]] got better.
-* Your faction standing with [[Knights of Truth]] got worse.
-* Your faction standing with [[Priests of Marr]] got worse.
+* Your faction standing with [[The Freeport Militia]] has been adjusted by 15.
+* Your faction standing with [[Coalition of Tradefolk Underground]] has been adjusted by ?.
+* Your faction standing with [[Knights of Truth]] has been adjusted by -1.
+* Your faction standing with [[Priests of Marr]] has been adjusted by -1.
 </div> 
 {{YouGainExperience}}
 

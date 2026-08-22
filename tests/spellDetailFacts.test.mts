@@ -65,17 +65,21 @@ test('D2 each stat row appears exactly when its own field is stated', () => {
   assert.deepEqual(idsOf(bare({ spellType: 'Beneficial' })), ['type'])
   assert.deepEqual(idsOf(bare({ targetType: 'Single Hostile' })), ['target'])
   assert.deepEqual(idsOf(bare({ castTimeMs: 4000 })), ['cast'])
+  assert.deepEqual(idsOf(bare({ recastMs: 6000 })), ['recast'])
   assert.deepEqual(idsOf(bare({ mana: 75 })), ['mana'])
   assert.deepEqual(idsOf(bare({ durationText: '24 Sec' })), ['duration'])
   assert.deepEqual(idsOf(bare({ instrumentEnhanced: 'Required' })), ['instrument'])
 })
 
 test('D3 a STATED ZERO is a fact and draws its row (mana 0, cast 0 - every bard song)', () => {
-  const song = bare({ mana: 0, castTimeMs: 0 })
-  assert.deepEqual(idsOf(song), ['cast', 'mana'])
+  const song = bare({ mana: 0, castTimeMs: 0, recastMs: 0 })
+  assert.deepEqual(idsOf(song), ['cast', 'recast', 'mana'])
   const rows = spellStatRows(song)
   assert.equal(rows.find((r) => r.id === 'mana')?.value, '0')
   assert.equal(rows.find((r) => r.id === 'cast')?.value, '0.0s')
+  // JOS-444: 432 catalog rows state `recast_time = 0`, which is the page saying there is no re-use
+  // timer. The card prints it for the same reason it prints a stated mana of 0 - somebody said so.
+  assert.equal(rows.find((r) => r.id === 'recast')?.value, '0.0s')
 })
 
 test('D4 the values are the source’s own words, never a re-spelling of them', () => {
@@ -92,11 +96,13 @@ test('D5 the row order is the spell window’s, whichever subset is present', ()
     spellType: 'Beneficial',
     targetType: 'Group',
     castTimeMs: 3000,
+    recastMs: 1500,
     mana: 0,
     durationText: '3 ticks',
     instrumentEnhanced: 'Yes'
   })
-  assert.deepEqual(idsOf(full), ['type', 'target', 'cast', 'mana', 'duration', 'instrument'])
+  // Recast sits beside cast: the casting cycle is the two of them read as one sentence (JOS-444).
+  assert.deepEqual(idsOf(full), ['type', 'target', 'cast', 'recast', 'mana', 'duration', 'instrument'])
 })
 
 // ─────────────────────────── 2. the real DB, read end to end ─────────────────────────────────
@@ -109,12 +115,13 @@ test('D6 Celestial Remedy reads out of the committed DB with every field it stat
   // Verbatim from src/main/data/spells.json.
   assert.equal(d.durationText, '24 Sec')
   assert.equal(d.castTimeMs, 4000)
+  assert.equal(d.recastMs, 1500, 'schema 3 carries recast_time, and the card states it (JOS-444)')
   assert.equal(d.mana, 75)
   assert.equal(d.targetType, 'Single Friendly (or Self)')
   assert.deepEqual(d.effects, ['Increase Hitpoints by 35 per tick'])
   assert.deepEqual(d.classLevels, [{ cls: 'CLR', level: 19 }])
   assert.equal(spellClassLine(d), 'CLR 19')
-  assert.deepEqual(idsOf(d), ['type', 'target', 'cast', 'mana', 'duration'])
+  assert.deepEqual(idsOf(d), ['type', 'target', 'cast', 'recast', 'mana', 'duration'])
   // The page carries no bard instrument row, so no instrument row is drawn.
   assert.equal(d.instrumentEnhanced, undefined)
 })

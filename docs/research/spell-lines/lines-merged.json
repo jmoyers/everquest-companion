@@ -19805,6 +19805,12 @@
        "note": "7-12. P99 level 4."
       },
       {
+       "name": "Lifebite",
+       "level": 8,
+       "inDb": true,
+       "note": "42/42, 1.75 s cast, 35 mana, autogranted. ADDED BY THE GAME PATCH OF 2026-08-18 (JOS-439) - wiki pageid 60016, created 2026-08-18T15:42Z, so no earlier scrape could have seen it. It has no P99 or live counterpart: Legends invented this rung. Owner log evidence at research time: 288 begins-casting, 246 damage lines, 251 heals, 9 resists, 10 interrupts, 4 fizzles."
+      },
+      {
        "name": "Lifedraw",
        "level": 12,
        "inDb": true,
@@ -28569,6 +28575,12 @@
        "note": "live 15, P99 15"
       },
       {
+       "name": "Lifebite",
+       "level": 10,
+       "inDb": true,
+       "note": "42/42, 1.75 s cast, 35 mana, autogranted. ADDED BY THE GAME PATCH OF 2026-08-18 (JOS-439) - wiki pageid 60016, created 2026-08-18T15:42Z. No live or P99 counterpart exists; Legends invented this rung, so the re-tier notes the rest of this line carries have nothing to compare against."
+      },
+      {
        "name": "Lifedraw",
        "level": 15,
        "inDb": true,
@@ -31516,7 +31528,7 @@
    "extras": []
   },
   "necromancer": {
-   "input": 192,
+   "input": 193,
    "lines": 50,
    "standalone": 19,
    "missing": [],
@@ -31548,7 +31560,7 @@
    "extras": []
   },
   "shadow-knight": {
-   "input": 90,
+   "input": 91,
    "lines": 36,
    "standalone": 6,
    "missing": [],

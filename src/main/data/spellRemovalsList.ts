@@ -146,6 +146,56 @@
 // pair STATICALLY, by reading both lists, so the contradiction is reported as what it is (two
 // entries that disagree about whether a spell exists) rather than as a rotted correction.
 //
+// ---------------------------------------------------------------------------------------------
+// THE DUPLICATE PAGE — the second claim this layer can make, and its own instrument (JOS-440)
+// ---------------------------------------------------------------------------------------------
+//
+// Everything above is one claim: EQ LEGENDS DOES NOT HAVE THIS SPELL. `supersededBy` is a second,
+// narrower one: THE WIKI DOCUMENTS THIS SPELL TWICE AND THIS PAGE IS THE COPY EQ LEGENDS IS NOT
+// RUNNING. The two are not the same statement and must not be filed under one bar, because after
+// an absence removal the DB says nothing about the spell at all, while after a superseded removal
+// the spell is still there — under the name `supersededBy` states, offered by every surface, with
+// its own row's facts. Nothing is withdrawn from the player. A DUPLICATE is.
+//
+// WHY IT BELONGS HERE AND NOT IN THE CORRECTIONS LAYER, which is the obvious first guess. A
+// correction patches FIELDS, and the surfaces that fold two rows into one line do not merge fields
+// — `db.byKey`, `dbRowFor` and `spellRows` all take the FIRST row of the name, in the scrape's own
+// `localeCompare` order. So when two pages disagree about a NUMBER, renaming them together does
+// not pick the right answer; it picks whichever page happens to sort first, and the corrections
+// layer has no field for `mana`, `castTimeMs`, `targetType` or `durationText` with which to argue.
+// The only lever that decides WHICH row answers is whether the other row is in the list, and that
+// lever is this file. (Measured on JOS-440: a bare `name` correction re-joined the twins and handed
+// the joined card the stale page's 30 mana and 5.00 s cast.)
+//
+// AND THE INSTRUMENT IS DIFFERENT, WHICH IS THE PART THE BAR ABOVE COULD NOT HAVE ANTICIPATED.
+// Rule 1 makes a PERSON the instrument because absence cannot be measured from a log, and it is
+// right about that. But a superseded entry is not asking about absence: it asks WHICH OF TWO
+// DESCRIPTIONS this client runs, and the client answers that itself. `spells_us.txt` — the game's
+// own complete spell table, which this repo already parses (`src/main/resist/spellTable.ts`,
+// JOS-396's "the client's slots answer where the page does not") — states the id, the name, the
+// cast time, the duration and the mana for every spell the client has. It is not a log and it is
+// not a sample: a page whose numbers contradict it describes some other client. So `verified` for
+// this kind is the date the client table was read, `evidence` restates the row it was read from as
+// DATA (id and figures, so a reader need not have the install), and `reason` keeps its own bar
+// exactly as before.
+//
+// THE THREE OBLIGATIONS A SUPERSEDED ENTRY CARRIES, all checked in `tests/spellRemovals.test.mts`:
+//
+//   1. `supersededBy` NAMES A ROW THAT SURVIVES THE WHOLE LOAD — removals and corrections both.
+//      An absence entry leaves nothing behind and is asserted that way; this one must leave the
+//      spell standing, or it is an absence removal wearing the wrong label.
+//   2. THE SURVIVOR MAY BE A RENAME TARGET, and on JOS-440 it is. The original audit refused any
+//      removal whose `spell` is a name a correction PRODUCES, for a stated reason: such an entry
+//      "would silently match nothing and report itself satisfied". That hazard is real and it is
+//      already caught twice over — `report.satisfied` must be empty and `report.removed` must
+//      equal the entry count, both asserted against the committed scrape — so the audit is now
+//      narrowed to the hazard rather than to the shape. The second hazard the blanket rule also
+//      covered (a re-scrape renames the surviving page UPSTREAM, both rows end up sharing the name,
+//      and the removal eats both) is caught by that same `removed === entries` assertion going to
+//      three, which is a red suite and not a silent loss.
+//   3. IT STILL SAYS WHAT IT DOES NOT TAKE WITH IT (rule 4), and for a duplicate that is a sharper
+//      question than usual, because the two pages share most of their sentences by construction.
+//
 // THE MECHANISM IS NEXT DOOR. `spellRemovals.ts` holds the types, the report and
 // `applySpellRemovals` — which is what every consumer imports, and which re-exports this list so
 // the seam is one import. The two are apart only because this one is a DATA file that grows by one
@@ -156,7 +206,8 @@ import type { SpellRemoval } from './spellRemovals'
 
 /**
  * The removals, ordered oldest first. There is no family grouping here of the kind the corrections
- * list uses, because there are no families: every entry is one spell and one person's one look.
+ * list uses, because there are no families: an absence entry is one spell and one person's one
+ * look, and a `supersededBy` entry is one wiki page and one reading of the client's own table.
  */
 export const SPELL_REMOVALS: readonly SpellRemoval[] = [
   // --- INVIGOR: the classic stamina buff the owner cannot find in EQ Legends ---------------------
@@ -220,5 +271,66 @@ export const SPELL_REMOVALS: readonly SpellRemoval[] = [
     reason: null,
     evidence:
       'Owner verified absent from EQ Legends, 2026-08-13 (owner directive; the New-at-this-level panel was offering it to his PAL/RNG/SHM loadout at 22/24/30). No mechanical reason is claimed: the ticket proposed that the classic stamina-loss mechanic does not exist in EQL, and the owner`s own log measures the opposite for the pre-launch client — `Jaxan`s Jig o` Vigor`, whose ONLY effect is `Decrease Stamina Loss`, lands 1,028 times on Sun Jul 19 2026 and wears off 6 times, with the owner memorizing it himself. Both of Invigor`s messages survive the removal under `Extinguish Fatigue`, which carries them verbatim, so no message table changes.'
+  },
+  // --- THE INVISIBILITY TWINS: the classic-EQ copy of a page the wiki carries twice (JOS-440) ----
+  //
+  // THE REPORT (owner, via JOS-439). eqlwiki has documented this one spell on TWO pages for as long
+  // as we have scraped it. Until 2026-08-18 both were titled with the word `versus` and differed
+  // only in case, so `spellCanonKey` folded them to ONE catalog entry and nobody noticed. A wiki
+  // editor then retitled the newer page to `Invisibility vs. Undead`; the fold stopped joining
+  // them, and the level-unlock panel drew TWO rows for the same spell at Necromancer 1, Shadow
+  // Knight 4, Cleric 11, Enchanter 14 and Paladin 17.
+  //
+  // THE TWO PAGES, AND WHICH ONE EQ LEGENDS IS RUNNING:
+  //
+  //   pageid 49735, `spellname = Invisibility vs. Undead` — mana 40, casting_time 4.00, duration
+  //     `27 Min`, target_type `Single Friendly (or Self)`, `Shadowknight - Level 4 (Autogranted)`,
+  //     slot `Invisibility versus Undead`, and an items/vendor section listing the Potions of
+  //     Unlife Awareness, Cloak of the Undead Eye, Rotting Boots and Warlock`s Boots.
+  //   pageid 57190, `spellname = Invisibility Versus Undead` — mana 30, casting_time 5.00, duration
+  //     `27 minutes`, target_type `Single`, no autogrant note, slot `Invisibility(1)`, and its
+  //     items and vendor sections COMMENTED OUT around a 1999 vendor list (Ak`Anon, East Cabilis,
+  //     Neriak, Erudin Palace…). This is the classic-EverQuest description of the spell.
+  //
+  // THE CLIENT SETTLES IT, WHICH IS THE WHOLE POINT OF THE `supersededBy` INSTRUMENT. The install`s
+  // own `spells_us.txt` carries `235^Invisibility Versus Undead^…^4000^1500^4000^3^270^0^40^…`:
+  // cast 4000 ms, 270 ticks (27 minutes) and 40 mana. That is pageid 49735`s row, field for field,
+  // and it is not pageid 57190`s. The owner`s log agrees independently — of 28 own-cast → `You feel
+  // your skin tingle.` pairs, the modal gap is 4 s and NO pair is longer than 4 s, which a 5.00 s
+  // cast cannot produce. So 57190 documents a build this server does not run.
+  //
+  // AND THE NAME GOES THE OTHER WAY, which is why this entry does not travel alone. The game prints
+  // `Invisibility Versus Undead` — 83 lines in the owner`s whole log (2,235,271 lines): 28 `You
+  // begin casting`, 15 memorize completions, 15 `You forget`, 15 `Beginning to memorize`, 7
+  // fizzles, one autogrant, one other player`s cast — and `Invisibility vs. Undead` ZERO times.
+  // The wiki`s retitle was an editorial change, not a patch. So the surviving row is renamed to the
+  // spelling the game prints by a JOS-161 `name` correction, and this removal drops the page whose
+  // NUMBERS are wrong while that correction fixes the name that was wrong. `supersededBy` names the
+  // survivor so the pair can never be read as a spell being withdrawn.
+  //
+  // WHAT THE REMOVAL DOES NOT TAKE WITH IT (bar rule 4), and for a duplicate this is the sharp
+  // question, because the two pages share their sentences by construction:
+  //   * `You feel your skin tingle.` and `Someone fades a little.` are carried VERBATIM by the
+  //     surviving row, and beyond it by `Invisibility to Undead`, `Improved Invis vs Undead` and
+  //     `Improved Invisibility to Undead`. No message table loses an owner.
+  //   * `Your skin stops tingling. <!--` was 57190`s alone, and it is a SCRAPE ARTIFACT rather than
+  //     a sentence — the field parser swallowed the opening of the page`s commented-out items
+  //     block. It had a correction of its own in `spellCorrectionsList.ts` (the scrape-artifacts
+  //     family) which is retired with this row; the clean sentence survives on the surviving row.
+  //     The parser defect itself is untouched here and is reported separately: `classes` on this
+  //     same page leaks the same `<!--`, so the swallow is general, not one page`s bad luck.
+  //   * The NINE items whose `Effect:` line reads `[[Invisibility versus Undead]]` (Potion of
+  //     Unlife Awareness x3, Cloak of the Undead Eye, Rat Bone Powder, Rotting Boots, Plague
+  //     Bearer`s Boots, Warlock`s Boots, Boots of the Bonecaster) keep their one-liner: the gear
+  //     planner`s join reads `spells.json` RAW, on the exemption this layer`s header states, and
+  //     folds case — so it resolves against the pristine scrape either way.
+  {
+    spell: 'Invisibility Versus Undead',
+    verified: '2026-08-21',
+    reason:
+      'eqlwiki carries this one spell on two pages; pageid 57190 is the classic-EverQuest copy, and EQ Legends runs the other one. Its own commented-out vendor list is the 1999 one.',
+    supersededBy: 'Invisibility Versus Undead',
+    evidence:
+      'The install`s own spell table settles which page this client runs: spells_us.txt row `235^Invisibility Versus Undead^…^4000^1500^4000^3^270^0^40` states cast 4000 ms, 270 ticks (27 min) and 40 mana, which is pageid 49735 (mana 40, casting_time 4.00, `27 Min`, `Single Friendly (or Self)`) field for field and is NOT pageid 57190 (mana 30, casting_time 5.00, `27 minutes`, `Single`). Read 2026-08-21. The owner`s log agrees independently: 28 own-cast → `You feel your skin tingle.` pairs, modal gap 4 s, maximum gap 4 s, which a 5.00 s cast cannot produce. Blast radius: spellClassIndex 1413 -> 1412 (the two spellings held two keys for one spell and now hold one); no per-class count moves, because both pages placed the same five classes at the same five levels; the unlock panel draws one card per level instead of two. The nine items whose Effect line names this spell are unaffected (the planner join reads the raw scrape, per this layer`s exemption).'
   }
 ]

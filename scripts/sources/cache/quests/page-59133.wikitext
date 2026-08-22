@@ -37,6 +37,9 @@
 {{End}}
 
 == Walkthrough ==
+
+'''WARNING: only one of the two kerran tseq will give the quest and give you credit for completion.  Before turning in the item, make sure you hail the tseq to ensure you're giving it to the correct one'''
+
 You say, 'Hail, kerran tseq'
 
 : Kerran tseq says, 'Errr.  You smell funny.  You bring us [toy]?'

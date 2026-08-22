@@ -19,6 +19,11 @@
 
 import { readFileSync } from 'fs'
 import type { InventoryDump } from '../../shared/outputs/inventory'
+import {
+  classUnlockClaims,
+  type AchievementsSource,
+  type ClassUnlockClaim
+} from '../../shared/outputs/achievements'
 import type { OutputKindId } from '../../shared/outputs/kinds'
 import { parseOutput, type OutputParseResult } from './kinds'
 import { outputStatus, type OutputCharacter } from './registry'
@@ -41,6 +46,7 @@ export {
   outputKind,
   parseOutput,
   preferredOutputFile,
+  type AchievementsOutput,
   type InventoryOutput,
   type OutputData,
   type OutputFileStatus,
@@ -108,4 +114,43 @@ export function loadInventoryDump(
   // The registry types this narrowing honestly: an unsupported kind never yields data.
   if (!result.ok || result.data.kind !== 'inventory') return null
   return { path: loaded.path, loadedAt: loaded.loadedAt, dump: result.data.dump }
+}
+
+/** The achievements dump's earned class-unlock rewards, plus the record of where they came from. */
+export interface LoadedAchievements {
+  path: string
+  /** The earned `Obtain <Item>` rows — the flat artifact that gets persisted (JOS-429). */
+  unlocks: ClassUnlockClaim[]
+  /** Exactly what gets persisted as `ProgressState.achievementsSource`. */
+  source: AchievementsSource
+}
+
+/**
+ * Load + parse the character's achievements dump into the EARNED class-unlock claims (JOS-429).
+ *
+ * THE FLAT ARTIFACT, not the dump — the `loadInventory` arrangement one file over, and for the
+ * identical reason. The parsed dump is 1,857 rows of which this app reads 95, it has no consumer
+ * that outlives the process, and the store-migration law makes every persisted shape a debt
+ * forever. So the projection is taken HERE, at the one place the file becomes the model, and the
+ * rows themselves are dropped.
+ *
+ * `now` is injected for the same reason `loadInventory`'s is: a test that pins the record should
+ * not have to pin a clock.
+ */
+export function loadAchievements(
+  characterName?: string,
+  server?: string,
+  now: () => number = Date.now
+): LoadedAchievements | null {
+  const loaded = loadOutput('achievements', characterName, server)
+  if (!loaded) return null
+  const { result } = loaded
+  if (!result.ok || result.data.kind !== 'achievements') return null
+  return {
+    path: loaded.path,
+    unlocks: classUnlockClaims(result.data.dump),
+    // `loadedAt` is the FILE's mtime (when the player typed the command) and `readAt` is ours —
+    // the JOS-253 pair, kept because a single timestamp cannot answer both questions.
+    source: { path: loaded.path, loadedAt: loaded.loadedAt, readAt: now() }
+  }
 }

@@ -37,12 +37,13 @@ import {
 import BugReportIcon from '@mui/icons-material/BugReport'
 import LightbulbIcon from '@mui/icons-material/Lightbulb'
 import { LOG_WINDOW_CHOICES, MAX_DESCRIPTION, type FeedbackType } from '@shared/feedback'
-import InventoryPreview from './InventoryPreview'
+import InventoryPreview, { AchievementsPreview } from './InventoryPreview'
 import LogPreview from './LogPreview'
 import PerfPreview from './PerfPreview'
 import {
   useFeedback,
   useFeedbackContext,
+  useAchievementsDump,
   useInventoryDump,
   useLogSlice,
   type FeedbackContext,
@@ -70,6 +71,18 @@ const INVENTORY_DISCLOSURE =
   'Your inventory export is included - the file /outputfile inventory writes. It lists your ' +
   'items, where each one sits, and how many. It has no chat in it, so nothing is removed. Read ' +
   'the whole thing below before you send it.'
+
+/**
+ * The achievements dump's disclosure (JOS-441), written to the same rule. The format sweep in
+ * `src/main/feedback/achievements.ts` is what lets it be this flat: the file is the game's own
+ * achievement list with a one-letter status on each row, and the sweep found no chat, no
+ * timestamps and not even the character's name inside it.
+ */
+const ACHIEVEMENTS_DISCLOSURE =
+  'Your achievements export is included - the file /outputfile achievements writes. It lists the ' +
+  'game’s achievements and whether you have completed each one. It has no chat in it and does not ' +
+  'even carry your character’s name, so nothing is removed. Read the whole thing below before you ' +
+  'send it.'
 
 /** Feature request | Bug report. The entry point picks the default; this is the override. */
 function TypeToggle({
@@ -270,6 +283,66 @@ function AttachInventorySection({
   )
 }
 
+/**
+ * The achievements attachment (JOS-441) — the same section, the same rules, its own file.
+ *
+ * WHY IT IS A SECOND SECTION AND NOT A SECOND LINE IN THE FIRST: consent here is per-FILE. The two
+ * exports say different things about a player, carry different disclosures, and are missing for
+ * different reasons; one tick covering both would be consent to something the user was never shown.
+ * The cost is one more row in a dialog that already draws two of these, and the shape is identical
+ * so it reads as the same idea rather than as a new one.
+ */
+function AttachAchievementsSection({
+  state,
+  ctx
+}: {
+  state: FeedbackState
+  ctx: FeedbackContext | null
+}): JSX.Element | null {
+  const { fields, attachAchievements, setAttachAchievements } = state
+  const noDump = ctx !== null && !ctx.achievementsAvailable
+  const active = fields.type === 'bug' && attachAchievements && !noDump
+  const ach = useAchievementsDump(active)
+  if (fields.type !== 'bug') return null
+  return (
+    <Stack spacing={1}>
+      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+        <FormControlLabel
+          sx={{ mr: 0 }}
+          disabled={noDump}
+          control={
+            <Checkbox
+              size="small"
+              checked={attachAchievements && !noDump}
+              data-testid="feedback-attach-achievements"
+              onChange={(e) => setAttachAchievements(e.target.checked)}
+            />
+          }
+          label={<Typography variant="body2">Attach my achievements export</Typography>}
+        />
+        {noDump && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="feedback-achievements-hint"
+          >
+            Type /outputfile achievements in game to make one.
+          </Typography>
+        )}
+      </Stack>
+
+      {active && (
+        <>
+          <Typography variant="caption" color="text.secondary">
+            {ACHIEVEMENTS_DISCLOSURE}
+          </Typography>
+          <AchievementsPreview dump={ach.dump} loading={ach.loading} onRefresh={ach.refresh} />
+        </>
+      )}
+    </Stack>
+  )
+}
+
 /** Version · channel · queued — the header context, stated, not explained. */
 function ContextLine({ ctx }: { ctx: FeedbackContext | null }): JSX.Element | null {
   if (!ctx) return null
@@ -338,6 +411,7 @@ export default function FeedbackDialog({ open, onClose, prefill }: FeedbackDialo
             <DraftFieldsBlock state={state} />
             <AttachLogSection state={state} />
             <AttachInventorySection state={state} ctx={ctx} />
+            <AttachAchievementsSection state={state} ctx={ctx} />
             {/* The perf timeline rides `env`, so it is part of EVERY report — feature requests
                 included — and it renders itself away when the rings are empty (JOS-369). It reads
                 the context itself rather than being handed a block, exactly as the inventory

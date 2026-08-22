@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Illusion: Guktan
+| spellicon =
+| description = Cloaks you in a shimmering illusion that makes you appear to be a Guktan Froglok.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Essence of Gukta (Wormwood)]].
+
+| items_with_effect =
+
+<ul><li> {{:Essence of Gukta (Wormwood)}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Illusion: Froglok }}
+
+| skill =
+| mana = 10
+| range = 0
+| casting_time = 3.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 36 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You feel very amphibious.
+| msg_cast_on_other = Someone  turns into a Froglok.
+| msg_wears_off = You no longer feel amphibious.
+}}

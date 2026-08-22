@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Divine Endurance
+| spellicon =
+| description = Causes you to become more resistant, increasing all resists for up to 20 minutes.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Elixir of Divine Endurance]].
+
+| items_with_effect =
+
+<ul><li> {{:Elixir of Divine Endurance}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 3 | Increase All Resists by 10 }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 20 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You feel resistant.
+| msg_cast_on_other = Someone  is resistant.
+| msg_wears_off = Your resistance fades.
+}}

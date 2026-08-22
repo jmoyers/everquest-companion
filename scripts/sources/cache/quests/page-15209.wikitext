@@ -1,4 +1,4 @@
-[[File:Eq3 zps000eb056.png|frame|Server's First Fiery Avenger]]
+[[File:Fiery Avenger.jpg|frame|The legendary blade Fiery Avenger.]]
 [[File:Elegor.png|right|250px]]
 
 
@@ -45,13 +45,12 @@
 ** Hand [[Miragul's Phylactery]] to the [[Lich of Miragul]] to spawn [[Miragul]]
 ** Obtain [[Miragul's Robe]] and [[Miragul's Head]] by killing [[Miragul]]- '''Only to whoever turned in the Phylactery!'''
 * Final hand-in to [[Inte Akera]]
-** In the [[Plane of Sky]] Efreeti room, tell [[Dason Goldblade]] that you wish to be tested by [[Dirkog Steelhand]]
-** Give Dirkog Steelhand 500pp to spawn Inte Akera -- '''Doing so will spawn Inte Akera in the Windmill on Island 4. Inte is a Deepwater Knight of Prexus and will unleash the Oceanlord's fury upon those deemed 'evil' in their eyes -- including your raid. Inte Akera only stays up for a few minutes which is why you need someone else to spawn him from the Quest Room.'''
+** Obtain access to Island 4 (Pegasus Island) of [[Plane of Sky]], this requires several keys.
+** In the [[Plane of Sky]] Efreeti room, give [Dason Goldblade]] 500pp to spawn Inte Akera -- '''Doing so will spawn Inte Akera in the Windmill on Island 4. Inte is a Deepwater Knight of Prexus and will unleash the Oceanlord's fury upon those deemed 'evil' in their eyes -- including your raid. Inte Akera only stays up for a few minutes which is why you need to have access to Island 4 ahead of time.  You can use invisibility to run up to Island 4 after spawning him.'''
 **  Give [[Inte Akera]] the [[Soulfire]] ALONE for the [[Blessing of Nobility]]. Warmly Faction Needed
 **  Give [[Inte Akera]] the [[Ghoulbane]] ALONE for the [[Blessing of Sacrifice]]. Warmly Faction Needed
 **  Give Inte Akera the head, robe, and both blessings (TOGETHER) for the [[:Fiery Avenger]]. Warmly Faction Needed
 {{end}}
-
 
 == Walkthrough ==
 
@@ -98,9 +97,7 @@ In the underwater ice caves of northern [[Everfrost]] find the [[Lich of Miragul
 
 '''PLEASE NOTE that only the character that turned in the Phylactery can receive the Head and Robe from Miragul!'''
 
-Spawn [[Inte Akera]] (Plane of Sky, 4th isle) by saying "I wish to be tested by Dirkog" to [[Dason Goldblade]] in the quest cave and returning the book you are handed.
-
-This will spawn [[Dirkog Steelhand]] (do not spawn Dirkog until you're ready to do the turn-in - he will depop after FIVE minutes), to whom you give 500p. 
+Spawn [[Inte Akera]] (Plane of Sky, 4th isle) by giving 500p to [[Dason Goldblade]] in the quest cave and returning the book you are handed.
 
 [[Inte Akera]] will spawn inside the windmill on isle 4 and despawn after FIVE minutes. He is a Deepwater Knight and will aggro anyone on the entire island who is KoS to erudite paladins. If you have any evils or people kos to erudite paladins for whatever reason, they should stay on 3 until Inte fully despawns. 
 

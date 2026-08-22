@@ -36,6 +36,11 @@ export const soundsBridge = {
   /** "Make this pack my default" — or null for "use whatever the app ships". */
   setDefaultSoundPack: (packId: string | null): Promise<SoundPackPrefs> =>
     ipcRenderer.invoke(IPC.setDefaultSoundPack, packId),
+  // NO `readAudioSession` HERE ANY MORE (JOS-443, owner: "we don't need any special audio
+  // debugging tools at all"). It bridged a WASAPI read of this app's own mixer session for the
+  // Preferences sound check; card, channel and native reader are all deleted. Audio failures are
+  // still never silent — they go to errors.log from alerts/audioHealth.ts — they simply have no
+  // surface of their own.
   /** Subscribe to "available sound packs changed" pushes (startup auto-provisioning). */
   onSoundPacksChanged: (cb: () => void): (() => void) => {
     const listener = (): void => cb()

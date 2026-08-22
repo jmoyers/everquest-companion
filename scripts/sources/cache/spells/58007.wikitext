@@ -37,6 +37,7 @@
 
 <ul>
 <li>[[Shaman#Spell Vendors|Shaman Spell Vendors]]</li>
-</ul>
+<li> {{:Titan Potion}}
+</li></ul>
 
 }}

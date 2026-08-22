@@ -80,10 +80,22 @@ test('NOBODY ELSE SENDS log:character — the main-window-only send is what the 
 })
 
 test('the overlay bridge exposes the SAME member, on the SAME channel, as the app bridge', () => {
+  // THE MAIN APP'S HALF MOVED FILES, NOT SURFACES (JOS-432). `src/preload/index.ts` hit the
+  // measured 400-code-line ceiling, so the three log-stream pushes — `onLine`, `onCharacter` and
+  // the quiet-switch offer — split out to `preload/logStream.ts` and are spread back into the same
+  // `window.eq` object, exactly as knowledge.ts and roster.ts are. So the wiring is read from the
+  // file that now carries it, and the spread is asserted separately below: together those two say
+  // the same thing the single file used to, which is that `window.eq.onCharacter` exists and rides
+  // this channel.
   const bridges = {
-    'the main app bridge': code('../src/preload/index.ts'),
+    'the main app bridge': code('../src/preload/logStream.ts'),
     'the overlay bridge': code('../src/preload/overlay.ts')
   }
+  assert.match(
+    code('../src/preload/index.ts'),
+    /\.\.\.logStreamBridge/,
+    'the log-stream bridge is no longer spread into window.eq'
+  )
   for (const [who, text] of Object.entries(bridges)) {
     assert.match(text, /\bonCharacter:/, `${who} is missing onCharacter`)
     assert.match(text, /ipcRenderer\.on\(IPC\.onCharacter/, `${who} does not subscribe to the channel`)

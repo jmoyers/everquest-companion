@@ -90,6 +90,13 @@ export const IPC = {
   listUserSounds: 'sounds:listUser',
   importUserSounds: 'sounds:importUser',
   removeUserSound: 'sounds:removeUser',
+  // There is NO `audio:session` channel, and that is a ruling rather than an oversight (JOS-443,
+  // owner: "we don't need any special audio debugging tools at all"). JOS-442 added one that read
+  // this app's own WASAPI session over a hand-walked COM vtable so a Preferences card could report
+  // the Windows mixer's per-app mute and volume. The card, the channel and the native reader are
+  // all gone. What survived is the part that needs no surface: a failed sound fetch is never cached
+  // (soundCache.ts) and every audio failure writes one throttled line to errors.log
+  // (alerts/audioHealth.ts).
   // main -> renderer: the set of available sound packs changed (e.g. a shipped
   // default pack was auto-provisioned in the background at startup — Task #39). The
   // renderer re-lists packs + invalidates its sound caches so it becomes usable live.
@@ -247,6 +254,32 @@ export const IPC = {
   // main -> EVERY window: the selection changed. Payload is the whole `ScopeSelection`. Sent to the
   // main window and all overlay kinds; a window with no scoped surface simply has no listener.
   onScopeSelection: 'scopeSelection:changed',
+
+  // ---- THE APP-WIDE SESSION MARKS (JOS-436 store, JOS-322 seam) ----
+  // "Start a new session now" is ONE INSTANT, and the segments are the half-open intervals between
+  // the instants (`shared/sessionSegments.ts`). It used to live in a renderer module variable, which
+  // meant every window kept its own copy AND the combat engine — which is in main — could never
+  // hear the click at all. The owner's ruling is that one click splits EVERYTHING: the loot ledger
+  // and the meter's engine records, from the SAME boundary.
+  //
+  // SO MAIN OWNS THE INSTANT, and that is the whole reason these channels exist: main is the only
+  // process that can both reach every window and call `combat.sessionMark(ts)` synchronously with
+  // the very number it just stamped. A renderer stamping its own clock and telling main afterwards
+  // would give the two halves two boundaries a round trip apart.
+  //
+  // EPHEMERAL, like the two selections above: no store key, no migration, empty at every launch
+  // (`shared/sessionSegments.ts` states why a slice is a thing you choose while you are looking).
+  //
+  // renderer(any window) -> main: read the marks, for hydrating a window that mounted after the
+  // last press. Returns `number[]`, ascending.
+  sessionMarksGet: 'sessionMarks:get',
+  // renderer(any window) -> main, INVOKE: "the user pressed New session". It carries NO PAYLOAD on
+  // purpose — main stamps `Date.now()` once and that instant is the boundary for the loot split and
+  // the engine split alike. Resolves to the new mark list so the window that pressed can select the
+  // segment it just opened without waiting for its own broadcast to come back.
+  sessionMarkAdd: 'sessionMarks:add',
+  // main -> EVERY window: the marks changed. Payload is the whole ascending list.
+  onSessionMarks: 'sessionMarks:changed',
 
   // ---- cursor ring + overlay auto-hide (presence-driven settings) ----
   // Both blobs are main-owned (electron-store), so Preferences has no other door. The setters
@@ -618,8 +651,12 @@ export const IPC = {
   // which dump belongs to this character is main's answer, never the renderer's. The gz bytes
   // never cross. Returns FeedbackInventoryPreview.
   feedbackBuildInventory: 'feedback:buildInventory',
-  // renderer -> main: submit. Args (draft, {attachLog, windowMinutes, attachInventory}). Never
-  // rejects; a network failure resolves with {ok:false, queued:true}. Returns SubmitResult.
+  // renderer -> main: the same for the CURRENT `/outputfile achievements` dump (JOS-441), on the
+  // identical no-arguments terms. Returns FeedbackAchievementsPreview.
+  feedbackBuildAchievements: 'feedback:buildAchievements',
+  // renderer -> main: submit. Args (draft, {attachLog, windowMinutes, attachInventory,
+  // attachAchievements}). Never rejects; a network failure resolves with {ok:false,
+  // queued:true}. Returns SubmitResult.
   feedbackSubmit: 'feedback:submit',
 
   // ---- usage analytics (docs/plans/usage-analytics.md wave A1) ------------------------
@@ -904,6 +941,11 @@ export const IPC = {
   // ---- misc pushes ----
   onLine: 'log:line',
   onCharacter: 'log:character',
+  // main -> renderer: the attached log has been silent for minutes while a SIBLING character log
+  // is growing — offer a one-click switch (JOS-432). Payload: LogSwitchNudge. At most one per
+  // candidate log per app session, by construction (src/main/log/quietSwitch.ts); there is no
+  // re-fire, no stacking and no re-show, so the renderer needs no rate limiting of its own.
+  onLogSwitchNudge: 'log:switchNudge',
 
   // ---- error harness (renderer -> main, fire-and-forget) ----
   // window.onerror / onunhandledrejection / React ErrorBoundary report here so

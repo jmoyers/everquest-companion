@@ -1,4 +1,4 @@
-{{Velious Era}}
+{{Classic Era}}
 
 [[File:npc_saemey_wirewhisker.png|frame|Saemey Wirewhisker]]
 {| class="questTopTable"
@@ -48,6 +48,9 @@
 </li><li> {{:Purified Warhammer}}
 </li><li> {{:Soulforge Hammer}}
 </li></ul>
+
+== WARNING ==
+While this quest is currently in Everquest Legends, it requires traveling to [[Tower of Frozen Shadow]] which is in Velious and not currently accessible in Everquest Legends.
 
 == Walkthrough ==
 '''Travel to the Kejek Village located in [[Stonebrunt Mountains]] by going through the Warrens. (not to be confused Steamfont Mtns) and locate [[Saemey Wirewhisker]]'''<br>
@@ -119,6 +122,8 @@ You say, 'Hail, Giang Yin'
 
 💡 '''Do not trust the Allakhazam posting saying that *any* of avatars can be used; tested with Prowler and ate the hammer and Ghostback also ate it. but Giang Yin does work though.'''
 
+'''NOTE:''' The next steps require drops from Velious. The remainder of this quest cannot currently be completed in EQ Legends.
+
 
 '''Place the Soulforge Hammer and one Crystallized Shadow or Fading Shadow item into a Forge and combine. There is a Forge located inside the Kejek Village. The trivial for all combines is 15 (no-fail) and the Soulforge Hammer will be returned after each combine just like a regular Smithy Hammer functions'''
 
@@ -131,12 +136,8 @@ You say, 'Hail, Giang Yin'
 <br>
 
 
-If you want to continue just for extra Faction (I dont recommend it as 2 of the drops are quite rare!), hunt down the three types of 'spiritlings' [[A jungle spiritling]], [[A mountain spiritling]], [[A valley spiritling]] ( they are willow wisp models but a bit larger and in colors Green, Yellow and Pink) collect one of each Valley, Jungle, and Mountain Spiritling Stones and give them to Saemey Wirewhisker.
+'''Note:''' You will need to complete the [[Spirit Powder]] quest to continue to the next step.
 
-: Saemey Wirewhisker grinds the spiritling stones in a mortar and pestle with foreign runes scratched into the ceramic. 'This powder will assist in matters concerning the contacting or freeing of spirits.'
-
-'''You receive between 1 - 4 Kejek Spirit Powders.'''<br>
-<br>
 '''Give one [[Kejek Spirit Powder]] and a [[Soul Orb]] to Saemey Wirewhisker:'''
 
 : Saemey Wirewhisker says 'I require a Soul Orb and Kejek Spirit Dust in order to perform the ritual that will free the imprisoned souls.  Saemey Wirewhisker scrawls an arcane symbol on the ground with an odd powder and places the orb in its center. He then begins reciting an incantation and waving his arms over the symbol and orb. Moments later the orb shatters and an apparition appears.

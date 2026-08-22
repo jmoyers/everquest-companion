@@ -35,6 +35,8 @@
 </li><li> {{:Twisted Nature Crown}}
 </li><li> {{:Wily Warlock Crown}}
 </li><li> {{:Wolf Caller's Bracer}}
+</li><li> {{:Potion of Fleeting Languor}}
+</li><li> {{:Potion of Gnomish Boils}}
 </li><li> See also items with [[Chill Sight]]
 </li><li> See also items with [[Serpent Sight]]
 </li><li> See also items with [[Truesight]]

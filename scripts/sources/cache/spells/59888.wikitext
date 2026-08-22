@@ -1,0 +1,36 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Elixir of Spiritualism III
+| spellicon =
+| description = Envelops you in an aura of spiritual light, increasing your mana and hit point regeneration.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Spirituality III]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Spirituality III}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 5 | Increase Current Mana by 1 per tick }}
+{{SpellSlotRow | 8 | Increase Current HP by 2 per tick }}
+
+| skill =
+| mana = 200
+| range = 0
+| casting_time = 5.00
+| fizzle_time = 0.00
+| recast_time = 1.50
+| duration = 30 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = An aura of spiritualism envelops you.
+| msg_cast_on_other = Someone  is enveloped by an aura of spiritualism.
+| msg_wears_off = The aura of spiritualism fades.
+}}

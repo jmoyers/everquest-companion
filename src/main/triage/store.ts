@@ -70,9 +70,11 @@ export type { InventoryDownload, SliceRescrub }
 // tsx's CJS interop that cjs-module-lexer cannot see, and every named import through this file
 // stops resolving (the lesson the analytics re-export block below records at length).
 export {
+  achievementsKeyOf,
   attachmentKeysOf,
   attachmentReports,
   deleteSlice,
+  downloadAchievements,
   downloadInventory,
   downloadSlice,
   inventoryKeyOf,
@@ -396,6 +398,8 @@ export function toTriageReport(row: Row): TriageReport {
     // and is a separate question the list deliberately does not ask (rows.ts's tri-state note).
     // A row written before the column existed reads `undefined`, i.e. no dump, which is true.
     hasInventory: row.inventory_json !== null && row.inventory_json !== undefined,
+    /** The third attachment (JOS-441), declared the same way and read the same way. */
+    hasAchievements: row.achievements_json !== null && row.achievements_json !== undefined,
   }
 }
 

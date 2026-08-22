@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_brother_estle.png|frame|Brother Estle]]
+[[File:npc_brother_estle.png|Brother Estle|thumb|400x400px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Western Plains of Karana]]

@@ -103,6 +103,23 @@ export const windowsApi = {
     return () => ipcRenderer.removeListener(IPC.onScopeSelection, listener)
   },
 
+  // ---- the app-wide SESSION MARKS (JOS-436 store, JOS-322 seam) ----
+  // "Start a new session now", as an INSTANT. The same three-member arrangement as the two facts
+  // above, and it is in this slice for their reason plus one of its own: the click has to reach the
+  // COMBAT ENGINE, which lives in main, so one press can split the loot ledger and the meter's
+  // records from the same boundary (src/main/sessionMarks.ts carries the argument).
+  /** The marks in force everywhere, ascending — for hydrating a surface that mounted after the last press. */
+  getSessionMarks: (): Promise<number[]> => ipcRenderer.invoke(IPC.sessionMarksGet),
+  /** "The user pressed New session." NO ARGUMENT: main stamps the instant once, so both halves of
+   *  the split share it. Resolves to the new mark list. */
+  addSessionMark: (): Promise<number[]> => ipcRenderer.invoke(IPC.sessionMarkAdd),
+  /** Subscribe to presses made in ANY window. Payload is the whole ascending list. */
+  onSessionMarks: (cb: (m: number[]) => void): (() => void) => {
+    const listener = (_e: unknown, m: number[]): void => cb(m)
+    ipcRenderer.on(IPC.onSessionMarks, listener)
+    return () => ipcRenderer.removeListener(IPC.onSessionMarks, listener)
+  },
+
   // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168) ----
   // WHICH of your spells the two timer overlays may draw: the opt-in mode switch that lives on the
   // Buffs tab, and the tri-state verdict per spell line behind it. It lives in THIS slice for the

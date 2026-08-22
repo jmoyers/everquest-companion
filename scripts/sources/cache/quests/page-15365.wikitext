@@ -1,4 +1,4 @@
-[[File:npc_captain_bosec.png|frame|Captain Bosec]]
+[[File:npc_captain_bosec.png|Captain Bosec|thumb|405x405px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[High Keep]]
@@ -50,19 +50,24 @@ You say, 'who are the Pickclaw Clan?'
 : Captain Bosec says, 'Well done! We could really use the extra help around here.'
 
 <div class='facblock'>
-* Your faction with [[Highpass Guards]] got better.
-* Your faction with [[Carson McCabe]] got better.
-* Your faction with [[Merchants of Highpass]] got better.
-* Your faction with [[Corrupt Qeynos Guards]] got better.
-* Your faction with [[The Freeport Militia]] got better.
+* Your faction with [[Highpass Guards]] has been adjusted by 5.
+* Your faction with [[Carson McCabe]] has been adjusted by 5.
+* Your faction with [[Merchants of Highpass]] has been adjusted by 5.
+* Your faction with [[Corrupt Qeynos Guards]] has been adjusted by 5.
+* Your faction with [[The Freeport Militia]] has been adjusted by 5.
 </div>
 {{exp}}
+
+<ul><li>You receive 3 copper from Captain Bosec.</li>
+<li>You receive 5 silver from Captain Bosec.</li>
+<li>You receive 6 gold from Captain Bosec.</li></ul>
+
 
 This is a great way to raise faction with the corrupt Freeport and Qeynos Guards/Militia.
 
 Note: As an Ogre, it took 240 ears to be dubious to [[Bank Clerk Jaylin]]
 
-''Need all dialogues, current faction hits, /loc of quest mobs, list of rewards.''
+''Need all dialogues, <s>current faction hits,</s> /loc of quest mobs, <s>list of rewards</s>.''
 
 [[Category:Quests]]
 [[Category:High Keep]]

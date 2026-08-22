@@ -70,7 +70,7 @@ const manifestPath = join(outDir, 'manifest.json')
 
 /** Same polite identity every fetcher in this repo sends (AGENTS.md scraper etiquette). */
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
-const REQUEST_DELAY_MS = 250
+const REQUEST_DELAY_MS = 1000
 const MAX_ATTEMPTS = 4
 const RETRY_BASE_MS = 1_000
 

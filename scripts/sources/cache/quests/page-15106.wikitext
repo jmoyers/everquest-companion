@@ -1,0 +1,12 @@
+[[File:npc_cilin_spellsinger.png|right|200px|thumb|]]
+
+{{Classic Era}}
+{{#lsth:Plane of Sky|Quest Givers}}
+
+== Bard Tests ==
+
+{{#lsth:Plane of Sky|[[Bard]] Tests}}
+
+[[Category: Quests]]
+[[Category:Plane of Sky]]
+[[Category:Bard Quests]]

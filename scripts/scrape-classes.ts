@@ -75,7 +75,7 @@ const OUT_PATH = resolve(HERE, '../src/main/data/classes.json')
 const SPELLS_PATH = resolve(HERE, '../src/main/data/spells.json')
 
 /** Politeness between LIVE fetches (cache hits never sleep). */
-const DELAY_MS = 150
+const DELAY_MS = 1000
 /** First backoff step; doubles per attempt. */
 const BACKOFF_MS = 1000
 const MAX_ATTEMPTS = 5

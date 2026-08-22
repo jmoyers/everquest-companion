@@ -1,3 +1,4 @@
+{{Classic Era}}
 {{Spellpagesmart|
 
 | spellname = Firestrike

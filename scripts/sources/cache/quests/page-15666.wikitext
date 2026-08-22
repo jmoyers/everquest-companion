@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_shazda_kaekwon.png|frame|Shazda Kaekwon]]
+[[File:npc_shazda_kaekwon.png|thumb|Shazda Kaekwon]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Stonebrunt Mountains]]

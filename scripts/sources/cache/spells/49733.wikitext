@@ -6,6 +6,12 @@
 | description = Cloaks you in a shimmering illusion that makes you appear to be a Dwarf.
 
 | classes = * [[Enchanter]] - Level 13
+
+| items_with_effect = 
+
+<ul><li> {{:Essence of Dwarf (Wormwood)}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Illusion: 8 }}

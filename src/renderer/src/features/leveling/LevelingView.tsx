@@ -56,6 +56,12 @@ import { EMPTY_LEVELING, applyLevelingDelta } from './levelingModule'
 // The four hero cards — split into their own file the day this one reached the measured ceiling.
 import { LevelingHeroes } from './LevelingHeroes'
 import { NewAtLevelPanel } from './NewAtLevelPanel'
+// THE RIGHT COLUMN'S FIRST PANEL (JOS-445): of everything the loadout already owns, what is best at
+// the level being viewed. It reads no scope and no chart — only the loadout — so it is the reason
+// the right column can exist on a log the charts cannot draw.
+import { BestSpellsPanel, useBestSpellsVisible } from './BestSpellsPanel'
+// The tab's viewed level, lifted out of `NewAtLevelPanel` the day a second panel needed it.
+import { useViewedLevel } from './viewedLevel'
 // The RIGHT column, whole: the AA ledger, the in-window drops and the progress feed, plus the
 // `FeedItem` shape `buildFeed` below fills. Split out at the measured max-lines ceiling (JOS-300),
 // on the LevelingHeroes precedent — the column is a composition over a scope and nothing else here
@@ -419,6 +425,8 @@ function ChartsColumn(p: {
   available: SliceId[]
   onPick: (id: SliceId) => void
   onCustom: (range: SliceRange) => void
+  /** The RAW custom pick, so the two datetime fields display what was typed (JOS-436). */
+  custom: SliceRange | null
 }): JSX.Element {
   const { chrome, scope, charts } = p
   return (
@@ -431,7 +439,14 @@ function ChartsColumn(p: {
           prefix is unchanged — `ScopeBar` spells the slice half's testids `leveling-slice…`. Since
           JOS-301 it is ONE row of controls with ONE caption line under it, so this is a single band
           of the column rather than the three stacked bars the owner called unbalanced. */}
-      <ScopeBar available={p.available} slice={p.slice} onPick={p.onPick} onCustom={p.onCustom} testId="leveling" />
+      <ScopeBar
+        available={p.available}
+        slice={p.slice}
+        onPick={p.onPick}
+        onCustom={p.onCustom}
+        custom={p.custom}
+        testId="leveling"
+      />
       <AaOverTimePanel points={p.aaPoints} drawn={charts.aaVisible} aaEarned={p.aaEarned} chrome={chrome} />
       <LevelOverTimePanel
         segments={charts.segVisible}
@@ -445,6 +460,49 @@ function ChartsColumn(p: {
       {/* ALWAYS mounted since JOS-75: it is the window's own read, narrowed by a drag while one
           exists. Below the plots it explains, so the picture stays the first thing on the tab. */}
       <RangeStatsPanel stats={scope.stats} scope={scope.kind} onClear={charts.clear} />
+    </Stack>
+  )
+}
+
+/**
+ * THE RIGHT COLUMN. It used to BE `LedgerColumn` and to exist only in the charted state, on the
+ * argument that all three of that component's panels are reads of a SCOPE and there is no scope
+ * without a domain to draw. The argument still governs the ledger; it never governed the COLUMN,
+ * and since JOS-445 the column has a second tenant that answers to the LOADOUT rather than to a
+ * scope — a fresh character with two dings has no charts and still wants to know which nuke is his
+ * best. So either tenant alone is enough for there to be a column, and the wrapper owns the width,
+ * because sizing has to sit on the box that decides whether there is a column at all.
+ *
+ * `present` is asked by the caller rather than derived here: `columnsInfo` in
+ * tests/e2e/levelingLayoutSteps.mts counts the bands of `leveling-columns`, and a band drawn around
+ * two absent panels would be a column with nothing in it. The charted count is still exactly two.
+ */
+function RightColumn(p: {
+  present: boolean
+  level: number
+  charted: { scope: ScopedStats } | null
+  spends: AASpendEvent[]
+  allocated: number
+  feed: FeedItem[]
+  onOpenLoot?: (item?: string) => void
+}): JSX.Element | null {
+  if (!p.present) return null
+  return (
+    <Stack
+      spacing={2}
+      sx={{ flex: { xs: '0 0 auto', lg: 1 }, minWidth: { lg: 260 } }}
+      data-testid="leveling-right-column"
+    >
+      <BestSpellsPanel level={p.level} />
+      {p.charted && (
+        <LedgerColumn
+          spends={p.spends}
+          allocated={p.allocated}
+          scope={p.charted.scope}
+          feed={p.feed}
+          onOpenItem={p.onOpenLoot}
+        />
+      )}
     </Stack>
   )
 }
@@ -521,7 +579,7 @@ export default function LevelingView({
   // now, and a session that spans a loadout swap sums `levelEquiv` straight across the boundary. The
   // Loot ledger's own opening (`All`, hiding nothing) is untouched — useTimeslice's header states
   // why those two coexist under one shared pick.
-  const { bounds, available, slice, setId, setCustom } = useTimeslice(useExtraTs(sortedLevels, aaCumulative), 'zoneSession')
+  const { bounds, available, slice, setId, setCustom, custom } = useTimeslice(useExtraTs(sortedLevels, aaCumulative), 'zoneSession')
   const charts = useLevelingCharts({ prog, aas: aaCumulative, segments: levelSegments, slice, bounds })
   // The SCOPE on its own — the only one of the three the reads below need before the charted gate
   // has been asked. `chrome` and `curve` are null on exactly the same condition it is, and all
@@ -534,10 +592,19 @@ export default function LevelingView({
   const nothing = sortedLevels.length === 0 && sortedAAs.length === 0
   // ONE GATE, TWO PLACEMENTS — see `chartedOf` for why the test is not spelled inline any more.
   const charted = chartedOf(nothing, charts)
+  // THE VIEWED LEVEL IS THE TAB'S SINCE JOS-445. It used to be private to `NewAtLevelPanel`; the
+  // best-spells readout in the RIGHT column ranks against the same number, and the owner's ask is
+  // that stepping the level re-ranks it. One state, one stepper, two columns.
+  const viewed = useViewedLevel(currentLevel)
+  // THE SECOND REASON THE RIGHT COLUMN EXISTS (JOS-445) — one gate, two placements, the `chartedOf`
+  // arrangement: the panel decides whether it can say anything and the column asks the same
+  // question before drawing a band around it.
+  const bestSpells = useBestSpellsVisible()
   // One props object, two placements (see both call sites): the panel is the same surface in the
-  // charted and the chart-less state, and spelling its four props twice is how they drift.
+  // charted and the chart-less state, and spelling its props twice is how they drift.
   const unlockPanel = {
     currentLevel,
+    viewed,
     focusLevel,
     focusNonce,
     onFocusConsumed: onFocusConsumed ?? ((): void => undefined)
@@ -608,6 +675,7 @@ export default function LevelingView({
               available={available}
               onPick={setId}
               onCustom={setCustom}
+              custom={custom}
             />
           ) : (
             <Typography color="text.secondary" sx={{ p: 2 }} data-testid="leveling-empty">
@@ -638,18 +706,15 @@ export default function LevelingView({
           <NewAtLevelPanel {...unlockPanel} />
         </Stack>
 
-        {/* THE RIGHT COLUMN, and only in the charted state — all three of its panels are reads of
-            a SCOPE, and there is no scope without a domain to draw. Its absence is what leaves the
-            left wrapper alone in the row on a log with too few dings to chart. */}
-        {charted && (
-          <LedgerColumn
-            spends={spends}
-            allocated={aa.aaSpent}
-            scope={charted.scope}
-            feed={scopedFeed}
-            onOpenItem={onOpenLoot}
-          />
-        )}
+        <RightColumn
+          present={bestSpells || charted !== null}
+          level={viewed.level}
+          charted={charted}
+          spends={spends}
+          allocated={aa.aaSpent}
+          feed={scopedFeed}
+          onOpenLoot={onOpenLoot}
+        />
       </Stack>
     </Stack>
   )

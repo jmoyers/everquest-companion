@@ -194,6 +194,26 @@ const overlayApi = {
     return () => ipcRenderer.removeListener(IPC.onScopeSelection, listener)
   },
 
+  // ---- the app-wide SESSION MARKS (JOS-436 store, JOS-322 seam) ----
+  // THE SAME THREE MEMBERS, UNDER THE SAME NAMES, as the main app's bridge (preload/windows.ts) —
+  // the scope-selection trio's arrangement applied to the third cross-window fact.
+  //
+  // THE SETTER IS PRESENT HERE, unlike the buff allow-list below, and the owner ruled it so
+  // (2026-08-21): the zone meter's title bar carries a small "New session" beside the Loot bar's
+  // affordance, because the report this came from — *so i can pop a new session when i reset the
+  // instance* — describes somebody looking at a floating meter over the game, not at a tab.
+  /** The marks in force everywhere, ascending — for hydrating a window that mounted after the last press. */
+  getSessionMarks: (): Promise<number[]> => ipcRenderer.invoke(IPC.sessionMarksGet),
+  /** "The user pressed New session." NO ARGUMENT: main stamps the instant once, so the loot split
+   *  and the engine split share it. Resolves to the new mark list. */
+  addSessionMark: (): Promise<number[]> => ipcRenderer.invoke(IPC.sessionMarkAdd),
+  /** Subscribe to presses made in ANY window. Payload is the whole ascending list. */
+  onSessionMarks: (cb: (m: number[]) => void): (() => void) => {
+    const listener = (_e: unknown, m: number[]): void => cb(m)
+    ipcRenderer.on(IPC.onSessionMarks, listener)
+    return () => ipcRenderer.removeListener(IPC.onSessionMarks, listener)
+  },
+
   // ---- the buff/debuff TRACKING ALLOW-LIST (JOS-168) ----
   // TWO of the three members the app bridge carries (preload/buffAllow.ts), under the SAME names,
   // for the fight-selection trio's reason: one fact, one name, two windows, and ONE renderer hook

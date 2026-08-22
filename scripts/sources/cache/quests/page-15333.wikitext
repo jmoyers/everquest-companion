@@ -22,7 +22,7 @@
 
 == Reward ==
 
-<ul><li>  [[Jaxan's Jig o' Vigor|Song: Jaxan's Jig o' Vigor]]
+<ul><li>  [[Selo's Accelerando|Song: Selo's Accelerando]]
 </li></ul>
 
 <ul><li>  1 silver
@@ -80,7 +80,7 @@ When you hand her the flute from the hermit...
 
 You receive 1 silver
 
-You receive [[Winds of Karana sheet 1]].
+You receive [[Winds of Karana sheet 2]].
 
 Now that you have both pages of sheet music, go back to Vhalen and give them both to him.
 
@@ -96,7 +96,7 @@ Now that you have both pages of sheet music, go back to Vhalen and give them bot
 
 {{YouGainExperience}}
 
-You receive [[Jaxan's Jig o' Vigor|Song: Jaxan's Jig o' Vigor]].
+You receive [[Selo's Accelerando|Song: Selo's Accelerando]].
 
 ==Alternative route==
 

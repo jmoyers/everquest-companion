@@ -1,6 +1,6 @@
 {{Classic Era}}
 :''For the overview of the many orc belt quests, see [[Orc Belt Quests]].''
-[[File:npc_kaglari.png|frame|Kaglari]]
+[[File:npc_kaglari.png|thumb|Kaglari]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Grobb]]

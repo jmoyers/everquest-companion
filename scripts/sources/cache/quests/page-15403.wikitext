@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_gren_frikniller.png|frame|Gren Frikniller]]
+[[File:npc_gren_frikniller.png|Gren Frikniller|thumb|392x392px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Freeport|East Freeport]]

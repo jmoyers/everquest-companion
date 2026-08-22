@@ -43,6 +43,14 @@ You say, 'What better ore?'
 
 ---
 
+Upon handing Crusader Iktra (4) [[Metal Bits]] (made via [[Blacksmithing]] 2 [[Small Pieces of Ore]] & 1 [[Water Flask]] - both available from [[Klok Rento]] in the [[New Sebilis Expedition]]. If you have poor faction, use the [[Sneak]] skill to sneak behind the merchant, right click and purchase.
+
+[[Crusader Iktra]] says 'Thank you, [Race]. This will go a ways towards rebuilding our ships.'
+
+Your faction standing with New Sebilisian Expedition has been adjusted by 5.
+
+---
+
 '''[[Small Piece of High Quality Ore]]''' can drop from goblins in zones like [[Permafrost]], [[Solusek's Eye]], and [[High Keep]]. Pieces and [[Small Brick of High Quality Ore]] can also be obtained via Blacksmithing by breaking down Fine Steel weapons at a forge. 
 
 ---

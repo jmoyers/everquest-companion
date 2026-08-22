@@ -25,6 +25,14 @@
 <ul><li>  {{:Runescale Cloak}}
 </li></ul>
 
+== Checklist ==
+
+{{CheckboxList}}
+*[[Lizardscale Cloak]] from [[Tae Ew Templar]] in [[Cazic Thule]]
+*[[Rune of Scale]] from [[a saltwater croc]] in [[Upper Guk]]
+*[[Rune of Scale]] from [[a deepwater crocodile]] and [[a deepwater caiman]] in [[Oasis of Marr]]
+*[[Rune of Scale]] from [[a firescale crocodile]] in [[Lavastorm]]
+
 == Walkthrough ==
 
 ''This quest begins with Vilissia in the Temple of Solusek Ro.''

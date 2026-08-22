@@ -61,7 +61,6 @@ You say, 'What Crushbone runners'
 * Your faction standing with [[Crushbone Orcs]] got worse.
 * Your faction standing with [[Emerald Warriors]] got better.
 * Your faction standing with [[Faydarks Champions]] got better.
-* Your faction standing with [[Indigo Brotherhood]] got worse.
 * Your faction standing with [[Storm Guard]] got better.
 </div>
 
@@ -88,9 +87,8 @@ You receive 1 gold, 7 silver, 6 copper pieces.
 : General Jyleel says, 'So, the Teir'Dal are behind the recent advances of the orcs?!! Your news has shed new light on their union. It is time to step forth and prove yourself a [faithful paladin of this court].'
 
 <div class="facblock">
-* Your faction standing with [[Anti-Mage]] got better.
-* Your faction standing with [[Clerics of Tunare]] got better.
-* Your faction standing with [[King Tearis Thex]] got better.
+* Your faction standing with [[Clerics of Tunare]] got better. (10)
+* Your faction standing with [[King Tearis Thex]] got better. (10)
 </div>
 
 {{YouGainExperience}}

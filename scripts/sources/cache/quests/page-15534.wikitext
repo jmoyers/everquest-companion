@@ -1,4 +1,4 @@
-[[File:npc_rathmana_allin.png|frame|Rathmana Allin]]
+[[File:npc_rathmana_allin.png|thumb|Rathmana Allin]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Southern Desert of Ro]]

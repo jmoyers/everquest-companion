@@ -14,6 +14,7 @@
 // still reaches the whole registry from main's side.
 
 import type { InventoryDump } from '../../shared/outputs/inventory'
+import { parseAchievementsDump, type AchievementsDump } from '../../shared/outputs/achievements'
 import { outputKind, type OutputKindId } from '../../shared/outputs/kinds'
 import { parseInventoryDump } from './inventoryParse'
 
@@ -34,8 +35,19 @@ export interface InventoryOutput {
   dump: InventoryDump
 }
 
+/**
+ * The achievements kind's payload (JOS-429). Unlike inventory, the PARSE is shared rather than
+ * main's: the row model is what the renderer joins against the Sky quest set, so splitting the
+ * format across the two halves of the app would leave neither able to state it. The header of
+ * shared/outputs/achievements.ts carries the measured format.
+ */
+export interface AchievementsOutput {
+  kind: 'achievements'
+  dump: AchievementsDump
+}
+
 /** The parsed payload of each supported kind: a union with one member per graduated kind. */
-export type OutputData = InventoryOutput
+export type OutputData = InventoryOutput | AchievementsOutput
 
 /** A parse either produced a typed payload, or explicitly refused and said why. */
 export type OutputParseResult =
@@ -50,6 +62,9 @@ export function parseOutput(id: OutputKindId, text: string): OutputParseResult {
   const def = outputKind(id)
   if (def.id === 'inventory') {
     return { ok: true, kind: id, data: { kind: 'inventory', dump: parseInventoryDump(text) } }
+  }
+  if (def.id === 'achievements') {
+    return { ok: true, kind: id, data: { kind: 'achievements', dump: parseAchievementsDump(text) } }
   }
   return {
     ok: false,

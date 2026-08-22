@@ -46,7 +46,7 @@ You say, 'Hail, Kirran Mirrah'
 
 : Kirran Mirrah says, 'Ahhhhhhhh! I can't believe that you ---- ahhhhhhhh! Die you, you, you evil evil heretic!'
 
-''--You receive [[Karran's Head]].--''
+''--You receive [[Karran's Head]]. Note that you receive it from the hand-in; you don't actually have to kill Kirran, even if he attacks you.--''
 
 '''Return to Antus and give him [[Karran's Head]].'''
 

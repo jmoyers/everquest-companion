@@ -31,6 +31,7 @@
 
 <ul><li>{{:Flayed Barbarian Hide Mask}}
 <li>{{:Kilt of the Northmen}}
+</li><li> {{:Essence of Barbarian (Wormwood)}}
 </li></ul>
 
 

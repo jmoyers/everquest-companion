@@ -72,6 +72,25 @@ Combat Effect: Haste (Req Level 30)<br>
 *Berserker Test of Sharpness
 }}</onlyinclude>`
 
+// The 2026-08-18 Mistmoore-rework spelling: `DMG Bonus` (third spelling of the field, after
+// `Dmg Bon` and `Damage Bonus`) — and on the SAME line as Atk Delay, where an unrecognized key
+// would be swallowed into the delay's value. Trimmed from the live Cherista's Fangs page.
+const CHERISTAS_FANGS = `
+<onlyinclude>{{Itempage
+|itemname    = Cherista's Fangs
+|lucy_img_ID = 1179
+|statsblock  =
+Attunable<br>
+Slot: PRIMARY SECONDARY<br>
+Skill: Hand to Hand <br>
+DMG: 10 <br>
+Atk Delay: 28 DMG Bonus: 13<br>
+Effect: [[Lifebite]] (Combat)<br>
+WT: 0.5 Size: SMALL<br>
+Class: MNK BST<br>
+Race: ALL<br>
+}}</onlyinclude>`
+
 const DJARNS_RING = `
 <onlyinclude>{{Itempage
 |notes       = {{Item Lore Missing}}
@@ -155,6 +174,18 @@ test('Skycleaver: weapon line pairs (Skill/Atk Delay, DMG/Dmg Bon) + a Combat Ef
   assert.equal(damageRatio(s.dmg, s.atkDelay)?.toFixed(2), '0.86')
 })
 
+test("Cherista's Fangs: same-line `Atk Delay: N DMG Bonus: M` — the third dmgBonus spelling parses", () => {
+  const k = parseItemWikitext("Cherista's Fangs", CHERISTAS_FANGS)
+  const s = k.stats
+  assert.ok(s)
+  assert.equal(s.skill, 'Hand to Hand')
+  assert.equal(s.dmg, 10)
+  assert.equal(s.atkDelay, 28)
+  assert.equal(s.dmgBonus, 13)
+  assert.deepEqual(s.effects, [{ kind: 'combat', name: 'Lifebite', detail: 'Combat' }])
+  assert.deepEqual(s.classes, ['MNK', 'BST'])
+})
+
 test("Djarn's Amethyst Ring: |focus_effect lives outside the stats block, still an effect row", () => {
   const k = parseItemWikitext("Djarn's Amethyst Ring", DJARNS_RING)
   const s = k.stats
@@ -197,6 +228,54 @@ test('effect kind falls back to the parenthetical when the key is a bare "Effect
   )
   assert.equal(span.effects[0].name, 'Dismiss Summoned')
   assert.equal(span.effects[0].reqLevel, 45)
+})
+
+// ---------------------------------------------------------------------------------
+// JOS-438 — the two shapes that used to mangle an effect line, both from Rain Caller's
+// `Effect: [[Firestrike (proc)]] (Must Equip, Casting Time: Instant, Cooldown: 120s) at Level 40`.
+// The reporter's bow clicky is the case; the parse is the mechanism.
+// ---------------------------------------------------------------------------------
+
+test('JOS-438: a Cooldown: inside the effect parenthetical does not split the line', () => {
+  // `Cooldown` is a real top-level stat key, so the key scanner used to cut the value at it —
+  // leaving an unbalanced `(` in the NAME and throwing the socket detail away entirely.
+  const s = parseStatsBlock('Effect: [[Feign Death]] (Must Equip, Casting Time: Instant, Cooldown: 300 seconds.) at Level 45<br>')
+  assert.deepEqual(s.effects, [
+    {
+      kind: 'click',
+      name: 'Feign Death',
+      detail: 'Must Equip, Casting Time: Instant, Cooldown: 300 seconds.',
+      reqLevel: 45
+    }
+  ])
+  // A `Cooldown:` on its OWN line is still an ordinary stat — the fix narrows nothing.
+  assert.deepEqual(parseStatsBlock('Cooldown: 120s<br>').stats, [{ key: 'COOLDOWN', value: '120s' }])
+})
+
+test("JOS-438: the wiki's page-name suffix is not the socket — Rain Caller's Firestrike is a CLICK", () => {
+  // `[[Firestrike (proc)]]` is a DISAMBIGUATION on the spell's wiki page, not a statement about
+  // the item's socket. Reading the first parenthetical made `(proc)` the detail, which left the
+  // effect kind unclassifiable and the name carrying the rest of the line.
+  const s = parseStatsBlock('Effect: [[Firestrike (proc)]] (Must Equip, Casting Time: Instant, Cooldown: 120s) at Level 40<br>')
+  assert.deepEqual(s.effects, [
+    {
+      kind: 'click',
+      name: 'Firestrike',
+      detail: 'Must Equip, Casting Time: Instant, Cooldown: 120s',
+      reqLevel: 40
+    }
+  ])
+  // Same shape, a different disambiguator, and an `Any Slot` socket.
+  const probe = parseStatsBlock('Effect: [[Stalking Probe (Spell)]] (Any Slot, Casting Time: Instant)<br>')
+  assert.deepEqual(probe.effects, [
+    { kind: 'click', name: 'Stalking Probe', detail: 'Any Slot, Casting Time: Instant' }
+  ])
+})
+
+test('JOS-438: `at 45` states a level exactly as `at Level 45` does', () => {
+  const s = parseStatsBlock('Effect: [[Promised Renewal]] (Any Slot, Casting Time: 2.0 seconds, Cooldown: 1200 seconds) at 45<br>')
+  assert.equal(s.effects[0].name, 'Promised Renewal')
+  assert.equal(s.effects[0].reqLevel, 45)
 })
 
 test('unrecognized stat-block text is preserved verbatim, never dropped or guessed', () => {

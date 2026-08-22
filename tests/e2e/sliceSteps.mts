@@ -21,6 +21,7 @@
 
 import type { Page } from 'playwright-core'
 import { check, countOf, note, settle } from './appHarness.mjs'
+import type { FixtureLog } from './logFixture.mjs'
 
 const TS_WINDOW = '[data-testid="leveling-slice-window"]'
 /** The ONE caption line under the row of controls (JOS-301) — both clauses live inside it. */
@@ -34,6 +35,14 @@ const DURATION = '[data-testid="leveling-range-duration"]'
 const LOOT_SLICE = '[data-testid="loot-slice"]'
 const LOOT_SUMMARY = '[data-testid="loot-summary"]'
 const LOOT_RATES = '[data-testid="loot-rates"]'
+/** THE SESSION SPLIT (JOS-436) — the reset button and the history picker it creates. */
+const NEW_SESSION = '[data-testid="loot-slice-new-session"]'
+const SESSION_LIST = '[data-testid="loot-slice-session-list"]'
+const SESSION_BUTTON = `${SESSION_LIST} [role="combobox"]`
+/** The custom slice's `To` field — the control the report was literally about. */
+const CUSTOM_TO = '[data-testid="loot-slice-custom-to"]'
+/** What the appended drop is called. Distinctive enough that a miscount is readable. */
+const NEW_DROP = 'Mote of Major Potential'
 /** Narrowest first. Any of these is a real cut of the ledger; `custom` is not one until somebody
  *  types two instants into it, so it is deliberately never a candidate. */
 const NARROW_ORDER = ['h1', 'h6', 'h24', 'd7', 'session', 'zone'] as const
@@ -333,6 +342,144 @@ export async function stepLootSlice(page: Page): Promise<void> {
   const back = await settle(() => textOf(page, LOOT_SUMMARY), (t) => t === all, { timeoutMs: 8000 })
   check('…and All restores the whole ledger, caption and all', back === all, back.replace(/\s+/g, ' '))
   check('…including the loot-per-hour line, byte for byte', (await textOf(page, LOOT_RATES)) === allRates)
+}
+
+/** The two numbers the ledger caption states: how many rows are in the slice, and how many the
+ *  whole record holds. The all-time half is only printed off `All`, where the two are equal — so
+ *  null there is the caption being honest rather than a parse failure. */
+async function summaryCounts(page: Page): Promise<{ sliced: number; total: number | null }> {
+  const text = (await textOf(page, LOOT_SUMMARY)).replace(/\s+/g, ' ')
+  const num = (m: RegExpMatchArray | null): number | null => (m ? Number(m[1].replace(/,/g, '')) : null)
+  return { sliced: num(/^([\d,]+) loot events/.exec(text)) ?? -1, total: num(/of ([\d,]+) all time/.exec(text)) }
+}
+
+/** `<input type="datetime-local">`'s own spelling of an instant — local wall time, no zone. The
+ *  same conversion `SliceBar.toLocalInput` does, re-derived here rather than imported: a test that
+ *  shared the formatter with the code could not catch the formatter. */
+function localInput(at: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+/**
+ * START A NEW SESSION NOW, ON THE DETAILS! RESET MODEL (JOS-436) — the whole ticket, end to end,
+ * against a log that is genuinely still being written.
+ *
+ * *really it would be ideal to just say "start a new session" from now so i can pop a new session
+ * when i reset the instance.*
+ *
+ * WHAT NO UNIT TEST CAN REACH. `tests/sessionSegments.test.mts` pins the tiling and — the part this
+ * ticket is really about — that Σ over the segments equals the unsplit range for every denominator,
+ * including across a silence that straddles the mark. It cannot see the button take a wall-clock
+ * instant, hand it through `useTimeslice` into an open-ended custom range, and have the real loot
+ * module's next delta land on the correct side of it. That is what happens here: the spec presses
+ * the button and then LOOTS SOMETHING, and the three claims are the acceptance criteria verbatim —
+ * the old session's totals are frozen and still selectable, the new one accrues from the click, and
+ * the two of them still add up to the whole record.
+ *
+ * THE APPEND'S INSTANT IS AN INSTRUMENT, not a bet. EQ stamps whole SECONDS, so a line written in
+ * the same second as the click could parse to an instant up to 999 ms BEFORE the mark and land in
+ * the wrong session for reasons that have nothing to do with the code under test. Rounding up to the
+ * next whole second past the click removes that entirely — the stamp is then strictly after the
+ * mark, by construction rather than by timing luck.
+ */
+export async function stepNewSession(page: Page, log: FixtureLog): Promise<void> {
+  if (!check('the ledger carries a one-click "New session"', (await countOf(page, NEW_SESSION)) === 1)) return
+  check(
+    '…and no session picker before the first press — one stretch of play is not a choice',
+    (await countOf(page, SESSION_LIST)) === 0
+  )
+  const before = await summaryCounts(page)
+  if (!check('the ledger is on All, so its count IS the whole record', before.total === null, String(before.total))) {
+    return
+  }
+
+  await page.click(NEW_SESSION, { timeout: 10_000 })
+  const at = new Date(Math.ceil((Date.now() + 1000) / 1000) * 1000)
+  const cut = await settle(() => textOf(page, LOOT_SUMMARY), (t) => /session 2/.test(t), { timeoutMs: 8000 })
+  check('pressing it opens session 2, and the caption says which session you are reading', /session 2/.test(cut),
+    cut.replace(/\s+/g, ' '))
+  check('…and the picker appears, now that there are two stretches to choose between',
+    (await countOf(page, SESSION_LIST)) === 1)
+  const opened = await summaryCounts(page)
+  check(
+    '…holding nothing yet: the new session starts at the CLICK, not at the newest log line',
+    opened.sliced === 0 && opened.total === before.sliced,
+    `${String(opened.sliced)} of ${String(opened.total)} · was ${String(before.sliced)}`
+  )
+
+  log.appendAt(at, `--You have looted a ${NEW_DROP} from a decaying skeleton corpse.--`)
+  const grown = await settle(() => summaryCounts(page), (c) => c.sliced > 0, { timeoutMs: 25_000 })
+  check(
+    'a drop looted AFTER the click accrues to the new session, and only to it',
+    grown.sliced === 1,
+    `${String(grown.sliced)} of ${String(grown.total)} all time`
+  )
+
+  await stepBrowseOldSession(page, before.sliced)
+  await stepFutureEndSticks(page)
+  await page.click('[data-testid="loot-slice-all"]', { timeout: 10_000 })
+  const back = await settle(() => summaryCounts(page), (c) => c.total === null, { timeoutMs: 8000 })
+  check('All restores the whole ledger, the new drop included', back.sliced === before.sliced + 1,
+    `${String(back.sliced)} · was ${String(before.sliced)}`)
+}
+
+/**
+ * THE OLD REFERENCE IS KEPT (the owner's words) — browse back to it and prove it did not move.
+ *
+ * Details! rule 4: browsing is a pick, not a mutation. Session 1 must hold exactly what the whole
+ * ledger held at the instant of the click — not one row more, even though the record has grown
+ * since — and the two sessions must still tile the record between them.
+ */
+async function stepBrowseOldSession(page: Page, atClick: number): Promise<void> {
+  await page.click(SESSION_BUTTON, { timeout: 10_000 })
+  await page.click('[data-testid="loot-slice-session-opt-1"]', { timeout: 10_000 })
+  const said = await settle(() => textOf(page, LOOT_SUMMARY), (t) => /session 1/.test(t), { timeoutMs: 8000 })
+  if (!check('the history picker offers the closed session, and picking it names it in the caption',
+    /session 1/.test(said), said.replace(/\s+/g, ' '))) return
+  const read = await summaryCounts(page)
+  check(
+    'the session the reset closed is still selectable, holding exactly what it held at the click',
+    read.sliced === atClick,
+    `session 1 has ${String(read.sliced)}, the ledger had ${String(atClick)} when the button was pressed`
+  )
+  check(
+    '…and the two sessions tile the record — every drop is in exactly one of them',
+    read.total !== null && read.sliced + 1 === read.total,
+    `${String(read.sliced)} + 1 vs ${String(read.total)} all time`
+  )
+}
+
+/**
+ * THE SYMPTOM THE AFFORDANCE OBVIATES, FIXED IN PASSING (JOS-436): *cannot select a future date on
+ * the end time.*
+ *
+ * The field used to re-render from the CLAMPED slice, so an end past the newest log line snapped
+ * straight back to it while the reporter was typing. The clamp itself is right and stays — nothing
+ * happened after the last line — so what moved is which range the control DISPLAYS. Only a real
+ * render can show it: the value is written by React on every commit, and no unit test holds a
+ * controlled input across one.
+ */
+async function stepFutureEndSticks(page: Page): Promise<void> {
+  if ((await countOf(page, CUSTOM_TO)) !== 1) {
+    note('the custom range fields are not mounted, so there is no end time to type into')
+    return
+  }
+  // MUI puts an extra prop on whichever node it considers the root, and that has moved between
+  // majors — resolve it once rather than betting on this version's answer.
+  const field = (await countOf(page, `${CUSTOM_TO} input`)) === 1 ? `${CUSTOM_TO} input` : CUSTOM_TO
+  const typed = localInput(new Date(Date.now() + 26 * 60 * 60 * 1000))
+  await page.fill(field, typed)
+  // AN ABSENCE, asserted the way wave E3's law says: poll for the regression — the value CHANGING
+  // out from under what was typed — and only claim it did not happen once the reading has stopped
+  // being given a chance to. The snap-back this covers used to be immediate, on the very next
+  // React commit.
+  const kept = await settle(() => page.inputValue(field), (v) => v !== typed, { timeoutMs: 3000 })
+  check(
+    'an end time in the future STAYS typed — it no longer snaps back to the last log line',
+    kept === typed,
+    `typed ${typed}, field reads ${kept}`
+  )
 }
 
 /**

@@ -42,6 +42,7 @@
 | items_with_effect = 
 <ul><li>{{:White Dragon Helm}}
 </li><li>{{:Deepwater Boots}}
+</li><li> {{:Potion of Shumar's Breath}}
 </li></ul>
 
 | where_to_obtain = 

@@ -1,4 +1,4 @@
-[[File:npc_noxhil_v`sek.png|frame|Noxhil V`Sek]]
+[[File:npc_noxhil_v`sek.png|thumb|Noxhil V`Sek]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Neriak|Neriak Third Gate]]
@@ -92,12 +92,12 @@ You say, 'Who are the Silent Watch?'
 : Loveal S`Nez says, 'I see my expeditionary unit has encountered problems. I must send a dragoon unit to [Befallen] at once. I must not allow the [Thex Mallet] to fall into the hands of some simple adventurer. Here is payment for your quick service.'
 
 <div class='facblock'>
-* Your faction standing with [[The Dead]] got better.
-* Your faction standing with [[Queen Cristanos Thex]] got better.
-* Your faction standing with [[King Aythox Thex]] got worse.
-* Your faction standing with [[Keepers of the Art]] got worse.
-* Your faction standing with [[Eldritch Collective]] got worse.
-* Your faction standing with [[Primordial Malice]] got worse.
+* Your faction standing with [[The Dead]] has been adjusted by 10.
+* Your faction standing with [[Queen Cristanos Thex]] has been adjusted by 5.
+* Your faction standing with [[King Aythox Thex]] has been adjusted by -1.
+* Your faction standing with [[Keepers of the Art]] has been adjusted by -1.
+* Your faction standing with [[Eldritch Collective]] has been adjusted by -1.
+* Your faction standing with [[Primordial Malice]] has been adjusted by -20.
 </div>
 
 {{YouGainExperience}}
@@ -110,15 +110,7 @@ You say, 'What is the Thex Mallet?'
 
 : Loveal S`Nez says, 'All you can know is that the Thex Mallet is desired by our Queen. If we are not successful in its retrieval, it will be our heads which adorn her trophy room. We have learned its location and believe it to be broken into three separate pieces.' 
 
----
-
-Noxhil needs someone to be a courier. He wants you to seek out three individuals and ask them if they have [any messages for Neriak].
-
-* The first person is Kizdean Giz located in the Western Commonlands.
-* The second person Cytodl Krish, is on the second floor of the Inn that is NE of the entrance to the High Hold Keep.
-* I'm not sure where the third one is.
-
-''Need all dialogues, faction hits, quest items, /loc of quest mobs, list of quest rewards.''
+This leads to the [[Thex Mallet Quest]].
 
 [[Category:Quests]]
 [[Category:Neriak Third Gate]]

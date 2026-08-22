@@ -141,7 +141,15 @@ for (const lag of [0, 6_000]) {
     assert.equal(ally[0].total, 8_570)
     assert.equal(ally[0].hits, 72)
     assert.equal(ally[0].misses, 47)
-    assert.equal(sel.outTotal, 72_672, 'you + the ally pet, and nothing else')
+    // AND THE CHARMER HIMSELF HAS A ROW NOW (JOS-430). Scooba is a combatant the log named and no
+    // model of ours claims, so his own swings at his own mobs are recorded as `other` — which is
+    // the owner's 2026-08-20 ruling in one row. It costs the two figures above nothing: the
+    // ally-pet bind is still the ally model's, and your 64,102 is still to the point.
+    const scooba = sel.entities.filter((e) => e.kind === 'other')
+    assert.equal(scooba.length, 1)
+    assert.equal(scooba[0].id, 'member:scooba', 'the same id a group-mate would have — one person, one row')
+    assert.equal(scooba[0].total, 8_725)
+    assert.equal(sel.outTotal, 81_397, 'you 64,102 + his pet 8,570 + the man himself 8,725')
 
     // THE KNIGHT IS THE SOFT-HOSTILE PROOF, and its whole contribution is the assertion: it was
     // bound for two seconds and landed nothing in them.
@@ -154,20 +162,23 @@ for (const lag of [0, 6_000]) {
     }
   })
 
-  test(`W44 (${label}): the PLAYER Scooba is still not a combatant, a hostile or a healer`, { skip: W44.length === 0 && 'fixture not present' }, () => {
+  test(`W44 (${label}): the PLAYER Scooba is never YOURS, never a hostile and never a healer`, { skip: W44.length === 0 && 'fixture not present' }, () => {
     const { eng, lastTs } = replay(W44, lag)
     const ids = [...fights(eng, lastTs).map((f) => f.id), 'zone']
     for (const id of ids) {
       const snap = eng.snapshot(lastTs + 120_000, { selectedId: id, timeline: true })
       const sel = snap.selected!
-      // THE ORIGINAL ASSERTION, RE-EXPRESSED RATHER THAN WEAKENED. Scooba's NAME now appears, on
-      // purpose, inside the label of the row his pet earned — that is the whole feature. What must
-      // still be impossible is Scooba being a SOURCE: a `you`/`pet`/`member` row, a mob in the
-      // incoming list, a target of anybody's swing, or an enemy healer.
-      for (const e of [...sel.entities, ...sel.incoming]) {
-        const isAllyLabel = e.kind === 'allyPet'
-        assert.ok(!/scooba/i.test(e.name) || isAllyLabel, `${id}: Scooba is not a combat source (${e.kind} ${e.name})`)
-        assert.ok(!/^scooba$/i.test(e.id), `${id}: Scooba has no row of his own`)
+      // THE ORIGINAL ASSERTION, RE-EXPRESSED TWICE NOW. JOS-250 made Scooba's NAME appear inside
+      // the label of the row his pet earned; JOS-430 gives him a row of his OWN, as `other`. Both
+      // are the feature. What has never been allowed, and still is not, is Scooba being one of
+      // OURS or one of THEIRS: no `you`/`pet`/`member` row, no entry in the incoming list, no
+      // instant aimed at him, no enemy healing credited to him.
+      for (const e of sel.entities) {
+        const named = e.kind === 'allyPet' || e.kind === 'other'
+        assert.ok(!/scooba/i.test(e.name) || named, `${id}: Scooba is not one of yours (${e.kind} ${e.name})`)
+      }
+      for (const e of sel.incoming) {
+        assert.ok(!/scooba/i.test(e.name), `${id}: Scooba is never something that hits you`)
       }
       assert.equal(sel.enemyHealTotal, 0, `${id}: a player's self-heals are not enemy healing`)
       for (const ev of snap.timeline?.events ?? []) {
@@ -268,7 +279,14 @@ test('W45: the owner\'s own charm still binds, and the pet still attributes', { 
   assert.equal(pet!.hits, 23)
   assert.equal(pet!.misses, 9)
   assert.equal(sel.entities.find((e) => e.id === 'you')!.total, 706)
-  assert.equal(sel.outTotal, 969)
+  // 969 = 706 + 263, and both halves are still exactly what they were. The segment total is 1,026
+  // because two bystanders in the same zone — Rekt (32) and Fickle (25) — are recorded now
+  // (JOS-430); neither is yours, neither is a pet, and neither moves the two numbers above.
+  assert.deepEqual(
+    sel.entities.filter((e) => e.kind === 'other').map((e) => `${e.name}|${String(e.total)}`).sort(),
+    ['Fickle|25', 'Rekt|32']
+  )
+  assert.equal(sel.outTotal, 1_026, '706 + 263 + 57 of other people\'s')
 })
 
 test('W45: the SHORT-LIVED first bind is real, then its own wear-off releases it', { skip: W45.length === 0 && 'fixture not present' }, () => {
@@ -287,12 +305,23 @@ test('W45: the SHORT-LIVED first bind is real, then its own wear-off releases it
   assert.deepEqual(through('16:48:10').charmedPetNames(), ['a kodiak'], 'and bound again')
 })
 
-test('W45: fight segmentation and totals are byte-identical to the pre-fix engine', { skip: W45.length === 0 && 'fixture not present' }, () => {
+test('W45: fight SEGMENTATION is byte-identical, and only recorded bystanders moved a total', { skip: W45.length === 0 && 'fixture not present' }, () => {
   const { eng, lastTs } = replay(W45)
   const fs = fights(eng, lastTs)
-  assert.equal(fs.length, 2)
+  assert.equal(fs.length, 2, 'two fights, exactly as before — nothing new may OPEN or MERGE one')
   assert.equal(fs[0].name, 'a Dervish Cutthroat')
-  assert.equal(fs[0].total, 380)
   assert.equal(fs[1].name, 'an orc legionnaire +2')
-  assert.equal(fs[1].total, 589)
+  // 380 → 388 and 589 → 614: the two bystanders landed 8 and 25 of their own INSIDE these two
+  // fights' windows, and a recorded combatant's damage attaches to an ALREADY-OPEN fight the way
+  // an ally pet's does (world-model law 8's rule — it may join, never open or extend). Their zone
+  // total is 57, so 24 of it fell outside both fights and lives in the zone lane alone — which is
+  // the same accounting a miss out of combat gets, and the proof that no fight was stretched to
+  // reach it.
+  assert.equal(fs[0].total, 388)
+  assert.equal(fs[1].total, 614)
+  const yours = (id: string): number =>
+    (eng.snapshot(lastTs + 120_000, { selectedId: id }).selected?.entities ?? [])
+      .filter((e) => e.kind === 'you' || e.kind === 'pet')
+      .reduce((n, e) => n + e.total, 0)
+  assert.equal(yours(fs[0].id) + yours(fs[1].id), 969, 'you + your pet: the pre-fix 380 + 589')
 })

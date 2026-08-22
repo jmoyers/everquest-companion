@@ -118,6 +118,16 @@ export function formatPpm(n: number): string {
 }
 
 /**
+ * A CLICKS-PER-MINUTE rate (JOS-438): '0.30 cpm'. The same number shape as `formatPpm` and a
+ * DIFFERENT WORD, because that word is the whole of the reported defect — the app was printing
+ * `ppm`, which the reporter read (correctly) as "procs per minute", over two abilities they were
+ * pressing by hand. `cpm` reads the same way for the thing it actually is.
+ */
+export function formatCpm(n: number): string {
+  return `${formatSmall(n)} cpm`
+}
+
+/**
  * Procs per 100 logged swing attempts: '3.52/100'. The only MECHANICALLY correct figure for a
  * chance-on-hit proc — it has none of active time's ambiguity — so it sits beside the ppm
  * headline rather than replacing it. The caller appends the word 'swings' where there is room;

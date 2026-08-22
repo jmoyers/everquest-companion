@@ -52,11 +52,11 @@ Eolorn wants you to find Giz Dinree in East Freeport.  I found her at -367, -109
 Once you find Giz, she tells you that the loot is in a strongbox, and that the last courier was killed by sharks before he could deliver it.  If you swim off shore a little ('''mind the shark guarding it''') you will find a groundspawn named [[A Locked Chest]] (Loc: -406, -1150). Pick the chest up and bring it back to Eolorn for some coin and a minor item.
 
 <div class="facblock">
-* Your faction standing with [[Ebon Mask]] got better.
-* Your faction standing with [[Guards of Qeynos]] got worse.
-* Your faction standing with [[Wolves of the North]] got worse.
-* Your faction standing with [[Guardians of the Vale]] got worse.
-* Your faction standing with [[Carson McCabe]] got worse.
+* Your faction standing with [[Ebon Mask]] got better. +10
+* Your faction standing with [[Guards of Qeynos]] got worse. -1
+* Your faction standing with [[Wolves of the North]] got worse. -2
+* Your faction standing with [[Guardians of the Vale]] got worse. -1
+* Your faction standing with [[Carson McCabe]] got worse. -2
 {{exp}}
 </div>
 

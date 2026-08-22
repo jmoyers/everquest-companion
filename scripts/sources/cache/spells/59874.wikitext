@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Elixir of Healing IX
+| spellicon =
+| description = Heals between 270 and 328 hit points every 6 seconds for up to 30 seconds.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Celestial Healing IX]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Celestial Healing IX}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Current HP by 299 per tick  (Random: 270 to 328) }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 30 seconds
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your wounds begin to heal.
+| msg_cast_on_other = Someone  drinks an elixir of healing.
+| msg_wears_off = The elixir's effect fades.
+}}

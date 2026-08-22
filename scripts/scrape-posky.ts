@@ -27,6 +27,15 @@ async function main(): Promise<void> {
   console.log(`Scraping with source: ${source.label}\n`)
   const data = await source.scrape()
 
+  // NEVER WRITE A GUTTED FILE (2026-08-22): a wiki restructure once renamed every class heading,
+  // the parser found nothing, and this script overwrote the committed 95-quest dataset with an
+  // empty one and exited 0. Zero quests is never a scrape result — it is a parser that stopped
+  // matching the page, and the only honest outcome is a loud failure that leaves the file alone.
+  if (data.quests.length === 0) {
+    console.error('\nRefusing to write: the scrape produced 0 quests (parser no longer matches the page?)')
+    process.exit(1)
+  }
+
   const here = dirname(fileURLToPath(import.meta.url))
   const outDir = resolve(here, `../src/renderer/src/data/${source.id}`)
   mkdirSync(outDir, { recursive: true })

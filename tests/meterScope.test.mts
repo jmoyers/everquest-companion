@@ -14,6 +14,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   memberKeyOf,
   scopeHealers,
@@ -86,12 +87,16 @@ function healer(id: string, kind: HealSourceView['kind'], total: number): HealSo
   } as HealSourceView
 }
 
-/** You, your pet and two group-mates — the shape every assertion below filters. */
+/** You, your pet, two group-mates — and, since JOS-430, a combatant the log named that the roster
+ *  never heard of. `other` is a row like any other to this filter: it carries the same
+ *  `member:<key>` id shape and it is asked the same question of the ROSTER, so Group hides it and
+ *  Everyone shows it without a rule of its own. */
 const ROWS: SourceView[] = [
   src('you', 'you', 1000, 100),
   src('pet:fluffy#1', 'pet', 400, 40),
   src('member:rykkerr', 'member', 600, 60),
-  src('member:dranix', 'member', 200, 20)
+  src('member:dranix', 'member', 200, 20),
+  src('member:scooba', 'other', 300, 30)
 ]
 
 // ── the allowlist ─────────────────────────────────────────────────────────────────────
@@ -200,4 +205,25 @@ test('memberKeyOf reads the roster key back out of a row id, and only for member
   assert.equal(memberKeyOf('member:rykkerr'), 'rykkerr')
   assert.equal(memberKeyOf('you'), null)
   assert.equal(memberKeyOf('pet:fluffy#1'), null)
+})
+
+// ── the two unions, pinned together ───────────────────────────────────────────────────
+
+test('shared/roster.ts ScopeKind still spells the same set as shared/combat.ts SourceKind', () => {
+  // `shared/roster.ts` is PURE (zero imports) so that the roster module, the engine and both
+  // renderer bundles can compile against it, and `shared/combat.ts` already imports `RosterSnap`
+  // from it — so the scope filter restates the kind union rather than importing it back. A
+  // restated union is a union that can drift, and the drift would be SILENT: a seventh kind that
+  // `isScopedKind` has never heard of falls through as "always visible", which is a row the Group
+  // scope cannot hide. So the two lists are compared here, as text, by reading both files.
+  const src = (rel: string): string => readFileSync(new URL(rel, import.meta.url), 'utf8')
+  const union = (text: string, name: string): string[] => {
+    const m = new RegExp(`export type ${name} =([^\\n]*)`).exec(text)
+    assert.ok(m, `could not find "export type ${name}"`)
+    return [...m[1].matchAll(/'([a-zA-Z]+)'/g)].map((x) => x[1]).sort()
+  }
+  assert.deepEqual(
+    union(src('../src/shared/roster.ts'), 'ScopeKind'),
+    union(src('../src/shared/combat.ts'), 'SourceKind')
+  )
 })

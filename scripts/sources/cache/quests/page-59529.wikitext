@@ -1,0 +1,28 @@
+
+<onlyinclude>{{Itempage
+|notes       = {{Item Lore | Once the soul of a cleric who brought benevolence to gnolls.. }}
+|itemname    = Burning Soul of the Pious
+|lucy_img_ID = 
+|statsblock  = 
+No Trade, Quest<br>
+Size: TINY<br>
+Class: None<br>
+Race: None<br>
+|bookcontents = 
+:After clicked on:
+As you stare into the fading embers within your palm, you are haunted by the visage of Brother Hayle and your decision to slay him. What temptation drove you to this madness? Within moments, a voice fills your head. "You've done well. This loathsome soul sought to spread their own piety into the minds of gnolls, disgracing the blessing of decay I've bestowed upon them." As the voice speaks, you feel a churn in your stomach as if you are about to be sick. "If you wish to understand your actions, seek out my servant, Lord Grimrot. Bestow upon them my gift through your hands, a dark reaver, and a token of your loyalty, the soul you have claimed. Only though them will you learn the truth."
+
+|dropsfrom = 
+
+[[Splitpaw Lair]]
+
+* [[Brother Hayle]]
+
+|relatedquests = 
+* [[The Torrid Corruptor]]
+
+}}</onlyinclude>
+
+[[Category:Quests]]
+[[Category:Paladin Quests]]
+[[Category:Shadow Knight Quests]]

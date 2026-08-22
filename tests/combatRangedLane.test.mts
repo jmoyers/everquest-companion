@@ -324,18 +324,25 @@ test('R5: the real bow lines in the committed fixtures each lane Ranged', { skip
   assert.equal(points, 76, '1 + 15 + 60')
 })
 
-test('W57: the window carries a real bow, and the meter shows nothing — because the archer is a stranger', { skip: SKIP57 }, () => {
-  // THE POINT OF THIS WINDOW. Sinzar lands two bow hits and whiffs a third while the owner is
-  // deep in his own fight with Commander Yarik. Sinzar is not the owner, not his pet and not a
-  // rostered group member (no group line names him anywhere in the log), so routing.ts
-  // `classify()` returns 'ignore' and his damage never reaches an aggregate. That is existing,
-  // correct behaviour and this change must not have altered it: parsing a line into a new lane
-  // is not the same as ADMITTING it.
+test('W57: the stranger\'s bow gets a row of its own, and none of YOUR lanes move', { skip: SKIP57 }, () => {
+  // THE POINT OF THIS WINDOW, AND THE ONE CLAIM JOS-430 REVERSED. Sinzar lands two bow hits and
+  // whiffs a third while the owner is deep in his own fight with Commander Yarik. Sinzar is not
+  // the owner, not his pet and not a rostered group member (no group line names him anywhere in
+  // the log), so `classify()` used to return 'ignore' and his damage never reached an aggregate.
+  //
+  // The owner's 2026-08-20 ruling says the opposite: Everyone means ANY fight the log can see, so
+  // an archer shooting a mob beside you is a row. He is `other` — the log named him, and nothing
+  // claims him — and his damage lands under `Ranged`, the lane JOS-92 built for exactly this line.
+  //
+  // WHAT DID NOT MOVE IS THE WHOLE REST OF THE TEST, and that is the law-8 tripwire: every one of
+  // the owner's own lanes and category totals below is the same figure it was before either change.
   const { skills, categories, catSkills, outTotal } = laneRollup(W57)
   assert.equal(skills.has('you|Ranged'), false, 'you did not shoot — no lane is invented')
   assert.equal(skills.has('pet|Ranged'), false)
   assert.equal(skills.has('enemy|Ranged'), false)
   assert.equal(skills.has('member|Ranged'), false, 'Sinzar is not a rostered member')
+  // …he is a combatant the log named, so his two landed shots (15 + 1) are his own row's Ranged lane.
+  lane(skills, 'other|Ranged', 16, 2)
 
   // EVERY FIGURE BELOW IS THE PRE-CHANGE VALUE, taken from the whole-fixture law-8 dump. The
   // owner's Commander Yarik fight: seven lanes, none of which may move by a point.
@@ -360,7 +367,12 @@ test('W57: the window carries a real bow, and the meter shows nothing — becaus
   assert.equal(categories.get('you|spell'), 746)
   assert.equal(categories.get('you|dot'), 94)
   assert.equal(categories.get('enemy|melee'), 519)
-  assert.equal(outTotal, 2254)
+  // OUT-TOTAL, BEFORE AND AFTER, said as arithmetic rather than as one frozen integer: 2,254 was
+  // the pre-JOS-430 figure AND it is exactly the sum of the owner's own three categories, because
+  // his rows were the only rows there were. The segment total now also carries the 653 the archers
+  // in the same zone dealt to their own mobs — which is the ruling, visible as a number.
+  assert.equal(1414 + 746 + 94, 2254, 'your own rows still sum to the whole of the old total')
+  assert.equal(outTotal, 2907, '…and the segment now also holds 653 of other people\'s')
   const sum = (names: string[]): number =>
     names.reduce((n, k) => n + (catSkills.get(`you|melee|${k}`)?.total ?? 0), 0)
   assert.equal(sum(['Melee', 'Backstab', 'Bash', 'Frenzy', 'Kick', 'Smite', 'Ranged']), 1414)
@@ -368,11 +380,14 @@ test('W57: the window carries a real bow, and the meter shows nothing — becaus
 
 test('W58: a CRITICAL bow shot beside the owner\'s own pull, and his numbers are untouched', { skip: SKIP58 }, () => {
   // `Brakk shoots a gloomwater mermaid for 60 points of damage. (Critical)` at 16:09:52, while
-  // the owner slays two gloomstalker mermaids around it. Same admission rule as W57 — Brakk is a
-  // stranger — so the crit is parsed into the Ranged lane and admitted nowhere.
+  // the owner slays two gloomstalker mermaids around it. Same rule as W57 — Brakk is a stranger,
+  // so since JOS-430 the crit lands on a row of his own rather than on the floor, and the CRIT
+  // FLAG rides with it: a recorded row's crit rate is its own, derived from the same fields yours
+  // is. The owner's numbers below are the pre-change figures, to the point.
   const { skills, categories, outTotal, inTotal } = laneRollup(W58)
   assert.equal(skills.has('you|Ranged'), false)
   assert.equal(skills.has('member|Ranged'), false)
+  lane(skills, 'other|Ranged', 60, 1) // Brakk's critical bow shot, on Brakk's own row
   // 2,633 over 17 hits since JOS-163: the 4 `You strike` swings that used to be inside this
   // number (257 damage, hand-tallied off the fixture) moved to their own neutral row. This window
   // carries no `You will now use` line, so the verb earns the row and nothing names it. The melee
@@ -385,8 +400,10 @@ test('W58: a CRITICAL bow shot beside the owner\'s own pull, and his numbers are
   lane(skills, 'enemy|thorns', 138, 23)
   assert.equal(categories.get('you|melee'), 3142)
   assert.equal(categories.get('enemy|ds'), 138)
-  assert.equal(outTotal, 3142)
-  assert.equal(inTotal, 313)
+  // Same before/after arithmetic as W57: 3,142 was the whole segment when your rows were the only
+  // rows, and it still is the whole of YOURS; the other 398 belongs to the people around you.
+  assert.equal(outTotal, 3540, 'you 3,142 + 398 recorded for everyone else in the zone')
+  assert.equal(inTotal, 313, 'and the INCOMING meter is untouched — it is still only what hits YOU')
 })
 
 test('W57 + THE INJECTED SELF ARM: your bow gets its own bar beside melee, and moves no other number', { skip: SKIP57 }, () => {

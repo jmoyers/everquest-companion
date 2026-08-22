@@ -61,7 +61,11 @@ You receive 9 copper from Leraena Shelyrak.
 
 == Notes ==
 
-<ul><li>Aderius will give you the note at scowling faction.</li></ul>
+<ul>
+<li>Requires amiable or better faction with [[Leraena Shelyrak]] to turn in.</li>
+<li>Another way to turn the notes into [[Leraena Shelyrak]] that worked for me is by using invisibility to get into the hallway and then by sneaking behind her just barely enough past the wall. I was threateningly to her, and after sneaking I was indifferently.
+</ul>
 
 [[Category:Quests]]
+[[Category:Erudin]]
 [[Category:The Warrens]]

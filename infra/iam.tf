@@ -53,10 +53,11 @@ data "aws_iam_policy_document" "lambda_inline" {
   # Only enough to SIGN the presigned POST. The handler never uploads anything
   # itself and can never read back what a client uploaded.
   #
-  # TWO PREFIXES SINCE JOS-296, NOT A WILDCARD ON THE BUCKET. A presigned POST can only be
+  # THREE PREFIXES SINCE JOS-441, NOT A WILDCARD ON THE BUCKET. A presigned POST can only be
   # signed for a key the signer itself may PUT, so this list IS the set of paths a client can be
-  # handed the right to write. `logs/*` + `inventory/*` says exactly that; `${bucket}/*` would
-  # widen a public write endpoint's reach for the sake of one line.
+  # handed the right to write. Naming each one says exactly that; `${bucket}/*` would widen a
+  # public write endpoint's reach for the sake of one line — and the fact that this list has now
+  # grown twice without becoming a wildcard is the rule working, not friction.
   statement {
     sid    = "PresignAttachmentUploads"
     effect = "Allow"
@@ -66,6 +67,7 @@ data "aws_iam_policy_document" "lambda_inline" {
     resources = [
       "${aws_s3_bucket.logs.arn}/logs/*",
       "${aws_s3_bucket.logs.arn}/inventory/*",
+      "${aws_s3_bucket.logs.arn}/achievements/*",
     ]
   }
 }
@@ -152,9 +154,9 @@ data "aws_iam_policy_document" "triage_inline" {
     resources = [aws_dsql_cluster.feedback.arn]
   }
 
-  # DeleteObject is what makes `forget` / `wipe` real rather than a promise — and since JOS-296
-  # a report can carry TWO objects, so both prefixes are listed here or `forget` would leave the
-  # inventory dump behind while telling the requester it was destroyed.
+  # DeleteObject is what makes `forget` / `wipe` real rather than a promise — and since JOS-441
+  # a report can carry THREE objects, so every prefix is listed here or `forget` would leave one
+  # of them behind while telling the requester it was destroyed.
   statement {
     sid    = "TriageAttachmentObjects"
     effect = "Allow"
@@ -167,6 +169,7 @@ data "aws_iam_policy_document" "triage_inline" {
     resources = [
       "${aws_s3_bucket.logs.arn}/logs/*",
       "${aws_s3_bucket.logs.arn}/inventory/*",
+      "${aws_s3_bucket.logs.arn}/achievements/*",
     ]
   }
 
@@ -179,7 +182,7 @@ data "aws_iam_policy_document" "triage_inline" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["logs/*", "inventory/*"]
+      values   = ["logs/*", "inventory/*", "achievements/*"]
     }
   }
 }

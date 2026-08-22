@@ -51,11 +51,11 @@ You say, 'I will crush the Freeport Militia.'
 Experience gain is negligible (less than 1%) at level 6.
 
 <div class="facblock">
-* Your faction standing with [[Knights of Truth]] got better.
-* Your faction standing with [[Priests of Marr]] got better.
-* Your faction standing with [[Steel Warriors]] got better. 
-* Your faction standing with [[Dismal Rage]] got '''worse'''.
-* Your faction standing with [[Freeport Militia]] got '''worse'''. 
+* Your faction standing with [[Knights of Truth]] got better. (10)
+* Your faction standing with [[Priests of Marr]] got better. (5)
+* Your faction standing with [[Steel Warriors]] got better.  (5)
+* Your faction standing with [[Dismal Rage]] got '''worse'''. (-1)
+* Your faction standing with [[Freeport Militia]] got '''worse'''. (-1)
 </div>
 
 You feel a little better.

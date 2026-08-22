@@ -47,6 +47,16 @@ Text 1 - The Kerran Sha`rr has sensed that something is amiss in Kerra Isle. The
 
 Kerran `Amir spawns on the northern part of the South Island
 
+Kill one for the [[Desecrated Kejaar Totem]].
+
+Faction from the kill:
+
+* Heretics -3
+* Deepwater Knights +5
+* Gate Callers +5
+* Craftkeepers +5
+* Crimson Hands +5
+
 --You have looted a [[Desecrated Kejaar Totem]] from a kerran `amir's corpse.--
 
 * Your task 'Something is Wrrrong' has been updated.

@@ -42,6 +42,7 @@ type Bridge = Window['eq']
 export type FeedbackContext = Awaited<ReturnType<Bridge['getFeedbackContext']>>
 export type FeedbackSlicePreview = NonNullable<Awaited<ReturnType<Bridge['buildFeedbackSlice']>>>
 export type FeedbackInventoryPreview = Awaited<ReturnType<Bridge['buildFeedbackInventory']>>
+export type FeedbackAchievementsPreview = Awaited<ReturnType<Bridge['buildFeedbackAchievements']>>
 export type SubmitResult = Awaited<ReturnType<Bridge['submitFeedback']>>
 
 /** What the dialog is doing right now. `done` renders an outcome instead of the form. */
@@ -163,14 +164,19 @@ export function useLogSlice(active: boolean, windowMinutes: number): LogSliceSta
  * `refresh` is what a "re-read it" affordance calls; the reply always carries either a dump or
  * the named reason there is none, so there is no third "unknown" state to render.
  */
-export interface InventoryDumpState {
-  dump: FeedbackInventoryPreview | null
+export interface DumpPreviewState<T> {
+  dump: T | null
   loading: boolean
   refresh: () => void
 }
 
-export function useInventoryDump(active: boolean): InventoryDumpState {
-  const [dump, setDump] = useState<FeedbackInventoryPreview | null>(null)
+/**
+ * ONE HOOK BODY FOR BOTH DUMPS (JOS-441). The nonce-driven re-read, the alive guard and the
+ * loading flag are facts about "packaging a file main owns while a dialog is open", not about
+ * which file — so the second attachment took a call argument rather than a copied hook.
+ */
+function useDumpPreview<T>(active: boolean, build: () => Promise<T>): DumpPreviewState<T> {
+  const [dump, setDump] = useState<T | null>(null)
   const [loading, setLoading] = useState(false)
   const [nonce, setNonce] = useState(0)
 
@@ -178,8 +184,7 @@ export function useInventoryDump(active: boolean): InventoryDumpState {
     if (!active) return
     let alive = true
     setLoading(true)
-    void window.eq
-      .buildFeedbackInventory()
+    void build()
       .then((d) => {
         if (alive) setDump(d)
       })
@@ -189,6 +194,8 @@ export function useInventoryDump(active: boolean): InventoryDumpState {
     return () => {
       alive = false
     }
+    // `build` is a stable bridge call in both callers; re-reading is driven by `active`/`nonce`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, nonce])
 
   const refresh = useCallback((): void => {
@@ -196,6 +203,18 @@ export function useInventoryDump(active: boolean): InventoryDumpState {
   }, [])
 
   return { dump, loading, refresh }
+}
+
+export type InventoryDumpState = DumpPreviewState<FeedbackInventoryPreview>
+
+export function useInventoryDump(active: boolean): InventoryDumpState {
+  return useDumpPreview(active, () => window.eq.buildFeedbackInventory())
+}
+
+export type AchievementsDumpState = DumpPreviewState<FeedbackAchievementsPreview>
+
+export function useAchievementsDump(active: boolean): AchievementsDumpState {
+  return useDumpPreview(active, () => window.eq.buildFeedbackAchievements())
 }
 
 /** The sentence for each way of having no dump. Pure, so the wording is testable and so the
@@ -215,15 +234,47 @@ export function inventoryProblem(reason: FeedbackInventoryPreview['unavailable']
   }
 }
 
-/** What the attachment lines say once a Send has landed. Pure, and the one place the two
- *  booleans are turned into English, so a report with both cannot claim only one. */
-export function sentMessage(logUploaded: boolean, inventoryUploaded: boolean): string {
-  if (logUploaded && inventoryUploaded) {
-    return 'Thanks - your report, its log slice and your inventory export are in.'
+/** The same four sentences for the achievements dump (JOS-441), naming its own command. Kept as
+ *  a second function rather than a parameterised one because every sentence differs in more than
+ *  the noun, and the `no-dump` line is the one that TEACHES the command. */
+export function achievementsProblem(reason: FeedbackInventoryPreview['unavailable']): string {
+  switch (reason) {
+    case 'no-dump':
+      return 'No achievements export on this machine yet - type /outputfile achievements in game, then re-open this dialog.'
+    case 'unreadable':
+      return 'Your achievements export could not be read - nothing would be attached.'
+    case 'empty':
+      return 'Your achievements export is empty - nothing would be attached.'
+    case 'too-large':
+      return 'Your achievements export is too large to send. It is not trimmed, because a partial one can drop the very rows that explain the bug.'
+    default:
+      return ''
   }
-  if (logUploaded) return 'Thanks - your report and its log slice are in.'
-  if (inventoryUploaded) return 'Thanks - your report and your inventory export are in.'
-  return 'Thanks - your report is in.'
+}
+
+/**
+ * What the attachment lines say once a Send has landed. Pure, and the one place the booleans are
+ * turned into English, so a report with three attachments cannot claim only one.
+ *
+ * BUILT AS A LIST RATHER THAN AS A TRUTH TABLE (JOS-441). Two attachments were four branches;
+ * three would be eight, and four would be sixteen — a shape that grows like that is the wrong
+ * shape. The wording of the one- and two-attachment cases is unchanged, which is what the tests
+ * that predate this pin.
+ */
+export function sentMessage(
+  logUploaded: boolean,
+  inventoryUploaded: boolean,
+  achievementsUploaded: boolean
+): string {
+  const parts = [
+    ...(logUploaded ? ['its log slice'] : []),
+    ...(inventoryUploaded ? ['your inventory export'] : []),
+    ...(achievementsUploaded ? ['your achievements export'] : [])
+  ]
+  if (parts.length === 0) return 'Thanks - your report is in.'
+  if (parts.length === 1) return `Thanks - your report and ${parts[0]} are in.`
+  const last = parts[parts.length - 1]
+  return `Thanks - your report, ${parts.slice(0, -1).join(', ')} and ${last} are in.`
 }
 
 /** Map the typed submit result onto the outcome the dialog renders. Never throws. */
@@ -232,7 +283,7 @@ export function toOutcome(res: SubmitResult): FeedbackOutcome {
     return {
       kind: 'sent',
       reportId: res.reportId,
-      message: sentMessage(res.logUploaded, res.inventoryUploaded)
+      message: sentMessage(res.logUploaded, res.inventoryUploaded, res.achievementsUploaded)
     }
   }
   if (res.queued) {
@@ -351,6 +402,8 @@ export interface FeedbackState {
   setWindowMinutes: (m: number) => void
   attachInventory: boolean
   setAttachInventory: (v: boolean) => void
+  attachAchievements: boolean
+  setAttachAchievements: (v: boolean) => void
   draft: FeedbackDraft
   problem: string | null
   phase: FeedbackPhase
@@ -367,6 +420,7 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
   const [attachLog, setAttachLog] = useState(false)
   const [windowMinutes, setWindowMinutes] = useState<number>(DEFAULT_LOG_WINDOW)
   const [attachInventory, setAttachInventory] = useState(false)
+  const [attachAchievements, setAttachAchievements] = useState(false)
   const [phase, setPhase] = useState<FeedbackPhase>('compose')
   const [outcome, setOutcome] = useState<FeedbackOutcome | null>(null)
 
@@ -386,6 +440,10 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
     // a default-off box on a diagnostic attachment is a box nobody ticks. It is DEFAULT, not
     // silent: the checkbox is visible, states what it sends, and is one click to clear.
     setAttachInventory(type === 'bug')
+    // …and the achievements export on the same terms (JOS-441). ITS OWN BOX, not a shared one:
+    // these are two different files with two different disclosures, and one "send my exports"
+    // tick would be consent to something the user was never shown.
+    setAttachAchievements(type === 'bug')
     setPhase('compose')
     setOutcome(null)
   }, [open, prefill])
@@ -403,6 +461,7 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
     setFields((f) => ({ ...f, type: t }))
     setAttachLog(t === 'bug')
     setAttachInventory(t === 'bug')
+    setAttachAchievements(t === 'bug')
   }, [])
 
   const draft = toDraft(fields)
@@ -415,11 +474,13 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
     track({ t: 'funnelStep', funnel: 'feedback', step: 'sendPressed' })
     const attach = fields.type === 'bug' && attachLog
     const attachInv = fields.type === 'bug' && attachInventory
+    const attachAch = fields.type === 'bug' && attachAchievements
     void window.eq
       .submitFeedback(toDraft(fields), {
         attachLog: attach,
         windowMinutes,
-        attachInventory: attachInv
+        attachInventory: attachInv,
+        attachAchievements: attachAch
       })
       .then((res) => {
         const ending = toOutcome(res)
@@ -434,7 +495,7 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
         setOutcome({ kind: 'error', message: String(err) })
         setPhase('done')
       })
-  }, [fields, attachLog, windowMinutes, attachInventory])
+  }, [fields, attachLog, windowMinutes, attachInventory, attachAchievements])
 
   return {
     fields,
@@ -446,6 +507,8 @@ export function useFeedback(open: boolean, prefill?: FeedbackPrefill): FeedbackS
     setWindowMinutes,
     attachInventory,
     setAttachInventory,
+    attachAchievements,
+    setAttachAchievements,
     draft,
     problem,
     phase,

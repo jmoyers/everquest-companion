@@ -21,6 +21,7 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { LOG_WINDOW_CHOICES, validateDraft, type SubmitErrorCode } from '../../shared/feedback'
 import {
+  buildAchievementsPreview,
   buildInventoryPreview,
   buildLogSlice,
   feedbackContext,
@@ -62,15 +63,19 @@ export function registerFeedbackIpc(): void {
   // renderer cannot turn this into a read-any-file primitive the way a path parameter would.
   ipcMain.handle(IPC.feedbackBuildInventory, async () => await buildInventoryPreview())
 
+  // The achievements dump, on the identical no-arguments terms (JOS-441).
+  ipcMain.handle(IPC.feedbackBuildAchievements, async () => await buildAchievementsPreview())
+
   // Submit. NEVER rejects: a network failure resolves with `{ok:false, queued:true}`.
   ipcMain.handle(IPC.feedbackSubmit, async (_e, draft: unknown, opts: unknown) => {
     const valid = validateDraft(draft)
     if (!valid.ok) return refuse(valid.message, valid.field)
     if (typeof opts !== 'object' || opts === null) return refuse('Missing send options.', 'opts')
-    const { attachLog, windowMinutes, attachInventory } = opts as {
+    const { attachLog, windowMinutes, attachInventory, attachAchievements } = opts as {
       attachLog?: unknown
       windowMinutes?: unknown
       attachInventory?: unknown
+      attachAchievements?: unknown
     }
     if (typeof attachLog !== 'boolean') return refuse('attachLog must be true or false.', 'attachLog')
     if (!isWindowChoice(windowMinutes)) {
@@ -81,6 +86,14 @@ export function registerFeedbackIpc(): void {
     if (typeof attachInventory !== 'boolean') {
       return refuse('attachInventory must be true or false.', 'attachInventory')
     }
-    return await submitFeedback(valid.value, { attachLog, windowMinutes, attachInventory })
+    if (typeof attachAchievements !== 'boolean') {
+      return refuse('attachAchievements must be true or false.', 'attachAchievements')
+    }
+    return await submitFeedback(valid.value, {
+      attachLog,
+      windowMinutes,
+      attachInventory,
+      attachAchievements
+    })
   })
 }

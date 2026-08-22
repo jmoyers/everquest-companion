@@ -1,0 +1,36 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Mana to Hp
+| spellicon =
+| description = Converts the power of your mind into physical health.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Potion of Wrackbane]].
+
+| items_with_effect =
+
+<ul><li> {{:Potion of Wrackbane}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Current HP by 69 }}
+{{SpellSlotRow | 2 | Decrease Current Mana by 180 }}
+
+| skill =
+| mana = 0
+| range = 0
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = Instant
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your mind aches as your body heals.
+| msg_cast_on_other = Someone  winces.
+| msg_wears_off = 
+}}

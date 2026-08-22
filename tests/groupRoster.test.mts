@@ -8,6 +8,14 @@
 // it (§3.5). It was deliberate solo scoping, not a regression, which is exactly why it needed a
 // model rather than a patch: the gate may only widen for people the LOG says are with you.
 //
+// AND THE ROSTER NO LONGER GATES RECORDING AT ALL (JOS-430, owner ruling 2026-08-20 — the
+// record-everything build lives in tests/combatRecordEveryone.test.mts). Every assertion below
+// still holds, because every one of them is about what the ROSTER does; what moved is that a
+// combatant the roster has not learned is now recorded as `other` instead of being dropped, so the
+// two G1 replays differ in a row's KIND rather than in whether the row exists. The roster's real
+// jobs — the engagement licence and the Group allowlist — are unchanged, and the three guardrails
+// at the bottom are the reason that is safe.
+//
 // THE GOLDEN WINDOW is `g1-group-lifecycle.log` — 90 real seconds in The Ruins of Old Guk
 // (Wed Jul 29 01:21–01:25) containing the whole lifecycle: an invite, the join, a four-way
 // ghoul fight in which the member lands 37 hits, a leader handoff and the disband. It was cut
@@ -333,22 +341,27 @@ function replaySolo(lines: string[]): { eng: CombatEngine; lastTs: number } {
   return { eng, lastTs }
 }
 
-test('G1 THE BUG: without a roster the member contributes nothing; with one, they get a row', () => {
-  // Same fixture, same parser, same engine — the ONLY difference is whether the roster module
-  // is wired in. That is the whole diagnosis of the reported defect in one assertion pair.
+test('G1 THE BUG: the roster no longer decides whether the member is RECORDED, only what he is CALLED', () => {
+  // Same fixture, same parser, same engine — the ONLY difference is whether the roster module is
+  // wired in. Until JOS-430 that pair was the whole diagnosis of the reported defect: without the
+  // roster the group-mate had NO ROW AT ALL, because admission gated recording.
+  //
+  // The owner's 2026-08-20 ruling moved that line. Recording is now unconditional, so the two
+  // replays differ only in the row's KIND and its label — and that is the point: a wrong (or
+  // absent) roster can no longer make a number disappear, which is the promise
+  // docs/plans/group-model.md §0 has been making since it was written.
   const solo = replaySolo(G1)
-  assert.equal(
-    zoneSources(solo.eng, solo.lastTs).some((e) => e.kind === 'member'),
-    false,
-    'before: the group-mate is invisible'
-  )
+  const recorded = zoneSources(solo.eng, solo.lastTs).find((e) => e.id === 'member:rykkerr')
+  assert.ok(recorded, 'with NO roster at all, the combatant is still recorded')
+  assert.equal(recorded.kind, 'other', 'as `other` — the log named him, nothing claims him')
+  assert.ok(recorded.total > 1000, `with real damage on it (got ${recorded.total})`)
 
   const r = replay(G1)
   const member = zoneSources(r.eng, r.lastTs).find((e) => e.kind === 'member')
-  assert.ok(member, 'after: the group-mate has a row')
+  assert.ok(member, 'with the roster wired in, the same combatant is a group-mate')
   assert.equal(member.name, 'Rykkerr')
   assert.equal(member.id, 'member:rykkerr', 'keyed by name, never by a minted world instance')
-  assert.ok(member.total > 1000, `and real damage on it (got ${member.total})`)
+  assert.equal(member.total, recorded.total, 'ONE row, ONE number — the kind is all that moved')
 })
 
 test('G1: YOUR OWN numbers are byte-identical whether or not the roster is wired in', () => {
@@ -384,19 +397,27 @@ test('G1: the member NEVER becomes a hostile', () => {
   )
 })
 
-test('G1: the member is admitted only from the JOIN line onward', () => {
+test('G1: he is a MEMBER only from the JOIN line onward — but he is recorded before it', () => {
   // The fixture opens with the member fighting the same mobs two minutes BEFORE the join line
-  // (the invite is its first line). Damage before the join is not group damage — it is a
-  // stranger's — and admitting it retroactively would be inventing evidence.
+  // (the invite is its first line). Calling that damage GROUP damage would be inventing evidence,
+  // so the `member` kind still starts at the join and not a second earlier.
+  //
+  // What changed with JOS-430 is that the damage is no longer thrown away while we wait: the same
+  // swings are recorded as `other` from the first one, so Everyone shows the fight the log can see
+  // and the join UPGRADES a row that already exists rather than starting one.
   const joinIdx = G1.findIndex((l) => l.includes('Rykkerr has joined the group.'))
   assert.ok(joinIdx > 0, 'the fixture really does start before the join')
   const beforeJoin = G1.slice(0, joinIdx)
   const r = replay(beforeJoin)
+  const rows = zoneSources(r.eng, r.lastTs)
   assert.equal(
-    zoneSources(r.eng, r.lastTs).some((e) => e.kind === 'member'),
+    rows.some((e) => e.kind === 'member'),
     false,
-    'nothing booked for the stranger before he was in the group'
+    'nothing is called a group-mate before he was in the group'
   )
+  const other = rows.find((e) => e.id === 'member:rykkerr')
+  assert.ok(other, 'but the stranger fighting beside you is recorded')
+  assert.equal(other.kind, 'other')
 })
 
 // ============================================================================

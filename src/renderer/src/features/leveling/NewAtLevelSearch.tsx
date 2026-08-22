@@ -19,6 +19,7 @@ import { Box, IconButton, InputAdornment, Stack, TextField, Typography } from '@
 import ClearIcon from '@mui/icons-material/Clear'
 import SearchIcon from '@mui/icons-material/Search'
 import type { SpellSetsSnap } from '@shared/spellSets'
+import type { ObservedSpellRanksSnap } from '@shared/spellRanks'
 import type { UnlockSearchResults } from '@shared/unlockSearch'
 import { UnlockList } from './UnlockList'
 
@@ -77,11 +78,14 @@ export function UnlockSearchField({
 export function UnlockSearchResultsList({
   results,
   resolved,
-  sets
+  sets,
+  ranks
 }: {
   results: UnlockSearchResults
   resolved: ReadonlySet<string>
   sets: SpellSetsSnap
+  /** The observed spell ranks (JOS-446), null before hydration. Passed straight through. */
+  ranks: ObservedSpellRanksSnap | null
 }): JSX.Element {
   return (
     <Stack spacing={0.25} data-testid="new-at-level-results">
@@ -91,6 +95,7 @@ export function UnlockSearchResultsList({
         count={results.matched}
         resolved={resolved}
         sets={sets}
+        ranks={ranks}
         empty="no spell in the wiki DB matches that - try a name, a class, a level or a range"
       />
       {results.hidden > 0 && (

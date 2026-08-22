@@ -91,13 +91,17 @@ function ProgressFeedPanel({ feed, scopeLabel }: { feed: FeedItem[]; scopeLabel:
 }
 
 /**
- * The column itself. A third of the WIDTH while there are two columns to share it; below `lg` it
- * is simply the second band of a single column, with a 260px floor it drops there so it cannot
- * push the page sideways. Height is whatever its panels need — since JOS-289 there is no shared
- * fixed height for the two columns to split, and no scroller of its own anywhere inside it except
- * the drops list's earned `maxHeight` ceiling.
+ * The three panels themselves. Height is whatever they need — since JOS-289 there is no shared
+ * fixed height for the two columns to split, and no scroller anywhere inside them except the drops
+ * list's earned `maxHeight` ceiling.
  *
- * IT IS THE CHARTED STATE'S COLUMN ONLY, and that is deliberate: all three panels are reads of a
+ * IT OWNS NO WIDTH SINCE JOS-445, and the move is the same one `ChartsColumn` made under JOS-300.
+ * This used to BE the right column, so it carried the `flex`/`minWidth`; the column now has a
+ * second tenant above it (`BestSpellsPanel`) that renders on a log too thin to chart, so the
+ * wrapper in LevelingView is the right column and sizing belongs on the box that is drawn whenever
+ * EITHER tenant is. Leaving the flex here would nest a sized column inside a sized column.
+ *
+ * THESE THREE ARE STILL THE CHARTED STATE'S, and that is deliberate: all three are reads of a
  * SCOPE, and a scope exists exactly when the charts do. The left column has the opposite
  * obligation (see LevelingView's placement law) — it must render with no log at all.
  */
@@ -109,7 +113,7 @@ export function LedgerColumn(p: {
   onOpenItem?: (item?: string) => void
 }): JSX.Element {
   return (
-    <Stack spacing={2} sx={{ flex: { xs: '0 0 auto', lg: 1 }, minWidth: { lg: 260 } }}>
+    <Stack spacing={2}>
       {/* The AA LEDGER stays full-history on purpose: it is an ACCOUNT of what you have bought,
           and its footer must equal the AA-points-spent hero card. "AA allocated in the last hour"
           is not a thing anyone owns. */}

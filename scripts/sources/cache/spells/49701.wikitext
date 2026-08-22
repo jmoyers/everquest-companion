@@ -34,6 +34,7 @@
 |items_with_effect = 
 
 <ul><li>  {{:Mask of Tinkering}}
+</li><li> {{:Essence of Gnome (Wormwood)}}
 </li></ul>
 
 | where_to_obtain = 

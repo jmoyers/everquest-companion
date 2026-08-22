@@ -29,7 +29,7 @@ The sash quests require "high amiably" faction in order to do. Sneaking only giv
 
 You can check if you have the require faction by saying "what white training sash" to [[Velan Torresk]]. If your faction is insufficient, he will say "I have been watching you, and appreciate the help you've given to the brothers and sisters of the Ashen Order, but I feel that such a vital matter should be left to one of our more trusted members.". If it is sufficient, he will give you details on how to obtain the quest items.
 
-A Human Monk starting out can instantly gain the required faction by simply turning in their newbie note. An Iksar Monk must embark on a long faction grind, which is most simply done by killing Deathfist orcs in the newbie area of Freeport, and in East/West Commonlands. Between 1800 and 2000 orc kills are required to get the necessary faction. If you wish, you can repeat the White Sash quest to gain even more faction, along with Knights of Truth and Silent Fist Clan (Qeynos Monks) faction. You can also complete a few select quests to gain faction, see [[Ashen Order]].
+A Human Monk starting out can instantly gain the required faction by simply turning in their newbie note. An Iksar Monk must embark on a faction grind, which is most simply done by killing Deathfist orcs in the newbie area of Freeport, and in East/West Commonlands. If you wish, you can repeat the White Sash quest to gain even more faction, along with Knights of Truth and Silent Fist Clan (Qeynos Monks) faction. You can also complete a few select quests to gain faction, see [[Ashen Order]].  By far the easiest of these is the [[Note for Konem]] quest, which you can fill your backpack and do quickly 100+ times.
 
 == Rewards ==
 
@@ -150,7 +150,7 @@ Turn the following items in to [[Velan Torresk]] in [[West Freeport]]:
 Turn the following items in to [[Reyia Beslin]] in [[West Freeport]]:
 
 * 1 - [[Blackened Sapphire]] ("the Sapphire of Souls") - This can be found on [[Ekeros]] in the [[Najena]] dungeon. Ekeros is a somewhat rare spawn, you can find him in the room just outside Rathyl's room. Note: a key is needed to get to Ekeros' spawn point. You can either get the key from another player, or you'll have to go after them yourself. Najena has a sequence of keys that open up deeper and deeper parts of the dungeon to you. The Ogre guards drop [[Guard's Keyring]], the first one you'll need. [[BoneCracker]] drops another key, [[The Guard Captain]] drops a third. These are the only keys you need to get into Rathyl's area ([[Rathyl]] himself drops another key that leads you further in toward Najena's room). 
-* 1 - [[Blackened Wand]] - This drops from [[Priest Amiaz]] on the bottom level of [[Befallen]]. (Spawnpoint is in same room with [[The Thaumaturgist]] which is required for [[Monk Headband Quests]]) 
+* 1 - [[Blackened Wand]] - This drops from [[Priest Amiaz]] on the bottom level of [[Befallen]]. (Found at -474, 90, -78. Doesn't have a placeholder anymore, since [[The Thaumaturgist]] has its own spawn point elsewhere in the zone.) 
 * 1 - [[Orange Sash of Order]]
 
 '''Reyia Beslin may be found at -154, -1502, -137.  '''

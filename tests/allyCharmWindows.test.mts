@@ -176,8 +176,22 @@ test('W67: a same-named twin makes the name unreadable, and the credit is ZERO',
   // model says so. What it cannot do is read the name's lines: `A rock golem pierces a rock
   // golem` is the very next line and the window never stops printing them.
   assert.equal(z.entities.filter((e) => e.kind === 'allyPet').length, 0, 'no ally row exists')
-  assert.equal(z.outTotal, 0, 'the owner is idle and nothing else is attributable')
   assert.deepEqual(eng.petDisplayNames(), [], 'and none of it is yours either')
+  assert.equal(
+    z.entities.filter((e) => e.kind === 'you' || e.kind === 'pet' || e.kind === 'allyPet').length,
+    0,
+    'the owner is idle and the twin-ambiguous pet is credited nothing — the point of the window'
+  )
+  // THE TWO PEOPLE IN IT ARE RECORDED, and that is JOS-430 rather than a hole in this refusal:
+  // `President` and `Enzee` swing at rock golems under their own names, so they are combatants the
+  // log named. The CHARMED GOLEM still books nothing, and it cannot: its lines read
+  // `A rock golem pierces a rock golem`, and a mob-shaped name never passes the record gate at all
+  // (src/main/combat/otherCombatants.ts), let alone the twin-ambiguity refusal above it.
+  assert.deepEqual(
+    z.entities.filter((e) => e.kind === 'other').map((e) => e.name).sort(),
+    ['Enzee', 'President']
+  )
+  assert.ok(!z.entities.some((e) => /golem/i.test(e.name)), 'the unreadable twin has no row of any kind')
 })
 
 test("W67: the BARD singing over it is not a competing claim", { skip: skip67 }, () => {
@@ -214,8 +228,10 @@ test('W68: two casters over one broadcast is a REFUSAL, not a coin flip', { skip
   assert.deepEqual(eng.allyPetNames(), [], 'nobody is credited')
   const z = zone(eng, lastTs)
   assert.equal(z.entities.filter((e) => e.kind === 'allyPet').length, 0)
-  assert.equal(z.outTotal, 0)
-  // …and it SAYS so, because a silent refusal and a missing feature look identical from outside.
+  // The CHARM is credited to nobody — which is this window's whole subject — while the two
+  // enchanters who tied over it are recorded under their own names (JOS-430). Refusing to say
+  // WHOSE the pet is has never meant refusing to see the people; it means refusing to guess.
+  assert.ok(!z.entities.some((e) => /golem|imp|elemental/i.test(e.name)), 'no charmed mob is credited')
   const lines = eng.snapshot(lastTs + 120_000, {}).recent.filter((l) => l.cat === 'charm')
   assert.ok(lines.some((l) => /2 casters armed/.test(l.text)), 'the reason is stated')
 })

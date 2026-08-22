@@ -19,6 +19,7 @@
 | items_with_effect = 
 
 <ul><li>  {{:Silver Bracelet}}
+</li><li> {{:Potion of Gorging Toxin}}
 </li></ul>
 
 | slots = 

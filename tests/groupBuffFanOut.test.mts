@@ -278,20 +278,21 @@ test('party experience alone NEVER puts a name on the roster, and never claims o
 // 4. THE ENGINE — the member's damage actually lands on the meter
 // ============================================================================
 
-test('THE FIX: the recovered member gets a meter row, and the same window without it does not', () => {
+test('THE FIX: the recovered member is named a group-mate; without the rung he is merely recorded', () => {
   const { eng, lastTs } = replay(G2)
   const member = zoneSources(eng, lastTs).find((s) => s.id === 'member:dranix')
   assert.ok(member, 'the member the burst recovered now has a row of his own')
   assert.equal(member.name, 'Dranix')
+  assert.equal(member.kind, 'member')
   assert.ok(member.total > 0, `and real damage on it (${String(member.total)})`)
 
-  // The SAME bytes with the gate removed — the engine exactly as it behaved before JOS-85.
+  // The SAME bytes with the gate removed — the engine exactly as it behaved before JOS-85, except
+  // for the one thing JOS-430 changed: the damage is recorded either way now. What this rung buys
+  // is the PROVENANCE, which is what the Group scope filters on; it no longer buys the row itself.
   const before = replay(G2.filter((l) => !/You gain party experience!/.test(l)))
-  assert.equal(
-    zoneSources(before.eng, before.lastTs).some((s) => s.kind === 'member'),
-    false,
-    'no roster, no admission, no row — the reported bug, reproduced'
-  )
+  const rows = zoneSources(before.eng, before.lastTs)
+  assert.equal(rows.some((s) => s.kind === 'member'), false, 'no roster, no group-mate')
+  assert.equal(rows.find((s) => s.id === 'member:dranix')?.kind, 'other', '…but the damage is there')
 })
 
 test('the member is never engaged as a hostile, and never files as incoming', () => {
@@ -306,10 +307,21 @@ test('the member is never engaged as a hostile, and never files as incoming', ()
   )
 })
 
-test('law 8: the ONLY difference between the two replays is the member row that appeared', () => {
+test('law 8: the ONLY difference between the two replays is what the row is CALLED', () => {
   // Recovering a member must not move one point of anything already recorded. Both the outgoing
   // list and the incoming list are compared whole — a per-row spot check would miss a re-keyed
   // instance, and the incoming side is where a friendly wrongly read as a hostile would show up.
+  //
+  // JOS-430 SHARPENED THIS ASSERTION rather than weakening it. The gate-less replay used to
+  // produce an EMPTY outgoing list; now it produces the same row with the same total under
+  // `other`, because recording no longer waits for the roster. So the two lists differ in exactly
+  // one field — which is a stricter statement of "the rung only ADDS provenance" than the
+  // empty-vs-one-row pair ever was.
+  //
+  // AND THE NUMBER ITSELF MOVED, 881 → 2,368, which is the whole ruling in one integer. The member
+  // used to be recorded only from the instant the burst admitted him (line 250 of 555), so the 30
+  // seconds of his fight before that were thrown away; they are recorded now and the admission
+  // relabels a row that already holds them.
   const withGate = replay(G2)
   const without = replay(G2.filter((l) => !/You gain party experience!/.test(l)))
   const out = (r: { eng: CombatEngine; lastTs: number }): string[] =>
@@ -318,8 +330,8 @@ test('law 8: the ONLY difference between the two replays is the member row that 
     (r.eng.snapshot(r.lastTs + 300_000, { selectedId: 'zone' }).selected?.incoming ?? [])
       .map((s) => `${s.id}|${String(s.total)}`).sort()
 
-  assert.deepEqual(out(without), [], 'before: the member was the only outgoing source and he was dropped')
-  assert.deepEqual(out(withGate), ['member:dranix|member|881'])
+  assert.deepEqual(out(without), ['member:dranix|other|2368'], 'without the rung: recorded, unnamed')
+  assert.deepEqual(out(withGate), ['member:dranix|member|2368'], 'with it: the same 2,368, now a group-mate')
   assert.deepEqual(inc(withGate), inc(without), 'the incoming meter is untouched, to the point')
 })
 

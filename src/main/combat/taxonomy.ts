@@ -19,6 +19,35 @@
 //   critted). We split on whitespace and preserve every token; `crit` is the presence
 //   of "Critical", `slay` the presence of "Slay Undead".
 //
+//   RE-SWEPT 2026-08-20 (JOS-437, same log, now 180 MB — the vocabulary is stable but two
+//   of the counts above are badly stale, so the fresh ones are recorded rather than the
+//   header quietly aging). YOUR OWN damage lines only, by modifier, with the mean hit:
+//     plain (no modifier) 284,617 @ 66.3 · (Critical) 39,763 @ 106.8 ·
+//     (Slay Undead) 2,551 @ 536.6 · (Riposte) 2,376 @ 101.3 · (Strikethrough) 1,754 @ 113.3 ·
+//     (Finishing Blow) 1,578 @ 167.8 · (Riposte Strikethrough) 822 · (Riposte Critical) 307 ·
+//     (Strikethrough Critical) 209 · (Riposte Strikethrough Critical) 120 · (Flurry) 46 ·
+//     (Strikethrough Slay Undead) 18 · (Riposte Slay Undead) 18 ·
+//     (Strikethrough Finishing Blow) 17 · (Critical Flurry) 11 ·
+//     (Riposte Strikethrough Slay Undead) 7 · (Riposte Finishing Blow) 5 ·
+//     (Riposte Strikethrough Finishing Blow) 2.
+//   THREE things that moved and are worth knowing:
+//     - "Strikethrough" went from 1 line to 1,754 and now compounds THREE deep. The splitter
+//       already handles it (it is a single word; the two-word pull runs first), and this is
+//       why that ordering is not an accident.
+//     - "Crippling Blow" has fallen out of the log entirely. Left in TWO_WORD: removing a
+//       recombination rule can only turn a real line into two junk tokens.
+//     - NO compound ever carries BOTH "Slay Undead" and "Finishing Blow" — 0 of 1,729
+//       Finishing Blow lines. procViews.ts leans on that (see finishingBlowLanes) and guards
+//       for it anyway.
+//
+//   FINISHING BLOW IS A DAMAGE PROC, and the means above are the evidence (JOS-437): 167.8
+//   against an ordinary swing's 66.3, i.e. it roughly adds a swing and a half. It is not a
+//   kill ANNOTATION, though it correlates hard with one — of 1,729 firings the very next line
+//   is death aftermath (faction/xp/slain) 984 times and continued combat 454 times, which is
+//   the shape of an AA that fires under a health threshold and usually, not always, finishes
+//   the job. Its swings stay in the 'melee' category (a weapon swing's damage IS melee); what
+//   it gets is a lane read from the modifier tally — see procViews.ts.
+//
 //   CATEGORY AXES (by line grammar, dtype from the parser):
 //     'melee'  — "<A> <verb> <B> for N points of damage." (skill = Bash/Kick/Backstab/
 //                Frenzy/Flurry/Melee). A melee hit carrying a "Slay Undead" modifier is
@@ -82,6 +111,16 @@ export function hasCritical(mods: string[]): boolean {
 export function hasSlayUndead(mods: string[]): boolean {
   return mods.some((m) => /^slay undead$/i.test(m))
 }
+
+/**
+ * The Finishing Blow AA's modifier, spelled ONCE (JOS-437).
+ *
+ * This is a TALLY KEY, not a display string: `aggregate.tallyModifiers` stores modifiers under
+ * the log's own spelling, so anything reading `SourceStat.mods` must ask for it in exactly that
+ * casing — the same rule `roundViews.riposteTally` already documents for 'Riposte'. It lives
+ * here because this file is where the modifier vocabulary is verified.
+ */
+export const FINISHING_BLOW = 'Finishing Blow'
 
 /**
  * The taxonomy category for a damage event given its parser dtype + modifier set.

@@ -73,10 +73,10 @@ You say, 'What lesson?'
 : Reebo Leafsway says 'Excellent!! You must have taught ol' Nillipuss a great deal! But he never seems to learn.. Oh well. The Stormreapers and all of Rivervale owe you a debt of gratitude. Please accept this token of our appreciation.'
 
 <div class='facblock'>
-*Your faction standing with [[Storm Reapers]] got better.
-*Your faction standing with [[Mayor Gubbin]] got better.
-*Your faction standing with [[Merchants of Rivervale]] got better.
-*Your faction standing with [[Unkempt Druids]] got worse.
+*Your faction standing with [[Storm Reapers]] has been adjusted by 10.
+*Your faction standing with [[Mayor Gubbin]] has been adjusted by 5.
+*Your faction standing with [[Merchants of Rivervale]] has been adjusted by 5.
+*Your faction standing with [[Unkempt Druids]] has been adjusted by -1.
 </div>
 {{YouGainExperience}}
 

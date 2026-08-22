@@ -38,6 +38,7 @@
 </li><li> {{:Sleeves of the Kelpmaidens}}
 </li><li> {{:Staff of the Waterwalker}}
 </li><li> {{:Summoned: Waterstone}}
+</li><li> {{:Potion of Vox's Vitality}}
 </li></ul>
 
 | slots = 

@@ -23,6 +23,13 @@
 //   3. THE CONTRADICTION. A spell cannot be both removed and corrected. The load order makes that
 //      fail on its own (a correction naming a removed row reports `unknownSpells`); this refuses
 //      the pair STATICALLY too, so the report names the real defect.
+//   3b. THE DUPLICATE PAGE (JOS-440). `supersededBy` is a second, narrower claim — "the wiki
+//      documents this spell twice and this page is the copy EQ Legends is not running" — and it is
+//      held to its own obligations here: the named survivor must be in the effective DB after
+//      removals AND corrections, and it is allowed to be a row a `name` correction renames INTO the
+//      removed spelling. That last permission is a NARROWING of a rule this suite used to state as
+//      a blanket refusal; the argument, and the two assertions that still cover the hazard the
+//      blanket rule was written for, are beside the test.
 //   4. IDEMPOTENCE, NON-MUTATION, AND THE RE-SCRAPE — both directions, the way
 //      tests/spellCorrections.test.mts asks them of every correction.
 //   5. THE RIPPLE. The layer exists because a phantom spell is OFFERED to the player, so the
@@ -67,8 +74,83 @@ test('THE REPORTED DEFECT: Invigor is in the scrape and is NOT in the effective 
 
   const { spells, report } = applySpellRemovals(RAW)
   assert.equal(spells.filter((s) => s.name === 'Invigor').length, 0, 'the layer drops it')
-  assert.equal(report.removed, 1, 'one row, counted')
+  // ONE ROW PER ENTRY, and the list has grown past one entry (JOS-440 added the invisibility
+  // duplicate page), so this counts the LIST rather than restating a literal that would have to be
+  // bumped by every future removal. `every removal removes something…` is where the per-entry
+  // accounting is asserted.
+  assert.equal(report.removed, SPELL_REMOVALS.length, 'one row per entry, counted')
   assert.deepEqual(report.satisfied, [], 'and nothing was already gone')
+})
+
+test('THE INVISIBILITY TWINS: two pages, one spell, and the client says which page (JOS-440)', () => {
+  // The second reported defect this layer answers, and the first `supersededBy` entry. eqlwiki
+  // carries this spell on TWO pages; a 2026-08-18 retitle of the newer one broke the canon-key fold
+  // that had been hiding the duplication, and the unlock panel drew two rows at five levels.
+  //
+  // THE COMMITTED SCRAPE STILL CARRIES BOTH, which is the point of the layer: the wiki dataset stays
+  // pristine and only the EFFECTIVE list shrinks.
+  const classic = RAW.filter((s) => s.name === 'Invisibility Versus Undead')
+  const modern = RAW.filter((s) => s.name === 'Invisibility vs. Undead')
+  assert.equal(classic.length, 1, 'pageid 57190, the classic-EverQuest copy')
+  assert.equal(modern.length, 1, 'pageid 49735, retitled by the wiki on 2026-08-18')
+  assert.deepEqual(
+    [classic[0].mana, classic[0].castTimeMs, classic[0].targetType],
+    [30, 5000, 'Single'],
+    'the copy this client does not run'
+  )
+  assert.deepEqual(
+    [modern[0].mana, modern[0].castTimeMs, modern[0].targetType],
+    [40, 4000, 'Single Friendly (or Self)'],
+    'and the one it does — spells_us.txt id 235 states cast 4000, 270 ticks, 40 mana'
+  )
+  // AND THE SCRAPE ARTIFACT IS THE CLASSIC PAGE'S ALONE: its commented-out items block swallowed
+  // the opening `<!--` into the two fields that precede it. The correction that used to patch
+  // `msgWearsOff` is retired with the row; `classes` was never patched at all.
+  assert.ok(classic[0].msgWearsOff?.includes('<!--'), 'msgWearsOff carries the swallowed comment')
+  assert.ok(classic[0].classes?.includes('<!--'), 'and so does classes — the swallow is general')
+  assert.ok(!modern[0].msgWearsOff?.includes('<!--'), 'the surviving page has neither')
+  assert.ok(!modern[0].classes?.includes('<!--'))
+
+  // THE EFFECTIVE DB HOLDS ONE ROW, under the spelling the game prints, with the client's numbers.
+  const rows = loadSpellDb().spells.filter((s) => /^Invisibility (Versus|vs\.) Undead$/.test(s.name))
+  assert.equal(rows.length, 1, 'one spell, one row')
+  assert.equal(rows[0].name, 'Invisibility Versus Undead', 'the 83 log lines spell it this way; 0 spell it `vs.`')
+  assert.deepEqual(
+    [rows[0].mana, rows[0].castTimeMs, rows[0].targetType, rows[0].durationText],
+    [40, 4000, 'Single Friendly (or Self)', '27 Min'],
+    'THE RULING: the joined entry keeps the surviving page`s fields, not whichever row sorted first'
+  )
+  assert.ok(!rows[0].classes?.includes('<!--'), 'and no leaked markup survives anywhere on it')
+  assert.ok(rows[0].classes?.includes('(Autogranted)'), 'including the autogrant note only that page states')
+})
+
+test('THE UNLOCK PANEL draws ONE invisibility-vs-undead row at each of the five levels', () => {
+  // The reported surface, at the five (class, level) pairs the report names. `buildLevelUnlocks`
+  // emits one row per DB ROW, so before the fix this returned two rows carrying the same five
+  // pairs and the panel's fold-by-name — which folds only WITHIN a level — had two different names
+  // to fold and drew both.
+  const data = buildLevelUnlocks()
+  const rows = data.spells.filter((s) => /^Invisibility (Versus|vs\.) Undead$/.test(s.name))
+  assert.equal(rows.length, 1, 'one row in the dataset, not two')
+  assert.deepEqual(
+    rows[0].at.map((p) => `${p.cls} ${p.level}`).sort(),
+    ['CLR 11', 'ENC 14', 'NEC 1', 'PAL 17', 'SHD 4'],
+    'at exactly the five levels the report names'
+  )
+  assert.deepEqual([rows[0].mana, rows[0].castTimeMs], [40, 4000], 'carrying the client-confirmed figures')
+})
+
+test('THE ALERT WIZARD and THE CLASS INDEX hold one invisibility-vs-undead key', () => {
+  // Two keys for one spell was the shape of the defect underneath the panel: `spellCanonKey` folds
+  // rank suffixes, not abbreviations, so `invisibility versus undead` and `invisibility vs. undead`
+  // were two spells everywhere a name is a join key.
+  const catalog = buildSpellCatalog(loadSpellDb(), new Map())
+  const keys = catalog.entries.filter((e) => e.key.includes('undead') && e.key.startsWith('invisibility'))
+  assert.deepEqual(keys.map((e) => e.key).sort(), ['invisibility to undead', 'invisibility versus undead'])
+  // And the key the catalog holds is the one a cast line produces: `You begin casting Invisibility
+  // Versus Undead.` occurs 28 times in the owner's log and is what class inference reads.
+  assert.deepEqual(classesForSpell('Invisibility Versus Undead'), ['CLR', 'ENC', 'NEC', 'PAL', 'SHD'])
+  assert.deepEqual(classesForSpell('Invisibility vs. Undead'), [], 'a spelling the game never prints places nobody')
 })
 
 test('every removal removes something in the committed DB, or is a stated tombstone', () => {
@@ -102,7 +184,7 @@ test('a removal that names a spell nobody looked for cannot hide in the list', (
 // 2 — THE SHAPE OF THE BAR, checked as data
 // ---------------------------------------------------------------------------------------------
 
-test('every removal states a dated owner verification, a reason field and evidence', () => {
+test('every removal states a dated verification, a reason field and evidence', () => {
   const seen = new Set<string>()
   for (const r of SPELL_REMOVALS) {
     assert.ok(r.spell.length > 0, 'a removal with no spell removes nothing')
@@ -118,6 +200,26 @@ test('every removal states a dated owner verification, a reason field and eviden
     // blank string, or whitespace, which reads as "stated" and says nothing.
     assert.ok(r.reason === null || r.reason.trim().length > 20, `${r.spell}: state a real reason or state null`)
     assert.ok(r.evidence.length > 20, `${r.spell}: say what was done and what was found`)
+    // A superseded entry does not withdraw a spell, so it owes the name the spell survives under.
+    // An absence entry must NOT state one: after it runs the DB says nothing about the spell, and a
+    // survivor would mean the entry is a duplicate-page claim filed under the absence bar.
+    if (r.supersededBy !== undefined) {
+      assert.ok(r.supersededBy.length > 0, `${r.spell}: \`supersededBy\` names the surviving row`)
+    }
+  }
+})
+
+test('a superseded page leaves its spell standing, under the name it says', () => {
+  // THE OBLIGATION THAT MAKES `supersededBy` A DIFFERENT CLAIM (JOS-440). An absence removal is
+  // asserted to leave NOTHING behind (`THE CLASS INDEX places nobody…`, below); this one is
+  // asserted to leave the spell exactly where the player can still reach it. Read through the FULL
+  // load — removals then corrections — because the survivor is allowed to be a row that a `name`
+  // correction renames into this spelling, which is what JOS-440's pair does.
+  const effective = loadSpellDb().spells
+  for (const r of SPELL_REMOVALS) {
+    if (r.supersededBy === undefined) continue
+    const rows = effective.filter((s) => s.name === r.supersededBy)
+    assert.equal(rows.length, 1, `${r.spell}: the survivor \`${r.supersededBy}\` must be in the effective DB, once`)
   }
 })
 
@@ -131,10 +233,15 @@ test('no spell is both removed and corrected', () => {
     for (const s of c.spells) {
       assert.ok(!removed.has(s), `${s} is removed AND corrected — one of the two entries is wrong`)
     }
-    // A `name` correction produces a name too, and removing the row it produces would be the same
-    // contradiction wearing the destination's spelling.
-    if (c.field === 'name') {
-      assert.ok(!removed.has(c.to), `${c.to} is removed AND is the target of a rename`)
+    // A `name` correction produces a name too, and removing the row it produces USED TO BE refused
+    // outright as the same contradiction wearing the destination's spelling. It is not always one,
+    // and JOS-440 is the case that separates them: two wiki pages for one spell, the classic copy
+    // removed and the surviving copy renamed INTO the removed spelling because that is what the
+    // game prints. Nothing is withdrawn — the test above asserts the survivor is still there — so
+    // the refusal now applies only where no `supersededBy` entry claims the destination.
+    if (c.field === 'name' && removed.has(c.to)) {
+      const claimed = SPELL_REMOVALS.some((r) => r.spell === c.to && r.supersededBy === c.to)
+      assert.ok(claimed, `${c.to} is removed AND is the target of a rename, with no superseded entry saying so`)
     }
   }
 })
@@ -161,8 +268,12 @@ test('THE TOMBSTONE: a re-scrape that drops the page reports satisfied, not a fa
   // absence the match condition; a removal is that argument with the ROW in place of the field.
   // The entry has got exactly what it asked for, so the suite must not go red — and the entry
   // STAYS, because the wiki is editable and a page that vanished in June can be restored in July.
+  // Read against ONE entry's page, with the rest of the list held out, so the assertion stays about
+  // the tombstone semantic rather than about how many entries the list happens to hold.
+  const invigor = SPELL_REMOVALS.filter((r) => r.spell === 'Invigor')
+  assert.equal(invigor.length, 1, 'the entry this test is about')
   const dropped = RAW.filter((s) => s.name !== 'Invigor')
-  const { spells, report } = applySpellRemovals(dropped)
+  const { spells, report } = applySpellRemovals(dropped, invigor)
   assert.equal(report.removed, 0, 'there was nothing left to remove')
   assert.deepEqual(report.satisfied, ['Invigor'], 'and the entry stands as a tombstone, named')
   assert.equal(spells.length, dropped.length, 'the list is untouched')
@@ -177,7 +288,7 @@ test('a removal takes EVERY row of its name, the way a NAME correction does', ()
   assert.equal(twinned.filter((s) => s.name === 'Invigor').length, 2)
   const { spells, report } = applySpellRemovals(twinned)
   assert.equal(spells.filter((s) => s.name === 'Invigor').length, 0, 'both rows, or the row is still there')
-  assert.equal(report.removed, 2, 'counted per ROW, not per entry')
+  assert.equal(report.removed, SPELL_REMOVALS.length + 1, 'counted per ROW, not per entry — the synthetic twin is the +1')
 })
 
 test('the layer never writes through the imported JSON module', () => {
@@ -191,11 +302,37 @@ test('the layer never writes through the imported JSON module', () => {
 
 test('a removal names the SCRAPE`s spelling, so the corrections overlay never sees the row', () => {
   // The order is semantics, not legibility. Removals run first, so a corrected name does not exist
-  // yet when the removals list is read — an entry naming a post-correction spelling would silently
-  // match nothing and report itself satisfied.
+  // yet when the removals list is read — and THE HAZARD is an entry naming a post-correction
+  // spelling and therefore matching nothing, which would report itself `satisfied` and look like
+  // coverage.
+  //
+  // THIS USED TO BE A BLANKET REFUSAL OF THE SHAPE and it is now scoped to the hazard (JOS-440).
+  // The shape is legitimate when the removal genuinely matches a row of its own in the committed
+  // scrape: two wiki pages for one spell, the classic copy removed under the name the game prints,
+  // the surviving copy renamed INTO that name because the wiki spells it otherwise. At the moment
+  // the removals list is read those are two different names, which is precisely why the order is
+  // semantics.
+  //
+  // AND THE HAZARD IS STILL COVERED, TWICE, WITHOUT THIS RULE — which is why narrowing it costs
+  // nothing. `every removal removes something in the committed DB` asserts `report.satisfied` is
+  // EMPTY, so an entry that matches nothing is red there; and it asserts `report.removed` equals
+  // the entry count, so the other direction — a re-scrape adopting the corrected spelling upstream,
+  // both rows sharing the name, one entry eating BOTH — is red there too, rather than silently
+  // deleting a spell.
   const corrected = new Set(SPELL_CORRECTIONS.filter((c) => c.field === 'name').map((c) => c.to))
+  const { spells } = applySpellRemovals([])
+  assert.deepEqual(spells, [], 'sanity: the pass is a filter, not a source')
   for (const r of SPELL_REMOVALS) {
-    assert.ok(!corrected.has(r.spell), `${r.spell} is a name the corrections layer PRODUCES; name the scrape`)
+    if (!corrected.has(r.spell)) continue
+    assert.equal(
+      r.supersededBy,
+      r.spell,
+      `${r.spell} is a name the corrections layer PRODUCES; only a superseded duplicate may share it`
+    )
+    assert.ok(
+      RAW.some((s) => s.name === r.spell),
+      `${r.spell} must name a row of the committed SCRAPE, not only the name a rename produces`
+    )
   }
 })
 

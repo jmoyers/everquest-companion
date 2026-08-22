@@ -115,23 +115,26 @@ test('JOS-129 — Bard Test of Brass is in the data, and the facets file it unde
 })
 
 test('LAW 1 — a quest with no resolvable dropper names NO boss, and keeps the island it states', () => {
-  // MEASURED over the committed files: exactly two quests resolve no boss at all — the Azarack
-  // pair, whose non-rune item (Azarack Skin / Azarack Blood) is one of the three names no catalog
-  // page lists. They are the case that proves the two axes are INDEPENDENT: posky states Island 2
-  // for that item, so the island facet still has them, while the boss facet invents nothing and
-  // so never sweeps them under somebody else's name.
+  // MEASURED over the committed files, re-measured 2026-08-22: ZERO quests resolve no boss now.
+  // The old two — the Azarack pair — gained a real dropper when the Protector of Sky page began
+  // listing Azarack Skin/Blood (wiki edit 2026-08-21), so the case that proved the two axes are
+  // independent has left the committed data. The LAW is still enforced on a synthetic row below;
+  // this count is the tripwire that says which world the suite is measuring.
   const bossless = ALL.filter((q) => questBosses(q).length === 0)
-  assert.equal(bossless.length, 2, `boss-less quests: ${bossless.length}`)
-  for (const q of bossless) {
-    assert.deepEqual(questIslands(q), ['Island 2'])
-    assert.equal(matchesFacets(q, { islands: ['Island 2'], bosses: [] }), true)
-    assert.equal(matchesFacets(q, { islands: ['Island 3'], bosses: [] }), false)
-    // No boss pick can reach them, not even the zone's biggest.
-    for (const boss of facetOptions(ALL).bosses)
-      assert.equal(matchesFacets(q, { islands: [], bosses: [boss] }), false, boss)
-    // …but no pick at all still shows them. Absence of a facet is not absence of the quest.
-    assert.equal(matchesFacets(q, { islands: [], bosses: [] }), true)
+  assert.equal(bossless.length, 0, `boss-less quests: ${bossless.length}`)
+  // The synthetic no-dropper quest: an island stated in words, an item no catalog page lists.
+  const synthetic = {
+    items: [{ where: 'Island 2', droppers: skyDroppersFor('Large Sky Lapis') }]
   }
+  assert.deepEqual(questBosses(synthetic), [])
+  assert.deepEqual(questIslands(synthetic), ['Island 2'])
+  assert.equal(matchesFacets(synthetic, { islands: ['Island 2'], bosses: [] }), true)
+  assert.equal(matchesFacets(synthetic, { islands: ['Island 3'], bosses: [] }), false)
+  // No boss pick can reach it, not even the zone's biggest.
+  for (const boss of facetOptions(ALL).bosses)
+    assert.equal(matchesFacets(synthetic, { islands: [], bosses: [boss] }), false, boss)
+  // …but no pick at all still shows it. Absence of a facet is not absence of the quest.
+  assert.equal(matchesFacets(synthetic, { islands: [], bosses: [] }), true)
 })
 
 test('a wind rune contributes neither facet: "Plane of Sky" is not an island and has no dropper', () => {

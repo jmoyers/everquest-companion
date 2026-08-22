@@ -114,7 +114,7 @@ Obtain the 10 rods and combine them in the <span style="color:#d52200"><strong>T
 |- style="text-align: center"
 ! Dena
 | [[Dagnor's Cauldron]]
-| {{loc|Dagnor's Cauldron|-890, -740}}
+| {{loc|Dagnor's Cauldron|-890, -740, -431}}
 | width="500" style="text-align: left" | Underwater in a small gully on the lake floor out and to the left of Kedge Keep (near the island), directly out from Unrest.
 | Yes
 |- style="text-align: center"
@@ -132,7 +132,7 @@ Obtain the 10 rods and combine them in the <span style="color:#d52200"><strong>T
 |- style="text-align: center"
 ! Geza
 | [[Highpass Hold]]
-| {{loc|Highpass Hold|-180, +445}}
+| {{loc|Highpass Hold|-207, 433, -18}}
 | width="500" style="text-align: left" | Beneath the waterfall near The Tiger's Roar patio.
 | No
 |- style="text-align: center"

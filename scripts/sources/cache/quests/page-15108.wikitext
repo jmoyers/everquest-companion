@@ -1,8 +1,10 @@
-{{Temple Era}}{{expand}}
+{{Classic Era}}
+
 __NOTOC__
+[[File:npc_sultin.png|thumb|Sultin]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
-| [[Temple of Solusek Ro]]
+| [[The Temple of Solusek Ro]]
 |-
 ! ''' Quest Giver: '''
 | [[Sultin]]
@@ -17,7 +19,7 @@ __NOTOC__
 | Various
 |-
 ! ''' Related NPCs: '''
-| [[Radiant]], [[a shadowed man]], [[Tarn Visilin]] , [[Tizina]]
+| [[Radiant]], [[a shadowed man]], [[Tarn Visilin]] , [[Tizina]], [[a dusty werebat]], [[a silvered guard]], [[Ezmirella]], [[Raine Beteria]], [[A Froglok Scryer]], [[Enynti]], [[Mizr N`Mar]], [[Madame Serena]]
 |}
 
 == Rewards ==
@@ -32,70 +34,128 @@ __NOTOC__
 [[File:npc_sultin.png|thumb|right|Sultin]]
 Incandescent gear is Enchanter specific quested items from The Temple of Solusek Ro. Talk to Sultin.
 
+'''You say, 'Hail, Sultin''''
+
+: Sultin says, 'I am Sultin - keeper of the three [incandescent]s of power and the [rod] of Insidious Glamour.  If you are an enchanter, perhaps we can deal.'
+
+'''You say, 'incandescent''''
+
+: Sultin says, 'There are three incandescent items of power - a [wand], [mask] and [gloves].  Are you [interested] in any of them?'
+
 === Incandescent Gloves ===
 
-Sultin needs to sew together four other sets of gloves to make these.{{CheckboxList}}
-* Indifferent or higher faction with [[Temple Of Sol Ro]].
-* [[Glowing Gloves]] are dropped randomly off [[a shadowed man]].
-* [[Radiant Gloves]] can be found on [[Radiant]] in [[Cazic Thule]].
-* [[Enchanted Gloves]] are obtained by bringing [[Tizina]] in [[Lavastorm Mountains]] 50gp.
-* [[Gleaming Gloves]] are obtained by giving [[Tarn Visilin]] in [[Highpass Keep]] a [[bloodstone]].
+Obtain the following for [[Sultin]]:{{CheckboxList}}
+* [[Glowing Gloves]] from [[a shadowed man]]
+* [[Radiant Gloves]] from [[Radiant]] in [[Cazic Thule|The Temple of Cazic-Thule]]
+* [[Enchanted Gloves]] by giving 5 pp to [[Tizina]] in [[Lavastorm Mountains]]
+* [[Gleaming Gloves]] by giving a [[bloodstone]] to [[Tarn Visilin]] in [[Highpass Keep]]
 {{End}}
 
-'''NOTE: Successfully did this turn in at indifferent faction as of 2/12/2020'''
+'''You say, 'I am interested in the gloves''''
 
-'''NOTE: Sultin ate my materials at indifferent faction as of 09/03/2020, make sure to cast a faction spell to be safe'''
+: Sultin says, 'My personal favorite! Incandescent gloves.  If you bring me the components to make another pair, I will give you my gloves.  Incandescent gloves are made by sewing together four other sets of gloves.  Glowing gloves can be found on our mortal enemies, the shadowed men.  Radiant gloves can be found on Radiant in the mazes of Cazic-Thule.  Enchanted and gleaming gloves can be purchased for 50 golden coins from Tizina of the Lavastorm gypsies and a bloodstone from Tarn Vislin of High Keep.  Bring me all four sets of gloves and I will give you a pair of incandescent ones.'
+
+[[a shadowed man|Shadowed men]] can be found in many zones. [[Glowing Gloves]] drom randomly from any of them.
+
+Kill [[Radiant]] in [[Cazic Thule|The Temple of Cazic-Thule]] and loot the [[Radiant Gloves]].
+
+Go to [[Lavastorm Mountains]] and give 5 platinum pieces to [[Tizina]], and she gives you the [[Enchanted Gloves]]:
+
+: Tizina says, 'Since you have given me gold, I will give you gloves.  For more magic gloves, give a bloodstone to Tarn Visilin in the High Keep library.'
+
+In [[Highpass Keep]], get the [[Gleaming Gloves]] by giving a [[bloodstone]] to [[Tarn Visilin]]: 
+
+: Tarn Visilin says, 'The gleam of blood - and now the gleam of gloves.'
+
+Take all 4 gloves back to [[The Temple of Solusek Ro]] and give them to [[Sultin]]:
+
+: Sultin says, 'Four pairs of gloves you have given me ? I will give you one pair in return.  We shall see who had the better deal.'
 
 <div class='facblock'>
-* Your faction with [[Temple of Solusek Ro]] got better.
-* Your faction with [[Shadowed Men]] got worse.
+* Your faction standing with [[Temple Of Sol Ro]] has been adjusted by 5.
+* Your faction standing with [[Shadowed Men]] has been adjusted by -1.
 </div>
+{{Exp}}
 
-<!-- In the Incandescent Gloves checklist section, the links are broken/unresponsive for: a shadowed man, Radiant, Cazic Thule, Tiznia, Tarn Visilin, bloodstone  -->
+You receive the {{:Incandescent Gloves}}.
 
 === Incandescent Mask ===
-'''NOTE: You need good faction for this. Amiable will work but he will eat your items if he's indifferent or below! Cast a faction increasing spell before turning in!'''
 
-Sultin needs four items:
+Sultin needs four items:{{CheckboxList}}
+* [[Glowing Mask]], found on [[a froglok scryer]] or [[a skeleton monk]] in [[Upper Guk]]
+* [[Rune of Fortune]] (top), from [[Enynti]] in the Chasm below [[Mistmoore]]
+* [[Rune of Fortune]] (bottom) by giving 5 pp to [[Mizr N`Mar]] in the [[Neriak|Neriak City Library]]
+* [[Rune of Fortune]] (middle) by giving 5 pp to [[Madame Serena]] in [[Qeynos|South Qeynos]]
+{{End}}
 
-* [[Glowing Mask]] (found on the [[a skeleton monk]] or [[A Froglok Scryer]] in [[Upper Guk]]). '''NOTE: Camping the Skeleton Monk is a better bet, as it pops every time, whereas the Scryer has a PH and is a rare pop.  Also note that the mob is a skeletON monk, not skeletal. He's in the same hidden room as Tempus'''
-* all three [[Rune of Fortune]]:
-** [[Rune of Fortune]] (top) can be found on the Dark Elf [[Enynti]] in the Chasm below [[Mistmoore]].
-** The other two can each be traded for 50 golden coins each - one from [[Mizr N`Mar]] [[Rune of Fortune]] (bottom) in the [[Neriak|Neriak City Library]] and the other from [[Madame Serena]] [[Rune of Fortune]] (middle) in [[Qeynos|South Qeynos]] behind the Mermaid's Lure near the dock. ''This is a gold turn-in, not a vendor purchase.''
+'''You say, 'I am interested in the mask''''
+
+: Sultin says, 'An item of power! The incandescent mask.  If you will bring me the components to make another, I will give you my own incandescent mask.  I will need a glowing mask, found on the skeletal monk in the caverns of Guk.  I will also need all three runes of fortune.  One rune can be found on the dark elf Enynti in the chasm below Castle Mistmoore.  The other two can be purchased for 50 golden coins, one from Mizr N'Mar in the Neriak City Library and the other from Madam Serena in the city of Qeynos.  Bring me all three runes and the glowing mask and I will give you your reward.'
+
+Kill [[a froglok scryer]] or [[a skeleton monk]] in [[Upper Guk]] for the [[Glowing Mask]].
+
+Kill the Dark Elf [[Enynti]] in the Chasm below [[Mistmoore]] for the [[Rune of Fortune]] (top).
+
+Hand 5 platinum pieces to [[Mizr N`Mar]] in the [[Neriak|Neriak City Library]]: 
+
+: Mizr N`Mar says, 'Ahhh - gold.  Here is the rune you desire.'
+
+Mizr N`Mar gives you the [[Rune of Fortune]] (bottom). 
+
+In [[Qeynos|South Qeynos]], behind the Mermaid's Lure near the dock, hand 5 platinum pieces to [[Madame Serena]]: 
+
+: Madame Serena says, 'Fifty gold?  You must want a rune of fortune.  If you want another one, give fifty gold to Mizr N'Mar in the Neriak library.'
+
+Madame Serena give you the [[Rune of Fortune]] (middle). 
+
+Go back to [[The Temple of Solusek Ro]] and give the [[Glowing Mask]] and the three ''different'' [[Rune of Fortune|Runes of Fortune]] to [[Sultin]]:
+
+: Sultin says, 'Fortune favors you .. as will this mask.'
 
 <div class='facblock'>
-* Your faction with [[Temple of Solusek Ro]] got better.
-* Your faction with [[Shadowed Men]] got worse.
+* Your faction standing with [[Temple Of Sol Ro]] has been adjusted by 5.
+* Your faction standing with [[Shadowed Men]] has been adjusted by -1.
 </div>
+{{Exp}}
 
-Note: Trading 50gp for the rune from Mizr N`Mar increases your faction with beta neutral, so this is an easy, but costly, way to raise this faction.
-
-Note: Madame Serena - As a dark elf your illusion and benevolence may still showed her ready to attack. You can charm her and turn in if you run into this issue.
-
-'''NOTE: This quest is MQ-able.  53 Druid with amiable (about 50 shadowmen kills) faction turned in Glowing Mask, Enynti's rune, and Serena's rune.  12 Enchanter turned in Mizr's rune to get the Mask using Alliance.'''
+You receive the {{:Incandescent Mask}}.
 
 === Incandescent Wand ===
 
-Sultin needs:
-
+Sultin needs:{{CheckboxList}}
 * [[Pouch of Silver Dust]] from the [[a dusty werebat]] in [[The Estate of Unrest]]
-* [[Silver Wand]] from the [[a silvered guard]] in [[Cazic Thule]]
+* [[Glowing Silver Wand]] from [[Raine Beteria]]
+** [[Blessed Silver Wand]] from [[Ezmirella]] (and 5 pp)
+*** [[Silver Wand]] from [[a silvered guard]] in [[Cazic Thule (Zone)|The Temple of Cazic-Thule]] (and 5 pp)
+{{End}}
 
-He asks that you get the wand enchanted before you bring it to him. Both of the components for this quest are no drop. Once you find the Silver Wand, take it to [[Ezmirella]] in the gypsy camp in [[Northern Karana]]. Hand her the Silver Wand and 50 gold coins. She will return a [[Blessed Silver Wand]] and instruct you to seek out [[Raine Beteria]] in the [[Erudin]] Library. Hand Raine the [[Blessed Silver Wand]] and 50 gold coins to receive the [[Glowing Silver Wand]] and the following positive faction adjustments:
+'''You say, 'I am interested in the wand''''
+
+: Sultin says, 'Ahh, the incandescent wand.  If you will get the components to make another, I will give you mine. I will need a pouch of silver dust, found on the dusty werebat in the Estate of Unrest.  I will also need a silver wand, found on a silvered guard in the temple of Cazic-Thule.  This wand will not be enchanted - you will need to pay Esmirella of the North Karana gypsy camp 50 gold to enchant it for you.  When the wand is fully enchanted, bring it and the pouch to me and I will give you the incandescent wand.'
+
+In [[The Estate of Unrest]], get the keys and go to the basement. Slay a [[A Dusty Werebat|a dusty werebat]] to get the [[Pouch of Silver Dust]]. 
+
+In [[Cazic Thule (Zone)|The Temple of Cazic-Thule]], find [[a silvered guard]] at the northwest pyramids, and kill it to get a [[Silver Wand]]. 
+
+Find [[Ezmirella]] in the gypsy camp in the [[Northern Plains of Karana]]. Hand her the [[Silver Wand]] and 50 gold coins (or 5 platinum). She will return a [[Blessed Silver Wand]] and instruct you to seek out [[Raine Beteria]]. 
+
+: Ezmirella says, 'I have blessed your silver wand.  To complete the enchantment, you must take the wand to Raine Beteria in the Erudin library.  Tip her 50 golden coins, and she will help you.'
+
+Hand Raine the [[Blessed Silver Wand]] and 50 gold coins (or 5 platinum) to receive the [[Glowing Silver Wand]].
+
+: Raine Beteria says, 'Your silver wand has been fully enchanted.  Take it and the pouch of silver dust back to the temple of Ro.'
+
+Take the [[Glowing Silver Wand]] and [[Pouch of Silver Dust]] back to Sultin. Hand him both. 
+
+: Sultin says, 'I see that you are resourceful... you have earned your incandescent wand.'
 
 <div class='facblock'>
-* Your faction with [[Merchants of Erudin]] gets better.
-* Your faction with [[High Council of Erudin]] gets better.
-* Your faction with [[High Guard of Erudin]] gets better.
+* Your faction standing with [[Temple Of Sol Ro]] has been adjusted by 5.
+* Your faction standing with [[Shadowed Men]] has been adjusted by -1.
 </div>
+{{exp}}
 
-(WARNING! Turn in [[Glowing Silver Wand]], not [[Silver Wand]])
-You must have a good faction for this, so you may need to use benevolence. Take the [[Glowing Silver Wand]] and Pouch of Silver Dust back to Sultin. Hand him both and he will give you the Incandescent Wand.
-
-<div class='facblock'>
-* Your faction with [[Temple of Solusek Ro]] got better.
-* Your faction with [[Shadowed Men]] got worse.
-</div>
+You receive the [[Incandescent Wand]].
 
 [[Category:Quests]]
 [[Category:Temple of Solusek Ro]]

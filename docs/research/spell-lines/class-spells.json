@@ -11785,6 +11785,17 @@
    "targetType": "Single Friendly (or Self)"
   },
   {
+   "name": "Lifebite",
+   "level": 8,
+   "effects": [
+    "Decrease Hitpoints by 42 to 42",
+    "Increase Hitpoints by 42 to 42 (Self)"
+   ],
+   "durationText": "Instant",
+   "spellType": "Detrimental",
+   "targetType": "Lifetap"
+  },
+  {
    "name": "Lesser Shielding",
    "level": 8,
    "effects": [
@@ -15644,6 +15655,17 @@
    "durationText": "27 minutes",
    "spellType": "Resist Buff",
    "targetType": "Single Friendly (or Self)"
+  },
+  {
+   "name": "Lifebite",
+   "level": 10,
+   "effects": [
+    "Decrease Hitpoints by 42 to 42",
+    "Increase Hitpoints by 42 to 42 (Self)"
+   ],
+   "durationText": "Instant",
+   "spellType": "Detrimental",
+   "targetType": "Lifetap"
   },
   {
    "name": "Clinging Darkness",

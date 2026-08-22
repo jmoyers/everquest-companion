@@ -98,6 +98,34 @@ export interface OutputKindWatch {
  *
  * Lifted verbatim (behavior-for-behavior) out of session.ts's inventory watcher in JOS-44, so
  * every future kind inherits the covered first-write instead of re-deriving it.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * TWO WATCHERS, AND THE DIRECTORY ONE NO LONGER STANDS DOWN (JOS-431).
+ *
+ * It used to be an EITHER/OR: a file matched ⇒ watch the file, nothing matched ⇒ watch the
+ * directory. Both halves of that were holes, and one report (01M0FMGA4DQRMG46290GWVVHQ6) sat in
+ * the first of them:
+ *
+ *   A REWRITE CAN DESTROY THE FILE WE ARE WATCHING. A writer that replaces rather than truncates
+ *   produces `unlink` + `add`, so the file watcher's subject stops existing mid-session and the
+ *   next dump is invisible until the app is restarted — which is what the reporter did, and what
+ *   they should not have had to do. (watch.ts now raises both events; this is the other half.)
+ *
+ *   A FALLBACK MATCH IS NOT THIS CHARACTER'S FILE. `preferredOutputFile` falls back to the newest
+ *   dump of the kind belonging to ANYBODY (kinds.ts — it is the right answer for a one-character
+ *   machine and a guess everywhere else). A watch armed on that file never notices the active
+ *   character's own dump appearing under its own name, because that is an `add` of a DIFFERENT
+ *   path and nothing was listening to the directory any more.
+ *
+ * So the directory watcher is armed for the whole life of the watch, beside the file watcher
+ * rather than instead of it, and its `onChange` re-arms the file half onto whatever discovery now
+ * prefers. One mechanism covers all three cases — the first-ever write, the recreated file, and
+ * the character's own dump arriving late — instead of three conditions to keep in step.
+ *
+ * THE COST IS ONE EXTRA DEPTH-0 WATCHER on a directory this app already watches on every
+ * never-run machine, and the duplicate reload it can produce (the directory sees the same `add`
+ * the file watcher does) is one re-read of a file we would have re-read anyway: `outputStatus`
+ * caches nothing and `loadInventory` is a parse, not a mutation.
  */
 export function watchOutputKind(
   id: OutputKindId,
@@ -106,37 +134,63 @@ export function watchOutputKind(
 ): OutputKindWatch {
   const def: OutputKindDef = outputKind(id)
   const active = opts.active ?? ((): boolean => true)
-  let watcher: FSWatcher | null = null
+  // The file half — re-armed whenever the subject changes. The directory half below is armed ONCE
+  // and outlives every re-arm, so there is no window in which nobody is watching the root for the
+  // dump to come back.
+  let fileWatcher: FSWatcher | null = null
 
-  const arm = (): void => {
-    void watcher?.close()
-    watcher = null
+  const armFile = (announce = false): void => {
+    void fileWatcher?.close()
+    fileWatcher = null
     const path = findOutputFile(id, character.name, character.server)
-    if (path === null) {
-      watcher = watchForOutputFile(effectiveEqRoot(), def, {
-        onChange: () => {
-          if (!active()) return
-          // Re-arm FIRST: the file now exists, so the next rewrite belongs to the file watcher.
-          arm()
-          opts.onChange()
-        },
-        onError: opts.onError
-      })
-      return
-    }
-    watcher = watchOutputFile(path, {
+    if (path === null) return
+    fileWatcher = watchOutputFile(path, {
       onChange: () => {
         if (active()) opts.onChange()
       },
+      // The file was deleted. Re-arm — either the replacement is already on disk (and it must be
+      // ANNOUNCED from here, see below) or it is not, in which case the directory watcher below is
+      // the one that will see it arrive.
+      onGone: () => {
+        if (active()) armFile(true)
+      },
       onError: opts.onError
     })
+    // THE GONE-AND-ALREADY-BACK CASE (JOS-431 audit fix). When the re-arm after an `unlink` finds
+    // the replacement on disk, NO future event will announce it: the fresh watcher was armed on an
+    // existing file (`ignoreInitial` ⇒ no `add`), and a fast replace reaches the directory watcher
+    // as a `change` it deliberately does not subscribe to (tests/outputsWatch.test.mts measured
+    // both). The original shape waited for "the settled add that follows" — which is exactly the
+    // event that never comes, and the sky-inventory-autoload e2e caught it the moment a second
+    // directory watcher (JOS-429's achievements kind) shifted chokidar off the lucky
+    // collapse-to-`change` path. So the announcer is this re-arm itself, delayed past
+    // `awaitWriteFinish`'s 400 ms stability window so the read sees a whole file; a duplicate
+    // reload if the directory watcher DOES also report it is the cost the header above already
+    // accepts ("one re-read of a file we would have re-read anyway").
+    if (announce) {
+      setTimeout(() => {
+        if (active()) opts.onChange()
+      }, 600)
+    }
   }
 
-  arm()
+  const dirWatcher = watchForOutputFile(effectiveEqRoot(), def, {
+    onChange: () => {
+      if (!active()) return
+      // Re-arm FIRST: whatever just appeared may be a better answer than what we were watching,
+      // so discovery runs before the consumer is told to read.
+      armFile()
+      opts.onChange()
+    },
+    onError: opts.onError
+  })
+
+  armFile()
   return {
     close: () => {
-      void watcher?.close()
-      watcher = null
+      void fileWatcher?.close()
+      fileWatcher = null
+      void dirWatcher.close()
     }
   }
 }

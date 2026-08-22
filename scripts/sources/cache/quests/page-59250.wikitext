@@ -1,0 +1,42 @@
+{{Classic Era}}
+
+{| class="questTopTable"
+! '''Start Zone:'''
+|[[The Northern Desert of Ro]]
+|-
+! '''Quest Giver:'''
+| [[Crusader Iktra]]
+|-
+! '''Minimum Level:'''
+| 1
+|-
+! '''Classes:'''
+| ALL
+|-
+! '''Related Zones:'''
+|
+|-
+! '''Related NPCs:'''
+|
+|}
+[[File:Crusader iktra.png|thumb]]
+
+== Reward ==
+Faction
+
+== Walkthrough ==
+''[[Crusader Iktra]] is at location 2256, -812 in North Ro on the shoreline closest to Freeport.''
+
+''There isn't any dialogue that leads to information about this quest.''
+
+Upon handing Crusader Iktra (4) [[Metal Bits]]:
+
+: Crusader Iktra says 'Thank you, [Player Race]. This will go a ways towards rebuilding our ships.
+
+<div class="facblock">
+* Your faction standing with [[New Sebilisian Expedition]] has been adjusted by 5.
+
+</div>
+{{exp}}
+
+[[Category:Quests]]

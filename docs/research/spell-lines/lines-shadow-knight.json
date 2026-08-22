@@ -22,6 +22,12 @@
      "note": "live 15, P99 15"
     },
     {
+     "name": "Lifebite",
+     "level": 10,
+     "inDb": true,
+     "note": "42/42, 1.75 s cast, 35 mana, autogranted. ADDED BY THE GAME PATCH OF 2026-08-18 (JOS-439) - wiki pageid 60016, created 2026-08-18T15:42Z. No live or P99 counterpart exists; Legends invented this rung, so the re-tier notes the rest of this line carries have nothing to compare against."
+    },
+    {
      "name": "Lifedraw",
      "level": 15,
      "inDb": true,

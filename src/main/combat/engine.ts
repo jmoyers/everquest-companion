@@ -61,7 +61,16 @@
 import { EngineState } from './state'
 import { ingestEvent } from './ingest'
 import type { EngineFoldProbe } from './foldProbe'
-import { encSummary, evalClosure, zoneSessionSummaries, zoneSummary } from './lifecycle'
+import {
+  encSummary,
+  evalClosure,
+  finalizeCurrent,
+  finalizeZoneSession,
+  resetZoneAccumulators,
+  zoneSessionSummaries,
+  zoneSummary
+} from './lifecycle'
+import { mergeAgg } from './mergeSessions'
 import { buildSelected, buildTimeline } from './segmentViews'
 import { searchFights } from './fightSearch'
 import { ACTIVE_MS, SLOW_SAMPLE_CAP } from './encounter'
@@ -224,6 +233,19 @@ export class CombatEngine {
   }
 
   /**
+   * Install the HELD-CLICKY set (JOS-438) — the canonical spell keys this character owns an
+   * instant item click for, from their `/outputfile inventory` dump.
+   *
+   * session.ts calls this TWICE by design: once from the persisted dump before the scan replay, so
+   * the fold classifies the historical log with the best evidence it has, and again whenever a
+   * fresh dump is loaded or auto-reloaded. Never called at all ⇒ the set stays empty and every
+   * cast-less firing keeps the proc lane it had before this gate existed.
+   */
+  setHeldClickies(spells: ReadonlySet<string>): void {
+    this.st.heldClickies = spells
+  }
+
+  /**
    * THE BENCH'S SUB-ATTRIBUTION SEAM (JOS-59 — see combat/foldProbe.ts for the whole rationale).
    * A PARAMETER, exactly like `ModuleRegistry.attach(bus, timer)`: `tests/bench/foldArm.mts` is
    * the only caller in the tree, there is no environment variable, and with no probe attached
@@ -245,6 +267,76 @@ export class CombatEngine {
    */
   ingestEvent(ev: LogEvent, live: boolean): void {
     ingestEvent(this.st, ev, live)
+  }
+
+  /**
+   * A SESSION MARK — "start a new session now", as the ENGINE's records hear it (JOS-322).
+   *
+   * It is the move a ZONE LINE makes, MINUS THE ROOM CHANGE, and that omission is the design: close
+   * the open fight, freeze the running stay into the browsable history tagged `closedBy: 'mark'`,
+   * and mint fresh accumulators. Everything the zone case does beyond that — retiring the world's
+   * mobs, breaking charm, retiring pets, zoning the ally model — is a statement about having LEFT,
+   * and you have not left. So `st.zone` keeps its value, `world.zone()` is never called, the coats,
+   * stances, specials and the session-level state timeline all run straight through; segment views
+   * clip timeline spans to each record's own span at read time, so a stance spanning the mark reads
+   * correctly in BOTH records.
+   *
+   * REFUSED WHILE HYDRATING, and that refusal is what makes replay determinism STRUCTURAL rather
+   * than careful: a mark is a user action, is stored nowhere, and cannot enter a replaying engine at
+   * all — so the JOS-208 replay-vs-live divergence class has no way to recur here. `ts` is the
+   * instant MAIN stamped once for the whole click (src/main/sessionMarks.ts), which is what makes
+   * the loot split and this split share one boundary.
+   *
+   * AN EMPTY STAY MINTS NOTHING (`finalizeZoneSession`'s own drop rule), which is also what makes a
+   * double-click harmless — the same property `addSessionMark`'s dedupe gives the loot half.
+   *
+   * Returns whether the mark was ACCEPTED (false only while hydrating). Whether it minted a record
+   * is a different question, and the honest answer to it is the history itself.
+   */
+  sessionMark(ts: number): boolean {
+    const st = this.st
+    if (st.hydrating) return false
+    // The same wall-clock evaluation `snapshot(now)` runs, so a fight that already ended by the
+    // log's own clock is closed at ITS last damage ts rather than dragged across the boundary.
+    evalClosure(st, ts)
+    finalizeCurrent(st)
+    finalizeZoneSession(st, 'mark')
+    resetZoneAccumulators(st)
+    return true
+  }
+
+  /**
+   * REMOVE THE MOST RECENT SESSION MARK'S BOUNDARY — the engine-level half of the owner's
+   * reversibility law (JOS-322: *the capability to merge it back/undo split, but not put that in
+   * the app*).
+   *
+   * NO UI CALLS THIS AND NONE IS PLANNED. It exists so that "a split is a boundary the engine can
+   * REMOVE" is a tested property of the record model rather than an aspiration — see
+   * combat/mergeSessions.ts for the five mergeable classes and the honest edges.
+   *
+   * ELIGIBILITY IS READ OFF THE FROZEN RECORD: the newest history entry must have been closed by a
+   * MARK and must name the zone we are still standing in. A record separated from the live stay by
+   * a real zone line can never qualify, so this can never fuse two rooms into one.
+   *
+   * Returns whether a boundary was removed.
+   */
+  unsplit(): boolean {
+    const st = this.st
+    const last = st.zoneHistory[st.zoneHistory.length - 1]
+    if (last?.closedBy !== 'mark') return false
+    if (last.zone !== (st.zone ?? 'Session')) return false
+    st.zoneHistory.pop()
+    // The id is handed back to the counter when it was the newest one minted, so an undone split
+    // leaves no hole in the `zs<n>` sequence for the next mark to skip over.
+    if (last.id === `zs${st.zoneSeq}`) st.zoneSeq--
+    st.zoneAgg = mergeAgg(last.agg, st.zoneAgg)
+    st.zoneFinalizedMs += last.finalizedMs
+    st.zoneActiveMs += last.activeMs
+    // The stay STARTED when the earlier half did; it has not ended, so the live end stands unless
+    // nothing has landed since the mark (0 is "no attributed damage yet", never an instant).
+    if (last.startTs !== 0) st.zoneStartTs = last.startTs
+    if (st.zoneLastTs === 0) st.zoneLastTs = last.lastTs
+    return true
   }
 
   snapshot(now: number, opts: SnapshotOpts = {}): CombatSnapshot {

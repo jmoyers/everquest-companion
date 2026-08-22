@@ -173,6 +173,9 @@ function whoWord(kind: TimelineEvent['kind']): string {
   if (kind === 'pet') return 'Pet'
   // 'Ally pet' (JOS-250) is somebody else's charm pet — never yours, so it must not read 'Pet'.
   if (kind === 'allyPet') return 'Ally pet'
+  // 'Other' (JOS-430): a combatant the log named and the roster has not. Deliberately not 'Player'
+  // — see EntityRow's KIND_TAG for why the word must not pick between a person and their pet.
+  if (kind === 'other') return 'Other'
   return kind === 'member' ? 'Group' : 'Enemy'
 }
 

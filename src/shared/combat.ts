@@ -22,8 +22,17 @@ import type { RosterSnap } from './roster'
  * never be added to your total, your curve or your drill. Its row reads
  * `Pet (<mob>) - <Charmer>` and its damage is only ever the mob-vs-mob damage the admission gate
  * lets through while that bind is live and unambiguous (src/main/combat/allyCharms.ts).
+ *
+ * `'other'` (JOS-430) is A COMBATANT THE LOG NAMED and no stronger model claimed — the
+ * record-everything widening the owner's 2026-08-20 ruling asked for ("Everyone means ANY fight the
+ * log can see"). It is deliberately NOT called a player: EQ spells a summoned pet's name with the
+ * same one-word proper-name grammar it gives people, so a row of this kind says the log named this
+ * combatant dealing this damage and nothing more (src/main/combat/otherCombatants.ts carries the
+ * ladder and the measurement). It shares the `member:<key>` id namespace with `'member'` ON
+ * PURPOSE: the same person recorded before your group learns their name and after must be ONE row,
+ * so the kind UPGRADES to `'member'` the moment the roster admits them and never moves back.
  */
-export type SourceKind = 'you' | 'pet' | 'member' | 'enemy' | 'allyPet'
+export type SourceKind = 'you' | 'pet' | 'member' | 'enemy' | 'allyPet' | 'other'
 export type DamageType = 'melee' | 'spell' | 'dot' | 'ds'
 
 /**
@@ -986,6 +995,15 @@ export interface ZoneSessionSummary {
   dps: number
   /** true for the currently-active (live) zone session. */
   live: boolean
+  /**
+   * WHAT ENDED IT (JOS-322): `'zone'` — you walked out of the room — or `'mark'` — you pressed the
+   * app-wide "New session". ABSENT on the live entry, which has not ended at all.
+   *
+   * It decides ONE thing on this side of the wire: the WORD the picker calls the row by (`overall`
+   * for a stay the world ended, `session` for one you did). The reversibility it also encodes is an
+   * engine-side property and deliberately has no control here — see `CombatEngine.unsplit`.
+   */
+  closedBy?: 'zone' | 'mark'
 }
 
 /**

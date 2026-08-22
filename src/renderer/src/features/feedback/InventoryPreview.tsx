@@ -21,20 +21,30 @@
 //   * IT OFFERS A RE-READ. The player can alt-tab, type the command and come back; main holds no
 //     cache for this file (see `currentInventory`), so "Re-read the export" is a real button
 //     rather than a lie about a cache.
+//
+// AND SINCE JOS-441 IT DRAWS TWO DUMPS, from ONE body. The achievements export is previewed by the
+// same component under its own testids and its own sentences: every one of the four decisions above
+// is a decision about "a game-written export we are about to send", not about items, and the second
+// attachment did not get to look different from the first for no reason. What is parameterised is
+// exactly what differs — the testid stem, the reading-it sentence, and the function that names the
+// reason there is nothing.
 
 import { type JSX } from 'react'
 import { Button, Stack, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { count, formatBytes, PreviewLines } from './LogPreview'
 import { outputAgeLabel } from '../../lib/outputFreshness'
-import type { FeedbackInventoryPreview } from './useFeedback'
-import { inventoryProblem } from './useFeedback'
+import type { FeedbackAchievementsPreview, FeedbackInventoryPreview } from './useFeedback'
+import { achievementsProblem, inventoryProblem } from './useFeedback'
+
+/** The part of either preview this component reads. Both shapes satisfy it structurally. */
+type DumpPreview = FeedbackInventoryPreview | FeedbackAchievementsPreview
 
 /**
  * The state line: age first, then the file, then what it costs to send.
  * `295 rows · Primitive_freeport-Inventory.txt · 2 KB compressed`, prefixed by `updated 3d ago`.
  */
-export function inventoryMetaText(dump: FeedbackInventoryPreview, now: number = Date.now()): string {
+export function inventoryMetaText(dump: DumpPreview, now: number = Date.now()): string {
   if (dump.meta === null) return ''
   const parts = [
     outputAgeLabel(dump.meta.updatedAt, now),
@@ -53,15 +63,37 @@ export interface InventoryPreviewProps {
   onRefresh: () => void
 }
 
-export default function InventoryPreview({
+export interface AchievementsPreviewProps {
+  dump: FeedbackAchievementsPreview | null
+  loading: boolean
+  onRefresh: () => void
+}
+
+/** What differs between the two dumps, and nothing else does. */
+interface DumpKindCopy {
+  /** Testid stem — `feedback-<stem>-meta`, `-preview`, `-empty`, `-refresh`. */
+  stem: string
+  /** While main is packaging it. */
+  reading: string
+  /** The sentence for each way of having nothing. */
+  problem: (reason: DumpPreview['unavailable']) => string
+}
+
+function DumpPreviewBody({
   dump,
   loading,
-  onRefresh
-}: InventoryPreviewProps): JSX.Element {
+  onRefresh,
+  copy
+}: {
+  dump: DumpPreview | null
+  loading: boolean
+  onRefresh: () => void
+  copy: DumpKindCopy
+}): JSX.Element {
   if (loading && dump === null) {
     return (
       <Typography variant="caption" color="text.secondary">
-        Reading your inventory export…
+        {copy.reading}
       </Typography>
     )
   }
@@ -71,14 +103,14 @@ export default function InventoryPreview({
         <Typography
           variant="caption"
           color="text.secondary"
-          data-testid="feedback-inventory-empty"
+          data-testid={`feedback-${copy.stem}-empty`}
         >
-          {inventoryProblem(dump?.unavailable ?? 'no-dump')}
+          {copy.problem(dump?.unavailable ?? 'no-dump')}
         </Typography>
         <Button
           size="small"
           startIcon={<RefreshIcon />}
-          data-testid="feedback-inventory-refresh"
+          data-testid={`feedback-${copy.stem}-refresh`}
           onClick={onRefresh}
         >
           Re-read
@@ -91,20 +123,20 @@ export default function InventoryPreview({
       <Typography
         variant="caption"
         color="text.secondary"
-        data-testid="feedback-inventory-meta"
+        data-testid={`feedback-${copy.stem}-meta`}
         sx={{ fontFamily: 'ui-monospace, monospace' }}
       >
         {inventoryMetaText(dump)}
       </Typography>
 
-      <PreviewLines lines={dump.previewLines} testId="feedback-inventory-preview" />
+      <PreviewLines lines={dump.previewLines} testId={`feedback-${copy.stem}-preview`} />
 
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
         <Button
           size="small"
           variant="outlined"
           startIcon={<RefreshIcon />}
-          data-testid="feedback-inventory-refresh"
+          data-testid={`feedback-${copy.stem}-refresh`}
           onClick={onRefresh}
         >
           Re-read the export
@@ -117,4 +149,24 @@ export default function InventoryPreview({
       </Stack>
     </Stack>
   )
+}
+
+const INVENTORY_COPY: DumpKindCopy = {
+  stem: 'inventory',
+  reading: 'Reading your inventory export…',
+  problem: inventoryProblem
+}
+
+const ACHIEVEMENTS_COPY: DumpKindCopy = {
+  stem: 'achievements',
+  reading: 'Reading your achievements export…',
+  problem: achievementsProblem
+}
+
+export default function InventoryPreview(props: InventoryPreviewProps): JSX.Element {
+  return <DumpPreviewBody {...props} copy={INVENTORY_COPY} />
+}
+
+export function AchievementsPreview(props: AchievementsPreviewProps): JSX.Element {
+  return <DumpPreviewBody {...props} copy={ACHIEVEMENTS_COPY} />
 }

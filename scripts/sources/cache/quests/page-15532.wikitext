@@ -1,5 +1,6 @@
-{{Velious Era}}
-[[File:npc_fixxin_followig.png|frame|Fixxin Followig]]
+{{Classic Era}}
+
+[[File:npc_fixxin_followig.png|thumb|Fixxin Followig]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[North Karana]]
@@ -44,15 +45,15 @@ You say, 'What enchanted blade?'
 
 : Fixxin Followig says 'Interested in an enchanted blade? You wouldn't be planning on hunting the moon beasts without a strong. well-oiled party to back you up, now, would you? Well, in any case, I'll gladly lend you a copy of my book, Fixxin Followigs Silvery Blades, if you will fetch me a bar of silver. My supply is running low and our weapons are in need of repair after the deaths of so many lycanthropes.'
 
-'''Give him a [[Silver Bar]]. Fixxin will accept 1 silver bar and ONLY 1 silver bar at a time.'''
+'''Give him a [[Silver Bar]].''' (Stacks of bars works)
 
 : Fixxin Followig thanks ______ heartily. 'Here is the book as promised. I wish you luck with your enchanted weapons. May they slay many lycanthropes before they go dull.'
 
 <div class='facblock'>
-* Your faction standing with [[Karana Residents]] got better.
-* Your faction standing with [[Guards of Qeynos]] got better.
-* Your faction standing with [[Priests of Life]] got better.
-* Your faction standing with [[Knights of Thunder]] got better.
+* Your faction standing with [[Karana Residents]] got better. (+5)
+* Your faction standing with [[Guards of Qeynos]] got better. (+5)
+* Your faction standing with [[Priests of Life]] got better. (+5)
+* Your faction standing with [[Knights of Thunder]] got better. (+5)
 </div>
 {{YouGainExperience}}
 

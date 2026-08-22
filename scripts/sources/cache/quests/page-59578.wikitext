@@ -1,0 +1,29 @@
+
+<onlyinclude>{{Itempage
+|notes       = {{Item Lore | Once the soul of a paladin who retired with the Sky Nobles.. }}
+|itemname    = Burning Soul of the Virtuous
+|lucy_img_ID = 
+|statsblock  = 
+No Trade, Quest<br>
+Size: TINY<br>
+Class: None<br>
+Race: None<br>
+|bookcontents = 
+:After clicked on:
+As you stare into the fading embers within your palm, the fear of your mistakes overwhelms you as the visage of Jotayi's vengeance upon Inte echoes from the beyond. You are left with a long silence and have no conclusions left to draw from. You clasp the flames away in disgust, and close your eyes to seek inward. A voice calls out to you from the void. "Still the gods' plaything, are you? A miserable fate we all have come to learn. You'll not find any truth despite their promises. It has led me only to selfish spite. My name is Luxio, I was once a knight such as you. If you still need guidance, seek me out in Freeport amidst the rest of the forsaken rabble."
+
+|dropsfrom = 
+
+[[Plane of Sky]]
+
+* [[Inte Akera]]
+
+|relatedquests = 
+* [[The Torrid Corruptor]]
+
+}}</onlyinclude>
+
+[[Category:Plane of Sky]]
+[[Category:Quests]]
+[[Category:Paladin Quests]]
+[[Category:Shadow Knight Quests]]

@@ -74,13 +74,23 @@ const SLOT_TOKENS: [token: string, canonical: string | null][] = [
   ['Back', 'BACK'],
   ['Face', 'FACE'],
   ['Hands', 'HANDS'],
+  // case variants added by the 2026-08-22 rescrape (the Mistmoore-rework wave of wiki edits
+  // writes Title Case slot lines; the fold already handled them, only this inventory grew)
+  ['Waist', 'WAIST'],
+  ['Wrist', 'WRIST'],
+  ['Feet', 'FEET'],
+  ['Neck', 'NECK'],
+  ['Arms', 'ARMS'],
+  ['Shoulders', 'SHOULDERS'],
+  ['Fingers', 'FINGER'],
+  ['Ear', 'EAR'],
   // punctuation the wiki leaves behind
   ['BACK,', 'BACK'],
   ['/', null]
 ]
 
 test('every measured slot token maps to a canonical slot or to silence', () => {
-  assert.equal(SLOT_TOKENS.length, 32, 'the measured inventory is 32 distinct tokens')
+  assert.equal(SLOT_TOKENS.length, 40, 'the measured inventory is 40 distinct tokens (2026-08-22 rescrape)')
   for (const [token, canonical] of SLOT_TOKENS) {
     const { slots, unknown } = normalizeSlotTokens(token)
     assert.deepEqual(unknown, [], `${token} should be known to the table`)
@@ -198,8 +208,10 @@ test('the class table covers the whole committed corpus', () => {
   assert.ok(allRows >= 4000, `only ${allRows} plain ALL rows`)
   assert.ok(exceptRows >= 700, `only ${exceptRows} 'except' rows`)
   assert.ok(noneRows >= 150, `only ${noneRows} NONE rows`)
-  // The measured token inventory: 16 codes + ALL/All + NONE/None + except + two annotations.
-  const known = new Set<string>([...CLASS_ABBRS, 'ALL', 'All', 'NONE', 'None', 'except', '(35)', '(48)'])
+  // The measured token inventory: 16 codes + ALL/All + NONE/None + except + two annotations —
+  // plus `War`, the one Title Case class code the 2026-08-22 rescrape added (the case fold
+  // already normalizes it; it is listed so the inventory stays a census and not a guess).
+  const known = new Set<string>([...CLASS_ABBRS, 'ALL', 'All', 'NONE', 'None', 'except', '(35)', '(48)', 'War'])
   assert.deepEqual([...seen].filter((t) => !known.has(t)), [], 'corpus class token outside the measured set')
 })
 

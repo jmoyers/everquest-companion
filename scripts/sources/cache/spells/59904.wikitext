@@ -1,0 +1,36 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Hp to Mana
+| spellicon =
+| description = Converts the power of your body into mental energy.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Potion of Vampiric Spirit]].
+
+| items_with_effect =
+
+<ul><li> {{:Potion of Vampiric Spirit}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Decrease Current HP by 180 }}
+{{SpellSlotRow | 2 | Increase Current Mana by 60 }}
+
+| skill =
+| mana = 0
+| range = 0
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = Instant
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your body aches as your mind clears.
+| msg_cast_on_other = Someone  winces.
+| msg_wears_off = 
+}}

@@ -25,7 +25,7 @@
 
 import { CLASS_ABBRS, resolvedClasses, type ClassAbbr, type ComboInterval } from './classCombo'
 import { comboAt } from './comboIndex'
-import type { SpellMetrics } from './spellMetrics'
+import type { ClientHpFacts, SpellMetrics } from './spellMetrics'
 
 /** What kind of thing unlocked. `skill`/`disc`/`innate` are classes.json's own words. */
 export type UnlockKind = 'spell' | 'skill' | 'disc' | 'innate'
@@ -65,6 +65,36 @@ export interface UnlockSpell {
    * paragraph. Absent for every spell with no hitpoint line, which is most of them.
    */
   metrics?: SpellMetrics
+  /**
+   * THE INPUTS `metrics` WAS COMPUTED FROM, so a reader can compute it again at a DIFFERENT LEVEL
+   * (JOS-445). `metrics` is a snapshot at the spell's own gain level and cannot answer "what is this
+   * L18 nuke worth to me at 35" — `Garrison's Mighty Mana Shock` states
+   * `Decrease Hitpoints by 272 (L18) to 333 (L34)`, so the two levels differ by 22%.
+   *
+   * ONLY THE HITPOINT LINES, and that is what makes carrying them affordable: the full effect list
+   * is the bulk of the catalog (the reason `UnlockSpell` never carried it), while the lines
+   * `parseHpLine` answers to are 403 spells and 17 kB against this dataset's 467 kB. Whether a line
+   * IS a hitpoint line does not depend on the level — the head test and the magnitude shapes are
+   * level-independent, only the VALUE a ramp yields is not — so filtering main-side loses nothing a
+   * far-end reader could have found.
+   *
+   * Absent for a spell with no hitpoint line at all, which is most of the catalog.
+   */
+  hpLines?: string[]
+  /**
+   * The CLIENT'S hitpoint slots (JOS-396's fallback source), carried for the same reason and under
+   * the same rule: only for the spells whose wiki lines yield nothing, which is the only case
+   * `spellMetricsAt` consults it in. Fifteen spells in the owner's install; absent for everyone
+   * else, and absent entirely on a machine with no `spells_us.txt`.
+   */
+  clientHp?: ClientHpFacts
+  /**
+   * The re-use timer, RESOLVED main-side with `spellMetricsAt`'s own precedence (page over client,
+   * a stated 0 blocking the fallback) — the JOS-444 ∩ JOS-445 seam: `hpLines`/`clientHp` let a
+   * reader re-evaluate at another level, and without this field that re-evaluation would divide by
+   * a cast-only window while the row's own snapshot divides by the sustained cycle.
+   */
+  recastMs?: number
   /**
    * The spell THIS one replaces, per class that gains it (JOS-391) — the shipped spell-line
    * research, joined main-side (`src/main/data/spellLineLookup.ts`).

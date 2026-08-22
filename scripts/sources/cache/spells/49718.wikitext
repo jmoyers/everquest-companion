@@ -13,6 +13,7 @@
 
 <ul><li> {{VeliousGray| {{:Desiccated Halfling Mask}} }}
 </li><li> {{:Skinned Halfling Face Mask}}
+</li><li> {{:Essence of Halfling (Wormwood)}}
 </li></ul>
 
 | slots = 

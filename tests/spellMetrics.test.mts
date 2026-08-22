@@ -169,8 +169,15 @@ test('R3 ticks come from the duration, and a rate with no duration states no tot
 })
 
 test('R4 the metrics arithmetic — damage, dps and per mana, on the real rows', () => {
-  // Anarchy: 273 (L34) to 288 (L39), 99 mana, 3.5s cast, instant. 288/99 = 2.909…, 288/3.5 = 82.3
-  assert.deepEqual(metrics(entry('Anarchy'), 39), { damage: 288, damagePerMana: 2.9, dps: 82.3 })
+  // Anarchy: 273 (L34) to 288 (L39), 99 mana, 3.5s cast, 1.5s recast, instant. 288/99 = 2.909…,
+  // and the per-second figure divides by the CYCLE (JOS-444): 288 / (3.5 + 1.5) = 57.6, where
+  // before the recast was read it was 288/3.5 = 82.3.
+  assert.deepEqual(metrics(entry('Anarchy'), 39), {
+    damage: 288,
+    damagePerMana: 2.9,
+    dps: 57.6,
+    recastMs: 1500
+  })
 
   // Blood of Pain: 56 (L41) to 65 (L50) per tick over its stated duration. 650 / (3 + 60) = 10.3
   const dot = metrics(
@@ -181,8 +188,16 @@ test('R4 the metrics arithmetic — damage, dps and per mana, on the real rows',
 
   // Chloroplast: a pure HoT — 16 per tick at L50 over 16 minutes (160 ticks), 200 mana, 6s cast.
   const hot = metrics(entry('Chloroplast'), 50)
-  // hps is over cast PLUS the whole duration: 2560 / (6 + 960) = 2.65
-  assert.deepEqual(hot, { heal: 2560, healPerMana: 12.8, hps: 2.7, hot: true, overSec: 960 })
+  // hps is over cast PLUS the whole duration: 2560 / (6 + 960) = 2.65. Its 1.5s recast is carried
+  // on the record but changes nothing — a re-use timer inside the duration buys no extra ticks.
+  assert.deepEqual(hot, {
+    heal: 2560,
+    healPerMana: 12.8,
+    hps: 2.7,
+    hot: true,
+    overSec: 960,
+    recastMs: 1500
+  })
 })
 
 test('R5 the Echo family sums its direct heal and its self-counted tail', () => {
@@ -223,9 +238,17 @@ test('R6 a lifetap is damage, and max-HP / HP-when-cast lines are not hit points
   assert.equal(parseHpLine('Charm (up to L37)', 1), null)
 })
 
-/** Every figure a SpellMetrics can carry, for the sweep's "no number nobody can hold" check. */
+/**
+ * Every number a SpellMetrics can carry, for the sweep's "no number nobody can hold" check.
+ *
+ * `recastMs` is in the list because it obeys the same rule (JOS-444): it is written only when a
+ * source states a POSITIVE timer, so a stated 0 — which 432 catalog rows carry — must leave the
+ * field absent rather than one day printing `recast 0s`.
+ */
 function figuresOf(m: SpellMetrics | undefined): (number | undefined)[] {
-  return m === undefined ? [] : [m.damage, m.heal, m.dps, m.hps, m.damagePerMana, m.healPerMana]
+  return m === undefined
+    ? []
+    : [m.damage, m.heal, m.dps, m.hps, m.damagePerMana, m.healPerMana, m.recastMs]
 }
 
 test('R7 the whole committed catalog reads without producing a number nobody can hold', () => {
@@ -272,7 +295,19 @@ test('R8 the row parts read the way the panel prints them, with no em dash', () 
   assert.deepEqual(heal, ['heal 250', 'hps 83', '3.6 heal/mana'])
   const dot = spellMetricsParts({ damage: 650, dps: 10.3, damagePerMana: 6.5, dot: true, overSec: 60 })
   assert.equal(dot[dot.length - 1], 'over 60s')
-  for (const p of [...dmg, ...heal, ...dot]) assert.ok(!/[—–]/.test(p), p)
+  // THE RECAST PART GOES LAST, and only when the timer is the spell's own rather than the game's
+  // 1.5s global cooldown (JOS-444).
+  const slow = spellMetricsParts({ damage: 500, dps: 55.6, recastMs: 6000 })
+  assert.deepEqual(slow, ['dmg 500', 'dps 56', 'recast 6s'])
+  assert.deepEqual(spellMetricsParts({ damage: 500, dps: 55.6, recastMs: 1500 }), ['dmg 500', 'dps 56'])
+  assert.equal(spellMetricsParts({ damage: 1, recastMs: 2000 }).at(-1), 'recast 2s', 'the floor is inclusive')
+  assert.equal(spellMetricsParts({ damage: 1, recastMs: 2250 }).at(-1), 'recast 2.3s', 'one decimal')
+  assert.equal(
+    spellMetricsParts({ damage: 650, dps: 10.3, dot: true, overSec: 60, recastMs: 12_000 }).at(-1),
+    'recast 12s',
+    'after the over-time window, never before it'
+  )
+  for (const p of [...dmg, ...heal, ...dot, ...slow]) assert.ok(!/[—–]/.test(p), p)
   // Nothing at all for a spell with no hitpoint line.
   assert.deepEqual(spellMetricsParts({}), [])
 })
@@ -294,6 +329,7 @@ const ODIUM_WIKI: SpellMetricsInput = {
   effects: ['Increase Curse Counter by 8'],
   mana: 409,
   castTimeMs: 3000,
+  recastMs: 6000,
   durationMs: 30_000
 }
 
@@ -350,7 +386,8 @@ test('R11 THE TICKET: Odium reads off the client and prints the way the row does
   // Before: the page states no hitpoint line, so there are no figures — the owner's report.
   assert.equal(spellMetricsAt(ODIUM_WIKI, 43), undefined)
 
-  // After: 303 a tick x 5 ticks = 1515, over 409 mana, over a 3s cast plus 30s of ticks.
+  // After: 303 a tick x 5 ticks = 1515, over 409 mana, over a 3s cast plus 30s of ticks. Its 6s
+  // recast is stated, printed, and changes no window — the ticks are the longer wait (JOS-444).
   const m = spellMetricsAt(ODIUM_WIKI, 43, ODIUM_CLIENT)
   assert.deepEqual(m, {
     damage: 1515,
@@ -358,13 +395,15 @@ test('R11 THE TICKET: Odium reads off the client and prints the way the row does
     dps: 45.9,
     dot: true,
     overSec: 30,
+    recastMs: 6000,
     source: 'client'
   })
   assert.deepEqual(spellMetricsParts(m ?? {}), [
     'dmg 1515',
     'dps 46',
     '3.7 dmg/mana',
-    'over 30s'
+    'over 30s',
+    'recast 6s'
   ])
   // The ramp is read at the evaluation level like every other figure in this file.
   assert.equal(spellMetricsAt(ODIUM_WIKI, 50, ODIUM_CLIENT)?.damage, 1585)
@@ -420,4 +459,75 @@ test('R13 the client fold: a flat nuke, a heal, an unknown formula, and a rate w
     hpDuration: { formula: 50, value: 0 }
   })
   assert.equal(lich, undefined)
+})
+
+// ── JOS-444 — THE RE-USE TIMER, AND WHAT IT DOES TO A PER-SECOND FIGURE ────────────────────────
+//
+// THE PREMISE THAT DIED: this file's header used to say recast was not in the catalog at all, and
+// on 2026-08-22 the scrape began capturing the wiki's `recast_time` (schema 3, 1,925 of 2,006
+// rows). The figures below are therefore SUSTAINED ones, and the tests are the arithmetic of the
+// casting cycle rather than of the cast.
+//
+// GARRISON'S MIGHTY MANA SHOCK IS THE PIN the ticket named, and it is the interesting shape: a
+// 3.0s cast with a 1.5s recast, so the re-use timer is SHORTER than the cast and still lengthens
+// the cycle to 4.5s, because it starts when the cast completes. 333 damage at L35 therefore reads
+// 74 dps where the cast-only window read 111.
+
+/** The wizard nuke the ticket pins, verbatim from spells.json (schema 3). */
+const GARRISON = "Garrison's Mighty Mana Shock"
+
+test('R14 THE TICKET: a sustained dps divides by the whole casting cycle', () => {
+  // The ramp is `272 (L18) to 333 (L34)`, so L35 reads the clamped top of it: 333 damage, 105
+  // mana, a 3.0s cast and a 1.5s recast. 333 / 4.5 = 74, and 333 / 105 = 3.17.
+  const g = metrics(entry(GARRISON), 35)
+  assert.deepEqual(g, { damage: 333, damagePerMana: 3.2, dps: 74, recastMs: 1500 })
+  // For the record, what the cast-only window used to answer here: 333 / 3.0 = 111.
+  // 1.5s is the game's global cooldown, so the ROW prints no word about it — only the arithmetic
+  // moved. (`spellMetricsParts`' floor, pinned in R8.)
+  assert.deepEqual(spellMetricsParts(g), ['dmg 333', 'dps 74', '3.2 dmg/mana'])
+})
+
+test('R15 the window is cast plus the LONGER of the duration and the recast', () => {
+  const dot = (recastMs: number | undefined): SpellMetrics =>
+    metrics(
+      {
+        effects: ['Decrease Hitpoints by 100 per tick'],
+        mana: 100,
+        castTimeMs: 2000,
+        durationMs: 30_000,
+        ...(recastMs === undefined ? {} : { recastMs })
+      },
+      50
+    )
+  // 500 damage over five ticks. With no recast at all the window is cast + duration = 32s.
+  assert.equal(dot(undefined).dps, 15.6)
+  // A recast INSIDE the duration buys nothing: the total is still the whole duration's ticks.
+  assert.equal(dot(6000).dps, 15.6, 'the ticks are the longer wait')
+  assert.equal(dot(30_000).dps, 15.6, 'equal is not longer')
+  // A recast BEYOND it does move the window: 500 / (2 + 60) = 8.1.
+  assert.equal(dot(60_000).dps, 8.1)
+
+  // And the instant case has no duration to compete with, so every millisecond of recast counts.
+  const nuke = (recastMs: number): SpellMetrics =>
+    metrics({ effects: ['Decrease Hitpoints by 300'], mana: 100, castTimeMs: 3000, recastMs }, 50)
+  assert.equal(nuke(0).dps, 100, 'a STATED zero is a real answer: no re-use timer, no extra window')
+  assert.equal(nuke(0).recastMs, undefined, 'and nothing to print')
+  assert.equal(nuke(1500).dps, 66.7)
+  assert.equal(nuke(9000).dps, 25)
+})
+
+test('R16 a spell no source states a recast for is unchanged, figure for figure', () => {
+  const silent: SpellMetricsInput = {
+    effects: ['Decrease Hitpoints by 300'],
+    mana: 100,
+    castTimeMs: 3000
+  }
+  assert.deepEqual(metrics(silent, 50), { damage: 300, damagePerMana: 3, dps: 100 })
+  // …and the client's own field 10 answers for exactly that spell, when the install has a row for
+  // it (JOS-444's fallback). The page still wins wherever the page speaks.
+  assert.equal(spellMetricsAt(silent, 50, { recastMs: 6000 })?.dps, 33.3)
+  assert.equal(spellMetricsAt(silent, 50, { recastMs: 6000 })?.recastMs, 6000)
+  assert.equal(spellMetricsAt({ ...silent, recastMs: 1500 }, 50, { recastMs: 6000 })?.dps, 66.7)
+  // A STATED zero on the page is a statement, so the client never overrides it.
+  assert.equal(spellMetricsAt({ ...silent, recastMs: 0 }, 50, { recastMs: 6000 })?.dps, 100)
 })

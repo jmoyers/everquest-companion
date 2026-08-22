@@ -1,4 +1,4 @@
-[[File:npc_hekzin_g`zule.png|frame|Hekzin G`Zule]]
+[[File:npc_hekzin_g`zule.png|thumb|Hekzin G`Zule]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Neriak|Neriak Third Gate]]
@@ -41,11 +41,11 @@ You receive an Empty Bag in which you need to combine three [[Snake Scales]] and
 : Hekzin G`Zule says 'Fine work for a scrub. Maybe one day you will be able to test this new snakescale armor out. For the moment you shall take the [Dark Shield of Ebon] if you do not own one already.' 
 
 <div class="facblock">
-* Your faction standing with [[Ebon Mask]] got better.
-* Your faction standing with [[Guards of Qeynos]] got worse.
-* Your faction standing with [[Wolves of the North]] got worse.
-* Your faction standing with [[Guardians of the Vale]] got worse.
-* Your faction standing with [[Carson McCabe]] got worse.
+* Your faction standing with [[Ebon Mask]] has been adjusted by 10.
+* Your faction standing with [[Guards of Qeynos]] has been adjusted by -1.
+* Your faction standing with [[Wolves of the North]] has been adjusted by -2.
+* Your faction standing with [[Guardians of the Vale]] has been adjusted by -1.
+* Your faction standing with [[Carson McCabe]] has been adjusted by -2.
 {{exp}}
 </div> 
 

@@ -54,6 +54,20 @@
  * with it absent again, and all three have to be the same y. A block element would pass every
  * other check in this file.
  *
+ * AND THE FOURTH RULING (JOS-431), which is the same surface answering a SECOND report. The three
+ * acts above all rest on one act of writing: the dump is OVERWRITTEN in place while the app is up,
+ * and the app follows it. Report 01M0FMGA4DQRMG46290GWVVHQ6 (v1.6.0) is what happens when the
+ * writer REPLACES the file instead — a fresh dump on disk, a days-old timestamp on screen, and a
+ * restart as the only cure. So this spec now writes the other shape too, and adds the affordance
+ * the reporter asked for by name:
+ *
+ *   THE FILE IS DELETED AND WRITTEN AGAIN, in the same session, on the same watcher. The app has
+ *   to date the replacement rather than the file that is gone (`stepReplacedNotOverwritten`), and
+ *   the evidence is deliberately an AGE IN MINUTES rather than a clock — the step's own header
+ *   says why a second timestamp stamped `now` would have proved nothing.
+ *   THE LINE CARRIES A REFRESH, in the row's own quiet voice, and pressing it re-reads the dump.
+ *   Not the JOS-268 button returning: `RELOAD` is still asserted absent beside it.
+ *
  * WHY THIS NEEDS A REAL APP, AND A REAL FILE. Every piece of the arc is a seam between processes:
  * chokidar in main sees a write into the EQ install root → the outputs registry re-finds and
  * re-stats the file → `loadInventory` parses it and stamps `readAt` → the store → two IPC pushes →
@@ -106,20 +120,34 @@ import type { Page } from 'playwright-core'
 import { buildIfStale, check, countOf, dumpArtifacts, failures, reportRun, settle } from './appHarness.mjs'
 import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { launchOnFixture, stageFixture, writeInventoryDump, type FixtureLog } from './logFixture.mjs'
+// JOS-431's two acts live next door because this file is AT the repo max-lines budget and the rule
+// is to SPLIT, never ratchet. The selectors and the `slot` reader they share come back with them,
+// so there is still exactly one spelling of each.
+import {
+  AGE,
+  DUMP,
+  LOADED,
+  REFRESH,
+  slot,
+  stepRefreshRereads,
+  stepReplacedNotOverwritten,
+  type Slot
+} from './inventoryRewriteSteps.mjs'
 
 const NAV_SKY = '[data-testid="nav-posky"]'
 const NAV_OVERVIEW = '[data-testid="nav-overview"]'
 /** The `/outputfile` line the Sky tab renders — the whole surface under test. */
 const FRESH = '[data-testid="posky-inventory-fresh"]'
-/** Its two slots: when the PLAYER wrote the dump, and when THIS APP read it. */
-const AGE = '[data-testid="posky-inventory-fresh-age"]'
-const LOADED = '[data-testid="posky-inventory-fresh-loaded"]'
 /** The command itself, and the HOW affordance the ticket kept (subdued, not absent). */
 const COMMAND = '[data-testid="posky-inventory-fresh-command"]'
 const HOW = '[data-testid="posky-inventory-fresh-steps-toggle"]'
 /** What HOW opens: the numbered steps, on a surface of their own over the list. */
 const STEPS = '[data-testid="posky-inventory-fresh-steps"]'
-/** THE CONTROL THAT NO LONGER EXISTS (JOS-268). Named here only so its absence can be asserted. */
+/**
+ * THE CONTROL THAT NO LONGER EXISTS (JOS-268). Named here only so its absence can be asserted, and
+ * it is still absent after JOS-431 put `REFRESH` on the line — the two are different controls in
+ * different places, which is the whole point of the later ticket's own assertions.
+ */
 const RELOAD = '[data-testid="posky-reload-inventory"]'
 /** THE SECOND TENANT OF THAT SLOT (JOS-294): what `log` says when a dump IS loaded. */
 const IGNORED = '[data-testid="posky-inventory-ignored"]'
@@ -137,27 +165,6 @@ const COUNT_SOURCE_KEY = 'eq.countSource'
 const COUNTS = '[data-testid="posky-counts"]'
 /** The tab's own handle, now that the Reload button is not there to wait for. */
 const SEARCH = '[data-testid="posky-search"]'
-/** The committed dump a real `/outputfile inventory` produced (tests/fixtures/). */
-const DUMP = 'Primitive_freeport-Inventory.txt'
-
-/** A slot, as the user sees it and as the DOM knows it: the words, the exact clock, the colour. */
-interface Slot {
-  text: string
-  title: string
-  color: string
-}
-
-function slot(page: Page, sel: string): Promise<Slot> {
-  return page.evaluate((s) => {
-    const el = document.querySelector(s)
-    if (!el) return { text: '', title: '', color: '' }
-    return {
-      text: (el as HTMLElement).innerText.trim(),
-      title: el.getAttribute('title') ?? '',
-      color: getComputedStyle(el).color
-    }
-  }, sel)
-}
 
 /**
  * THE LAYOUT, READ IN ONE FRAME — which is the only way the no-reflow comparison means anything.
@@ -355,11 +362,17 @@ async function stepItIsUnderstated(page: Page): Promise<void> {
   check('the command is no louder than the timestamp beside it', style.commandSize === style.ageSize, `${style.commandSize} vs ${style.ageSize}`)
   check('…the line wears no card border', style.border === '0px', style.border)
   check('…and no fill of its own — it sits on the panel', style.fill === 'rgba(0, 0, 0, 0)', style.fill)
-  const how = await page.evaluate(
-    (s) => (document.querySelector(s) as HTMLElement | null)?.innerText.trim() ?? '',
-    HOW
-  )
-  check('…and the HOW affordance is still there, in a quiet voice', how === 'How', how)
+  // The two affordances, read the same way: sentence-cased words, no louder than the stamps they
+  // sit beside. The second one is JOS-431's, and it is held to this constraint rather than exempted
+  // from it — the JOS-268 button was a control BESIDE the dropdown, this is one word INSIDE the
+  // caption row, and `RELOAD`'s continued absence three steps up is the other half of that claim.
+  for (const [sel, word] of [[HOW, 'How'], [REFRESH, 'Refresh']] as const) {
+    const label = await page.evaluate(
+      (s) => (document.querySelector(s) as HTMLElement | null)?.innerText.trim() ?? '',
+      sel
+    )
+    check(`…and the ${word} affordance is there, in a quiet voice`, label === word, label)
+  }
 }
 
 /**
@@ -602,6 +615,7 @@ async function stepStartupRead(page: Page, before: Slot): Promise<void> {
   check('…and the file is dated from disk, as it always was', age.title.length > 0, age.title)
 }
 
+
 /**
  * ONE LAUNCH, WITH ITS CONSOLE WATCHED AND ITS ARTIFACTS DROPPED — the boilerplate both launches
  * need, factored so `main` reads as the two-act story the header describes rather than as four
@@ -654,6 +668,8 @@ async function main(): Promise<void> {
       await stepAskingHowMovesNothing(page, base)
       await stepNeverRun(page)
       readAt = await stepAutoLoads(page, log.installDir)
+      // The other shape of rewrite, in the same session and on the same file (JOS-431).
+      await stepReplacedNotOverwritten(page, log.installDir)
       await stepItLeavesWithoutMoving(page, base)
       await stepLogSaysTheDumpIsIgnored(page, base)
       await stepReadyTabCarriesTheSource(page)
@@ -676,6 +692,9 @@ async function main(): Promise<void> {
         if (!(await setCountSource(page, 'inventory'))) return
         if (!check('the line comes back with the source', await appears(page, FRESH, 20_000))) return
         await stepStartupRead(page, before)
+        // …and the affordance the second report asked for, pressed for real (JOS-431). It goes
+        // last because it needs the app to have been up a while — see the step's own header.
+        await stepRefreshRereads(page, await slot(page, LOADED))
       })
     }
   } finally {
