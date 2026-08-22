@@ -39,7 +39,8 @@ import { logError } from './errorLog'
 import { normalizeItemName, parseItemWikitext } from './itemLookupParse'
 import { buildQuestItemIndex } from './questItemIndex'
 import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbFile } from './itemsDb'
-import type { ItemKnowledge, ItemQuestUse, PoskyData, QuestData } from '../shared/types'
+import { heldClickySpells as clickySpells } from './itemClickies'
+import type { HeldCounts, ItemKnowledge, ItemQuestUse, PoskyData, QuestData } from '../shared/types'
 
 export { normalizeItemName, parseItemWikitext }
 // The COMMITTED wiki item database — the PRIMARY source (see the design note above).
@@ -91,6 +92,18 @@ const cacheKey = itemKey
 // ---- the committed item database (PRIMARY source) ------------------------------
 
 const itemDb = buildItemDbIndex(itemsJson as unknown as ItemDbFile)
+
+/**
+ * THE HELD-CLICKY CATALOG (JOS-438), bound to the committed DB here because this module already
+ * imports it and pipeline.ts already imports THIS — so the feature adds no module edge to the main
+ * bundle. That is not tidiness: giving itemClickies.ts its own items.json import and reaching it
+ * from session.ts/pipeline.ts broke JOS-431's inventory watcher, measured, with the function never
+ * called. itemClickies.ts carries the bisect. The derivation is pure and lives there; this is the
+ * binding and nothing else.
+ */
+export function heldClickySpells(counts: HeldCounts): ReadonlySet<string> {
+  return clickySpells((itemsJson as unknown as ItemDbFile).items, counts)
+}
 
 /**
  * The committed DB's answer for a key, already in `ItemKnowledge` shape (the record IS those

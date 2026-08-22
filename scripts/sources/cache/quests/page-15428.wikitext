@@ -26,7 +26,9 @@
 
 == Walkthrough ==
 
-Your Location is 600.04, 809.14, -31.12
+Shando's Location is 600.04, 809.14, -31.12
+
+To reach him, go to the Erudin City office, through a series of doors in the back there is a staircase down to the jails where you will find him.
 
 You say, 'Hail, Shondo Billin'
 

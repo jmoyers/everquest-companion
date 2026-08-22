@@ -11,7 +11,7 @@ import { takenAnnotations } from './roundViews'
 import { sumHeal } from './aggregate'
 import { buildHealingView } from './healing'
 import { buildProcsView, effectLandings } from './procViews'
-import { zoneActiveSec, zoneDurationSec } from './lifecycle'
+import { zoneActiveSec, zoneDurationSec, zoneSessionWord } from './lifecycle'
 import { ACTIVE_MS, TIMELINE_BUDGET, encounterName, type Encounter, type TimelineRaw } from './encounter'
 import { CATEGORY_ORDER } from '../../shared/combat'
 import type { Agg } from './aggregate'
@@ -64,7 +64,8 @@ export function buildSelected(st: EngineState, id: string, now: number): Segment
     const zDur = Math.max(1, zs.finalizedMs / 1000)
     const zActive = Math.min(zDur, zs.activeMs / 1000)
     return buildView({
-      id: zs.id, kind: 'zone', name: `${zs.zone} - overall`, zone: zs.zone,
+      // `overall` or `session`, decided by what CLOSED the stay (JOS-322 — lifecycle.zoneSessionWord).
+      id: zs.id, kind: 'zone', name: `${zs.zone} - ${zoneSessionWord(zs.closedBy)}`, zone: zs.zone,
       agg: zs.agg, durationSec: zDur, activeSec: zActive, active: false,
       st, startTs: zs.startTs, endTs: zs.lastTs
     })

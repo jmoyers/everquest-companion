@@ -1,5 +1,5 @@
 {{Disambig3|[[Poacher's Head Quest (Surefall Glade)]]}}
-[[File:npc_jras_solsier.png|frame|Jras Solsier]]
+[[File:npc_jras_solsier.png|thumb|Jras Solsier]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Erudin]]
@@ -55,9 +55,9 @@ Hand in a [[Poacher's Head]] to Jras. Note that the poacher's head doesn't have 
 : Jras Solsier says 'You have served us well. The harmony of the forest shall be preserved. I have word that theses infidels were all working for one man. Find me evidence pertaining to this man. Surely one of these poachers has something which could aid in finding this man. Go in peace.'
 
 <div class="facblock">
-* Your faction standing with [[Peace Keepers]] got better.
-* Your faction standing with [[High Council of Erudin]] got better.
-* Your faction standing with [[Heretics]] got worse.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
+* Your faction standing with [[High Council of Erudin]] has been adjusted by 5.
+* Your faction standing with [[Heretics]] has been adjusted by -1.
 </div>
 {{YouGainExperience}}
 : You get a small amount of coin

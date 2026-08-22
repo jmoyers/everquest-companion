@@ -43,17 +43,15 @@ export interface ItemRename {
 }
 
 export const ITEM_RENAMES: readonly ItemRename[] = [
-  {
-    from: 'Scintillating Bracer of Protection',
-    to: 'Shimmering Bracer of Protection',
-    verified: '2026-08-19',
-    evidence:
-      'Reported BQ25B2 (1.5.0) citing eqlwiki.com/Shimmering_Bracer_of_Protection. Checked: the ' +
-      'raw wikitext of Scintillating Bracer of Protection is exactly "#REDIRECT [[Shimmering ' +
-      'Bracer of Protection]]", and the target page carries {{Sky Era}}, itemname = Shimmering ' +
-      'Bracer of Protection, the same WRIST/ROG slot and the same Rogue Test of Stealth quest ' +
-      'link our scrape files under the old name. One item, renamed upstream after our scrape.'
-  }
+  // EMPTY TODAY, AND THAT IS THE TABLE WORKING. Its one row — `Scintillating Bracer of
+  // Protection` → `Shimmering Bracer of Protection` (verified 2026-08-19, reported BQ25B2) —
+  // RETIRED 2026-08-22 when the full rescrape landed the rename upstream in every committed
+  // scrape (items.json carries only the new page; posky.json's Rogue Test of Stealth reward says
+  // Shimmering; quests.json no longer carries the item at all, its class-test page having become
+  // a pure transclusion). The old spelling in a player's log resolves through the wiki's own
+  // redirect via itemLookup's live fallback — which is the arrangement this overlay was bridging
+  // until the scrapes caught up. `tests/itemRenames.test.mts` keeps the machinery proven on
+  // fixtures while the table is empty.
 ]
 
 /** Lowercased, `+N`-stripped — the same fold `itemKey`/`itemCountKey` use, restated for matching. */

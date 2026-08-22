@@ -395,5 +395,20 @@ export const SUBJECT_DRIFTS: readonly SubjectDrift[] = [
     attribution: 'db',
     evidence:
       "A JOIN whose sentence the owner`s log has never printed: `Rain of Molten LAva` already owns `'s skin sears.`, and the shape occurs 0 times in 2,138,726 lines (measured 2026-08-19). `hits: 0` here is the JOIN reading of the field, not the reporter-slice one — a join mints no tail, so its blast radius is provably zero in both directions and the count is a fact about the sentence rather than about the correction. The row is admitted because the SPELL was unreachable and the DB is its own witness for the sentence; it can wait for a log without being wrong in the meantime."
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // JOS-435 — THE FIRST CENSUS ROW A REPORT CALLED OUT OF THE noSubject POPULATION. See THE
+  // CENSUS ANSWERS BACK in `spellCorrectionsSubjects.ts`.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+
+  {
+    spells: ['Swarm of Pain'],
+    from: 'is covered in a swarm of nifiliks.',
+    to: 'Someone is covered in a swarm of nifiliks.',
+    hits: 199,
+    attribution: 'cast',
+    evidence:
+      'THE REPORTED DEFECT (01M0GR6H8SJH69XS9W2RH61W90, v1.6.0, a ranger): "Ranger Spell: Swarm of Pain not tracking in Debuffs overlay." A CROPPED subject rather than a wrong token — the wiki dropped the placeholder and the sentence starts on its verb — so this is JOS-174`s population, and the row sat in the noSubject census because no log had proved the sentence until this report. THE OWNER`S OWN LOG WITNESSES IT, 2,192,979 lines measured 2026-08-20: 219 `You begin casting Swarm of Pain <rank>.` casts and 199 lines of `<mob> is covered in a swarm of nifiliks.`, of which 198 fall 0-3 s after one of those casts (0 s x56, 1 s x115, 2 s x10, 3 s x17 — the DB`s own 3 s cast time) and the 199th falls 2 s after `Syruss begins casting Swarm of Pain.`, one of 14 third-person casts. 0 of the wiki form, which it must be: that form has no subject at all. The reporter`s slice says the same from the other end — `You begin casting Swarm of Pain V.` 16:29:54 then `Gorgalosk is covered in a swarm of nifiliks.` 16:29:56 — and before this row that landing classified as `{kind:`unknown`}`, so no instance opened and no bar could be drawn. THE TAIL IS MINTED and collides with nothing: `Swarm of Pain` is the only registry row whose messages mention nifiliks, and no existing suffix is a suffix of this one or has it as one. THE LAW-8 TRIPWIRE, whole-log, 2,192,979 lines parsed TWICE in one process with and without this row (2026-08-20): `unknown` 210,432 -> 210,233 and `buffApply` 146,467 -> 146,666. EXACTLY 199 lines move, all 57 other kinds byte-identical — the sentence is claimed by no poison proc and no emote verb, so the mint takes nothing from any classifier below.'
   }
 ]

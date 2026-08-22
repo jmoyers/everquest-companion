@@ -1,7 +1,7 @@
-Requires higher than Indifferent faction (Classic?)
+{{Classic Era}}
 
 :''For the overview of the many bone chips quests, see [[Bone Chips Quests]].''
-[[File:npc_lumi_stergnon.png|frame|Lumi Stergnon]]
+[[File:npc_lumi_stergnon.png|thumb|Lumi Stergnon]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Erudin]]
@@ -24,7 +24,6 @@ Requires higher than Indifferent faction (Classic?)
 
 Requires Higher than indifferent faction
 
-'''21/10/25:''' 318 Bone Chips (53 hand ins) took a new character to only just into level 3.
 == Reward ==
 
 <ul><li>  {{:Backpack}}
@@ -62,14 +61,14 @@ You say, 'I will battle the undead.'
 
 : Lumi Stergnon says 'Then you shall venture to Toxxulia Forest. There has been an increase in skeleton sightings lately. I do not know their origin, but I believe that your efforts will reduce their numbers! Take this box. Return it to me when you have filled it with the bones of these undead creatures and combined it. May Quellious' light guide you.'
 
-'''You receive a [[Box For Bones]], a 6-slot SMALL container.  Fill it with [[Bone Chips]] and combine them to craft [[Box of Bones]] (identifies as "Box For Bones").  Hand this in.'''
+'''You receive a [[Box For Bones]], a 6-slot MEDIUM container.  Fill it with 6 [[Bone Chips]] and combine them to craft [[Box of Bones]] (identifies as "Box For Bones").  Hand this in.'''
 
 : Lumi Stergnon says 'This is fabulous work, my friend! You have served your people well. Take this as a gift. I hope it can be of use to you. We need proof of these skeletons' origins. Continue the eradication of the undead and find out who creates them. Once you know, bring their head to me.'
 
 <div class="facblock">
-* Your faction standing with [[Peace Keepers]] got better.
-* Your faction standing with [[High Council of Erudin]] got better.
-* Your faction standing with [[Heretics]] got worse.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 10.
+* Your faction standing with [[High Council of Erudin]] has been adjusted by 5.
+* Your faction standing with [[Heretics]] has been adjusted by -2.
 </div>
 
 {{YouGainExperience}}

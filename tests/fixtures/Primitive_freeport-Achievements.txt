@@ -1,0 +1,1884 @@
+Untapped Potential: Races
+I	Race Unlock - Barbarian
+I		Get maximum faction with Rogues of the White Rose.
+I		Get maximum faction with Wolves of the North.
+I		Get maximum faction with Merchants of Halas.
+I		This achievement will autocomplete if your character was created as a Barbarian.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Dark Elf
+I		Get maximum faction with Dark Bargainers.
+I		Get maximum faction with Dreadguard Outer.
+I		Get maximum faction with Dreadguard Inner.
+I		This achievement will autocomplete if your character was created as a Dark Elf.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Dwarf
+I		Get maximum faction with Kazon Stormhammer.
+I		Get maximum faction with Merchants of Kaladim.
+I		Get maximum faction with Storm Guard.
+I		This achievement will autocomplete if your character was created as a Dwarf.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Erudite
+I		Get maximum faction with Deepwater Knights.
+C		Get maximum faction with Heretics.
+I		Get maximum faction with High Council of Erudin.
+I		This achievement will autocomplete if your character was created as a Erudite.
+I		This achievement can be bypassed using a Race Unlock Token.
+C	Race Unlock - Froglok
+C		Get maximum faction with Protectors of Gukta.
+C		Get maximum faction with Guktan Elders.
+C		Get maximum faction with Guktan Suppliers.
+C		This achievement will autocomplete if your character was created as a Froglok.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Gnome
+I		Get maximum faction with Eldritch Collective.
+I		Get maximum faction with Gem Choppers.
+I		Get maximum faction with King Ak`Anon.
+I		This achievement will autocomplete if your character was created as a Gnome.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Half Elf
+I		This achievement will autocomplete when you unlock Human or Wood Elf as a race.
+I		This achievement will autocomplete if your character was created as a Half Elf.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Halfling
+I		Get maximum faction with Guardians of the Vale.
+I		Get maximum faction with Merchants of Rivervale.
+I		Get maximum faction with Priests of Mischief.
+I		This achievement will autocomplete if your character was created as a Halfling.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - High Elf
+I		Get maximum faction with Clerics of Tunare.
+I		Get maximum faction with Keepers of the Art.
+I		Get maximum faction with Merchants of Felwithe.
+I		This achievement will autocomplete if your character was created as a High Elf.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Human (Freeport)
+I		Get maximum faction with Coalition of Tradesfolk.
+I		Get maximum faction with Knights of Truth.
+I		Get maximum faction with Freeport Militia.
+I		This achievement will autocomplete if your character was created as a Human.
+I		This achievement can by bypassed using a Race Unlock Token.
+I	Race Unlock - Human (Qeynos)
+I		Get maximum faction with Corrupt Qeynos Guard.
+C		Get maximum faction with Guards of Qeynos.
+I		Get maximum faction with Merchants of Qeynos.
+I		This achievement will autocomplete if your character was created as a Human.
+I		This achievement can by bypassed using a Race Unlock Token.
+I	Race Unlock - Iksar
+I		Get maximum faction with New Sebilisian Expedition.
+I		This achievement will autocomplete if your character was created as a Iksar.
+I		This achievement can be bypassed using a Race Unlock Token.
+C	Race Unlock - Ogre
+C		Get maximum faction with Clurg.
+C		Get maximum faction with Oggok Guards.
+C		Get maximum faction with Merchants of Oggok.
+I		This achievement will autocomplete if your character was created as a Ogre.
+C		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Troll
+I		Get maximum faction with Da Bashers.
+I		Get maximum faction with Dark Ones.
+I		Get maximum faction with Grobb Merchants.
+I		This achievement will autocomplete if your character was created as a Troll.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Kerran
+I		Complete the 'Aid the Kerrans of Kerra Isle' Task.
+I		This achievement will autocomplete if your character was created as a Kerran.
+I		This achievement can be bypassed using a Race Unlock Token.
+I	Race Unlock - Wood Elf
+I		Get maximum faction with Kelethin Merchants.
+I		Get maximum faction with Soldiers of Tunare.
+I		Get maximum faction with Emerald Warriors.
+I		This achievement will autocomplete if your character was created as a Wood Elf.
+I		This achievement can be bypassed using a Race Unlock Token.
+Untapped Potential: Classes
+I	Primary Class Unlock - Bard
+C		Obtain Mask of Song.
+C		Obtain Mantle of the Songweaver.
+I		Obtain Ervaj's Flute of Flight.
+C		Obtain Amulet of the Fae.
+I		Obtain Denon's Horn of Disaster.
+C		Obtain Spear of Harmony.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Bard.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Beastlord
+C		Obtain Windhowl and Spirit Render
+I		Obtain Diaphonous Waistband
+I		Obtain Spiroc Beak Earcuff
+I		Obtain Griffin-Hide Armguards
+C		Obtain Azarack Skin Wristwraps
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Beastlord.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Berserker
+I		Obtain Skycleaver
+I		Obtain Cudgel of the Fool
+C		Obtain Sash of Ferocity
+C		Obtain Molten Coil
+I		Obtain Shroud of the Sky
+I		Obtain Blood-Drawn Runes
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Berserker.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Cleric
+I		Obtain Necklace of Resolution.
+C		Obtain Truewind Earring.
+C		Obtain Aegis of the Wind.
+C		Obtain Pauldrons of Piety.
+C		Obtain Theurgist's Star.
+I		Obtain Baton of the Sky.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Cleric.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Druid
+C		Obtain Nature Walker's Mantle.
+C		Obtain Drake-Hide Mask.
+I		Obtain Shillelagh.
+I		Obtain Espri.
+C		Obtain Honeycomb Belt.
+I		Obtain Spiroc Banisher Focus.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Druid.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Enchanter
+C		Obtain Ivory Mask.
+C		Obtain Wind Walker's Mantle.
+C		Obtain Sphinx Hair Cord.
+I		Obtain Necklace of Whispering Winds.
+I		Obtain Earring of Displacement.
+I		Obtain Rod of the Protecting Winds.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Enchanter.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Magician
+I		Obtain Bracelet of Clarification.
+C		Obtain Mask of Empowerment.
+I		Obtain Drake-Hide Amice.
+I		Obtain Staff of Elemental Mastery: Air.
+C		Obtain Staff of the Magister.
+C		Obtain Duennan Shielding Ring.
+C		Obtain Gold White Pendant.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Magician.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Monk
+I		Obtain Sandals of Alacrity.
+C		Obtain Ton Po's Eye Patch.
+I		Obtain Ton Po's Shoulder Wraps.
+I		Obtain Golden Sash of Tranquility.
+I		Obtain Back Straps of Mastery.
+I		Obtain Wu's Fist of Mastery.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Monk.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Necromancer
+C		Obtain Cloak of Spiroc Feathers.
+I		Obtain Bloodsoaked Raiment.
+I		Obtain Gorgon Head Staff.
+I		Obtain Sphinx Heart Amulet.
+C		Obtain Bloody Griffon-Hide Wrist Guard.
+I		Obtain Band of Wailing Winds.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Necromancer.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+C	Primary Class Unlock - Paladin
+C		Obtain Girdle of Faith.
+C		Obtain Truvinan.
+C		Obtain Aldryn, Blade of the Ocean.
+C		Obtain Thelvorn, Blade of Light.
+C		This achievement will autocomplete if you chose to confirm your Primary Class as a Paladin.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Ranger
+C		Obtain Earthshaker's Mantle.
+I		Obtain Windstriker.
+I		Obtain Griffon Talon Necklace.
+I		Obtain Thunderforged Earring.
+C		Obtain Dark Cloak of the Sky.
+C		Obtain Arydryidriyorn.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Ranger.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Rogue
+C		Obtain Griffon Wing Spaulders.
+I		Obtain Renard's Belt of Quickness.
+I		Obtain Wispy Choker of Vigor.
+C		Obtain Crystal Mask.
+C		Obtain Shimmering Bracer of Protection.
+I		Obtain Thornstinger.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Rogue.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Shadowknight
+C		Obtain Pegasus-Hide Belt.
+C		Obtain Blood Sky Face Plate.
+C		Obtain Obtenebrate Mithril Guard.
+I		Obtain Pearlescent Pauldrons.
+I		Obtain Amulet of the Sphinx Eye.
+C		Obtain Crimson Ring of the Djinni.
+C		Obtain Khyldorn the Blood Drinker.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Shadowknight.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Shaman
+C		Obtain Garduk.
+I		Obtain Amulet of the Fang.
+I		Obtain Bracelet of the Spirits.
+C		Obtain Fairy-Hide Mantle.
+C		Obtain Warhammer of the Wind.
+I		Obtain Vermilion Sky Ring.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Shaman.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Warrior
+C		Obtain Belt of the Four Winds.
+C		Obtain Dagas.
+I		Obtain Fangol.
+C		Obtain Azure Ruby Ring.
+C		Obtain Runed Wind Amulet.
+I		Obtain Pauldrons of the Blue Sky.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Warrior.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+I	Primary Class Unlock - Wizard
+C		Obtain Al`Kabor's Cap of Binding.
+I		Obtain Augmentor's Mask.
+I		Obtain Raiment of Thunder.
+I		Obtain Nargon's Staff.
+I		Obtain Solidate Mithril Ring.
+I		Obtain Amulet of the Void.
+I		This achievement will autocomplete if you chose to confirm your Primary Class as a Wizard.
+I		This achievement can be bypassed using a Primary Class Unlock Token.
+Untapped Potential: Deity
+I	Deity Unlock - Agnostic
+I		Complete the 'Renouncing Your Faith' task for a mysterious Emissary.
+I		This achievement will autocomplete if your character was created as Agnostic.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Bertoxxulous
+I		Future Placeholder for Bertoxxulous Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Bertoxxulous.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Brell Serilis
+I		Future Placeholder for Brell Serilis Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Brell Serilis.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Cazic Thule
+I		Future Placeholder for Cazic Thule Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Cazic Thule.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Erollisi Marr
+I		Future Placeholder for Erollisi Marr Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Erollisi Marr.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Bristlebane
+I		Future Placeholder for Bristlebane Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Bristlebane.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Innoruuk
+I		Future Placeholder for Innoruuk Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Innoruuk.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Karana
+I		Future Placeholder for Karana Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Karana.
+I		This achievement can be bypassed using a Deity Unlock Token.
+C	Deity Unlock - Mithaniel Marr
+C		Future Placeholder for Mithaniel Marr Requirements.
+C		This achievement will autocomplete if you chose to confirm your Deity as Mithaniel Marr.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Prexus
+I		Future Placeholder for Prexus Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Prexus.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Quellious
+I		Future Placeholder for Quellious Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Quellious.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Rallos Zek
+I		Future Placeholder for Rallos Zek Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Rallos Zek.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Rodcet Nife
+I		Future Placeholder for Rodcet Nife Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Rodcet Nife.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Solusek Ro
+I		Future Placeholder for Solusek Ro Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Solusek Ro.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Tribunal
+I		Future Placeholder for Tribunal Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Tribunal.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Tunare
+I		Future Placeholder for Tunare Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Tunare.
+I		This achievement can be bypassed using a Deity Unlock Token.
+I	Deity Unlock - Veeshan
+I		Future Placeholder for Veeshan Requirements.
+I		This achievement will autocomplete if you chose to confirm your Deity as Veeshan.
+I		This achievement can be bypassed using a Deity Unlock Token.
+General: Advancement
+C	5 Alternate Advancement Points
+C		Spend 5 Alternate Advancement Points
+General: Keys
+I	Bone Crafted Key
+I		Bone Crafted Key
+I	Hole Key
+I		Hole Key
+C	Islands of Sky Keys
+C		Key of Swords
+C		Key of the Misplaced
+C		Key of Misfortune
+C		Key of Beasts
+C		Avian Key
+C		Key of the Swarm
+C		Key of Scale
+C		Veeshan's Key
+C	Efreeti's Key
+C		Efreeti's Key
+General: Level
+C	Level 5
+C		Reach Level 5
+C	Level 10
+C		Reach Level 10
+C	Level 15
+C		Reach Level 15
+C	Level 20
+C		Reach Level 20
+C	Level 25
+C		Reach Level 25
+C	Level 30
+C		Reach Level 30
+C	Level 35
+C		Reach Level 35
+C	Level 40
+C		Reach Level 40
+C	Level 45
+C		Reach Level 45
+C	Level 50
+C		Reach Level 50
+General: Skills
+C	Berserker's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Double Attack at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C		Reach the maximum skill in Parry at level 50.
+C		Reach the maximum skill in Riposte at level 50.
+C		Reach the maximum skill in Triple Attack at level 50.
+C	Berserker's Specialized Proficiency, Level 50
+C		Reach the maximum skill in Frenzy at level 50.
+C	Enchanter's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C	Monk's Combat Proficiency, Level 50
+C		Reach the maximum skill in Block at level 50.
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Double Attack at level 50.
+C		Reach the maximum skill in Dual Wield at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C		Reach the maximum skill in Riposte at level 50.
+C		Reach the maximum skill in Triple Attack at level 50.
+I	Paladin's Casting Proficiency, Level 50
+C		Reach the maximum skill in Abjuration at level 50.
+C		Reach the maximum skill in Alteration at level 50.
+C		Reach the maximum skill in Channelling at level 50.
+C		Reach the maximum skill in Conjuration at level 50.
+I		Reach the maximum skill in Divination at level 50.
+C		Reach the maximum skill in Evocation at level 50.
+C		Reach the maximum skill in Meditate at level 50.
+C	Paladin's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Double Attack at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C		Reach the maximum skill in Parry at level 50.
+C		Reach the maximum skill in Riposte at level 50.
+C		Reach the maximum skill in Triple Attack at level 50.
+I	Paladin's Utility Proficiency, Level 50
+I		Reach the maximum skill in Bind Wound at level 50.
+I		Reach the maximum skill in Disarm at level 50.
+C		Reach the maximum skill in Sense Heading at level 50.
+I		Reach the maximum skill in Swimming at level 50.
+I		Reach the maximum skill in Alcohol Tolerance at level 50.
+I		Reach the maximum skill in Begging at level 50.
+I		Reach the maximum skill in Taunt at level 50.
+I	Paladin's Weapon Proficiency, Level 50
+I		Reach the maximum skill in 1H Blunt at level 50.
+C		Reach the maximum skill in 1H Slashing at level 50.
+I		Reach the maximum skill in 2H Blunt at level 50.
+I		Reach the maximum skill in 2H Slashing at level 50.
+I		Reach the maximum skill in Archery at level 50.
+C		Reach the maximum skill in Bash at level 50.
+C		Reach the maximum skill in Hand To Hand at level 50.
+C		Reach the maximum skill in 1H Piercing at level 50.
+I		Reach the maximum skill in Throwing at level 50.
+I		Reach the maximum skill in 2H Piercing at level 50.
+I	Ranger's Casting Proficiency, Level 50
+C		Reach the maximum skill in Abjuration at level 50.
+C		Reach the maximum skill in Alteration at level 50.
+C		Reach the maximum skill in Channelling at level 50.
+C		Reach the maximum skill in Conjuration at level 50.
+I		Reach the maximum skill in Divination at level 50.
+C		Reach the maximum skill in Evocation at level 50.
+C		Reach the maximum skill in Meditate at level 50.
+C	Ranger's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Double Attack at level 50.
+C		Reach the maximum skill in Dual Wield at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C		Reach the maximum skill in Parry at level 50.
+C		Reach the maximum skill in Riposte at level 50.
+C		Reach the maximum skill in Triple Attack at level 50.
+I	Ranger's Specialized Proficiency, Level 50
+I		Reach the maximum skill in Sneak at level 50.
+I	Ranger's Utility Proficiency, Level 50
+I		Reach the maximum skill in Bind Wound at level 50.
+I		Reach the maximum skill in Disarm at level 50.
+I		Reach the maximum skill in Forage at level 50.
+I		Reach the maximum skill in Hide at level 50.
+C		Reach the maximum skill in Sense Heading at level 50.
+I		Reach the maximum skill in Swimming at level 50.
+I		Reach the maximum skill in Tracking at level 50.
+I		Reach the maximum skill in Alcohol Tolerance at level 50.
+I		Reach the maximum skill in Begging at level 50.
+I		Reach the maximum skill in Taunt at level 50.
+I	Ranger's Weapon Proficiency, Level 50
+I		Reach the maximum skill in 1H Blunt at level 50.
+C		Reach the maximum skill in 1H Slashing at level 50.
+I		Reach the maximum skill in 2H Blunt at level 50.
+I		Reach the maximum skill in 2H Slashing at level 50.
+I		Reach the maximum skill in Archery at level 50.
+C		Reach the maximum skill in Hand To Hand at level 50.
+C		Reach the maximum skill in Kick at level 50.
+C		Reach the maximum skill in 1H Piercing at level 50.
+I		Reach the maximum skill in Throwing at level 50.
+I		Reach the maximum skill in 2H Piercing at level 50.
+C	Rogue's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Double Attack at level 50.
+C		Reach the maximum skill in Dual Wield at level 50.
+C		Reach the maximum skill in Offense at level 50.
+C		Reach the maximum skill in Parry at level 50.
+C		Reach the maximum skill in Riposte at level 50.
+C		Reach the maximum skill in Triple Attack at level 50.
+I	Shaman's Casting Proficiency, Level 50
+C		Reach the maximum skill in Abjuration at level 50.
+C		Reach the maximum skill in Alteration at level 50.
+C		Reach the maximum skill in Channelling at level 50.
+C		Reach the maximum skill in Conjuration at level 50.
+I		Reach the maximum skill in Divination at level 50.
+C		Reach the maximum skill in Evocation at level 50.
+C		Reach the maximum skill in Meditate at level 50.
+C	Shaman's Combat Proficiency, Level 50
+C		Reach the maximum skill in Defense at level 50.
+C		Reach the maximum skill in Dodge at level 50.
+C		Reach the maximum skill in Offense at level 50.
+I	Shaman's Utility Proficiency, Level 50
+I		Reach the maximum skill in Bind Wound at level 50.
+I		Reach the maximum skill in Forage at level 50.
+C		Reach the maximum skill in Sense Heading at level 50.
+I		Reach the maximum skill in Swimming at level 50.
+I		Reach the maximum skill in Alcohol Tolerance at level 50.
+I		Reach the maximum skill in Begging at level 50.
+I	Shaman's Weapon Proficiency, Level 50
+I		Reach the maximum skill in 1H Blunt at level 50.
+I		Reach the maximum skill in 2H Blunt at level 50.
+C		Reach the maximum skill in Hand To Hand at level 50.
+C		Reach the maximum skill in 1H Piercing at level 50.
+I		Reach the maximum skill in Throwing at level 50.
+Tradeskill: Baking
+I	Baking (50)
+I		Reach 50 skill in Baking
+I	Baking (100)
+I		Reach 100 skill in Baking
+I	Baking (150)
+I		Reach 150 skill in Baking
+I	Baking (200)
+I		Reach 200 skill in Baking
+I	Baking (250)
+I		Reach 250 skill in Baking
+I	Baking (300)
+I		Reach 300 skill in Baking
+Tradeskill: Blacksmithing
+I	Smithing (50)
+I		Reach 50 skill in Smithing
+I	Smithing (100)
+I		Reach 100 skill in Smithing
+I	Smithing (150)
+I		Reach 150 skill in Smithing
+I	Smithing (200)
+I		Reach 200 skill in Smithing
+I	Smithing (250)
+I		Reach 250 skill in Smithing
+I	Smithing (300)
+I		Reach 300 skill in Smithing
+Tradeskill: Brewing
+I	Brewing (50)
+I		Reach 50 skill in Brewing
+I	Brewing (100)
+I		Reach 100 skill in Brewing
+I	Brewing (150)
+I		Reach 150 skill in Brewing
+I	Brewing (200)
+I		Reach 200 skill in Brewing
+I	Brewing (250)
+I		Reach 250 skill in Brewing
+I	Brewing (300)
+I		Reach 300 skill in Brewing
+Tradeskill: Fishing
+I	Fishing (50)
+I		Reach 50 skill in Fishing
+I	Fishing (100)
+I		Reach 100 skill in Fishing
+I	Fishing (150)
+I		Reach 150 skill in Fishing
+I	Fishing (200)
+I		Reach 200 skill in Fishing
+Tradeskill: Fletching
+I	Fletching (50)
+I		Reach 50 skill in Fletching
+I	Fletching (100)
+I		Reach 100 skill in Fletching
+I	Fletching (150)
+I		Reach 150 skill in Fletching
+I	Fletching (200)
+I		Reach 200 skill in Fletching
+I	Fletching (250)
+I		Reach 250 skill in Fletching
+I	Fletching (300)
+I		Reach 300 skill in Fletching
+Tradeskill: Jewelcrafting
+I	Jewelcrafting (50)
+I		Reach 50 skill in Jewelcrafting
+I	Jewelcrafting (100)
+I		Reach 100 skill in Jewelcrafting
+I	Jewelcrafting (150)
+I		Reach 150 skill in Jewelcrafting
+I	Jewelcrafting (200)
+I		Reach 200 skill in Jewelcrafting
+I	Jewelcrafting (250)
+I		Reach 250 skill in Jewelcrafting
+I	Jewelcrafting (300)
+I		Reach 300 skill in Jewelcrafting
+Tradeskill: Pottery
+I	Pottery (50)
+I		Reach 50 skill in Pottery
+I	Pottery (100)
+I		Reach 100 skill in Pottery
+I	Pottery (150)
+I		Reach 150 skill in Pottery
+I	Pottery (200)
+I		Reach 200 skill in Pottery
+I	Pottery (250)
+I		Reach 250 skill in Pottery
+I	Pottery (300)
+I		Reach 300 skill in Pottery
+Tradeskill: Tailoring
+I	Tailoring (50)
+I		Reach 50 skill in Tailoring
+I	Tailoring (100)
+I		Reach 100 skill in Tailoring
+I	Tailoring (150)
+I		Reach 150 skill in Tailoring
+I	Tailoring (200)
+I		Reach 200 skill in Tailoring
+I	Tailoring (250)
+I		Reach 250 skill in Tailoring
+I	Tailoring (300)
+I		Reach 300 skill in Tailoring
+Tradeskill: Special
+I	Alchemy (50)
+I		Reach 50 skill in Alchemy
+I	Alchemy (100)
+I		Reach 100 skill in Alchemy
+I	Alchemy (150)
+I		Reach 150 skill in Alchemy
+I	Alchemy (200)
+I		Reach 200 skill in Alchemy
+I	Alchemy (250)
+I		Reach 250 skill in Alchemy
+I	Alchemy (300)
+I		Reach 300 skill in Alchemy
+Slayer: General
+I	Megadeath
+I		Complete the achievement "A Force of Nature"
+I		Complete the achievement "Highly Decorated"
+I		Complete the achievement "Progressive"
+I	A Force of Nature
+I		Complete the achievement "Doesn't Play Well With Others"
+I		Complete the achievement "Don't Bug Me"
+I		Complete the achievement "I Hate Snakes!"
+I		Complete the achievement "Pesticide"
+I		Complete the achievement "We are the dead!"
+I		Complete the achievement "Strange Weather"
+I		Complete the achievement "The Zookeeper"
+I		Complete the achievement "Swordfishmermaid"
+I		Complete the achievement "Orc stomp!"
+I		Complete the achievement "Ugly creature near my feet..."
+I		Complete the achievement "BBBBBAAAARRRKKKK!!!!!"
+I		Complete the achievement "Puttin' On The Dog"
+I		Complete the achievement "It's Alive!"
+I		Complete the achievement "Plants Concrete and Stone"
+I		Complete the achievement "Here Be Dragons!"
+I		Complete the achievement "Might They Be Giants?"
+I		Complete the achievement "Legendary Creatures"
+I		Complete the achievement "Planes, Trains and Element-iles"
+I		Complete the achievement "A Sight for Sore Eyes"
+I		Complete the achievement "Domo Arigato"
+I		Complete the achievement "Foreign Affair"
+I		Complete the achievement "Invaders in a Strange Land"
+I		Complete the achievement "Your god has found you lacking."
+I		Complete the achievement "Table Flipper"
+I	Highly Decorated
+I		Complete the achievement "I'm a People Person!"
+I		Complete the achievement "What Keeps Mankind Alive?"
+C		Complete the achievement "Three letter word for dead..."
+I		Complete the achievement "Short People"
+I		Complete the achievement "Simple Folk of the Ykesha"
+I		Complete the achievement "Bounced!"
+I		Complete the achievement "Mostly Kunzar"
+I		Complete the achievement "Catnipped in the bud."
+C		Complete the achievement "Amphibicide"
+I		Complete the achievement "Rats!"
+I		Complete the achievement "Eight legs are better than one!"
+I		Complete the achievement "The Hounds"
+I		Complete the achievement "The Cat's Pajamas"
+I		Complete the achievement "Bird Flew"
+I		Complete the achievement "Monkey Business"
+I		Complete the achievement "I'm Boared!"
+I		Complete the achievement "Orc Kill!"
+I		Complete the achievement "Me thinks that you'll be good to eat!"
+I		Complete the achievement "Gnolling is Half the Battle"
+I		Complete the achievement "Kobolded Killer"
+I		Complete the achievement "Gooooooooooooooolem!"
+I		Complete the achievement "Drawing Life From a Stone"
+I		Complete the achievement "Living Stone I presume?"
+I		Complete the achievement "Herbicide"
+I		Complete the achievement "Dragonbane"
+I		Complete the achievement "You call that a dragon?"
+I		Complete the achievement "A Giant Problem"
+I		Complete the achievement "Shorter People"
+I		Complete the achievement "Slayer of Mystical Horses"
+I		Complete the achievement "It's Plane to See"
+I		Complete the achievement "Breakdown Dead Ahead"
+I		Complete the achievement "Natives of Velious"
+I		Complete the achievement "Navies of Luclin"
+I		Complete the achievement "Natives of Taelosia"
+I		Complete the achievement "Natives of Kuua"
+I		Complete the achievement "Natives of Alaris"
+I		Complete the achievement "Such Anguish"
+I	Progressive
+I		Complete the achievement "Oh the Humanity!"
+I		Complete the achievement "Barbarous"
+C		Complete the achievement "Hardly Erudite of You"
+I		Complete the achievement "Drackity Drak"
+I		Complete the achievement "Wood you could you?"
+I		Complete the achievement "Highly Uncivilized"
+C		Complete the achievement "Dark Elf Antonican, Please!"
+I		Complete the achievement "Now .49999%"
+I		Complete the achievement "It was called Tunaria"
+I		Complete the achievement "Axe me no questions."
+I		Complete the achievement "Dainy it's cold outside."
+I		Complete the achievement "Fuzzyfeet"
+I		Complete the achievement "A Clockwork Gnome"
+I		Complete the achievement "Here's Yer Grozmok"
+I		Complete the achievement "Get Stupid"
+I		Complete the achievement "Icky!"
+I		Complete the achievement "Why the Kylong faces?"
+I		Complete the achievement "Good Luck, Bad Guk"
+C		Complete the achievement "It's a frog eat frog world"
+I		Complete the achievement "Rrrribit!"
+I		Complete the achievement "Moonkitty"
+I		Complete the achievement "Not a Kerran the world!"
+I		Complete the achievement "Bat Country!"
+C		Complete the achievement "Rat Killer"
+I		Complete the achievement "Armadilloed and Dangerous"
+I		Complete the achievement "It Stinks!"
+I		Complete the achievement "Bunnyslayer"
+I		Complete the achievement "You dirty ratman!"
+I		Complete the achievement "Of Micelike Men"
+I		Complete the achievement "Badger, Badger, Badger..."
+I		Complete the achievement "Beetlemania"
+I		Complete the achievement "Leechy Keen"
+I		Complete the achievement "Corathus!"
+I		Complete the achievement "Army Ants"
+I		Complete the achievement "Shoo fly!"
+C		Complete the achievement "Get the broom!"
+I		Complete the achievement "A Web of Lies"
+I		Complete the achievement "Fury of Soriz"
+I		Complete the achievement "Snake in the Grass"
+C		Complete the achievement "A Bone to Pick With You"
+C		Complete the achievement "Stake Dinner"
+C		Complete the achievement "Hide your brains!"
+C		Complete the achievement "Mummy Dearest"
+C		Complete the achievement "Ghoul on the Hill"
+I		Complete the achievement "Round of Applause"
+C		Complete the achievement "Ghosts of Frostfell Past"
+I		Complete the achievement "50 Shades Repaid"
+I		Complete the achievement "Suit up!"
+I		Complete the achievement "New Tricks"
+I		Complete the achievement "Got your Tongue?"
+I		Complete the achievement "Featherbrained Plan"
+I		Complete the achievement "Better Get a Barrel"
+I		Complete the achievement "Bear with me"
+I		Complete the achievement "The Elephant in the Room"
+I		Complete the achievement "Overthere in the Wastes"
+I		Complete the achievement "These boots were made for..."
+I		Complete the achievement "Guess you didn't like turtles."
+I		Complete the achievement "What has science done!?"
+I		Complete the achievement "Have you seen my bucket?"
+I		Complete the achievement "Seacow!"
+I		Complete the achievement "A molkor?"
+I		Complete the achievement "Sealephant"
+I		Complete the achievement "A Horse of Course"
+I		Complete the achievement "Plenty of fish in the sea."
+I		Complete the achievement "Why so crabby?"
+I		Complete the achievement "Orc weapons, your blood will spill!"
+I		Complete the achievement "New Frontiers"
+I		Complete the achievement "The More You Gnoll!"
+C		Complete the achievement "World Warrens Three"
+I		Complete the achievement "Alliz Tae Ew"
+I		Complete the achievement "Sarnak Slayer"
+I		Complete the achievement "Don't be Shellfish!"
+I		Complete the achievement "Innoruuk's Gift"
+I		(Optional) Complete the achievement "Shadows of Lxanvom"
+I		(Optional) Complete the achievement "Achievement: Spider-Bear"
+I		Complete the achievement "A Fallen Empire"
+I		Complete the achievement "You can call me Alaran"
+I		Complete the achievement "Re-Extinction"
+I		Complete the achievement "Aquatic Allure"
+C		Complete the achievement "I said Argyle!"
+I		Complete the achievement "You're not scaring anyone."
+I		Complete the achievement "Lumberer"
+I		Complete the achievement "Mushroom Hunting"
+I		Complete the achievement "Stop dragon this out."
+I		Complete the achievement "Quit dragon your heels!"
+I		Complete the achievement "You keep dragon me into this."
+C		Complete the achievement "A Small Giant Problem"
+I		Complete the achievement "Fairicide"
+I		Complete the achievement "For the Hive!"
+I		Complete the achievement "Jumjummery"
+I		Complete the achievement "Self Centaured"
+I		Complete the achievement "You're Faunny"
+I		Complete the achievement "Amazing!"
+C		Complete the achievement "No Vacancy"
+I		Complete the achievement "Half Man, Half Scorpion, Half Lion."
+I		Complete the achievement "Puzzling"
+I		Complete the achievement "My Golden Boots"
+C		Complete the achievement "Imp-atient"
+I		(Optional) Complete the achievement "Reader's Die Jest"
+I		(Optional) Complete the achievement "Witch Mount?"
+I		(Optional) Complete the achievement "Dino-sore!"
+I		(Optional) Complete the achievement "In Your Eyes"
+C		Complete the achievement "Elementary"
+I		Complete the achievement "Spin Me Right Round"
+I		Complete the achievement "They Call Me The Riftseeker"
+I		Complete the achievement "Terrorible Tentacles"
+I		Complete the achievement "Denizens of Fear"
+I		Complete the achievement "Insatiable"
+I		Complete the achievement "You look lovely"
+I		Complete the achievement "Eye see what you did there!"
+I		Complete the achievement "Goo-dness Gracious!"
+I		Complete the achievement "Cubic"
+I		Complete the achievement "Gnome Tested, Steamwork Approved!"
+I		Complete the achievement "Discord Sounds Out of Tune"
+I		(Optional) Complete the achievement "Terror from the Stars"
+Slayer: Conquest
+I	Doesn't Play Well With Others
+I		The playable races.	1603/10000
+I	Don't Bug Me
+I		Beetles, Cliknars, Corathus Beasts, Drachnids, Insects, Leeches, Mosquitoes, Spiders, Ursarachnids.	253/5000
+I	I Hate Snakes!
+I		Alligators, Basilisks, Crocodiles, Lizard Men, Sarnaks, Shissar, Snakes, Sokokar, and Turtles.	72/5000
+I	Pesticide
+I		Armadillos, Bats, Bubonians, Burynai, Molerats, Rabbits, Ratmen, Rats, Skunks and Werebats.	257/5000
+I	We Are the Dead!
+I		Animated Armors, Ghosts, Ghouls, Mummies, Shades, Skeletons, Spectres, Vampires, and Zombies.	3388/10000
+I	Strange Weather
+I		Chokidais, Drolvargs, Hynids, Lions, Pumas, Rotdogs, Tigers, Werewolves, Wolves, Worgs, and Wrulons.	19/5000
+I	The Zookeeper
+I		Apes, Bears, Birds, Boars, Mammoths, Mystical Horses, Othmirs, Rhinos, Sea Mammals, and Swinetors.	193/5000
+I	Swordfishmermaid
+I		Crabs, Fishes, Hraquis, Kedge, Krakens, Mermaids, Nymphs, Piranhas, Seahorses, Sharks, and Sirens.	35/5000
+I	Orc Stomp!
+I		Orcs and Wereorcs.	11/5000
+I	Ugly Creature Near My Feet...
+I		Goblins and Nightmare Goblins.	28/5000
+I	BBBBBAAAARRRKKKK!!!!!
+I		Gnolls	2/5000
+I	Puttin' On The Dog
+I		Kobolds	770/5000
+I	It's Alive!
+I		Brellian Constructs, Gargoyles, Gingerbread Men, Golems, Marionettes, Muddites, and Scarecrows.	360/5000
+I	Plants Concrete and Stone
+I		Crystal Creatures, Grekens, Living Plants, Shriekers, Sporalis, Stonegrabbers, and Treants.	35/5000
+I	Here Be Dragons!
+I		Dinosaurs, Dracoliches, Dragons, Drakes, Drixies, Raptors, Witherans, Wurms, and Wyverns.	82/5000
+I	Might They Be Giants?
+I		Giants	213/5000
+I	Legendary Creatures
+I		Bixies, Brownies, Centaurs, Fairies, Griffins, Manticores, Minotaurs, Pixies, Satyr, and Sphinxes.	179/5000
+I	Planes, Trains and Element-iles
+I		Dervishes, Efreetis, Elementals, Imps, Nilborien, Riftseekers, Scrykin, Stormriders, and Wraiths.	1075/10000
+I	A Sight for Sore Eyes
+I		Amygdalans, Cubes, Eyes, Goos, Gorgons, Harpies, Luggalds, Shiliskins, Tentacle Terrors, and Xulous.	164/5000
+I	Domo Arigato
+I		Clockwork: Beetles, Boars, Dragons, Rats, Snakes, Spiders, Gnomeworks, Copters, and Tin Soldiers.	0/5000
+I	Your God Has Found You Lacking
+I		The avatar of a deity.	30/100
+I	Table Flipper
+I		Barrels, Bones, Boxes, Chests, Clocks, Coffins, Mimics, Tables, Totems, Traps, Vases, and Webs.	67/5000
+Slayer: Special
+I	I'm a People Person!
+C		Humans
+I		Barbarians	1/10
+C		Erudites
+I		Wood Elves	0/10
+I		High Elves	1/10
+C		Dark Elves
+C		Half Elves
+I		Dwarves	7/10
+I		Halflings	2/10
+C		Gnomes
+C		Trolls
+C		Ogres
+I		Iksars	0/10
+C		Frogloks
+I		Kerran	0/10
+I	What Keeps Mankind Alive?
+I		Barbarians, Drakkin, Erudites, and Humans.	322/1000
+C	Three Letter Word for Dead...
+C		Dark Elves, Elddar Elves, Fire Elves, Half Elves, High Elves, Sand Elves, and Wood Elves.
+I	Short People
+I		Coldain, Dwarves, Gnomes, and Halflings.	67/1000
+I	Simple Folk of the Ykesha
+I		Trolls	27/1000
+I	Bounced!
+I		Ogres	28/1000
+I	Mostly Kunzar
+I		Iksars and Kylong Iksars of Veksar.	14/1000
+I	Catnipped In the Bud
+I		Kerrans and Vah Shir.	0/1000
+C	Amphibicide
+C		Frogloks, Frogs, Guktans, and Tadpoles.
+I	Rats!
+I		Armadillos, Bubonians, Burynai, Molerats, Rabbits, Ratmen, Rats, and Skunks.	214/1000
+I	Eight Legs Are Better Than One!
+I		Drachnids, Scorpions, Spiders, and Ursarachnids.	131/1000
+I	The Hounds
+I		Chokidais, Drolvargs, Hynids, Rotdogs, Werewolves, Wolves, and Worgs.	10/1000
+I	The Cat's Pajamas
+I		Cats, Lions, Pumas, Sabertooths, Scarlet Cheetahs, Tigers, Topiary Lions, and Wrulons.	9/1000
+I	Bird Flew
+I		Aviaks, Blood Ravens, Cockatrices, Hawks, and Parrots.	61/500
+I	Monkey Business
+I		Gorillas, Holgresh, and Yetis.	12/500
+I	Orc Kill!
+I		Orcs and Wereorcs.	11/1000
+I	Me Thinks That You'll Be Good to Eat!
+I		Goblins and Nightmare Goblins.	28/1000
+I	Gnolling is Half the Battle
+I		Gnolls	2/1000
+I	Kobolded Killer
+I		Kobolds	770/1000
+I	Gooooooooooooooolem!
+I		Gingerbread Men, Golems, Muddites, and Statues.	234/1000
+I	Dragonbane
+I		True Dragons	30/250
+I	You Call That a Dragon?
+I		Dinosaurs, Dracoliches, Lesser Dragons, Drakes, Drixies, Raptors, Witherans, Wurms, and Wyverns.	52/1000
+I	A Giant Problem
+I		Giants	213/1000
+I	Shorter People
+I		Bixies, Brownies, Dryads, Fairies, and Pixies.	64/1000
+I	Slayer of Mystical Horses
+I		Kirins, Nightmares, Pegasus, and Unicorns.	107/250
+I	It's Plane to See
+I		Fiends, Guardians, Planar Manifestations, Scrykin, Stormriders, Tormentors, Vegerogs, Wraiths.	0/1000
+I	Breakdown Dead Ahead
+I		Clockwork: Beetles, Boars, Dragons, Rats, Snakes, Spiders, Gnomeworks, Copters, and Tin Soldiers.	0/1000
+Slayer: Skill
+I	Oh the Humanity!
+I		Humans	94/100
+I	Barbarous
+I		Barbarians	1/100
+C	Hardly Erudite of You
+C		Erudites
+I	Wood You Could You?
+I		Wood Elves	0/100
+I	Highly Uncivilized
+I		High Elves	1/100
+C	Love Will Teir Them Apart
+C		Dark Elves
+I	Now .49999%
+I		Half Elves	35/100
+I	Axe Me No Questions
+I		Dwarves	9/100
+I	Fuzzyfeet
+I		Halflings	2/100
+I	A Clockwork Gnome
+I		Gnomes	56/100
+I	Here's Yer Grozmok
+I		Trolls	27/100
+I	Get Stupid
+I		Ogres	28/100
+I	Icky!
+I		Iksars	14/100
+C	It's a Frog Eat Frog World
+C		Frogloks and Tadpoles.
+I	Not a Kerran the World!
+I		Kerrans	0/50
+I	Bat Country!
+I		Bats and Werebats.	43/100
+C	Rat Killer
+C		Rats and Molerats.
+I	Armadilloed and Dangerous
+I		Armadillos	0/50
+I	It Stinks!
+I		Skunks	0/5
+I	You Dirty Ratman!
+I		Ratmen	50/100
+I	Beetlemania
+I		Beetles, Insects, Lightcrawlers, Shik'Nars, and Underbulks.	28/100
+I	Leechy Keen
+I		Leeches, Ticks, and Vacuum Worms.	13/100
+I	Shoo fly!
+I		Butterflies, Flies, Malarians, Mosquitoes, Tsetsians, and Wasps.	81/100
+C	Get the Broom!
+C		Scorpions and Spiders.
+I	Snake in the Grass
+I		Snakes	39/100
+C	A Bone to Pick With You
+C		Skeletons
+C	Stake Dinner
+C		Vampires
+C	Hide Your Brains!
+C		Hags, Ghouls, and Zombies.
+C	Mummy Dearest
+C		Mummies
+C	Ghoul On the Hill
+C		Ghouls
+I	Round of Applause
+I		Animated Hands	21/25
+C	Ghosts of Frostfell Past
+C		Banshees, Ghosts, Spectres, Spirits, and Wisps.
+I	New Tricks
+I		Chokidais, Drolvargs, Hynids, Rotdogs, Scaled Wolves, Sonic Wolves, Werewolves, Wolves, and Worgs.	10/100
+I	Got Your Tongue?
+I		Cats, Lions, Pumas, Sabertooths, Scarlet Cheetahs, Tigers, Topiary Lions, and Wrulons.	9/100
+I	Featherbrained Plan
+I		Aviaks, Blood Ravens, Cockatrices, Hawks, and Parrots.	61/100
+I	Better Get a Barrel
+I		Gorillas, Holgresh, and Yetis.	12/100
+I	Bear With Me
+I		Bears, Kodiaks, Owlbears, and Pandas.	11/100
+I	The Elephant in the Room
+I		Elephants and Mammoths.	2/100
+I	These Boots Were Made For...
+I		Alligators, Basilisks, and Crocodiles.	17/100
+I	Plenty of Fish In the Sea
+I		Fishes, Piranhas, Seahorses, Sharks, Swordfishes, and Wetfang Minnows.	28/100
+I	Orc Weapons, Your Blood Will Spill!
+I		Orcs and Wereorcs.	11/100
+I	New Frontiers
+I		Goblins and Nightmare Goblins.	28/100
+I	The More You Gnoll!
+I		Gnolls	2/100
+C	World Warrens Three
+C		Kobolds
+I	Alliz Tae Ew
+I		Lizard Men	2/100
+I	Re-Extinction
+I		Kedge	0/50
+I	Aquatic Allure
+I		Nagas, Mermaids, Nymphs, and Sirens.	7/50
+C	I Said Argyle!
+C		Gargoyles
+I	You're Not Scaring Anyone
+I		Scarecrows and Totems.	13/50
+I	Lumberer
+I		Treants	0/100
+I	Mushroom Hunting
+I		Sporalis	35/100
+I	Stop Dragon This Out
+I		Dracoliches, Water Dragons, and Witherans.	40/100
+I	You Keep Dragon Me Into This
+I		Drakes, Drixies, and Fay Drakes.	12/100
+C	A Small Giant Problem
+C		Giants
+I	Fairicide
+I		Dryads, Fairies, and Pixies.	42/100
+I	For the Hive!
+I		Bixies	22/100
+I	Jumjummery
+I		Brownies	0/100
+I	Self Centaured
+I		Centaurs	0/100
+I	Amazing!
+I		Minotaurs and Tizmak.	2/100
+C	No Vacancy
+C		Griffons, Griffennes, and Griffins.
+I	Puzzling
+I		Sphinxes	6/10
+I	My Golden Boots
+I		Djinns and Efreetis.	63/100
+C	Imp-atient
+C		Imps and Mephits.
+C	Elementary
+C		Elementals
+I	Spin Me Right Round
+I		Dervishes	7/100
+I	Terrorible Tentacles
+I		Tentacle Terrors	27/50
+I	Denizens of Fear
+I		Amygdalans	41/50
+I	Eye See What You Did There!
+I		Evil Eyes	27/100
+I	Cubic
+I		Gelatinous Cubes	17/50
+I	Gnome Tested, Steamwork Approved!
+I		Clockwork: Beetles, Boars, Dragons, Rats, Snakes, Spiders, Gnomeworks, Copters, and Tin Soldiers.	0/100
+EverQuest: General
+I	Norrathian Slayer
+I		Hunter of Faydwer
+I		Hunter of Odus
+I		Hunter of Northwest Antonica
+I		Hunter of Northeast Antonica
+I		Hunter of Southwest Antonica
+I		Hunter of Southeast Antonica
+I		Hunter of The Planes
+I	Conqueror of Norrath
+I		Conqueror of The Caverns of Exile
+I		Conqueror of Kedge Keep
+I		Conqueror of Nagafen's Lair
+I		Conqueror of The Permafrost Caverns
+I		Conqueror of The Plane of Fear
+I		Conqueror of The Plane of Hate
+I		Conqueror of The Plane of Sky
+I		Conqueror of The Ruins of Old Paineel or The Hole
+I	Norrathian Explorer
+I		Faydwer Explorer
+C		Odus Explorer
+I		Northwest Antonica Explorer
+I		Northeast Antonica Explorer
+I		Southwest Antonica Explorer
+C		Southeast Antonica Explorer
+C		The Planes Explorer
+I		Guild Locals Explorer
+I		Housing Explorer
+I		Special Events Explorer
+EverQuest: Progression
+I	Arcane Scientists
+I		Arcane Scientists
+I	Ashen Order
+I		Ashen Order
+C	Bloodsabers
+C		Bloodsabers
+I	Carson McCabe
+I		Carson McCabe
+I	Circle of Unseen Hands
+I		Circle of Unseen Hands
+I	Clerics of Tunare
+I		Clerics of Tunare
+I	Clerics of Underfoot
+I		Clerics of Underfoot
+I	Clurg
+I		Clurg
+I	Coalition of Tradefolk
+I		Coalition of Tradefolk
+I	Coalition of Tradefolk Underground
+I		Coalition of Tradefolk Underground
+I	Corrupt Qeynos Guards
+I		Corrupt Qeynos Guards
+I	Craftkeepers
+I		Craftkeepers
+I	Craknek Warriors
+I		Craknek Warriors
+I	Crimson Hands
+I		Crimson Hands
+I	DaBashers
+I		DaBashers
+I	Dark Bargainers
+I		Dark Bargainers
+I	Dark Ones
+I		Dark Ones
+I	Dark Reflection
+I		Dark Reflection
+I	Deepmuses
+I		Deepmuses
+I	Deeppockets
+I		Deeppockets
+I	Deepwater Knights
+I		Deepwater Knights
+I	Dismal Rage
+I		Dismal Rage
+I	Dreadguard Inner
+I		Dreadguard Inner
+I	Dreadguard Outer
+I		Dreadguard Outer
+I	Ebon Mask
+I		Ebon Mask
+I	Eldritch Collective
+I		Eldritch Collective
+I	Emerald Warriors
+I		Emerald Warriors
+I	Faydarks Champions
+I		Faydarks Champions
+I	Gate Callers
+I		Gate Callers
+I	Gem Choppers
+I		Gem Choppers
+I	Green Blood Knights
+I		Green Blood Knights
+I	Grobb Merchants
+I		Grobb Merchants
+I	Guardians of the Vale
+I		Guardians of the Vale
+C	Guards of Qeynos
+C		Guards of Qeynos
+I	Guktan Elders
+I		Guktan Elders
+I	Guktan Suppliers
+I		Guktan Suppliers
+C	Heretics
+C		Heretics
+I	High Council of Erudin
+I		High Council of Erudin
+I	High Council of Gukta
+I		High Council of Gukta
+C	High Guard of Erudin
+C		High Guard of Erudin
+I	Indigo Brotherhood
+I		Indigo Brotherhood
+I	Kazon Stormhammer
+I		Kazon Stormhammer
+I	Keepers of the Art
+I		Keepers of the Art
+I	Kelethin Merchants
+I		Kelethin Merchants
+C	Kerra Isle
+C		Kerra Isle
+I	King Ak`Anon
+I		King Ak`Anon
+I	King Tearis Thex
+I		King Tearis Thex
+I	Knights of Thunder
+I		Knights of Thunder
+I	Knights of Truth
+I		Knights of Truth
+I	Lorekeepers of Gukta
+I		Lorekeepers of Gukta
+I	Merchants of Ak`Anon
+I		Merchants of Ak`Anon
+I	Merchants of Erudin
+I		Merchants of Erudin
+I	Merchants of Felwithe
+I		Merchants of Felwithe
+I	Merchants of Halas
+I		Merchants of Halas
+I	Merchants of Kaladim
+I		Merchants of Kaladim
+I	Merchants of Oggok
+I		Merchants of Oggok
+I	Merchants of Qeynos
+I		Merchants of Qeynos
+I	Merchants of Rivervale
+I		Merchants of Rivervale
+I	Miners Guild 249
+I		Miners Guild 249
+I	Miners Guild 628
+I		Miners Guild 628
+I	New Sebilis Expedition
+I		New Sebilis Expedition
+I	Oggok Guards
+I		Oggok Guards
+I	Paladins of Underfoot
+I		Paladins of Underfoot
+I	Priests of Innoruuk
+I		Priests of Innoruuk
+I	Priests of Life
+I		Priests of Life
+I	Priests of Marr
+I		Priests of Marr
+I	Priests of Mischief
+I		Priests of Mischief
+I	Protectors of Gukta
+I		Protectors of Gukta
+I	Rogues of the White Rose
+I		Rogues of the White Rose
+I	Shadowknights of Night Keep
+I		Shadowknights of Night Keep
+I	Shamen of Justice
+I		Shamen of Justice
+I	Shamen of War
+I		Shamen of War
+I	Silent Fist Clan
+I		Silent Fist
+I	Soldiers of Tunare
+I		Soldiers of Tunare
+I	Song Weavers
+I		Song Weavers
+I	Steel Warriors
+I		Steel Warriors
+I	Storm Guard
+I		Storm Guard
+I	Storm Reapers
+I		Storm Reapers
+I	The Dead
+I		The Dead
+I	The Freeport Militia
+I		The Freeport Militia
+I	The Spurned
+I		The Spurned
+I	Tunare's Scouts
+I		Tunare's Scouts
+I	Wolves of the North
+I		Wolves of the North
+EverQuest: Exploration
+I	Faydwer Explorer
+C		Northern Felwithe Traveler
+I		Southern Felwithe Traveler
+C		The Greater Faydark Traveler
+I		Crushbone Traveler
+C		The Lesser Faydark Traveler
+C		The Castle of Mistmoore Traveler
+C		The Steamfont Mountains Traveler
+C		Ak'Anon Traveler
+C		Butcherblock Mountains Traveler
+C		South Kaladim Traveler
+C		North Kaladim Traveler
+C		Dagnor's Cauldron Traveler
+C		The Estate of Unrest Traveler
+C		Kedge Keep Traveler
+C		The Ocean of Tears Traveler
+I	Northeast Antonica Explorer
+C		East Freeport Traveler
+C		West Freeport Traveler
+I		Freeport Sewers Traveler
+C		The Commonlands Traveler
+C		Befallen Traveler
+C		Kithicor Forest Traveler
+I		Rivervale Traveler
+I		The Misty Thicket Traveler
+I		The Liberated Citadel of Runnyeye Traveler
+C		The Gorge of King Xorbb Traveler
+C		Highpass Hold Traveler
+C		High Keep Traveler
+C		The Nektulos Forest Traveler
+C		Neriak - Foreign Quarter Traveler
+C		Neriak - Commons Traveler
+C		Neriak - Third Gate Traveler
+C		The Lavastorm Mountains Traveler
+C		The Temple of Solusek Ro Traveler
+C		Najena Traveler
+I		Solusek's Eye Traveler
+C		Nagafen's Lair Traveler
+I		The Caverns of Exile Traveler
+I	Northwest Antonica Explorer
+C		South Qeynos Traveler
+C		North Qeynos Traveler
+C		The Qeynos Aqueduct System Traveler
+C		The Qeynos Hills Traveler
+C		The Surefall Glade Traveler
+C		Blackburrow Traveler
+I		Jaggedpine Forest Traveler
+I		Nedaria's Landing Traveler
+C		Everfrost Peaks Traveler
+C		Halas Traveler
+C		The Permafrost Caverns Traveler
+C		The Western Plains of Karana Traveler
+C		The Northern Plains of Karana Traveler
+C		Eastern Plains of Karana Traveler
+C	Odus Explorer
+C		Erud's Crossing Traveler
+C		Erudin Traveler
+C		The Erudin Palace Traveler
+C		Toxxulia Forest Traveler
+C		Paineel Traveler
+C		The Ruins of Old Paineel Traveler
+C		The Warrens Traveler
+C		The Stonebrunt Mountains Traveler
+C	Southeast Antonica Explorer
+C		The Northern Desert of Ro Traveler
+C		The Southern Desert of Ro Traveler
+C		The Innothule Swamp Traveler
+C		Grobb Traveler
+C		The City of Guk Traveler
+C		The Ruins of Old Guk Traveler
+I	Southwest Antonica Explorer
+C		The Southern Plains of Karana Traveler
+C		The Lair of the Splitpaw Traveler
+I		Lake Rathetear Traveler
+I		The Arena Traveler
+C		The Rathe Mountains Traveler
+C		The Feerrott Traveler
+C		Oggok Traveler
+I		Temple of Cazic-Thule Traveler
+C	The Planes Explorer
+C		The Plane of Fear Traveler
+C		The Plane of Hate Traveler
+C		The Plane of Sky Traveler
+I	Special Events Explorer
+I		Shadowrest Traveler
+I		Dragoncrypt Traveler
+I		Wedding Chapel (Light) Traveler
+I		Wedding Chapel (Dark) Traveler
+I	Housing Explorer
+I		House (One Room Stucco Interior) Traveler
+I		House (One Room Wood Interior) Traveler
+I		House (One Room Stone Interior) Traveler
+I		House (Three Room Stucco Interior) Traveler
+I		House (Three Room Wood Interior) Traveler
+I		House (Three Room Stone Interior) Traveler
+I		House (Hermit's Hideaway) Traveler
+I		House (Evantil's Abode) Traveler
+I		House (Bixie Hive) Traveler
+I	Guild Locals Explorer
+I		Guild Lobby Traveler
+I		Guild Hall Traveler
+I		Guild Hall (Modest) Traveler
+I		Guild Hall (Grand) Traveler
+I		Guild Hall (Palatial) Traveler
+C	Ak'Anon Traveler
+C		Visit Ak'Anon
+C	Befallen Traveler
+C		Visit Befallen
+C	Blackburrow Traveler
+C		Visit Blackburrow
+C	Butcherblock Mountains Traveler
+C		Visit Butcherblock Mountains
+I	Crushbone Traveler
+I		Visit Crushbone
+C	Dagnor's Cauldron Traveler
+C		Visit Dagnor's Cauldron
+I	Dragoncrypt Traveler
+I		Visit Dragoncrypt
+C	East Freeport Traveler
+C		Visit East Freeport
+C	Eastern Plains of Karana Traveler
+C		Visit Eastern Plains of Karana
+C	Erud's Crossing Traveler
+C		Visit Erud's Crossing
+C	Erudin Traveler
+C		Visit Erudin
+C	Everfrost Peaks Traveler
+C		Visit Everfrost Peaks
+C	Grobb Traveler
+C		Visit Grobb
+I	Guild Hall (Grand) Traveler
+I		Visit a Grand Guild Hall
+I	Guild Hall (Modest) Traveler
+I		Visit a Modest Guild Hall
+I	Guild Hall (Palatial) Traveler
+I		Visit a Palatial Guild Hall
+I	Guild Hall Traveler
+I		Visit your Guild Hall
+I	Guild Lobby Traveler
+I		Visit the Guild Lobby
+C	Halas Traveler
+C		Visit Halas
+C	High Keep Traveler
+C		Visit High Keep
+C	Highpass Hold Traveler
+C		Visit Highpass Hold
+I	House (Bixie Hive) Traveler
+I		Visit a Bixie Hive House
+I	House (Evantil's Abode) Traveler
+I		Visit an Evantil's Abode House
+I	House (Hermit's Hideaway) Traveler
+I		Visit a Hermit's Hideaway House
+I	House (One Room Stone Interior) Traveler
+I		Visit a One Room House with Stone Interior
+I	House (One Room Stucco Interior) Traveler
+I		Visit a One Room House with Stucco Interior
+I	House (One Room Wood Interior) Traveler
+I		Visit a One Room House with Wood Interior
+I	House (Three Room Stone Interior) Traveler
+I		Visit a Three Room House with Stone Interior
+I	House (Three Room Stucco Interior) Traveler
+I		Visit a Three Room House with Stucco Interior
+I	House (Three Room Wood Interior) Traveler
+I		Visit a Three Room House with Wood Interior
+C	Kedge Keep Traveler
+C		Visit Kedge Keep
+C	Kithicor Forest Traveler
+C		Visit Kithicor Forest
+I	Lake Rathetear Traveler
+I		Visit Lake Rathetear
+C	Nagafen's Lair Traveler
+C		Visit Nagafen's Lair
+C	Najena Traveler
+C		Visit Najena
+I	Nedaria's Landing Traveler
+I		Visit Nedaria's Landing
+C	Neriak - Commons Traveler
+C		Visit Neriak - Commons
+C	Neriak - Foreign Quarter Traveler
+C		Visit Neriak - Foreign Quarter
+C	Neriak - Third Gate Traveler
+C		Visit Neriak - Third Gate
+C	North Kaladim Traveler
+C		Visit North Kaladim
+C	North Qeynos Traveler
+C		Visit North Qeynos
+C	Northern Felwithe Traveler
+C		Visit Northern Felwithe
+C	Oggok Traveler
+C		Visit Oggok
+C	Paineel Traveler
+C		Visit Paineel
+I	Rivervale Traveler
+I		Visit Rivervale
+I	Shadowrest Traveler
+I		Visit Shadowrest
+I	Solusek's Eye Traveler
+I		Visit Solusek's Eye
+C	South Kaladim Traveler
+C		Visit South Kaladim
+C	South Qeynos Traveler
+C		Visit South Qeynos
+I	Southern Felwithe Traveler
+I		Visit Southern Felwithe
+I	Temple of Cazic-Thule Traveler
+I		Visit Temple of Cazic-Thule
+I	The Arena Traveler
+I		Visit The Arena
+C	The Castle of Mistmoore Traveler
+C		Visit The Castle of Mistmoore
+C	The City of Guk Traveler
+C		Visit The City of Guk
+C	The Commonlands Traveler
+C		Visit The Commonlands
+C	The Erudin Palace Traveler
+C		Visit The Erudin Palace
+C	The Estate of Unrest Traveler
+C		Visit The Estate of Unrest
+C	The Feerrott Traveler
+C		Visit The Feerrott
+C	The Gorge of King Xorbb Traveler
+C		Visit The Gorge of King Xorbb
+C	The Greater Faydark Traveler
+C		Visit The Greater Faydark
+C	The Innothule Swamp Traveler
+C		Visit The Innothule Swamp
+C	The Lair of the Splitpaw Traveler
+C		Visit The Lair of the Splitpaw
+C	The Lavastorm Mountains Traveler
+C		Visit The Lavastorm Mountains
+C	The Lesser Faydark Traveler
+C		Visit The Lesser Faydark
+I	The Liberated Citadel of Runnyeye Traveler
+I		Visit The Liberated Citadel of Runnyeye
+I	The Misty Thicket Traveler
+I		Visit The Misty Thicket
+C	The Nektulos Forest Traveler
+C		Visit The Nektulos Forest
+C	The Northern Desert of Ro Traveler
+C		Visit The Northern Desert of Ro
+C	The Northern Plains of Karana Traveler
+C		Visit The Northern Plains of Karana
+C	The Oasis of Marr Traveler
+C		Visit The Oasis of Marr
+C	The Ocean of Tears Traveler
+C		Visit The Ocean of Tears
+C	The Permafrost Caverns Traveler
+C		Visit The Permafrost Caverns
+C	The Plane of Fear Traveler
+C		Visit The Plane of Fear
+C	The Plane of Hate Traveler
+C		Visit The Plane of Hate
+C	The Plane of Sky Traveler
+C		Visit The Plane of Sky
+C	The Qeynos Aqueduct System Traveler
+C		Visit The Qeynos Aqueduct System
+C	The Qeynos Hills Traveler
+C		Visit The Qeynos Hills
+C	The Rathe Mountains Traveler
+C		Visit The Rathe Mountains
+C	The Ruins of Old Guk Traveler
+C		Visit The Ruins of Old Guk
+C	The Ruins of Old Paineel Traveler
+C		Visit The Ruins of Old Paineel
+C	The Southern Desert of Ro Traveler
+C		Visit The Southern Desert of Ro
+C	The Southern Plains of Karana Traveler
+C		Visit The Southern Plains of Karana
+C	The Steamfont Mountains Traveler
+C		Visit The Steamfont Mountains
+C	The Stonebrunt Mountains Traveler
+C		Visit The Stonebrunt Mountains
+C	The Surefall Glade Traveler
+C		Visit The Surefall Glade
+C	The Temple of Solusek Ro Traveler
+C		Visit The Temple of Solusek Ro
+C	The Warrens Traveler
+C		Visit The Warrens
+C	The Western Plains of Karana Traveler
+C		Visit The Western Plains of Karana
+C	Toxxulia Forest Traveler
+C		Visit Toxxulia Forest
+I	Wedding Chapel (Dark) Traveler
+I		Visit the Dark Wedding Chapel
+I	Wedding Chapel (Light) Traveler
+I		Visit the Light Wedding Chapel
+C	West Freeport Traveler
+C		Visit West Freeport
+EverQuest: Keys
+I	Bone Crafted Key
+I		Bone Crafted Key
+I	Hole Key
+I		Hole Key
+C	Islands of Sky Keys
+C		Key of Swords
+C		Key of the Misplaced
+C		Key of Misfortune
+C		Key of Beasts
+C		Avian Key
+C		Key of the Swarm
+C		Key of Scale
+C		Veeshan's Key
+C	Efreeti's Key
+C		Efreeti's Key
+EverQuest: Raids
+I	Conqueror of Kedge Keep
+I		Phinigel Autropos
+I	Conqueror of Nagafen's Lair
+I		Lord Nagafen
+I	Conqueror of The Permafrost Caverns
+I		Lady Vox
+I	Conqueror of The Plane of Fear
+I		Cazic-Thule
+I		Dread
+I		Fright
+I		Terror
+I		a dracoliche
+I	Conqueror of The Plane of Hate
+I		Innoruuk
+I		Maestro of Rancor
+I	Conqueror of The Plane of Sky
+I		Eye of Veeshan
+I		a thunder spirit princess
+I		Noble Dojorn
+I		Overseer of Air
+I		Protector of Sky
+I		Gorgalosk
+I		Keeper of Souls
+I		The Spiroc Lord
+I		Bazzt Zzzt
+I		Sister of the Spire
+I		Hand of Veeshan
+EverQuest: Hunter
+I	Hunter of Faydwer
+I		Hunter of Crushbone
+I		Hunter of The Lesser Faydark
+I		Hunter of The Castle of Mistmoore
+I		Hunter of The Steamfont Mountains
+I		Hunter of Butcherblock Mountains
+I		Hunter of Dagnor's Cauldron
+I		Hunter of The Estate of Unrest
+I		Hunter of Kedge Keep
+I		Hunter of The Ocean of Tears
+I	Hunter of Northeast Antonica
+I		Hunter of Freeport Sewers
+C		Hunter of Befallen
+I		Hunter of The Liberated Citadel of Runnyeye
+I		Hunter of The Caverns of Exile
+I		Hunter of The Misty Thicket
+I		Hunter of The Gorge of King Xorbb
+I		Hunter of Highpass Hold
+I		Hunter of The Lavastorm Mountains
+I		Hunter of Najena
+I		Hunter of Solusek's Eye
+I		Hunter of Nagafen's Lair
+I	Hunter of Northwest Antonica
+I		Hunter of Jaggedpine Forest
+I		Hunter of Nedaria's Landing
+I		Hunter of The Qeynos Aqueduct System
+I		Hunter of The Qeynos Hills
+I		Hunter of Everfrost Peaks
+I		Hunter of The Permafrost Caverns
+I		Hunter of The Western Plains of Karana
+I		Hunter of The Northern Plains of Karana
+I	Hunter of Odus
+I		Hunter of Toxxulia Forest
+I		Hunter of The Ruins of Old Paineel or The Hole
+I		Hunter of The Stonebrunt Mountains
+C		Hunter of The Warrens
+I	Hunter of Southeast Antonica
+I		Hunter of North Desert of Ro
+I		Hunter of South Desert of Ro
+I		Hunter of The City of Guk
+I		Hunter of The Ruins of Old Guk
+I	Hunter of Southwest Antonica
+I		Hunter of The Southern Plains of Karana
+I		Hunter of The Lair of the Splitpaw or The Invaded Lair of the Splitpaw
+I		Hunter of The Rathe Mountains
+I		Hunter of The Feerrott
+I		Hunter of Temple of Cazic-Thule or Accursed Temple of Cazic-Thule
+I	Hunter of The Planes
+I		Hunter of The Plane of Hate
+C	Hunter of Befallen
+C		Priest Amiaz
+C		the thaumaturgist
+I	Hunter of Butcherblock Mountains
+I		Glubbsink
+I	Hunter of The Castle of Mistmoore
+I		a glyphed ghoul
+I		Garton Viswin
+I		a cloaked dhampyre
+C		Lasna Cheroon
+I		an avenging caitiff
+C		Mynthi Davissi or a werewolf gypsy
+I		Maid Issis
+I		Butler Syncall
+I	Hunter of The City of Guk
+I		a froglok realist
+I		a froglok gaz squire
+I		a giant heart spider
+I		a froglok scryer
+C		the froglok warden
+C		the froglok shin lord
+I		an ancient croc
+C		a froglok summoner
+I	Hunter of Crushbone
+I		orc warlord
+I		orc taskmaster
+I	Hunter of Dagnor's Cauldron
+I		Flotsam
+I		Jetsam
+I		Squallslither
+I		Barnacle Bones
+I		Bilge Farfathom
+I	Hunter of The Estate of Unrest
+I		Garanel Rucksif
+I		a reanimated hand
+I		reclusive ghoul magus
+C		an undead knight of Unrest
+I		an undead barkeep
+I		lesser blade fiend
+I	Hunter of Everfrost Peaks
+I		Dark Assassin
+I	Hunter of The Feerrott
+I		a Silverflank guardian
+I		Tae Ew Templar
+I		Tae Ew Diviner
+I		Tae Ew Archon
+I		Thul Tae Ew Cenobite
+I		a Tae Ew Spiritualist
+I	Hunter of The Gorge of King Xorbb
+I		Spinflint
+I		Brahhm
+I		Yymp the infernal
+I		King Xorbb
+I	Hunter of Highpass Hold
+I		Vopuk Shralok
+I		Recfek Shralok
+I		Hagnis Shralok
+I		Vexven Mucktail
+I		Grenix Mucktail
+I	Hunter of Kedge Keep
+I		a frenzied cauldron shark
+C		a ferocious hammerhead
+I		a fierce impaler
+I		a seahorse matriarch
+C		a seahorse patriarch
+C		Shellara Ebbhunter
+I		Coralyn Kelpmaiden
+I		Cauldronboil
+C		Undertow
+I	Hunter of The Lair of the Splitpaw
+I		Tesch Val Deval`Nmak
+I		Tesch Val Kadvem
+I		Rosch Val L`Vlor
+I		Nisch Val Torash Mashk
+I	Hunter of Lake Rathetear
+I		a gnoll embalmer
+I	Hunter of The Lavastorm Mountains
+I		Scorchwing
+I		Scorchfist
+I		Swirlstone
+I		Flamebite
+I		Brognot
+I		Flameclaw
+I		Cinder Goblin Overseer
+I		Molgo
+I		Solusek Goblin Commander
+I		Solusek Goblin Lookout
+I		Shadowsoul
+I		Lavaspinner Protector
+I		Burnt Overlord
+I		Shadowhand
+I		Solusek Goblin Assassin
+I		Tisella
+I		a lesser nightmare
+I		a warbone monk
+C		a warbone spearman
+I	Hunter of The Lesser Faydark
+I		Crookstinger
+I		Queen Nasheeji
+I		Old Dimshimmer
+I		Whimsy Larktwitter
+I		Mina Glimmerwing
+I	Hunter of The Liberated Citadel of Runnyeye
+I		The Sporali Moldmaster
+I		a goblin janitor
+I	Hunter of The Misty Thicket
+I		a goblin alchemist
+I	Hunter of Nagafen's Lair
+I		a guano harvester
+C		a death beetle
+C		a kobold noble
+I		a kobold priest
+I		a kobold champion
+I		a kobold king
+C		a noxious spider
+C		a stone spider
+C		Efreeti Lord Djarn
+I		King Tranix
+I		Warlord Skarlon
+I		Magus Rokyl
+I	Hunter of Najena
+C		Drelzna
+C		Rathyl
+I		Najena
+C		Ekeros
+I		Trazdon
+C		Officer Grush
+I		The Widowmistress
+I	Hunter of Nedaria's Landing
+I		a magnificent grizzly
+I	Hunter of North Desert of Ro
+I		Dunedigger
+I		Rahotep
+I	Hunter of The Northern Plains of Karana
+I		Ashenpaw
+I		Callowwing
+I		Grimtooth
+I		Korvik the Cursed
+I		Lieutenant Midraim
+I		Swiftclaw
+I		Timbur the tiny
+I		Bristletoe
+I	Hunter of The Ocean of Tears
+I		Mojo the Tainted
+I		an ancient cyclops
+I	Hunter of The Permafrost Caverns
+I		an elite honor guard
+I		High Priest Zaharn
+I		King Thex`Ka IV
+I		an injured polar bear
+I		a goblin scryer
+I		a goblin jailmaster
+I		a goblin preacher
+I		a goblin alchemist
+I		a goblin archaeologist
+I	Hunter of The Qeynos Aqueduct System
+I		an injured rat
+I		an undead knight
+I		a shady mercenary
+I		a nesting rat
+I	Hunter of The Qeynos Hills
+I		Pyzjn
+I		Varsoon
+I	Hunter of The Rathe Mountains
+I		Petrifin
+I		Oculys Ogrefiend
+I		Shardwing
+C		Yun Jerahk the Poisoned
+C		Bloodneedle
+I		Quid Rilstone
+I		Mortificator Syythrak
+I	Hunter of The Ruins of Old Guk
+C		a reanimated hand
+C		a ghoul ritualist
+C		a ghoul supplier
+C		a ghoul savant
+C		a ghoul assassin
+C		a ghoul cavalier
+C		a ghoul sage
+C		a ghoul executioner
+C		a frenzied ghoul
+C		a ghoul sentinel
+C		the ghoul arch magus
+C		the ghoul lord
+I		a minotaur patriarch
+I		a minotaur elder
+I		a froglok crusader
+I		a froglok noble
+I		a froglok yun priest
+I		the froglok king
+I		a froglok tactician
+I		a froglok herbalist
+I	Hunter of The Ruins of Old Paineel
+I		Stonegrinder Minion
+I		Gibartik
+C		Stonesoul the Unmoving
+C		muck covered elemental
+C		Rocksoul
+C		bejeweled elemental
+C		Irslak the Wretched
+C		Niltoth the Unholy
+C		Initiate Sirlis
+C		Commander Yarik
+C		Ulrik the Devout
+C		Slizik the Mighty
+I		Retseth Tretse
+I	Hunter of Solusek's Eye
+I		flame goblin foreman
+I		Singe
+I		Kindle
+I		inferno goblin captain
+I		reckless efreeti
+I		fire goblin bartender
+I		goblin high shaman
+I		inferno goblin torturer
+I		Solusek goblin king
+I		kobold predator
+I		Gabbie Mardoddle
+I		Captain Bipnubble
+I		CWG Model EXG
+I		lava elemental
+I	Hunter of South Desert of Ro
+I		an ancient cyclops
+C		Lockjaw
+I		Hatar
+I		Erg Bluntbruiser
+I	Hunter of The Southern Plains of Karana
+I		Marik Clubthorn
+I		Knari Morawk
+I		Kroldir Thunderhoof
+I		Mroon
+I		Narra Tanith
+I		Grizzleknot
+C		Quillmane
+C		Lord Grimrot
+I		Tesch Val Deval`Nmak
+I		Tesch Val Kadvem
+I		Rosch Val L`Vlor
+I		Nisch Val Torash Mashk
+I		Synger Foxfyre
+I	Hunter of The Steamfont Mountains
+I		Minotaur Lord
+I		Minotaur Hero
+I	Hunter of The Stonebrunt Mountains
+I		Rognarog the Infuriated
+I		Slyder the Ancient
+I		Giang Yin
+I		Snowbeast
+I		Jelquar the Soulslayer
+I		Girgak the Bloody
+I		Rendolr the Maimer
+I		Arglar the Tormentor
+I		Hurglak the Destroyer
+I	Hunter of Temple of Cazic-Thule
+I		a clay golem
+I		a stone golem
+I		a steel golem
+I		Tae Ew Templar
+I		Tae Ew Diviner
+I		Tae Ew Archon
+I		Cazic Cenobite
+I		Avatar of Fear
+I		a lizard ritualist
+I	Hunter of Toxxulia Forest
+I		Alrik Pasdar
+I		Lord Gongo
+I		Jo Jo
+I		The Kerran Sha`rr
+I		Khonza Mitty of Kerra
+I		Hamed Grarr
+C	Hunter of The Warrens
+C		Warlord Drrig
+C		Packmaster Dledsh
+I	Hunter of The Western Plains of Karana
+I		a werewolf bandit

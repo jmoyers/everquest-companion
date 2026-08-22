@@ -30,6 +30,7 @@
 </li><li> {{:Summoned: Staff of Runes}}
 </li><li> {{:Staff_of_Null}}
 </li><li> {{:Vindication}}
+</li><li> {{:Potion of Copal's Demise}}
 </li></ul>
 
 | slots = 

@@ -13,6 +13,12 @@ import type {
 } from '../../shared/combat'
 
 /**
+ * Why a zone session stopped accruing — see `ZoneSession.closedBy` for what it decides.
+ * Mirrored on the serialized `ZoneSessionSummary` so the picker can say the right word.
+ */
+export type ZoneSessionClose = 'zone' | 'mark'
+
+/**
  * A finalized ZONE SESSION (Task #54). When the player zones, the live zoneAgg is frozen into
  * one of these (kept in a capped ring) instead of being discarded, so a past zone's overall
  * meter is still selectable. Holds the frozen Agg + timing + accumulated durations, plus a
@@ -23,6 +29,18 @@ export interface ZoneSession {
   id: string
   zone: string
   agg: Agg
+  /**
+   * WHAT ENDED THIS STAY (JOS-322). `'zone'` is the original and only cause: you walked through a
+   * zone line (or the epoch boundary did it for you). `'mark'` is a SESSION MARK — the user pressed
+   * "New session" and the engine made the same move minus the room change.
+   *
+   * IT IS THE MERGE-BACK ELIGIBILITY TEST, and that is the whole reason it is on the record rather
+   * than inferred: a split the USER made is reversible (the two halves are one uninterrupted stay
+   * in one room), and a boundary the WORLD made is not (the mobs were retired, the charm broke,
+   * the room changed). `unsplit()` reads exactly this field plus the zone name, so eligibility is
+   * decidable from the frozen record alone — no side ledger, nothing to keep in step.
+   */
+  closedBy: ZoneSessionClose
   /** first/last attributed-damage ts (0 if the session saw no damage — those are dropped). */
   startTs: number
   lastTs: number
@@ -176,8 +194,14 @@ export const ACTIVE_MS = 3_000
 export const RECENT_CAP = 300
 // Zone-session history cap (Task #54): how many FINALIZED zone sessions to retain (the live one
 // is separate). Each holds only frozen aggregate maps + a small summary — no per-event rings — so
-// 20 sessions is a trivial footprint (see the finalize note + the task report).
-export const ZONE_HISTORY_CAP = 20
+// this many sessions is a trivial footprint (see the finalize note + the task report).
+//
+// 24 SINCE JOS-322 (owner ruling 2026-08-21), and the number is borrowed rather than chosen: a
+// SESSION MARK now mints a finalized entry here too, and the marks themselves are bounded by
+// `shared/sessionSegments.MAX_SESSION_MARKS = 24`. Two rings holding two halves of the same click
+// at two different depths would mean the loot picker could still offer a session the meter had
+// already dropped. Same click, same reach.
+export const ZONE_HISTORY_CAP = 24
 
 // Timeline (Task #51):
 //   TIMELINE_CAP          — per-encounter event ring size (drop-oldest). Bumped 5k→8k for

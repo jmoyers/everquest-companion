@@ -28,11 +28,16 @@
 // half-parsed object, and it never falls back to "well, it's tab-separated, so…".
 //
 // `fileKindVerified` is a SECOND, separate honesty flag on the same idea: the filename suffix
-// itself is knowledge. `Inventory` is MEASURED (the real dump on the dev machine is
-// `Primitive_freeport-Inventory.txt`). Every other suffix below is the community/client spelling
-// as best we know it and has NOT been observed on disk — an unverified suffix simply never
-// matches a real file, which is a quiet miss rather than a wrong parse, and it gets corrected the
-// moment someone runs the command and looks.
+// itself is knowledge. `Inventory` and `Achievements` are MEASURED (the real dumps on the dev
+// machine are `Primitive_freeport-Inventory.txt` and `Primitive_freeport-Achievements.txt`). Every
+// other suffix below is the community/client spelling as best we know it and has NOT been observed
+// on disk — an unverified suffix simply never matches a real file, which is a quiet miss rather
+// than a wrong parse, and it gets corrected the moment someone runs the command and looks.
+//
+// TWO KINDS HAVE GRADUATED, and the second one shows the law working exactly as written: JOS-429's
+// brief was investigation-first, the owner exported the real file, its format was characterized and
+// written down (shared/outputs/achievements.ts's header) and the fixture committed BEFORE a line of
+// parser existed. The five kinds still `awaiting-sample` below are waiting for the same thing.
 
 /** Every `/outputfile` kind this app knows the name of. */
 export type OutputKindId =
@@ -145,11 +150,16 @@ export const OUTPUT_KINDS: readonly OutputKindDef[] = [
   {
     id: 'achievements',
     command: '/outputfile achievements',
-    why: 'Dumps your achievement progress as the game currently sees it.',
+    why: 'Type it in game to import Sky quests you finished before this app ever saw your log.',
     fileKind: 'Achievements',
-    fileKindVerified: false,
-    status: 'awaiting-sample',
-    note: 'Achievements dump - no verified sample; run /outputfile achievements and commit a fixture.',
+    fileKindVerified: true,
+    status: 'supported',
+    note: 'Achievement progress, including the class-unlock rows that name each Sky quest reward.',
+    // NO PRECONDITIONS, and the empty list is a measured claim rather than a gap. The inventory
+    // dump's steps exist because that command is conditional in ways the file never admits to
+    // (bank/hoard/depot windows). This one is not: the server already knows which achievements you
+    // have, no window has to be open, and it can be typed anywhere. Saying nothing is the honest
+    // answer; inventing a ritual would be a caveat with no fact under it.
     steps: []
   },
   {

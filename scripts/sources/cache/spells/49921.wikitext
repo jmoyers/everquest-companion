@@ -35,7 +35,7 @@
 * '''Reagent:''' [[Jasper]]
 
 
-| msg_cast_on_you = A mystic symbol flashes before your eyes.
+| msg_cast_on_you = The symbol of Pinzarn flashes before your eyes.
 | msg_cast_on_other = Someone  is cloaked in a shimmer of glowing symbols.
 | msg_wears_off = The mystic symbol fades.
 

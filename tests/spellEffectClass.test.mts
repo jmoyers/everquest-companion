@@ -260,13 +260,40 @@ test('JOS-251 R4c: both wiki phrasings of a charm read the same, and a spell can
 test('JOS-251 R4d: the per-class membership counts, pinned', () => {
   // A re-scrape that widens or narrows a class fails HERE, with the class named, instead of drifting
   // into somebody's alert list. Counts are canonical (rank-stripped) names, ungated.
+  //
+  // THE 2026-08-18 GAME PATCH MOVED TWO OF THESE, AND NEITHER IS A NEW ABILITY (JOS-439):
+  //
+  //   haste 44 -> 45. The patch's `Elixir of Speed I..IX` (six rows) all read
+  //     `Increase Attack Speed by N%`, which is the haste rule's own anchor. Six ROWS, ONE
+  //     canonical name (`elixir of speed` — the rank suffix is stripped), so the count moves by
+  //     one. They are potion clickies (`classes` says the spell cannot be cast directly), which is
+  //     why they widen the roster without widening anybody's spell book. Note also what did NOT
+  //     move: `Jonthan's Provocation` was re-worded from `Increase Melee Haste by 3%` to
+  //     `Increase Attack Speed by 48% (L45) to 50% (L47)` and classifies as `haste` either way —
+  //     the anchor reads both phrasings, which is the whole argument for anchoring at the head of
+  //     the sentence instead of matching a stem.
+  //   invisibility 19 -> 20. NO spell was added. The wiki keeps this one spell on two pages, and
+  //     until the patch both were spelled `Invisibility versus/Versus Undead`, folding to one
+  //     canonical name; the patch renamed one of them to `Invisibility vs. Undead` and the fold
+  //     stopped joining them. The EFFECT line on both is still the string `Invisibility versus
+  //     Undead` (R4b asserts on it below, unchanged) — it is the NAME that split.
+  //
+  // AND JOS-440 PUT THE TWINS BACK TOGETHER WITHOUT MOVING THIS NUMBER, which is worth writing
+  // down because the ticket predicted 20 -> 19 and the prediction was wrong for a reason this file
+  // exists to state. JOS-440 drops the classic duplicate page (a `supersededBy` removal) and
+  // renames the survivor to the spelling the game prints, so the EFFECTIVE catalog holds one
+  // invisibility key where it held two. This roster is not the effective catalog: `RAW` is the
+  // committed scrape with NO overlay of any kind — that is R7's separation, asserted directly
+  // below — so it still sees both pages and still counts 20. A future re-scrape that drops the
+  // duplicate page UPSTREAM is what moves this number to 19, and it will be a diff of spells.json
+  // rather than of the overlay.
   const all = (k: Parameters<typeof effectRoster>[1]): number =>
     effectRoster(RAW, k, { castableOnly: false, targetOnly: false }).size
   assert.deepEqual(
     Object.fromEntries(EFFECT_RULES.map((r) => [r.klass, all(r.klass)])),
     {
-      charm: 23, summonPet: 102, mez: 16, root: 24, snare: 31, slow: 34, haste: 44, fear: 15,
-      stun: 92, blind: 12, pacify: 12, memblur: 17, invisibility: 19, feignDeath: 2,
+      charm: 23, summonPet: 102, mez: 16, root: 24, snare: 31, slow: 34, haste: 45, fear: 15,
+      stun: 92, blind: 12, pacify: 12, memblur: 17, invisibility: 20, feignDeath: 2,
       // JOS-318, the class the alert catalog reads. 67 rows / 66 canonical names.
       healOverTime: 66
     }
@@ -388,11 +415,23 @@ test('JOS-258 R8c: the roster gate is INVERTED against the charm one, and on pur
   )
 })
 
-test('JOS-251 R4e: the scrape captured an effect list for all but one spell', () => {
+test('JOS-251 R4e: the scrape captured an effect list for all but four spells', () => {
   const file = spellsJson as SpellDbFile
-  assert.equal(file.schema, 2, 'the effect-list schema')
+  // 2 -> 3 on 2026-08-22: the scraper began capturing `recast_time` (SpellEntry.recastMs).
+  assert.equal(file.schema, 3, 'the effect-list schema')
   assert.equal(file.withEffects, RAW.filter((s) => s.effects?.length).length, 'the header counts what the rows carry')
-  assert.equal(RAW.length - file.withEffects!, 1, 'exactly one page states no slot table at all')
+  // 1 -> 4 (JOS-439), 4 -> 3 (2026-08-22): a wiki editor filled Heritage of Mistmoore's effect
+  // box that same day ("Added spell effects to appropriate box", the edit our rescrape caught).
+  // The two Improved Vampirism stubs are still slotless, and the pre-existing one is `Instill`.
+  // Naming them is the assertion: `effects: undefined` means THE WIKI SAID NOTHING, never "this
+  // spell does nothing" (the scrape writes the field absent rather than `[]` for exactly that
+  // reason), and a silent jump here would be the derived charm, mez and pet rosters quietly
+  // losing members.
+  assert.deepEqual(
+    RAW.filter((s) => !s.effects?.length).map((s) => s.name).sort(),
+    ['Improved Vampirism II', 'Improved Vampirism III', 'Instill']
+  )
+  assert.equal(RAW.length - file.withEffects!, 3, 'exactly three pages state no slot table at all')
   assert.equal(RAW.filter((s) => s.instrumentEnhanced).length, 79, 'the bard pages')
 })
 

@@ -21,7 +21,8 @@
 // decide absence — absence is the engine's decision, read off the undefined field. So a drift
 // here misstates a sentence; it can never manufacture or suppress a number.
 
-import { formatPpm } from '../../lib/formatRate'
+import { formatCpm, formatPpm } from '../../lib/formatRate'
+import { ORIGIN_COLOR } from './markerStyle'
 import type { ProcsView } from '@shared/combat'
 import type { ProcLaneView, ProcOrigin, ProcRateView, ProcSkillTag } from '@shared/procAnalytics'
 
@@ -38,9 +39,16 @@ export const ABSENT = '-'
  * accrues active seconds you did not swing in. Changing that would move `activeDps`, a shipped
  * number, so the number keeps the meter's meaning and the UI says what it means.
  */
-export const ACTIVE_TIME_NOTE =
-  'Procs per minute of ACTIVE combat time - the meter’s own definition: gaps between attributed ' +
-  'hits capped at 3s each, incoming damage included.'
+export const ACTIVE_TIME_NOTE = activeTimeNote('proc')
+
+/** The same sentence in whichever unit the lane counts (JOS-438) — `Procs per minute …` for the
+ *  three proc origins, `Clicks per minute …` for a held clicky. ONE spelling, one place. */
+function activeTimeNote(unit: string): string {
+  return (
+    `${unit[0].toUpperCase()}${unit.slice(1)}s per minute of ACTIVE combat time - the meter’s own ` +
+    'definition: gaps between attributed hits capped at 3s each, incoming damage included.'
+  )
+}
 
 /** ONE cell of a rate column: what to draw, whether it is an absence, and what the hover says. */
 export interface RateCell {
@@ -81,7 +89,11 @@ export function sourceNote(rate: ProcRateView): string {
  * `activeSec` is the SELECTION's active time, used only to word the absence. The denominator the
  * engine actually divided by rides on the rate itself (`sourceSec`) — see `sourceNote`.
  */
-export function ppmCell(rate: ProcRateView, activeSec: number): RateCell {
+export function ppmCell(rate: ProcRateView, activeSec: number, origin: ProcOrigin = 'spell'): RateCell {
+  // A CLICK LANE IS COUNTED IN CLICKS (JOS-438) — the number and its withholding rule are
+  // identical, and the unit word is the entire difference the reporter asked for.
+  const unit = ORIGIN_UNIT[origin]
+  const fmt = origin === 'click' ? formatCpm : formatPpm
   if (rate.ppmActive === undefined) {
     const sec = Math.round(rate.sourceSec ?? activeSec)
     return {
@@ -90,12 +102,12 @@ export function ppmCell(rate: ProcRateView, activeSec: number): RateCell {
       hint:
         `No per-minute rate: that needs at least ${MIN_ACTIVE_SEC}s of active combat time and ` +
         `${rate.sourceName === undefined ? 'this selection' : `${rate.sourceName}’s window`} has ` +
-        `${sec}s. ${plural(rate.count, 'proc')} counted - the count is exact; only the division ` +
+        `${sec}s. ${plural(rate.count, unit)} counted - the count is exact; only the division ` +
         'is withheld.'
     }
   }
-  const wall = rate.ppmWall === undefined ? '' : ` (${formatPpm(rate.ppmWall)} of wall clock)`
-  return { text: formatPpm(rate.ppmActive), absent: false, hint: `${ACTIVE_TIME_NOTE}${wall}${sourceNote(rate)}` }
+  const wall = rate.ppmWall === undefined ? '' : ` (${fmt(rate.ppmWall)} of wall clock)`
+  return { text: fmt(rate.ppmActive), absent: false, hint: `${activeTimeNote(unit)}${wall}${sourceNote(rate)}` }
 }
 
 // ── THE GLANCEABLE LIST (JOS-37) ────────────────────────────────────────────────────
@@ -118,9 +130,10 @@ export interface ProcListRow {
   ppm: string
 }
 
-/** `4.0 ppm` / `—`. The engine decides absence; this only spells it. */
-function ppmText(rate: ProcRateView): string {
-  return rate.ppmActive === undefined ? ABSENT : formatPpm(rate.ppmActive)
+/** `4.0 ppm` / `0.30 cpm` / `—`. The engine decides absence; this only spells it. */
+function ppmText(rate: ProcRateView, origin: ProcOrigin): string {
+  if (rate.ppmActive === undefined) return ABSENT
+  return origin === 'click' ? formatCpm(rate.ppmActive) : formatPpm(rate.ppmActive)
 }
 
 function listRow(l: ProcLaneView): ProcListRow {
@@ -130,7 +143,7 @@ function listRow(l: ProcLaneView): ProcListRow {
     ambiguous: l.ambiguous === true,
     origin: l.origin,
     count: l.count,
-    ppm: ppmText(l.rate)
+    ppm: ppmText(l.rate, l.origin)
   }
 }
 
@@ -162,26 +175,36 @@ export function procListRows(p: ProcsView): ProcListRow[] {
  * How many procs this selection saw — the ledger's own headline.
  *
  * The unified lane count when the engine sent one (poison Strikes, cast-less spell effects and
- * Slay Undead together), else the shipped poison-only count. So the header can never quote a
- * number the list under it does not add up to.
+ * the two swing-borne AAs — Slay Undead and Finishing Blow — together), else the shipped
+ * poison-only count. So the header can never quote a number the list under it does not add up to.
  */
 export function procCount(p: ProcsView): number {
   return p.overall?.count ?? p.strikeCount
 }
 
+/** Firings of HELD CLICKIES in this selection (JOS-438) — counted apart from the procs above,
+ *  because they are not procs and `overall` therefore excludes them. */
+export function clickCount(p: ProcsView): number {
+  return (p.lanes ?? []).reduce((n, l) => n + (l.origin === 'click' ? l.count : 0), 0)
+}
+
 /** Is there proc activity at all? Zero procs ⇒ the card's quiet note and no header readout:
- *  an empty selection must not grow furniture. */
+ *  an empty selection must not grow furniture. A selection whose ONLY cast-less firings were
+ *  clicks still has something to say, so the clicks count here too. */
 export function hasProcActivity(p: ProcsView): boolean {
-  return procCount(p) > 0
+  return procCount(p) + clickCount(p) > 0
 }
 
 /** The card-level readout, in the one spelling the header and the clipboard share. */
 export interface ProcSummary {
   /** Every detected proc in this selection. Always exact. */
   count: number
+  /** Held-clicky firings, which are NOT in `count` (JOS-438). */
+  clicks: number
   /** `3.1 ppm`, absent below the engine's own floor — never '0.0' (law 5). */
   ppm?: string
-  /** `12 procs · 3.1 ppm`, or just `12 procs` when the rate was withheld. */
+  /** `12 procs · 3.1 ppm`, or just `12 procs` when the rate was withheld — plus `· 3 clicks`
+   *  when the selection had any. */
   header: string
 }
 
@@ -195,12 +218,18 @@ export interface ProcSummary {
  */
 export function procSummary(p: ProcsView): ProcSummary {
   const count = procCount(p)
+  const clicks = clickCount(p)
   const ppmActive = p.overall?.ppmActive
   const ppm = ppmActive === undefined ? undefined : formatPpm(ppmActive)
+  // THE CLICKS ARE A SECOND TERM, NOT A SECOND RATE (JOS-438). A count that sums the rows the
+  // card lists is what keeps the header honest; a per-minute figure for "how often did I press
+  // buttons in this fight" belongs on the lane, where the reader can see WHICH button.
+  const procs = ppm === undefined ? plural(count, 'proc') : `${plural(count, 'proc')} · ${ppm}`
   return {
     count,
+    clicks,
     ...(ppm === undefined ? {} : { ppm }),
-    header: ppm === undefined ? plural(count, 'proc') : `${plural(count, 'proc')} · ${ppm}`
+    header: clicks === 0 ? procs : `${procs} · ${plural(clicks, 'click')}`
   }
 }
 
@@ -211,13 +240,25 @@ export function procSummary(p: ProcsView): ProcSummary {
 const ORIGIN_NOTE: Record<ProcOrigin, string> = {
   poison: 'A rogue poison Strike: it printed its landing emote and no cast line, which is the only way a Strike ever appears.',
   spell: 'Detected as a proc by INFERENCE: this spell effect landed with no “You begin casting” line of yours behind it. The log never names what fired it, so this is a co-occurrence, not a source.',
-  slay: 'The Slay Undead melee proc, counted from the damage taxonomy - it rides an ordinary weapon swing and prints no spell line of its own.'
+  slay: 'The Slay Undead melee proc, counted from the damage taxonomy - it rides an ordinary weapon swing and prints no spell line of its own.',
+  aa: 'An innate AA proc, counted from the “(Finishing Blow)” annotation the game prints on the swing it rode. Its damage stays in the melee lane, where it belongs - a weapon swing is a weapon swing - so the figure here is the damage of the swings that procced, not the damage the proc added. That estimate is the marginal below.',
+  click:
+    'NOT a proc - an item CLICK. It landed with no “You begin casting” line, exactly as a proc does, and your own inventory dump names an instant click effect of this spell that no weapon in the item database procs. The rate below is how often you pressed it, not how often it fired on its own.'
+}
+
+/** The WORD a lane's rate is measured in. A proc rate and a click rate are different claims, and
+ *  the unit is where the difference has to show up (JOS-438). */
+const ORIGIN_UNIT: Record<ProcOrigin, string> = {
+  poison: 'proc', spell: 'proc', slay: 'proc', aa: 'proc', click: 'click'
 }
 
 /** A drill row's proc annotation: `proc · 3.1 ppm`, plus the hover that states its basis. */
 export interface ProcAnnotation {
   text: string
   hint: string
+  /** The lane's hue, resolved here so the tag and the Procs panel's dot read one table
+   *  (`markerStyle.ORIGIN_COLOR`) and a `click` tag can never wear the proc magenta. */
+  color: string
 }
 
 /**
@@ -252,7 +293,8 @@ export function procAnnotationFor(
 ): ProcAnnotation | undefined {
   const t = index.get(skill.toLowerCase())
   if (!t) return undefined
-  const ppm = ppmCell(t.rate, t.activeSec)
+  const unit = ORIGIN_UNIT[t.origin]
+  const ppm = ppmCell(t.rate, t.activeSec, t.origin)
   const lane =
     t.lane === t.skill
       ? ''
@@ -263,9 +305,10 @@ export function procAnnotationFor(
   const sec = Math.round(t.rate.sourceSec ?? t.activeSec)
   const basis = ppm.absent
     ? ''
-    : `${plural(t.rate.count, 'proc')} over ${sec}s of active combat in this selection. `
+    : `${plural(t.rate.count, unit)} over ${sec}s of active combat in this selection. `
   return {
-    text: ppm.absent ? 'proc' : `proc · ${ppm.text}`,
-    hint: `${ORIGIN_NOTE[t.origin]}${lane} ${basis}${ppm.hint}`
+    text: ppm.absent ? unit : `${unit} · ${ppm.text}`,
+    hint: `${ORIGIN_NOTE[t.origin]}${lane} ${basis}${ppm.hint}`,
+    color: ORIGIN_COLOR[t.origin]
   }
 }

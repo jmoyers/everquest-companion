@@ -6,7 +6,8 @@ import { formatTime } from '../lib/formatDate'
 import { LIVE_SELECTION, scopeOptions, type ScopeOption } from '../features/combat/dashboardData'
 import { useGlobalFight } from '../features/combat/useGlobalFight'
 import { type OverlaySelectRow } from './OverlaySelect'
-import { OverlayHeader } from './OverlayHeader'
+import { OverlayHeader, type OverlayHeaderAction } from './OverlayHeader'
+import { useSessionMarks } from '../features/timeslice/useSessionMarks'
 import { MeterBars } from './meterBars'
 import { MeterPane } from './scopeFloor'
 import { PetNudgeCard } from './petNudgeCard'
@@ -141,6 +142,37 @@ function liveNudge(snap: CombatSnapshot | null): PetSummonNudge | undefined {
   return snap.petNudge
 }
 
+/**
+ * THE ZONE METER'S TITLE-BAR "NEW SESSION" (JOS-322, owner ruling 2026-08-21: *the New-session
+ * button DOES go on the zone meter overlay — small, in the title bar*).
+ *
+ * It is the SAME app-wide mark the Loot bar's button presses, through the same main-held list: one
+ * click, one instant, and everything splits at it — the loot ledger's segments AND this meter's own
+ * engine records. Nothing here knows the instant; main stamps it (src/main/sessionMarks.ts).
+ *
+ * ZONE ONLY, and that is the ruling's own shape rather than a simplification. This control's whole
+ * meaning on a meter is "the Overall I am watching starts again from here", and Overall is exactly
+ * what the ZONE kind draws. A FIGHT meter's records are pulls — the log opens and closes those, and
+ * a button that split one would be answering a question nobody asked.
+ *
+ * The hook runs unconditionally (it is a hook) and the ACTION is what is withheld, so a fight meter
+ * still shares the one cache and simply draws no button.
+ */
+function useNewSessionAction(isFight: boolean, after: () => void): OverlayHeaderAction | undefined {
+  const { press } = useSessionMarks(window.eqOverlay)
+  if (isFight) return undefined
+  return {
+    // The accessible NAME, not a tooltip — overlay chrome carries aria-labels and no native titles
+    // (the 1111d8d9 ruling). It is the same three words the ledger's button prints, because it is
+    // the same concept and the vocabulary is unified by ruling.
+    label: 'New session',
+    glyph: '⚑',
+    onClick: () => {
+      void press().then(after, () => undefined)
+    }
+  }
+}
+
 export default function OverlayMeter(): JSX.Element {
   // `kind` comes from the preload bridge (read from the window's ?kind= query). Fall back to
   // 'fight' if the bridge is momentarily absent (e.g. an HMR reload before the preload re-runs).
@@ -167,6 +199,14 @@ export default function OverlayMeter(): JSX.Element {
   // tab always filter the same names by the same rule.
   const [meterScope] = useMeterScope()
   const roster = snap?.roster ?? EMPTY_ROSTER
+  const newSession = useNewSessionAction(isFight, () => {
+    // The engine's Overall drops to zero and the stay you just closed appears in THIS selector as
+    // one more finalized entry — so the window snaps back to the live session rather than sitting
+    // on a browse of whatever was picked. Anything else already selected is left alone: the click
+    // splits the record, and Details! rule 4 says browsing is a pick, not a mutation.
+    setZoneSelection('zone')
+    setDrill(null)
+  })
 
   const { seg, live, headerName, rows, headIsLast } = meterView(
     snap,
@@ -228,6 +268,9 @@ export default function OverlayMeter(): JSX.Element {
         // instead of floating unlabelled beside a mob name. So this header passes NO tail at all,
         // and every pixel it was holding is width a long mob name gets to use at 380px.
         select={{ rows, value: selection, onChange: selectSegment, accent: GOLD }}
+        // ONE small control beside the lock/close pair, on the ZONE kind only (JOS-322). Undefined
+        // on a fight meter, so that title bar is byte-for-byte the row it was.
+        action={newSession}
         chrome={{ locked, hovering, dragRegion, noDrag, toggleLock, capture }}
       />
 

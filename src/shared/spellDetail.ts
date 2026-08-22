@@ -66,6 +66,13 @@ export interface SpellDetail {
   /** the wiki's own duration words ("24 Sec", "Permanent"), never a re-spelling of them. */
   durationText?: string
   castTimeMs?: number
+  /**
+   * The wiki's `recast_time` in ms (JOS-444). The card prints it WHENEVER a source states one, not
+   * only when it is long enough to earn a word on a dense unlock row: the card is the place a
+   * player goes to ask what a spell costs him, and "how soon can I do that again" is one of the
+   * four numbers that answers it. Absent when the page omits it, like every other field here.
+   */
+  recastMs?: number
   mana?: number
   targetType?: string
   spellType?: string
@@ -142,6 +149,8 @@ export function spellStatRows(d: SpellDetail): SpellStatRow[] {
   if (d.spellType !== undefined) rows.push({ id: 'type', label: 'Type', value: d.spellType })
   if (d.targetType !== undefined) rows.push({ id: 'target', label: 'Target', value: d.targetType })
   if (d.castTimeMs !== undefined) rows.push({ id: 'cast', label: 'Cast', value: seconds(d.castTimeMs) })
+  // Beside the cast, because the two are one sentence: the cycle is the first plus the second.
+  if (d.recastMs !== undefined) rows.push({ id: 'recast', label: 'Recast', value: seconds(d.recastMs) })
   if (d.mana !== undefined) rows.push({ id: 'mana', label: 'Mana', value: String(d.mana) })
   if (d.durationText !== undefined) rows.push({ id: 'duration', label: 'Duration', value: d.durationText })
   if (d.instrumentEnhanced !== undefined) {

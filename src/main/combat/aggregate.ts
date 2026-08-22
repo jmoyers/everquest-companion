@@ -496,9 +496,36 @@ export class Agg {
    * dependence on any event ring.
    */
   windows = new WindowAccum()
+  /**
+   * RE-STATE a row's identity from the ref that just arrived. The display name has always been
+   * refreshed this way (world-model law 2: the log's latest spelling wins).
+   *
+   * THE KIND MOVES TOO SINCE JOS-430, and ONE transition is allowed: `'other'` → `'member'`. A
+   * combatant recorded before your group learned their name is `'other'`; the moment the roster
+   * admits them the SAME row (`member:<key>` — one id, one aggregate, one bar) starts arriving as
+   * `'member'` and the bar re-labels itself without splitting.
+   *
+   * IT IS ONE-WAY ON PURPOSE, and the G1 golden window is why: that fixture ends with a DISBAND,
+   * and the roster's admission set is cleared by a self-leave. A free-running assignment would let
+   * the last line of a session decide what a fight two minutes earlier was, so a group-mate's bar
+   * would quietly stop saying `group` the moment you left the group. What this fight's damage WAS
+   * does not change when the group ends. Every other kind is a constant for a given row id
+   * (`you`, `pet:<instance>`, `allypet:…`), so nothing else can reach this line at all.
+   */
+  private reid(s: SourceStat, ref: SourceRef): void {
+    if (s.name !== ref.name) s.name = ref.name
+    if (s.kind === 'other' && ref.kind === 'member') s.kind = 'member'
+  }
+  /** DROP a recorded row (JOS-430). The one caller is `EngineState.retractOther`: a name a
+   *  stronger model has just claimed as a pet must not keep a second bar beside the pet's own.
+   *  Safe by construction — an `'other'` row is additive (it enters no `you`/`pet` total and no
+   *  target/engaged set), so removing it can move nothing that existed before it did. */
+  dropOut(id: string): boolean {
+    return this.out.delete(id)
+  }
   addOut(ref: SourceRef, ev: DamageEvent, ambiguous = false): void {
     const s = this.out.get(ref.id) ?? newSource(ref.name, ref.kind)
-    if (s.name !== ref.name) s.name = ref.name
+    this.reid(s, ref)
     addToSource(s, ev, ambiguous)
     this.out.set(ref.id, s)
   }
@@ -509,7 +536,7 @@ export class Agg {
   }
   addOutMiss(ref: SourceRef, m: MissFold): void {
     const s = this.out.get(ref.id) ?? newSource(ref.name, ref.kind)
-    if (s.name !== ref.name) s.name = ref.name
+    this.reid(s, ref)
     addMissToSource(s, m)
     this.out.set(ref.id, s)
   }
@@ -520,7 +547,7 @@ export class Agg {
   }
   addOutResist(ref: SourceRef, spell: string, category: DamageCategory): void {
     const s = this.out.get(ref.id) ?? newSource(ref.name, ref.kind)
-    if (s.name !== ref.name) s.name = ref.name
+    this.reid(s, ref)
     addResistToSource(s, spell, category)
     this.out.set(ref.id, s)
   }

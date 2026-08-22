@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Hawk's Eye Tonic
+| spellicon =
+| description = Improves your aim, allowing you to become more skillful at archery for up to 20 minutes.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Hawks Eye Tonic]].
+
+| items_with_effect =
+
+<ul><li> {{:Hawks Eye Tonic}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Chance to Hit by 10% with Archery }}
+
+| skill =
+| mana = 0
+| range = 0
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 20 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your aim improves.
+| msg_cast_on_other = Someone's eyes sharpen.
+| msg_wears_off = Your aim returns to normal.
+}}

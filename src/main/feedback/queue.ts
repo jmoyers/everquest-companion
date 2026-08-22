@@ -26,6 +26,7 @@ import {
   installId,
   pruneQueue,
   readPendingGz,
+  readPendingAchievementsGz,
   readPendingInventoryGz,
   removeQueued,
   type QueuedReport
@@ -38,8 +39,9 @@ export const FLUSH_INTERVAL_MS = 30 * 60 * 1000
 
 /** Rebuild the wire request from a spooled entry — same shape, same idempotency key.
  *
- *  `inventory` is `?? null` rather than read straight through: an entry spooled by a build from
- *  before JOS-296 has no such field, and the contract's spelling for "no dump" is null. */
+ *  `inventory` and `achievements` are `?? null` rather than read straight through: an entry
+ *  spooled by a build from before JOS-296 / JOS-441 has no such field, and the contract's
+ *  spelling for "no dump" is null. */
 function requestOf(entry: QueuedReport): SubmitRequest {
   return {
     v: 1,
@@ -49,7 +51,8 @@ function requestOf(entry: QueuedReport): SubmitRequest {
     clientReportId: entry.clientReportId,
     clientTs: entry.clientTs,
     log: entry.log,
-    inventory: entry.inventory ?? null
+    inventory: entry.inventory ?? null,
+    achievements: entry.achievements ?? null
   }
 }
 
@@ -69,7 +72,8 @@ export async function flushQueue(): Promise<number> {
   for (const entry of dueEntries(now)) {
     const res = await sendReport(requestOf(entry), {
       log: readPendingGz(entry),
-      inventory: readPendingInventoryGz(entry)
+      inventory: readPendingInventoryGz(entry),
+      achievements: readPendingAchievementsGz(entry)
     })
     if (res.ok) {
       removeQueued(entry.clientReportId)

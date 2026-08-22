@@ -22,6 +22,7 @@
 
 <ul><li> {{:Vial of Swirling Smoke}}
 </li><li> {{:Glimmer Ring}} (GM Event Only)
+</li><li> {{:Gate Potion}}
 </li></ul>
 
 | slots = 

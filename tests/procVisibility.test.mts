@@ -229,14 +229,17 @@ test('W36: the header, the list and the drill rows all light from the same ledge
   const zone = segment(eng, lastTs, 'zone')
   const s = procSummary(zone.procs)
 
-  // Hand-read: 23 poison Strike emotes + 27 cast-less Smiting Strike = 50 procs in the window.
+  // Hand-read: 23 poison Strike emotes + 27 cast-less Smiting Strike + 5 Finishing Blow = 55
+  // procs in the window. The five are JOS-437's: grepping W36 for `(Finishing Blow)` returns
+  // exactly those five of the player's own swings (W35's sixth is in the earlier zone session
+  // this replay primes with). They were happening here before and the panel did not count them.
   assert.equal(zone.procs.strikeCount, 23)
-  assert.equal(s.count, 50)
-  assert.match(s.header, /^50 procs · /)
+  assert.equal(s.count, 55)
+  assert.match(s.header, /^55 procs · /)
   assert.equal(hasProcActivity(zone.procs), true)
   // The list is ranked by count, and its counts add up to the header's number.
   const list = procListRows(zone.procs)
-  assert.equal(list.reduce((n, r) => n + r.count, 0), 50)
+  assert.equal(list.reduce((n, r) => n + r.count, 0), 55)
   for (let i = 1; i < list.length; i++) assert.ok(list[i - 1].count >= list[i].count, 'count desc')
 
   // THE DRILL. Three lanes carry damage — and THREE MORE carry only landing emotes (2026-08-04,

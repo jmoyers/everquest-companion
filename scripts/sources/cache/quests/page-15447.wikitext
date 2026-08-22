@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_tyokan_mekase.png|frame|Tyokan Mekase]]
+[[File:npc_tyokan_mekase.png|Tyokan Mekase|thumb|400x400px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Qeynos|North Qeynos]]

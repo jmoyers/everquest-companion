@@ -57,6 +57,11 @@ The Kerran Sha`rr has sensed that something is amiss in Kerra Isle. The trouble 
 kerran tiger spahi spawns on the southern part of the South Island. On a raised platform above a pit of tigers.
 
  You have slain kerran tiger spahi!
+ Your faction standing with Heretics has been adjusted by -5.
+ Your faction standing with Deepwater Knights has been adjusted by 5.
+ Your faction standing with Gate Callers has been adjusted by 5.
+ Your faction standing with Craftkeepers has been adjusted by 5.
+ Your faction standing with Crimson Hands has been adjusted by 5.
  --You have looted a Heretic Insurrection Orders from kerran tiger spahi's corpse.--
 
 ''' Your task 'This Means Warrr' has been updated. '''

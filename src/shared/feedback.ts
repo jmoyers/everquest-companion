@@ -46,10 +46,39 @@
 
 import { validatePerf, type FeedbackPerf } from './feedbackPerf'
 import { hasWireControls, sanitizeMultiline } from './sanitizeText'
+import {
+  MAX_ACHIEVEMENTS_LINES,
+  MAX_INVENTORY_LINES,
+  type AchievementsDumpMeta,
+  type InventoryDumpMeta,
+} from './feedbackAttachments'
+
+/**
+ * WHAT AN ATTACHED DUMP IS, re-exported so this file is still the one place the contract is read
+ * from. It moved to `./feedbackAttachments` for FILE MASS ONLY (JOS-441) — that file's header
+ * carries the split and the storePlans.ts precedent behind it — and every import path in the
+ * renderer, main, the triage CLI and the ingest Lambda is unchanged.
+ *
+ * NAMED, NEVER `export *`, and this cost one red test to learn: under tsx a star re-export is CJS
+ * interop that `cjs-module-lexer` cannot see through, so every named import THROUGH this file
+ * stops resolving at runtime while the typechecker stays green. `src/main/triage/store.ts`'s
+ * export block records the same trap in the same words.
+ */
+export {
+  MAX_ACHIEVEMENTS_LINES,
+  MAX_INVENTORY_LINES,
+  type AchievementsDumpMeta,
+  type FeedbackAchievementsPreview,
+  type FeedbackInventoryPreview,
+  type InventoryDumpMeta,
+  type InventoryUnavailable,
+} from './feedbackAttachments'
 
 /** Bumped only for a BREAKING wire change; the server rejects anything else outright.
  *
- *  IT STAYS 1 FOR THE INVENTORY ATTACHMENT (JOS-296), and that is a decision, not an omission.
+ *  IT STAYS 1 FOR THE INVENTORY ATTACHMENT (JOS-296) AND FOR THE ACHIEVEMENTS ONE (JOS-441), and
+ *  that is a decision, not an omission — the second time on exactly the argument below, which is
+ *  what makes it a rule rather than a one-off.
  *  `v` is a HARD GATE — `validateSubmit` refuses any other value outright — so bumping it would
  *  make every already-installed client's report a 400 the instant the new server deployed. An
  *  ADDITIVE field cannot break either side: an old client simply omits `inventory` (which reads
@@ -142,27 +171,6 @@ export interface LogSliceMeta {
   sha256: string // hex digest of the gz bytes — integrity, and a free dedupe key
 }
 
-/**
- * Metadata about an attached `/outputfile inventory` dump (JOS-296). The BYTES go to S3 on their
- * own presign, exactly like the slice; this is the part that travels in the JSON body.
- *
- * WHAT IS DELIBERATELY NOT HERE: the file's NAME or PATH. EQ names the dump
- * `<Character>_<server>-Inventory.txt`, so the filename is the one place the character's identity
- * appears at all (the dump's CONTENTS carry none — see the format sweep in
- * src/main/feedback/inventory.ts). The dialog shows the user their own filename because it is
- * their own screen; the wire does not need it to diagnose an export-shaped bug, so it does not
- * get it.
- */
-export interface InventoryDumpMeta {
-  bytes: number // gzipped size the client is about to upload
-  lines: number // rows in the dump, as read (nothing is removed — see below)
-  /** The DUMP's mtime, epoch ms — when the PLAYER last typed `/outputfile inventory`, never when
-   *  we read it. This is the JOS-253 freshness truth, and it is the single most diagnostic field
-   *  here: a three-week-old export explains most "the app has the wrong items" reports outright. */
-  updatedAt: number
-  sha256: string // hex digest of the gz bytes — integrity, and a free dedupe key
-}
-
 export interface SubmitRequest {
   v: typeof FEEDBACK_API_VERSION
   draft: FeedbackDraft
@@ -174,6 +182,9 @@ export interface SubmitRequest {
   /** The SECOND attachment (JOS-296). Additive: absent reads as null, so a client built before
    *  this field existed is a client that attached no dump, which is exactly what it meant. */
   inventory: InventoryDumpMeta | null
+  /** The THIRD (JOS-441), on the identical additive terms — which is the whole argument for
+   *  keeping `v` at 1 a second time. */
+  achievements: AchievementsDumpMeta | null
 }
 
 export type SubmitResponse =
@@ -185,6 +196,8 @@ export type SubmitResponse =
        *  server that minted none — the client then uploads nothing and says `false`, rather
        *  than reading a missing field as a failure. */
       inventoryUpload?: PresignedUpload | null
+      /** The achievements dump's presign (JOS-441), optional for the same reason. */
+      achievementsUpload?: PresignedUpload | null
     }
   | {
       ok: false
@@ -234,19 +247,21 @@ export interface FeedbackContext {
   /** The dump's mtime, epoch ms, or null when there is none. Carried on the CONTEXT and not
    *  only on the preview so the dialog can state the age BEFORE anything is read or gzipped. */
   inventoryUpdatedAt: number | null
+  /** False when `/outputfile achievements` has never been run on this machine (JOS-441) — same
+   *  disabled-with-a-hint treatment as the dump above, for the same reason. */
+  achievementsAvailable: boolean
+  /** The achievements dump's mtime, epoch ms, or null when there is none. */
+  achievementsUpdatedAt: number | null
 }
 
-/** Why there is no inventory dump to attach. Exactly one of these or a built dump, never both. */
-export type InventoryUnavailable =
-  /** `/outputfile inventory` has never been run (or the file is gone). */
-  | 'no-dump'
-  /** The file exists and could not be read — permissions, a vanished drive. */
-  | 'unreadable'
-  /** The file is there and holds nothing. */
-  | 'empty'
-  /** Over MAX_UPLOAD_BYTES gzipped. REFUSED, never trimmed — see the note on the constant. */
-  | 'too-large'
-
+/**
+ * Why there is no dump to attach. Exactly one of these or a built dump, never both.
+ *
+ * ONE TYPE FOR BOTH KINDS (JOS-441 kept it that way rather than cloning a second identical union):
+ * the four states are properties of "a file we tried to package", not of what is in the file, and
+ * the four sentences the dialog says about them differ only in the command they name — which the
+ * dialog already has to know. A second union would be four more members that must never drift.
+ */
 /**
  * What crosses IPC for the preview (§5.4): the true counts plus AT MOST `PREVIEW_MAX_LINES`
  * lines of text. The gz BYTES never cross — a 4 MB string does not belong on the bridge.
@@ -259,31 +274,17 @@ export interface FeedbackSlicePreview extends LogSliceMeta {
 }
 
 /**
- * What crosses IPC for the DUMP preview (JOS-296) — the slice preview's twin, with one
- * difference that is the whole design: exactly one of `meta` and `unavailable` is set.
- *
- * The slice can answer "nothing to attach" with a bare `null` because every way of getting
- * there reads the same to a user ("no log lines in this window"). A dump cannot: "you have never
- * run the command" and "your dump is too big to send" call for different sentences, and
- * collapsing `too-large` into "no dump" would be the dialog telling a user their export does not
- * exist while they are looking at it.
- */
-export interface FeedbackInventoryPreview {
-  meta: InventoryDumpMeta | null
-  unavailable: InventoryUnavailable | null
-  previewLines: string[]
-  truncatedPreview: boolean
-  /** The dump's FILE NAME (never its path, never the wire's business — see InventoryDumpMeta).
-   *  Shown so the dialog can name the exact file it will send. Null when there is none. */
-  fileName: string | null
-}
-
-/**
  * The end of a Send. `submitFeedback` NEVER rejects — every outcome, including a dead network,
  * is one of these values (§4.2).
  */
 export type SubmitResult =
-  | { ok: true; reportId: string; logUploaded: boolean; inventoryUploaded: boolean }
+  | {
+      ok: true
+      reportId: string
+      logUploaded: boolean
+      inventoryUploaded: boolean
+      achievementsUploaded: boolean
+    }
   | { ok: false; error: SubmitErrorCode; message: string; queued: boolean }
 
 /** The "Save a copy…" escape hatch: the OS save dialog lives in main (§4.2). */
@@ -302,21 +303,7 @@ export const MAX_DESCRIPTION = 4_000
 export const MAX_BODY_BYTES = 32 * 1024 // whole JSON request
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 // gzipped slice
 export const MAX_SLICE_LINES = 50_000
-/**
- * Rows in an attached inventory dump (JOS-296). The measured dev dump is 295 lines; a hoarder
- * with every bank slot, both shared banks, the depot and a full keyring is still four figures.
- * 50,000 is not a budget, it is the "this is not an inventory dump" line — the same job
- * MAX_SLICE_LINES does for the log, which is why it is the same number.
- *
- * THE BYTE CAP IS `MAX_UPLOAD_BYTES`, SHARED WITH THE SLICE, AND IT IS ENFORCED BY REFUSAL.
- * A slice that will not fit is TRIMMED FROM THE FRONT, because fewer log lines is simply less
- * context. A dump cannot be treated that way: it is a complete statement of what a character
- * owns, and a trimmed one is a well-formed file that silently claims the missing items do not
- * exist — the exact failure mode `/outputfile inventory` already has when the Bank window is
- * shut (shared/outputs/kinds.ts `steps`), and the one this attachment exists to diagnose. So an
- * oversize dump is `unavailable: 'too-large'` and the dialog says so.
- */
-export const MAX_INVENTORY_LINES = 50_000
+/** The two DUMP row caps live in ./feedbackAttachments and are re-exported above. */
 export const PREVIEW_MAX_LINES = 5_000 // what crosses IPC for the preview (§5.4)
 export const LOG_WINDOW_CHOICES = [15, 30, 60] as const // minutes
 export const DEFAULT_LOG_WINDOW = 30
@@ -619,7 +606,41 @@ export function validateInventoryMeta(input: unknown): Validated<InventoryDumpMe
 }
 
 /**
- * AN OPTIONAL ATTACHMENT, in ONE place for both of them.
+ * The attached ACHIEVEMENTS dump's metadata (JOS-441) — the same four bounds over its own field
+ * names, so a rejection says `achievements.lines` and not `inventory.lines`. The field names are
+ * the only reason this is not one function with a prefix argument: an error message that names the
+ * wrong attachment is a report nobody can act on.
+ */
+export function validateAchievementsMeta(input: unknown): Validated<AchievementsDumpMeta> {
+  if (!isRecord(input)) return fail('achievements', 'achievements must be an object or null.')
+
+  const bytes = integerInRange(input.bytes, 'achievements.bytes', 1, MAX_UPLOAD_BYTES)
+  if (!bytes.ok) return bytes
+  const lines = integerInRange(input.lines, 'achievements.lines', 1, MAX_ACHIEVEMENTS_LINES)
+  if (!lines.ok) return lines
+  const updatedAt = integerInRange(
+    input.updatedAt,
+    'achievements.updatedAt',
+    0,
+    Number.MAX_SAFE_INTEGER,
+  )
+  if (!updatedAt.ok) return updatedAt
+  const sha256 = matching(input.sha256, 'achievements.sha256', SHA256_HEX_RE, '64 hex characters')
+  if (!sha256.ok) return sha256
+
+  return {
+    ok: true,
+    value: {
+      bytes: bytes.value,
+      lines: lines.value,
+      updatedAt: updatedAt.value,
+      sha256: sha256.value,
+    },
+  }
+}
+
+/**
+ * AN OPTIONAL ATTACHMENT, in ONE place for all of them.
  *
  * `null` and ABSENT are the same statement — "nothing attached" — and this is the only function
  * in the contract that says so. That matters more since there are two attachments than it did
@@ -665,12 +686,14 @@ export function validateSubmit(input: unknown): Validated<SubmitRequest> {
   if (typeof input.clientTs !== 'number' || !Number.isFinite(input.clientTs))
     return fail('clientTs', 'clientTs must be a number.')
 
-  // BOTH ATTACHMENTS, read the same way (JOS-296): absent and null are the same answer, and a
-  // present-but-malformed one is a named 400 rather than a silently dropped field.
+  // ALL THREE ATTACHMENTS, read the same way (JOS-296, JOS-441): absent and null are the same
+  // answer, and a present-but-malformed one is a named 400 rather than a silently dropped field.
   const log = optionalMeta(input.log, validateLogMeta)
   if (!log.ok) return log
   const inventory = optionalMeta(input.inventory, validateInventoryMeta)
   if (!inventory.ok) return inventory
+  const achievements = optionalMeta(input.achievements, validateAchievementsMeta)
+  if (!achievements.ok) return achievements
 
   return {
     ok: true,
@@ -683,6 +706,7 @@ export function validateSubmit(input: unknown): Validated<SubmitRequest> {
       clientTs: input.clientTs,
       log: log.value,
       inventory: inventory.value,
+      achievements: achievements.value,
     },
   }
 }

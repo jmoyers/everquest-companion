@@ -1,0 +1,65 @@
+{{Classic Era}}
+
+[[File:npc_zok_zribb.png|thumb|Zok Zribb]]
+
+{| class="raidMobTopTable"
+! ''' Start Zone: '''
+| [[Rathe Mountains]]
+|-
+! ''' Quest Giver: '''
+| [[Zok Zribb]]
+|-
+! ''' Minimum Level: '''
+| 1
+|-
+! ''' Classes: '''
+| All
+|-
+! ''' Related Zones: '''
+| [[Lower Guk]]
+|-
+! ''' Related NPCs: '''
+| None
+|}
+
+== Reward ==
+
+* Faction
+* 2 - 8 gold, 2 - 6 silver per turn-in
+
+== Walkthrough ==
+
+[[Zok Zribb]] may be found at (-2134, 306) in [[Rathe Mountains]] underneath a tent.
+
+You say, 'Hail, Zok Zribb'
+
+: Zok Zribb says, 'Welcome to my store, ______. Please, buy something if my wares interest you. Or perhaps you'd be able to help me with some [supplies]?'
+
+You say, 'supplies'
+
+: Zok Zribb says, 'Ever since we left Guk behind, we've had to buy every scrap of phosphorous powder we can find. The stuff is incredibly useful for farming, smithing, alchemical work, and as a pest repellent! It used to seep in through the cracks in the walls of Guk, making it quite plentiful, however, we've had to scrounge every bit out here. If you could bring me two pinches of phospherous powder, I'd be most grateful!'
+
+'''Give Zok Zribb 2 [[Phosphorous Powder]],'''
+
+: Zok Zribb says, 'Thank you, ______! Even just this small amount is enough help keep us going for a while longer! Please, take this as payment.'
+
+<div class="facblock">
+* Your faction standing with [[Guktan Suppliers]] has been adjusted by (+5).
+* Your faction standing with [[Protectors of Gukta]] has been adjusted by (+5).
+* Your faction standing with [[High Council of Gukta]] has been adjusted by (+5).
+* Your faction standing with [[Lorekeepers of Gukta]] has been adjusted by (+5).
+* Your faction standing with [[Guktan Elders]] has been adjusted by (+5).
+</div>
+
+You receive between 2 - 8 gold, 2 - 6 silver per turn-in.
+
+== Notes ==
+
+* [[Phosphorous Powder]] drops from undead rares and high level frogloks in [[Lower Guk]].
+* Turning in larger stack at once is automatically processed as repeated 2-unit turn-ins, each triggering its own reward and faction hits.
+* This quest can be used to unlock the achievement [[Race Unlock - Froglok]].
+
+[[Category:Quests]]
+[[Category:Rathe Mountains]]
+[[Category:All Classes Quests]]
+[[Category:Repeatable Turn-in Quests]]

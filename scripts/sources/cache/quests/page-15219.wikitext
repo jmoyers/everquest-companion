@@ -35,7 +35,7 @@ You say, 'Hail, Lashun Novashine'
 
 : Lashun Novashine says 'Well met, ______. My name is Lashun Novashine and I am a humble priest of Rodcet Nife, the Prime Healer. I wish to spread His word to every corner of Norrath. My job gets more difficult each day with so many so willing to take lives rather than preserve them.'' 
 
-'''Turn in two [[Bone Chips]], unstacked.'''
+'''Turn in two [[Bone Chips]].'''
 
 : Lashun Novashine says 'Ah good, I see you seek healing. But you must offer the remains of one more minion of Bertoxxulous before Rodcet will deem you worthy.'
 

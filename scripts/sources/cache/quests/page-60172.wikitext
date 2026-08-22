@@ -1,0 +1,47 @@
+{{Classic Era}}
+[[File:Npc_qaelin_hailstorm.png|frame|Qaelin Hailstorm]]
+{| class="questTopTable"
+! ''' Start Zone: '''
+| [[Surefall Glade]]
+|-
+! ''' Quest Giver: '''
+| [[Qaelin Hailstorm]]
+|-
+! ''' Minimum Level: '''
+| 1
+|-
+! ''' Classes: '''
+| Any; requires [[Karana]] as your active deity.
+|-
+! ''' Related Zones: '''
+| None
+|-
+! ''' Related NPCs: '''
+| [[Qaelin Hailstorm]]
+|-
+! ''' Required Faction: '''
+| Indifferent or better
+|}
+
+== Reward ==
+
+<ul><li>{{:Mark of Karana}}</li>
+
+== Walkthrough ==
+
+[[Qaelin Hailstorm]] can be found at 170, 135 in Surefall Glade.
+
+You say, 'Hail, Qaelin Hailstorm'
+
+: Qaelin Hailstorm says 'Welcome to Surefall Glade. I have the great honor of bestowing these small but powerful Marks of Karana to those who follow him. With it they can use fletching to create bows and arrows. If you [need a mark] and are a true follower of Karana, I will give you all that you need. There is no fear of running out.'
+
+*''Note: you can not have Qaelin targeted during this next step. Make sure you have Karana as the active deity in your loadout, untarget Qaelin, then use the following text:''
+
+You say, 'I need a mark.'
+
+: Qaelin Hailstorm says 'Here you go. If you need another please let me know.'
+
+[[Category:Quests]]
+[[Category:Surefall Glade]]
+[[Category:Karana Quests]]
+[[Category:Fletching Quests]]

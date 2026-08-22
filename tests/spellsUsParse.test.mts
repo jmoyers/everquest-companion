@@ -20,6 +20,13 @@
 // and the duration the game's spell window prints. What the parser does with them is nothing:
 // it records the two numbers and the effect-0 slots beside them, and every evaluation happens at
 // a READER'S level in shared/spellMetrics.ts.
+//
+// JOS-444 ADDS FIELD 10, THE RE-USE TIMER, AND ITS DECOY SITS RIGHT BESIDE IT. Field 9 is the
+// RECOVERY time and reads 1500 on 18,008 of the owner's 33,952 playable rows, so a spell whose
+// recast happens to be 1.5s — Garrison's Mighty Mana Shock, below — cannot tell the two columns
+// apart on its own. Odium can: field 9 is 1500 and field 10 is 6000, and the wiki's own
+// `recast_time` for Odium is six seconds. Complete Heal closes it from the other side (field 9 =
+// 1500, field 10 = 0), and all three rows are transcribed below.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -33,6 +40,13 @@ function row(spec: {
   id: number
   name: string
   castMs?: number
+  /**
+   * Field 9 — the RECOVERY time, the column next door that is NOT the recast (JOS-444). It is
+   * settable here for exactly one reason: to prove the parser does not read it.
+   */
+  recovery?: number
+  /** Field 10 — the spell's own re-use timer, ms. 0 means it has none. */
+  recastMs?: number
   /** Field 11 — the buff duration formula. 0 (the default) is an instant spell. */
   durationFormula?: number
   /** Field 12 — the cap the formula clamps to. */
@@ -43,18 +57,35 @@ function row(spec: {
   classes?: Record<number, number>
   slots?: string
 }): string {
+  // The omitted fields default here rather than at each use, which keeps this builder well under
+  // the lint config's complexity ceiling as the field map grows (JOS-444 added two).
+  const s = {
+    castMs: 0,
+    recovery: 0,
+    recastMs: 0,
+    durationFormula: 0,
+    duration: 0,
+    resistType: 0,
+    targetType: 0,
+    resistAdj: 0,
+    classes: {} as Record<number, number>,
+    slots: '',
+    ...spec
+  }
   const f = new Array<string>(173).fill('0')
-  f[0] = String(spec.id)
-  f[1] = spec.name
-  f[8] = String(spec.castMs ?? 0)
-  f[11] = String(spec.durationFormula ?? 0)
-  f[12] = String(spec.duration ?? 0)
-  f[29] = String(spec.resistType ?? 0)
-  f[30] = String(spec.targetType ?? 0)
+  f[0] = String(s.id)
+  f[1] = s.name
+  f[8] = String(s.castMs)
+  f[9] = String(s.recovery)
+  f[10] = String(s.recastMs)
+  f[11] = String(s.durationFormula)
+  f[12] = String(s.duration)
+  f[29] = String(s.resistType)
+  f[30] = String(s.targetType)
   for (let i = 0; i < 16; i++) f[36 + i] = '255'
-  for (const [idx, lvl] of Object.entries(spec.classes ?? {})) f[36 + Number(idx)] = String(lvl)
-  f[78] = String(spec.resistAdj ?? 0)
-  f[172] = spec.slots ?? ''
+  for (const [idx, lvl] of Object.entries(s.classes)) f[36 + Number(idx)] = String(lvl)
+  f[78] = String(s.resistAdj)
+  f[172] = s.slots
   return f.join('^')
 }
 
@@ -64,6 +95,7 @@ const BRD = 7
 const PAL = 2
 const SHM = 9
 const NEC = 10
+const WIZ = 11
 
 // Verbatim from the owner's install, 2026-08-16.
 const TASHANI = row({ id: 677, name: 'Tashani', castMs: 1000, resistType: 0, targetType: 5, classes: { [ENC]: 20 }, slots: '1|36|1|0|100|0$2|50|-10|0|101|23' })
@@ -79,7 +111,7 @@ const SMITE = row({ id: 1234, name: 'Divine Might Strike', castMs: 0, resistType
 // JOS-396, verbatim from the owner's install 2026-08-16. THE TICKET'S CASE: the wiki's slot table
 // for Odium lists `Increase Curse Counter by 8` and no hitpoint line at all; the client carries
 // both, and slot 2 is the damage the shaman actually does.
-const ODIUM = row({ id: 4093, name: 'Odium', castMs: 3000, durationFormula: 7, duration: 5, resistType: 1, targetType: 5, classes: { [SHM]: 43 }, slots: '1|116|8|0|100|0$2|0|-217|0|103|325' })
+const ODIUM = row({ id: 4093, name: 'Odium', castMs: 3000, recovery: 1500, recastMs: 6000, durationFormula: 7, duration: 5, resistType: 1, targetType: 5, classes: { [SHM]: 43 }, slots: '1|116|8|0|100|0$2|0|-217|0|103|325' })
 // A PERMANENT duration (formula 50) over a per-tick drain — the necromancer's Lich. The client
 // states a RATE and no length, which is a total nobody can compute; the fold refuses it, and the
 // parse's job is only to record the 50 faithfully so the fold can.
@@ -88,9 +120,17 @@ const LICH = row({ id: 1735, name: 'Lich', castMs: 6000, durationFormula: 50, du
 // than one, which is why `hp` is a list and `hpSlot` — the estimator's single-slot reader — could
 // never have been widened in place.
 const DIVINE_CENSURE = row({ id: 14234, name: 'Divine Censure', castMs: 3000, resistType: 1, targetType: 5, classes: { [PAL]: 77 }, slots: '1|0|-2164|635|100|2164$2|0|-2878|603|100|2878$3|0|-2575|118|100|2575' })
+// JOS-444, verbatim from the owner's install 2026-08-22. THE TICKET'S PIN: a 3.0s cast with a 1.5s
+// re-use timer in field 10, which is the number the wiki's `recast_time` states for the same spell.
+// Field 9 reads 1500 as well, and that coincidence is exactly why the column had to be picked by
+// cross-checking a spell where the two DISAGREE (Odium below, 6000).
+const GARRISON = row({ id: 2552, name: "Garrison's Mighty Mana Shock", castMs: 3000, recovery: 1500, recastMs: 1500, resistType: 1, targetType: 5, classes: { [WIZ]: 18 }, slots: '1|0|-200|0|105|333' })
+// The other half of the discrimination: field 9 says 1500 and field 10 says 0. Complete Heal has
+// NO re-use timer, and a parser reading field 9 would give it one.
+const COMPLETE_HEAL = row({ id: 1292, name: 'Complete Heal', castMs: 1000, recovery: 1500, recastMs: 0, durationFormula: 3, duration: 75, resistType: 0, targetType: 5, slots: '1|101|1|0|100|1' })
 
 const TABLE = parseSpellsUs(
-  [TASHANI, MALAISEMENT, MESMERIZATION, CHAOS_FLUX, CHAOS_FLUX_NPC, SMITING_STRIKE, SCORCHING_ARROW, SCORCHING_ARROW_IV, CHORDS, SMITE, ODIUM, LICH, DIVINE_CENSURE].join('\n') + '\n'
+  [TASHANI, MALAISEMENT, MESMERIZATION, CHAOS_FLUX, CHAOS_FLUX_NPC, SMITING_STRIKE, SCORCHING_ARROW, SCORCHING_ARROW_IV, CHORDS, SMITE, ODIUM, LICH, DIVINE_CENSURE, GARRISON, COMPLETE_HEAL].join('\n') + '\n'
 )
 
 test('the axis comes from field 29, and the four unmodellable kinds come back null', () => {
@@ -110,6 +150,20 @@ test('cast time and target type ride along', () => {
   assert.equal(TABLE.mesmerization.castMs, 3000)
   assert.equal(TABLE.mesmerization.targetType, 8)
   assert.equal(TABLE['smiting strike'].castMs, 0)
+})
+
+test('JOS-444: the re-use timer is FIELD 10, and field 9 is the cooldown that looks like it', () => {
+  // Odium is the row that picks the column: field 10 reads 6000 and the wiki's own `recast_time`
+  // for Odium is 6 seconds. Field 9 reads 1500 on the same row, which is what makes it a decoy.
+  assert.equal(TABLE.odium.recastMs, 6000)
+  assert.equal(TABLE["garrison's mighty mana shock"].recastMs, 1500)
+  // A row whose field 10 is 0 states that it has NO re-use timer, and the absence is how the
+  // reader hears that — a stored 0 would be half the table saying nothing.
+  assert.equal(TABLE['complete heal'].recastMs, undefined)
+  // …and a parser that had reached one field to the left would have given it 1500.
+  assert.equal(TABLE['complete heal'].castMs, 1000)
+  // Every row authored before this ticket leaves both fields at 0 and is unchanged.
+  assert.equal(TABLE.tashani.recastMs, undefined)
 })
 
 test('AN EFFECT SLOT IS slot|effect|base|limit|CALC|MAX, and Tashani proves it', () => {

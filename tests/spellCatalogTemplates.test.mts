@@ -164,12 +164,20 @@ test('the dead-lands gate actually removed something, and the count is measured 
   // What remains is what it has always been: sentences no log has evidenced. The difference is that
   // they are now a pinned CENSUS (tests/spellSubjectAudit.test.mts) rather than a silence, so the
   // next spell to enter this state fails a build instead of waiting for somebody to notice.
+  //
+  // AND IT IS 40 SINCE JOS-435, which is the census paying out for the first time. `Swarm of Pain`
+  // (Ranger 40, Detrimental) left this population because a ranger reported the missing debuff bar
+  // and the owner's own log then witnessed the sentence 199 times — see
+  // tests/swarmOfPainLanding.test.mts. The row was already in the census by name, with the reason it
+  // carried no correction stated in advance; a report is that reason expiring, not a new discovery.
+  // So the number moves the way the paragraph above predicts it will: one spell at a time, each one
+  // leaving because a log proved its sentence.
   let dead = 0
   for (const s of db.spells) {
     if (s.spellType !== 'Detrimental' || !s.msgCastOnOther) continue
     if (castOnOtherSuffix(s.msgCastOnOther) === null) dead += 1
   }
-  assert.equal(dead, 41, 'the measured population the `lands` gate now excludes')
+  assert.equal(dead, 40, 'the measured population the `lands` gate now excludes')
 })
 
 test('`landsOnOther` always travels with the pattern it needs', () => {

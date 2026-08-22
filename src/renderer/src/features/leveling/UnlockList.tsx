@@ -56,6 +56,15 @@
 //   question the player typed and hiding the row would answer a different one.
 // A spell the era sidecar has no verdict for wears nothing and is folded nowhere: silence is not a
 // verdict (law 1), and the drops list made the same call for the same reason.
+//
+// AND THE ROW NOW SAYS WHICH RUNG YOU ARE ON (JOS-446). Every name in this list is the catalog's,
+// which means it is the BASE name: the list offers `Clarity` while the scroll in your bags reads
+// `Clarity III`, because the wiki scrape carries one unsuffixed row for ~1,800 of its ~1,900
+// spells. `yours: III` is the observed-rank module's answer, drawn only where there is one — an
+// unobserved line wears nothing, and a rank-1 observation is not drawn at all (rank 1 is every
+// spell's default, so the chip would restate it). The FIGURES beside it are still the line's, and
+// for a ranked spell they understate; src/main/modules/observedSpellRanks.ts carries that
+// statement in full, and it stays off the screen (the caveat diet).
 
 import { type JSX, useState } from 'react'
 import { Box, Chip, Collapse, Stack, Typography } from '@mui/material'
@@ -64,6 +73,7 @@ import type { ClassAbbr } from '@shared/classCombo'
 import { ownershipPhrase, replacesEntries, replacesPhrase, type UnlockRow } from '@shared/levelUnlocks'
 import { spellMetricsParts } from '@shared/spellMetrics'
 import { memorizedClause, type SpellSetsSnap } from '@shared/spellSets'
+import { observedRankLabel, type ObservedSpellRanksSnap } from '@shared/spellRanks'
 import { classLevelLabel } from '@shared/unlockSearch'
 import { Tooltip } from '../../lib/Tooltip'
 import { SpellTooltip } from '../../lib/SpellCard'
@@ -121,6 +131,43 @@ function ClassChips({
         />
       ))}
     </>
+  )
+}
+
+/**
+ * `yours: III` — the rank of this line the log has watched you reach (JOS-446).
+ *
+ * Null whenever the module has nothing to say: no witness for the line, a rank-1 observation, or
+ * the map not yet hydrated. `observedRankLabel` owns the wording so the spell card's copy of this
+ * chip cannot drift from this one.
+ *
+ * THE HOVER IS ONE CLAUSE, naming what the chip is (the caveat diet). That a ranked spell's
+ * figures understate is real and is written down in src/main/modules/observedSpellRanks.ts, which
+ * is where it stays until JOS-447 makes the numbers right.
+ *
+ * EXPORTED for the best-spells readout next door (JOS-445 landed in the same merge window):
+ * one chip, one wording, one tooltip — the `outOfEraLabel` arrangement, one component further.
+ */
+export function RankChip({
+  name,
+  ranks
+}: {
+  name: string
+  ranks: ObservedSpellRanksSnap | null
+}): JSX.Element | null {
+  const label = observedRankLabel(ranks, name)
+  if (label === null) return null
+  return (
+    <Tooltip title="The highest rank of this spell your log has watched you merge or cast.">
+      <Chip
+        size="small"
+        label={label}
+        data-testid="unlock-observed-rank"
+        color="success"
+        variant="outlined"
+        sx={{ height: 17, fontSize: 10, '& .MuiChip-label': { px: 0.6 } }}
+      />
+    </Tooltip>
   )
 }
 
@@ -263,11 +310,13 @@ function RowDetail({
 function Row({
   row,
   resolved,
-  sets
+  sets,
+  ranks
 }: {
   row: UnlockRow
   resolved: ReadonlySet<string>
   sets: SpellSetsSnap
+  ranks: ObservedSpellRanksSnap | null
 }): JSX.Element {
   const name =
     row.kind === 'spell' ? (
@@ -303,6 +352,7 @@ function Row({
         />
       )}
       <Box sx={{ minWidth: 0, flexShrink: 1 }}>{name}</Box>
+      {row.kind === 'spell' && <RankChip name={row.name} ranks={ranks} />}
       <Box sx={{ flexGrow: 1 }} />
       {row.dispute && (
         <Tooltip title={row.dispute}>
@@ -351,11 +401,13 @@ function Row({
 function OutOfEraRows({
   rows,
   resolved,
-  sets
+  sets,
+  ranks
 }: {
   rows: UnlockRow[]
   resolved: ReadonlySet<string>
   sets: SpellSetsSnap
+  ranks: ObservedSpellRanksSnap | null
 }): JSX.Element | null {
   const [open, setOpen] = useState(false)
   if (rows.length === 0) return null
@@ -389,7 +441,7 @@ function OutOfEraRows({
       </Stack>
       <Collapse in={open} unmountOnExit>
         {rows.map((r) => (
-          <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} />
+          <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} ranks={ranks} />
         ))}
       </Collapse>
     </Box>
@@ -407,6 +459,7 @@ export function UnlockList({
   resolved,
   empty,
   sets,
+  ranks,
   count,
   outOfEra = []
 }: {
@@ -416,6 +469,12 @@ export function UnlockList({
   empty: string
   /** The live gem/spell-set state, for the "is what this replaces loaded right now" clause. */
   sets: SpellSetsSnap
+  /**
+   * The observed spell ranks (JOS-446), or null before the module has hydrated. A PROP rather
+   * than a hook call in here for the same reason `sets` is one: the panel subscribes once and
+   * every list it draws reads the same map, instead of one subscription per mounted list.
+   */
+  ranks: ObservedSpellRanksSnap | null
   /**
    * What the heading counts, when that is not the number of rows drawn — the search results are
    * CAPPED (JOS-392), and a heading that counted the mounted rows would quietly restate the cap as
@@ -446,9 +505,11 @@ export function UnlockList({
             {empty}
           </Typography>
         ) : (
-          rows.map((r) => <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} />)
+          rows.map((r) => (
+            <Row key={`${r.kind}:${r.name}`} row={r} resolved={resolved} sets={sets} ranks={ranks} />
+          ))
         )}
-        <OutOfEraRows rows={outOfEra} resolved={resolved} sets={sets} />
+        <OutOfEraRows rows={outOfEra} resolved={resolved} sets={sets} ranks={ranks} />
       </Box>
     </Box>
   )

@@ -26,6 +26,8 @@
 
 == Walkthrough ==
 
+THIS QUEST DOES NOT APPEAR TO BE IN LEGENDS - Tomer Instogle exists and all parts of the quest work up to returning Tomer's backpack. However Seta Bakindo does not exist, so completing the quest is impossible.
+
 ''This quest is NOT available at Indifferent faction. Tomer will say "Don't take this personally, but I cant trust you with such matters" after returning his backpack.''
 
 ''[[Tomer Instogle]] is a monk hurt near the western walls outside of Qeynos city.''

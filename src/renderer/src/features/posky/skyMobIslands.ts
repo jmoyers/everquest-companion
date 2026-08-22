@@ -58,7 +58,11 @@ export const SKY_MOB_ISLANDS: readonly SkyMobIsland[] = [
   {
     page: 'Protector of Sky',
     island: 'Island 2',
-    derived: ['Island 7'],
+    // 2026-08-22 rescrape: the mob page (edited 2026-08-21) now lists Azarack Skin/Blood in its
+    // loot, so the join derives Island 2 AS WELL AS the spurious Island 7 - the row is still
+    // needed to trim the 7, and "droppable when derived equals [island] exactly" is the audit
+    // test's rule for when it stops being needed.
+    derived: ['Island 2', 'Island 7'],
     evidence:
       'eqlwiki Protector of Sky states "Location: 2nd Island"; the Rogue Test of Thievery page ' +
       'writes its Gem of Invigoration as "(Protector of Sky - Island 2 Boss)"; posky\'s own two ' +

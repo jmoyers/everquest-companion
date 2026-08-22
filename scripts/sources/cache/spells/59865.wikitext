@@ -1,0 +1,36 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Donlo's Dementia
+| spellicon =
+| description = Shrinks your group, allowing them greater mobility in tight quarters.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Army Ant Potion]].
+
+| items_with_effect =
+
+<ul><li> {{:Army Ant Potion}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Decrease Player Size by 34% }}
+{{SpellSlotRow | 2 | Decrease Pet Size by 34% }}
+
+| skill =
+| mana = 50
+| range = 200
+| casting_time = 4.00
+| fizzle_time = 0.00
+| recast_time = 1.50
+| duration = Instant
+| target_type = Group
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You feel almost as short as a halfling.
+| msg_cast_on_other = Someone  shrinks.
+| msg_wears_off = You return to normal height.
+}}

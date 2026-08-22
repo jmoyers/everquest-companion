@@ -1,0 +1,12 @@
+[[File:npc_animist_kratho.png|right|200px|thumb|]]
+
+{{Classic Era}}
+{{#lsth:Plane of Sky|Quest Givers}}
+
+== Beastlord Tests ==
+
+{{#lsth:Plane of Sky|[[Beastlord]] Tests}}
+
+[[Category: Quests]]
+[[Category:Plane of Sky]]
+[[Category:Beastlord Quests]]

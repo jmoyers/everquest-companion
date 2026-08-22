@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Levity
+| spellicon =
+| description = Your feet leave the ground, allowing you to levitate for 20 minutes 30 seconds.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Potion of Gulon's Impunity]].
+
+| items_with_effect =
+
+<ul><li> {{:Potion of Gulon's Impunity}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 3 | Levitate }}
+
+| skill =
+| mana = 60
+| range = 100
+| casting_time = 3.00
+| fizzle_time = 0.00
+| recast_time = 5.00
+| duration = 20 minutes 30 seconds
+| target_type = Single
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your feet leave the ground.
+| msg_cast_on_other = Someone  floats into the air.
+| msg_wears_off = You can no longer levitate.
+}}

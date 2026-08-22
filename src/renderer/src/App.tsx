@@ -10,6 +10,10 @@ import GearAreaTabs from './components/GearAreaTabs'
 // The two app-wide celebration snackbars — they fire on ANY tab, so they live at app level. Their
 // markup moved into its own file when this one hit the factoring ceiling (see its header).
 import CelebrationToasts from './components/CelebrationToasts'
+// "Another character's log is active — switch?" (JOS-432). Self-contained: it subscribes to its own
+// push and switches through the same `character:set` IPC the title bar uses, so the shell gains an
+// element and no state. Main guarantees it can ask at most once per candidate log per app session.
+import LogSwitchNudge from './components/LogSwitchNudge'
 import NoLogsEmptyState from './components/NoLogsEmptyState'
 import { VIEW_KEY, isGearAreaView, loadView, rememberGearTab, type View } from './appViews'
 // The app's navigation MODEL — the deep-link routers and their nonce contract. See appRouting.ts.
@@ -658,6 +662,8 @@ export default function App(): JSX.Element {
         onDismissDefeat={() => setDefeatToast(null)}
         onDismissQuest={() => setQuestToast(null)}
       />
+
+      <LogSwitchNudge />
 
       {/* Feedback is a DIALOG, not a view (appViews.ts is untouched), so it is hosted here and
           opened from the nav footer, from Preferences, and by the ErrorBoundary's "Report this"

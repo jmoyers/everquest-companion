@@ -85,6 +85,11 @@ import { MAX_TELEMETRY_BODY_BYTES } from '../src/shared/telemetry'
 // the S3 presign rehearsal's pure helpers, and the whole `/v1/telemetry` rehearsal.
 import { boundaryOf, multipartFields, policyViolation, s3Error, TOO_BIG, TOO_SMALL, type Res } from './devS3Leg.mjs'
 import { emptyTelemetryState, telemetryRoute, telemetryTables, type TelemetryState } from './devTelemetryStack.mjs'
+// …and, since JOS-441, where each attachment kind lands. Same reason, same shape of split.
+import {
+  achievementsObjectKey, ATTACHMENT_KINDS, inventoryObjectKey, logObjectKey, reportIdOfToken,
+  type AttachmentKind,
+} from './devFeedbackKeys.mjs'
 
 const DEFAULT_PORT = 8477
 const DEFAULT_DIR = '.devstack'
@@ -116,7 +121,7 @@ interface Presign {
   expiresAt: number
   /** The DECLARED digest, whichever attachment this is. The upload leg reports the match. */
   sha256: string
-  kind: 'log' | 'inventory'
+  kind: AttachmentKind
   file: string
 }
 
@@ -173,22 +178,6 @@ function secondsToUtcMidnight(now: number): number {
   const d = new Date(now)
   const midnight = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)
   return Math.max(1, Math.ceil((midnight - now) / 1000))
-}
-
-function datePrefix(now: number): string {
-  const d = new Date(now)
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  return `${d.getUTCFullYear()}/${mm}/${dd}`
-}
-
-function logObjectKey(reportId: string, now: number): string {
-  return `logs/${datePrefix(now)}/${reportId}.log.gz`
-}
-
-/** The dump's key (JOS-296) — its own top-level prefix, exactly as in infra/lambda/submit.ts. */
-function inventoryObjectKey(reportId: string, now: number): string {
-  return `inventory/${datePrefix(now)}/${reportId}.txt.gz`
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -249,28 +238,29 @@ function consumeQuota(state: State, req: SubmitRequest, now: number): boolean {
 /**
  * The presign, minus the parts that only mean something with an AWS key to sign with.
  *
- * ONE FUNCTION, TWO ATTACHMENT KINDS (JOS-296). `token` is the URL segment the upload leg looks
- * the presign up by: the bare reportId for the slice, `<reportId>.inventory` for the dump. Two
- * TOKENS rather than two routes, so the URL shape the client already knows is untouched and the
- * second leg is simply a second entry in the same map.
+ * ONE FUNCTION, THREE ATTACHMENT KINDS (JOS-296, JOS-441). `token` is the URL segment the upload
+ * leg looks the presign up by: the bare reportId for the slice, `<reportId>.inventory` for the
+ * inventory dump, `<reportId>.achievements` for the achievements one. TOKENS rather than routes,
+ * so the URL shape the client already knows is untouched and each new leg is one more entry in the
+ * same map. The ternary chain the second kind justified became a table when the third arrived.
  */
 function mintUpload(
   state: State,
   reportId: string,
-  what: { kind: 'log' | 'inventory'; sha256: string; now: number },
+  what: { kind: AttachmentKind; sha256: string; now: number },
 ): PresignedUpload {
   const { kind, now } = what
-  const isLog = kind === 'log'
-  const key = isLog ? logObjectKey(reportId, now) : inventoryObjectKey(reportId, now)
-  const file = isLog ? `${reportId}.log.gz` : `${reportId}.inventory.txt.gz`
-  const token = isLog ? reportId : `${reportId}.inventory`
+  const spec = ATTACHMENT_KINDS[kind]
+  const key = spec.key(reportId, now)
+  const file = `${reportId}${spec.file}`
+  const token = `${reportId}${spec.token}`
   state.presigns.set(token, { key, expiresAt: now + UPLOAD_TTL_SEC * 1000, sha256: what.sha256, kind, file })
   const fields = { key, 'Content-Type': 'application/gzip', 'x-amz-server-side-encryption': 'AES256' }
   return { url: `${state.origin}/devstack/upload/${token}`, fields, key, expiresInSec: UPLOAD_TTL_SEC }
 }
 
 function reportRow(req: SubmitRequest, reportId: string, now: number): Record<string, unknown> {
-  const { installId, clientReportId, clientTs, draft, env, log, inventory } = req
+  const { installId, clientReportId, clientTs, draft, env, log, inventory, achievements } = req
   return {
     t: 'report', reportId, installId, clientReportId, receivedAt: now, clientTs, status: 'new',
     // Scored only by the Lambda — never guessed at here (see FIDELITY in the header).
@@ -283,6 +273,9 @@ function reportRow(req: SubmitRequest, reportId: string, now: number): Record<st
     // The second attachment (JOS-296), stored in the two columns the Lambda's INSERT names.
     inventory,
     inventoryKey: inventory === null ? null : inventoryObjectKey(reportId, now),
+    // The third (JOS-441), in the two more columns the Lambda's INSERT names.
+    achievements,
+    achievementsKey: achievements === null ? null : achievementsObjectKey(reportId, now),
   }
 }
 
@@ -309,13 +302,17 @@ function accept(state: State, req: SubmitRequest, now: number): Res {
   const upload = log === null ? null : mintUpload(state, reportId, { kind: 'log', sha256: log.sha256, now })
   const inventoryUpload =
     inv === null ? null : mintUpload(state, reportId, { kind: 'inventory', sha256: inv.sha256, now })
+  const ach = req.achievements
+  const achievementsUpload =
+    ach === null ? null : mintUpload(state, reportId, { kind: 'achievements', sha256: ach.sha256, now })
   return {
     status: 201,
-    json: { ok: true, reportId, upload, inventoryUpload },
+    json: { ok: true, reportId, upload, inventoryUpload, achievementsUpload },
     note:
       `${reportId} ${req.draft.type}` +
       (log === null ? '' : ` +log ${String(log.bytes)}B`) +
-      (inv === null ? '' : ` +inv ${String(inv.bytes)}B`),
+      (inv === null ? '' : ` +inv ${String(inv.bytes)}B`) +
+      (ach === null ? '' : ` +ach ${String(ach.bytes)}B`),
   }
 }
 
@@ -354,8 +351,9 @@ function storeSlice(state: State, reportId: string, presign: Presign, file: Buff
 }
 
 function uploadRoute(state: State, token: string, contentType: string | undefined, body: Buffer): Res {
-  // `<reportId>` or `<reportId>.inventory` — the row is filed under the report either way.
-  const reportId = token.replace(/\.inventory$/, '')
+  // `<reportId>`, `<reportId>.inventory` or `<reportId>.achievements` — the row is filed under
+  // the report whichever leg it came in on.
+  const reportId = reportIdOfToken(token)
   const presign = state.presigns.get(token)
   if (presign === undefined) return s3Error(403, 'AccessDenied', 'no presign was minted for this key')
   if (Date.now() > presign.expiresAt) return s3Error(403, 'AccessDenied', 'Request has expired')

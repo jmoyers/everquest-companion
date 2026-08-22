@@ -1,4 +1,4 @@
-{{Classic Era}}[[File:npc_grevak.png|frame|Grevak]]
+{{Classic Era}}[[File:npc_grevak.png|thumb|Grevak]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Oggok]]

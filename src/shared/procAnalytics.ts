@@ -72,8 +72,31 @@ export interface StateSpan {
  *   'spell'  — a spell-effect line with no own cast behind it (see PROC_CAST_WINDOW_MS).
  *   'slay'   — the `(Slay Undead)` melee paren modifier: a proc that rides a swing, so its
  *              damage is NOT the damage it added (see ProcLaneView.marginalDamage).
+ *   'aa'     — an INNATE AA proc that rides a swing and is counted from the line's paren
+ *              modifier tally, the way `slay` is counted from the damage taxonomy. Today that
+ *              is `(Finishing Blow)` and only that (JOS-437, report 01M0DNQQ41G1YA20N4ZM07HVWG:
+ *              "The proc from Finishing Blow AA is not being listed anywhere (neither in melee
+ *              nor under procs). Since it's a proc similar to slay undead AA proc, it should
+ *              …[be]"). The reporter's analogy is the right one and the difference is only
+ *              where the count is READ: Slay Undead was pulled into a damage CATEGORY of its
+ *              own, so its swings left the melee lane and `byCategory` counts them; Finishing
+ *              Blow was left in `melee` — correctly, its damage is a weapon swing's — so the
+ *              only place it is counted is `SourceStat.mods`, which nothing rendered. Hence a
+ *              lane read from the tally, and hence a separate origin: an `aa` lane has NO
+ *              damage row of its own to tag (see `taggedSkills`), where a `slay` lane has the
+ *              merged Slay Undead row. Its damage is "damage on swings that procced" exactly
+ *              as slay's is, so it carries `marginalDamage` for the same reason.
+ *   'click'  — NOT A PROC AT ALL, and that is the whole point of the value (JOS-438,
+ *              report 01M0BS3FJW1YWP6ZNMM41HCMS2: "they are given ppm ratings in the dps
+ *              breakdown, but they are not procs"). An instant item click prints the same
+ *              nothing a proc does — one effect line, no cast line — so it reaches the same
+ *              detector; what separates them is the player's OWN inventory naming the clicky
+ *              (main/itemClickies.ts). A `click` lane counts the same firings and divides them
+ *              the same way, and every surface that prints a rate for one says CLICKS, never
+ *              procs. The reporter asked for exactly that: the rate they remember to press the
+ *              button at is worth knowing; calling it a proc rate is not.
  */
-export type ProcOrigin = 'poison' | 'spell' | 'slay'
+export type ProcOrigin = 'poison' | 'spell' | 'slay' | 'aa' | 'click'
 
 /**
  * THREE denominators, all carried, none hidden. They answer different questions, and
@@ -150,15 +173,26 @@ export interface ProcLaneView {
   /** `directDamage` as a percentage of the segment's outgoing total. */
   pctOfOut: number
   /** `directDamage / activeSec` — this proc's share of your DPS. EXACT for 'spell' and
-   *  'poison' lanes. For a 'slay' lane it is the damage of swings that PROCCED, which is NOT
-   *  the damage the proc ADDED — see `marginalDamage`. */
+   *  'poison' lanes. For a 'slay' or an 'aa' lane it is the damage of swings that PROCCED,
+   *  which is NOT the damage the proc ADDED — see `marginalDamage`. */
   dpsContribution: number
   /**
-   * SLAY-ONLY, and an ESTIMATE with its assumption written into the type: a Slay Undead swing
-   * would have landed anyway for something. This is
-   *   slayTotal − slayHits × (mean melee hit in this segment)
+   * SWING-BORNE ORIGINS ONLY ('slay' and 'aa'), and an ESTIMATE with its assumption written
+   * into the type: a Slay Undead or Finishing Blow swing would have landed anyway for
+   * something. This is
+   *   procTotal − procHits × (mean ORDINARY melee hit in this segment)
    * i.e. the excess over an ordinary swing. Absent for every other origin, where the proc's
    * whole damage IS its marginal damage.
+   *
+   * The two read their baseline from slightly different places and the difference matters
+   * (JOS-437): a slay swing LEFT the melee category, so `melee` is already the ordinary body;
+   * a Finishing Blow swing did NOT, so its own hits are subtracted out of `melee` first.
+   *
+   * ONE KNOWN IMPRECISION, stated rather than fixed: the SLAY baseline still contains the
+   * segment's Finishing Blow swings, which run hot, so its divisor is a shade high and its
+   * marginal a shade low (in the W38 golden, ≈10 of 4,687). Unifying the two would change a
+   * shipped number for a rounding-scale gain on a ticket whose whole claim is that it moves
+   * nothing, so it was left measured instead of silently adjusted.
    */
   marginalDamage?: number
 

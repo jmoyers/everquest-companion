@@ -7,6 +7,21 @@ Triggered by feedback 01KZA9BVNYDKN9FDVT2N6ZVYPS (group member missing from
 meters); the PARSE half of that report is a separate fix already in flight —
 this model is the presentation-layer half, and neither depends on the other.
 
+**JOS-430 (owner ruling 2026-08-20) MADE §0 TRUE.** For the whole life of this
+plan §0 described an intent the build contradicted: `classify()`'s admission
+gate meant the roster decided whether a bystander's damage was RECORDED, so a
+wrong or empty roster did corrupt a number — it deleted one. The ruling
+("Everyone means ANY fight the log can see; participation not required") moved
+recording out from behind the roster: every player-vs-mob row is recorded, as
+`SourceKind 'other'` when nothing claims the name, and the roster's remaining
+jobs are the ENGAGEMENT LICENCE (a member's target is a mob YOUR fight is
+engaged with; a stranger's is not) and the Group allowlist. Read
+`src/main/combat/otherCombatants.ts` for the refusal ladder and its whole-log
+measurements, `otherRouting.ts` for the aggregate-only discipline a recorded row
+keeps, and `tests/combatRecordEveryone.test.mts` for the pins. §3.5 below is
+kept verbatim as the diagnosis it was; the sentence in it that begins "So G2's
+exact surface is" describes a build that has now been superseded.
+
 ## 0. The one rule that protects everything else
 
 THE ROSTER NEVER TOUCHES THE PARSER. The combat engine records every entity's
@@ -82,8 +97,10 @@ Three, on the combat dashboard AND each damage/heal overlay:
 - **Group** — you + roster members + pets ATTRIBUTED BY THE EXISTING
   pet-ownership logic (petRows) to any of those. Charm pets follow whatever
   attribution already decides; this plan changes no attribution.
-- **Everyone** (THE DEFAULT, JOS-229) — every recorded source (today's
-  behavior; "open it up to all the people around you" is this one click)
+- **Everyone** (THE DEFAULT, JOS-229) — every recorded source. Since JOS-430
+  that means EVERY COMBATANT THE LOG NAMED, including everyone the roster never
+  heard of; before it, "every recorded source" was a much smaller set than it
+  sounded, because the roster gated what got recorded.
 
 Defaulting: if the roster is EMPTY or the model has seen no signal this
 session, Group scope is not silently wrong — it falls back to rendering as

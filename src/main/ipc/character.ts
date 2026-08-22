@@ -107,6 +107,12 @@ export function registerCharacterIpc(): void {
     if (!res) return { ok: false as const, error: 'No *-Inventory.txt found in the EQ folder.' }
     setInventory(activeCharId(), res.counts, res.source)
     const progress = getProgress(activeCharId())
+    // A MANUAL RE-READ IS THE SAME NEWS AS AN AUTOMATIC ONE (JOS-431). This pushed `progress` and
+    // nothing else, so the surfaces that read the FILE's own status — the `/outputfile` freshness
+    // line, which re-asks the registry on `inventory:reload` and on nothing else — kept showing
+    // the age they had before the click. That is the reported symptom (a stale timestamp) wearing
+    // the fix's own clothes, so both pushes go out here exactly as `loadInventoryNow` sends them.
+    sendToMain(IPC.onInventoryReload, { path: res.path, loadedAt: res.loadedAt })
     // Keep other views consistent (Plane of Sky derives held-item counts too).
     sendToMain(IPC.onProgress, progress)
     return { ok: true as const, path: res.path, loadedAt: res.loadedAt, progress }

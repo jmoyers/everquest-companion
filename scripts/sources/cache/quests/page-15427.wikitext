@@ -41,6 +41,7 @@ You say, 'I am a new warrior'
 
 : Manik Compolten says, 'It is always good to see new blood amongst the Gemchoppers. I have a small task for you. Take this keycard. I will give you only one at a time. Use each to obtain blackboxes for the C series clockworks. I am sure you are familiar with the clockworks. When you are done, bring them all to me. Let me know if you need another keycard.'
 
+
 '''Give each Clockwork spider, located as follows, the [[Shiny Card]] you received from [[Manik Compolten]]:'''
   
 * ''[[Clockwork XIIC]] is located at 1314, -380, -80 on an island at the top of the waterfalls.''
@@ -48,11 +49,11 @@ You say, 'I am a new warrior'
 : Clockwork XIIC says, 'Tic.. Pop.. Access Granted'
 
 <div class="facblock">
-* Your faction standing with [[King Ak'Anon]] got better. (+5)
-* Your faction standing with [[Eldritch Collective]] got better. (+5)
-* Your faction standing with [[Gem Choppers]] got better. (+5)
-* Your faction standing with [[Dark Reflection]] got worse. (-1)
-* Your faction standing with [[Meldrath]] got worse. (-1)
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[Eldritch Collective]] has been adjusted by 5.
+* Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Dark Reflection]] has been adjusted by -1.
+* Your faction standing with [[Meldrath]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}
@@ -62,13 +63,14 @@ You receive the [[Blackbox XIIC]]
 * ''[[Clockwork XVIIC]] is located atop the wall just inside from the [[Steamfont Mountains]] entrance at 238, -46, 12 between 8pm and 6am, or at 2045, -354, -180 outside the entrance to the the Mines of Malfunction (evil Gnomes) between 6am and 8pm.''
 
 : Clockwork XVIIC says, 'Tic.. Pop.. Access Granted'
+: [[File:Faction Change for Manik.png|thumb]]
 
 <div class="facblock">
-* Your faction standing with [[King Ak'Anon]] got better.
-* Your faction standing with [[Eldritch Collective]] got better.
-* Your faction standing with [[Gem Choppers]] got better.
-* Your faction standing with [[Dark Reflection]] got worse.
-* Your faction standing with [[Meldrath]] got worse.
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[Eldritch Collective]] has been adjusted by 5.
+* Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Dark Reflection]] has been adjusted by -1.
+* Your faction standing with [[Meldrath]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}
@@ -80,11 +82,11 @@ You receive the [[Blackbox XVIIC]]
 : Clockwork XXVIC says, 'Tic.. Pop.. Access Granted'
 
 <div class="facblock">
-* Your faction standing with [[King Ak'Anon]] got better.
-* Your faction standing with [[Eldritch Collective]] got better.
-* Your faction standing with [[Gem Choppers]] got better.
-* Your faction standing with [[Dark Reflection]] got worse.
-* Your faction standing with [[Meldrath]] got worse.
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[Eldritch Collective]] has been adjusted by 5.
+* Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Dark Reflection]] has been adjusted by -1.
+* Your faction standing with [[Meldrath]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}
@@ -96,11 +98,11 @@ You receive the [[Blackbox XXVIC]]
 : Clockwork XXVIIC says, 'Tic.. Pop.. Access Granted'
 
 <div class="facblock">
-* Your faction standing with [[King Ak'Anon]] got better.
-* Your faction standing with [[Eldritch Collective]] got better.
-* Your faction standing with [[Gem Choppers]] got better.
-* Your faction standing with [[Dark Reflection]] got worse.
-* Your faction standing with [[Meldrath]] got worse.
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[Eldritch Collective]] has been adjusted by 5.
+* Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Dark Reflection]] has been adjusted by -1.
+* Your faction standing with [[Meldrath]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}
@@ -116,14 +118,16 @@ You receive the [[Blackbox XXVIIC]]
 : Manik Compolten says, 'There are a total of four C series clockworks.'
 
 : Manik Compolten says, 'Ah!! I see you had no problem finding all of the C series clockworks. Good work. Here. Take this blackbox. We received it from Clockwork 27C. Take it to Jogl Doobraugh. He is the operator of the only blackbox definer in Ak'Anon. He is out at the windmills checking on their operation.'
-: [[File:Faction Change for Manik.png|thumb]]
+
+<b>Note: These are slightly different factions from the previous turn-ins! Mainly, [[Eldritch Collective]] is replaced by and [[Merchants of AkAnon]] and [[Clan Grikbar]] replaces [[The Dead]]</b>
 
 <div class="facblock">
-* Your faction standing with [[King AkAnon]] has been adjusted by 5.
-* Your faction standing with [[Eldritch Collective]] has been adjusted by 5.
 * Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Merchants of Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
 * Your faction standing with [[Dark Reflection]] has been adjusted by -1.
-* Your faction standing with [[Meldrath]] has been adjusted by -1.</div>
+* Your faction standing with [[Clan Grikbar]] has been adjusted by -1.
+</div>
 
 {{YouGainExperience}}
 
@@ -181,11 +185,11 @@ You say, 'Hail, Drekon Vebnebber'
 : Drekon Vebnebber says, 'Oh my!! It seems two of the obsolete duster models were not fully shut down. You must find them. They could be anywhere in Ak'Anon!! After you destroy them, take their scraps to Sanfyrd Montop. He is the operator of the scrapyard.'
 
 <div class="facblock">
-* Your faction standing with [[Gem Choppers]] got better.
-* Your faction standing with [[Merchants of AkAnon]] got better.
-* Your faction standing with [[King AkAnon]] got better.
-* Your faction standing with [[Dark Reflection]] got worse.
-* Your faction standing with [[Clan Grikbar]] got worse.
+* Your faction standing with [[Gem Choppers]] has been adjusted by 5.
+* Your faction standing with [[Merchants of Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[King Ak'Anon]] has been adjusted by 5.
+* Your faction standing with [[Dark Reflection]] has been adjusted by -1.
+* Your faction standing with [[Clan Grikbar]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}

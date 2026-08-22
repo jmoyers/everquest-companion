@@ -393,15 +393,16 @@ const HAND_DERIVED_CORRECTIONS: readonly SpellCorrection[] = [
       'Twenty-odd sibling gates (Abscond, Gate, Common Gate, Fay Gate, Frost Port, …) already say `Someone fades away.` verbatim, so the suffix already exists and matches 155 owner-log lines; these 24 use the wiki`s other placeholder and were absent from it. Purely additive: no new suffix is created.'
   },
   // --- scrape artifacts: HTML, wiki navigation and stray editorial marks in the message ----------
-  {
-    spells: ['Invisibility Versus Undead'],
-    field: 'msgWearsOff',
-    from: 'Your skin stops tingling. <!--',
-    to: 'Your skin stops tingling.',
-    attribution: 'cast',
-    evidence:
-      '26/27 casts fade to the clean sentence. The scrape swallowed the start of an HTML comment; four sibling entries (Invisibility to Undead, Improved Invis vs Undead, Sunskin, …) carry the clean text.'
-  },
+  //
+  // `Invisibility Versus Undead` USED TO HEAD THIS FAMILY and its entry is gone, retired with the
+  // row it described (JOS-440). The swallowed `<!--` belonged to eqlwiki pageid 57190, the
+  // classic-EverQuest duplicate of a spell the wiki carries on two pages; that page is now a
+  // `supersededBy` removal (`spellRemovalsList.ts`) because the client`s own spell table states the
+  // OTHER page`s numbers, and a removed row may not also be corrected. The clean sentence survives
+  // on the surviving row, which never had the artifact. The scrape defect the entry documented is
+  // NOT fixed and is not one page`s bad luck — the same page leaks the same `<!--` into `classes`,
+  // so `parseSpellpageFields` swallows the opening of any commented-out block that follows a field.
+  // Reported to the integrator rather than papered over one field at a time.
   {
     spells: ['Instill'],
     field: 'msgWearsOff',
@@ -665,6 +666,44 @@ const HAND_DERIVED_CORRECTIONS: readonly SpellCorrection[] = [
     attribution: 'sole',
     evidence:
       'The shaman malo ladder`s level-32 rung. Owner log, whole file (2,026,223 lines): 229 lines naming `Malaisement` (123 `<mob> begins casting Malaisement.`, 5 `You begin casting Malaisement.`, the rest interrupts and fades) and 0 naming `Malisement`. One inserted vowel, never a different spell: nothing else in the DB is named Mal*sement, and the entry`s four `Decrease Cold/Magic/Poison/Fire Resist by 36-40` effect lines are exactly the rung between Malaise (15-20) and Malosi (59-60), which the log casts 136 and 63 times under names the catalog already matches. Until this correction `isResistDebuff` (main/resist/world.ts) answered false for all 229 lines, so the debuff was never recorded against a mob and every observation made under it was fitted at an offset 36 to 40 points too small.'
+  },
+  // --- the invisibility twins: the wiki retitled the page, the game did not (JOS-440) ------------
+  //
+  // The fifth drift class again, and this one arrived as a wiki EDIT rather than as a page that was
+  // always wrong. eqlwiki carries this spell on two pages (pageids 49735 and 57190); until
+  // 2026-08-18 both spelled it `versus` and differed only in case, so `spellCanonKey` folded them
+  // to one catalog entry. An editor then retitled 49735 to `Invisibility vs. Undead`, the fold
+  // stopped joining them, and the level-unlock panel drew two rows for one spell at NEC 1 / SHD 4 /
+  // CLR 11 / ENC 14 / PAL 17.
+  //
+  // THE GAME NEVER ADOPTED THE RETITLE, which is the whole of the correction`s case and is the same
+  // argument `Solon's Bravura` makes above: the wiki`s `spellname` is not what the client prints.
+  // The install`s `spells_us.txt` carries the spell as id 235 `Invisibility Versus Undead`, and the
+  // owner`s log prints that spelling 83 times and the wiki`s new one zero.
+  //
+  // IT DOES NOT TRAVEL ALONE, and the pairing is deliberate. The two pages disagree about NUMBERS —
+  // 40 mana / 4.00 s cast on 49735 against 30 / 5.00 on 57190 — and a rename alone cannot choose
+  // between them, because every surface that folds two rows of one name takes the FIRST row in
+  // scrape order, which is 57190. MEASURED: with only this correction applied, the joined card
+  // showed 30 mana, a 5.00 s cast and `Single`. So the classic page is dropped by a `supersededBy`
+  // removal (`spellRemovalsList.ts`, which carries the client-table reading), and this correction
+  // renames the survivor to the spelling the game prints. Removals run first, so at the moment the
+  // removal is read the survivor is still called `Invisibility vs. Undead` and only the classic row
+  // answers to `Invisibility Versus Undead` — the one arrangement in which a removal may name a
+  // rename`s destination, and `tests/spellRemovals.test.mts` states the conditions.
+  //
+  // WHAT THE RENAME BUYS BEYOND THE DUPLICATE. The name is a join key: under the wiki`s spelling
+  // the 28 own-casts in the owner`s log reached `spellClassIndex` at no key at all, the alerts
+  // catalog offered the spell under a name no cast line can produce, and `spellLineLookup` — whose
+  // ladder rows say `Invisibility versus Undead` — could not place it.
+  {
+    spells: ['Invisibility vs. Undead'],
+    field: 'name',
+    from: 'Invisibility vs. Undead',
+    to: 'Invisibility Versus Undead',
+    attribution: 'cast',
+    evidence:
+      'The wiki page`s `spellname` became `Invisibility vs. Undead` in a 2026-08-18 retitle of pageid 49735; the game has never printed it. Owner log, whole file (2,235,271 lines): 83 lines naming `Invisibility Versus Undead` (28 `You begin casting`, 15 `You have finished memorizing`, 15 `You forget`, 15 `Beginning to memorize`, 7 fizzles, 1 `You have been granted the following spell`, 1 another player`s cast) and 0 naming `Invisibility vs. Undead`. The install`s own table says the same: spells_us.txt id 235 is `Invisibility Versus Undead`. An abbreviation, never a different spell — the two pages state the same five classes at the same five levels and the same three messages, and the surviving row`s own slot line already reads `Invisibility versus Undead`. Blast radius: one catalog entry instead of two; spellClassIndex 1413 -> 1412 with no per-class count moving; the unlock cards draw one row at NEC 1 / SHD 4 / CLR 11 / ENC 14 / PAL 17; `spellLineLookup` and `clientSpellHp` join by name and now reach the row.'
   },
   // --- the seventh drift class: the wrong LEVEL (JOS-415) ----------------------------------------
   // The header's paragraph carries the bar; this is its one entry. The wiki has two pages for this

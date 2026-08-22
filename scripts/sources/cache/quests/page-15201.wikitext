@@ -33,7 +33,7 @@
 
 '''If you make the mistake of moving from the corner, Pandos will most likely attack you. Be careful, and happy factioning!'''
 
-''Pandos Flintside may be found at +100, -615 in the Hogcaller's Inn.''
+''[[Pandos Flintside]] may be found at (-204, -497, -10.5) on the second floor of the Hogcaller's Inn.''
 
 You say, 'Hail, Pandos Flintside'
 

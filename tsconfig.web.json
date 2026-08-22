@@ -59,6 +59,8 @@
     // …and `knowledge.ts` (the spell/item/mob lookups, JOS-293), likewise.
     "src/preload/knowledge.ts",
     // …and `overlaySnap.ts` (the overlay-snapping switch, JOS-217), likewise.
-    "src/preload/overlaySnap.ts"
+    "src/preload/overlaySnap.ts",
+    // …and `logStream.ts` (line / character rebuild / quiet-switch offer, JOS-432), likewise.
+    "src/preload/logStream.ts"
   ]
 }

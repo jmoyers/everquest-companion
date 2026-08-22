@@ -178,20 +178,34 @@ function worthFields(
  * every bard song's page says, and it is a fact.
  */
 function statedFields(e: SpellEntry): Partial<SpellDetail> {
-  const out: Partial<SpellDetail> = {}
+  const out: Partial<SpellDetail> = { ...messageFields(e) }
   if (e.durationText !== undefined) out.durationText = e.durationText
   if (e.castTimeMs !== undefined) out.castTimeMs = e.castTimeMs
+  if (e.recastMs !== undefined) out.recastMs = e.recastMs
   if (e.mana !== undefined) out.mana = e.mana
   if (e.targetType !== undefined) out.targetType = e.targetType
   if (e.spellType !== undefined) out.spellType = e.spellType
   if (e.instrumentEnhanced !== undefined) out.instrumentEnhanced = e.instrumentEnhanced
   if (e.effects !== undefined) out.effects = e.effects
-  if (e.msgCastOnYou !== undefined) out.msgCastOnYou = e.msgCastOnYou
-  if (e.msgCastOnOther !== undefined) out.msgCastOnOther = e.msgCastOnOther
-  if (e.msgWearsOff !== undefined) out.msgWearsOff = e.msgWearsOff
   // The era verdict is DERIVED rather than scraped (`spellEra.ts` joins it at load), but it obeys
   // the same rule as every line above it: copied across only when it is a positive claim, so the
   // card has nothing to interpret and cannot print "in era" over a page nobody has classified.
   if (e.outOfEra === true) out.outOfEra = true
+  return out
+}
+
+/**
+ * The three sentences the GAME prints, split out of the table above under the same rule.
+ *
+ * A separate function for a mechanical reason worth stating so nobody re-inlines it: the table is
+ * one branch per field and adding the JOS-444 recast row put it at the lint config's complexity
+ * ceiling. These three belong together anyway - they are the log-recognition block on the card,
+ * not the spell-window block.
+ */
+function messageFields(e: SpellEntry): Partial<SpellDetail> {
+  const out: Partial<SpellDetail> = {}
+  if (e.msgCastOnYou !== undefined) out.msgCastOnYou = e.msgCastOnYou
+  if (e.msgCastOnOther !== undefined) out.msgCastOnOther = e.msgCastOnOther
+  if (e.msgWearsOff !== undefined) out.msgWearsOff = e.msgWearsOff
   return out
 }

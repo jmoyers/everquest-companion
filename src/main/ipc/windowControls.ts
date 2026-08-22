@@ -9,6 +9,7 @@ import { logError, logInfo } from '../errorLog'
 import { noteOwnWindowRaise } from '../presence'
 import { getFightSelection, setFightSelection } from '../fightSelection'
 import { getScopeSelection, setScopeSelection } from '../scopeSelection'
+import { getSessionMarks, pressNewSession } from '../sessionMarks'
 import { getOverlayConfig, setOverlayConfig } from '../store'
 import { getOverlaySnap, setOverlaySnap } from '../storeOverlaySnap'
 import { getOverlayTextSize, setOverlayTextSize } from '../storeOverlayTextSize'
@@ -436,6 +437,21 @@ export function registerWindowIpc(): void {
   ipcMain.on(IPC.scopeSelectionSet, (_e, patch: unknown) => {
     setScopeSelection(patch)
   })
+
+  // ---- the app-wide SESSION MARKS (JOS-436 store, JOS-322 seam) ----
+  // A read for a window that mounted after the last press, and the press itself.
+  //
+  // THE PRESS TAKES NO ARGUMENT, and that absence is the whole design (src/main/sessionMarks.ts):
+  // main stamps `Date.now()` ONCE and hands that same number to `combat.sessionMark(ts)` and to the
+  // mark list, so the meter's split and the loot ledger's split share one boundary rather than two
+  // a round trip apart. There is therefore nothing here to validate — a renderer cannot supply an
+  // instant, so it cannot supply a bad one.
+  //
+  // An INVOKE rather than a send, unlike its two neighbours above: the pressing window needs the new
+  // list back to select the segment it just opened, and waiting for its own broadcast to return
+  // would leave the picker a frame behind the click that moved it.
+  ipcMain.handle(IPC.sessionMarksGet, () => getSessionMarks())
+  ipcMain.handle(IPC.sessionMarkAdd, () => pressNewSession())
 
   // Fire-and-forget renderer error reports (window.onerror / unhandledrejection /
   // React ErrorBoundary). `ipcMain.on` (not handle) matches the preload's `send`.

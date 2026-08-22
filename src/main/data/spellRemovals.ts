@@ -62,6 +62,10 @@ export interface SpellRemoval {
    * ISO date (`YYYY-MM-DD`) on which the owner looked in EQ Legends and did not find the spell.
    * Absence cannot be measured from a log, so a dated human verification is the only evidence
    * that exists for this class and it is stated as DATA, not prose, so the audit can check it.
+   *
+   * A `supersededBy` entry reads this field the same way but with a different INSTRUMENT — the
+   * date the client's own `spells_us.txt` was read. See that field, and the list header's
+   * DUPLICATE-PAGE section for why one claim admits an instrument the other cannot.
    */
   verified: string
   /**
@@ -76,6 +80,26 @@ export interface SpellRemoval {
    * spell and nothing wider is claimed". Never restate the ticket's hypothesis here.
    */
   reason: string | null
+  /**
+   * THE NAME THE SPELL SURVIVES UNDER, when this entry drops a DUPLICATE WIKI PAGE rather than a
+   * spell EQ Legends does not have — and `undefined` for the plain absence claim the layer was
+   * built for (JOS-440).
+   *
+   * THE TWO CLAIMS ARE DIFFERENT AND THE FIELD IS WHAT SAYS WHICH ONE IS BEING MADE. An absence
+   * entry says "no player can go and learn this spell", and after it runs the DB states nothing
+   * about that spell at all. A superseded entry says "the wiki documents this spell twice, this
+   * page is the copy EQ Legends is not running, and THAT row is the one the game has" — after it
+   * runs the spell is still in the DB, under the name written here, and every surface still offers
+   * it. Nothing is withdrawn from the player; a duplicate is.
+   *
+   * SO IT CARRIES THE OBLIGATION THE ABSENCE CLAIM DOES NOT: the named row must SURVIVE the whole
+   * load. `tests/spellRemovals.test.mts` asserts it by name against the committed scrape, run
+   * through removals AND corrections — because the surviving row is allowed to be a row a `name`
+   * correction renames INTO this spelling, which is exactly what JOS-440 does and is the one
+   * arrangement the layer's original audit refused outright. That audit is now narrowed to the
+   * hazard it was actually written for; the argument is in the test, beside the assertion.
+   */
+  supersededBy?: string
   /** What was done and what was found, in one line: the verification, and any measurement beside it. */
   evidence: string
 }

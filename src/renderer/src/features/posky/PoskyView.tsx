@@ -5,6 +5,9 @@ import { OverrideSummaryChip } from './ItemOverrides'
 import { useProgress, type QuestProgress } from './useProgress'
 import { IgnoredList } from './IgnoredList'
 import QuestFilterBar, { InventorySource } from './QuestFilterBar'
+// The `/outputfile` freshness line (JOS-44). The Sky tab draws it twice now — the inventory dump's
+// under the count-source dropdown, the achievements dump's under the counts line (JOS-429).
+import OutputKindLine from '../../components/OutputKindLine'
 import { countSourcePhrase, countsFromInventory } from '../inventory/countSource'
 // The game fact that can empty this tab and that no amount of re-exporting will fix (JOS-409).
 import { DUMP_BLIND_READY_NOTE } from './dumpBlindItems'
@@ -307,6 +310,12 @@ interface PoskyBodyProps {
   countSource: CountSource
   onCountSource: (s: CountSource) => void
   inventoryLoadedAt: number | null
+  /**
+   * When this app last read the `/outputfile achievements` dump (`achievementsSource.readAt`), or
+   * `null` for never (JOS-429) — the second instant of that kind's freshness line, exactly as
+   * `inventoryLoadedAt` is for the inventory one.
+   */
+  achievementsLoadedAt: number | null
   /** an item name → the Loot tab's drill-down, for the pane that draws names without quest rows */
   onOpenLoot?: (item: string) => void
   itemOverrides: readonly ItemCountOverride[]
@@ -401,6 +410,29 @@ function PoskyBody(x: PoskyBodyProps): JSX.Element {
         countSource={countSource}
         overrides={x.itemOverrides}
       />
+      {/* THE SECOND `/outputfile` LINE (JOS-429), and deliberately the SAME line component the
+          inventory dump gets — `OutputKindLine quiet`, which inherits the command string, the
+          why-clause and the file's own mtime from the registry, and reads "not yet run" for a
+          player who has never typed it. Inventing a second freshness UX was the one thing the
+          ticket ruled out.
+
+          WHAT DIFFERS IS THE SLOT, AND ONLY BECAUSE THE SUBJECT DIFFERS. The inventory line hangs
+          absolutely under "Count items from" because it is about that dropdown's file and because
+          a caption appearing there would otherwise shove the whole quest list down (JOS-268's
+          geometry argument). This one is about COMPLETIONS, which no control on the bar governs —
+          it belongs to the counts line, where the tab already says where its readings came from,
+          and it sits IN FLOW because that Stack's spacing is a real gap rather than a 17px slot.
+
+          IT IS UNCONDITIONAL, unlike the inventory line's source gate. There is no "count
+          achievements from" choice to be out of step with: the dump either marks quests or it does
+          not, and the player who has not run the command is exactly the one the four reports were
+          about — telling them the command exists is the feature. */}
+      <OutputKindLine
+        quiet
+        kind="achievements"
+        loadedAt={x.achievementsLoadedAt}
+        testId="posky-achievements-fresh"
+      />
       <QuestList quests={list.filtered} {...rows} />
     </>
   )
@@ -440,6 +472,7 @@ export default function PoskyView({
     setItemOverride,
     itemOverrides,
     inventoryInfo,
+    achievementsInfo,
     sharedItems,
     ambiguousQuestNames
   } = useProgress({ onQuestComplete })
@@ -489,6 +522,7 @@ export default function PoskyView({
         countSource={countSource}
         onCountSource={setCountSource}
         inventoryLoadedAt={inventoryInfo?.readAt ?? null}
+        achievementsLoadedAt={achievementsInfo?.readAt ?? null}
         onOpenLoot={onOpenLoot}
         itemOverrides={itemOverrides}
       />

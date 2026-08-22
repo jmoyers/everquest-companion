@@ -25,6 +25,7 @@ import {
   MAX_BODY_BYTES,
   validateDraft,
   type FeedbackDraft,
+  type AchievementsDumpMeta,
   type FeedbackEnv,
   type InventoryDumpMeta,
   type LogSliceMeta,
@@ -45,13 +46,25 @@ import {
   type InventoryAttachment,
   type InventoryResult
 } from './inventory'
+import {
+  achievementsMeta,
+  buildAchievementsAttachment,
+  type AchievementsAttachment,
+  type AchievementsResult
+} from './achievements'
 import { feedbackPerfBlock } from './perf'
 import { buildSlice, sliceMeta, type FeedbackSlice } from './slice'
 import { enqueue, installId, type QueuedReport } from './state'
 
 /** The public result of a submit attempt. Never a thrown error, never a bare boolean. */
 export type SubmitResult =
-  | { ok: true; reportId: string; logUploaded: boolean; inventoryUploaded: boolean }
+  | {
+      ok: true
+      reportId: string
+      logUploaded: boolean
+      inventoryUploaded: boolean
+      achievementsUploaded: boolean
+    }
   | {
       ok: false
       error: SubmitErrorCode
@@ -150,6 +163,17 @@ export function activeInventoryPath(): { path: string; fileName: string } | null
 }
 
 /**
+ * The same resolution for the achievements dump (JOS-441). `findOutputFile` is kind-parameterized
+ * and the `achievements` kind has been `supported` with a VERIFIED filename suffix since JOS-429,
+ * so the kind literal is the only thing that differs — no path rule is re-derived here either.
+ */
+export function activeAchievementsPath(): { path: string; fileName: string } | null {
+  const c = resolveActiveCharacter()
+  const path = findOutputFile('achievements', c?.name, c?.server)
+  return path === null ? null : { path, fileName: basename(path) }
+}
+
+/**
  * There is deliberately NO CACHE here, and that is the opposite call from `cachedSlice`.
  *
  * A slice is cached because the promise is "you see exactly what is sent": the bytes previewed,
@@ -165,6 +189,17 @@ export async function currentInventory(): Promise<InventoryResult> {
   const found = activeInventoryPath()
   if (found === null) return { ok: false, reason: 'no-dump' }
   return await buildInventoryAttachment(found.path, found.fileName)
+}
+
+/**
+ * The achievements dump, on the same no-cache terms and for the same reason — with one difference
+ * of degree: on THIS attachment, re-running the command mid-report is the likely case rather than
+ * the edge one, because the dialog's own hint is what tells a player the command exists.
+ */
+export async function currentAchievements(): Promise<AchievementsResult> {
+  const found = activeAchievementsPath()
+  if (found === null) return { ok: false, reason: 'no-dump' }
+  return await buildAchievementsAttachment(found.path, found.fileName)
 }
 
 // ---- the wire ------------------------------------------------------------------------------------
@@ -235,6 +270,42 @@ function uploadInventory(upload: PresignedUpload, gz: Buffer): Promise<boolean> 
   return uploadGz(upload, gz, { field: 'inventory', fileName: 'inventory.txt.gz' })
 }
 
+/** The achievements leg (JOS-441), independent of the other two in exactly the same way. */
+function uploadAchievements(upload: PresignedUpload, gz: Buffer): Promise<boolean> {
+  return uploadGz(upload, gz, { field: 'achievements', fileName: 'achievements.txt.gz' })
+}
+
+/**
+ * RUN EVERY UPLOAD LEG and report each one's truth — split out of `sendReport` at three legs,
+ * because "did the server mint a presign AND did we build the bytes" is one question asked three
+ * times and `sendReport`'s own job is the JSON round trip.
+ *
+ * A leg needs BOTH halves. A server that minted no presign (one that predates the attachment) and
+ * a client that built no bytes both yield `false`, which is the truth in either case.
+ */
+async function uploadLegs(
+  body: Record<string, unknown>,
+  gz: Attachments
+): Promise<{
+  logUploaded: boolean
+  inventoryUploaded: boolean
+  achievementsUploaded: boolean
+}> {
+  const leg = async (
+    raw: unknown,
+    bytes: Buffer | null,
+    send: (u: PresignedUpload, b: Buffer) => Promise<boolean>
+  ): Promise<boolean> => {
+    const upload = asUpload(raw)
+    return upload !== null && bytes !== null ? await send(upload, bytes) : false
+  }
+  return {
+    logUploaded: await leg(body.upload, gz.log, uploadSlice),
+    inventoryUploaded: await leg(body.inventoryUpload, gz.inventory, uploadInventory),
+    achievementsUploaded: await leg(body.achievementsUpload, gz.achievements, uploadAchievements)
+  }
+}
+
 /** The §8.3 response table, as data. A status we do not recognize is `internal`. */
 const STATUS_ERROR: Readonly<Record<number, SubmitErrorCode>> = {
   400: 'invalid_payload',
@@ -267,14 +338,15 @@ function retryable(status: number, error: SubmitErrorCode): boolean {
 /**
  * The BYTES of a report's attachments — never in the JSON body, always on their own presigns.
  * One field per attachment rather than a positional pair, so adding a third some day is a field
- * and not a signature every caller has to re-read.
+ * and not a signature every caller has to re-read. (JOS-441 was that third, and it was.)
  */
 export interface Attachments {
   log: Buffer | null
   inventory: Buffer | null
+  achievements: Buffer | null
 }
 
-export const NO_ATTACHMENTS: Attachments = { log: null, inventory: null }
+export const NO_ATTACHMENTS: Attachments = { log: null, inventory: null, achievements: null }
 
 /**
  * Send ONE assembled request. Shared by the interactive path and the queue drain, so an
@@ -296,12 +368,7 @@ export async function sendReport(
   const res = await postJson(FEEDBACK_API_URL, req)
   const body = asRecord(res.body)
   if (res.status >= 200 && res.status < 300 && body?.ok === true && typeof body.reportId === 'string') {
-    const upload = asUpload(body.upload)
-    const invUpload = asUpload(body.inventoryUpload)
-    const logUploaded = upload !== null && gz.log !== null ? await uploadSlice(upload, gz.log) : false
-    const inventoryUploaded =
-      invUpload !== null && gz.inventory !== null ? await uploadInventory(invUpload, gz.inventory) : false
-    return { ok: true, reportId: body.reportId, logUploaded, inventoryUploaded }
+    return { ok: true, reportId: body.reportId, ...(await uploadLegs(body, gz)) }
   }
   const mapped = errorFor(res.status, body)
   return { ...failure(mapped.error, mapped.message, mapped), retry: retryable(res.status, mapped.error) }
@@ -312,7 +379,7 @@ export async function sendReport(
 /** Assemble a `SubmitRequest` for a draft + whichever attachments were built. */
 async function requestFor(
   draft: FeedbackDraft,
-  meta: { log: LogSliceMeta | null; inventory: InventoryDumpMeta | null },
+  meta: AttachmentMeta,
   clientReportId: string
 ): Promise<SubmitRequest> {
   return {
@@ -323,8 +390,16 @@ async function requestFor(
     clientReportId,
     clientTs: Date.now(),
     log: meta.log,
-    inventory: meta.inventory
+    inventory: meta.inventory,
+    achievements: meta.achievements
   }
+}
+
+/** The metadata half of the three attachments — named once, since three call sites carry it. */
+interface AttachmentMeta {
+  log: LogSliceMeta | null
+  inventory: InventoryDumpMeta | null
+  achievements: AchievementsDumpMeta | null
 }
 
 function queueEntry(req: SubmitRequest): QueuedReport {
@@ -335,6 +410,7 @@ function queueEntry(req: SubmitRequest): QueuedReport {
     clientTs: req.clientTs,
     log: req.log,
     inventory: req.inventory,
+    achievements: req.achievements,
     attempts: 1,
     // The first retry waits out the normal backoff; the periodic drain picks it up.
     nextAttemptAt: Date.now() + 5 * 60 * 1000,
@@ -371,32 +447,42 @@ function queueFailure(res: SubmitFailure, req: SubmitRequest, gz: Attachments): 
   }
 }
 
+/** A dump that PACKAGED, or null. "Not asked for", "no such file" and "too large" all read the
+ *  same here on purpose: each is a report that goes without that attachment, and the dialog
+ *  already told the user which one it was before Send was pressed. */
+function packaged<T extends { ok: true }>(res: T | { ok: false } | null): T | null {
+  return res?.ok === true ? res : null
+}
+
 /**
  * Build whichever attachments the user ticked, and hand back BOTH halves of each: the bytes for
  * the upload legs and the metadata for the JSON body. One function so the two can never disagree
  * — a report whose body declares a dump but whose upload has no bytes would be a report the
  * server presigns for nothing.
- *
- * A dump the user asked for but that cannot be PACKAGED (never exported, unreadable, over the
- * cap) is NOT an error: the report goes without it, exactly as a missing log does. The dialog
- * already said which of those it was, before Send was pressed.
  */
 async function buildAttachments(opts: {
   attachLog: boolean
   windowMinutes: number
   attachInventory: boolean
-}): Promise<{ gz: Attachments; meta: { log: LogSliceMeta | null; inventory: InventoryDumpMeta | null } }> {
+  attachAchievements: boolean
+}): Promise<{ gz: Attachments; meta: AttachmentMeta }> {
   const slice = opts.attachLog ? await cachedSlice(opts.windowMinutes) : null
-  const dump = opts.attachInventory ? await currentInventory() : null
-  const attached: InventoryAttachment | null = dump?.ok === true ? dump : null
+  const attached = packaged<InventoryAttachment>(
+    opts.attachInventory ? await currentInventory() : null
+  )
+  const achAttached = packaged<AchievementsAttachment>(
+    opts.attachAchievements ? await currentAchievements() : null
+  )
   return {
     gz: {
       log: slice === null ? null : slice.gz,
-      inventory: attached === null ? null : attached.gz
+      inventory: attached === null ? null : attached.gz,
+      achievements: achAttached === null ? null : achAttached.gz
     },
     meta: {
       log: slice === null ? null : sliceMeta(slice),
-      inventory: attached === null ? null : inventoryMeta(attached)
+      inventory: attached === null ? null : inventoryMeta(attached),
+      achievements: achAttached === null ? null : achievementsMeta(achAttached)
     }
   }
 }
@@ -412,7 +498,12 @@ async function buildAttachments(opts: {
  */
 export async function submitFeedback(
   draft: FeedbackDraft,
-  opts: { attachLog: boolean; windowMinutes: number; attachInventory: boolean }
+  opts: {
+    attachLog: boolean
+    windowMinutes: number
+    attachInventory: boolean
+    attachAchievements: boolean
+  }
 ): Promise<SubmitResult> {
   if (E2E) return failure('internal', 'disabled in e2e')
   if (FEEDBACK_API_URL === '') {
@@ -429,13 +520,15 @@ export async function submitFeedback(
     logInfo(
       `[everquest-companion] feedback sent: ${res.reportId} ` +
         `(log ${res.logUploaded ? 'uploaded' : 'not uploaded'}, ` +
-        `inventory ${res.inventoryUploaded ? 'uploaded' : 'not uploaded'})`
+        `inventory ${res.inventoryUploaded ? 'uploaded' : 'not uploaded'}, ` +
+        `achievements ${res.achievementsUploaded ? 'uploaded' : 'not uploaded'})`
     )
     return {
       ok: true,
       reportId: res.reportId,
       logUploaded: res.logUploaded,
-      inventoryUploaded: res.inventoryUploaded
+      inventoryUploaded: res.inventoryUploaded,
+      achievementsUploaded: res.achievementsUploaded
     }
   }
   return res.retry === true ? queueFailure(res, req, built.gz) : { ...res, queued: false }

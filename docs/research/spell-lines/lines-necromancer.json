@@ -286,6 +286,7 @@
       "members": [
         { "name": "Lifetap", "level": 1, "inDb": true, "note": "4-6." },
         { "name": "Lifespike", "level": 3, "inDb": true, "note": "7-12. P99 level 4." },
+        { "name": "Lifebite", "level": 8, "inDb": true, "note": "42/42, 1.75 s cast, 35 mana, autogranted. ADDED BY THE GAME PATCH OF 2026-08-18 (JOS-439) - wiki pageid 60016, created 2026-08-18T15:42Z, so no earlier scrape could have seen it. It has no P99 or live counterpart: Legends invented this rung. Owner log evidence at research time: 288 begins-casting, 246 damage lines, 251 heals, 9 resists, 10 interrupts, 4 fizzles." },
         { "name": "Lifedraw", "level": 12, "inDb": true, "note": "39-45." },
         { "name": "Siphon Life", "level": 20, "inDb": true, "note": "65-75." },
         { "name": "Spirit Tap", "level": 26, "inDb": true, "note": "132-150. P99 level 29." },

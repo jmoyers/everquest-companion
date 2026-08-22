@@ -18,11 +18,24 @@
 // multipliers, no spell-damage bonus, no resist. They are DIRECTIONAL - the right instrument for
 // comparing two spells you are choosing between, not a damage meter.
 //
-// AND RECAST IS NOT IN THE CATALOG AT ALL. `SpellEntry` carries `castTimeMs` and `durationMs` and
-// no recast/refresh field, so a `dps` here is damage over the CAST plus (for a DoT) its duration,
-// never over a real casting cycle. A wizard nuke's true sustained dps is lower than the number
-// this file produces and a fast-recast spell's is higher. Stated here rather than in the UI on
-// purpose: the caveat diet (AGENTS.md) - the panel says one quiet `directional` and stops.
+// AND THE PER-SECOND FIGURES ARE SUSTAINED ONES SINCE JOS-444, BECAUSE RECAST IS IN THE CATALOG NOW.
+// This header used to say the opposite - "RECAST IS NOT IN THE CATALOG AT ALL" - and it was true
+// until 2026-08-22, when the scrape began capturing the wiki's `recast_time` (spells.json schema 3,
+// `SpellEntry.recastMs`, 1,925 of 2,006 rows) and the client's own row grew a reader for the same
+// number (spellsUsParse.ts field 10). So `dps`/`hps` divide by the CASTING CYCLE rather than by the
+// cast alone: cast plus recast for an instant spell, cast plus the whole duration for an over-time
+// one, and never a window shorter than cast plus recast.
+//
+// THE RE-USE TIMER STARTS WHEN THE CAST COMPLETES, which is the edge worth stating out loud: a
+// recast SHORTER than the cast still lengthens the cycle. Garrison's Mighty Mana Shock is a 3.0s
+// cast with a 1.5s recast and its sustained window is 4.5s, not 3.0s - 333 damage at L35 reads
+// 74 dps where it used to read 111. What contributes nothing extra is a recast shorter than an
+// OVER-TIME spell's own duration: those figures total the whole duration's ticks, so the window
+// has to cover the duration, and a faster re-use timer cannot make the same ticks arrive sooner.
+// A spell no source states a recast for is unchanged, figure for figure.
+//
+// The remaining caveats stay out of the UI on purpose: the caveat diet (AGENTS.md) - the panel says
+// one quiet `directional` and stops.
 //
 // ── THE SHAPES, MEASURED ───────────────────────────────────────────────────────────────────────
 //
@@ -109,6 +122,13 @@ export interface ClientHpSlot {
 export interface ClientHpFacts {
   hp?: readonly ClientHpSlot[]
   hpDuration?: { formula: number; value: number }
+  /**
+   * THE CLIENT'S RE-USE TIMER (JOS-444), and the only field here that is NOT part of the hitpoint
+   * fallback: it is read even when the wiki's own lines answered, because 81 catalog rows state no
+   * `recast_time` and a sustained figure with no denominator is the thing this ticket removed.
+   * The page wins where it states one - see `spellMetricsAt`.
+   */
+  recastMs?: number
 }
 
 /**
@@ -188,10 +208,20 @@ export interface SpellMetrics {
   damagePerMana?: number
   /** heal / mana, same rule. */
   healPerMana?: number
-  /** damage over cast time plus, for a DoT, its whole duration. */
+  /** SUSTAINED damage per second: the total over one whole casting cycle (see the header). */
   dps?: number
   /** the same for healing. */
   hps?: number
+  /**
+   * The re-use timer, in ms, as some source stated it - echoed onto the figures because it is the
+   * half of the `dps`/`hps` denominator that no other field on this record explains, and because
+   * the formatter (`spellMetricsParts`) is the one place that decides whether it is worth printing.
+   *
+   * Written only when a source states a POSITIVE one. A stated 0 (432 catalog rows) is a real
+   * answer meaning "no re-use timer", and it changes no window and prints nothing, so carrying it
+   * across the wire on every row would be bytes saying nothing.
+   */
+  recastMs?: number
   /** True when any damage arrives per tick - the row marks it `over Ns`. */
   dot?: boolean
   /** True when any healing arrives per tick. */
@@ -221,6 +251,12 @@ export interface SpellMetricsInput {
   effects?: string[]
   mana?: number
   castTimeMs?: number
+  /**
+   * The wiki's `recast_time`, in ms (schema 3). ABSENT means no source stated one, which is not
+   * the same as the STATED 0 that 432 rows carry - both leave the window at the cast alone, but
+   * only the second is an answer, and `spellMetricsAt` falls back to the client file for the first.
+   */
+  recastMs?: number
   durationMs?: number | null
   /** `target_type` verbatim. `Lifetap` changes what the Increase line means - see below. */
   targetType?: string
@@ -390,6 +426,16 @@ function foldLine(side: Side, line: HpLine, durationTicks: number): void {
 }
 
 /**
+ * The spell with its re-use timer resolved: the page's own `recast_time`, or the client's row where
+ * the page is silent (JOS-444). Returns the input UNTOUCHED when there is nothing to add, so a
+ * caller that passes no client facts gets the object it handed in.
+ */
+function withRecast(spell: SpellMetricsInput, client?: ClientHpFacts): SpellMetricsInput {
+  if (spell.recastMs !== undefined || client?.recastMs === undefined) return spell
+  return { ...spell, recastMs: client.recastMs }
+}
+
+/**
  * THE FIGURES FOR ONE SPELL AT ONE LEVEL. Returns undefined when the spell has no hitpoint line
  * at all, which is most of the catalog and is a row that simply shows no figures.
  *
@@ -402,12 +448,18 @@ function foldLine(side: Side, line: HpLine, durationTicks: number): void {
  * with a heal it does not perform on anybody but the caster and would put a `heal/mana` on a
  * detrimental spell. The catalog files all 28 such rows under `targetType: 'Lifetap'`, so the
  * increase side is dropped there and the damage side stands alone.
+ *
+ * THE RECAST FALLBACK IS RESOLVED HERE AND NOWHERE ELSE (JOS-444). The wiki's `recast_time` wins;
+ * the client's field 10 answers for the 81 rows whose page omits it. It is folded into the input
+ * rather than threaded past `assemble` so that every path below — the wiki fold, the client fold,
+ * the unlock row, the spell card — divides by one denominator resolved one way.
  */
 export function spellMetricsAt(
-  spell: SpellMetricsInput,
+  input: SpellMetricsInput,
   level: number,
   client?: ClientHpFacts
 ): SpellMetrics | undefined {
+  const spell = withRecast(input, client)
   const lifetap = spell.targetType === 'Lifetap'
   const durationTicks = ticksOf(spell.durationMs)
   const dmg: Side = { total: 0, overTime: false }
@@ -502,17 +554,28 @@ interface SideFigures {
 }
 
 /**
- * One side, derived. The per-second window is the CAST plus, for an over-time side, the whole
- * duration — the honest denominator for "how fast does this arrive", and the reason a DoT's dps
+ * One side, derived. `windowSec` is the casting cycle this side's total arrived over (see
+ * `cycleSec`) — the honest denominator for "how fast does this arrive", and the reason a DoT's dps
  * is not its per-tick rate.
  */
-function figures(side: Side, mana: number | null, castSec: number, overSec: number): SideFigures | null {
+function figures(side: Side, mana: number | null, windowSec: number): SideFigures | null {
   if (side.total <= 0) return null
   const out: SideFigures = { total: r1(side.total) }
   if (mana !== null) out.perMana = r1(side.total / mana)
-  const window = castSec + (side.overTime ? overSec : 0)
-  if (window > 0) out.perSecond = r1(side.total / window)
+  if (windowSec > 0) out.perSecond = r1(side.total / windowSec)
   return out
+}
+
+/**
+ * THE CASTING CYCLE one side's total arrives over, in seconds (JOS-444).
+ *
+ * The cast is always in it, because you spend it either way. On top of that sits whichever is
+ * LONGER: the duration an over-time side's ticks run for, or the re-use timer you must wait out
+ * before the spell is yours to cast again. Both are measured from the moment the cast completes,
+ * so they overlap rather than add - a 30s DoT on a 6s recast is one 30s cycle, not 36.
+ */
+function cycleSec(overTime: boolean, castSec: number, overSec: number, recastSec: number): number {
+  return castSec + Math.max(overTime ? overSec : 0, recastSec)
 }
 
 /** The damage side's four fields, written onto the output. */
@@ -543,23 +606,50 @@ function assemble(
   const mana = typeof spell.mana === 'number' && spell.mana > 0 ? spell.mana : null
   const castSec = (spell.castTimeMs ?? 0) / 1000
   const overSec = durationTicks * (TICK_MS / 1000)
-  const d = figures(dmg, mana, castSec, overSec)
-  const h = figures(heal, mana, castSec, overSec)
+  const recastMs = spell.recastMs ?? 0
+  const recastSec = recastMs > 0 ? recastMs / 1000 : 0
+  const d = figures(dmg, mana, cycleSec(dmg.overTime, castSec, overSec, recastSec))
+  const h = figures(heal, mana, cycleSec(heal.overTime, castSec, overSec, recastSec))
   if (!d && !h) return undefined
   const out: SpellMetrics = {}
   writeDamage(d, dmg.overTime, out)
   writeHeal(h, heal.overTime, out)
   if ((dmg.overTime || heal.overTime) && overSec > 0) out.overSec = Math.round(overSec)
+  if (recastMs > 0) out.recastMs = recastMs
   return out
 }
 
 /**
+ * A RECAST BELOW THIS IS THE GAME'S GLOBAL COOLDOWN, not a property of the spell (JOS-444).
+ *
+ * 532 of the catalog's 1,925 stated recasts are exactly 1.5s — the floor every spell in EverQuest
+ * pays — and printing `recast 1.5s` on a third of the rows would be a column of noise saying the
+ * same thing. It still counts in the arithmetic, because the 1.5s is real time the caster spends;
+ * what it does not earn is a word on a dense row.
+ *
+ * The threshold is drawn just above that floor rather than fitted to a distribution: 539 rows state
+ * a positive recast under 2s (532 of them the 1.5s itself, plus 4 at 1.0s and 3 at 0.01s) and 954
+ * state 2s or more, the smallest of which is 2s exactly — so the cut lands in a real gap and the
+ * floor is inclusive.
+ */
+const RECAST_PART_MIN_MS = 2000
+
+/** Seconds, one decimal, with a whole number left whole: `6s`, `2.3s`. */
+function secondsPart(ms: number): string {
+  return `${String(r1(ms / 1000))}s`
+}
+
+/**
  * The row's compact figures, in the order the panel prints them:
- * `dmg 143 · dps 48 · 2.1 dmg/mana`, `heal 250 · hps 83 · 3.6 heal/mana`, `over 24s`.
+ * `dmg 143 · dps 48 · 2.1 dmg/mana`, `heal 250 · hps 83 · 3.6 heal/mana`, `over 24s`, `recast 6s`.
  *
  * ONE FORMATTER, shared by the unlock row and (by design) the spell search that reuses these
  * rows - two components formatting the same figures is two opinions about what `2.1` means.
  * No em dashes; the separator is the middle dot the rest of the app already uses.
+ *
+ * THE RECAST GOES LAST because it is the only part that is not a figure read off the effect list:
+ * it is the cycle the per-second numbers were divided by, which is what a reader wants after the
+ * number rather than before it.
  */
 export function spellMetricsParts(m: SpellMetrics): string[] {
   const parts: string[] = []
@@ -574,5 +664,8 @@ export function spellMetricsParts(m: SpellMetrics): string[] {
     if (m.healPerMana !== undefined) parts.push(`${String(m.healPerMana)} heal/mana`)
   }
   if (m.overSec !== undefined) parts.push(`over ${String(m.overSec)}s`)
+  if (m.recastMs !== undefined && m.recastMs >= RECAST_PART_MIN_MS) {
+    parts.push(`recast ${secondsPart(m.recastMs)}`)
+  }
   return parts
 }

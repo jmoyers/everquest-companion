@@ -14,10 +14,20 @@
 // THE FIELD MAP, verified by measurement against the owner's install (2026-08-16):
 //
 //   0    spell id                       1    name
-//   8    cast time, ms                  11   buff duration formula (JOS-396)
-//   12   buff duration                  29   resist type (see axisFromResistType)
+//   8    cast time, ms                  10   recast (re-use) time, ms (JOS-444)
+//   11   buff duration formula (JOS-396) 12  buff duration
+//   29   resist type (see axisFromResistType)
 //   30   target type                    36..51  class levels, WAR..BER (255 = cannot use)
 //   78   resist adjust                  172  effect slots, `$`-separated
+//
+// FIELD 10 IS THE RECAST AND FIELD 9 IS NOT, which is the only trap in that line and is measured
+// rather than reasoned (owner's install, 2026-08-22). Field 9 is the RECOVERY time — the cooldown
+// the game charges for any cast — and it reads 1500 on 18,008 of the 33,952 rows a class can cast,
+// 0 on most of the rest; it disagrees with field 10 on 14,535 of them, so the two are plainly not
+// one number written twice. WHICH of them is the re-use timer is settled by cross-checking against
+// the wiki's own `recast_time` for the same spell: Odium (id 4093) reads 9 = 1500, 10 = 6000 and
+// its page says 6 seconds; Garrison's Mighty Mana Shock (2552) reads 1500 in both and its page
+// says 1.5; Complete Heal (1292) reads 9 = 1500, 10 = 0. Only field 10 tracks the page.
 //
 // FIELDS 11 AND 12 WERE ADDED BY JOS-396 and are measured the same way: Odium (id 4093) reads
 // `11 = 7`, `12 = 5`, and formula 7 is "as many ticks as the caster's level, capped at field 12" —
@@ -43,6 +53,7 @@ import { spellCanonKey } from '../log/parseCommon'
 const F_ID = 0
 const F_NAME = 1
 const F_CAST_MS = 8
+const F_RECAST_MS = 10
 const F_DURATION_FORMULA = 11
 const F_DURATION = 12
 const F_RESIST_TYPE = 29
@@ -160,6 +171,18 @@ function classLevels(f: readonly string[]): { any: boolean; bardOnly: boolean } 
   return { any, bardOnly: bard && !nonBard }
 }
 
+/**
+ * Field 10, present only when POSITIVE: a 0 in that column is the file's way of saying "no re-use
+ * timer", and storing it would cost a field on half the table to state what the absence states.
+ *
+ * A helper returning a SPREADABLE fragment rather than two lines inside `rowInfo`, because that
+ * function sits at the complexity ceiling and every optional field it grows costs two branches.
+ */
+function recastField(f: readonly string[]): { recastMs?: number } {
+  const ms = Number(f[F_RECAST_MS]) || 0
+  return ms > 0 ? { recastMs: ms } : {}
+}
+
 function rowInfo(f: readonly string[]): SpellResistInfo {
   const slots = parseSlots(f[F_SLOTS])
   const { bardOnly } = classLevels(f)
@@ -167,6 +190,7 @@ function rowInfo(f: readonly string[]): SpellResistInfo {
     axis: axisFromResistType(Number(f[F_RESIST_TYPE])),
     resistAdj: Number(f[F_RESIST_ADJ]) || 0,
     castMs: Number(f[F_CAST_MS]) || 0,
+    ...recastField(f),
     targetType: Number(f[F_TARGET_TYPE]) || 0,
   }
   const hp = hpSlotOf(slots)

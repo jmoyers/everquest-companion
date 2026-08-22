@@ -63,7 +63,7 @@ You receive a {{:Collar of Neshika}}.
 == Notes ==
 * Grim shares a spawn cycle with [[Brollus Hoost]] and [[Tallyn Starwatch]]. If he is not present, check back later, or kill the placeholder (and suffer the faction hits).
 * The three tigers spawn after you talk to Grim, so the easiest way to find these tigers is with a tracker. Fair warning though, killing them gives a hit to ranger/druid factions.
-* If you reverse the names of Eenot and Rigget, you get Tonee (Tony the Tiger) and Tigger. Kobb is probably a reference to inner circle Hall of Famer Ty Cobb, who played for the Detroit Tigers.
+* If you reverse the names of Eenot and Reggit, you get Tonee (Tony the Tiger) and Tigger. Kobb is probably a reference to inner circle Hall of Famer Ty Cobb, who played for the Detroit Tigers.
 
 [[Category: Quests]]
 [[Category:Kithicor Forest]]

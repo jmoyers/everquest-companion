@@ -330,6 +330,13 @@ function buildSections({ version, status, onSendFeedback, onWhatsNew }: SectionI
     buffTrustSection(),
     cursorRingSection(),
     voiceSection(),
+    // NO SOUND SECTION HERE, and that is a ruling rather than an omission (JOS-443, owner:
+    // "remove the sound section from preferences - redundant" and then, on the whole idea, "we
+    // don't need any special audio debugging tools at all"). JOS-442's Sound check card sat beside
+    // Voice and reported what Windows' volume mixer thought of this app; it is deleted, along with
+    // the native WASAPI reader and the IPC channel it asked through. Nothing replaced it on any
+    // surface. Audio failures are still never silent — they write throttled lines to errors.log
+    // from features/alerts/audioHealth.ts — and the mixer is where a mute is undone.
     {
       id: 'profiles',
       label: 'Profiles',

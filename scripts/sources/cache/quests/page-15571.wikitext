@@ -22,7 +22,7 @@
 
 == Reward ==
 
-<ul><li> {{:Rough Elm Recurve Bow}}, coin
+<ul><li> {{:Rough Elm Recurve Bow}}, coin, Faction
 </li></ul>
 
 == Walkthrough ==
@@ -39,12 +39,26 @@ You say, 'I want to join the hunt.'
 
 : Gillarian Naelev says 'Very good, friend. Be on the lookout for poachers in Surefall Glade or Qeynos Hills. Especially in the nearby caves. The poachers are not always human. Oftentimes, we'll find ourselves a Blackburrow gnoll or two. Bring me back their heads. Let us see how they look mounted above the mantle. Be on your way, then!'  
 
-==== '''Poacher Spawns in Surefall Glade:''' ====
+==== '''Poacher Spawns in <s>Surefall Glade</s>''' and '''Toxxulia Forest'''====
+
+In '''Toxxulia Forest''' you will find 5 named poachers that drop [[Poacher's Head]].  Use track on a Ranger, Druid or Bard.  
+
+* If you don't have Track, try near the Wizard spires, Middle of the zone a little ways from the water, and top of the zone near the left before the water.  There are other places and they wander a little while after spawning.
+* Poachers have a 10 seconds spawn timer including their placeholders.
+* Poachers share placeholders
+** Poacher Dell and Poacher Willa share a timer with [[a widow hatchling]].  Spawn Location: Southern third of the zone, right side of the river.
+** Poacher Hill, Poacher Topi and Poacher Shelli share a timer with [[a large skunk]] and [[a widow hatchling]].  Spawn Location: Upper left side of the zone, right side of the river.
+* If you don't see any poachers, go find the hatchlings and large skunks and kill them.  10 seconds after ones dies, you should have a new Poacher, hatchling or skunk on track.  If you don't, that wasn't one of the placeholders, go find a new placholder and try again.
+
+
+
+I have not see a poacher in surefall glade in EQL, so I believe they have been removed.  Information here on Surefall Glade in case it comes back.
+
 <nowiki>#</nowiki>1 Waterfall Cave (/loc 221,-179): shared spawn point for [[Poacher]] and Mammoth (named bear). Poacher drops a regular [[Poacher's Head]] for coin and faction rewards.  
 
 <nowiki>#</nowiki>2 Hidden Cave (/loc 144,-415): behind the hidden wall cave entrance, and the shared spawn point for [[Gnoll Poacher]], [[a poacher]], and a bear cub. The Gnoll Poacher drops the Gnoll Head used for the Rough Elm Recurve Bow quest reward. A poacher drops a regular [[Poacher's Head]] that just nets you coin and faction rewards.  
 
-The spawn timer for either spot is approximately 2.5 minutes, but the mobs in both locations will start to wander around the tunnels shortly after spawning. The will path back to their spawn points if you don't want to go looking for them though. If you blindly sit on either spawn point, you could be waiting anywhere from 7.5 - 30 minutes for the spawns to cycle through.  
+The spawn timer for either spot is approximately 2.5 minutes, but the mobs in both locations will start to wander around the tunnels shortly after spawning. The will path back to their spawn points if you don't want to go looking for them though. If you blindly sit on either spawn point, you could be waiting anywhere from 7.5 - 30 minutes for the spawns to cycle through.
 
 ==== Turn Ins: ====
 '''Hand Gillarian Naelev a [[Gnoll Head]] (identifies as "Gnoll Poacher Head").'''
@@ -63,8 +77,8 @@ Rewards include 7 gold, a [[Rough Elm Recurve Bow]].
 The [[Poacher's Head]] does not have to be from one of the poachers in Surefall Glade.  The poacher's heads from the poachers in the [[Toxxulia Forest]] will also work.
 
 : Gillarian Naelev says 'Your deeds are great indeed.  We shall cleanse our land of these poachers once and for all. A report has surfaced of a [master poacher].'
-* Your faction standing with [[Protectors of Pine]] got better.
-* Your faction standing with [[Jaggedpine Treefolk]] got better.
+* Your faction standing with [[Protectors of Pine]] has been adjusted by 15.
+* Your faction standing with [[Jaggedpine Treefolk]] has been adjusted by 5.
 * Your faction standing with [[Sabertooths of Blackburrow]] got worse.
 * Your faction standing with [[Guards of Qeynos]] got better.
 {{YouGainExperience}}

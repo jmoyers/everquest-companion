@@ -1,6 +1,6 @@
 ---
 name: explain
-description: Render every decision currently waiting on the owner as a plain-English, self-contained decision sheet — no conversation history, Linear, or code access needed to decide. Use when the owner asks "explain those", "what's waiting on me", "give me the decision sheet", or wants any pending item explained well enough to rule on it from the text alone.
+description: Render every decision currently waiting on the owner as a plain-English, self-contained decision sheet — no conversation history, Linear, or code access needed to decide. Use when the owner asks "explain those", "what's waiting on me", "give me the decision sheet" — AND (owner directive 2026-08-21) use it UNPROMPTED whenever presenting anything that needs an owner ruling: a gated ticket, a design fork, a triage readout item, a worker-flagged judgment call. If the owner must decide it, it goes through this format.
 ---
 
 # The /explain decision sheet
@@ -10,6 +10,17 @@ them from: every open decision, explained so completely in plain language that
 the owner can answer from the sheet alone — without scrolling the conversation,
 opening Linear, reading code, or trusting memory. The sheet is the deliverable;
 its quality bar is "decidable cold."
+
+## When it fires (owner directive 2026-08-21: always, for any ruling)
+
+Not only on request. ANY time a session needs an owner ruling — a gated
+ticket ready for its call, a design fork a worker surfaced, a triage item
+that isn't an obvious fix, a hold that could lift — the ask is presented in
+this sheet format, unprompted. A ruling requested outside this format is a
+ruling requested badly: if the owner has to reconstruct context to answer,
+the question was not finished being asked. Scope the sheet to what actually
+needs deciding (one item is a one-item sheet; the full gather below is for
+"what's waiting on me" sweeps).
 
 ## Gather (all four sources, every time)
 

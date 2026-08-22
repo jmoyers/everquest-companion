@@ -17,7 +17,13 @@
 
 import { idKey } from '../log/parser'
 import { damageCategory } from './taxonomy'
-import { evalClosure, ensureEncounter, finalizeCurrent, finalizeZoneSession } from './lifecycle'
+import {
+  evalClosure,
+  ensureEncounter,
+  finalizeCurrent,
+  finalizeZoneSession,
+  resetZoneAccumulators
+} from './lifecycle'
 import { route, routeHeal, routeHealUnstated, routeMiss, routeMitigation, routeResist, verdict } from './routing'
 import { SEC_ANALYTICS, SEC_DISPATCH } from './foldProbe'
 import {
@@ -36,6 +42,7 @@ import {
 import { sweepCoatClass } from './coatClass'
 import {
   QUICK_BUFF_AA,
+  castlessKind,
   isCastlessHeal,
   laneNameFor,
   procEligibleDamage,
@@ -51,7 +58,7 @@ import { bindPetBuffLanding, ingestPetClaim } from './petClaims'
 // …and the coaching nudge that exists BECAUSE those three routes are all there are (JOS-258).
 import { isPetSummonSpell } from './petNudge'
 import { CC_HOLD_MS } from './encounter'
-import { Agg, type DamageEvent } from './aggregate'
+import { type Agg, type DamageEvent } from './aggregate'
 import type { WindowFold } from './procWindows'
 import type { EngineState } from './state'
 import type { Attribution } from './routing'
@@ -107,6 +114,11 @@ function ingestCc(st: EngineState, ev: CcEvent): void {
  */
 function ingestCharm(st: EngineState, ev: CharmEvent): void {
   const key = idKey(ev.mob)
+  // WHOEVER'S CHARM IT IS, THE THING IS A MOB (JOS-430). Stated before the ownership branch because
+  // it is true of both arms: a name a charm broadcast has ever spoken is not a combatant the
+  // record-everything ladder may keep its own row for. `st.notePet` below would say it for YOUR
+  // charm; a stranger's would otherwise leave the row standing beside the ally-pet one.
+  st.retractOther(key, 'a charm broadcast named it')
   if (st.charm.charmBroadcast(key, ev.mob, ev.ts) === 'foreign') {
     ingestForeignCharm(st, ev, key)
     return
@@ -204,11 +216,9 @@ function ingestWorld(st: EngineState, ev: LogEvent): boolean {
       // damage is dropped (nothing to show), matching the empty-encounter drop rule.
       finalizeZoneSession(st)
       st.zone = ev.zone
-      st.zoneAgg = new Agg()
-      st.zoneFinalizedMs = 0
-      st.zoneActiveMs = 0
-      st.zoneStartTs = 0
-      st.zoneLastTs = 0
+      // The accumulator half of the boundary is shared with the SESSION MARK now (JOS-322) — see
+      // `resetZoneAccumulators`. Everything BELOW this line is the part a mark deliberately omits.
+      resetZoneAccumulators(st)
       // Charm cannot survive a zone transition, and hostile mobs don't follow —
       // both are retired. SUMMONED class pets DO persist across zones (real-log
       // verified), so world.zone() returns the survivors (summoned pets only) and we
@@ -230,7 +240,20 @@ function ingestWorld(st: EngineState, ev: LogEvent): boolean {
       ingestPetClaim(st, ev)
       return true
     case 'allyPetLeader':
+      // The speaker just named somebody its leader, which settles what it is whether or not the
+      // ally model goes on to bind it (JOS-430).
+      st.retractOther(idKey(ev.pet), `named ${ev.owner} its leader`)
       ingestAllyPetLeader(st, ev)
+      return true
+    case 'petSay':
+      // THE ENGINE CONSUMES `petSay` AGAIN, for one job and a different one (JOS-430). JOS-49 cut
+      // the question these six sentences used to answer — "is this one YOURS?" — and the note below
+      // still holds: a `says` line is broadcast and proves nothing about whose pet the speaker is.
+      // What it DOES prove is that the speaker is SOMEBODY's pet, which is exactly the fact the
+      // record-everything ladder cannot get any other way: EQ spells a summoned pet's name with the
+      // same grammar it gives people, so without this the strangers' pets in a raid keep rows of
+      // their own. Measured on the owner's whole log: it settles 8 names no other rung reaches.
+      st.retractOther(idKey(ev.name), `said a pet sentence (${ev.say})`)
       return true
     case 'uncharm': {
       // `Your <charm spell> spell has worn off of <mob>` — only the CASTER sees this, so it is
@@ -324,7 +347,9 @@ function damageOrigin(st: EngineState, ev: DamageEvent): SpellOrigin | null {
   if (!procEligibleDamage(ev.dtype, ev.skill)) return null
   if (idKey(ev.attacker) !== 'you') return null
   if (verdict(st, ev).kind !== 'out-you') return null
-  return st.recentCasts.origin(ev.skill, ev.ts)
+  // The cast ledger answers cast-or-not; the held-clicky set is what turns a `proc` verdict into
+  // a `click` one (JOS-438). Empty set ⇒ identity, so this line changes nothing without a dump.
+  return castlessKind(st.recentCasts.origin(ev.skill, ev.ts), ev.skill, st.heldClickies)
 }
 
 /**
@@ -348,7 +373,10 @@ function damageAnalytics(ev: DamageEvent, at: Attribution, origin: SpellOrigin |
   // the same `mine: false` branch the pet does and moves no proc counter.
   if (at.kind !== 'out-you') return { mine: false, swing: 0, proc: false }
   const swing = ev.category === 'melee' || ev.category === 'slay' ? 1 : 0
-  return { mine: true, swing, proc: origin === 'proc' }
+  // A CLICK IS A CAST-LESS FIRING TOO (JOS-438), so it still folds a lane — `procDamage` and the
+  // Tier-B windows keep counting the damage an item effect delivered, which is what they are for.
+  // What changes is the LANE it lands in, and `foldDamageAnalytics` carries the marker there.
+  return { mine: true, swing, proc: origin === 'proc' || origin === 'click' }
 }
 
 /**
@@ -398,7 +426,12 @@ function foldDamageAnalytics(st: EngineState, f: DamageFold): void {
     agg.windows.fold(fold, active)
     agg.procs.addActiveMs(activeDeltaMs, active)
     if (a.swing) agg.procs.addSwing(active)
-    if (a.proc) agg.procs.addSpellProc({ spell: ev.skill, side: 'damage', amount: ev.amount, active })
+    if (a.proc) {
+      agg.procs.addSpellProc({
+        spell: ev.skill, side: 'damage', amount: ev.amount, active,
+        ...(f.origin === 'click' ? { click: true as const } : {})
+      })
+    }
   })
   if (p) p.leave()
 }
@@ -412,10 +445,13 @@ function foldHealAnalytics(st: EngineState, ev: HealEvent): void {
   const spell = ev.spell
   if (!spell || idKey(ev.healer ?? '') !== 'you') return
   if (!isCastlessHeal(st.recentCasts, { spell, ts: ev.ts, overTime: ev.overTime === true, quickBuffTs: st.quickBuffTs })) return
+  // The gate above has already reached `proc`; the held set is what promotes it (JOS-438). A
+  // clicky heal (Stein of Moggok's Light Healing) is the same shape as the damage side.
+  const click = castlessKind('proc', spell, st.heldClickies) === 'click'
   const p = st.probe
   if (p) p.enter(SEC_ANALYTICS)
   foldBoth(st, ev.ts, (agg, active) => {
-    agg.procs.addSpellProc({ spell, side: 'heal', amount: ev.amount, active })
+    agg.procs.addSpellProc({ spell, side: 'heal', amount: ev.amount, active, ...(click ? { click: true as const } : {}) })
   })
   if (p) p.leave()
 }

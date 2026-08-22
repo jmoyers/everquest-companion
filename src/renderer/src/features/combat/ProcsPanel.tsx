@@ -22,13 +22,12 @@
 
 import { Box, Stack, Typography } from '@mui/material'
 import type { SegmentView } from '@shared/combat'
-import { CAT_COLOR, CopyButton, DashCard, QuietNote } from './combatShared'
+import { CopyButton, DashCard, QuietNote } from './combatShared'
 import { formatProcsText } from './copyText'
-import { MARKER_COLOR } from './markerStyle'
+// Lane hues, by origin — ONE table, shared with the drill row's tag, so a lane means one thing
+// app-wide (JOS-438 gave `click` a hue of its own and that table a single home).
+import { ORIGIN_COLOR } from './markerStyle'
 import { procListRows, procSummary, type ProcListRow } from './procRows'
-
-/** Lane hues, by origin — the same three the charts use, so a lane means one thing app-wide. */
-const ORIGIN_COLOR = { poison: MARKER_COLOR.coat, spell: CAT_COLOR.spell, slay: CAT_COLOR.slay }
 
 /** `Smiting Strike ······ 4.0 ppm  ×214`. The count is exact; the rate may be an honest dash. */
 function ProcRow({ row }: { row: ProcListRow }): React.JSX.Element {

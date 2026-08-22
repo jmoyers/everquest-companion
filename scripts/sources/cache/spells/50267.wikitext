@@ -33,6 +33,7 @@
 | items_with_effect = 
 
 <ul><li> {{:Lodizal Shell Boots}}
+</li><li> {{:Turtle's Drink}}
 </li></ul>
 
 | where_to_obtain = 

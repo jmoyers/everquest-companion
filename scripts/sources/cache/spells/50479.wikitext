@@ -2,7 +2,7 @@
 
 | spellname = Inferno Shock
 | spellicon = O
-| description = Surrounds your target in an inferno, causing between 550 and 600 damage.
+| description = Surrounds your target in an inferno, causing between 430 and 600 damage.
 
 | Table = {{{Table|0}}}
 | TableLevel = {{{TableLevel|}}}

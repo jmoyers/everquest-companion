@@ -74,10 +74,16 @@ function primaryWorkArea(): Rect | null {
  * Where a kind's overlay window belongs RIGHT NOW, given the bounds the user last left it at.
  *
  * `stored` that is still fully on a screen comes back unchanged — the overwhelmingly common case,
- * and the one that must cost nothing. `stored` that is partly or wholly off screen is fitted, and
- * a rectangle on no display at all falls back to that kind's reserved first-open dock slot on the
- * primary display: the same bottom-right stack a fresh install gets, so a recovered overlay lands
- * somewhere the user already knows to look and never on top of another kind.
+ * and the one that must cost nothing. So does one that hangs off an edge by no more than the fit's
+ * slack (JOS-433: a meter parked along the bottom of the screen is a placement, not a defect).
+ * `stored` that is substantially off screen is fitted, and a rectangle on no display at all falls
+ * back to that kind's reserved first-open dock slot on the primary display: the same bottom-right
+ * stack a fresh install gets, so a recovered overlay lands somewhere the user already knows to look
+ * and never on top of another kind.
+ *
+ * THE FIT'S DEFAULTS ARE THE OVERLAY'S DEFAULTS — an always-on-top overlay is drawn over the
+ * taskbar by design, so a correction that has to move one stops at the physical screen edge rather
+ * than above the taskbar. `mainWindowBounds` below asks for the other answer, and says why.
  *
  * `null` means there is no display information to place against. Callers keep whatever they have.
  */
@@ -116,10 +122,16 @@ export function workAreaFor(rect: Rect): Rect | null {
  * `undefined` in, `undefined` out — a fresh install has no remembered bounds and its first launch
  * is placed by the OS exactly as it always was. This function never invents a position for a window
  * that never had one.
+ *
+ * AND IT CLAMPS INTO THE WORK AREA, WHERE AN OVERLAY CLAMPS INTO THE SCREEN (JOS-433). The slack
+ * band is shared — a main window somebody left flush with the bottom of their screen has exactly
+ * the same right not to be hauled upward on every launch — but the two windows differ in the one
+ * case where a rectangle really has to be MOVED: this one is an ordinary framed window that belongs
+ * beside the taskbar, not under it. Same distinction, same reason, as `displayWorkAreas` above.
  */
 export function mainWindowBounds(stored?: Rect): Rect | undefined {
   if (!stored) return undefined
-  const fitted = fitToDisplays(stored, displayAreas())
+  const fitted = fitToDisplays(stored, displayAreas(), { clampTo: 'workArea' })
   if (fitted) return fitted
   const workArea = primaryWorkArea()
   const size: Size = { width: stored.width, height: stored.height }

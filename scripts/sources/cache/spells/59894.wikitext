@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Healing Potion I
+| spellicon =
+| description = Heals you for between 9 and 12 hit points.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Divine Healing I]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Divine Healing I}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Current HP by 10 (Random: 9 to 12) }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = Instant
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your wounds heal.
+| msg_cast_on_other = Someone  drinks a healing potion.
+| msg_wears_off = 
+}}

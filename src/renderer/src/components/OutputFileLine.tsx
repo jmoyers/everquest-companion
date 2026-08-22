@@ -112,6 +112,33 @@ function Stamp({
 }
 
 /**
+ * ONE CONTROL ON THE ROW, in the row's own voice — a text button wearing the chrome the caller
+ * picked, and nothing else.
+ *
+ * The row has two of these since JOS-431 (re-read the dump, show the steps) and they are the same
+ * rendering with a different word, so they are one component for the reason `Stamp` above is one:
+ * two near-identical eight-line blocks in the tree are two things to keep in step and one more
+ * thing to diff by eye.
+ */
+function Control({
+  label,
+  onClick,
+  sx,
+  testId
+}: {
+  label: string
+  onClick: () => void
+  sx: SxProps<Theme>
+  testId: string | undefined
+}): JSX.Element {
+  return (
+    <Button size="small" variant="text" onClick={onClick} data-testid={testId} sx={sx}>
+      {label}
+    </Button>
+  )
+}
+
+/**
  * THE TWO WEIGHTS THIS LINE COMES IN, as data rather than as branches in the render (JOS-268).
  *
  * Everything that differs between the loud line and the quiet one is a style, so it lives here and
@@ -228,6 +255,20 @@ export interface OutputFileLineProps {
    * is ABOUT the dump leaves it off; a surface where the dump is a detail turns it on.
    */
   quiet?: boolean
+  /**
+   * RE-READ THE DUMP NOW (JOS-431). Optional, and it is a HANDLE rather than a promise: a surface
+   * that can ask its own consumer to re-read passes one, and everything else renders the line it
+   * always rendered.
+   *
+   * Why the line is the right home for it. The app follows the file by itself and the button
+   * JOS-268 removed was the wrong shape of answer (it was `disabled` on the default source and
+   * could only redo what had already happened) — but "by itself" is a claim, and when it misses
+   * one the player is left with a stale number and nothing to press. The reporter asked for
+   * exactly this, in these words: "is there a way to refresh". It rides in the row that already
+   * states the two instants, in the same quiet voice as the `How` toggle beside it, so the answer
+   * and the evidence that it worked are the same three inches of screen.
+   */
+  onRefresh?: () => void
   testId?: string
 }
 
@@ -238,6 +279,7 @@ export default function OutputFileLine({
   steps = [],
   loadedAt,
   quiet = false,
+  onRefresh,
   testId
 }: OutputFileLineProps): JSX.Element {
   const [now, setNow] = useState(() => Date.now())
@@ -279,18 +321,23 @@ export default function OutputFileLine({
           </Typography>
         )}
         <Box sx={{ flexGrow: 1, minWidth: 8 }} />
+        {/* THE MANUAL RE-READ (JOS-431), in the SAME chrome as the steps toggle beside it — one
+            more quiet word on a row of quiet words, never a button with a card around it. It is
+            first in the control group because it is the one a player arrives at this line looking
+            for, and the two stamps to its right are the receipt: press it and "loaded 4d ago"
+            becomes "loaded just now", in place, with no toast to read and dismiss. */}
+        {onRefresh !== undefined && (
+          <Control label="Refresh" onClick={onRefresh} sx={chrome.toggle} testId={sub(testId, 'refresh')} />
+        )}
         {/* The steps toggle sits BEFORE the age and never shrinks: it is a control, and the
             why-clause remains the one group allowed to give up room (the compact-bar contract). */}
         {steps.length > 0 && (
-          <Button
-            size="small"
-            variant="text"
+          <Control
+            label={showSteps ? 'Hide steps' : 'How'}
             onClick={() => setShowSteps((v) => !v)}
-            data-testid={sub(testId, 'steps-toggle')}
             sx={chrome.toggle}
-          >
-            {showSteps ? 'Hide steps' : 'How'}
-          </Button>
+            testId={sub(testId, 'steps-toggle')}
+          />
         )}
         {/* The exact clock time is one hover away; the ambient text stays coarse (formatDate's
             own contract). This is the ONE place a tooltip is warranted here — it states the

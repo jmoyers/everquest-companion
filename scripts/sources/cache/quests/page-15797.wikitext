@@ -1,5 +1,5 @@
 :''For the overview of the many bone chips quests, see [[Bone Chips Quests]].''
-[[File:npc_hukulk.png|frame|Hukulk]]
+[[File:npc_hukulk.png|thumb|Hukulk]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Grobb]]

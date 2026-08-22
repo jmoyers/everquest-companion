@@ -1,4 +1,4 @@
-{{Temple Era}}
+{{Classic Era}}
 [[File:npc_vira.png|frame|Vira]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
@@ -8,7 +8,7 @@
 | [[Vira]]
 |-
 ! ''' Minimum Level: '''
-| 33
+| 20s
 |-
 ! ''' Classes: '''
 | [[Magician]]
@@ -28,8 +28,6 @@
 == Walkthrough ==
 
 Vira may be found on the balcony to the left, at +410, +85. 
-
-
 
 You say, 'Hail, [[Vira]]'
 

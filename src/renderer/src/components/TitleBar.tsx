@@ -397,7 +397,11 @@ export default function TitleBar({
       {/* Drag spacer between brand and the right-hand controls. */}
       <Box sx={{ flexGrow: 1 }} />
 
-      {live && <CircleIcon sx={{ fontSize: 12, color: 'success.main' }} />}
+      {/* The live dot. It means exactly "a module delta has arrived since the last rebuild" — see
+          JOS-432's characterization, which is why it can be dark on a perfectly healthy app whose
+          log is simply quiet. The testid is how `log-switch-nudge.e2e.mts` asserts that a switch
+          taken from the nudge really did light it on the new character's next line. */}
+      {live && <CircleIcon data-testid="live-dot" sx={{ fontSize: 12, color: 'success.main' }} />}
 
       {/* The performance HUD (docs/plans/perf-profiling.md P3). Renders NOTHING at all unless
           the user turned it on in Preferences → Performance — no placeholder, no reserved slot,

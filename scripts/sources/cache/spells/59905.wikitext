@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Illusion: Froglok
+| spellicon =
+| description = Cloaks you in a shimmering illusion that makes you appear to be a Froglok.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Essence of Froglok]].
+
+| items_with_effect =
+
+<ul><li> {{:Essence of Froglok}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Illusion: Froglok Ghoul }}
+
+| skill =
+| mana = 10
+| range = 0
+| casting_time = 3.00
+| fizzle_time = 0.00
+| recast_time = 6.00
+| duration = 36 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You have a sudden desire to Froak.
+| msg_cast_on_other = Someone's image shimmers.
+| msg_wears_off = Your illusion fades.
+}}

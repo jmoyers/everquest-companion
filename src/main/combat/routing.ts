@@ -15,6 +15,16 @@ import { baseLaneName } from './procDetect'
 // calls below are the only places it touches this file, and every one of them sits on a line the
 // meter was already dropping. See allyRouting.ts for what it may and may not do.
 import { noteAllyPetEvidence, routeAllyPetDamage, routeAllyPetMiss } from './allyRouting'
+// EVERY OTHER COMBATANT THE LOG NAMES (JOS-430). Same relationship as allyRouting above: the three
+// route* calls below sit on lines this file was already dropping, plus the ONE gate `classify()`
+// asks and the ONE evidence hook the incoming path feeds. Nothing your rows read is touched.
+import {
+  noteOtherHostile,
+  otherSource,
+  routeOtherDamage,
+  routeOtherMiss,
+  routeOtherResist
+} from './otherRouting'
 import { ACTIVE_MS, type Encounter } from './encounter'
 import type { DamageEvent, MissFold, SourceRef } from './aggregate'
 import type { HealAccum, HealInput } from './healing'
@@ -38,12 +48,27 @@ export type Attribution =
   | { kind: 'ignore' }
 
 /**
- * THE ADMISSION GATE. Everything the combat model books passes through here, which is why the
- * reported "my group-mate is missing from the meter" bug was a one-line decision rather than a
+ * THE ATTRIBUTION DECISION. Everything the combat model books passes through here, which is why
+ * the reported "my group-mate is missing from the meter" bug was a one-line decision rather than a
  * parse failure: a slice replay proved every damage-shaped line parses (0 unmatched shapes) and
- * the group member still appeared in ZERO fights, because the last rule below used to be
+ * the group member still appeared in ZERO fights, because the last rule here used to be
  * "attacker not you/pet, target not you → ignore" and 2,224 parsed events fell through it
  * (docs/plans/group-model.md §3.5).
+ *
+ * IT IS NO LONGER THE ADMISSION GATE, AND THAT IS THE JOS-430 CHANGE (owner ruling 2026-08-20:
+ * "Everyone" means ANY fight the log can see). Recording used to end here: a name the roster had
+ * not admitted fell through the last rule, so an empty roster snapshot recorded nobody and no scope
+ * could show what nothing had recorded. The `'ignore'` verdict is now an OFFER rather than a
+ * disposal — `route()` hands the line to the record-everything ladder (otherRouting.ts) and then to
+ * the ally-pet model before dropping it, exactly as JOS-250 did before it.
+ *
+ * THIS FUNCTION IS DELIBERATELY UNTOUCHED BY EITHER FEATURE. It is pure, it is called three times
+ * per line (the damage, miss and resist probes), and its four membership sets are the ones that
+ * decide YOUR rows; a fold that also asked "…and if not, whose is it?" would be paying for the
+ * answer three times and mixing two questions in one place. So the roster's remaining jobs are the
+ * ENGAGEMENT LICENCE below and the Group scope, neither of which can move a number — which is what
+ * finally makes the group-model doc's promise ("a wrong roster can hide a row but never corrupt a
+ * number") true rather than aspirational.
  *
  * `petNames` is a Set of canonical (lowercased) keys for ALL of your live pets, charmed AND
  * summoned: both attribute identically (as "your pet"), so this function never needs to know
@@ -98,15 +123,15 @@ export function classify(
   // attributes as your pet.
   if (members.has(aKey)) return memberAttacker(ev, sides)
   if (sides.bYou) return { kind: 'incoming' }
-  // Attacker not friendly, target not you. If the target is a pet or a group member, this is a
-  // mob hitting one of ours — deliberately NOT tracked as our incoming (existing behavior for
-  // pets; docs/plans/group-model.md §3.5 defers "what is hitting my group" to a later wave).
+  // Attacker not one of ours, target not you. THIS IS THE LINE THE METER USED TO DROP ON THE FLOOR,
+  // and `'ignore'` is no longer where it ends: `route()` offers it to the record-everything ladder
+  // (JOS-430) and then to the ally-pet model (JOS-250) before anything is actually discarded.
   return { kind: 'ignore' }
 }
 
 /**
- * `classify` AS THE ENGINE ASKS IT — the pure decision above, fed the three live membership sets
- * off the state object, and charged to the bench's `classify` section when a probe is attached
+ * `classify` AS THE ENGINE ASKS IT — the pure decision above, fed the live membership sets off the
+ * state object, and charged to the bench's `classify` section when a probe is attached
  * (foldProbe.ts). Every caller inside the engine goes through here, so the attribution row in the
  * sub-table is the whole of the engine's attribution cost and not a sample of it.
  */
@@ -160,20 +185,14 @@ function outKind(at: Attribution): OutKind {
  * name, kind) triple the damage, miss and resist paths all need and all resolved
  * identically. A pet is resolved to its pet INSTANCE so twin pets stay distinct.
  *
- * A GROUP MEMBER IS KEYED BY NAME, NOT BY INSTANCE, and that is a deliberate departure from the
- * pet rule. Instance discipline exists to tell same-named entities apart in a world of spawning
- * mobs; a group member is a player with a unique account name and no spawn generation. More to
- * the point, `world.resolve()` MINTS a world instance, and minting one for a friendly is
- * precisely what Task #65's hard-won discipline forbids — a player-shaped instance can be
- * engaged, retired, aged out and counted as a hostile presence. Keying on the canonical name
- * gives one stable row per member and touches the world model not at all.
+ * A GROUP MEMBER IS KEYED BY NAME, NOT BY INSTANCE — the argument, and the `member:<key>` id it
+ * produces, now live in `otherRouting.otherSource`, because a group member and a combatant the
+ * roster has not learned yet share exactly one row and must therefore share exactly one row
+ * builder.
  */
 function outSource(st: EngineState, attacker: string, kind: OutKind, ts: number): SourceRef {
   if (kind === 'you') return { id: 'you', name: 'You', kind: 'you' satisfies SourceKind }
-  if (kind === 'member') {
-    const key = idKey(attacker)
-    return { id: `member:${key}`, name: st.roster().nameOf(key) ?? attacker, kind: 'member' }
-  }
+  if (kind === 'member') return otherSource(st, attacker, idKey(attacker), true)
   const petInst = st.world.petInstance(attacker) ?? st.world.resolve(attacker, ts, true)
   return { id: `pet:${petInst.instanceId}`, name: st.world.label(petInst), kind: 'pet' }
 }
@@ -322,11 +341,16 @@ export function route(st: EngineState, ev: DamageEvent): Attribution | null {
   // proof there is (JOS-250). Reading the evidence off every line is what keeps the two cases from
   // needing two rules.
   noteAllyPetEvidence(st, ev.attacker, ev.target, ev.ts)
+  // …and the same line, read for the other model: something that LANDED DAMAGE ON YOU is a hostile,
+  // whatever its name looks like (JOS-430, otherRouting.noteOtherHostile carries the measurement).
+  if (at.kind === 'incoming') noteOtherHostile(st, ev.attacker)
   if (at.kind === 'ignore') {
-    // …and the mob-vs-mob lines the meter has always dropped are where a THIRD PARTY's charm pet
-    // finally has a row. Only while bound and unambiguous; everything else stays dropped exactly
-    // as it was.
-    routeAllyPetDamage(st, ev)
+    // THE LINE THE METER USED TO DROP, offered to the two models that read it (JOS-430 first, then
+    // JOS-250): a combatant the log named hitting something that is not on our side, and then a
+    // THIRD PARTY's charm pet while its bind is live and unambiguous. Both book aggregate-only —
+    // see otherRouting.ts for every side effect they deliberately do not have, and why. Everything
+    // neither claims stays dropped exactly as it was.
+    if (!routeOtherDamage(st, ev)) routeAllyPetDamage(st, ev)
     return at
   }
 
@@ -431,7 +455,11 @@ export function routeMiss(st: EngineState, ev: MissEvent): void {
   // pet's swing at a friendly proves the break whether or not it connected (JOS-250).
   noteAllyPetEvidence(st, attacker, target, ts)
   if (at.kind === 'ignore') {
-    routeAllyPetMiss(st, ev, missFold(st, ev, false))
+    // The same two offers the damage path makes, in the same order. NO hostile-evidence read on
+    // the incoming side here: the "it hit YOU" rung was measured on LANDED damage
+    // (otherCombatants.ts), and a swing that connected with nothing is not what was measured.
+    const fold = missFold(st, ev, false)
+    if (!routeOtherMiss(st, ev, fold)) routeAllyPetMiss(st, ev, fold)
     return
   }
   const fold = missFold(st, ev, at.kind === 'out-you')
@@ -546,6 +574,9 @@ export function routeResist(st: EngineState, ev: ResistEvent): void {
 
   const kind = resistCaster(st, idKey(caster))
   if (kind === null) {
+    // A resisted cast by a combatant the log named — the same widening the damage path got
+    // (JOS-430), asked of the CASTER because a resist has no attacker/defender pair to classify.
+    if (routeOtherResist(st, { ts, caster, target, spell, category })) return
     // A hostile mob's spell resisted by another mob — out of scope for the meter.
     st.log(ts, 'resist', 'dropped', `${caster}'s ${spell} resisted by ${target}`)
     return

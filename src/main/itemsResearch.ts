@@ -32,9 +32,12 @@
 // THE FOUR TABLES THE FILE CARRIES TODAY (JOS-25 + JOS-64 + JOS-67, the non-gated halves of
 // planner-v2 §4):
 //
-//   * gmEvent × 10 — swept out of the item corpus's own `|notes` prose (`summary`) and the
-//     `|gmitem` template param. Every one of the ten states a GM hand-out AND names no drop
-//     source, quest or recipe anywhere on its page, so "unfarmable" is the page's whole story.
+//   * gmEvent × 9 — swept out of the item corpus's own `|notes` prose (`summary`) and the
+//     `|gmitem` template param. Every one states a GM hand-out AND names no drop source, quest
+//     or recipe anywhere on its page, so "unfarmable" is the page's whole story. (Was × 10:
+//     `essence of gukta` was RETIRED by the 2026-08-22 rescrape — the wiki rebuilt the page as
+//     "Essence of Gukta (Wormwood)", player-crafted, in the Protectors of Gukta content wave,
+//     and the GM-event prose is gone, so the entry had stopped describing anything.)
 //     Five pages whose prose is hedged or contradicted were DELIBERATELY ABSENT at JOS-25 —
 //     the loudest is `Dabner's Staff of Recall`, which carries `|gmitem` and a real `|dropsfrom`
 //     mob in the same template. A GM hand-out beside a live drop is not "unfarmable", and

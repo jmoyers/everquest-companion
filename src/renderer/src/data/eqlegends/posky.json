@@ -1,5 +1,5 @@
 {
-  "scrapedAt": "2026-08-02T07:20:14.128Z",
+  "scrapedAt": "2026-08-22T19:49:15.706Z",
   "quests": [
     {
       "className": "Bard",
@@ -37,7 +37,7 @@
       "giver": "Cilin Spellsinger",
       "rune": "Wind Rune Kala",
       "reward": "Mantle of the Songweaver",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nCharges: 5\nAC: 9\nSTR: +7 DEX: +7 CHA: +5 AGI: +5\nSV MAGIC: +5\nEffect: Fury (Must Equip, Casting Time: Instant) at Level 45\nWT: 2.5 Size: SMALL\nClass: BRD\nRace: ALL\nPost-upgrade Plane of Sky quest reward. Previous version: Songweaver's Mantle",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 9\nSTR: +7 DEX: +7 CHA: +5 AGI: +5\nSV MAGIC: +5\nEffect: Fury (Must Equip, Casting Time: Instant, Cooldown: 120s) at Level 45\nWT: 2.5 Size: SMALL\nClass: BRD\nRace: ALL\nPost-upgrade Plane of Sky quest reward. Previous version: Songweaver's Mantle",
       "rewardPage": "Mantle of the Songweaver",
       "items": [
         {
@@ -48,7 +48,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Light Woolen Mantle",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 5\nHP: +10\nWT: 0.5 Size: SMALL\nClass: BRD\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 5\nHP: 10\nWT: 0.5 Size: SMALL\nClass: BRD\nRace: ALL"
         },
         {
           "name": "Wind Rune Kala",
@@ -78,7 +78,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Crude Wooden Flute",
-          "stats": "LORE ITEM NO DROP\nSlot: PRIMARY\nWind Resonance: 0\nWT: 0.1 Size: SMALL\nClass: BRD\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: Primary Secondary\nWT: 0.1 Size: SMALL\nClass: BRD\nRace: ALLFocus Effect: Wind Resonance 8"
         },
         {
           "name": "Wind Rune Azia",
@@ -127,7 +127,7 @@
       "giver": "Cilin Spellsinger",
       "rune": "Wind Rune Fana",
       "reward": "Denon's Horn of Disaster",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nBrass Resonance: 14\nSTR: +5 CHA: +10 INT: +5 HP: +50\nWT: 2.0 Size: MEDIUM\nClass: BRD\nRace: ALL\nItem Lore : Denon's Horn of Disaster",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nBrass Resonance: 15\nSTR: +5 CHA: +10 INT: +5 HP: +50\nWT: 2.0 Size: MEDIUM\nClass: BRD\nRace: ALL\nItem Lore : Denon's Horn of Disaster",
       "rewardPage": "Denon's Horn of Disaster",
       "items": [
         {
@@ -146,7 +146,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Horn",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nBrass Resonance: 12\nWT: 5.0 Size: MEDIUM\nClass: BRD\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary Secondary\nWT: 5.0 Size: MEDIUM\nClass: ALL\nRace: ALLFocus Effect: Brass Resonance: 13\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Fana",
@@ -164,9 +164,9 @@
       "name": "Bard Test of Harmony",
       "giver": "Cilin Spellsinger",
       "rune": "Wind Rune Heda",
-      "reward": "Harmonic Spear",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: Piercing Atk Delay: 21\nDMG: 10\nSTR: +5 DEX: +5 CHA: +5\nEffect: Chant of Battle (Combat, Casting Time: Instant) at Level 45\nWT: 3.5 Size: MEDIUM\nClass: BRD\nRace: ALL",
-      "rewardPage": "Harmonic Spear",
+      "reward": "Spear of Harmony",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: Piercing Atk Delay: 21\nDMG: 12\nSTR: +5 DEX: +5 CHA: +5\nEffect: Chant of Battle (Combat, Casting Time: Instant) at Level 45\nWT: 3.5 Size: MEDIUM\nClass: BRD\nRace: ALL",
+      "rewardPage": "Spear of Harmony",
       "items": [
         {
           "name": "Nebulous Diamond",
@@ -243,7 +243,8 @@
           ],
           "where": "Island 2",
           "count": 1,
-          "page": "Azarack Skin (page does not exist)"
+          "page": "Azarack Skin",
+          "stats": "No Trade, Quest\nWT: 0.5 Size: SMALL\nClass: BST\nRace: ALL\nThis item can be used in tradeskills\nThis item can be used in tradeskills."
         },
         {
           "name": "Wind Rune Heda",
@@ -262,7 +263,7 @@
       "giver": "Animist Kratho",
       "rune": "Wind Rune Izah",
       "reward": "Windhowl",
-      "rewardStats": "No Trade\nSlot: Primary\nSkill: Hand to Hand Atk Delay: 22\nDMG: 12\nHP: +55 End: +25\nSTR: +4 DEX: +4\nEffect: Herikol's Soothing (Combat, Casting Time: Instant) at Level 46\nWT: 0.1 Size: Tiny\nClass: BST\nRace: ALL\nCustom EQL Plane of Sky reward.",
+      "rewardStats": "Lore Equipped, No Trade\nSlot: Primary\nSkill: Hand to Hand Atk Delay: 22\nDMG: 12\nDmg Bon: 10\nHP: +50 End: +25\nSTR: +4 DEX: +4\nEffect: Herikol's Soothing (Combat, Casting Time: Instant) at Level 46\nWT: 0.1 Size: Tiny\nClass: BST\nRace: ALL\nItem Lore : Windshriek",
       "rewardPage": "Windhowl",
       "items": [
         {
@@ -273,7 +274,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Sphinx Claw",
-          "stats": "LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: 1H Slashing Atk Delay: 20\nDMG: 12\nWT: 2.0 Size: MEDIUM\nClass: PAL\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: PRIMARY\nSkill: 1H Slashing Atk Delay: 20\nDMG: 12\nDmg Bon: 10\nWT: 2.0 Size: MEDIUM\nClass: PAL BST\nRace: ALL"
         },
         {
           "name": "Mithril Bands",
@@ -283,7 +284,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Mithril Bands",
-          "stats": "LORE ITEM NO DROP\nWT: 12.0 Size: LARGE\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 12.0 Size: LARGE\nClass: CLR BST\nRace: ALL"
         },
         {
           "name": "Brass Knuckles",
@@ -291,7 +292,7 @@
           "where": "",
           "count": 1,
           "page": "Brass Knuckles",
-          "stats": "Slot: PRIMARY SECONDARY\nSkill: 1H Blunt Atk Delay: 25\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: WAR MNK\nRace: ALL\nDespite being a weapon, this item is stackable."
+          "stats": "No Trade, Quest, Placeable\nSlot: PRIMARY SECONDARY\nSkill: 1H Blunt Atk Delay: 25\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: WAR MNK\nRace: ALL\nDespite being a weapon, this item is stackable."
         },
         {
           "name": "Wind Rune Izah",
@@ -321,7 +322,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Leather Cord",
-          "stats": "NO DROP\nWT: 1.0 Size: SMALL\nClass: NONE\nRace: NONE"
+          "stats": "No Trade, Quest\nWT: 3.0 Size: MEDIUM\nClass: SHM BST\nRace: ALL"
         },
         {
           "name": "Wind Rune Kala",
@@ -389,7 +390,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Standard",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: SECONDARY\nSkill: 1H Blunt Atk Delay: 10\nDMG: 3\nWT: 10.0 Size: LARGE\nClass: WAR CLR PAL RNG SHD DRU MNK BRD ROG SHM NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Secondary\nSkill: 1H Blunt Atk Delay: 10\nDMG: 3\nDmg Bon: 5\nWT: 10.0 Size: LARGE\nClass: WAR CLR PAL RNG SHD DRU MNK BRD ROG SHM NEC WIZ MAG ENC\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Jaka",
@@ -449,7 +450,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "High Quality Raiment",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 6\nINT: +2 AGI: +2\nSV MAGIC: +3\nWT: 15.0 Size: LARGE\nClass: WIZ\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 6\nINT: +2 AGI: +2\nSV MAGIC: +3\nWT: 15.0 Size: LARGE\nClass: WIZ BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Ozah",
@@ -479,7 +480,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Feathered Cape",
-          "stats": "LORE ITEM NO DROP\nSlot: BACK\nAC: 4\nINT: +3 MANA: +10\nWT: 0.5 Size: SMALL\nClass: MAG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Back\nAC: 4\nINT: +3 MANA: +10\nWT: 0.5 Size: SMALL\nClass: MAG BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Azia",
@@ -508,7 +509,8 @@
           ],
           "where": "Island 2",
           "count": 1,
-          "page": "Azarack Blood (page does not exist)"
+          "page": "Azarack Blood",
+          "stats": "?\nAzarack Blood\nNo Trade, Quest\nWT: 0.5 Size: SMALL\nClass: BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Lena",
@@ -527,7 +529,7 @@
       "giver": "Stragen The Hewer",
       "rune": "Wind Rune Dena",
       "reward": "Cudgel of the Fool",
-      "rewardStats": "LORE ITEM NO TRADE\nSlot: PRIMARY\nSkill: 2H Blunt Atk Delay: 52\nDMG: 45 Dmg Bonus: 40\nINT: -7\nEffect: Fury of the Chosen (Combat)\nWT: 5.7 Size: GIANT\nClass: BER\nRace: ALL",
+      "rewardStats": "LORE ITEM NO TRADE\nSlot: PRIMARY\nSkill: 2H Blunt Atk Delay: 52\nDMG: 45\nINT: -10 END: +100\nEffect: Fury of the Chosen (Combat)\nWT: 8.0 Size: GIANT\nClass: BER\nRace: ALL\nItem Lore : Madman's Judgement",
       "rewardPage": "Cudgel of the Fool",
       "items": [
         {
@@ -538,7 +540,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Jester's Mask",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FACE\nAC: 5\nAGI: +2\nWT: 15.0 Size: LARGE\nClass: ROG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Face\nAC: 5\nAGI: +2\nWT: 15.0 Size: LARGE\nClass: ROG BER\nRace: ALL"
         },
         {
           "name": "Efreeti Great Staff",
@@ -606,7 +608,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Small Shield",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SECONDARY\nAC: 15\nWIS: +4\nWT: 2.5 Size: SMALL\nClass: CLR\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Secondary\nAC: 15\nWIS: +4\nWT: 2.5 Size: SMALL\nClass: CLR\nRace: ALL"
         },
         {
           "name": "Wind Rune Meda",
@@ -636,7 +638,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Shiny Pauldrons",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 10\nWT: 9.0 Size: MEDIUM\nClass: CLR\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 10\nWT: 9.0 Size: MEDIUM\nClass: CLR\nRace: ALL"
         },
         {
           "name": "Wind Rune Caza",
@@ -704,7 +706,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Mace",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 1H Blunt Atk Delay: 30\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: ALL except DRU NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 1H Blunt Atk Delay: 30\nDMG: 10\nDmg Bon: 15\nWT: 1.0 Size: MEDIUM\nClass: WAR CLR PAL RNG SHD MNK BRD ROG SHM BST\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Kala",
@@ -734,7 +736,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Mithril Bands",
-          "stats": "LORE ITEM NO DROP\nWT: 12.0 Size: LARGE\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 12.0 Size: LARGE\nClass: CLR BST\nRace: ALL"
         },
         {
           "name": "Efreeti Standard",
@@ -742,7 +744,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Standard",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: SECONDARY\nSkill: 1H Blunt Atk Delay: 10\nDMG: 3\nWT: 10.0 Size: LARGE\nClass: WAR CLR PAL RNG SHD DRU MNK BRD ROG SHM NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Secondary\nSkill: 1H Blunt Atk Delay: 10\nDMG: 3\nDmg Bon: 5\nWT: 10.0 Size: LARGE\nClass: WAR CLR PAL RNG SHD DRU MNK BRD ROG SHM NEC WIZ MAG ENC\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Ena",
@@ -802,7 +804,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Mantle of Woven Grass",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 4\nWIS: +4 INT: +2\nWT: 2.0 Size: MEDIUM\nClass: DRU\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 4\nWIS: +4 INT: +2\nWT: 2.0 Size: MEDIUM\nClass: DRU\nRace: ALL"
         },
         {
           "name": "Wind Rune Kala",
@@ -832,7 +834,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Spiroc Battle Staff",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: 1H Blunt Atk Delay: 30\nDMG: 8\nWIS: +2 MANA: +10\nWT: 5.0 Size: MEDIUM\nClass: ALL except BRD ROG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: Primary\nSkill: 1H Blunt Atk Delay: 30\nDMG: 8\nDmg Bon: 15\nWIS: +2 MANA: +10\nWT: 5.0 Size: MEDIUM\nClass: DRU\nRace: ALL"
         },
         {
           "name": "Efreeti Statuette",
@@ -840,7 +842,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Statuette",
-          "stats": "LORE ITEM\nWT: 1.0 Size: SMALL\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 1.0 Size: SMALL\nClass: DRU WIZ\nRace: ALL"
         },
         {
           "name": "Wind Rune Azia",
@@ -900,7 +902,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Ethereal Ruby",
-          "stats": "LORE ITEM NO DROP\nWT: 1.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 1.0 Size: MEDIUM\nClass: DRU\nRace: ALL"
         },
         {
           "name": "Spiroc Elder's Totem",
@@ -1008,7 +1010,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Light Cloth Mantle",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 4\nSTA: +3 CHA: +3\nWT: 9.0 Size: LARGE\nClass: ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest\nSlot: Shoulders\nAC: 4\nSTA: 3 CHA: 3\nWT: 9.0 Size: LARGE\nClass: ENC\nRace: ALL"
         },
         {
           "name": "Wind Rune Ozah",
@@ -1053,11 +1055,11 @@
     },
     {
       "className": "Enchanter",
-      "name": "Enchanter Test of Disillusion",
+      "name": "Enchanter Test of Dislocation",
       "giver": "Enchanter Jolas",
       "rune": "Wind Rune Caza",
       "reward": "Earring of Displacement",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: EAR\nCharges: 2\nAC: 6\nCHA: +4 INT: +4 MANA: +25\nEffect: Gravity Flux (Must Equip, Casting Time: Instant) at Level 45\nWT: 0.1 Size: TINY\nClass: ENC\nRace: ALL",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: EAR\nAC: 6\nCHA: +4 INT: +4 MANA: +25\nEffect: Gravity Flux (Must Equip, Casting Time: Instant, Cooldown: 180 seconds) at Level 45\nWT: 0.1 Size: TINY\nClass: ENC\nRace: ALL",
       "rewardPage": "Earring of Displacement",
       "items": [
         {
@@ -1098,7 +1100,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Glowing Necklace",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: NECK\nAC: 2\nSV DISEASE: +5 SV POISON: +5\nWT: 1.0 Size: MEDIUM\nClass: ENC\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Neck\nAC: 2\nSV DISEASE: +5 SV POISON: +5\nWT: 1.0 Size: MEDIUM\nClass: ENC\nRace: ALL"
         },
         {
           "name": "Wind Rune Fana",
@@ -1136,7 +1138,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Wind Staff",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 2H Blunt Atk Delay: 36\nDMG: 12\nINT: +3\nWT: 15.0 Size: LARGE\nClass: CLR DRU SHM NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 2H Blunt Atk Delay: 36\nDMG: 12\nDmg Bon: 24\nINT: 3\nWT: 15.0 Size: LARGE\nClass: CLR DRU SHM NEC WIZ MAG ENC BST BER\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Izah",
@@ -1166,7 +1168,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Feathered Cape",
-          "stats": "LORE ITEM NO DROP\nSlot: BACK\nAC: 4\nINT: +3 MANA: +10\nWT: 0.5 Size: SMALL\nClass: MAG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Back\nAC: 4\nINT: +3 MANA: +10\nWT: 0.5 Size: SMALL\nClass: MAG BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Lena",
@@ -1196,7 +1198,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Ceramic Mask",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FACE\nAC: 4\nINT: +2\nWT: 1.0 Size: MEDIUM\nClass: MAG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Face\nAC: 4\nINT: +2\nWT: 1.0 Size: MEDIUM\nClass: MAG\nRace: ALL"
         },
         {
           "name": "Wind Rune Neza",
@@ -1316,7 +1318,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Hazy Opal",
-          "stats": "LORE ITEM NO DROP\nWT: 0.2 Size: SMALL\nClass: MAG\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 0.2 Size: SMALL\nClass: MAG\nRace: ALL"
         },
         {
           "name": "Efreeti Magi Staff",
@@ -1347,13 +1349,14 @@
       "rewardPage": "Staff of Elemental Mastery: Air",
       "items": [
         {
-          "name": "Crown Of Elemental Mastery",
+          "name": "Crown of Elemental Mastery",
           "who": [
             "Trash"
           ],
           "where": "Island 7",
           "count": 1,
-          "page": "Crown Of Elemental Mastery (page does not exist)"
+          "page": "Crown of Elemental Mastery",
+          "stats": "MAGIC ITEM LORE ITEM\nSlot: HEAD\nAC: 5\nINT: +5\nSV FIRE: +5 SV COLD: +5\nWT: 8.0 Size: MEDIUM\nClass: MAG\nRace: ALL"
         },
         {
           "name": "Large Opal",
@@ -1363,7 +1366,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Large Opal",
-          "stats": "LORE ITEM NO DROP\nWT: 8.0 Size: LARGE\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 8.0 Size: LARGE\nClass: MAG\nRace: ALL\nItem Lore : Mistshrouded Opal"
         },
         {
           "name": "Djinni Stave",
@@ -1373,7 +1376,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Djinni Stave",
-          "stats": "Unlike the majority of Staves in Norrath, this item appears as a bag.\nDjinni Stave\nMAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 1H Blunt Atk Delay: 19\nDMG: 5\nWT: 0.5 Size: SMALL\nClass: CLR DRU SHM NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: Primary\nSkill: 1H Blunt Atk Delay: 19\nDMG: 5\nDmg Bon: 9\nWT: 0.5 Size: SMALL\nClass: MAG\nRace: ALL"
         },
         {
           "name": "Wind Rune Heda",
@@ -1403,7 +1406,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Silken Strands",
-          "stats": "LORE ITEM NO DROP\nWT: 0.5 Size: SMALL\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 0.5 Size: SMALL\nClass: MNK\nRace: ALL"
         },
         {
           "name": "Wind Rune Caza",
@@ -1433,7 +1436,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Cracked Leather Eyepatch",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FACE\nAC: 2\nWT: 0.1 Size: SMALL\nClass: MNK\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Face\nAC: 2\nWT: 0.1 Size: SMALL\nClass: MNK\nRace: ALL"
         },
         {
           "name": "Wind Rune Geza",
@@ -1463,7 +1466,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Dove Slippers",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FEET\nAC: 2\nDEX: +3 AGI: +3\nWT: 0.2 Size: SMALL\nClass: MNK\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Feet\nAC: 2\nDEX: +3 AGI: +3\nWT: 0.2 Size: SMALL\nClass: MNK\nRace: ALL"
         },
         {
           "name": "Wind Rune Jaka",
@@ -1523,7 +1526,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Nebulous Sapphire",
-          "stats": "LORE ITEM NO DROP\nWT: 5.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 5.0 Size: MEDIUM\nClass: MNK\nRace: ALL"
         },
         {
           "name": "Brass Knuckles",
@@ -1531,7 +1534,7 @@
           "where": "",
           "count": 1,
           "page": "Brass Knuckles",
-          "stats": "Slot: PRIMARY SECONDARY\nSkill: 1H Blunt Atk Delay: 25\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: WAR MNK\nRace: ALL\nDespite being a weapon, this item is stackable."
+          "stats": "No Trade, Quest, Placeable\nSlot: PRIMARY SECONDARY\nSkill: 1H Blunt Atk Delay: 25\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: WAR MNK\nRace: ALL\nDespite being a weapon, this item is stackable."
         },
         {
           "name": "Wind Rune Neza",
@@ -1561,7 +1564,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Tear of Quellious",
-          "stats": "LORE ITEM NO DROP\nWT: 1.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 1.0 Size: MEDIUM\nClass: MNK\nRace: ALL"
         },
         {
           "name": "Wind Rune Lena",
@@ -1591,7 +1594,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Griffon's Beak",
-          "stats": "LORE ITEM NO DROP\nWT: 18.0 Size: LARGE\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 18.0 Size: LARGE\nClass: NEC\nRace: ALL"
         },
         {
           "name": "Wind Rune Lena",
@@ -1621,7 +1624,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Black Silk Cape",
-          "stats": "LORE ITEM NO DROP\nSlot: BACK\nAC: 3\nMANA: +10\nWT: 0.0 Size: TINY\nClass: NEC\nRace: ALL\nItem Lore : Black Silk Cape"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Back\nAC: 3\nMANA: 10\nSize: TINY\nClass: NEC\nRace: ALL"
         },
         {
           "name": "Wind Rune Neza",
@@ -1741,7 +1744,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Gorgon Head",
-          "stats": "LORE ITEM\nWT: 12.0 Size: LARGE\nClass: ALL\nRace: ALL"
+          "stats": "LORE ITEM NO DROP\nWT: 12.0 Size: LARGE\nClass: ALL\nRace: ALL"
         },
         {
           "name": "Efreeti Great Staff",
@@ -1779,7 +1782,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Ivory Sky Diamond",
-          "stats": "LORE ITEM NO DROP\nWT: 0.2 Size: SMALL\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 0.2 Size: SMALL\nClass: PAL\nRace: ALL"
         },
         {
           "name": "Wind Rune Lena",
@@ -1809,7 +1812,7 @@
           "where": "Island 6",
           "count": 1,
           "page": "Bixie Sword Blade",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: 1H Slashing Atk Delay: 16\nDMG: 2\nWT: 1.0 Size: MEDIUM\nClass: PAL\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: Primary\nSkill: 1H Slashing Atk Delay: 16\nDMG: 2\nDmg Bon: 7\nWT: 1.0 Size: MEDIUM\nClass: PAL\nRace: ALL"
         },
         {
           "name": "Wind Rune Ozah",
@@ -1847,7 +1850,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Sphinx Claw",
-          "stats": "LORE ITEM NO DROP\nSlot: PRIMARY\nSkill: 1H Slashing Atk Delay: 20\nDMG: 12\nWT: 2.0 Size: MEDIUM\nClass: PAL\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest, Placeable\nSlot: PRIMARY\nSkill: 1H Slashing Atk Delay: 20\nDMG: 12\nDmg Bon: 10\nWT: 2.0 Size: MEDIUM\nClass: PAL BST\nRace: ALL"
         },
         {
           "name": "Wind Rune Geza",
@@ -1885,7 +1888,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Zweihander",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 2H Slashing Atk Delay: 45\nDMG: 24\nWT: 0.1 Size: SMALL\nClass: WAR PAL RNG SHD\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 2H Slashing Atk Delay: 45\nDMG: 24\nDmg Bon: 30\nWT: 0.1 Size: SMALL\nClass: WAR PAL RNG SHD BER\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Izah",
@@ -1904,7 +1907,7 @@
       "giver": "Ranger Spirit",
       "rune": "Wind Rune Meda",
       "reward": "Griffon Talon Necklace",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: NECK\nAC: 4\nSTR: +4 STA: +4 WIS: +5\nSV FIRE: +5 SV COLD: +5\nWT: 0.1 Size: TINY\nClass: RNG\nRace: ALL",
+      "rewardStats": "Lore Equipped, No Trade\nSlot: Neck\nAC: 4\nSTR: +4 STA: +4 WIS: +5\nSV FIRE: +5 SV COLD: +5\nWT: 0.1 Size: TINY\nClass: RNG\nRace: ALL",
       "rewardPage": "Griffon Talon Necklace",
       "items": [
         {
@@ -2043,7 +2046,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Long Sword",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY SECONDARY\nSkill: 1H Slashing Atk Delay: 28\nDMG: 11\nWT: 0.1 Size: SMALL\nClass: WAR PAL RNG SHD BRD ROG\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary Secondary\nSkill: 1H Slashing Atk Delay: 28\nDMG: 11\nDmg Bon: 13\nWT: 0.1 Size: SMALL\nClass: WAR PAL RNG SHD BRD ROG\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Ena",
@@ -2062,7 +2065,7 @@
       "giver": "Ranger Spirit",
       "rune": "Wind Rune Heda",
       "reward": "Windstriker",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: RANGE\nSkill: Archery Atk Delay: 60\nDMG: 45\nSTR: +5 DEX: +5 AGI: +5 HP: +50\nEffect: Whirlwind (Combat, Casting Time: Instant) at Level 50\nWT: 4.0 Range: 200 Size: MEDIUM\nClass: RNG\nRace: ALL\n.",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: RANGE\nSkill: Archery Atk Delay: 60\nDMG: 45\nSTR: +5 DEX: +5 AGI: +5 HP: +50\nEffect: Whirlwind (Combat, Casting Time: Instant) at Level 50\nWT: 4.0 Range: 200 Size: MEDIUM\nClass: RNG\nRace: ALL",
       "rewardPage": "Windstriker",
       "items": [
         {
@@ -2081,7 +2084,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Bow",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: RANGE\nSkill: Archery Atk Delay: 100\nDMG: 40\nWT: 1.0 Range: 75 Size: MEDIUM\nClass: WAR RNG\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Range\nSkill: Archery Atk Delay: 100\nDMG: 40\nWT: 1.0 Range: 75 Size: MEDIUM\nClass: WAR RNG\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Heda",
@@ -2159,9 +2162,9 @@
       "name": "Rogue Test of Silence",
       "giver": "Thalik Silenthand",
       "rune": "Wind Rune Ena",
-      "reward": "Griffon Wing Spauldors",
-      "rewardStats": "Rechargeable in Box of the Void with a Mana Battery - Class Five will destroy box.\nGriffon Wing Spauldors\nMAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nCharges: 10\nAC: 9\nSTR: +6 DEX: +6 AGI: +4 HP: +30\nEffect: Levitate (Must Equip, Casting Time: Instant) at Level 45\nWT: 2.5 Size: SMALL\nClass: ROG\nRace: ALL",
-      "rewardPage": "Griffon Wing Spauldors",
+      "reward": "Griffon Wing Spaulders",
+      "rewardStats": "Lore Equipped, No Trade\nSlot: SHOULDERS\nAC: 9\nSTR: +6 DEX: +6 AGI: +4 HP: +30\nEffect: Levitate (Must Equip, Casting Time: Instant, Cooldown: 120s) at Level 45\nWT: 2.5 Size: SMALL\nClass: ROG\nRace: ALL",
+      "rewardPage": "Griffon Wing Spaulders",
       "items": [
         {
           "name": "Spiroc Sky Totem",
@@ -2171,7 +2174,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Spiroc Sky Totem",
-          "stats": "LORE ITEM NO DROP\nWT: 3.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 3.0 Size: MEDIUM\nClass: ROG\nRace: ALL"
         },
         {
           "name": "Wind Rune Ena",
@@ -2201,7 +2204,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Jester's Mask",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FACE\nAC: 5\nAGI: +2\nWT: 15.0 Size: LARGE\nClass: ROG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Face\nAC: 5\nAGI: +2\nWT: 15.0 Size: LARGE\nClass: ROG BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Dena",
@@ -2219,9 +2222,9 @@
       "name": "Rogue Test of Stealth",
       "giver": "Thalik Silenthand",
       "rune": "Wind Rune Geza",
-      "reward": "Scintillating Bracer of Protection",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: WRIST\nAC: 9\nSTR: +3 DEX: +3 WIS: +2\nSV FIRE: +8 SV DISEASE: +8 SV COLD: +8 SV MAGIC: +8 SV POISON: +8\nWT: 2.5 Size: MEDIUM\nClass: ROG\nRace: ALL except IKS",
-      "rewardPage": "Scintillating Bracer of Protection",
+      "reward": "Shimmering Bracer of Protection",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: WRIST\nAC: 10\nSTR: +9 DEX: +3 WIS: +2\nSV FIRE: +8 SV DISEASE: +8 SV COLD: +8 SV MAGIC: +8 SV POISON: +8\nWT: 2.5 Size: MEDIUM\nClass: ROG\nRace: ALL",
+      "rewardPage": "Shimmering Bracer of Protection",
       "items": [
         {
           "name": "Fine Wool Cloak",
@@ -2231,7 +2234,7 @@
           "where": "Island 6",
           "count": 1,
           "page": "Fine Wool Cloak",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: BACK\nAC: 4\nSTR: +2 STA: +2\nWT: 1.0 Size: MEDIUM\nClass: ROG\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Back\nAC: 4\nSTR: +2 STA: +2\nWT: 1.0 Size: MEDIUM\nClass: ROG\nRace: ALL\nItem Lore : A fine wool cloak"
         },
         {
           "name": "Wind Rune Geza",
@@ -2301,7 +2304,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Finely Crafted Amulet",
-          "stats": "LORE ITEM NO DROP\nWT: 0.1 Size: TINY\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 0.1 Size: TINY\nClass: SHD\nRace: ALL"
         },
         {
           "name": "Wind Rune Ozah",
@@ -2331,7 +2334,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Silvery Ring",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FINGER\nSV MAGIC: +5\nWT: 5.0 Size: MEDIUM\nClass: SHD\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Fingers\nSV MAGIC: +5\nWT: 5.0 Size: MEDIUM\nClass: SHD\nRace: ALL"
         },
         {
           "name": "Wind Rune Beza",
@@ -2391,7 +2394,7 @@
           "where": "Island 6",
           "count": 1,
           "page": "Rusted Pauldrons",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 7\nDEX: +1\nWT: 1.0 Size: MEDIUM\nClass: SHD\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 7\nDEX: +1\nWT: 1.0 Size: MEDIUM\nClass: SHD\nRace: ALL"
         },
         {
           "name": "Wind Rune Fana",
@@ -2419,7 +2422,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Shield",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: SECONDARY\nAC: 15\nSTR: +5\nSV FIRE: +10\nWT: 2.0 Size: MEDIUM\nClass: WAR CLR PAL RNG SHD\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Secondary\nAC: 15\nSTR: +5\nSV FIRE: +10\nWT: 2.0 Size: MEDIUM\nSkill: Shield\nClass: WAR CLR PAL RNG SHD\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Heda",
@@ -2489,7 +2492,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Blood Sky Ruby",
-          "stats": "LORE ITEM NO DROP\nWT: 10.0 Size: LARGE\nClass: SHD\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 10.0 Size: LARGE\nClass: SHD\nRace: ALL"
         },
         {
           "name": "Efreeti War Axe",
@@ -2497,7 +2500,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Axe",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 2H Slashing Atk Delay: 28\nDMG: 12\nWT: 0.1 Size: SMALL\nClass: WAR PAL SHD\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 2H Slashing Atk Delay: 28\nDMG: 12\nDmg Bon: 19\nWT: 0.1 Size: SMALL\nClass: WAR PAL SHD BER\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Kala",
@@ -2527,7 +2530,7 @@
           "where": "Island 3",
           "count": 1,
           "page": "Leather Cord",
-          "stats": "NO DROP\nWT: 1.0 Size: SMALL\nClass: NONE\nRace: NONE"
+          "stats": "No Trade, Quest\nWT: 3.0 Size: MEDIUM\nClass: SHM BST\nRace: ALL"
         },
         {
           "name": "Wind Rune Meda",
@@ -2557,7 +2560,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "Ceremonial Belt",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: WAIST\nAC: 6\nWIS: +5\nWT: 0.1 Size: SMALL\nClass: SHM\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Waist\nAC: 6\nWIS: +5\nWT: 0.1 Size: SMALL\nClass: SHM\nRace: ALL"
         },
         {
           "name": "Wind Rune Kala",
@@ -2617,7 +2620,7 @@
           "where": "Island 6",
           "count": 1,
           "page": "Corrosive Venom",
-          "stats": "LORE ITEM NO DROP\nWT: 5.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 5.0 Size: MEDIUM\nClass: SHM\nRace: ALL"
         },
         {
           "name": "Efreeti War Club",
@@ -2625,7 +2628,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Club",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 1H Blunt Atk Delay: 26\nDMG: 11\nWT: 1.0 Size: MEDIUM\nClass: ALL except BRD NEC WIZ MAG ENC\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 1H Blunt Atk Delay: 26\nDMG: 11\nDmg Bon: 12\nWT: 1.0 Size: MEDIUM\nClass: War CLR PAL RNG SHD DRU MNK ROG SHM BST\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Ena",
@@ -2693,7 +2696,7 @@
           "where": "Island 8",
           "count": 1,
           "page": "Symbol of Veeshan",
-          "stats": "LORE ITEM NO DROP\nWT: 5.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 5.0 Size: MEDIUM\nClass: SHM\nRace: ALL"
         },
         {
           "name": "Efreeti War Maul",
@@ -2701,7 +2704,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Maul",
-          "stats": "MAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 2H Blunt Atk Delay: 35\nDMG: 15\nWT: 10.0 Size: LARGE\nClass: WAR PAL RNG SHD SHM\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 2H Blunt Atk Delay: 35\nDMG: 15\nDmg Bon: 24\nWT: 10.0 Size: LARGE\nClass: WAR PAL RNG SHD SHM BST BER\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Geza",
@@ -2821,7 +2824,7 @@
           "where": "Island 6",
           "count": 1,
           "page": "Wind Tablet",
-          "stats": "LORE ITEM NO DROP\nWT: 2.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 2.0 Size: MEDIUM\nClass: WAR\nRace: ALL"
         },
         {
           "name": "Efreeti Belt",
@@ -2869,7 +2872,7 @@
           "where": "Island 7",
           "count": 1,
           "page": "Gem of Invigoration",
-          "stats": "LORE ITEM\nWT: 1.0 Size: SMALL\nClass: ALL\nRace: ALL"
+          "stats": "LORE ITEM\nWT: 1.0 Size: SMALL\nClass: ALL\nRace: ALL\nCan drop off any trash on island 7 (SotS)"
         },
         {
           "name": "Wind Rune Jaka",
@@ -2956,7 +2959,7 @@
       "giver": "Wizard Schrock",
       "rune": "Wind Rune Fana",
       "reward": "Al`Kabor's Cap of Binding",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: HEAD\nCharges: 4\nAC: 6\nSTR: +5 INT: +8 HP: +40 MANA: +20\nSV FIRE: +10 SV COLD: +10\nEffect: Bonds of Force (Must Equip, Casting Time: Instant) at Level 45\nWT: 0.2 Size: SMALL\nClass: WIZ\nRace: ALL\nThis Item is NOT Rechargable.",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: HEAD\nAC: 6\nSTR: +5 INT: +8 HP: +40 MANA: +20\nSV FIRE: +10 SV COLD: +10\nEffect: Bonds of Force (Must Equip, Casting Time: Instant, Cooldown: 180 seconds) at Level 45\nWT: 0.2 Size: SMALL\nClass: WIZ\nRace: ALL",
       "rewardPage": "Al`Kabor's Cap of Binding",
       "items": [
         {
@@ -2967,7 +2970,7 @@
           "where": "Island 4",
           "count": 1,
           "page": "Woven Skull Cap",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: HEAD\nAC: 4\nMANA: +5\nSV POISON: +2\nWT: 0.1 Size: SMALL\nClass: WIZ\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Head\nAC: 4\nMANA: +5\nSV POISON: +2\nWT: 0.1 Size: SMALL\nClass: WIZ\nRace: ALL"
         },
         {
           "name": "Wind Rune Fana",
@@ -2997,7 +3000,7 @@
           "where": "Island 5",
           "count": 1,
           "page": "High Quality Raiment",
-          "stats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: SHOULDERS\nAC: 6\nINT: +2 AGI: +2\nSV MAGIC: +3\nWT: 15.0 Size: LARGE\nClass: WIZ\nRace: ALL"
+          "stats": "Lore Equipped, No Trade, Quest\nSlot: Shoulders\nAC: 6\nINT: +2 AGI: +2\nSV MAGIC: +3\nWT: 15.0 Size: LARGE\nClass: WIZ BER\nRace: ALL"
         },
         {
           "name": "Wind Rune Geza",
@@ -3016,7 +3019,7 @@
       "giver": "Wizard Schrock",
       "rune": "Wind Rune Izah",
       "reward": "Solidate Mithril Ring",
-      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FINGER\nCharges: 3\nAC: 4\nSTR: +5 INT: +5 AGI: +6 MANA: +50\nEffect: Steelskin (Must Equip, Casting Time: Instant) at Level 45\nWT: 0.1 Size: TINY\nClass: WIZ\nRace: ALL",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: FINGER\nAC: 4\nSTR: +5 INT: +5 AGI: +6 MANA: +50\nEffect: Steelskin (Must Equip, Casting Time: Instant, Cooldown: 180 seconds) at Level 45\nWT: 0.1 Size: TINY\nClass: WIZ\nRace: ALL",
       "rewardPage": "Solidate Mithril Ring",
       "items": [
         {
@@ -3035,7 +3038,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti Statuette",
-          "stats": "LORE ITEM\nWT: 1.0 Size: SMALL\nClass: ALL\nRace: ALL"
+          "stats": "No Trade, Quest\nWT: 1.0 Size: SMALL\nClass: DRU WIZ\nRace: ALL"
         },
         {
           "name": "Wind Rune Izah",
@@ -3054,7 +3057,7 @@
       "giver": "Wizard Schrock",
       "rune": "Wind Rune Jaka",
       "reward": "Amulet of the Void",
-      "rewardStats": "Amulet of the Void MAGIC ITEM LORE ITEM NO DROP Slot: NECK Charges: 1 AC: 4 DEX: +5 CHA: +5 INT: +5 AGI: +5 MANA: +50 Effect: Alter Plane: Sky (Any Slot/Can Equip, Casting Time: Instant) at Level 45 WT: 0.1 Size: TINY Class: WIZ Race: ALL",
+      "rewardStats": "MAGIC ITEM LORE ITEM NO DROP\nSlot: NECK\nAC: 4\nDEX: +5 CHA: +5 INT: +5 AGI: +5 MANA: +50\nEffect: Alter Plane: Sky (Any Slot/Can Equip, Casting Time: Instant, Cooldown: 120 seconds) at Level 45\nWT: 0.1 Size: TINY\nClass: WIZ\nRace: ALL",
       "rewardPage": "Amulet of the Void",
       "items": [
         {
@@ -3094,7 +3097,8 @@
           ],
           "where": "Island 8",
           "count": 1,
-          "page": "Large Sky Lapis (page does not exist)"
+          "page": "Large Sky Lapis",
+          "stats": "File:?.png?\nLarge Sky Lapis\nNo Trade, Quest\nWT: 0.1 Size: MEDIUM\nClass: WIZ\nRace: ALL"
         },
         {
           "name": "Efreeti War Staff",
@@ -3102,7 +3106,7 @@
           "where": "",
           "count": 1,
           "page": "Efreeti War Staff",
-          "stats": "Similar in appearance to the Cracked Staff, Norrath's most trusted weapon.\nEfreeti War Staff\nMAGIC ITEM LORE ITEM\nSlot: PRIMARY\nSkill: 2H Blunt Atk Delay: 30\nDMG: 10\nWT: 1.0 Size: MEDIUM\nClass: ALL\nRace: ALL"
+          "stats": "Lore Equipped, Attunable, Quest, Placeable\nSlot: Primary\nSkill: 2H Blunt Atk Delay: 30\nDMG: 10\nDmg Bon: 20\nEnd: 11\nWT: 1.0 Size: MEDIUM\nClass: ALL\nRace: ALL\nMerchant resale value: absolutely nothing"
         },
         {
           "name": "Wind Rune Caza",

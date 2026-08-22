@@ -340,6 +340,13 @@ export interface SpellEntry {
   durationMs: number | null
   /** Casting time in ms (from casting_time seconds), when present. */
   castTimeMs?: number
+  /**
+   * Recast (re-use) time in ms (from `recast_time` seconds), when the page states one — schema 3
+   * (owner ask 2026-08-22: the re-use timer was invisible and absent from every dps figure; the
+   * template had carried the field all along, e.g. Garrison's Mighty Mana Shock `1.50 sec`, and
+   * the scrape simply never read it).
+   */
+  recastMs?: number
   /** target_type ("Single Friendly (or Self)", "Single Hostile", …). */
   targetType?: string
   /** spell_type ("Beneficial" / "Detrimental"). */
@@ -406,7 +413,8 @@ export interface SpellDbFile {
   /**
    * Scrape schema version — bumped when the scraper starts capturing a new per-spell field, so a
    * consumer can tell an old committed file from a new one instead of guessing from absent keys.
-   * 2 = the effect list + instrument flag (JOS-251). Absent means 1 (pre-JOS-251).
+   * 3 = recast time (2026-08-22). 2 = the effect list + instrument flag (JOS-251). Absent means 1
+   * (pre-JOS-251).
    */
   schema?: number
   /** How many spells carry a non-empty `effects` list — scrape health at a glance. */

@@ -1,5 +1,5 @@
 {
-  "scrapedAt": "2026-08-03T03:16:13.504Z",
+  "scrapedAt": "2026-08-22T19:51:37.602Z",
   "source": "eqlwiki.com — Category:Quests + quest subcategories",
   "quests": [
     {
@@ -60,6 +60,31 @@
         "Fire Beetle Eye"
       ],
       "expReward": true
+    },
+    {
+      "name": "A sealed letter",
+      "page": "A sealed letter",
+      "requiredItems": [
+        "Peacekeeper Staff"
+      ]
+    },
+    {
+      "name": "Acquire a Mark of Karana",
+      "page": "Acquire a Mark of Karana",
+      "startZone": "Surefall Glade",
+      "giver": "Qaelin Hailstorm",
+      "minLevel": 1,
+      "classes": [
+        "Karana"
+      ],
+      "relatedNpcs": [
+        "Qaelin Hailstorm"
+      ],
+      "rewards": [
+        {
+          "name": "Mark of Karana"
+        }
+      ]
     },
     {
       "name": "Acumen Mask Quest",
@@ -2261,7 +2286,7 @@
       "page": "Broom Of Trilon Quest",
       "startZone": "Temple of Solusek Ro",
       "giver": "Vira",
-      "minLevel": 33,
+      "minLevel": 20,
       "classes": [
         "Magician"
       ],
@@ -2269,7 +2294,9 @@
         "Najena"
       ],
       "relatedNpcs": [
-        "a griffin"
+        "a griffin",
+        "a cyclops",
+        "Gornit"
       ],
       "rewards": [
         {
@@ -2802,12 +2829,13 @@
       "page": "Catfish Tail",
       "startZone": "Erudin",
       "giver": "Vynon Estaliun",
-      "minLevel": 7,
+      "minLevel": 1,
       "classes": [
-        "?"
+        "All"
       ],
       "relatedZones": [
-        "Toxxulia Forest"
+        "Toxxulia Forest",
+        "Kerra Island"
       ],
       "relatedNpcs": [
         "a catfisher"
@@ -2818,6 +2846,9 @@
         },
         {
           "name": "Torch"
+        },
+        {
+          "name": "Corroded Buckler"
         }
       ],
       "requiredItems": [
@@ -3219,38 +3250,6 @@
         "Crushed Flame Emerald"
       ],
       "expReward": true
-    },
-    {
-      "name": "Cleric Plane of Sky Tests",
-      "page": "Cleric Plane of Sky Tests",
-      "requiredItems": [
-        "Truewind Earring",
-        "Ochre Tessera",
-        "Sky Emerald",
-        "Silver Hoop",
-        "Aegis of the Wind",
-        "Gold Disc",
-        "Dark Wood",
-        "Small Shield",
-        "Pauldrons of Piety",
-        "Adumbrate Globe",
-        "Faintly Glowing Diamond",
-        "Shiny Pauldrons",
-        "Necklace of Resolution",
-        "Spiroc Statuette",
-        "Spiroc Healing Totem",
-        "Silvered Spiroc Necklace",
-        "Theurgist's Star",
-        "Saffron Spiroc Feather",
-        "Glowing Sapphire",
-        "Djinni Aura",
-        "Efreeti Mace",
-        "Truwian Baton",
-        "Manna Nectar",
-        "Shimmering Topaz",
-        "Mithril Bands",
-        "Efreeti Standard"
-      ]
     },
     {
       "name": "Cleric Skyshrine Armor Quests",
@@ -4424,8 +4423,7 @@
       ],
       "requiredItems": [
         "Box For Bones",
-        "Bone Chips",
-        "A Box of Bones"
+        "Bone Chips"
       ],
       "expReward": true
     },
@@ -5669,38 +5667,6 @@
       "expReward": true
     },
     {
-      "name": "Druid Plane of Sky Tests",
-      "page": "Druid Plane of Sky Tests",
-      "requiredItems": [
-        "Drake-Hide Mask",
-        "Azure Tessera",
-        "Black Face Paint",
-        "Worn Leather Mask",
-        "Nature Walker's Mantle",
-        "Copper Disc",
-        "Nature Walker's Sky Emerald",
-        "Mantle of Woven Grass",
-        "Shillelagh",
-        "Diaphanous Globe",
-        "Hardened Clay",
-        "Spiroc Battle Staff",
-        "Honeycomb Belt",
-        "Efreeti Statuette",
-        "Wilder's Girdle",
-        "Divine Honeycomb",
-        "Spiroc Banisher Focus",
-        "White-tipped Spiroc Feather",
-        "Spiroc Elder's Totem",
-        "Acidic Venom",
-        "Ethereal Ruby",
-        "Espri",
-        "Lush Nectar",
-        "Fire Sky Ruby",
-        "Storm Sky Opal",
-        "Efreeti Scimitar"
-      ]
-    },
-    {
       "name": "Druid Skyshrine Armor Quests",
       "page": "Druid Skyshrine Armor Quests",
       "startZone": "Skyshrine",
@@ -5739,22 +5705,6 @@
         "Crushed Flame Emerald"
       ],
       "expReward": true
-    },
-    {
-      "name": "Druid Spells",
-      "page": "Druid Spells",
-      "startZone": "Firiona Vie",
-      "giver": "Samitha Lightheart",
-      "minLevel": 51,
-      "classes": [
-        "Druid"
-      ],
-      "relatedZones": [
-        "Various"
-      ],
-      "relatedNpcs": [
-        "Various"
-      ]
     },
     {
       "name": "Druid Thurgadin Armor Quests",
@@ -6173,19 +6123,26 @@
       "page": "Enchanter Plane of Sky Tests",
       "requiredItems": [
         "Sphinx Hair Cord",
+        "Wind Rune Meda",
         "Finely Woven Cloth Cord",
+        "Earring of Displacement",
+        "Wind Rune Caza",
+        "Adamantium Earring",
         "Wind Walker's Mantle",
+        "Wind Rune Ozah",
         "Light Cloth Mantle",
         "Ivory Mask",
+        "Wind Rune Beza",
         "Silken Mask",
-        "Earring of Displacement",
-        "Adamantium Earring",
         "Necklace of Whispering Winds",
+        "Wind Rune Fana",
         "Glowing Necklace",
         "Rod of the Protecting Winds",
+        "Wind Rune Izah",
         "Large Sky Sapphire (Enchanter)",
         "Efreeti Wind Staff",
         "Rod of Warding Winds",
+        "Efreeti's Key",
         "Jade"
       ]
     },
@@ -9953,6 +9910,9 @@
           "name": "A note"
         },
         {
+          "name": "Fungus Eye"
+        },
+        {
           "name": "Fire Opal"
         }
       ],
@@ -10196,12 +10156,13 @@
       "page": "Heretic Heads",
       "startZone": "Stonebrunt Mountains",
       "giver": "Shazda Kaekwon",
-      "minLevel": 25,
+      "minLevel": 20,
       "classes": [
         "All"
       ],
       "relatedNpcs": [
-        "a heretic invader",
+        "a heretic invader(Necromancer)",
+        "a heretic invader(Shadow Knight)",
         "Jelquar the Soulslayer"
       ],
       "rewards": [
@@ -10924,7 +10885,7 @@
     {
       "name": "Incandescent Armor Quests",
       "page": "Incandescent Armor Quests",
-      "startZone": "Temple of Solusek Ro",
+      "startZone": "The Temple of Solusek Ro",
       "giver": "Sultin",
       "minLevel": 25,
       "classes": [
@@ -10937,9 +10898,19 @@
         "Radiant",
         "a shadowed man",
         "Tarn Visilin",
-        "Tizina"
+        "Tizina",
+        "a dusty werebat",
+        "a silvered guard",
+        "Ezmirella",
+        "Raine Beteria",
+        "A Froglok Scryer",
+        "Enynti",
+        "Mizr N`Mar",
+        "Madame Serena"
       ],
       "requiredItems": [
+        "Incandescent Gloves",
+        "Incandescent Mask",
         "Glowing Gloves",
         "Radiant Gloves",
         "Enchanted Gloves",
@@ -10948,10 +10919,12 @@
         "Glowing Mask",
         "Rune of Fortune",
         "Pouch of Silver Dust",
-        "Silver Wand",
+        "Glowing Silver Wand",
         "Blessed Silver Wand",
-        "Glowing Silver Wand"
-      ]
+        "Silver Wand",
+        "Incandescent Wand"
+      ],
+      "expReward": true
     },
     {
       "name": "Incandescent Mask quest",
@@ -12679,41 +12652,6 @@
       ]
     },
     {
-      "name": "Magician Plane of Sky Tests",
-      "page": "Magician Plane of Sky Tests",
-      "requiredItems": [
-        "Bracelet of Clarification",
-        "Crimson Tessera",
-        "Ethereal Sapphire",
-        "Feathered Cape",
-        "Mask of Empowerment",
-        "Iron Disc",
-        "Gem of Empowerment",
-        "Ceramic Mask",
-        "Staff of The Magister",
-        "Sweet Nectar",
-        "Efreeti Magi Staff",
-        "Sphinx Crown",
-        "Hazy Opal",
-        "Gold White Pendant",
-        "Hyaline Globe",
-        "Ivory Pendant",
-        "Golden Coffer",
-        "Drake-Hide Amice",
-        "Harpy Statuette",
-        "Finely Woven Cloth Amice",
-        "Large Diamond",
-        "Duennan Shielding Ring",
-        "Carmine Spiroc Feather",
-        "Blood Sky Amethyst",
-        "Golden Efreeti Ring",
-        "Staff of Elemental Mastery: Air",
-        "Djinni Stave",
-        "Large Opal",
-        "Crown of Elemental Mastery"
-      ]
-    },
-    {
       "name": "Magician Skyshrine Armor Quests",
       "page": "Magician Skyshrine Armor Quests",
       "startZone": "Skyshrine",
@@ -13296,6 +13234,20 @@
       "expReward": true
     },
     {
+      "name": "Metal Bits for the New Sebilisian Expedition",
+      "page": "Metal Bits for the New Sebilisian Expedition",
+      "startZone": "The Northern Desert of Ro",
+      "giver": "Crusader Iktra",
+      "minLevel": 1,
+      "classes": [
+        "ALL"
+      ],
+      "requiredItems": [
+        "Metal Bits"
+      ],
+      "expReward": true
+    },
+    {
       "name": "Miner's Cap",
       "page": "Miner's Cap",
       "startZone": "North Kaladim",
@@ -13659,18 +13611,25 @@
       "page": "Monk Plane of Sky Tests",
       "requiredItems": [
         "Back Straps of Mastery",
+        "Wind Rune Caza",
         "Silken Strands",
         "Ton Po's Eye Patch",
+        "Wind Rune Geza",
         "Cracked Leather Eyepatch",
         "Sandals of Alacrity",
+        "Wind Rune Jaka",
         "Dove Slippers",
         "Ton Po's Shoulder Wraps",
+        "Wind Rune Beza",
         "Silken Wrap",
         "Wu's Fist of Mastery",
+        "Wind Rune Neza",
         "Brass Knuckles",
         "Nebulous Sapphire",
         "Golden Sash of Tranquility",
+        "Wind Rune Lena",
         "Tear of Quellious",
+        "Efreeti's Key",
         "Jade"
       ]
     },
@@ -14206,18 +14165,25 @@
       "page": "Necromancer Plane of Sky Tests",
       "requiredItems": [
         "Bloody Griffon-Hide Wrist Guard",
+        "Wind Rune Lena",
         "Griffon's Beak",
         "Cloak of Spiroc Feathers",
+        "Wind Rune Neza",
         "Black Silk Cape",
         "Bloodsoaked Raiment",
+        "Wind Rune Ozah",
         "Fine Cloth Raiment",
         "Sphinx Heart Amulet",
+        "Wind Rune Azia",
         "Pulsating Ruby",
         "Gorgon Head Staff",
+        "Wind Rune Fana",
         "Gorgon Head",
         "Efreeti Great Staff",
         "Band of Wailing Winds",
+        "Wind Rune Caza",
         "Ring of Veeshan",
+        "Efreeti's Key",
         "Jade"
       ]
     },
@@ -14326,22 +14292,6 @@
         "Rotting Boots",
         "Tattered Silk Boots",
         "Crushed Jaundice Gem"
-      ]
-    },
-    {
-      "name": "Necromancer Spells",
-      "page": "Necromancer Spells",
-      "startZone": "The Overthere",
-      "giver": "Vaean the Night",
-      "minLevel": 51,
-      "classes": [
-        "Necromancer"
-      ],
-      "relatedZones": [
-        "Various"
-      ],
-      "relatedNpcs": [
-        "Various"
       ]
     },
     {
@@ -14814,7 +14764,7 @@
         "West Freeport"
       ],
       "relatedNpcs": [
-        "Rebby"
+        "Rebby Willend"
       ],
       "requiredItems": [
         "Message to Rebby",
@@ -14970,11 +14920,6 @@
         "Orc Legionnaire (Deathfist)",
         "Orc Centurion (Deathfist)",
         "Orc Pawn (Deathfist)"
-      ],
-      "rewards": [
-        {
-          "name": "Tagglefoot Tingle Drink"
-        }
       ],
       "requiredItems": [
         "Deathfist Slashed Belt"
@@ -15208,6 +15153,7 @@
       "requiredItems": [
         "Crushbone Shoulderpads",
         "Crushbone Belt",
+        "Silk Swatch",
         "Deathfist Shoulderpads",
         "Deathfist Slashed Belt"
       ],
@@ -15454,21 +15400,22 @@
       "name": "Paladin Plane of Sky Tests",
       "page": "Paladin Plane of Sky Tests",
       "requiredItems": [
-        "Girdle of Faith",
-        "Diaphanous Globe",
-        "Silvery Girdle",
-        "Ivory Sky Diamond",
+        "Truvinan",
+        "Wind Rune Izah",
+        "Efreeti Zweihander",
+        "Large Sky Diamond",
         "Aldryn, Blade of the Ocean",
+        "Wind Rune Ozah",
         "Bixie Sword Blade",
         "Thelvorn, Blade of Light",
-        "Dark Spiroc Feather",
-        "Ethereal Topaz",
-        "Sphinx Claw",
-        "Truvinan",
-        "Dulcet Nectar",
+        "Wind Rune Geza",
         "Golden Hilt",
-        "Large Sky Diamond",
-        "Efreeti Zweihander"
+        "Sphinx Claw",
+        "Girdle of Faith",
+        "Wind Rune Lena",
+        "Ivory Sky Diamond",
+        "Efreeti's Key",
+        "Jade"
       ]
     },
     {
@@ -15645,6 +15592,13 @@
         "Wooden Shards"
       ],
       "expReward": true
+    },
+    {
+      "name": "Phosphorous Powder for Zok Zribb",
+      "page": "Phosphorous Powder for Zok Zribb",
+      "requiredItems": [
+        "Phosphorous Powder"
+      ]
     },
     {
       "name": "Pickled Frogloks",
@@ -16103,6 +16057,36 @@
       ]
     },
     {
+      "name": "Potential of the Void",
+      "page": "Potential of the Void",
+      "startZone": "The Hole, Kedge Keep, Permafrost, Nagafen's Lair, Oasis of Marr, Feerrott",
+      "giver": "voidling",
+      "classes": [
+        "All"
+      ],
+      "relatedZones": [
+        "The Hole",
+        "Kedge Keep",
+        "Permafrost",
+        "Nagafen's Lair",
+        "Plane of Hate",
+        "Plane of Fear"
+      ],
+      "relatedNpcs": [
+        "Master Yael",
+        "Phinigel Autropos",
+        "Lady Vox",
+        "Lord Nagafen",
+        "Innoruuk",
+        "Cazic Thule"
+      ],
+      "rewards": [
+        {
+          "name": "Void-Touched Potential"
+        }
+      ]
+    },
+    {
       "name": "Preserved Meat Delivery",
       "page": "Preserved Meat Delivery",
       "startZone": "Oggok",
@@ -16343,6 +16327,38 @@
         "Water Flask"
       ],
       "expReward": true
+    },
+    {
+      "name": "Quest:Druid Spells",
+      "page": "Quest:Druid Spells",
+      "startZone": "Firiona Vie",
+      "giver": "Samitha Lightheart",
+      "minLevel": 51,
+      "classes": [
+        "Druid"
+      ],
+      "relatedZones": [
+        "Various"
+      ],
+      "relatedNpcs": [
+        "Various"
+      ]
+    },
+    {
+      "name": "Quest:Necromancer Spells",
+      "page": "Quest:Necromancer Spells",
+      "startZone": "The Overthere",
+      "giver": "Vaean the Night",
+      "minLevel": 51,
+      "classes": [
+        "Necromancer"
+      ],
+      "relatedZones": [
+        "Various"
+      ],
+      "relatedNpcs": [
+        "Various"
+      ]
     },
     {
       "name": "Rabid Grizzlies",
@@ -16600,37 +16616,6 @@
         "Forest Stalker's Boots",
         "Ancient Tarnished Chain Boots",
         "Crushed Black Marble"
-      ]
-    },
-    {
-      "name": "Ranger Plane of Sky Tests",
-      "page": "Ranger Plane of Sky Tests",
-      "requiredItems": [
-        "Griffon Talon Necklace",
-        "Auburn Tessera",
-        "Ysgaril Root",
-        "Griffon Talon",
-        "Dark Cloak of the Sky",
-        "Mithril Disc",
-        "Harpy Tongue",
-        "Fine Velvet Cloak",
-        "Earthshaker's Mantle",
-        "Gridelin Globe",
-        "Spiroc Earth Totem",
-        "Thunderforged Earring",
-        "Djinni Statuette",
-        "Spiroc Thunder Totem",
-        "White Gold Earring",
-        "Arydryidriyorn",
-        "Emerald Spiroc Feather",
-        "Bitter Honey",
-        "Circlet of Brambles",
-        "Efreeti Long Sword",
-        "Windstriker",
-        "Thickened Nectar",
-        "Sphinx Tallow",
-        "Shimmering Pearl",
-        "Efreeti War Bow"
       ]
     },
     {
@@ -17293,6 +17278,23 @@
       ]
     },
     {
+      "name": "Renouncing Your Faith",
+      "page": "Renouncing Your Faith",
+      "giver": "Emissary of Zebuxoruk",
+      "minLevel": 46,
+      "classes": [
+        "All"
+      ],
+      "relatedZones": [
+        "Plane of Fear",
+        "Plane of Hate"
+      ],
+      "relatedNpcs": [
+        "Cazic Thule (God)",
+        "Innoruuk (God)"
+      ]
+    },
+    {
       "name": "Request of the Arcane",
       "page": "Request of the Arcane",
       "startZone": "Temple of Veeshan",
@@ -17492,7 +17494,7 @@
     {
       "name": "Rod of Insidious Glamour Quest",
       "page": "Rod of Insidious Glamour Quest",
-      "startZone": "Temple of Solusek Ro",
+      "startZone": "The Temple of Solusek Ro",
       "giver": "Sultin",
       "minLevel": 25,
       "classes": [
@@ -17516,10 +17518,11 @@
       ],
       "requiredItems": [
         "Golden Rod",
-        "A Shining Stone",
+        "Glowing Glamour Stone",
         "Glamour Stone",
-        "Glowing Glamour Stone"
-      ]
+        "Shining Stone"
+      ],
+      "expReward": true
     },
     {
       "name": "Rognarog's Head",
@@ -17662,37 +17665,6 @@
         "Deceiver's Boots",
         "Ancient Tarnished Chain Boots",
         "Crushed Black Marble"
-      ]
-    },
-    {
-      "name": "Rogue Plane of Sky Tests",
-      "page": "Rogue Plane of Sky Tests",
-      "requiredItems": [
-        "Wispy Choker of Vigor",
-        "Ivory Tessera",
-        "Gem of Invigoration",
-        "Inlaid Choker",
-        "Griffon Wing Spauldors",
-        "Pearlescent Globe",
-        "Black Griffon Feather",
-        "Spiroc Sky Totem",
-        "Renard's Belt of Quickness",
-        "Mottled Spiroc Feather",
-        "Cracked Leather Belt",
-        "Sphinxian Circlet",
-        "Crystal Mask",
-        "Bronze Disc",
-        "Red Face Paint",
-        "Jester's Mask",
-        "Scintillating Bracer of Protection",
-        "Pegasus Statuette",
-        "Prismatic Sphere",
-        "Fine Wool Cloak",
-        "Thornstinger",
-        "Honeyed Nectar",
-        "Bixie Stinger (Bixie God's Stinger)",
-        "Lightning Rod",
-        "Bloodsky Sapphire"
       ]
     },
     {
@@ -18642,42 +18614,6 @@
       "expReward": true
     },
     {
-      "name": "Shadow Knight Plane of Sky Tests",
-      "page": "Shadow Knight Plane of Sky Tests",
-      "requiredItems": [
-        "Amulet of the Sphinx Eye",
-        "Ebon Tessera",
-        "Sphinx Eye Opal",
-        "Finely Crafted Amulet",
-        "Crimson Ring of the Djinni",
-        "Copper Disc",
-        "Small Sapphire",
-        "Silvery Ring",
-        "Pegasus-Hide Belt",
-        "Diaphanous Globe",
-        "Dried Leather",
-        "Finely Woven Cloth Belt",
-        "Blood Sky Face Plate",
-        "Griffon Statuette",
-        "Blood Sky Emerald",
-        "Rusted Pauldrons",
-        "Obtenebrate Mithril Guard",
-        "Dark Spiroc Feather",
-        "Obsidian Shard (Sky)",
-        "Efreeti War Shield",
-        "Pearlescent Pauldrons",
-        "Jar of Honey",
-        "Sphinxian Ring",
-        "Fae Pauldrons",
-        "Large Sky Pearl",
-        "Khyldorn the Blood Drinker",
-        "Dulcet Nectar",
-        "Bloodstained Hilt",
-        "Blood Sky Ruby",
-        "Efreeti War Axe"
-      ]
-    },
-    {
       "name": "ShadowBound Armor Quests",
       "page": "ShadowBound Armor Quests",
       "startZone": "Temple of Solusek Ro",
@@ -18981,38 +18917,6 @@
         "Spirit Caller's Boots",
         "Ancient Tarnished Chain Boots",
         "Crushed Flame Emerald"
-      ]
-    },
-    {
-      "name": "Shaman Plane of Sky Tests",
-      "page": "Shaman Plane of Sky Tests",
-      "requiredItems": [
-        "Amulet of the Fang",
-        "Auburn Tessera",
-        "Drake Fang",
-        "Leather Cord",
-        "Bracelet of the Spirits",
-        "Platinum Disc",
-        "Ethereal Amber",
-        "Shimmering Amber",
-        "Ceremonial Belt",
-        "Fairy-Hide Mantle",
-        "Phosphoric Globe",
-        "Sphinx Hide",
-        "Light Damask Mantle",
-        "Warhammer of the Wind",
-        "Djinni Statuette",
-        "Efreeti War Club",
-        "Wooden Bands",
-        "Corrosive Venom",
-        "Vermilion Sky Ring",
-        "Emerald Spiroc Feather",
-        "Bixie Essence",
-        "Garduk",
-        "Thickened Nectar",
-        "Fire Sky Ruby",
-        "Symbol of Veeshan",
-        "Efreeti War Maul"
       ]
     },
     {
@@ -19406,7 +19310,7 @@
       "page": "Shovel Of Ponz Quest",
       "startZone": "Temple of Solusek Ro",
       "giver": "Vira",
-      "minLevel": 33,
+      "minLevel": 20,
       "classes": [
         "Magician"
       ],
@@ -19565,7 +19469,8 @@
       ],
       "requiredItems": [
         "Box For Bones",
-        "Bone Chips"
+        "Bone Chips",
+        "Box of Bones"
       ],
       "expReward": true
     },
@@ -19792,6 +19697,58 @@
       ],
       "requiredItems": [
         "Fairy Dust"
+      ],
+      "expReward": true
+    },
+    {
+      "name": "Soldier's Brooch Quest",
+      "page": "Soldier's Brooch Quest",
+      "startZone": "Rathe Mountains",
+      "giver": "Gaz Commander Faltip",
+      "minLevel": 30,
+      "classes": [
+        "All"
+      ],
+      "relatedZones": [
+        "Rathe Mountains"
+      ],
+      "relatedNpcs": [
+        "A Troll Greenblood",
+        "A Troll Marauder",
+        "A Tier'Dal Spellbinder",
+        "A Tier'Dal Priest"
+      ],
+      "rewards": [
+        {
+          "name": "Soldier's Brooch of the Arcane"
+        },
+        {
+          "name": "Soldier's Brooch of the Corrupt"
+        },
+        {
+          "name": "Soldier's Brooch of the Darkened"
+        },
+        {
+          "name": "Soldier's Brooch of the Robust"
+        },
+        {
+          "name": "Soldier's Brooch of the Spirited"
+        },
+        {
+          "name": "Soldier's Brooch of the Stalwart"
+        },
+        {
+          "name": "Soldier's Brooch of the Stealthy"
+        },
+        {
+          "name": "Soldier's Brooch of the Virtuous"
+        }
+      ],
+      "requiredItems": [
+        "Troll Greenblood Insignia",
+        "Troll Basher Insignia",
+        "Tier'Dal Arcane Insignia",
+        "Tier'Dal Priest Insignia"
       ],
       "expReward": true
     },
@@ -20096,6 +20053,34 @@
       "expReward": true
     },
     {
+      "name": "Spirit Powder",
+      "page": "Spirit Powder",
+      "startZone": "Stonebrunt Mountains",
+      "giver": "Saemey Wirewhisker",
+      "minLevel": 20,
+      "classes": [
+        "Any"
+      ],
+      "relatedZones": [
+        "Stonebrunt Mountains"
+      ],
+      "relatedNpcs": [
+        "a jungle spiritling",
+        "A mountain spiritling",
+        "A valley spiritling"
+      ],
+      "rewards": [
+        {
+          "name": "Kejek Spirit Powder"
+        }
+      ],
+      "requiredItems": [
+        "Jungle Spiritling Stone",
+        "Mountain Spiritling Stone"
+      ],
+      "expReward": true
+    },
+    {
       "name": "Spirit Wracked Cord Quest",
       "page": "Spirit Wracked Cord Quest",
       "startZone": "Chardok",
@@ -20221,7 +20206,7 @@
       "page": "Stein Of Ulissa Quest",
       "startZone": "Temple of Solusek Ro",
       "giver": "Vira",
-      "minLevel": 33,
+      "minLevel": 20,
       "classes": [
         "Magician"
       ],
@@ -20334,6 +20319,8 @@
         "ALL"
       ],
       "requiredItems": [
+        "Metal Bits",
+        "Water Flask",
         "Small Piece of High Quality Ore",
         "Small Brick of High Quality Ore"
       ],
@@ -21076,8 +21063,8 @@
       ],
       "requiredItems": [
         "Dwarven Ale",
-        "Dusty Old Skull",
         "Dusty Old Finger Bones",
+        "Dusty Old Skull",
         "Empty Gem Bag",
         "Diamond",
         "Star Ruby",
@@ -21593,38 +21580,6 @@
         "Faceted Hyacinth",
         "Uncut Hyacinth",
         "Faceted Hyacinth Telesm",
-        "Monstrous Zombie Heart"
-      ]
-    },
-    {
-      "name": "The Etched Stone (Spell: Life Leech)",
-      "page": "The Etched Stone (Spell: Life Leech)",
-      "startZone": "Rathe Mountains",
-      "giver": "Kazzel D`Leryt",
-      "minLevel": 46,
-      "classes": [
-        "Shadow Knight"
-      ],
-      "relatedZones": [
-        "Various"
-      ],
-      "relatedNpcs": [
-        "A froglok noble",
-        "Darfumpel Zirubbel",
-        "Xenyari Lisariel",
-        "monstrous zombie",
-        "an icy terror",
-        "stone spider"
-      ],
-      "rewards": [
-        {
-          "name": "Pulsating Hyacinth Telesm"
-        }
-      ],
-      "requiredItems": [
-        "Prickly Pear",
-        "White Gold Necklace",
-        "Crystalline Orb",
         "Monstrous Zombie Heart"
       ]
     },
@@ -22322,6 +22277,14 @@
         "Rotting Femur"
       ],
       "expReward": true
+    },
+    {
+      "name": "The Lost Snake",
+      "page": "The Lost Snake",
+      "requiredItems": [
+        "Trainer's Bauble",
+        "Muddy Trinket"
+      ]
     },
     {
       "name": "The Lost Tome",
@@ -23323,8 +23286,12 @@
       ],
       "requiredItems": [
         "SoulFire",
-        "Pestilence Scythe"
-      ]
+        "Burning Soul of the Pious",
+        "Pestilence Scythe",
+        "Burning Soul of the Pestilent",
+        "Burning Soul of the Virtuous"
+      ],
+      "expReward": true
     },
     {
       "name": "The Traitor",
@@ -23950,7 +23917,7 @@
       "page": "Torch Of Alna Quest",
       "startZone": "Temple of Solusek Ro",
       "giver": "Vira",
-      "minLevel": 33,
+      "minLevel": 20,
       "classes": [
         "Magician"
       ],
@@ -24077,7 +24044,6 @@
         "Driftwood Pipe",
         "Basalt Drake Scales",
         "fishbone earring",
-        "Cracked Glass Key",
         "Barbed Bone Chips"
       ]
     },
@@ -25124,39 +25090,6 @@
       "expReward": true
     },
     {
-      "name": "Warrior Plane of Sky Tests",
-      "page": "Warrior Plane of Sky Tests",
-      "requiredItems": [
-        "Runed Wind Amulet",
-        "Bronze Disc",
-        "Small Pick",
-        "Stone Amulet",
-        "Pauldrons of the Blue Sky",
-        "Pearlescent Globe",
-        "Silver Mesh",
-        "Spiroc Air Totem",
-        "Azure Ruby Ring",
-        "Ivory Tessera",
-        "Small Ruby",
-        "Azure Ring",
-        "Fangol",
-        "Honeyed Nectar",
-        "Ethereal Emerald",
-        "Bottled Djinni",
-        "Efreeti Battle Axe",
-        "Dagas",
-        "Mottled Spiroc Feather",
-        "Virulent Poison",
-        "Djinni War Blade",
-        "Belt of the Four Winds",
-        "Pegasus Statuette",
-        "Wind Tablet",
-        "Spiroc Wind Totem",
-        "Efreeti Belt",
-        "Aerated Pauldrons"
-      ]
-    },
-    {
       "name": "Warrior Skyshrine Armor Quests",
       "page": "Warrior Skyshrine Armor Quests",
       "startZone": "Skyshrine",
@@ -25451,7 +25384,8 @@
       ],
       "requiredItems": [
         "Cracked Flute",
-        "Winds of Karana sheet 1"
+        "Winds of Karana sheet 1",
+        "Winds of Karana sheet 2"
       ],
       "expReward": true
     },
@@ -25624,38 +25558,6 @@
         "Boots of the Invoker",
         "Ancient Silk Boots",
         "Crushed Jaundice Gem"
-      ]
-    },
-    {
-      "name": "Wizard Plane of Sky Tests",
-      "page": "Wizard Plane of Sky Tests",
-      "requiredItems": [
-        "Augmentor's Mask",
-        "Azure Tessera",
-        "Augmentor's Gem",
-        "Grey Damask Cloak",
-        "Al`Kabor's Cap of Binding",
-        "Iron Disc",
-        "Ethereal Opal",
-        "Woven Skull Cap",
-        "Raiment of Thunder",
-        "Hyaline Globe",
-        "Sky Topaz",
-        "High Quality Raiment",
-        "Solidate Mithril Ring",
-        "Efreeti Statuette",
-        "Mithril Air Ring",
-        "Box of Winds",
-        "Amulet of the Void",
-        "White-tipped Spiroc Feather",
-        "Pulsating Sapphire",
-        "Amethyst Amulet",
-        "Nargon's Staff",
-        "Lush Nectar",
-        "Copper Air Band",
-        "Large Sky Sapphire",
-        "Efreeti War Staff",
-        "Amulet of Planar Transference"
       ]
     },
     {
@@ -26019,7 +25921,8 @@
         "Bamboo Shoot",
         "Full Gathering Satchel",
         "Vial of Healing Liquid"
-      ]
+      ],
+      "expReward": true
     },
     {
       "name": "Zimel's Blades (SoulFire)",
@@ -26055,11 +25958,15 @@
         "Glowing Sword Hilt",
         "Testimony of Truth",
         "Brilliant Sword of Faith",
+        "Note",
         "Bottle",
         "Snake Scales",
         "Water Flask",
         "Fire Beetle Eye",
-        "Rat Ears"
+        "Rat Ears",
+        "Silver Bar",
+        "Bottle of Milk",
+        "Sealed Note"
       ]
     },
     {

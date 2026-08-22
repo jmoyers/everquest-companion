@@ -212,7 +212,7 @@ You say, 'What is the Coronet of Buried Blood?'
 Turn these in to '''TOGAHN SORAST''' in the Silent Fist Clan House in Qeynos.
 
 # [[Skull of Jhen`Tra]] - Drops from [[a gnoll embalmer]] in [[Lake Rathetear]].
-# [[Dagger of Marnek]] - Drops from [[the thaumaturgist]] in the third level of [[Befallen]]. (She is next to the spawn point for [[Priest Amiaz]] which is needed for [[Monk Sash Quests]])
+# [[Dagger of Marnek]] - Drops from [[the thaumaturgist]] in the second level of [[Befallen]]. Note: this is '''not''' the "Arisen Thaumaturgist" on the third level.
 # [[Zaharn's Coronet]] - The "Coronet of Buried Blood" which drops from [[High Priest Zaharn]] in the [[Permafrost]] throne room. 
 # Red Headband - From prior Quest
 

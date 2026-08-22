@@ -305,7 +305,7 @@ export function buildDpsSeries(tl: TimelineView, live = false): DpsSeries {
     else if (e.kind === 'pet') {
       rawPet[i] += e.amount
       hasPet = true
-    } else if (e.kind === 'member' || e.kind === 'allyPet') {
+    } else if (e.kind === 'member' || e.kind === 'allyPet' || e.kind === 'other') {
       // EXPLICIT, not an `else`. Before the group model the final branch was "everything that is
       // not you or your pet is incoming", which is exactly the assumption a fourth source kind
       // breaks: a group-mate's 300-damage nuke would have been drawn as damage taken. JOS-250's
@@ -313,6 +313,9 @@ export function buildDpsSeries(tl: TimelineView, live = false): DpsSeries {
       // an ally's charm pet is somebody else's outgoing damage, which is what this band already
       // means. It shares the band rather than growing a sixth one because the curve answers "how
       // much is coming from where", and the row list beneath it is where the WHOSE is spelled out.
+      // JOS-430's SIXTH kind ('other') is the trap a third time, and the most dangerous of the
+      // three: it is the kind that fires on an ungrouped session, so a missing branch here would
+      // have drawn a stranger's whole raid as damage TAKEN on the most common configuration there is.
       rawGroup[i] += e.amount
       hasGroup = true
     } else {
@@ -682,12 +685,29 @@ export function fightScopeOptions(segments: SegmentSummary[]): ScopeOptions {
   return { head, rest }
 }
 
+/**
+ * THE WORD A ZONE-SESSION ROW IS CALLED BY (JOS-322) — the renderer's mirror of the engine's
+ * `lifecycle.zoneSessionWord`, over the serialized summary.
+ *
+ * A stay the WORLD ended is that zone's `overall`; a stay the USER ended with the app-wide
+ * "New session" mark is that zone's `session`, which is the word the loot ledger and the leveling
+ * surfaces already print for the very same click. The live row has no `closedBy` at all and is
+ * always `overall` — it has not ended, so nothing has decided anything about it yet.
+ *
+ * A MIRROR AND NOT A SECOND OPINION: the engine names the SegmentView it hands back with its own
+ * copy of this rule, so the picker row and the header title of the thing it selects agree by
+ * construction. Both read the same field of the same record.
+ */
+function zoneSessionWord(z: ZoneSessionSummary): string {
+  return z.closedBy === 'mark' ? 'session' : 'overall'
+}
+
 /** Overall scope: the live zone session, then the finalized zone-session history. NO fights. */
 export function overallScopeOptions(zoneSessions: ZoneSessionSummary[]): ScopeOptions {
   const toRow = (z: ZoneSessionSummary): ScopeOption => ({
     value: z.id,
-    label: `${z.zone} - overall`,
-    name: `${z.zone} - overall`,
+    label: `${z.zone} - ${zoneSessionWord(z)}`,
+    name: `${z.zone} - ${zoneSessionWord(z)}`,
     dps: z.dps,
     startTs: z.startTs,
     durationSec: z.live ? 0 : Math.max(1, (z.endTs - z.startTs) / 1000),

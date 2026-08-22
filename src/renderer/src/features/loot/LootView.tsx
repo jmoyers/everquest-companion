@@ -57,8 +57,37 @@ import { useSliceLootRates } from './useSliceLootRates'
 // control and the SAME pick the Leveling tab reads, so the drops and the xp behind them can never
 // describe different stretches.
 import { SliceBar } from '../timeslice/SliceBar'
-import { useTimeslice } from '../timeslice/useTimeslice'
+import { useTimeslice, type TimesliceState } from '../timeslice/useTimeslice'
 import { inSlice, type Timeslice } from '@shared/timeslice'
+
+/**
+ * THE LEDGER'S SLICE BAR, INCLUDING THE SESSION SPLIT (JOS-436).
+ *
+ * This is the surface that carries "New session" — the instance-reset workflow the ledger was asked
+ * for: one click ends the stretch you were farming and opens a new one from that instant, with the
+ * old one still in the picker beside it. What it produces is an ordinary custom range, so every
+ * other surface reads the result without knowing this button exists.
+ *
+ * `custom` is handed down BESIDE the resolved slice on purpose: the two datetime fields must show
+ * what the user typed rather than what the record clamped it to (`SliceBar.CustomRange` states the
+ * measurement behind that — it is the reporter's *cannot select a future date on the end time*).
+ *
+ * Its own element so `LootView` stays inside the measured lines-per-function ceiling, exactly like
+ * `LootLedgerBody` and `LootDetailTakeover` below.
+ */
+function LootSliceBar(ts: TimesliceState): JSX.Element {
+  return (
+    <SliceBar
+      available={ts.available}
+      slice={ts.slice}
+      onPick={ts.setId}
+      onCustom={ts.setCustom}
+      custom={ts.custom}
+      sessions={{ segments: ts.segments, index: ts.segmentIndex, onNew: ts.newSession, onPick: ts.pickSegment }}
+      testId="loot-slice"
+    />
+  )
+}
 
 export interface LootViewProps {
   /** An item to open on arrival — the Overview's drop rows deep-linking in. Re-applied whenever
@@ -254,7 +283,8 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
   // `prog` comes back with the slice on purpose (TimesliceState.prog): the rate line below needs a
   // `rangeStats` over this very slice, and a second subscription to the same module is how a
   // numerator and a denominator end up describing two different snapshots.
-  const { prog, available, slice, setId, setCustom } = useTimeslice()
+  const timeslice = useTimeslice()
+  const { prog, slice } = timeslice
   // THE SLICE IS APPLIED ONCE, HERE, and everything below reads the result — the ledger, the
   // grouped counts, the notable strip and the drill-down's events. `inSlice` is the shared
   // membership test (`shared/timeslice.ts`), half-open exactly like `rangeStats`, so a row is in
@@ -295,7 +325,7 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
       {/* ABOVE the toolbar and on its own row: it governs everything below it, including the
           filters, and it must never be crowded into the same line as the search box (the
           compact-bar contract — controls never shrink). */}
-      <SliceBar available={available} slice={slice} onPick={setId} onCustom={setCustom} testId="loot-slice" />
+      <LootSliceBar {...timeslice} />
 
       <LootToolbar
         query={query}

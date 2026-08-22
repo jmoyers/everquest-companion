@@ -318,6 +318,18 @@ export function sanitizeInventory(raw: string): { text: string; cleaned: number 
   return { text: out.join(''), cleaned }
 }
 
+/**
+ * THE ACHIEVEMENTS DUMP'S THIRD LEG (JOS-441) — the same function, and deliberately the same one.
+ *
+ * Every sentence above is true of this file too, on ITS OWN sweep rather than by inheritance
+ * (`src/main/feedback/achievements.ts` carries it): tab-separated, no chat to scrub, an operator
+ * will `cat` it, and it is CRLF so the terminators must survive byte for byte. So this is an
+ * ALIAS rather than a copy — two identical sanitizers would be two things to keep in step, and
+ * the JOS-404 lesson (the wrong sanitizer flagged 1,079 of 1,080 honest rows) is one worth
+ * learning once.
+ */
+export const sanitizeAchievements = sanitizeInventory
+
 /** What the owner-side read of a dump found, as `store.ts downloadInventory` reports it. */
 export interface InventoryDownload {
   /** Where the (sanitized) copy lives on this machine. */
@@ -345,6 +357,23 @@ export function inventoryNotes(dl: InventoryDownload): string[] {
       'or ANSI escapes and were sanitized before being written to disk. A real dump contains ' +
       'none - this one did not come from the game. The S3 object is untouched (it is the ' +
       'evidence); only the local copy was cleaned.'
+  ]
+}
+
+/** The same verdict for the achievements export (JOS-441), naming the file it is about. */
+export function achievementsNotes(dl: InventoryDownload): string[] {
+  if (dl.fromLegacyCache) {
+    return [
+      '[achievements: this copy was cached before the sanitize-on-read counter existed, so what ' +
+        `it cleaned was never measured. Delete ${dl.path} and re-run for a real answer.]`
+    ]
+  }
+  if (dl.cleaned === 0) return []
+  return [
+    `WARNING: ${String(dl.cleaned)} row(s) of this achievements export carried control ` +
+      'characters or ANSI escapes and were sanitized before being written to disk. A real dump ' +
+      'contains none - this one did not come from the game. The S3 object is untouched (it is ' +
+      'the evidence); only the local copy was cleaned.'
   ]
 }
 

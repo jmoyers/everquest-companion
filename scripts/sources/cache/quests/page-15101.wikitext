@@ -59,7 +59,7 @@ You can reference the list of quests below to decide which items you plan to get
 
 If you're also trying to level at the same time, then in terms of difficulty you will probably want to start with [[Lesser Faydark]], [[Rathe Mountains]], then the [[North Karana|North]] and [[South Karana|South]] Karanas camps first - though you will want Tracking for Grizzleknot in South Karana.
 
-Next you can do [[Everfrost]] and [[Ocean of Tears]] followed by [[Cazic Thule]].
+Next you can do [[Everfrost]] and [[Ocean of Tears]] followed by [[Cazic Thule]] and [[Najena]].
 
 And you will probably want to end with the Dagnor's Cauldron region ([[Dagnor's Cauldron]], [[Unrest]], [[Kedge Keep]]). I recommend doing [[Permafrost]] last because it requires clearing lots of the zone and dealing with lots of swarms of mobs, so better off done when you're not trying to get experience - unless you can convince friends to go with you. This may change in the coming months when Permafrost gets its own zone revamp for EQ Legends.
 {{CheckboxList}}
@@ -69,7 +69,7 @@ And you will probably want to end with the Dagnor's Cauldron region ([[Dagnor's 
 '''Reward:''' {{:Totemic Boots}}
 * [[Banded Boots]]
 * [[Dufrenite]]
-* [[Terror Spines]] ([[Tentacle Terror]], [[Najena]]) (lvl22) or ([[A_tentacle_terror_(Unrest)|a tentacle terror]], [[Unrest]]) (lvl30)
+* [[Terror Spines]] ([[Tentacle Terror]], [[Najena]]) (lvl22)
 * [[Chief's Tongue]] ([[Orc chief]], [[Lesser Faydark]]) (lvl18-21)
 
 ==Gauntlets==
@@ -209,15 +209,9 @@ Head out to the [[Everfrost]] tundra, near [[Permafrost]]. Slay [[a wooly mammot
 
 *[[Ghoul Carrion]] from [[a carrion ghoul]] (Sleeves)
 
-*[[Terror Spines]] from [[a_tentacle_terror_(Unrest)|a tentacle terror]] (Boots)
-
-If you do not intend to get the [[Terror Spines]] in Unrest (they can also be farmed in [[Najena]]) you can ignore the rest and just hunt barbed bone skeletons and carrion ghouls upstairs in the house in Unrest. Both mobs spawn frequently and their drops aren't too rare.
-
-If you want to collect all three drops in Unrest, you will need to get the [[Cracked Glass Key]] to open the fake bookshelf that leads to the basement, as the doors are locked in Everquest Legends. If you want to do this, start with a personal, non-respawning instance of the zone so all the key holders will be up.  As you clear the house to get the keys, you have a good chance to get the [[Ghoul Carrion]], and a slim chance of getting the [[Bone Barbs]]. Once you have all the keys, switch to a respawning instance, and head down to the basement for the [[Terror Spines]]. You can also get the [[Bone Barbs]] down in the basement as well. But the [[a carrion ghoul|carrion ghouls]] are only in the upstairs of the house. Fortunately, the carrion drop is fairly common.
+Hunt barbed bone skeletons and carrion ghouls upstairs in the house in Unrest. Both mobs spawn frequently and their drops aren't too rare.
 
 Just remember you want [[Bone Barbs]], NOT [[Barbed Bone Chips]].
-
-'''NOTE:''' In the pre-order beta I could not get the tentacle terrors in [[Unrest]] to drop the spines. But I went to Najena, dropped down the fake floor to the jail cell with the [[Tentacle Terror]] and I got the spines after three kills (less than 15 minutes).
 
 ===Kedge Keep===
 *[[Lancer Swordfish Fin]] from [[A Lancer Swordfish]], [[A Piercer Swordfish]], or [[An impaler swordfish]] (Mail)
@@ -229,6 +223,12 @@ The [[Lancer Swordfish Fin]] can drop from any of the swordfish, and the very fi
 *[[Ogreskin Chamois]] from [[A lizard page]] (Helm)
 
 [[a lizard page|Lizard pages]] can be found in the throne room area of [[Cazic Thule]] as a fairly frequent spawn, as well as inside the maze. The drop isn't guaranteed but seems pretty common.
+
+===Najena===
+
+*[[Terror Spines]] from [[a_tentacle_terror_(Unrest)|a tentacle terror]] (Boots)
+
+Drop down the fake floor into the jail cell with the [[Tentacle Terror]]. It has a 5 minute respawn and drops the spines very frequently.
 
 ===Lesser Feydark===
 *[[Chief's Tongue]] from [[Orc chief]] (Boots)

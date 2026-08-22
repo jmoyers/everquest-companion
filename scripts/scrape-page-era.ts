@@ -34,7 +34,8 @@
  *       `mw.config.wgEQLEraOutKeys`, which is the eleven `out` rows of `PAGE_ERA` in
  *       `shared/planner/era.ts` at `wgEQLEraConfigRevision` 156232. We do not re-implement that
  *       list; `eraBadge`/`namesEra` ARE it.
- * Five requests, warm cache zero. Same UA, same 110 ms serialized delay, same Retry-After backoff
+ * Five requests, warm cache zero. Same UA, same 1 s serialized delay (owner ruling 2026-08-22
+ * — fan-run servers), same Retry-After backoff
  * as every other scraper here (AGENTS.md scraper etiquette).
  *
  * THE SILENCE PROBLEM, and why the token is fetched rather than inferred. `outOfEra: false` is
@@ -87,7 +88,7 @@ const MOBS_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/mobs.json')
 const SPELLS_PATH = resolve(HERE, '../src/main/data/spells.json')
 const OUT_PATH = resolve(HERE, '../src/main/data/pageEra.json')
 
-const DELAY_MS = 110
+const DELAY_MS = 1000
 const MAX_RETRIES = 5
 /** MEASURED anonymous multi-value limit (scrape-items.ts header) — 60 silently returns nothing. */
 const TITLE_BATCH = 50
@@ -114,6 +115,11 @@ function retryDelayMs(res: Response, backoff: number): number {
 
 let requestsSent = 0
 
+/** A maxlag deferral arrives as HTTP 200 with an error body (and a Retry-After header). */
+function isMaxlagDeferral(j: unknown): boolean {
+  return (j as { error?: { code?: string } }).error?.code === 'maxlag'
+}
+
 /**
  * One serialized request with exponential backoff on 429/5xx (honours Retry-After).
  *
@@ -122,7 +128,9 @@ let requestsSent = 0
  */
 /** GET puts the params in the query string; POST puts them in the body. One shape either way. */
 function requestFor(params: Record<string, string>, method: 'GET' | 'POST'): [string, RequestInit] {
-  const body = new URLSearchParams({ format: 'json', formatversion: '2', ...params })
+  // maxlag=5: MediaWiki's own bot-courtesy contract — the server refuses the request outright
+  // when replication lag exceeds 5s, instead of straining to serve it (owner ruling 2026-08-22).
+  const body = new URLSearchParams({ format: 'json', formatversion: '2', maxlag: '5', ...params })
   if (method === 'GET') return [`${API}?${body.toString()}`, { headers: { 'User-Agent': UA } }]
   return [
     API,
@@ -150,7 +158,13 @@ async function api<T>(params: Record<string, string>, method: 'GET' | 'POST' = '
     }
     if (res.ok) {
       await sleep(DELAY_MS)
-      return (await res.json()) as T
+      const j = (await res.json()) as T
+      if (isMaxlagDeferral(j) && attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(res, wait))
+        wait *= 2
+        continue
+      }
+      return j
     }
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
       await sleep(retryDelayMs(res, wait))

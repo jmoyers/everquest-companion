@@ -173,17 +173,15 @@ test('where a boss name appears nowhere else, typing it and picking it give the 
 // =============================================================================
 
 test('LAW 1 — a quest that resolves no boss is found by no boss name', () => {
-  // The Azarack pair: posky states Island 2 and the catalog lists their non-rune item on no mob
-  // page at all (questFacets.test.mts measures the same two).
-  const noBoss = ALL.filter((q) => questBosses(q).length === 0)
-  assert.deepEqual(keys(noBoss), ['Beastlord::Beastlord Test of Azarack', 'Berserker::Berserker Test of Blood'])
-  for (const boss of OPTIONS.bosses) {
-    const typed = new Set(keys(filterByQuery(ALL, boss)))
-    for (const q of noBoss) {
-      assert.equal(typed.has(`${(q as { className: string }).className}::${q.name}`), false, `${boss} swept in ${q.name}`)
-    }
-  }
-  // They ARE findable by the island they state, because that is a fact the data carries.
+  // Re-measured 2026-08-22: the Azarack pair — the two quests this test used to name — gained a
+  // real dropper when the Protector of Sky page began listing Azarack Skin/Blood, so NO committed
+  // quest is boss-less any more (questFacets.test.mts measures the same zero and enforces the law
+  // on a synthetic row). What this file can still assert over real data: the pair is now found BY
+  // that boss's name, and still by the island it states.
+  assert.deepEqual(ALL.filter((q) => questBosses(q).length === 0), [])
+  const byBoss = keys(filterByQuery(ALL, 'Protector of Sky'))
+  assert.ok(byBoss.includes('Beastlord::Beastlord Test of Azarack'), 'Azarack found by its new boss')
+  assert.ok(byBoss.includes('Berserker::Berserker Test of Blood'), 'Blood found by its new boss')
   assert.ok(keys(filterByQuery(ALL, 'Island 2')).includes('Beastlord::Beastlord Test of Azarack'))
 })
 

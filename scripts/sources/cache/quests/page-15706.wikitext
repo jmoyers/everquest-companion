@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_jali_kaliio.png|frame|Jali Kaliio]]
+[[File:npc_jali_kaliio.png|thumb|Jali Kaliio]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Stonebrunt Mountains]]
@@ -52,8 +52,8 @@ Go to Khonza and tell her, 'Jali sent me.'
 : Khonza Ayssla says 'Take this satchel and please listen closely. I need the following and they need to be relatively fresh. So dont waste time with frivolous strolls through the jungle. I require two Panda Claws, two Tiger Skins, two Asp Poison Sacs, a Bamboo Shoot, and a Kejekan Palm Fruit, which you will need to find somewhere in the jungle. Once you have these items, combine them in the bag and return to me.'
 
 * 2x [[Panda Claws]] can be found from pandas in Stonebrunt.
-* 2x [[Tiger Skin]]s drop from Kejek Tigers (orange ones).
-* 2x The best place to get [[Asp Poison Sac]]s is in Oasis of Marr.
+* 2x [[Tiger Skin]]s drop from Kejek Tigers (orange ones)- The tigers on the island in south [[Kerra Island]] have a very high drop rate and fast spawn time.
+* 2x [[Asp Poison Sac]] drop from Asps and Cistern Asps, most common in [[Oasis of Marr]] and the [[Southern Desert of Ro]].
 * 1x [[Kejekan Palm Fruit]] are foraged in Stonebrunt
 * 1x [[Bamboo Shoot]] are foraged in Stonebrunt and can also drop [[Bamboo Shoot]] from pandas. 
 
@@ -62,21 +62,25 @@ Combine into a [[Full Gathering Satchel]].
 When you return the bag to Khonza, Khonza Ayssla says 'I thought the kobolds would have you for dinner, but you made it back.' Ayssla takes the satchel and begins to pour different vials of foul smelling liquid into it. She then takes the entire contents of the bag and dumps it into a large kettle and begins to chant in an unknown language. After a few minutes, she takes a small amount of the now boiling liquid and puts it in a vial. 'Take this vial back to Jali. I pray to the Titan Spirits that it works.'
 
 <div class='facblock'>
-* Your faction standing with [[Kejek Village]] got better.
-* Your faction standing with [[Peace Keepers]] got better.
+* Your faction standing with [[Kejek Village]] has been adjusted by 5.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
 </div>
+{{exp}}
 
-You receive a [[Vial of Healing Liquid]] (MAGIC, LORE, NO TRADE, Tiny, weight 0.2) in return.
+You receive a [[Vial of Healing Liquid]] (NO TRADE, Tiny, weight 0.2) in return.
 
 Giving this to Jali gets the following:
 
 : [[Jali Kaliio]] says ''Khonza Ayssla gave this to you? We must try it at once then.' Jali opens the vial and gently tilts back Yuio's head. He pours the liquid into her mouth and waits. Miraculously, Yuios fur begins to take on a healthy sheen and the sores begin to disappear! Yuio falls into Jali's arms then goes slack, passing out. 'She needs much rest. I cannot begin to thank you enough for helping us. Please accept this as a reward. It is not much but it should be of some use. You are indeed a friend of ours and if you ever need shelter from the wilds, please visit us again.'
 
+<div class='facblock'>
+* Your faction standing with [[Kejek Village]] has been adjusted by 5.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
+</div>
+{{exp}}
+
 You receive the [[Wakizashi of the Frozen Skies]].
 
-==External links==
-
-* http://runen.co.uk/Everquest/Zones/Quests/Stonebrunt/JaliKaliio.htm
 
 [[Category:Quests]]
 [[Category:Stonebrunt Mountains]]

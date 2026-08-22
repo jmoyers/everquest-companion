@@ -30,9 +30,11 @@
 
 == Walkthrough ==
 
-'''Note: This is extremely difficult faction-wise for anyone other than a [[Dark Elf]] [[Necromancer]], [[Shadow Knight]] or [[Cleric]] (must have amiable faction with [[The Dead]], the dark elf necromancer and shadow knight guild).'''
+'''Note: This requires amiable faction (+100) with [[The Dead]], the dark elf necromancer and shadow knight guild.'''
 
-An enchanter can charm Kizdean for the note, however the final turn in NPC cannot be charmed. Raising [[The Dead]] faction is possible (if tedious) by killing high elf or gnome casters from [[Eldritch Collective]] or [[Keepers of the Art]] such as [[Linara Parlone]] or [[Retlon Brenclog]]. Dark elf form or [[Guise of the Deceiver]] will also help. Faction can potentially be bypassed as both the [[Thex Mallet]] and [[Reaper of the Dead]] are tradable.
+An enchanter can charm Kizdean for the note, however the final turn in NPC cannot be charmed. Raising [[The Dead]] faction is possible by killing high elf or gnome casters from [[Eldritch Collective]] or [[Keepers of the Art]] such as [[Linara Parlone]] (highly recommended: +47 faction/kill, faction hits reversible by [[Bat Wings]] quest) or [[Retlon Brenclog]]. Dark elf form (auto-granted to enchanters at level 10) or [[Guise of the Deceiver]] will also help. Faction can potentially be bypassed as both the [[Thex Mallet]] and [[Reaper of the Dead]] are tradable.
+
+The [[Messages For Neriak]] quest can be a simple way to quickly raise [[The Dead]] as well. 
 
 You say, 'Hail [[Loveal S`Nez]]'
 

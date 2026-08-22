@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Elixir of Speed IV
+| spellicon =
+| description = Fills your body with energy, increasing your attack speed for up to 30 minutes.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Alacrity IV]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Alacrity IV}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Attack Speed by 20% }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 30 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You feel very fast.
+| msg_cast_on_other = Someone  drinks an elixir of speed.
+| msg_wears_off = The speed fades.
+}}

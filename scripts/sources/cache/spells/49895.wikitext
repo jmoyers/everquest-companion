@@ -20,6 +20,7 @@
 </li><li> {{:10 Dose Ethira's Poison Antidote}}
 </li><li> {{:Earring of Cleansing}}
 </li><li> {{:Potion of Poison Warding}}
+</li><li> {{:Potion of Prince's Root}}
 </li></ul>
 
 | slots = 

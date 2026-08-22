@@ -49,9 +49,8 @@ You say, 'I am a faithful paladin of this court'
 General Jylell says, 'A noble deed has been done and the alliance of evil has been stalled. I present you with the falchion of the Koada’Vie. You are now an honorable member of our order. Hail Felwithe! May you defend her with honor.'
 
 <div class="facblock">
-* Your faction standing with [[Clerics of Tunare]] got better.
-* Your faction standing with [[King Tearis Thex]] got better.
-* Your faction standing with [[Anti-Mage]] got better.
+* Your faction standing with [[Clerics of Tunare]] has been adjusted by 9.
+* Your faction standing with [[King Tearis Thex]] has been adjusted by 9.
 </div>
 
 {{exp}}

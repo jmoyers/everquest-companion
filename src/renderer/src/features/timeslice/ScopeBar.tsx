@@ -47,11 +47,17 @@ export interface ScopeBarProps {
   slice: Timeslice
   onPick: (id: SliceId) => void
   onCustom: (range: SliceRange) => void
+  /** THE RAW custom pick (`TimesliceState.custom`), passed straight through to `SliceControls` so
+   *  the two datetime fields show what was typed rather than what the record clamped it to
+   *  (JOS-436 — `SliceBar.CustomRange` carries the argument). It travels here for the same reason
+   *  the buttons do: this is the SAME control as the Loot ledger's, and one of them displaying a
+   *  different range than the other is two controls wearing one design. */
+  custom?: SliceRange | null
   /** Prefix for the controls' testids: `<prefix>-slice…`, `<prefix>-tier…`, `<prefix>-basis…`. */
   testId: string
 }
 
-export function ScopeBar({ available, slice, onPick, onCustom, testId }: ScopeBarProps): JSX.Element {
+export function ScopeBar({ available, slice, onPick, onCustom, custom, testId }: ScopeBarProps): JSX.Element {
   return (
     <Stack spacing={0.75} sx={{ minWidth: 0 }}>
       {/* THE ROW. One `columnGap` and one `rowGap` for all three, so a wrapped row is spaced like
@@ -67,6 +73,7 @@ export function ScopeBar({ available, slice, onPick, onCustom, testId }: ScopeBa
           slice={slice}
           onPick={onPick}
           onCustom={onCustom}
+          custom={custom}
           testId={`${testId}-slice`}
         />
         {slice.zoneKey !== null && <ZoneScopeBar testId={`${testId}-tier`} />}

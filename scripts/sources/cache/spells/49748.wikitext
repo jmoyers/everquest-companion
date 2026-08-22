@@ -6,6 +6,12 @@
 | description = Cloaks you in a shimmering illusion that makes you appear to be an Ogre.
 
 | classes = * [[Enchanter]] - Level 17
+
+| items_with_effect = 
+
+<ul><li> {{:Essence of Ogre (Wormwood)}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Illusion: 10 }}

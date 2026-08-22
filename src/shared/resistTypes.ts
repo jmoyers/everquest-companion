@@ -270,6 +270,15 @@ export interface SpellResistInfo {
   axis: ResistAxis | null
   resistAdj: number
   castMs: number
+  /**
+   * THE RE-USE TIMER in ms, field 10, present only when the row states a positive one (JOS-444).
+   *
+   * It is here rather than in the wiki catalog's shadow because it answers for the 81 catalog rows
+   * whose page omits `recast_time`: `shared/spellMetrics.ts` reads it as the FALLBACK denominator
+   * of a sustained dps. Field 9 is a different number that looks like this one and is not it — see
+   * spellsUsParse.ts, where both are measured.
+   */
+  recastMs?: number
   targetType: number
   /** Slot-1-through-N effect 0 (hitpoints), when the spell has one. Drives fixed-vs-variable. */
   hpSlot?: { base: number; max: number; calc: number }

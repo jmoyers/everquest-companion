@@ -1,5 +1,5 @@
 {
-  "scrapedAt": "2026-08-05T01:58:39.318Z",
+  "scrapedAt": "2026-08-22T19:26:23.025Z",
   "source": "eqlwiki.com — Category:NPCs/Named Mobs/Merchants/Raid Encounters ∪ embeddedin Template:Namedmobpage/MerchantPage, filtered to pages opening a mob template",
   "mobs": [
     {
@@ -919,8 +919,7 @@
         "Lower Guk"
       ],
       "drops": [
-        "Torn Page of Magi`kot pg. 3",
-        "Torn Page of Magi`kot pg. 1"
+        "Torn Page of Magi`kot pg. 3"
       ],
       "loc": [
         {
@@ -2044,7 +2043,7 @@
     {
       "page": "A catfisher",
       "name": "a catfisher",
-      "level": "2",
+      "level": "1-2",
       "zones": [
         "Kerra Island"
       ],
@@ -3353,13 +3352,10 @@
       "level": "9 - 13",
       "zones": [
         "South Ro",
-        "Oasis of Marr",
-        "North Ro"
+        "Oasis of Marr"
       ],
       "drops": [
-        "Asp Poison Sac",
-        "Giant Snake Fang",
-        "Snake Venom Sac"
+        "Asp Poison Sac"
       ]
     },
     {
@@ -3523,8 +3519,9 @@
         "Mistmoore Castle"
       ],
       "drops": [
+        "Blood of the Dhampyre",
         "Hooded Black Cloak",
-        "Blood of the Dhampyre"
+        "Fleeting Memory"
       ],
       "loc": [
         {
@@ -5880,7 +5877,8 @@
         "Mistmoore Castle"
       ],
       "drops": [
-        "Illegible Scroll"
+        "Illegible Scroll",
+        "Veil of Silence"
       ],
       "loc": [
         {
@@ -6382,6 +6380,17 @@
       "drops": [
         "Bone Chips",
         "Brittle Iksar Skull"
+      ]
+    },
+    {
+      "page": "A decrepit warder",
+      "name": "a decrepit warder",
+      "zones": [
+        "Plane of Fear"
+      ],
+      "drops": [
+        "Crystallized Sulfur",
+        "Opal Bracelet"
       ]
     },
     {
@@ -7088,6 +7097,7 @@
       "drops": [
         "Ethereal Mist Greaves",
         "Lustrous Russet Greaves",
+        "Neriak Ceremonial Robe",
         "Rune Etched Greaves",
         "Shiverback-hide Leggings",
         "Thorny Vine Greaves",
@@ -7167,7 +7177,9 @@
       ],
       "drops": [
         "Piece of Rat Fur",
-        "Rat Ears"
+        "Rat Ears",
+        "Rat Whiskers",
+        "Rat Eye"
       ],
       "loc": [
         {
@@ -7799,6 +7811,17 @@
       ]
     },
     {
+      "page": "A dread skeleton",
+      "name": "a dread skeleton",
+      "level": "23-25",
+      "zones": [
+        "Najena"
+      ],
+      "drops": [
+        "Bone Chips"
+      ]
+    },
+    {
       "page": "A dread widow",
       "name": "a dread widow",
       "level": "47-49",
@@ -8337,7 +8360,7 @@
       "name": "a dune tarantula",
       "level": "11-13",
       "zones": [
-        "Northern Desert of Ro"
+        "Northern Desert of Ro Oasis of Marr"
       ],
       "drops": [
         "Spider Silk",
@@ -8982,13 +9005,15 @@
         "Mistmoore Castle"
       ],
       "drops": [
+        "Mistmoore Heirloom Ring",
         "Noble's Robes",
         "Vial of Noble's Blood"
       ],
       "loc": [
         {
           "ns": 23,
-          "ew": 105
+          "ew": 105,
+          "pct": 100
         }
       ]
     },
@@ -14239,6 +14264,7 @@
         {
           "ns": 578,
           "ew": -609,
+          "z": -192,
           "pct": 75
         }
       ]
@@ -14435,24 +14461,6 @@
       "level": "18-22",
       "zones": [
         "Najena"
-      ],
-      "loc": [
-        {
-          "ns": 460,
-          "ew": -160
-        },
-        {
-          "ns": 440,
-          "ew": 80
-        },
-        {
-          "ns": 420,
-          "ew": 130
-        },
-        {
-          "ns": 460,
-          "ew": 220
-        }
       ]
     },
     {
@@ -15127,6 +15135,17 @@
       ]
     },
     {
+      "page": "A giant wood spider",
+      "name": "a giant wood spider",
+      "level": "7-10",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Spider Silk"
+      ]
+    },
+    {
       "page": "A giant wooly spider",
       "name": "a giant wooly spider",
       "level": "8",
@@ -15140,6 +15159,19 @@
         "Barbarian Meat",
         "Winter Lilly",
         "Spider Silk"
+      ]
+    },
+    {
+      "page": "A giant yellowjacket",
+      "name": "a giant yellowjacket",
+      "level": "7-8",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Giant Wasp Eye",
+        "Giant Wasp Wing",
+        "Giant Wasp Venom Sac"
       ]
     },
     {
@@ -15402,16 +15434,6 @@
         "Kedge Keep"
       ],
       "drops": [
-        "Pearl Necklace",
-        "Emerald Ring",
-        "Opal Bracelet",
-        "Mithril Amulet",
-        "Star Ruby Earring",
-        "Fire Emerald Ring",
-        "Fire Opal",
-        "Star Ruby",
-        "Fire Emerald",
-        "Sapphire",
         "Fresh Fish",
         "Deepwater Ink",
         "Mermaid Scale",
@@ -15637,22 +15659,8 @@
       ],
       "drops": [
         "Crested Mistmoore Shield",
-        "Vial of Vampire Blood",
-        "Fine Steel Scimitar",
-        "Fine Steel Two Handed Sword",
-        "Fine Steel Morning Star",
-        "Ringmail Coat",
-        "Ringmail Cape",
-        "Iron Visor",
-        "Fine Steel Spear",
-        "Fine Steel Warhammer",
-        "Fine Steel Dagger",
-        "Fine Steel Rapier",
-        "Fine Steel Long Sword",
-        "Fine Steel Great Staff",
-        "Ringmail Boots",
-        "Ringmail Skirt",
-        "Ringmail Gloves"
+        "Gilded Mistmoore Visor",
+        "Vial of Vampire Blood"
       ],
       "loc": [
         {
@@ -18742,16 +18750,7 @@
         "Stonebrunt Mountains"
       ],
       "drops": [
-        "Bamboo Splint Visor",
-        "Bamboo Splint Skirt",
-        "Bamboo Splint Sleeves",
-        "Blue Wicker Wristbands",
-        "Bamboo Tanto Bo",
-        "Copper Amulet",
         "Odd Cold Iron Necklace",
-        "Lapis Lazuli",
-        "Kobold Hide",
-        "Kobold Meat",
         "Kobold Shaman's Pouch"
       ],
       "loc": [
@@ -19495,6 +19494,17 @@
       ]
     },
     {
+      "page": "A halfling skeleton",
+      "name": "a halfling skeleton",
+      "level": "4-5",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Bone Chips"
+      ]
+    },
+    {
       "page": "A halfling swashbuckler",
       "name": "halfling swashbuckler",
       "level": "25",
@@ -19517,6 +19527,17 @@
           "ew": -1868,
           "pct": 11
         }
+      ]
+    },
+    {
+      "page": "A halfling zombie",
+      "name": "a halfling zombie",
+      "level": "8",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Zombie Skin"
       ]
     },
     {
@@ -19610,6 +19631,7 @@
         "Rune Etched Bracer",
         "Umbral Platemail Bracer",
         "Ethereal Mist Vambraces",
+        "Lustrous Russet Bracer",
         "Thorny Vine Boots",
         "Indicolite Boots",
         "Star Ruby",
@@ -20050,6 +20072,9 @@
       "zones": [
         "Mistmoore Castle"
       ],
+      "drops": [
+        "Wine Thief"
+      ],
       "loc": [
         {
           "ns": -67,
@@ -20077,18 +20102,6 @@
         "Dirt Soiled Robe*",
         "Necromancer Blood",
         "Heretics Head"
-      ],
-      "loc": [
-        {
-          "ns": -1513,
-          "ew": -2710,
-          "pct": 100
-        },
-        {
-          "ns": -1879,
-          "ew": 2064,
-          "pct": 100
-        }
       ]
     },
     {
@@ -20103,22 +20116,8 @@
         "Fine Steel Katana",
         "Fine Steel Tonfa",
         "Fine Steel Tachi",
-        "Targ Shield",
-        "Necromancer Blood",
         "Kite Shield",
         "Heretics Head"
-      ],
-      "loc": [
-        {
-          "ns": -1513,
-          "ew": -2710,
-          "pct": 100
-        },
-        {
-          "ns": -1879,
-          "ew": 2064,
-          "pct": 100
-        }
       ]
     },
     {
@@ -20971,7 +20970,8 @@
       ],
       "drops": [
         "Spider Silk",
-        "Spider Legs"
+        "Spider Legs",
+        "Black Spider Silk"
       ]
     },
     {
@@ -20980,25 +20980,23 @@
       "level": "1 - 3",
       "zones": [
         "The Feerrott"
+      ],
+      "drops": [
+        "Spiderling Silk",
+        "Spiderling Legs",
+        "Black Spider Silk"
       ]
     },
     {
       "page": "A jungle spiritling",
       "name": "a jungle spiritling",
-      "level": "21",
+      "level": "21-22",
       "zones": [
         "Stonebrunt Mountains"
       ],
       "drops": [
         "Jungle Spiritling Stone",
         "Burned Out Lightstone"
-      ],
-      "loc": [
-        {
-          "ns": -4691,
-          "ew": 2835,
-          "pct": 100
-        }
       ]
     },
     {
@@ -21006,7 +21004,7 @@
       "name": "a keeper",
       "level": "34-36",
       "zones": [
-        "Temple of Solusek Ro"
+        "The Temple of Solusek Ro"
       ],
       "drops": [
         "Darkwood Staff",
@@ -21031,7 +21029,7 @@
     {
       "page": "A kejek leopardess",
       "name": "a kejek leopardess",
-      "level": "16ish",
+      "level": "14-16",
       "zones": [
         "Stonebrunt Mountains"
       ],
@@ -21040,19 +21038,24 @@
         "Ruined Cat Pelt",
         "Low Quality Cat Pelt",
         "Medium Quality Cat Pelt",
-        "High Quality Cat Pelt"
+        "High Quality Cat Pelt",
+        "Leopard Skin"
       ]
     },
     {
       "page": "A kejek tiger",
       "name": "a kejek tiger",
-      "level": "26-28?",
+      "level": "26-28",
       "zones": [
         "Stonebrunt Mountains"
       ],
       "drops": [
         "Chunk of Meat",
-        "Tiger Skin"
+        "Tiger Skin",
+        "Ruined Cat Pelt",
+        "Low Quality Cat Pelt",
+        "Medium Quality Cat Pelt",
+        "High Quality Cat Pelt"
       ],
       "loc": [
         {
@@ -21064,7 +21067,7 @@
     {
       "page": "A kejek tigress",
       "name": "a kejek tigress",
-      "level": "21",
+      "level": "20-22?",
       "zones": [
         "Stonebrunt Mountains"
       ],
@@ -23031,6 +23034,14 @@
       ]
     },
     {
+      "page": "A large fruit bat",
+      "name": "a large fruit bat",
+      "level": "6",
+      "zones": [
+        "Misty Thicket"
+      ]
+    },
+    {
       "page": "A large heart spider",
       "name": "a large heart spider",
       "level": "17-21",
@@ -23248,7 +23259,7 @@
     {
       "page": "A large skeleton",
       "name": "a large skeleton",
-      "level": "8-10",
+      "level": "8-10, 15 (Najena)",
       "zones": [
         "Najena",
         "The Estate of Unrest",
@@ -23463,6 +23474,18 @@
       ]
     },
     {
+      "page": "A large yellowjacket",
+      "name": "a large yellowjacket",
+      "level": "4-5",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Large Yellowjacket Tarsus",
+        "Giant Wasp Eye"
+      ]
+    },
+    {
       "page": "A Lava Basilisk",
       "name": "a lava basilisk",
       "level": "13 - 18",
@@ -23596,6 +23619,14 @@
       "level": "60",
       "zones": [
         "Veeshan's Peak"
+      ]
+    },
+    {
+      "page": "A lava guardian",
+      "name": "a lava guardian",
+      "level": "42-46",
+      "zones": [
+        "Nagafen's Lair"
       ]
     },
     {
@@ -23902,33 +23933,6 @@
         "Bamboo Tanto Bo",
         "Bronze Tonfa",
         "Fish Wine"
-      ],
-      "loc": [
-        {
-          "ns": -4822,
-          "ew": 1188,
-          "pct": 33
-        },
-        {
-          "ns": -4826,
-          "ew": 1142,
-          "pct": 33
-        },
-        {
-          "ns": -3819,
-          "ew": 2123,
-          "pct": 33
-        },
-        {
-          "ns": -3864,
-          "ew": 2183,
-          "pct": 33
-        },
-        {
-          "ns": -3998,
-          "ew": 2391,
-          "pct": 33
-        }
       ]
     },
     {
@@ -25014,7 +25018,7 @@
     {
       "page": "A Magician",
       "name": "a magician",
-      "level": "9-23",
+      "level": "17 (Entrance), 24 (Interior), 29 (Najena's disciples)",
       "zones": [
         "Najena"
       ],
@@ -25030,48 +25034,6 @@
         "Torn Page of Mastery Wind",
         "Torn Page of Mastery Earth",
         "Torn Page of Mastery Water"
-      ],
-      "loc": [
-        {
-          "ns": 0,
-          "ew": 110
-        },
-        {
-          "ns": -25,
-          "ew": -25
-        },
-        {
-          "ns": 110,
-          "ew": -138
-        },
-        {
-          "ns": 110,
-          "ew": -190
-        },
-        {
-          "ns": 130,
-          "ew": -163
-        },
-        {
-          "ns": -700,
-          "ew": -40
-        },
-        {
-          "ns": -670,
-          "ew": -40
-        },
-        {
-          "ns": -700,
-          "ew": -67
-        },
-        {
-          "ns": -690,
-          "ew": -120
-        },
-        {
-          "ns": 357,
-          "ew": 175
-        }
       ]
     },
     {
@@ -25145,10 +25107,11 @@
     {
       "page": "A Mangy Rat",
       "name": "A Mangy Rat",
-      "level": "1",
+      "level": "1-3",
       "zones": [
         "North Qeynos",
-        "Qeynos Hills"
+        "Qeynos Hills",
+        "Misty Thicket"
       ]
     },
     {
@@ -25474,7 +25437,9 @@
       "drops": [
         "Panda Claws",
         "Panda Pelt",
-        "Bamboo Shoot"
+        "Bamboo Shoot",
+        "Black Pearl",
+        "Mithril Amulet"
       ],
       "loc": [
         {
@@ -25704,7 +25669,8 @@
       ],
       "drops": [
         "Carved Ivory Mask",
-        "Chrysoberyl Talisman"
+        "Chrysoberyl Talisman",
+        "Minotaur Horn"
       ],
       "loc": [
         {
@@ -26294,20 +26260,13 @@
     {
       "page": "A mountain spiritling",
       "name": "A mountain spiritling",
-      "level": "25",
+      "level": "25-27",
       "zones": [
         "Stonebrunt Mountains"
       ],
       "drops": [
         "Burned Out Lightstone",
         "Mountain Spiritling Stone"
-      ],
-      "loc": [
-        {
-          "ns": 2606,
-          "ew": -2145,
-          "pct": 100
-        }
       ]
     },
     {
@@ -26843,6 +26802,9 @@
       "zones": [
         "Lower Guk"
       ],
+      "drops": [
+        "Undead Froglok Tongue"
+      ],
       "loc": [
         {
           "ns": 1000,
@@ -27145,7 +27107,8 @@
         "Panda Claws",
         "Panda Pelt",
         "Bamboo Shoot",
-        "Jade"
+        "Black Pearl",
+        "Mithril Amulet"
       ]
     },
     {
@@ -28452,6 +28415,7 @@
         {
           "ns": 504,
           "ew": 62,
+          "z": 45,
           "pct": 5
         }
       ]
@@ -29625,8 +29589,8 @@
       ],
       "drops": [
         "Imbued Granite Spauldors",
-        "Bow of the Underfoot",
-        "Mudman Enforcer"
+        "Mudman Enforcer",
+        "Bow of the Underfoot"
       ]
     },
     {
@@ -30697,6 +30661,14 @@
         "Giant Scarab Eye",
         "Pristine Giant Scarab Carapace",
         "Scarab Carapace"
+      ]
+    },
+    {
+      "page": "A sand scarab hatchling",
+      "name": "a sand scarab hatchling",
+      "level": "4",
+      "zones": [
+        "East Commonlands"
       ]
     },
     {
@@ -33728,7 +33700,6 @@
         "Barbed Armplates",
         "Bone Bladed Claymore",
         "Chipped Bone Rod",
-        "Dark Elf Parts",
         "Splintered Wooden Key"
       ],
       "loc": [
@@ -34481,14 +34452,7 @@
       ],
       "drops": [
         "Shin Gauntlets",
-        "Shin Greaves",
-        "Flame of Vox",
-        "Black Pearl",
-        "Amber",
-        "Topaz",
-        "Peridot",
-        "Emerald",
-        "Opal"
+        "Shin Greaves"
       ]
     },
     {
@@ -35108,6 +35072,13 @@
           "ew": 80,
           "pct": 10
         }
+      ]
+    },
+    {
+      "page": "A skeletal excavator",
+      "name": "a skeletal excavator",
+      "zones": [
+        "Befallen"
       ]
     },
     {
@@ -36487,8 +36458,8 @@
       ],
       "loc": [
         {
-          "ns": 470,
-          "ew": -39,
+          "ns": 475,
+          "ew": -69,
           "pct": 100
         }
       ]
@@ -37782,9 +37753,6 @@
       "level": "30-34",
       "zones": [
         "Lower Guk"
-      ],
-      "drops": [
-        "Undead Froglok Tongue"
       ]
     },
     {
@@ -37908,6 +37876,14 @@
       "level": "9",
       "zones": [
         "Rivervale"
+      ]
+    },
+    {
+      "page": "A Teir`Dal priest",
+      "name": "a Teir`Dal priest",
+      "level": "22-25",
+      "zones": [
+        "Befallen"
       ]
     },
     {
@@ -38414,6 +38390,14 @@
       ]
     },
     {
+      "page": "A thorn drakeling",
+      "name": "a thorn drakeling",
+      "level": "3-5",
+      "zones": [
+        "Misty Thicket"
+      ]
+    },
+    {
       "page": "A thorny succulent",
       "name": "a thorny succulent",
       "level": "29-33",
@@ -38628,6 +38612,28 @@
         "White Satin Gloves",
         "Lost rabbit's foot",
         "Miniature Sword"
+      ]
+    },
+    {
+      "page": "A Tier'Dal Priest",
+      "name": "a Tier'Dal Priest",
+      "level": "11",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "drops": [
+        "Tier'Dal Priest Insignia"
+      ]
+    },
+    {
+      "page": "A Tier'Dal Spellbinder",
+      "name": "a Tier'Dal Spellbinder",
+      "level": "11",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "drops": [
+        "Tier'Dal Arcane Insignia"
       ]
     },
     {
@@ -39502,11 +39508,33 @@
       "level": "4-6",
       "zones": [
         "Kithicor Forest",
-        "Southern Desert of Ro"
+        "Southern Desert of Ro. Misty Thicket"
       ],
       "drops": [
         "Snake Fang",
         "Snake Egg"
+      ]
+    },
+    {
+      "page": "A Troll Greenblood",
+      "name": "a Troll Greenblood",
+      "level": "9",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "drops": [
+        "Troll Greenblood Insignia"
+      ]
+    },
+    {
+      "page": "A Troll Marauder",
+      "name": "a Troll Marauder",
+      "level": "10",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "drops": [
+        "Troll Basher Insignia"
       ]
     },
     {
@@ -39811,13 +39839,6 @@
       "drops": [
         "Burned Out Lightstone",
         "Valley Spiritling Stone"
-      ],
-      "loc": [
-        {
-          "ns": -2023,
-          "ew": -2129,
-          "pct": 100
-        }
       ]
     },
     {
@@ -40456,87 +40477,6 @@
       "level": "33-37",
       "zones": [
         "Lower Guk"
-      ],
-      "drops": [
-        "Fine Steel Short Sword",
-        "Amber",
-        "Topaz",
-        "Words of Endurance",
-        "Words of Efficacy",
-        "Words of Abatement",
-        "Undead Froglok Tongue",
-        "Cloth Cap",
-        "Fine Steel Long Sword",
-        "Fine Steel Scimitar",
-        "Fine Steel Warhammer",
-        "Fine Steel Morning Star",
-        "Fine Steel Great Staff",
-        "Fine Steel Dagger",
-        "Fine Steel Spear",
-        "Fine Steel Rapier",
-        "Gold Ring",
-        "Jade",
-        "Pearl",
-        "Silver Amulet",
-        "Mithril Earring",
-        "Jade Earring",
-        "Flame Agate",
-        "Salil's Writ Pg. 60 (Left)",
-        "Salil's Writ Pg. 60 (Right)",
-        "Faded Salil's Writ Page",
-        "Salil's Writ Pg. 64 (Left)",
-        "Salil's Writ Pg. 90 (Left)",
-        "Rune of Consumption",
-        "Rune of Sorcery",
-        "Rune of Arrest",
-        "Rune of Concussion",
-        "Rune of Banding",
-        "Rune of the Catalyst",
-        "Rune of Solusek Ro",
-        "Rune of the Cyclone",
-        "Rune of Howling",
-        "Rune of Contortion",
-        "Words of Detention",
-        "Words of Duress",
-        "Words of Resolve",
-        "Words of Quivering",
-        "Words of Duration",
-        "Words of Motion",
-        "Words of Neglect",
-        "Words of Dark Paths",
-        "Words of the Suffering",
-        "Pod of Water",
-        "Words of Cazic-Thule",
-        "Ivory",
-        "Fine Steel Two Handed Sword",
-        "The Scent of Marr"
-      ],
-      "loc": [
-        {
-          "ns": 637,
-          "ew": -912,
-          "pct": 33
-        },
-        {
-          "ns": 622,
-          "ew": -890,
-          "pct": 33
-        },
-        {
-          "ns": 916,
-          "ew": -665,
-          "pct": 33
-        },
-        {
-          "ns": 708,
-          "ew": -687,
-          "pct": 33
-        },
-        {
-          "ns": 931,
-          "ew": -1015,
-          "pct": 33
-        }
       ]
     },
     {
@@ -41584,50 +41524,10 @@
       ],
       "drops": [
         "Panda Claws",
-        "Emerald",
         "Panda Pelt",
         "Bamboo Shoot",
-        "Pearl Ring",
         "Black Pearl",
-        "Peridot",
-        "Opal",
-        "Opal Bracelet",
-        "Fire Opal",
-        "Fire Emerald",
-        "Golden Pendant",
-        "Rune of Al'Kabor",
-        "Rune of Regeneration",
-        "Flame of Vox",
-        "Words of Possession",
-        "Words of Dissemination",
-        "Words of Parasitism"
-      ],
-      "loc": [
-        {
-          "ns": 3172,
-          "ew": 3164,
-          "pct": 100
-        },
-        {
-          "ns": 2597,
-          "ew": -3280,
-          "pct": 100
-        },
-        {
-          "ns": 3128,
-          "ew": 3235,
-          "pct": 100
-        },
-        {
-          "ns": 3018,
-          "ew": 554,
-          "pct": 100
-        },
-        {
-          "ns": 1551,
-          "ew": 2577,
-          "pct": 100
-        }
+        "Mithril Amulet"
       ]
     },
     {
@@ -41887,50 +41787,7 @@
         "Lower Guk"
       ],
       "drops": [
-        "Fine Steel Short Sword",
-        "Amber",
-        "Black Pearl",
-        "Topaz",
-        "Undead Froglok Tongue",
-        "Fine Steel Long Sword",
-        "Fine Steel Scimitar",
-        "Fine Steel Warhammer",
-        "Fine Steel Morning Star",
-        "Fine Steel Great Staff",
-        "Fine Steel Dagger",
-        "Fine Steel Spear",
-        "Fine Steel Rapier",
-        "Gold Ring",
-        "Jade",
-        "Pearl",
-        "Peridot",
-        "Silver Amulet",
-        "Mithril Earring",
-        "Jade Earring",
-        "Flame Agate",
-        "Ivory",
-        "Fine Steel Two Handed Sword",
-        "Words of Absorption",
-        "Words of Anthology",
-        "Words of Bidding",
-        "Words of Cazic-Thule",
-        "Words of Descrying",
-        "Words of Dominion",
-        "Words of Enlightenment",
-        "Words of Imitation",
-        "Words of Projection",
-        "Words of Radiance",
-        "Words of Seizure",
-        "Words of the Extinct",
-        "Words of the Suffering",
-        "Rune of Embrace",
-        "Rune of Oppression",
-        "Rune of Tyranny",
-        "Rune of Velious",
-        "Part of Tasarin's Grimoire Pg. 30 (Right)",
-        "Part of Tasarin's Grimoire Pg. 375 (Left)",
-        "Salil's Writ Pg. 153 (Right)",
-        "Salil's Writ Pg. 174 (Left)"
+        "Phosphorous Powder"
       ]
     },
     {
@@ -44127,10 +43984,6 @@
       "zones": [
         "Najena"
       ],
-      "drops": [
-        "Damask Robe",
-        "Dark Gold Sr Apprentice Robe*"
-      ],
       "loc": [
         {
           "ns": 372,
@@ -44332,9 +44185,22 @@
       ]
     },
     {
+      "page": "Alladria Skyetcher",
+      "name": "Alladria Skyetcher",
+      "zones": [
+        "North Felwithe"
+      ],
+      "loc": [
+        {
+          "ns": 127,
+          "ew": -414
+        }
+      ]
+    },
+    {
       "page": "Allia Moondancer",
       "name": "Allia Moondancer",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -44369,18 +44235,7 @@
         "Ocean of Tears"
       ],
       "drops": [
-        "Emerald Ring",
-        "Fire Emerald Ring",
-        "Sapphire Necklace",
-        "Star Ruby Earring",
-        "Ruby",
-        "Ruby Crown",
-        "Black Sapphire",
-        "Diamond",
-        "Jacinth",
-        "Blue Diamond",
-        "Crystallized Sulfur",
-        "Snake Scales"
+        "Crystallized Sulfur"
       ],
       "loc": [
         {
@@ -46097,12 +45952,10 @@
         "Small Piece of Ore",
         "Steamfont Spring Water",
         "Russet Oxide",
-        "Iron Oxide",
         "Carnelian",
         "Charcoal",
         "Drop of Mercury",
         "Hardened Brick of Clay",
-        "Words of Reviviscence",
         "Large Ball of Clay"
       ]
     },
@@ -46345,22 +46198,10 @@
       ],
       "drops": [
         "Panda Claws",
+        "Panda Pelt",
+        "Bamboo Shoot",
         "Black Pearl",
-        "Amber",
-        "Topaz",
-        "Peridot",
-        "Emerald",
-        "Opal",
-        "Fire Opal",
-        "Star Ruby",
-        "Panda Pelt"
-      ],
-      "loc": [
-        {
-          "ns": 1760,
-          "ew": 3434,
-          "pct": 13
-        }
+        "Mithril Amulet"
       ]
     },
     {
@@ -46554,18 +46395,6 @@
         "Smoldering Brand",
         "Earthen Blade",
         "Elemental Binder"
-      ],
-      "loc": [
-        {
-          "ns": 340,
-          "ew": -250,
-          "pct": 3
-        },
-        {
-          "ns": 246,
-          "ew": -176,
-          "pct": 3
-        }
       ]
     },
     {
@@ -47039,48 +46868,6 @@
         "Snake Meat",
         "Snake Venom Sac",
         "Giant Snake Rattle"
-      ],
-      "loc": [
-        {
-          "ns": -430,
-          "ew": -95,
-          "pct": 100
-        },
-        {
-          "ns": -1996,
-          "ew": -815,
-          "pct": 100
-        },
-        {
-          "ns": -2928,
-          "ew": -1919,
-          "pct": 100
-        },
-        {
-          "ns": -325,
-          "ew": -3181,
-          "pct": 100
-        },
-        {
-          "ns": -498,
-          "ew": 342,
-          "pct": 100
-        },
-        {
-          "ns": -1015,
-          "ew": 1397,
-          "pct": 100
-        },
-        {
-          "ns": -3275,
-          "ew": -2369,
-          "pct": 100
-        },
-        {
-          "ns": -766,
-          "ew": 2581,
-          "pct": 100
-        }
       ]
     },
     {
@@ -47752,7 +47539,8 @@
       ],
       "drops": [
         "Rusty Shortened Spear",
-        "Rain Water"
+        "Rain Water",
+        "Cracked Staff"
       ],
       "loc": [
         {
@@ -47959,7 +47747,7 @@
     {
       "page": "An Evil Eye (Runnyeye)",
       "name": "an Evil Eye",
-      "level": "32+ ? (Blue to 46)",
+      "level": "30+",
       "zones": [
         "Runnyeye Citadel"
       ],
@@ -49596,7 +49384,8 @@
         "Jade Shard",
         "Bronze Spear",
         "Bronze Two Handed Sword",
-        "Bronze Short Sword"
+        "Bronze Short Sword",
+        "Familiar Ring"
       ],
       "loc": [
         {
@@ -49635,16 +49424,8 @@
         "Najena"
       ],
       "drops": [
-        "Torn Page of Mastery Earth",
-        "Torn Page of Mastery Water",
-        "A Shovel",
+        "Leatherfoot_Raider_Skullcap_(drop)",
         "Scribbled Prisoner's Note"
-      ],
-      "loc": [
-        {
-          "ns": -50,
-          "ew": -75
-        }
       ]
     },
     {
@@ -50071,7 +49852,7 @@
     {
       "page": "An Ogre Guard",
       "name": "an ogre guard",
-      "level": "10-20",
+      "level": "16",
       "zones": [
         "Najena"
       ],
@@ -50156,14 +49937,17 @@
         "Western Plains of Karana"
       ],
       "drops": [
-        "Glowing Bone Collar",
-        "Batfang Headband",
-        "Giant Snakespine Belt",
-        "Batskull Earring",
-        "Sheer Bone Mask",
         "Bone Armplates",
+        "Giant Snakespine Belt",
         "Bone Legplates",
-        "Chipped Bone Collar"
+        "Turtleshell Helm",
+        "Chipped Bone Collar",
+        "Sheer Bone Mask",
+        "Batfang Headband",
+        "Batskull Earring",
+        "Chipped Bone Bracelet",
+        "Glowing Bone Collar",
+        "Bone Amulet of Blade Turning"
       ],
       "loc": [
         {
@@ -50215,18 +49999,17 @@
         "Western Plains of Karana"
       ],
       "drops": [
-        "Turtleshell Helm",
-        "Sheer Bone Mask",
-        "Chipped Bone Collar",
-        "Giant Snakespine Belt",
         "Bone Armplates",
-        "Large Splinted Bronze Cloak",
-        "Chipped Bone Bracelet",
+        "Giant Snakespine Belt",
         "Bone Legplates",
-        "Batskull Earring",
+        "Turtleshell Helm",
+        "Chipped Bone Collar",
+        "Sheer Bone Mask",
         "Batfang Headband",
-        "Part of Tasarin's Grimoire Pg. 312 (Left)",
-        "Glowing Bone Collar"
+        "Batskull Earring",
+        "Chipped Bone Bracelet",
+        "Glowing Bone Collar",
+        "Bone Amulet of Blade Turning"
       ],
       "loc": [
         {
@@ -50491,6 +50274,16 @@
       ]
     },
     {
+      "page": "An orc centurion",
+      "name": "a orc centurion",
+      "zones": [
+        "East Freeport"
+      ],
+      "drops": [
+        "Deathfist Slashed Belt"
+      ]
+    },
+    {
       "page": "An Orc Cleric",
       "name": "an orc cleric",
       "level": "8-10",
@@ -50594,6 +50387,17 @@
         "Small Cloth Wristband",
         "Worn Great Staff",
         "Worn Weighted Gloves"
+      ]
+    },
+    {
+      "page": "An orc lumberjack",
+      "name": "an orc lumberjack",
+      "level": "10",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "drops": [
+        "Deathfist Slashed Belt"
       ]
     },
     {
@@ -52021,6 +51825,20 @@
       ]
     },
     {
+      "page": "Animal Trainer Visop",
+      "name": "Animal Trainer Visop",
+      "level": "49",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "loc": [
+        {
+          "ns": -2223,
+          "ew": 577
+        }
+      ]
+    },
+    {
       "page": "Anite Gemcutter",
       "name": "Anite Gemcutter",
       "level": "45",
@@ -53061,7 +52879,7 @@
     {
       "page": "Assa Leafwind",
       "name": "Assa Leafwind",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -53276,6 +53094,28 @@
         {
           "ns": 762,
           "ew": 849
+        }
+      ]
+    },
+    {
+      "page": "Auraline",
+      "name": "Auraline",
+      "level": "50",
+      "zones": [
+        "Kedge Keep"
+      ],
+      "loc": [
+        {
+          "ns": 116,
+          "ew": -64
+        },
+        {
+          "ns": 91,
+          "ew": -253
+        },
+        {
+          "ns": 19,
+          "ew": -183
         }
       ]
     },
@@ -55446,6 +55286,20 @@
       ]
     },
     {
+      "page": "Bedida Claygrinder",
+      "name": "Bedida Claygrinder",
+      "level": "50",
+      "zones": [
+        "Northern Felwithe"
+      ],
+      "loc": [
+        {
+          "ns": 105,
+          "ew": -423
+        }
+      ]
+    },
+    {
       "page": "Beef",
       "name": "Beef",
       "level": "40",
@@ -55935,6 +55789,21 @@
         {
           "ns": 361,
           "ew": -236
+        }
+      ]
+    },
+    {
+      "page": "Bidils the Quickhand",
+      "name": "Bidils the Quickhand",
+      "level": "61",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "loc": [
+        {
+          "ns": 331,
+          "ew": -1998,
+          "z": -12
         }
       ]
     },
@@ -57024,6 +56893,20 @@
           "ns": 15,
           "ew": -450,
           "pct": 25
+        }
+      ]
+    },
+    {
+      "page": "Bodbin Gimple",
+      "name": "Bodbin Gimple",
+      "level": "50",
+      "zones": [
+        "Rivervale"
+      ],
+      "loc": [
+        {
+          "ns": -80,
+          "ew": -370
         }
       ]
     },
@@ -58156,7 +58039,7 @@
     {
       "page": "Bran Greenglade",
       "name": "Bran Greenglade",
-      "level": "45",
+      "level": "50",
       "zones": [
         "North Freeport"
       ],
@@ -59091,6 +58974,9 @@
       "level": "3",
       "zones": [
         "Southern Karana"
+      ],
+      "drops": [
+        "Loaf of Bread"
       ],
       "loc": [
         {
@@ -61383,12 +61269,6 @@
       "drops": [
         "Kedgemail Gauntlets",
         "Sharkjaw Cutlass"
-      ],
-      "loc": [
-        {
-          "ns": 86,
-          "ew": 15
-        }
       ]
     },
     {
@@ -61650,7 +61530,7 @@
     {
       "page": "Celent Newmist",
       "name": "Celent Newmist",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -61780,7 +61660,6 @@
         "Hunting Bow",
         "Fractured Centaur Hoof",
         "Large Ringmail Mantle",
-        "Large Ringmail Belt",
         "Large Ringmail Coif",
         "Large Iron Visor",
         "Large Ringmail Neckguard",
@@ -62373,9 +62252,9 @@
       ],
       "drops": [
         "Bone Armplates",
+        "Giant Snakespine Belt",
         "Bone Legplates",
         "Turtleshell Helm",
-        "Fine Steel Morning Star",
         "Chipped Bone Collar",
         "Sheer Bone Mask",
         "Batfang Headband",
@@ -63045,10 +62924,12 @@
         "Plane of Hate"
       ],
       "drops": [
+        "Anthemion Skullcap",
         "Ethereal Mist Helm",
         "Lustrous Russet Helm",
         "Prismatic Shield",
         "Rune Etched Helm",
+        "Shadow Rage Helm",
         "Thorny Vine Helm",
         "Valorium Helmet",
         "Vermiculated Crown"
@@ -67644,6 +67525,7 @@
       "drops": [
         "Bloody Mantle",
         "Bloody Dirk",
+        "Combine Dagger",
         "Fading Shadow Dagger"
       ]
     },
@@ -67748,7 +67630,9 @@
         "Stein (of Water)",
         "Darkbone Marrow",
         "Torn Page of Mastery Wind",
-        "Torn Page of Mastery Earth"
+        "Torn Page of Mastery Earth",
+        "Torn Page of Mastery Fire",
+        "Torn Page of Mastery Water"
       ],
       "loc": [
         {
@@ -70018,14 +69902,14 @@
     {
       "page": "Disciple Okarote",
       "name": "Disciple Okarote",
-      "level": "35",
+      "level": "33",
       "zones": [
         "Stonebrunt Mountains"
       ],
       "loc": [
         {
           "ns": 1224,
-          "ew": -616,
+          "ew": -625,
           "pct": 100
         }
       ]
@@ -72951,22 +72835,16 @@
         "Najena"
       ],
       "drops": [
-        "Leather Wristbands",
         "Throwing Knife",
         "Blackened Sapphire",
-        "Hilt of the Nobleman",
+        "Damask Leggings",
         "A Broom",
+        "A Shovel",
+        "a Torch",
         "Torn Page of Mastery Fire",
         "Torn Page of Mastery Wind",
-        "Words of Absorption",
-        "Damask Leggings"
-      ],
-      "loc": [
-        {
-          "ns": -681,
-          "ew": -49,
-          "pct": 33
-        }
+        "Torn Page of Mastery Earth",
+        "Torn Page of Mastery Water"
       ]
     },
     {
@@ -73781,6 +73659,20 @@
       ]
     },
     {
+      "page": "Emissary of Zebuxoruk",
+      "name": "Emissary of Zebuxoruk",
+      "level": "50",
+      "zones": [
+        "Oasis of Marr"
+      ],
+      "loc": [
+        {
+          "ns": 905,
+          "ew": -740
+        }
+      ]
+    },
+    {
       "page": "Emkel Kabae",
       "name": "Emkel Kabae",
       "level": "55",
@@ -74088,7 +73980,9 @@
         "Mistmoore Castle"
       ],
       "drops": [
-        "Rune of Fortune"
+        "Gargoyle Grips",
+        "Rune of Fortune",
+        "Visage of the Gargoyle"
       ],
       "loc": [
         {
@@ -74122,6 +74016,21 @@
         {
           "ns": 2100,
           "ew": -407
+        }
+      ]
+    },
+    {
+      "page": "Epicurean halfling",
+      "name": "epicurean halfling",
+      "level": "15",
+      "zones": [
+        "Misty Thicket"
+      ],
+      "loc": [
+        {
+          "ns": 882,
+          "ew": 80,
+          "z": -23
         }
       ]
     },
@@ -74608,7 +74517,7 @@
     {
       "page": "Est Treewalker",
       "name": "Est Treewalker",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -75694,6 +75603,20 @@
       ]
     },
     {
+      "page": "Feraniel Leafsway",
+      "name": "Feraniel Leafsway",
+      "level": "50",
+      "zones": [
+        "Northern Felwithe"
+      ],
+      "loc": [
+        {
+          "ns": 78,
+          "ew": -344
+        }
+      ]
+    },
+    {
       "page": "Feren",
       "name": "Feren",
       "level": "14",
@@ -76043,24 +75966,6 @@
         "Fire Giant Toes",
         "Diamond Dust",
         "Lava Rock"
-      ],
-      "loc": [
-        {
-          "ns": -1117,
-          "ew": -624
-        },
-        {
-          "ns": -1237,
-          "ew": -472
-        },
-        {
-          "ns": -1312,
-          "ew": -365
-        },
-        {
-          "ns": -1580,
-          "ew": -332
-        }
       ]
     },
     {
@@ -79766,6 +79671,20 @@
       ]
     },
     {
+      "page": "Gaz Commander Faltip",
+      "name": "Gaz Commander Faltip",
+      "level": "60",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "loc": [
+        {
+          "ns": -1576,
+          "ew": -255
+        }
+      ]
+    },
+    {
       "page": "Gearheart",
       "name": "Gearheart",
       "level": "26",
@@ -82867,7 +82786,7 @@
     {
       "page": "Grandmaster R`Tal",
       "name": "Grandmaster R`Tal",
-      "level": "58",
+      "level": "56",
       "zones": [
         "Plane of Hate"
       ],
@@ -82888,8 +82807,8 @@
       ],
       "loc": [
         {
-          "ns": -72,
-          "ew": 317,
+          "ns": -64,
+          "ew": -452,
           "pct": 50
         }
       ]
@@ -83525,8 +83444,14 @@
       ],
       "loc": [
         {
-          "ns": -87,
-          "ew": -624
+          "ns": -326,
+          "ew": -842,
+          "z": -106
+        },
+        {
+          "ns": 52,
+          "ew": -276,
+          "z": -50
         }
       ]
     },
@@ -86233,6 +86158,20 @@
           "ns": -315,
           "ew": 265,
           "z": -394
+        }
+      ]
+    },
+    {
+      "page": "Guard Evital",
+      "name": "Guard Evital",
+      "level": "50",
+      "zones": [
+        "North Felwithe"
+      ],
+      "loc": [
+        {
+          "ns": -64,
+          "ew": -444
         }
       ]
     },
@@ -93202,6 +93141,21 @@
       ]
     },
     {
+      "page": "Guja Master Therik",
+      "name": "Guja Master Therik",
+      "level": "61",
+      "zones": [
+        "Lake Rathetear"
+      ],
+      "loc": [
+        {
+          "ns": 73,
+          "ew": 1531,
+          "z": -223
+        }
+      ]
+    },
+    {
       "page": "Gull Skytalon",
       "name": "Gull Skytalon",
       "level": "35",
@@ -94543,9 +94497,6 @@
       "page": "Heretic Invader",
       "name": "a heretic invader",
       "level": "22-24",
-      "zones": [
-        "Stonebrunt Mountains"
-      ],
       "drops": [
         "Fine Steel Tanto",
         "Fine Steel Katana",
@@ -96586,9 +96537,9 @@
       ]
     },
     {
-      "page": "Ilanics Skeleton",
-      "name": "Ilanics skeleton",
-      "level": "~7",
+      "page": "Ilanic`s skeleton",
+      "name": "Ilanic`s skeleton",
+      "level": "6-7",
       "zones": [
         "Toxxulia Forest"
       ],
@@ -97161,7 +97112,7 @@
     },
     {
       "page": "Inkeeper Freegraze",
-      "name": "Inkeeper Freegraze",
+      "name": "Innkeeper Freegraze",
       "level": "40",
       "zones": [
         "Northern Felwithe"
@@ -97763,21 +97714,21 @@
         "Plane of Hate"
       ],
       "drops": [
-        "Eye of Innoruuk",
-        "Hotof's Bracer",
-        "Darkbrood Mask",
-        "Earring of Bashing",
         "Bloodstar Pendant",
         "Brewer's Mesh Cloak",
-        "Leatherfoot Sandals",
-        "Engineer's Ring",
-        "Skinner's Belt",
-        "Pauldrons of Power",
-        "Icebelt",
-        "Ring of Pureblood",
-        "Triumphant Mask",
         "Cloak of Scales",
-        "Shattered Emerald of Corruption"
+        "Darkbrood Mask",
+        "Earring of Bashing",
+        "Engineer's Ring",
+        "Eye of Innoruuk",
+        "Hotof's Bracer",
+        "Icebelt",
+        "Leatherfoot Sandals",
+        "Pauldrons of Power",
+        "Ring of Pureblood",
+        "Shattered Emerald of Corruption",
+        "Skinner's Belt",
+        "Triumphant Mask"
       ]
     },
     {
@@ -97838,6 +97789,7 @@
         "Thorny Vine Greaves",
         "Valorium Greaves",
         "Vermiculated Leggings",
+        "Indicolite Breastplate",
         "Apothic Kilt",
         "Blighted Trousers",
         "Carmine Pants",
@@ -97846,7 +97798,8 @@
         "Insidious Pantaloons",
         "Midnight Clad Leggings",
         "Umbral Platemail Greaves",
-        "Woven Shadow Greaves"
+        "Woven Shadow Greaves",
+        "Indicolite Bracer"
       ]
     },
     {
@@ -98944,6 +98897,14 @@
           "ns": -219,
           "ew": -330
         }
+      ]
+    },
+    {
+      "page": "Jarah Reskan",
+      "name": "Jarah Reskan",
+      "level": "70",
+      "zones": [
+        "Ak'Anon"
       ]
     },
     {
@@ -100089,7 +100050,7 @@
     {
       "page": "Jras Solsier",
       "name": "Jras Solsier",
-      "level": "61",
+      "level": "70",
       "zones": [
         "Erudin"
       ],
@@ -102344,8 +102305,7 @@
       "loc": [
         {
           "ns": 1209,
-          "ew": -409,
-          "pct": 100
+          "ew": -409
         }
       ]
     },
@@ -102396,6 +102356,7 @@
         {
           "ns": 595,
           "ew": 61,
+          "z": 20,
           "pct": 100
         }
       ]
@@ -103241,6 +103202,21 @@
       ]
     },
     {
+      "page": "Klok Esrek",
+      "name": "Klok Esrek",
+      "level": "50",
+      "zones": [
+        "New Sebilis Expedition"
+      ],
+      "loc": [
+        {
+          "ns": 224,
+          "ew": -143,
+          "z": -20
+        }
+      ]
+    },
+    {
       "page": "Klok F`tshai",
       "name": "Klok F`tshai",
       "level": "40",
@@ -103548,6 +103524,21 @@
         {
           "ns": -2419,
           "ew": -566
+        }
+      ]
+    },
+    {
+      "page": "Klok Nylsi",
+      "name": "Klok Nylsi",
+      "level": "50",
+      "zones": [
+        "New Sebilis Expedition"
+      ],
+      "loc": [
+        {
+          "ns": 239,
+          "ew": -130,
+          "z": -21
         }
       ]
     },
@@ -104283,8 +104274,11 @@
       "loc": [
         {
           "ns": 1439,
-          "ew": 327,
-          "pct": 100
+          "ew": 327
+        },
+        {
+          "ns": 1103,
+          "ew": -682
         }
       ]
     },
@@ -104865,15 +104859,9 @@
       ],
       "drops": [
         "Runed Oak Bow",
+        "Arrow",
         "Longbow",
         "Thunderhoof Quiver"
-      ],
-      "loc": [
-        {
-          "ns": 70,
-          "ew": -2514,
-          "pct": 10
-        }
       ]
     },
     {
@@ -109172,7 +109160,7 @@
     {
       "page": "Liln Sedder",
       "name": "Liln Sedder",
-      "level": "45",
+      "level": "50",
       "zones": [
         "South Qeynos"
       ],
@@ -110086,7 +110074,6 @@
       ],
       "drops": [
         "Bladestopper",
-        "Blight, Hammer of the Scourge",
         "Cloak of Flames",
         "Gauntlets of Fiery Might",
         "Gold Plated Koshigatana",
@@ -110097,7 +110084,8 @@
         "Red Dragon Tooth",
         "Selo`s Drums of the March",
         "Torn, burnt book",
-        "Treasure Hunter`s Satchel"
+        "Treasure Hunter`s Satchel",
+        "Blight, Hammer of the Scourge"
       ],
       "loc": [
         {
@@ -110132,15 +110120,15 @@
         "Bloodmoon",
         "Eye of Innoruuk",
         "Shield of the Immaculate",
+        "Shield of the Stalwart Seas",
         "Shattered Emerald of Corruption",
         "Darkmetal Holy Water Sprinkler",
         "Trueheart Shield"
       ],
       "loc": [
         {
-          "ns": 502,
-          "ew": -598,
-          "pct": 34
+          "ns": -352,
+          "ew": -165
         }
       ]
     },
@@ -110877,7 +110865,7 @@
     {
       "page": "Lumi Stergnon",
       "name": "Lumi Stergnon",
-      "level": "61",
+      "level": "70",
       "zones": [
         "Erudin"
       ],
@@ -111005,6 +110993,21 @@
       ]
     },
     {
+      "page": "Luxio Nulsis",
+      "name": "Luxio Nulsis",
+      "level": "50",
+      "zones": [
+        "East Freeport"
+      ],
+      "loc": [
+        {
+          "ns": -133.5,
+          "ew": -249.5,
+          "z": -95.15
+        }
+      ]
+    },
+    {
       "page": "Lybar",
       "name": "Lybar",
       "level": "30",
@@ -111127,6 +111130,7 @@
       "drops": [
         "A 'Sparkle' Purse",
         "Damask Amice",
+        "Soft Leather Shoes",
         "Dark Elf Parts"
       ],
       "loc": [
@@ -111586,7 +111590,8 @@
         "Polished Mithril Mask",
         "Rokyls Channelling Crystal",
         "Throwing Boulder",
-        "Fire Giant Toes"
+        "Fire Giant Toes",
+        "Lava Rock"
       ],
       "loc": [
         {
@@ -111604,8 +111609,9 @@
         "Mistmoore Castle"
       ],
       "drops": [
-        "Nightshade Wreath",
-        "Maid Issis Fang"
+        "Maid's Stockings",
+        "Maid Issis Fang",
+        "Nightshade Wreath"
       ],
       "loc": [
         {
@@ -112612,7 +112618,8 @@
       "loc": [
         {
           "ns": 20,
-          "ew": -875
+          "ew": -875,
+          "z": -53
         }
       ]
     },
@@ -112712,7 +112719,7 @@
     {
       "page": "Master of Spite",
       "name": "Master of Spite",
-      "level": "58",
+      "level": "56",
       "zones": [
         "Plane of Hate"
       ],
@@ -112730,8 +112737,8 @@
       ],
       "loc": [
         {
-          "ns": 206,
-          "ew": -442,
+          "ns": 199,
+          "ew": -445,
           "pct": 100
         }
       ]
@@ -113670,7 +113677,7 @@
     {
       "page": "Merchant Irontree",
       "name": "Merchant Irontree",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -113782,15 +113789,14 @@
     {
       "page": "Merchant Lanin",
       "name": "Merchant Lanin",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Greater Faydark"
       ],
       "loc": [
         {
-          "ns": 413.69,
-          "ew": 329.14,
-          "z": 77.41
+          "ns": 410,
+          "ew": 78
         }
       ]
     },
@@ -113979,7 +113985,7 @@
     {
       "page": "Merchant Silspin",
       "name": "Merchant Silspin",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -114007,7 +114013,7 @@
     {
       "page": "Merchant Silverkale",
       "name": "Merchant Silverkale",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -114035,7 +114041,7 @@
     {
       "page": "Merchant Sorintal",
       "name": "Merchant Sorintal",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -114071,7 +114077,7 @@
     {
       "page": "Merchant Tearlan",
       "name": "Merchant Tearlan",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -114185,7 +114191,7 @@
     {
       "page": "Merchant Tyslin (South Felwithe)",
       "name": "Merchant Tyslin",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -114955,8 +114961,7 @@
       "loc": [
         {
           "ns": 1221,
-          "ew": -529,
-          "pct": 50
+          "ew": -529
         }
       ]
     },
@@ -114982,8 +114987,7 @@
       "loc": [
         {
           "ns": 1201,
-          "ew": -516,
-          "pct": 100
+          "ew": -516
         }
       ]
     },
@@ -115181,7 +115185,7 @@
     {
       "page": "Mistress of Scorn",
       "name": "Mistress of Scorn",
-      "level": "58",
+      "level": "56",
       "zones": [
         "Plane of Hate"
       ],
@@ -115201,8 +115205,8 @@
       ],
       "loc": [
         {
-          "ns": -164,
-          "ew": -63,
+          "ns": -136,
+          "ew": -181,
           "pct": 100
         }
       ]
@@ -115588,13 +115592,6 @@
       "drops": [
         "Whore's Bane",
         "Guard's Keyring"
-      ],
-      "loc": [
-        {
-          "ns": -6,
-          "ew": -92,
-          "pct": 9
-        }
       ]
     },
     {
@@ -116822,6 +116819,20 @@
       ]
     },
     {
+      "page": "Nashia Lanseb",
+      "name": "Nashia Lanseb",
+      "level": "70",
+      "zones": [
+        "North Freeport"
+      ],
+      "loc": [
+        {
+          "ns": -91,
+          "ew": 584
+        }
+      ]
+    },
+    {
       "page": "Natasha Whitewater",
       "name": "Natasha Whitewater",
       "level": "40",
@@ -117266,7 +117277,7 @@
     {
       "page": "Nestess Branchtop",
       "name": "Nestess Branchtop",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -117280,7 +117291,7 @@
     {
       "page": "Nestral TGaza",
       "name": "Nestral TGaza",
-      "level": "61",
+      "level": "70",
       "zones": [
         "East Freeport"
       ],
@@ -117632,6 +117643,13 @@
       "drops": [
         "Withered Leather Gloves",
         "Withered Leather Mask"
+      ],
+      "loc": [
+        {
+          "ns": 840,
+          "ew": 531,
+          "z": -663
+        }
       ]
     },
     {
@@ -117833,10 +117851,6 @@
         "Efreeti Belt",
         "Efreeti Battle Axe",
         "Efreeti Zweihander",
-        "Wind Etched Bracers of Ro",
-        "Wind Etched Gauntlets of Ro",
-        "Wind Etched Boots of Ro",
-        "Wind Etched Helm of Ro",
         "Brass_Knuckles",
         "Large Sky Pearl"
       ]
@@ -118465,6 +118479,21 @@
       ],
       "drops": [
         "High Elf Parts"
+      ]
+    },
+    {
+      "page": "Nyuae the Cruel",
+      "name": "Nyuae the Cruel",
+      "level": "42",
+      "zones": [
+        "Ocean of Tears"
+      ],
+      "loc": [
+        {
+          "ns": -3484,
+          "ew": -1190.5,
+          "z": 129.5
+        }
       ]
     },
     {
@@ -119256,7 +119285,7 @@
     {
       "page": "Opal Leganyn",
       "name": "Opal Leganyn",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -119716,7 +119745,8 @@
       "name": "orc apprentice",
       "level": "2",
       "zones": [
-        "West Commonlands"
+        "West Commonlands",
+        "Misty Thicket"
       ],
       "drops": [
         "Rusty Short Sword",
@@ -120392,7 +120422,7 @@
     {
       "page": "Osisa Goldenspear",
       "name": "Osisa Goldenspear",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -120843,6 +120873,7 @@
         {
           "ns": -204,
           "ew": -497,
+          "z": -10.5,
           "pct": 50
         }
       ]
@@ -123043,8 +123074,10 @@
         "Mistmoore Castle"
       ],
       "drops": [
+        "Cherista's Fangs",
+        "Diamondine Earring",
         "Gem-Encrusted Scepter",
-        "Diamondine Earring"
+        "Tarnished Ancient Tiara"
       ],
       "loc": [
         {
@@ -123249,6 +123282,8 @@
       ],
       "drops": [
         "Augmentor's Gem",
+        "Azarack Skin",
+        "Azarack Blood",
         "Black Face Paint",
         "Darkstone Emerald",
         "Drake Fang",
@@ -123261,6 +123296,7 @@
         "Songbird Statuette",
         "Sphinx Eye Opal",
         "Ysgaril Root",
+        "Wind Rune Ozah",
         "Broken Mirror"
       ]
     },
@@ -123518,6 +123554,20 @@
         "Glowing Black Stone",
         "Rusty Dagger",
         "Gnome Meat"
+      ]
+    },
+    {
+      "page": "Qaelin Hailstorm",
+      "name": "Qaelin Hailstorm",
+      "level": "50",
+      "zones": [
+        "Surefall Glade"
+      ],
+      "loc": [
+        {
+          "ns": 162,
+          "ew": 130
+        }
       ]
     },
     {
@@ -124084,7 +124134,7 @@
     {
       "page": "Quiss Stormseeker",
       "name": "Quiss Stormseeker",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -124957,9 +125007,13 @@
       ],
       "drops": [
         "Hollowed Bone Bracers",
-        "Torn Page of Mastery Earth",
+        "A Broom",
+        "A Shovel",
+        "a Torch",
+        "Torn Page of Mastery Fire",
         "Torn Page of Mastery Wind",
-        "Shovel (of Earth)"
+        "Torn Page of Mastery Earth",
+        "Torn Page of Mastery Water"
       ],
       "loc": [
         {
@@ -128584,6 +128638,22 @@
         {
           "ns": -4705,
           "ew": -3900,
+          "pct": 100
+        }
+      ]
+    },
+    {
+      "page": "Scout Malom",
+      "name": "Scout Malom",
+      "level": "15",
+      "zones": [
+        "Stonebrunt Mountains"
+      ],
+      "loc": [
+        {
+          "ns": 3644,
+          "ew": -3533,
+          "z": 1308.6,
           "pct": 100
         }
       ]
@@ -133005,7 +133075,7 @@
     {
       "page": "Seren the Swift",
       "name": "Seren the Swift",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -133013,6 +133083,20 @@
         {
           "ns": 511,
           "ew": -910
+        }
+      ]
+    },
+    {
+      "page": "Serenica Greenfinger",
+      "name": "Serenica Greenfinger",
+      "level": "50",
+      "zones": [
+        "Northern Felwithe"
+      ],
+      "loc": [
+        {
+          "ns": 144,
+          "ew": -453
         }
       ]
     },
@@ -133673,6 +133757,14 @@
           "ns": 257,
           "ew": 313
         }
+      ]
+    },
+    {
+      "page": "Sethena",
+      "name": "Sethena",
+      "level": "7",
+      "zones": [
+        "Rathe Mountains"
       ]
     },
     {
@@ -134776,28 +134868,28 @@
       ],
       "loc": [
         {
-          "ns": -530,
-          "ew": -785
-        },
-        {
-          "ns": -616,
-          "ew": -665
-        },
-        {
           "ns": -182,
           "ew": -743
-        },
-        {
-          "ns": -362,
-          "ew": -604
         },
         {
           "ns": -379,
           "ew": -733
         },
         {
+          "ns": -362,
+          "ew": -604
+        },
+        {
           "ns": -567,
           "ew": -704
+        },
+        {
+          "ns": -616,
+          "ew": -665
+        },
+        {
+          "ns": -530,
+          "ew": -785
         },
         {
           "ns": -542,
@@ -138458,7 +138550,8 @@
       "loc": [
         {
           "ns": -97,
-          "ew": -38
+          "ew": -38,
+          "z": -34
         },
         {
           "ns": 251,
@@ -138834,6 +138927,14 @@
           "ew": 373,
           "pct": 50
         }
+      ]
+    },
+    {
+      "page": "Stable Hand Brack",
+      "name": "Stable Hand Brack",
+      "level": "35",
+      "zones": [
+        "East Freeport"
       ]
     },
     {
@@ -139350,7 +139451,7 @@
     {
       "page": "Stormy",
       "name": "Stormy",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Southern Felwithe"
       ],
@@ -139731,20 +139832,6 @@
         {
           "ns": 3992,
           "ew": -1383
-        }
-      ]
-    },
-    {
-      "page": "Sven Felligan",
-      "name": "Sven Felligan",
-      "level": "50",
-      "zones": [
-        "Everfrost Peaks"
-      ],
-      "loc": [
-        {
-          "ns": 2848,
-          "ew": -3454
         }
       ]
     },
@@ -140906,7 +140993,7 @@
     {
       "page": "Tam Slyspan",
       "name": "Tam Slyspan",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -141894,34 +141981,7 @@
       "drops": [
         "Tentacle Whip",
         "Wand",
-        "Terror Spines",
-        "Copper Band",
-        "Bead Necklace",
-        "Silver Stud"
-      ],
-      "loc": [
-        {
-          "ns": 10,
-          "ew": 190,
-          "pct": 10
-        },
-        {
-          "ns": -70,
-          "ew": 190
-        },
-        {
-          "ns": -10,
-          "ew": 395
-        },
-        {
-          "ns": -75,
-          "ew": 340
-        },
-        {
-          "ns": -32,
-          "ew": -164,
-          "z": -25
-        }
+        "Terror Spines"
       ]
     },
     {
@@ -142230,6 +142290,14 @@
           "ns": 338,
           "ew": -436
         }
+      ]
+    },
+    {
+      "page": "Test Dummy",
+      "name": "Test LEVEL",
+      "level": "15-70",
+      "zones": [
+        "Arena"
       ]
     },
     {
@@ -142669,7 +142737,7 @@
     },
     {
       "page": "The Ghoul Lord",
-      "name": "the ghoul lord",
+      "name": "the ghoul lord (Hoptor Thaggelum)",
       "level": "47",
       "zones": [
         "Lower Guk"
@@ -142912,9 +142980,10 @@
       "name": "The Ishva Mal",
       "level": "40",
       "zones": [
-        "South Karana"
+        "South Karana & Splitpaw Lair"
       ],
       "drops": [
+        "Sandals of the Ishva",
         "Robe of the Ishva",
         "Dagger of Dropping",
         "Preserved Split Paw Eye",
@@ -143864,6 +143933,7 @@
         "Plane of Sky"
       ],
       "drops": [
+        "White Satin Gloves",
         "Belt of Tranquility",
         "Belt of Iniquity",
         "Belt of Virtue",
@@ -143878,7 +143948,9 @@
         "Stein of Flowing Ichor",
         "Bracelet of Cessation",
         "Bracelet of Exertion",
-        "Bracelet of Quiescence"
+        "Bracelet of Quiescence",
+        "Key of Swords",
+        "Key of the Misplaced"
       ],
       "loc": [
         {
@@ -145492,14 +145564,6 @@
           "ew": -763,
           "pct": 100
         }
-      ]
-    },
-    {
-      "page": "Training Dummy",
-      "name": "Test LEVEL",
-      "level": "15-70",
-      "zones": [
-        "Arena"
       ]
     },
     {
@@ -149538,7 +149602,7 @@
     {
       "page": "Tyle Songwhisper",
       "name": "Tyle Songwhisper",
-      "level": "40",
+      "level": "50",
       "zones": [
         "Northern Felwithe"
       ],
@@ -150275,7 +150339,7 @@
       "name": "Ungia",
       "level": "40",
       "zones": [
-        "Neriak Foreign Quarter"
+        "Grobb"
       ],
       "loc": [
         {
@@ -150675,6 +150739,20 @@
         {
           "ns": 590,
           "ew": 832
+        }
+      ]
+    },
+    {
+      "page": "Valla Strongbranch",
+      "name": "Valla Strongbranch",
+      "level": "50",
+      "zones": [
+        "North Freeport"
+      ],
+      "loc": [
+        {
+          "ns": -76,
+          "ew": -40
         }
       ]
     },
@@ -152687,8 +152765,7 @@
       "loc": [
         {
           "ns": 411,
-          "ew": 91,
-          "pct": 100
+          "ew": 91
         }
       ]
     },
@@ -152942,6 +153019,10 @@
           "ew": -762
         }
       ]
+    },
+    {
+      "page": "Voidling",
+      "name": "Voidling"
     },
     {
       "page": "Voleen Tassen",
@@ -155677,18 +155758,15 @@
       "page": "Webclaw Murkwave",
       "name": "Webclaw Murkwave",
       "level": "25",
-      "zones": [
-        "Lake Rathetear"
-      ],
       "drops": [
         "Water Crystal Staff",
         "Hunting Bow"
       ],
       "loc": [
         {
-          "ns": 2624,
-          "ew": 1072,
-          "pct": 34
+          "ns": 2508,
+          "ew": 923,
+          "z": -190
         }
       ]
     },
@@ -157463,6 +157541,14 @@
       ]
     },
     {
+      "page": "Yollis Jenkins",
+      "name": "Yollis Jenkins",
+      "level": "12",
+      "zones": [
+        "Qeynos Hills"
+      ]
+    },
+    {
       "page": "YOU",
       "name": "YOU",
       "level": "56",
@@ -157658,6 +157744,20 @@
         {
           "ns": 1212,
           "ew": -591
+        }
+      ]
+    },
+    {
+      "page": "Yun Assistant Maldock",
+      "name": "Yun Assistant Maldock",
+      "level": "20",
+      "zones": [
+        "Erud's Crossing"
+      ],
+      "loc": [
+        {
+          "ns": -1301,
+          "ew": 2132
         }
       ]
     },
@@ -158512,6 +158612,20 @@
       "level": "?",
       "zones": [
         "Kael Drakkel"
+      ]
+    },
+    {
+      "page": "Zok Zribb",
+      "name": "Zok Zribb",
+      "level": "?",
+      "zones": [
+        "Rathe Mountains"
+      ],
+      "loc": [
+        {
+          "ns": -2134,
+          "ew": 306
+        }
       ]
     },
     {

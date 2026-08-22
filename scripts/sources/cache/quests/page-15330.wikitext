@@ -121,10 +121,11 @@ Here are the quest completion texts, and the unquantified faction changes.
 Basil's Head
 
 Renth McLanis says, 'Nice work [YourName]! Basil has always been an outcast of sorts. I'm glad to see you were able to stop him. Here is a Langseax for your efforts.'
-* Your faction standing with WolvesoftheNorth got worse.
-* Your faction standing with ShamenofJustice got worse.
-* Your faction standing with MerchantsofHalas got worse.
-* Your faction standing with SteelWarriors got worse.
+* Your faction standing with [[Wolves of the North]] has been adjusted by -10.
+* Your faction standing with [[Shamen of Justice]] has been adjusted by -2.
+* Your faction standing with [[Merchants of Halas]] has been adjusted by -2.
+* Your faction standing with [[Rogues of the White Rose]] has been adjusted by -2.
+* Your faction standing with [[Steel Warriors]] has been adjusted by -1.
 * You gain experience!!
 * You receive 8 gold from Renth McLanis.
 

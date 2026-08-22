@@ -26,7 +26,15 @@ import { Tooltip } from '../../lib/Tooltip'
  */
 // `ally` (JOS-250): somebody else's charm pet, credited to whoever charmed it. The row's NAME
 // already carries the charmer, so the chip only has to say which kind of thing the row is.
-const KIND_TAG: Partial<Record<string, string>> = { pet: 'pet', member: 'group', allyPet: 'ally' }
+//
+// `other` (JOS-430) says the honest thing and no more: the log named this combatant, and no model
+// of ours claims it. It is NOT tagged 'player' — EQ spells a summoned pet's name with the same
+// grammar it gives people, so a row of this kind can be either and the word must not pick one
+// (src/main/combat/otherCombatants.ts). The moment the roster learns the name the SAME row becomes
+// 'group', which is the whole reason the two share an id.
+const KIND_TAG: Partial<Record<string, string>> = {
+  pet: 'pet', member: 'group', allyPet: 'ally', other: 'other'
+}
 
 function KindChip({ kind }: { kind: string }): React.JSX.Element | null {
   const tag = KIND_TAG[kind]

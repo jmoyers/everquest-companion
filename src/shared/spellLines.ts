@@ -53,6 +53,19 @@ const RANK_VALUE: Record<string, number> = {
   x: 10
 }
 
+/**
+ * The INVERSE of the table above — ordinal → the numeral EQ prints (`4` → `IV`).
+ *
+ * It lives here rather than beside its one caller because `RANK_VALUE` is the ladder's single
+ * definition and a second numeral table is a second opinion about what rank 9 is called. Out of
+ * range answers the ordinal in digits: no source in this repo states a rank above X, so the
+ * honest output for an eleventh is the number itself rather than an invented `XI`.
+ */
+export function romanRank(rank: number): string {
+  const found = Object.entries(RANK_VALUE).find(([, v]) => v === rank)
+  return found ? found[0].toUpperCase() : String(rank)
+}
+
 /** One RANK within a line: its display name (suffix intact) and its ordinal. */
 export interface SpellRank {
   /** display name exactly as the log/DB spells it ("Mesmerization III", "Clarity"). */

@@ -48,7 +48,7 @@ Give the flower to Ssynthi.
 : Ssynthi says, 'Thank you. Since you have done me a service with no thought of reward, I offer you this small token of my favor.'
 
 <div class="facblock">
-* Your faction standing with [[Temple Of Sol Ro|Temple of Solusek Ro]] has been adjusted by 1.
+* Your faction standing with [[Temple Of Sol Ro|Temple of Solusek Ro]] has been adjusted by 5.
 * Your faction standing with [[Shadowed Men]] has been adjusted by -1.
 </div>
 {{YouGainExperience}}

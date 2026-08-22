@@ -281,7 +281,11 @@ const NO_SUBJECT_CENSUS = [
   'Static',
   'Stunning Strike',
   'Stunning Venom',
-  'Swarm of Pain',
+  // `Swarm of Pain` LEFT THIS LIST IN JOS-435, which is the census working in the direction it was
+  // not designed for. The row was already named here, with the reason it had no correction stated
+  // in advance (the awaiting-sample law: no log had printed the sentence attached to a cast). A
+  // ranger's report was that log arriving, and the owner's own log then witnessed it 199 times —
+  // see THE CENSUS ANSWERS BACK in src/main/data/spellCorrectionsSubjects.ts.
   'Temperance',
   'Terror of Darkness',
   'Terror of Shadows',
@@ -316,17 +320,17 @@ test('THE CENSUS: exactly these registry rows carry an unkeyable third-person la
     NO_SUBJECT_CENSUS
   )
   assert.equal(audit.wrongSubject, 30)
-  assert.equal(audit.noSubject, 82)
-  assert.equal(audit.landings.length, 112)
+  assert.equal(audit.noSubject, 81, 'JOS-435 took `Swarm of Pain` out of the cropped population')
+  assert.equal(audit.landings.length, 111)
 })
 
-test('THE CENSUS: 109 spells cannot be resolved to their own landing, and three rows are free', () => {
+test('THE CENSUS: 108 spells cannot be resolved to their own landing, and three rows are free', () => {
   assert.deepEqual(
     audit.landings.filter((r) => !r.spellUnreachable).map((r) => r.spell),
     REACHABLE_ANYWAY,
     'the only rows flagged for a spell that IS reachable are the scrape`s duplicates'
   )
-  assert.equal(audit.unreachable.length, 109, '112 rows minus the three duplicates')
+  assert.equal(audit.unreachable.length, 108, '111 rows minus the three duplicates')
   for (const name of REACHABLE_ANYWAY) assert.ok(!audit.unreachable.includes(name), name)
 })
 

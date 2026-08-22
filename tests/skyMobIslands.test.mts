@@ -79,7 +79,13 @@ test('every entry is well formed and names a mob page exactly once', () => {
     // the override all speak one language.
     assert.equal(islandOf(e.island), e.island, `${e.page}: island must read as "Island N"`)
     assert.ok(e.derived.length > 0, `${e.page}: must state what the join produces today`)
-    assert.ok(!e.derived.includes(e.island), `${e.page}: derived already agrees — drop the entry`)
+    // Droppable only when the join produces EXACTLY the mob's island: since the 2026-08-22
+    // rescrape the join can derive the right island AND a wrong one (Protector of Sky reads
+    // Island 2 + Island 7), and the row still earns its keep by trimming the wrong half.
+    assert.ok(
+      !(e.derived.length === 1 && e.derived[0] === e.island),
+      `${e.page}: derived already agrees — drop the entry`
+    )
     assert.ok(e.evidence.length > 40, `${e.page}: evidence must say how it was checked`)
   }
 })
@@ -109,7 +115,9 @@ test('Protector of Sky: the join says island 7, the mob is on island 2', () => {
   const entry = skyMobIslandFor('Protector of Sky')
   assert.ok(entry)
   assert.equal(entry.island, 'Island 2')
-  assert.deepEqual([...entry.derived], ['Island 7'])
+  // Island 2 joined the derivation with the 2026-08-22 rescrape (the mob page now lists the two
+  // Azarack items, both stated Island 2); the spurious Island 7 is still there and still trimmed.
+  assert.deepEqual([...entry.derived], ['Island 2', 'Island 7'])
 
   const smash = QUESTS.find((q) => q.name === 'Warrior Test of Smash')
   assert.ok(smash, 'Warrior Test of Smash is not in the committed scrape')

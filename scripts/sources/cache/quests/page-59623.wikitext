@@ -1,0 +1,64 @@
+{{Era}}
+{{Namedmobpage
+
+| imagefilename     = Npc jarah reskan.png
+
+| name              = 
+| race              = Gnome
+| class             = Warrior
+| level             = 70
+| agro_radius       = 
+| run_speed         = 
+
+| zone              = Ak'Anon
+| location          = 
+| respawn_time      = 
+
+| AC                = 
+| HP                = 
+| HP_regen          = 
+| mana_regen        = 
+
+| attacks_per_round = 
+| attack_speed      = 
+| damage_per_hit    = 
+| special           = 
+
+| description = I found the three bandits spawned in Steamfont Mountains, killed and looted their heads. So I looked up the quest on other sites ;-)
+She is a Warrior Guildmaster and can be found via CTRL-F
+
+You say, 'Hail, Jarah Reskan'
+
+Jarah Reskan says 'Greetings, child. Welcome to Gemchopper Hall. I trust that you are a [warrior], or perhaps you are lost..?'
+
+You say, 'I am a warrior.'
+
+Jarah Reskan says, 'That is good news! We gnomes are not known for our love of battle so it is always good to bring new blood into our ranks. We shall prove our worth as warriors to all other races. For now, there is much to do in Ak'Anon. We need someone to take care of the [rogue] and [bandit] problems in the Steamfont Mountains.'
+
+You say, 'rogue'
+
+Jarah Reskan says, 'We desire volunteers for the extermination of all rogue clockworks in the Steamfont Mountains. It appears they have gone haywire and refuse to return to service. When you destroy one, take its blackbox to [Manik Compolten].'
+
+You say, 'Manik Compolten'
+
+Jarah Reskan says, 'Manik is a trainer within this guild. The clockworks are his responsibility. Speak with him - I am sure he is here somewhere.'
+
+| known_loot = 
+
+* None
+
+| factions = 
+
+* None
+
+| opposing_factions = 
+
+* None
+
+| related_quests = 
+
+* Cargo Clockwork
+
+}}
+
+[[Category:Quest]]

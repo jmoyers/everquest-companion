@@ -46,7 +46,17 @@ const KIND_COLOR: Record<string, string> = {
   pet: '#6fb3d2',
   allyPet: '#5b7f95',
   member: '#7fbf8f',
+  other: '#5f8f74',
   enemy: '#cf6679'
+}
+// The one-word tag after a bar's name. KEEP IN SYNC with the app's KIND_TAG (features/combat/
+// EntityRow.tsx), which carries the argument for each word — in particular why `other` (JOS-430)
+// is not called 'player'.
+const KIND_SUFFIX: Record<string, string> = {
+  pet: ' ·pet',
+  member: ' ·group',
+  allyPet: ' ·ally',
+  other: ' ·other'
 }
 // KEEP IN SYNC with the app's CAT_COLOR (features/combat/combatShared.tsx) — the overlay is a
 // separate renderer entry with no MUI theme, so it carries its own copy. 'slay' is a radiant
@@ -277,7 +287,7 @@ function SourceLines({
           label={
             <>
               {e.name}
-              {e.kind === 'pet' ? ' ·pet' : e.kind === 'member' ? ' ·group' : e.kind === 'allyPet' ? ' ·ally' : ''}
+              {KIND_SUFFIX[e.kind] ?? ''}
             </>
           }
           right={`${formatRate(e.dps)} · ${fmt(e.total)}`}

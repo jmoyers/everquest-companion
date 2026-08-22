@@ -57,11 +57,11 @@ You say, 'Why is it considered contraband?'
 :Guard Shilster says, 'There you go, sport. If you get caught with that, you didn't get it from me!'
 
 <div class="facblock">
+* Your faction standing with [[Corrupt Qeynos Guards]] got better. (+5)
 * Your faction standing with [[Guards of Qeynos]] got worse. (-1)
-* Your faction standing with [[Kane Bayle]] got better.
-* Your faction standing with [[Circle Of Unseen Hands]] got better.
-* Your faction standing with [[Corrupt Qeynos Guards]] got better. (1)
-* Your faction standing with [[Bloodsabers]] got better.
+* Your faction standing with [[Kane Bayle]] got better. (+5)
+* Your faction standing with [[Circle Of Unseen Hands]] got better. (+5)
+* Your faction standing with [[Bloodsabers]] got better. (+5)
 </div>
 
 You receive [[Black Burrow Stout]]

@@ -1,3 +1,5 @@
+{{Delete}}{{DNE}}
+
 {{Classic Era}}
 [[File:npc_smith_tvysa.png|frame|Smith Tv`ysa]]
 {| class="questTopTable"

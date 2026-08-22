@@ -38,9 +38,10 @@ Give the erudite the key
 
 : an erudite prisoner says, 'I thank you for freeing me from my dog faced captors!'
 <div class='facblock'>
-* Your faction standings with [[Heretics]] got better.
-* Your faction standings with [[Clan Kolbok]] got worse.
-* Your faction standings with [[High Guard of Erudin]] got better.
+No faction given on Legends.
+* <s>Your faction standings with [[Heretics]] got better.</s>
+* <s>Your faction standings with [[Clan Kolbok]] got worse.</s>
+* <s>Your faction standings with [[High Guard of Erudin]] got better.</s>
 </div>
 {{exp}}
 

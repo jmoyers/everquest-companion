@@ -192,6 +192,9 @@ export function setInventory(
   return setProgress(charId, { ...getProgress(charId), inventory: counts, inventorySource: source })
 }
 
+// The achievements dump's write pair (JOS-429) is `./storeAchievements.ts` — a split-out accessor,
+// for the reason that file's header gives: this one is at the factoring ceiling.
+
 /**
  * Record what we know about ONE quest's turn-ins (JOS-131): the epoch-ms instants it was handed
  * in, which is a COUNT and not a flag because a Sky quest can be run again.

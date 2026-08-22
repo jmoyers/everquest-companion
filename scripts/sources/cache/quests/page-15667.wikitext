@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_shazda_kaekwon.png|frame|Shazda Kaekwon]]
+[[File:npc_shazda_kaekwon.png|thumb|Shazda Kaekwon]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Stonebrunt Mountains]]
@@ -8,7 +8,7 @@
 | [[Shazda Kaekwon]]
 |-
 ! ''' Minimum Level: '''
-| 25
+| 20
 |-
 ! ''' Classes: '''
 | All
@@ -17,7 +17,7 @@
 | 
 |-
 ! ''' Related NPCs: '''
-| [[a heretic invader]], [[Jelquar the Soulslayer]]
+| [[a heretic invader(Necromancer)]], [[a heretic invader(Shadow Knight)]], [[Jelquar the Soulslayer]]
 |}
 
 == Reward ==
@@ -44,57 +44,23 @@ You say, 'What about the Heretics?'
 : Shazda Kaekwon says 'Less heretics to defile the lands and spirits. You have the gratitude of Kejek for your assistance in repelling the heretic threat.' 
 
 <div class="facblock">
-* Your faction standing with [[Kejek Village]] got better.
-* Your faction standing with [[Peace Keepers]] got better.
+* Your faction standing with [[Kejek Village]] has been adjusted by 8.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
 </div> 
 {{YouGainExperience}}
 
-You receive ~2 platinum from Shazda Kaekwon.
-You receive either a {{:Kejekan Tribal Headband}} (common) or a {{:Swiftclaw Sash}} (rare).
+You receive 1pp, 5cp from Shazda Kaekwon.
+You receive either the [[Kejekan Tribal Headband]] (common) or a [[Swiftclaw Sash]] (rare).
 
-''Statistics per player:''
+''Drop Statistics''
 
-{| class="eoTable"
-! Player Time !! # of Turn Ins !! # of Headbands !! # of Sashes
-|-
-| June 2017 || 9  || 8  || 1
-|-
-| Aug  2019 || 17 || 16 || 1
-|-
-| Sept 2019 || 6  || 6  || 0
-|-
-| Oct  2019 || 4  || 2  || 2
-|-
-| Nov  2019 || 4  || 4  || 0
-|-
-| Dec  2019 || 3  || 2  || 1
-|-
-| Oct  2022 (green) || 2  || 1 || 1
-|-
-| May  2023 (green) || 5  || 4 || 1
-|-
-| May  2023 (blue) || 7  || 6 || 1
-|-
-| June  2023 (green) || 4  || 3 || 1
-|-
-| July  2023 (green) || 16  || 15 || 1
-|-
-| Nov 2024 (green) || 24  || 23 || 1
-|-
-| Jan 2025 (green) || 5  || 4 || 1
-|}
-
-''According to the chart above, it is about a 10% chance to get a swiftclaw sash.''
+5 Turn ins: 4 [[Kejekan Tribal Headband]], 1 [[Swiftclaw Sash]]
 
 ''Tips:''
-
+* Make use of different instances and difficulties to kill more heretics per hour.
 * Ensure you have plenty of carrying capacity as each head is quite heavy (WT 7.0)
 * Levitation or safe fall is highly recommended as the zone has many steep mountains. 
-* Tracking is highly recommended (I would say mandatory due to the limited visibility in the zone)
-
-== External links ==
-
-* http://runen.co.uk/Everquest/Zones/Quests/Stonebrunt/ShazdaKaekwon.htm
+* Tracking is highly recommended
 
 [[Category:Quests]]
 [[Category:Stonebrunt Mountains]]
