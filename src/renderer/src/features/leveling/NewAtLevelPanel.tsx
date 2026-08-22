@@ -56,6 +56,7 @@ import { comboClassSet, unlocksAtLevel } from '@shared/levelUnlocks'
 import { tokenizeSpellQuery } from '@shared/spellSearch'
 import { EMPTY_UNLOCK_SEARCH, searchUnlockSpells } from '@shared/unlockSearch'
 import { Tooltip } from '../../lib/Tooltip'
+import { useObservedSpellRanks } from '../../lib/useObservedSpellRanks'
 import { ProvenanceChip } from '../profiles/ClassComboChips'
 import { useComboSnap } from '../profiles/ClassComboData'
 import { UnlockList } from './UnlockList'
@@ -63,12 +64,10 @@ import { UnlockSearchField, UnlockSearchResultsList } from './NewAtLevelSearch'
 import { LANDING_PULSE_SX, useFocusLanding } from './useFocusLanding'
 import { useCurrentComboClasses, useLevelUnlocks } from './useLevelUnlocks'
 import { useSpellSets } from './useSpellSets'
-
-/** The band the stepper walks. 1..63 is what the DB states; the ceiling leaves room to grow. */
-const LEVEL_MIN = 1
-const LEVEL_MAX = 65
-
-const clampLevel = (n: number): number => Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, Math.round(n)))
+// THE LEVEL IS THE TAB'S SINCE JOS-445, not this panel's: the best-spells readout in the other
+// column reads the same number, and the stepper below is the one control for both. The band and the
+// clamp moved with it so there is still exactly one opinion about what level 0 means.
+import { LEVEL_MAX, LEVEL_MIN, clampLevel, type ViewedLevel } from './viewedLevel'
 
 /**
  * −/+ around the level, with the character's own level as the default and the reset.
@@ -162,6 +161,12 @@ function ComboChips({
 export interface NewAtLevelPanelProps {
   /** the character's CURRENT level (latest reported, never max) — the stepper's default */
   currentLevel: number | null
+  /**
+   * THE TAB'S viewed level (JOS-445) — the number, what the reader picked, and the setter, as one
+   * object because the three only mean anything together. The stepper below writes it and the
+   * best-spells readout in the other column reads it.
+   */
+  viewed: ViewedLevel
   /** a level-up toast's deep link asked for this level, or null */
   focusLevel: number | null
   /** bumps per link, so asking for the same level twice arrives twice (the nonce contract) */
@@ -171,21 +176,23 @@ export interface NewAtLevelPanelProps {
 
 export function NewAtLevelPanel({
   currentLevel,
+  viewed,
   focusLevel,
   focusNonce,
   onFocusConsumed
 }: NewAtLevelPanelProps): JSX.Element {
+  const { level, picked, pick: onPick } = viewed
   const data = useLevelUnlocks()
   const combo = useCurrentComboClasses()
   // The live spell bar (JOS-391) — read here rather than inside the row so one subscription
   // serves both lists, and so a list with no spell rows costs nothing.
   const sets = useSpellSets()
+  // Which rank of each line you have been observed to hold (JOS-446), subscribed here for the
+  // same reason `sets` is: one subscription for every list this panel draws.
+  const ranks = useObservedSpellRanks()
   // The same OPEN interval `useCurrentComboClasses` reduces to strings — kept whole here for the
   // one thing the strings drop: where the loadout came from.
   const current = useComboSnap().current
-  // null = "follow the character" — so the panel keeps tracking dings until the user steps it.
-  const [picked, setPicked] = useState<number | null>(null)
-  const level = clampLevel(picked ?? currentLevel ?? LEVEL_MIN)
   // THE SEARCH (JOS-392). An empty box is the level view, byte for byte — the state below is the
   // only thing that switches the body, and nothing about the level view reads it.
   const [query, setQuery] = useState('')
@@ -199,7 +206,7 @@ export function NewAtLevelPanel({
   // only switched tabs left the reader looking at charts) and LIGHTS it briefly on arrival. Read
   // that file for why the scroll rides React's commits rather than `requestAnimationFrame`.
   const landing = useFocusLanding(focusLevel !== null, focusNonce, () => {
-    if (focusLevel !== null) setPicked(clampLevel(focusLevel))
+    if (focusLevel !== null) onPick(clampLevel(focusLevel))
     onFocusConsumed()
   })
 
@@ -237,10 +244,12 @@ export function NewAtLevelPanel({
       {landing.seq !== null && <Box key={landing.seq} aria-hidden sx={LANDING_PULSE_SX} />}
       <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.75 }}>
         <Typography variant="subtitle2">New at this level</Typography>
-        <LevelStepper level={level} onChange={(n) => setPicked(n)} dimmed={searching} />
+        <LevelStepper level={level} onChange={(n) => onPick(n)} dimmed={searching} />
         {/* ONE QUIET WORD, ONCE (JOS-391, AGENTS.md's caveat diet). The row figures are base
-            values with no crits, focus or recast in them; that is a property of the whole panel,
-            said here in a word rather than footnoted on twelve rows. */}
+            values with no crits, focus or AA in them; that is a property of the whole panel,
+            said here in a word rather than footnoted on twelve rows. The per-second figures DO
+            carry the re-use timer now (JOS-444) - they are sustained numbers, not cast-window
+            ones - which is a change in the arithmetic and not in what this word covers. */}
         <Typography variant="caption" color="text.disabled" data-testid="new-at-level-directional">
           directional
         </Typography>
@@ -249,7 +258,7 @@ export function NewAtLevelPanel({
             size="small"
             label={`back to ${String(currentLevel)}`}
             variant="outlined"
-            onClick={() => setPicked(null)}
+            onClick={() => onPick(null)}
             sx={{ height: 18, fontSize: 10 }}
           />
         )}
@@ -264,7 +273,7 @@ export function NewAtLevelPanel({
           YOUR trio and say so when there is no trio; a search is a question about the game, and a
           player who has not typed `/who` yet can still ask where Complete Heal sits. */}
       {searching ? (
-        <UnlockSearchResultsList results={results} resolved={resolved} sets={sets} />
+        <UnlockSearchResultsList results={results} resolved={resolved} sets={sets} ranks={ranks} />
       ) : known ? (
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <UnlockList
@@ -273,6 +282,7 @@ export function NewAtLevelPanel({
             outOfEra={unlocks.outOfEraSpells}
             resolved={resolved}
             sets={sets}
+            ranks={ranks}
             empty={`no new spells at level ${String(level)} for this loadout`}
           />
           <UnlockList
@@ -280,6 +290,7 @@ export function NewAtLevelPanel({
             rows={unlocks.skills}
             resolved={resolved}
             sets={sets}
+            ranks={ranks}
             empty={`no new skills at level ${String(level)} for this loadout`}
           />
         </Stack>

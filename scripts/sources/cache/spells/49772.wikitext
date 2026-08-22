@@ -29,6 +29,7 @@
 </li><li> {{:Sly Summoners Gloves}}
 </li><li> {{:Twisted Nature Gloves}}
 </li><li> {{:Wily Warlock Gloves}}
+</li><li> {{:Potion of Hathcoat's Spirit}}
 </li></ul>
 
 | slots = 

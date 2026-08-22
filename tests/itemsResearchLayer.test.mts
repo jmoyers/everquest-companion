@@ -237,7 +237,9 @@ test('the GM-event table is exactly what the committed prose clearly marks', () 
   const derived = derivedGmEvent()
   console.log('gm-event layer', { flagged: flagged.size, derived: derived.size })
   assert.deepEqual([...flagged].sort(), [...derived].sort())
-  assert.ok(flagged.size >= 10, `only ${flagged.size} GM-event entries`)
+  // Floor lowered 10 → 9 on 2026-08-22: `essence of gukta` retired with its page (rebuilt as the
+  // player-crafted "Essence of Gukta (Wormwood)" — the GM-event prose is gone from the corpus).
+  assert.ok(flagged.size >= 9, `only ${flagged.size} GM-event entries`)
 
   // Unfarmable is the whole claim — re-asserted on the flagged set itself, not just on the
   // derivation, because a hand-added entry never passes through `derivedGmEvent`.

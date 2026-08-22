@@ -1,0 +1,44 @@
+{{Disambig3|[[Complete Heal]]}}
+{{Classic Era}}
+{{Spellpagesmart|
+
+| spellname = Healing
+| spellicon = 99
+| description = This spell is used by the [[Test Dummy]] in the Arena to heal you while sparring.
+| Table = {{{Table|0}}}
+| TableLevel = {{{TableLevel|}}}
+
+| classes = 
+
+* None
+
+| items_with_effect = 
+
+* None
+
+| slots = 
+
+{{SpellSlotRowSmart | 1 | Increase Hitpoints by 100% | simple = {{#ifeq:{{{Table|0}}}|0|0|1}} }}
+
+| skill = 
+
+| mana = 0
+| range = 120
+| casting_time = 0
+| fizzle_time = 1.00
+| recast_time = 0
+| duration = Instant
+| target_type = Single Friendly (or Self)
+| spell_type = Heal
+| resist = Unresistable
+
+| msg_cast_on_you = Your wounds are gone.
+| msg_cast_on_other =
+| msg_wears_off = 
+
+| where_to_obtain = 
+
+<ul><li>NPC Only</li>
+</ul>
+
+}}

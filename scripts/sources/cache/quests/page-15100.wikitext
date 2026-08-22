@@ -1,5 +1,5 @@
-{{Temple Era}}
-[[File:npc_joyce.png|frame|Joyce]]
+{{Classic Era}}
+[[File:npc_joyce.png|right|150px|Joyce]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Temple of Solusek Ro]]

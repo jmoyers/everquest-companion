@@ -314,10 +314,11 @@ test('every weapon skill the corpus states folds to a type - and the exceptions 
 
   // AN EQUALITY, exactly like `unindexedStatKeys` above and for exactly the same reason: a rescrape
   // that spells a skill a new way is a whole class of weapon quietly leaving the type filter, and
-  // it should stop the suite instead. `SHIELD` is the one page (Crushbone Fetish, a SECONDARY with
-  // no DMG and no delay) whose `Skill:` names no weapon skill at all — it is not a weapon, and the
-  // fold answers `null` rather than inventing a tenth type for it.
-  assert.deepEqual(unmapped, ['SHIELD (1)'])
+  // it should stop the suite instead. `SHIELD` names no weapon skill at all — two pages state it
+  // (Crushbone Fetish, and since the 2026-08-22 rescrape Efreeti War Shield in Title Case), both
+  // SECONDARY with no DMG and no delay — they are not weapons, and the fold answers `null` rather
+  // than inventing a tenth type for them.
+  assert.deepEqual(unmapped, ['SHIELD (1)', 'Shield (1)'])
 })
 
 test('the weapon type census is deep enough for the filter to be worth having', () => {

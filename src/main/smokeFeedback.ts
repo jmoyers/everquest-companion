@@ -70,8 +70,14 @@ export async function runSmokeFeedback(): Promise<void> {
       // would add a field to the result line that is always false. The slice leg already proves
       // the thing this hook exists to prove: presign, bucket pin, upload. Stage a dump beside
       // the log in that script and flip this to `true` if the inventory leg ever needs its own
-      // released-installer proof.
-      { attachLog: true, windowMinutes: SMOKE_WINDOW_MINUTES, attachInventory: false }
+      // released-installer proof. `attachAchievements: false` (JOS-441) for the identical reason
+      // — the smoke guest stages no achievements export either.
+      {
+        attachLog: true,
+        windowMinutes: SMOKE_WINDOW_MINUTES,
+        attachInventory: false,
+        attachAchievements: false
+      }
     )
     line = smokeResultLine(nonce, res)
   } catch (err) {

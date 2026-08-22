@@ -78,11 +78,12 @@ You say, 'The heretic has escaped.'
 You have slain Elial Brook!
 
 <div class="facblock">
-* Your faction standing with [[Heretics]] got worse.
-* Your faction standing with [[Deepwater Knights]] got better.
-* Your faction standing with [[Gate Callers]] got better.
-* Your faction standing with [[Craftkeepers]] got better.
-* Your faction standing with [[Crimson Hands]] got better.
+* Your faction standing with [[Heretics]] got worse. (-20)
+* Your faction standing with [[Deepwater Knights]] got better. (+20)
+* Your faction standing with [[Gate Callers]] got better. (+20)
+* Your faction standing with [[Craftkeepers]] got better. (+20)
+* Your faction standing with [[Crimson Hands]] got better. (+20)
+* Your faction standing with [[Kerra Isle]] got better. (+5)
 </div>
 
 '''Hand in the Bones.'''
@@ -90,10 +91,11 @@ You have slain Elial Brook!
 : Markus Jaevins says 'This is fine work, young one. You keep this up and you shall be knighted before long.'
 
 <div class="facblock">
-* Your faction standing with [[Gate Callers]] got better.
-* Your faction standing with [[High Guard of Erudin]] got better.
-* Your faction standing with [[High Council of Erudin]] got better.
-* Your faction standing with [[Heretics]] got worse.
+* Your faction standing with [[Gate Callers]] got better. (+50)
+* Your faction standing with [[High Guard of Erudin]] got better. (+7)
+* Your faction standing with [[High Council of Erudin]] got better. (+5)
+* Your faction standing with [[Heretics]] got worse. (-7)
+* Your faction standing with [[Kerra Isle]] got worse. (-5)
 </div>
 {{exp}}
 

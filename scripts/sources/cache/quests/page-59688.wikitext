@@ -1,0 +1,60 @@
+{{Era}}
+
+{| class="questTopTable"
+! ''' Starts In: '''
+| [[Oasis of Marr]]
+|-
+! ''' Quest Giver: '''
+| [[Emissary of Zebuxoruk]]
+|-
+! ''' Minimum Level: '''
+| 46+
+|-
+! ''' Classes: '''
+| All
+|-
+! ''' Related Zones: '''
+| [[Plane of Fear]], [[Plane of Hate]]
+|-
+! ''' Related NPCs: '''
+| [[Cazic Thule (God)]], [[Innoruuk (God)]]
+|}
+
+= Reward =
+
+* [[Agnostic]] [[:Category:Achievements#deity_unlock|Deity Unlock]]
+
+= Dialogue =
+
+'''You say, "Hail, [[Emissary of Zebuxoruk]]"'''
+
+: [[Emissary of Zebuxoruk]] says, "Hello again, _____. How goes your journey so far? Have you spoken to your Gods lately, or have their [voices diminished] in your ears?"
+
+'''You say, "voices diminished"'''
+
+: [[Emissary of Zebuxoruk]] says, "Ahh, a loss of faith, not unheard of amongst followers of the Gods, but not common either. If you truly wish to renounce your faith, know that it is not for the [faint of heart].
+
+'''You say, "faint of heart"'''
+
+:: Before the quest is accepted:
+: ***NEEDS DIALOG BEFORE QUEST ACCEPTED HERE***
+:: Or, if the quest is already accepted:
+: [[Emissary of Zebuxoruk]] says, "You've already begun your journey out of the shadow of the Gods. Continue it, and walk your own path."
+
+= Walkthrough =
+
+# Speak with [[Emissary of Zebuxoruk]] in [[Oasis of Marr]].
+# Kill [[Cazic Thule (God)]] in the [[Plane of Fear]].
+# Kill [[Innoruuk (God)]] in the [[Plane of Hate]].
+
+= Notes =
+
+* None
+
+= Related Quests =
+
+* None
+
+[[Category:Quests]]
+[[Category:Oasis of Marr]]
+[[Category:All Classes Quests]]

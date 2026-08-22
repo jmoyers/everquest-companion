@@ -57,16 +57,18 @@ You say, 'What is Lion's Mane'
 
 '''Hand [[Gharin]] 4 [[Crows Special Brew]] to receive the letter.'''
 
-''Note: There are two kinds of Crow's Special Brew in the game. [[Crow's Special Brew]] with an ' Apostrophe in the name that comes from Tattered Pouch quest will '''not''' be accepted by Gharin. The correct kind [[Crows Special Brew]] is purchased from [[Crow]] himself, but this is a limited supply item (20). Once he sells out, its all gone until the server is restarted or he respawns after being killed.'' 
+''Note: There are two kinds of Crow's Special Brew in the game. [[Crow's Special Brew]] with an ' Apostrophe in the name that comes from Tattered Pouch quest will '''not''' be accepted by Gharin. The correct kind [[Crows Special Brew]] is purchased from [[Crow]] himself, but this is a limited supply item (20). Once he sells out, its all gone until the server is restarted or he respawns after being killed.''
+
+'''Update for EQL 2026-08-10: The above italics appear incorrect. i purchased [[Crow's Special Brew]] with the Apostrophe on a public layer, which was **NOT** quantity limited and Gharin took it.''' 
 
 : Gharin says 'Oohhh! My head. Stop the pub from spinning. I cannot make it to the Jaggedpine feeling like this. Please take this note to Te'Anara of the Treefolk. Here is a little silver for the favor. Thanks. Ooohhhh..'
 
 <div class="facblock">
 * Your faction standing with [[Guards of Qeynos]] has been adjusted by 50.
-* Your faction standing with [[Antonius Bayle]] has been adjusted by 5?.
+* Your faction standing with [[Antonius Bayle]] has been adjusted by 7.
 * Your faction standing with [[Corrupt Qeynos Guards]] has been adjusted by -7.
 * Your faction standing with [[Circle Of Unseen Hands]] has been adjusted by -12.
-* Your faction standing with [[Merchants of Qeynos]] has been adjusted by 5?.
+* Your faction standing with [[Merchants of Qeynos]] has been adjusted by 5.
 </div>
 
 {{YouGainExperience}}

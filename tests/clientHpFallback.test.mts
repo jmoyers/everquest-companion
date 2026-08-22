@@ -38,6 +38,10 @@ const CLIENT: SpellResistTable = {
     axis: 'magic',
     resistAdj: 0,
     castMs: 3000,
+    // Field 10, transcribed with the rest of the row (JOS-444, re-read 2026-08-22): 6000, the same
+    // number the wiki's own `recast_time` states. Never consulted for Odium, because the page
+    // speaks — it is here so the row is the row.
+    recastMs: 6000,
     targetType: 5,
     hpSlot: { base: -217, max: 325, calc: 103 },
     hp: [{ base: -217, max: 325, calc: 103, perTick: true }],
@@ -45,18 +49,25 @@ const CLIENT: SpellResistTable = {
   }
 }
 
-/** 303 a tick at shaman 43, five ticks, 409 mana, a 3s cast plus 30s of ticks. */
+/**
+ * 303 a tick at shaman 43, five ticks, 409 mana, a 3s cast plus 30s of ticks.
+ *
+ * `recastMs` is the WIKI'S (JOS-444) — Odium's page states a 6s re-use timer, and it changes no
+ * figure here because the ticks are the longer wait. The client row below states one too and never
+ * gets asked, which is the fallback's own rule.
+ */
 const ODIUM_FIGURES = {
   damage: 1515,
   damagePerMana: 3.7,
   dps: 45.9,
   dot: true,
   overSec: 30,
+  recastMs: 6000,
   source: 'client'
 }
 
 /** What the panel and the card both print, in order. */
-const ODIUM_PARTS = ['dmg 1515', 'dps 46', '3.7 dmg/mana', 'over 30s']
+const ODIUM_PARTS = ['dmg 1515', 'dps 46', '3.7 dmg/mana', 'over 30s', 'recast 6s']
 
 test('C1 the join is the CANONICAL key, because a miss here fails silently', () => {
   assert.ok(clientHpFor(CLIENT, 'Odium'))
@@ -144,4 +155,34 @@ test('C6 the card is unchanged for every spell whose page states its own hitpoin
   for (const name of ['Superior Healing', 'Ice Comet', 'Anarchy', 'Clarity', 'Siphon']) {
     assert.deepEqual(buildSpellDetail(db, name, [], CLIENT), buildSpellDetail(db, name), `${name} moved`)
   }
+})
+
+// ── JOS-444 — THE SECOND FALLBACK ON THE SAME JOIN: the re-use timer ──────────────────────────
+//
+// `clientHpFor` used to answer only for a row with an effect-0 slot, because the hitpoint slots
+// were the only thing anyone read off it. The re-use timer is a fact about a spell whose WIKI page
+// may well have stated its damage, so the gate grew a second arm and the row now reaches the reader
+// on either fact.
+//
+// AND THE HONEST STATUS OF THE FALLBACK ITSELF, measured rather than assumed (2026-08-22): NO row
+// of the committed catalog needs it today. Exactly two spells whose page omits `recast_time` carry
+// a hitpoint line at all — `Call of Sky Strike` and `Call of Fire Strike`, both ranger procs — and
+// the owner's own `spells_us.txt` states 0 in field 10 for both of them, which is the same answer
+// as silence. So this is STRUCTURALLY covered and unobserved on today's data (the awaiting-sample
+// law), and the row below is hand-authored to say so out loud rather than transcribed.
+
+test('C7 a client row reaches the reader on its recast alone, and the page still wins', () => {
+  const recastOnly: SpellResistTable = {
+    'made up spell': { axis: null, resistAdj: 0, castMs: 0, recastMs: 9000, targetType: 5 }
+  }
+  const facts = clientHpFor(recastOnly, 'Made Up Spell')
+  assert.equal(facts?.recastMs, 9000, 'no effect-0 slot, and it is still worth answering')
+  assert.equal(facts?.hp, undefined)
+
+  // A page with a damage line and NO recast_time: the client supplies the denominator.
+  const page = { effects: ['Decrease Hitpoints by 300'], mana: 100, castTimeMs: 3000 }
+  assert.equal(spellMetricsAt(page, 50, facts)?.dps, 25, '300 / (3 + 9)')
+  assert.equal(spellMetricsAt(page, 50)?.dps, 100, 'and without an install, the cast alone')
+  // A page that states its own is untouched by the row beside it.
+  assert.equal(spellMetricsAt({ ...page, recastMs: 1500 }, 50, facts)?.dps, 66.7)
 })

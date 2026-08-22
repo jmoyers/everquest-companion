@@ -1,4 +1,4 @@
-{{EpicQuests Era}}
+{{Kunark Era}}
 [[File:npc_ryshon_hunsti.png|frame|Ryshon Hunsti]]
 {| class="questTopTable"
 ! ''' Start Zone: '''

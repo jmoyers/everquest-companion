@@ -1,0 +1,24 @@
+{{Classic Era}}
+
+[[File:item_sealed_letter.png|200px|thumb|'''sealed letter''']]
+
+<onlyinclude>{{Itempage
+|notes       = {{Item Lore|Note For Emil Parsin}}
+|itemname = Sealed Letter
+|lucy_img_ID = 
+|statsblock  = 
+No Trade, Quest<br>
+WT: 0  Size: TINY<br>
+Class: None<br>
+Race: None<br>
+|relatedquests = 
+
+* [[Peacekeeper Staff]]
+
+}}</onlyinclude>
+
+[[Category:Inventory Items]]
+[[Category:Quests]]
+[[Category:Erudin]]
+[[Category:Cleric Quests]]
+[[Category:Paladin Quests]]

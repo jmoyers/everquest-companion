@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Elixir of Clarity I
+| spellicon =
+| description = Restores 1 mana every 6 seconds for up to 30 minutes.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Clarity I]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Clarity I}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 2 | Increase Current Mana by 1 per tick }}
+
+| skill =
+| mana = 0
+| range = 200
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 30 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your mind begins to clear.
+| msg_cast_on_other = Someone  drinks an elixir of clarity.
+| msg_wears_off = The clarity of mind fades.
+}}

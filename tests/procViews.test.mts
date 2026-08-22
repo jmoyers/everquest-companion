@@ -92,7 +92,13 @@ test('W38: every lane the engine detected is serialized, with its origin', { ski
       ['Smiting Strike', 'spell', 27, 2796],
       ['Condemnation of Nife', 'spell', 5, 1165],
       ['Dismiss Undead', 'spell', 5, 683],
-      ['Slay Undead', 'slay', 6, 5111]
+      ['Slay Undead', 'slay', 6, 5111],
+      // JOS-437. These ten were in this golden all along — `(Finishing Blow)` has been parsed
+      // and tallied since Task #51 — and no surface read the tally, which is the defect the
+      // report named. The lane is read from `SourceStat.mods`, so its arrival MOVES NO DAMAGE:
+      // the 1,593 is still inside the melee rows below, and the two tripwires under this
+      // assertion are unchanged because the spell category is untouched.
+      ['Finishing Blow', 'aa', 10, 1593]
     ]
   )
   // THE TRIPWIRE: the three spell lanes ARE the spell category, exactly. A proc lane is an
@@ -106,15 +112,21 @@ test('W38: `overall` is an IDENTITY over the lanes, not a parallel counter', { s
   const { procs, seg } = zoneProcs(W38)
   const sum = (procs.lanes ?? []).reduce((n, l) => n + l.count, 0)
   assert.equal(procs.overall?.count, sum)
-  assert.equal(procs.overall?.count, 43) // 37 cast-less spell procs + 6 slay hits
+  // 37 cast-less spell procs + 6 slay hits + 10 Finishing Blow (JOS-437). The headline WENT UP
+  // BY TEN and that is the fix, not a regression: those ten firings happened in this window and
+  // the ledger had never counted them, so "43 procs" was an undercount of a number the panel
+  // advertises. The identity above is what makes the change safe to make — the header cannot
+  // drift from the rows, so moving one moves both.
+  assert.equal(procs.overall?.count, 53)
   // Every lane shares the segment's swing denominator — the mechanical one, with no active-time
-  // ambiguity in it at all.
+  // ambiguity in it at all. UNCHANGED at 922: a Finishing Blow swing was already being counted
+  // as a swing, because it always was one.
   assert.equal(procs.overall?.swings, 922)
   for (const l of procs.lanes ?? []) assert.equal(l.rate.swings, 922)
-  // 43 procs over 280 active seconds; 43 per 922 swings. Computed from the SEGMENT's own clock.
+  // 53 procs over 280 active seconds; 53 per 922 swings. Computed from the SEGMENT's own clock.
   assert.equal(seg.activeSec, 280)
-  assert.ok(Math.abs((procs.overall?.ppmActive ?? 0) - (43 * 60) / 280) < 1e-9)
-  assert.ok(Math.abs((procs.overall?.per100Swings ?? 0) - (100 * 43) / 922) < 1e-9)
+  assert.ok(Math.abs((procs.overall?.ppmActive ?? 0) - (53 * 60) / 280) < 1e-9)
+  assert.ok(Math.abs((procs.overall?.per100Swings ?? 0) - (100 * 53) / 922) < 1e-9)
 })
 
 test('W38: SLAY damage is "swings that procced", and the marginal says so separately', { skip: missing(W38) }, () => {
@@ -126,11 +138,20 @@ test('W38: SLAY damage is "swings that procced", and the marginal says so separa
   const meanMelee = 36227 / 513
   assert.ok(Math.abs((slay.marginalDamage ?? 0) - (5111 - 6 * meanMelee)) < 1e-9)
   assert.ok((slay.marginalDamage ?? 0) < slay.directDamage, 'the marginal is ALWAYS below the raw total')
-  // …and it is the ONLY origin that carries one: for a spell or poison lane the proc's whole
-  // damage IS its marginal damage, so a field there would be a second name for the same number.
+  // …and the SWING-BORNE origins are the only ones that carry one (JOS-437 added the second):
+  // for a spell or poison lane the proc's whole damage IS its marginal damage, so a field there
+  // would be a second name for the same number.
   for (const l of procs.lanes ?? []) {
-    if (l.origin !== 'slay') assert.equal(l.marginalDamage, undefined)
+    if (l.origin === 'slay' || l.origin === 'aa') assert.notEqual(l.marginalDamage, undefined)
+    else assert.equal(l.marginalDamage, undefined)
   }
+  // THE SLAY BASELINE IS DELIBERATELY UNTOUCHED by JOS-437, and this pins that. `36227 / 513` is
+  // the whole melee body, which still contains this window's ten Finishing Blow swings — so the
+  // divisor is a shade high and the slay marginal a shade low (≈10 of 4,687 here). Making the
+  // two lanes share one "ordinary swing" definition would change a SHIPPED number to chase a
+  // rounding-scale difference, on a ticket whose entire claim is that it moves nothing. Left as
+  // a known, measured imprecision rather than a silent side effect.
+  assert.equal(procs.lanes?.filter((l) => l.marginalDamage !== undefined).length, 2)
   // pctOfOut / dpsContribution are read off the segment, not recomputed.
   assert.ok(Math.abs(slay.pctOfOut - (5111 / seg.outTotal) * 100) < 1e-9)
   assert.ok(Math.abs(slay.dpsContribution - 5111 / seg.activeSec) < 1e-9)

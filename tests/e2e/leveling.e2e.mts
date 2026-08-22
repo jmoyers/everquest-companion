@@ -118,6 +118,10 @@ import { stepChartShots, stepLevelCurve } from './curveSteps.mjs'
 // the header). Next door for the same line-budget reason; the pair is one question about one
 // panel, and this spec still owns the order and the launch.
 import { shootUnlockPanel, stepNewAtLevel, stepUnlockEra, stepUnlockSearch } from './unlockRowSteps.mjs'
+// THE RIGHT COLUMN'S READOUT (JOS-445) — best damage by dps, best healing by hps, at the level the
+// tab is showing. Next door for the same line-budget reason; it asserts the SEAM the unit suite
+// cannot reach (the lines crossing IPC, one stepper driving two columns, a header click re-ranking).
+import { shootBestSpells, stepBestSpells } from './bestSpellsSteps.mjs'
 
 const NAV = '[data-testid="nav-leveling"]'
 const VIEW = '[data-testid="leveling-view"]'
@@ -713,6 +717,11 @@ async function main(): Promise<void> {
       // the full card (JOS-293's `SpellTooltip`), which is only usable because the list stopped
       // being a 120px porthole — the two halves of JOS-289 proving each other.
       await stepSpellCard(page)
+      // AFTER the whole unlock-panel sequence (JOS-445): those steps resolve the loadout and walk
+      // the stepper to a level with rows on it, which is the state this readout is a claim about —
+      // and they leave the search box empty, so the stepper is live. It presses the stepper once
+      // and presses it back, so nothing below sees a level the steps above did not leave.
+      await stepBestSpells(page)
       await stepPageScroll(page)
       // LAST, because it moves the window: it puts the size and the minimum back before it
       // returns, but nothing after it should have to trust that.
@@ -721,6 +730,9 @@ async function main(): Promise<void> {
       // position and stalls compositing — measured, it broke three of the layout checks above
       // when it sat in place after step 6a. It asserts nothing, so it costs nothing here.
       await shootUnlockPanel(app, page)
+      // …and the new readout beside it (JOS-445), for the same reason and in the same place: a
+      // surface the owner asked for gets a picture. Both cameras run after every measurement.
+      await shootBestSpells(app, page)
     }
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))

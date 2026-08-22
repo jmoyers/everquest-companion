@@ -7,13 +7,13 @@
 | [[Vynon Estaliun]]
 |-
 ! ''' Minimum Level: '''
-| 7
+| 1
 |-
 ! ''' Classes: '''
-| ?
+| All
 |-
 ! ''' Related Zones: '''
-| [[Toxxulia Forest]]
+| [[Toxxulia Forest]], [[Kerra Island]]
 |-
 ! ''' Related NPCs: '''
 | [[a catfisher]]
@@ -23,6 +23,7 @@
 
 <ul><li>  {{:Brass Ring}}
 </li><li> {{:Torch}}
+</li><li> {{:Corroded Buckler}}
 </li></ul>
 
 == Walkthrough ==
@@ -37,11 +38,11 @@ You say, 'I desire to face fear.'
 
 : Vynon Estaliun says 'Very well. You shall face it. In Toxxulia Forest, you shall seek out Kerra Ridge. Once found, you will bring me the tail of a catfisher. Somehow, you shall find a way. They are weak, but they only work near the opposite side of the bridge, along the water's edge.'
 
-''a catfisher is at location -340, +1860 in Kerra Island.''
+''a catfisher wanders the east side of [[Kerra Island]], west of the river.''
 
 :You have slain a catfisher!
 <div class="facblock">
-* Your faction standing with [[Kerra Isle]] got worse.
+* Your faction standing with [[Kerra Isle]] has been adjusted by -1.
 </div>
 :You have looted a [[Fishy Cat Tail]].
 
@@ -50,9 +51,9 @@ You say, 'I desire to face fear.'
 : Vynon Estaliun says 'Good work. I knew you could do it. Take this as reward.'
 
 <div class="facblock">
-* Your faction standing with [[Peace Keepers]] got better.
-* Your faction standing with [[High Council of Erudin]] got better.
-* Your faction standing with [[Heretics]] got worse.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
+* Your faction standing with [[High Council of Erudin]] has been adjusted by 5.
+* Your faction standing with [[Heretics]] has been adjusted by 5.
 </div>
 : {{YouGainExperience}}
 

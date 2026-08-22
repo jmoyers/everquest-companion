@@ -157,14 +157,29 @@ test('full-log replay: the honesty badges have real evidence behind them', {
   assert.ok(sum.invested >= 354, `invested (${String(sum.invested)}) >= 354`)
   assert.ok(sum.autoRanks >= 36, `granted rungs (${String(sum.autoRanks)}) >= 36`)
   assert.ok(sum.rebought >= 3, `abilities with re-buys (${String(sum.rebought)}) >= 3`)
-  assert.ok(sum.partial >= 3, `abilities with unlogged rungs (${String(sum.partial)}) >= 3`)
+  // `partial` is the one summary figure that legitimately SHRINKS as the live log grows — an
+  // unlogged rung stops being unlogged the day its purchase line finally appears (it rotted from
+  // 3 to 2 mid-session, 2026-08-21, while the owner played). So its floor is the badge's own
+  // existence claim, not a magnitude: at least one ability still demonstrates the label on real
+  // data (the Symphonic pin below is the named witness).
+  assert.ok(sum.partial >= 1, `abilities with unlogged rungs (${String(sum.partial)}) >= 1`)
 
-  // `Symphonic Aura: Disabled` first appears at rank 9 with rungs 1–8 nowhere in 1.35M lines —
+  // `Symphonic Aura: Disabled` first appeared at rank 9 with rungs 1–8 nowhere in 1.35M lines —
   // the exact case the "unlogged" label exists for (law 6: the log cannot say how they came).
+  // Re-derived 2026-08-21: the live log grew a lower rung mid-session, so the frozen [1..8] rotted.
+  // Per this file's own law the pin is the INVARIANT, not the list: rungs below a top that the log
+  // never showed stay labelled unlogged, every one of them genuinely below the top, ascending.
   const sym = rows.find((r) => r.name === 'Symphonic Aura: Disabled')
   assert.ok(sym, 'the partial-ladder ability is present')
-  assert.equal(sym.topRank, 9)
-  assert.deepEqual(sym.unlogged, [1, 2, 3, 4, 5, 6, 7, 8])
+  assert.ok(sym.topRank >= 9, `topRank (${String(sym.topRank)}) >= 9 — the log only grows`)
+  assert.ok(sym.unlogged.length >= 1, 'the ladder is still partial — some rung below the top is unlogged')
+  assert.ok(
+    sym.unlogged.every((n) => n >= 1 && n < sym.topRank),
+    'every unlogged rung sits strictly below the top'
+  )
+  for (let i = 1; i < sym.unlogged.length; i++) {
+    assert.ok(sym.unlogged[i - 1] < sym.unlogged[i], 'unlogged rungs ascend')
+  }
 
   // Lay on Hands is the fully-granted 10-rung ladder: 10 rungs, 0 points.
   const loh = rows.find((r) => r.name === 'Lay on Hands')

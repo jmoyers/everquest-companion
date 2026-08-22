@@ -1,4 +1,4 @@
-[[File:npc_maesyn_trueshot.png|frame|Maesyn Trueshot]]
+[[File:npc_maesyn_trueshot.png|right|200px|Maesyn Trueshot]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Greater Faydark]]
@@ -67,13 +67,13 @@ You say, 'What Tumpy Tonics?'
 : Trantor Everhot says 'Great!! I did not have the time to get down to Irontoe's today. Here. Like I said. A spool of dwarven wire. Now go away. I ain't sharing these tonics.'
 
 <div class="facblock">
-* Your faction standing with [[Storm Guard]] got better.
-* Your faction standing with [[Kazon Stormhammer]] got better.
-* Your faction standing with [[Miners Guild 249]] got better.
-* Your faction standing with [[Merchants of Kaladim]] got better.
-* Your faction standing with [[Craknek Warriors]] got worse.
+* Your faction standing with [[Storm Guard]] has been adjusted by 5.
+* Your faction standing with [[Kazon Stormhammer]] has been adjusted by 5.
+* Your faction standing with [[Miners Guild 249]] has been adjusted by 5.
+* Your faction standing with [[Merchants of Kaladim]] has been adjusted by 5.
+* Your faction standing with [[Craknek Warriors]] has been adjusted by -1.
 </div>
-You gain experience!! 
+{{Exp}}
 
 '''You receive [[Dwarven Wire]].  Give him another two [[Tumpy Tonics]] unstacked for the second piece of [[Dwarven Wire]].'''
 

@@ -104,6 +104,9 @@ const EFFECT_KEYS = ['Combat Effect', 'Click Effect', 'Worn Effect', 'Proc Effec
 
 const STRUCT_KEYS = [
   'Slot', 'Class', 'Race', 'Skill', 'Atk Delay', 'Delay', 'DMG', 'Dmg Bon', 'Damage Bonus',
+  // Third spelling, first seen on the 2026-08-18 Mistmoore-rework pages ("Atk Delay: 28 DMG
+  // Bonus: 13" — Cherista's Fangs, Rod of Understanding) and already in posky.json's Skycleaver.
+  'Dmg Bonus',
   'BACKSTAB', 'Backstab', 'WT', 'Weight', 'Size', 'Range', 'AC'
 ]
 
@@ -189,16 +192,68 @@ function effectKind(key: string, detail: string | undefined): ItemEffectKind {
   return 'effect'
 }
 
+/**
+ * Is `at` inside an unclosed `(` on this line?
+ *
+ * THE `Cooldown:` DEFECT (JOS-438). `Cooldown` is a legitimate top-level stat key
+ * (`Cooldown: 300 seconds` on its own line), and it ALSO appears inside an effect's own
+ * parenthetical: `Effect: Firestrike (Must Equip, Casting Time: Instant, Cooldown: 120s)`.
+ * Splitting the line at that inner key truncated the effect's value mid-parenthetical, so the
+ * name kept an unbalanced `(` and the socket detail was lost — which is how Rain Caller's
+ * clicky came to read `Firestrike  (Must Equip, Casting Time: Instant`.
+ *
+ * MEASURED before and after: exactly THREE of the 11,375 committed items carry a key inside an
+ * effect parenthetical (Rain Caller, Reaper of the Dead, Vermilion Sky Ring), and every other
+ * item re-parses byte-identically. `tests/itemStats.test.mts` pins both halves of that.
+ *
+ * A depth COUNT rather than a "was there a `(`" flag, because effect values legitimately carry
+ * two parentheticals in a row (`[[Firestrike (proc)]] (Must Equip, …)`) and the first one closes.
+ */
+function insideParens(line: string, at: number): boolean {
+  let depth = 0
+  for (let i = 0; i < at; i++) {
+    if (line[i] === '(') depth++
+    else if (line[i] === ')' && depth > 0) depth--
+  }
+  return depth > 0
+}
+
+/**
+ * Which parenthetical DESCRIBES THE SOCKET, when the value carries more than one.
+ *
+ * The wiki disambiguates spell pages by suffix — `Effect: [[Firestrike (proc)]] (Must Equip,
+ * Casting Time: Instant, Cooldown: 120s)` — and `stripWikiMarkup` leaves both parentheticals in
+ * the value. Taking the FIRST one made the wiki's page-name suffix the socket detail, which both
+ * mangled the name and cost `effectKind` the only text that could classify it.
+ *
+ * So the socket parenthetical is the one that TALKS LIKE ONE (a slot rule, a casting time, or
+ * the bare `Combat`/`Worn` word), and the first parenthetical is the fallback for every value
+ * that only ever had one — which is all but a handful of the DB.
+ */
+const SOCKET_PAREN = /\b(?:any slot|must equip|casting time|combat|worn)\b/i
+
+function socketDetail(value: string): string | undefined {
+  const parens = [...value.matchAll(/\(([^)]*)\)/g)].map((p) => p[1].trim())
+  return parens.find((p) => SOCKET_PAREN.test(p)) ?? parens[0]
+}
+
+/**
+ * The `at Level N` marker an effect line may carry, with `Level` OPTIONAL: the wiki writes both
+ * (`… ) at Level 40` on Rain Caller, `… ) at 45` on Reaper of the Dead). Widening the shipped
+ * `\bat Level\s+\d+` by that one optional word is the whole change, and it is MEASURED — one
+ * additional row of the 11,375 gains a `reqLevel` it always stated in words.
+ */
+const AT_LEVEL = /\bat (?:Level\s+)?(\d+)/i
+
 function parseEffect(key: string, rawValue: string): ItemEffect {
   const value = rawValue.trim()
-  const paren = /\(([^)]*)\)/.exec(value)
-  const detail = paren?.[1]?.trim()
+  const detail = socketDetail(value)
   const name = value
     .replace(/\([^)]*\)/g, '')
-    .replace(/\bat Level\s+\d+/i, '')
+    .replace(AT_LEVEL, '')
     .trim()
     .replace(/[,;]$/, '')
-  const lvl = /Req(?:uires)?\.?\s*Level\s*[: ]\s*(\d+)/i.exec(value) ?? /\bat Level\s+(\d+)/i.exec(value)
+  const lvl = /Req(?:uires)?\.?\s*Level\s*[: ]\s*(\d+)/i.exec(value) ?? AT_LEVEL.exec(value)
 
   return { kind: effectKind(key, detail), name, detail, ...(lvl ? { reqLevel: Number(lvl[1]) } : {}) }
 }
@@ -224,7 +279,8 @@ export function parseStatsBlock(raw: string): ItemStatBlock {
     const hits: { key: string; from: number; to: number }[] = []
     let m: RegExpExecArray | null
     while ((m = KEY_RE.exec(line)) !== null) {
-      hits.push({ key: m[1], from: m.index, to: m.index + m[0].length })
+      // A KEY INSIDE THE EFFECT'S OWN PARENTHETICAL IS NOT A KEY (JOS-438). See `insideParens`.
+      if (!insideParens(line, m.index)) hits.push({ key: m[1], from: m.index, to: m.index + m[0].length })
       // Zero-width guard (a key can't be empty, but be safe against pathological input).
       if (KEY_RE.lastIndex === m.index) KEY_RE.lastIndex++
     }
@@ -256,6 +312,7 @@ const NUMERIC_FIELDS: Record<string, 'atkDelay' | 'dmg' | 'dmgBonus' | 'backstab
   DELAY: 'atkDelay',
   DMG: 'dmg',
   'DMG BON': 'dmgBonus',
+  'DMG BONUS': 'dmgBonus',
   'DAMAGE BONUS': 'dmgBonus',
   BACKSTAB: 'backstab',
   AC: 'ac'

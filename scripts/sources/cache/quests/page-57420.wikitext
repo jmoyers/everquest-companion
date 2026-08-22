@@ -57,12 +57,12 @@ You say, 'glory'
 Vexia D`Ynth says, in Dark Elvish, 'Yes. You will hunt for the Dread Slayers. You will hunt and you will learn through the doing. You do not have to hunt these all at once. I will accept each as its own task. Bring back four each of Garter Snake Tongue, Spider Venom Sac, Wolf Meat, Bone Chips, and Giant Bat Fur.'
 
 <div class="facblock">
-* Your faction standing with Dread Slayers has been adjusted by 5.
-* Your faction standing with Indigo Brotherhood has been adjusted by 5.
-* Your faction standing with Dreadguard Outer has been adjusted by 5.
-* Your faction standing with Dreadguard Inner has been adjusted by 5.
-* Your faction standing with Guardians of the Vale has been adjusted by -1.
-* Your faction standing with Wolves of the North has been adjusted by -1.
+* Your faction standing with [[Dread Slayers]] has been adjusted by 5.
+* Your faction standing with [[Indigo Brotherhood]] has been adjusted by 5.
+* Your faction standing with [[Dreadguard Outer]] has been adjusted by 5.
+* Your faction standing with [[Dreadguard Inner]] has been adjusted by 5.
+* Your faction standing with [[Guardians of the Vale]] has been adjusted by -1.
+* Your faction standing with [[Wolves of the North]] has been adjusted by -1.
 </div>
 
 {{YouGainExperience}}
@@ -71,6 +71,6 @@ Vexia D`Ynth says, in Dark Elvish, 'Yes. You will hunt for the Dread Slayers. Yo
 == Notes ==
 
 All of the turn ins here can be done independently; as described by Vexia you just have to hand in four of a kind. Turn in whatever you have - likely [[Bone Chips]]. 
-
+Turning in Giant Bat Fur grants +10 to Dread Slayers
 [[Category: Quests]]
 [[Category: Neriak Commons]]

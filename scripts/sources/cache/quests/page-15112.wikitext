@@ -1,27 +1,28 @@
-{{Temple Era}}
+{{Classic Era}}
+
 __NOTOC__
-[[File:npc_sultin.png|frame|Sultin]]
+[[File:npc_sultin.png|thumb|Sultin]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
-|[[Temple of Solusek Ro]]
+| [[The Temple of Solusek Ro]]
 |-
 ! ''' Quest Giver: '''
-|[[Sultin]]
+| [[Sultin]]
 |-
 ! ''' Minimum Level: '''
-|25 (Solo)
+| 25 (Solo)
 |-
 ! ''' Classes: '''
-|[[Enchanter]]
+| [[Enchanter]]
 |-
 ! ''' Related Zones: '''
-|[[High Keep]], [[Rathe Mountains]], [[Upper Guk]]
+| [[High Keep]], [[Rathe Mountains]], [[Upper Guk]]
 |-
 ! ''' Related NPCs: '''
 | [[a froglok priest]], [[a shadowed man]], [[Cynthia]], [[Tarn Visilin]]
 |-
 ! ''' Faction: '''
-|[[Temple Of Sol Ro]] (Amiably or higher required)
+| [[Temple Of Sol Ro]]
 |-
 |} 	
 
@@ -31,23 +32,25 @@ __NOTOC__
 </li></ul>
 
 == Checklist ==
-{{CheckboxList}}
-*Go to [[Upper Guk]] and obtain a [[Golden Rod]] from [[a froglok priest]], who can be found in the same room as [[a froglok summoner]].
-*Obtain [[A Shining Stone]] (NOT no-rent) from [[a shadowed man]] (in any of the zones they can be found).
-*Take [[A Shining Stone]], along with 50gp to [[Cynthia]] in [[Rathe Mountains]] in the gypsy camp near [[Lake Rathetear]]. She gives you [[Glamour Stone]].
-*Head to [[High Keep]] and find [[Tarn Visilin]] on the first floor in a room on the left. Give him 50 gold pieces and the Glamour Stone. He gives you [[Glowing Glamour Stone]].
-*Return to [[Sultin]] in the [[Temple of Solusek Ro]]. Give him the [[Golden Rod]] and [[Glowing Glamour Stone]].
+
+[[Sultin]] in [[The Temple of Solusek Ro]] requires:{{CheckboxList}}
+* Amiable [[Faction]] with [[Temple Of Sol Ro]]
+* [[Golden Rod]] from [[a froglok priest]] in [[Upper Guk]]
+* [[Glowing Glamour Stone]] by handing [[Tarn Visilin]] in [[High Keep]] 5 pp and a [[Glamour Stone]]
+** [[Glamour Stone]] by handing [[Cynthia]] in [[Rathe Mountains]] 5 pp and a [[Shining Stone]]
+*** [[Shining Stone]] (NOT no-rent) from [[a shadowed man]]
+{{End}}
  ''' DO NOT TURN IN TO SULTIN WITHOUT AMIABLE FACTION OR YOU MAY LOSE BOTH ITEMS. Turn Ins worked to [[Cynthia]] and [[Tarn Visilin]] with indifferent faction. '''
 
 == Walkthrough ==
 
-'''The opening dialog is optional. [[Sultin]] can be found in the [[Temple of Solusek Ro]], in the lower library of the west wing.'''
+'''The opening dialog is optional. [[Sultin]] can be found in [[The Temple of Solusek Ro]], in the lower library of the west wing.'''
 
 You say, 'Hail, Sultin'
 
 : Sultin says, 'I am Sultin - keeper of the three [Incandescent]s of power and the [Rod] of Insidious Glamour. If you are an Enchanter, perhaps we can deal.'
 
-You say, 'Tell me about the Rod. It sounds awesome'
+You say, 'rod'
 
 : Sultin says, 'I am keeper of the Rod of Insidious Glamour - a device of guile and deceit. The rod will increase the Charisma of whomever holds it. Are you [interested] in obtaining the [rod]?'
 
@@ -67,19 +70,21 @@ Sultin looks friendly.
 
 You say, 'I am interested in the rod'
 
+'''Please note that even when amiable he may not give you this dialog.'''
+
 : Sultin says, 'If I am to give you this rod, you must bring me the parts to make another. I will need the Golden Rod from the froglok priest in Guk, as well as a Shining Stone from our mortal enemies, the Shadowed Men. Once you have obtained the Shining Stone, you will need to get it enchanted. Cynthia of the Rathe Mountain Gypsy Clan will enchant the Shining Stone for you - give it to her with 50 golden coins. When the Stone is fully enchanted, bring it and the rod to me and I will give you a Rod of Insidious Glamour.'
 
 '''Go to Upper Guk and obtain a [[Golden Rod]] from [[a froglok priest]], who can be found in the same room as [[a froglok summoner]].'''
 
-'''Obtain [[A Shining Stone]] (NOT no-rent) from [[a shadowed man]] (in any of the zones they can be found).'''
+'''Obtain a [[Shining Stone]] (NOT no-rent) from [[a shadowed man]] (in any of the zones they can be found).'''
 
-'''Take [[A Shining Stone]] to [[Cynthia]] in [[Rathe Mountains]] in the gypsy camp near [[Lake Rathetear]]. Hand it to her along with 50gp.''' 
+'''Take the [[Shining Stone]] to [[Cynthia]] in [[Rathe Mountains]] in the gypsy camp near [[Lake Rathetear]]. Hand it to her along with 5 platinum pieces.''' 
 
 : Cynthia says, 'I have enchanted your Shining Stone. To get it further enchanted, take this stone to [[Tarn Visilin]] in HighKeep.  Tip him 50 golden coins and he will work his magic.'
 
 '''She gives you [[Glamour Stone]].'''
 
-'''Head to [[High Keep]] and find [[Tarn Visilin]] on the first floor in a room on the left. Give him both 50 gold pieces and [[Glamour Stone]].'''
+'''Head to [[High Keep]] and find [[Tarn Visilin]] on the first floor in a room on the left. Give him 5 platinum pieces and the [[Glamour Stone]].'''
 
 : Tarn Visilin says, ' Your Glamour Stone has been fully enchanted. Take it and the Golden Rod back to the temple of Ro.'
 
@@ -87,22 +92,23 @@ You say, 'I am interested in the rod'
 
 '''<DO NOT TURN IN WITHOUT AMIABLE FACTION YOU WILL LOSE BOTH ITEMS. LEARN FROM MY MISFORTUNE! CAST [[Benevolence]]!!>'''
 
-'''Return to [[Sultin]] in the [[Temple of Solusek Ro]]. Give him the [[Golden Rod]] and [[Glowing Glamour Stone]].'''
+'''Return to [[Sultin]] in [[The Temple of Solusek Ro]]. Give him the [[Golden Rod]] and [[Glowing Glamour Stone]].'''
 
-: Sultin says, 'Well done, ___.  Here is your reward.' 
+: Sultin says, 'Well done, adventurer.  You have kept your part of the bargain, so I keep mine.  Here is your rod.'
 
 <div class='facblock'>
-* Your faction standing with [[Temple Of Sol Ro]] got better.
-* Your faction standing with [[Shadowed Men]] got worse.
+* Your faction standing with [[Temple Of Sol Ro]] has been adjusted by 5.
+* Your faction standing with [[Shadowed Men]] has been adjusted by -1.
 </div>
+{{Exp}}
 
-<br>You receive the {{:Rod of Insidious Glamour}}.
+You receive the {{:Rod of Insidious Glamour}}.
 
 == Note ==
 
 You need to be amiable with Sultin to get past the first part of the conversation (and receive your reward). You can increase faction several ways but it's far easier to just cast [[Benevolence]] on him. Non-enchanters can complete other temple quests or kill shadowed men.
 
-Faction can also be gained quickly by giving [[Rathmana Allin]] in the [[Southern Desert of Ro]] 30gp. Spells can be sold back to him, and he is factioned to the [[Temple Of Sol Ro]]. I went with 3000gp and left with 150+pp and amiable faction.
+Faction can also be gained quickly by giving [[Rathmana Allin]] in the [[Southern Desert of Ro]] 3 platinum pieces per 5 faction. Spells can be sold back to him, and he is factioned to [[Temple Of Sol Ro]].
 
 The Alliance instant cast is usable at level 30.
 

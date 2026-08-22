@@ -234,7 +234,7 @@ function QuestSummaryRow({
       {/* BOTH, since JOS-131. The turn-in badge is history ("you have done this, twice"); the
           chip beside it is the present ("and right now you are three items short of doing it
           again"). Collapsing them into one chip is what used to make a re-run invisible. */}
-      <TurnInBadge count={q.turnIns} />
+      <TurnInBadge count={q.turnIns} evidence={q.completionEvidence} />
       <Chip
         size="small"
         variant="outlined"

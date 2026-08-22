@@ -407,6 +407,7 @@ test('unknown fields are STILL dropped, dump or no dump — the validator constr
     assert.equal(stray in value, false, `${stray} must not survive validation`)
   }
   assert.deepEqual(Object.keys(value).sort(), [
+    'achievements',
     'clientReportId',
     'clientTs',
     'draft',

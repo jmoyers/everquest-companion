@@ -38,6 +38,7 @@ import { CharacterModule } from './character'
 import { OutputFilesModule } from './outputFiles'
 import { SpellSetsModule } from './spellSets'
 import { ItemTiersModule } from './itemTiers'
+import { ObservedSpellRanksModule } from './observedSpellRanks'
 import { AlertsModule } from './alerts'
 import { BuffsModule } from './buffs'
 import { BuffTimersModule } from './buffTimers'
@@ -104,6 +105,7 @@ export interface ModuleWiring {
   outputFiles: OutputFilesModule
   spellSets: SpellSetsModule
   itemTiers: ItemTiersModule
+  observedSpellRanks: ObservedSpellRanksModule
   alerts: AlertsModule
   buffs: BuffsModule
   buffTimers: BuffTimersModule
@@ -184,6 +186,15 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
   const spellSets = new SpellSetsModule()
   // Observed item levels (Task #60): character-scoped, epoch-aware per-item tier state.
   const itemTiers = new ItemTiersModule()
+  // …and its SPELL twin (JOS-446): which roman-numeral rank of each spell line this character has
+  // been observed to hold. It reads the OTHER half of the very same merge sentence itemTiers reads
+  // (the rank-suffixed results that carry no ` +N`), plus the two cast families that keep the
+  // numeral. The catalog probe is what tells a merged spell scroll from a merged item whose name
+  // happens to end in a numeral — `db.byKey` is keyed by `spellCanonKey`, the same fold the module
+  // keys its rows by, so the two can never disagree about what a line is called.
+  const observedSpellRanks = new ObservedSpellRanksModule({
+    knownSpell: (key) => spellDb.byKey.has(key)
+  })
   // The alerts extension (Task #18): evaluates event/raw triggers on LIVE events only. Its defs
   // are user prefs (owned by the store), loaded in here and re-synced on every save.
   const alerts = new AlertsModule()
@@ -253,6 +264,7 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
     outputFiles,
     spellSets,
     itemTiers,
+    observedSpellRanks,
     alerts,
     buffs,
     buffTimers,
@@ -290,6 +302,10 @@ export function createModules(deps: ModuleWiringDeps = {}): ModuleWiring {
       // and no module reads its state within a delivery.
       spellSets,
       itemTiers,
+      // Beside itemTiers because the two split ONE sentence between them, and AFTER it so a
+      // reader of both within a delivery sees the item half settled first. Position is otherwise
+      // free: no module reads its state.
+      observedSpellRanks,
       alerts,
       buffs,
       // AFTER buffs, because the overlay's projection composes the two snapshots and the CC

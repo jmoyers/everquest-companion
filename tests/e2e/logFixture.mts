@@ -185,6 +185,24 @@ export function writeInventoryDump(installDir: string, fixture: string): string 
   return at
 }
 
+/**
+ * Copy a committed `/outputfile achievements` dump into the staged install root (JOS-429).
+ *
+ * `writeInventoryDump`'s twin, and deliberately its twin down to the mtime stamp: the name matters
+ * for the same `preferredOutputFile` reason, and Windows' `CopyFileW` preserves the SOURCE's
+ * last-write time, so an unstamped copy would hand the app a file to date as hours old — a lie
+ * about the player who is supposed to have just typed the command.
+ */
+export function writeAchievementsDump(installDir: string, fixture: string): string {
+  const dump = join(FIXTURES, fixture)
+  if (!existsSync(dump)) throw new Error(`e2e: no such fixture — ${dump}`)
+  const at = join(installDir, `Primitive_${SERVER}-Achievements.txt`)
+  copyFileSync(dump, at)
+  const now = new Date()
+  utimesSync(at, now, now)
+  return at
+}
+
 /** The real EQ install, if this machine has one — the only source of map packs. */
 function realEqRoot(): string | null {
   // The FS half of discovery only: no `reg query` subprocesses in a test harness.
@@ -204,6 +222,8 @@ export function stageFixture(
     maps?: boolean
     spells?: boolean
     inventory?: string
+    /** a committed `/outputfile achievements` dump to stage beside the executable (JOS-429) */
+    achievements?: string
     others?: Readonly<Record<string, string>>
   } = {}
 ): FixtureLog {
@@ -230,6 +250,7 @@ export function stageFixture(
   }
 
   if (opts.inventory !== undefined) writeInventoryDump(installDir, opts.inventory)
+  if (opts.achievements !== undefined) writeAchievementsDump(installDir, opts.achievements)
 
   if (opts.maps) stageMaps(installDir)
   if (opts.spells) stageSpells(installDir)
@@ -280,6 +301,8 @@ export async function launchOnFixture(
     maps?: boolean
     spells?: boolean
     inventory?: string
+    /** a committed `/outputfile achievements` dump to stage beside the executable (JOS-429) */
+    achievements?: string
     userData?: string
     env?: Record<string, string>
     others?: Readonly<Record<string, string>>
@@ -291,6 +314,7 @@ export async function launchOnFixture(
         ...(opts.maps === undefined ? {} : { maps: opts.maps }),
         ...(opts.spells === undefined ? {} : { spells: opts.spells }),
         ...(opts.inventory === undefined ? {} : { inventory: opts.inventory }),
+        ...(opts.achievements === undefined ? {} : { achievements: opts.achievements }),
         ...(opts.others === undefined ? {} : { others: opts.others })
       })
     : fixture

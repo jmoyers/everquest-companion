@@ -1,0 +1,39 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Cold Awareness I
+| spellicon =
+| description = Reduces the mana cost of cold-based spells by up to 5 percent.  This bonus will decay on spells over level 20.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Cold Awareness I]].
+
+| items_with_effect =
+
+<ul><li> {{:Cold Awareness I}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Decrease Spell Mana Cost by 1% to 5% }}
+{{SpellSlotRow | 2 | Limit Max Level: 20 (lose 5% per level) }}
+{{SpellSlotRow | 3 | Limit Spell: Exclude }}
+{{SpellSlotRow | 4 | Limit Resist: Cold }}
+{{SpellSlotRow | 5 | Limit Type: Exclude Combat Skills }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 3 hours 15 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = An aura of cold awareness surrounds you.
+| msg_cast_on_other = 
+| msg_wears_off = The awareness fades.
+}}

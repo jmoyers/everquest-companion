@@ -1,0 +1,12 @@
+[[File:npc_stragen_the_hewer.png|right|200px|thumb|]]
+
+{{Classic Era}}
+{{#lsth:Plane of Sky|Quest Givers}}
+
+== Berserker Tests ==
+
+{{#lsth:Plane of Sky|[[Berserker]] Tests}}
+
+[[Category: Quests]]
+[[Category:Plane of Sky]]
+[[Category:Berserker Quests]]

@@ -6348,6 +6348,10 @@
       "level": 3
      },
      {
+      "name": "Lifebite",
+      "level": 8
+     },
+     {
       "name": "Lifedraw",
       "level": 12
      },
@@ -8426,6 +8430,10 @@
      {
       "name": "Lifespike",
       "level": 8
+     },
+     {
+      "name": "Lifebite",
+      "level": 10
      },
      {
       "name": "Lifedraw",

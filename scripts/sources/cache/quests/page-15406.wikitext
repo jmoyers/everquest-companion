@@ -23,7 +23,7 @@
 
 == Reward ==
 
-<ul><li>  [[Faction]], [[Tagglefoot Tingle Drink]] and nominal coin 
+<ul><li>  [[Faction]] and nominal coin 
 </li></ul>
 
 == Walkthrough ==
@@ -41,21 +41,16 @@ Deputy Budo no longer responds to any further text, if you hand him a [[Deathfis
 : Deputy Budo says 'Grand work, Deputy _____! You will become a full-fledged deputy in no time. You should check in with [[Marshal Ghobber]] from time to time to see if you have earned your squad ring. Just go up to him and ask, 'Am I one with the Wall?' He will know, but you must first show your bravery in many battles against the goblins.'
 
 <div class="facblock">
-* Your faction standing with [[Guardians of the Vale]] got better.
-* Your faction standing with [[Mayor Gubbin]] got better.
-* Your faction standing with [[Storm Reapers]] got better.
-* Your faction standing with [[Merchants of Rivervale]] got better.
-* Your faction standing with [[Dreadguard Outer]] got worse.
+* Your faction standing with [[Guardians of the Vale]] has been adjusted by 5.
+* Your faction standing with [[Mayor Gubbin]] has been adjusted by 5.
+* Your faction standing with [[Storm Reapers]] has been adjusted by 5.
+* Your faction standing with [[Merchants of Rivervale]] has been adjusted by 5.
+* Your faction standing with [[Dreadguard Outer]] has been adjusted by -1.
 </div>
 
 {{exp}}
 
-* 4.76% exp for 7 Halfling Druid [21 hand ins = ~100%]
-* 3.46% exp for 8 Halfling Druid [13 hand ins = ~45%]
-* ~3% exp for 9 Halfling druid
-* ~1.6% exp for 11 High Elf enchanter [27 hand ins =  ~45%]
-
-You receive 9 gold from Deputy Budo and a [[Tagglefoot Tingle Drink]]. Make sure to hand belts in individually. You get 9 gold regardless the number of belts you give him.
+You receive 1-8 copper from Deputy Budo.
 
 [[Category:Quests]]
 [[Category:Misty Thicket]]

@@ -1,4 +1,4 @@
-{{Temple Era}}
+{{Classic Era}}
 [[File:npc_vira.png|frame|Vira]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
@@ -8,7 +8,7 @@
 | [[Vira]]
 |-
 ! ''' Minimum Level: '''
-| 33
+| 20s
 |-
 ! ''' Classes: '''
 | [[Magician]] Quest is doable and spell confirmed usable by SHM and SHD.
@@ -17,7 +17,7 @@
 | [[Najena]]
 |-
 ! ''' Related NPCs: '''
-| [[a griffin]], cyclops
+| [[a griffin]], [[a cyclops]] or [[Gornit]]
 |}
 
 == Reward ==

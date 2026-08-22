@@ -17,6 +17,7 @@
 
 import type { ComboProgress } from './classCombo'
 import type { ItemCountOverride } from './itemOverrides'
+import type { AchievementsSource, ClassUnlockClaim } from './outputs/achievements'
 import type { InventorySource } from './outputs/baseline'
 import type { ExaltPlan } from './planner/types'
 import type { GearSet } from './planner/gearSet'
@@ -92,6 +93,30 @@ export interface ProgressState {
   questTurnIns?: Record<string, number[]>
   /** metadata about the last inventory load */
   inventorySource?: InventorySource
+  /**
+   * THE EARNED CLASS-UNLOCK REWARDS the last `/outputfile achievements` dump vouched for
+   * (JOS-429) — `<class, item>` pairs in the GAME's own spelling, the flat artifact taken at the
+   * one place the file becomes the model (`loadAchievements`).
+   *
+   * IT IS NOT A LIST OF TURN-INS AND NEVER BECOMES ONE. Nothing here is written into
+   * `questTurnIns` or into its downgrade mirror `completedQuests`: the join against the quest set
+   * happens on every read in the renderer, labelled with where it came from
+   * (shared/questTurnIns.ts's evidence ladder). Persisting it as a turn-in would forge an event
+   * the player never made, would survive the file being corrected, and would hand an older build
+   * a completion it has no way to explain.
+   *
+   * ONLY EARNED ROWS ARE IN IT, structurally. The dump also says which rewards you have NOT
+   * obtained, and that is deliberately not stored: `I` is not evidence a quest was never turned
+   * in, and a record that cannot express a denial cannot be misread as one (the "a dump adds, it
+   * never subtracts" promise `CountSource` above already makes).
+   *
+   * ADDITIVE and OPTIONAL — no schema bump and no migration, the `exaltPlans` precedent: every
+   * reader defaults on a missing key, so a store written by any older build loads unchanged and
+   * one written here still opens in a build that predates the achievements reader.
+   */
+  achievementUnlocks?: ClassUnlockClaim[]
+  /** metadata about the last achievements load — the file's mtime and when we read it (JOS-429). */
+  achievementsSource?: AchievementsSource
   /**
    * HAND-STATED HELD COUNTS (JOS-186) — the escape hatch for an item the witnesses cannot see the
    * truth about: one destroyed, given away, or otherwise gone in a way no log line and no dump

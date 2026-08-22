@@ -21,7 +21,8 @@
  * UI shows when the parse refused, and keeping it means a grammar fix in respawnWiki.ts applies
  * to the committed data without another 158 requests at the wiki's expense.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time, 110 ms between them,
+ * Scraper etiquette (AGENTS.md LAW): one serialized request at a time, 1 s between them
+ * (owner ruling 2026-08-22 — fan-run servers),
  * exponential backoff honouring Retry-After on 429/5xx, and revisions batched at 50 titles —
  * BATCH=50 is MEASURED, not tunable (>50 pageids returns HTTP 200 with zero pages and no
  * warning). Output is sorted by key, so a re-scrape produces a clean diff.
@@ -34,7 +35,7 @@ import type { MobData } from '../src/shared/types'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
-const DELAY_MS = 110
+const DELAY_MS = 1000
 const MAX_RETRIES = 5
 const BATCH = 50
 

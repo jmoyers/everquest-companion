@@ -190,6 +190,53 @@ export function reapOrphanUserData(maxAgeMs = 86_400_000): number {
   return reaped
 }
 
+/**
+ * THE SUITE MAKES NO NOISE (JOS-443, reported live: e2e runs were audibly playing alert tones on
+ * the owner's desktop while he worked).
+ *
+ * `--mute-audio` is Chromium's own switch and it silences the OUTPUT, not the code: every
+ * `new Audio()` is still constructed, `play()` still resolves or rejects exactly as it would, the
+ * element still advances, and speech still travels its seam — so every spec that asserts about
+ * audio BEHAVIOUR (voice-alerts' spoken lines, the preview steps in alert-banner and voice-alerts)
+ * asserts precisely what it did before. Nothing in this suite has ever asserted that a sound was
+ * AUDIBLE; it cannot, on a hidden window on a CI box.
+ *
+ * IT IS A LAUNCH ARGUMENT RATHER THAN AN EQ_E2E BRANCH IN MAIN on purpose. Muting is a property of
+ * the harness's own launches, not of the product — a `commandLine.appendSwitch` under the test flag
+ * would put a behaviour change inside the thing under test, and `EQ_E2E` is deliberately a mode
+ * that changes as little as possible (src/main/e2e.ts lists what it changes and why). Passing it
+ * here also covers every window this launch ever opens, overlays included, because the switch is
+ * process-wide.
+ *
+ * The mixer slider it protects is the owner's: this must hold whatever state that slider is in,
+ * which is exactly why it is not "the machine happens to be quiet".
+ */
+const MUTE_ARGS = ['--mute-audio']
+
+/**
+ * The second half of the same promise, belt and braces: mute every window's WebContents too.
+ *
+ * WHY BOTH. The switch is process-wide and is the one that cannot be missed, but it is a Chromium
+ * command-line flag — invisible from the app, and nothing in a test can read back that it took.
+ * `webContents.setAudioMuted(true)` is the half that ANSWERS: `isAudioMuted()` is a fact a spec (or
+ * a person debugging this) can read. Installed on `browser-window-created` as well as over the
+ * windows that already exist, because the overlays, the toast strip and the cursor ring are all
+ * opened after the launch resolves and every one of them is a renderer that could play something.
+ *
+ * Best effort by design: a launch that dies before this lands is a launch whose spec is about to
+ * fail on its own terms, and silencing that failure behind a mute error would be the worse report.
+ */
+async function muteEveryWindow(app: ElectronApplication): Promise<void> {
+  await app
+    .evaluate(({ app: electronApp, BrowserWindow }) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.setAudioMuted(true)
+      electronApp.on('browser-window-created', (_e, w) => {
+        w.webContents.setAudioMuted(true)
+      })
+    })
+    .catch(() => undefined)
+}
+
 /** A launched app, its userData dir, and the teardown that matches how the dir was obtained. */
 export interface LaunchedApp {
   readonly app: ElectronApplication
@@ -242,11 +289,12 @@ export async function launchApp(
   Object.assign(env, opts.env ?? {})
   const app = await electron.launch({
     executablePath: electronBinary(),
-    args: [MAIN_ENTRY],
+    args: [MAIN_ENTRY, ...MUTE_ARGS],
     cwd: ROOT,
     env,
     timeout: 60_000
   })
+  await muteEveryWindow(app)
   return {
     app,
     userData,

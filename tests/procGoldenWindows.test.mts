@@ -528,6 +528,25 @@ test('serialized proc lanes agree with the hand-read numbers', { skip: missing(W
   for (const l of lanes) assert.equal(l.rate.swings, 922)
   // `overall` is the sum of the lanes it is built from — an identity, so it cannot drift.
   assert.equal(zone.procs.overall?.count, lanes.reduce((n, l) => n + l.count, 0))
-  // 37 cast-less spell procs + 6 slay hits = 43 in this window.
-  assert.equal(zone.procs.overall?.count, 43)
+  // 37 cast-less spell procs + 6 slay hits + 10 Finishing Blow = 53 in this window.
+  assert.equal(zone.procs.overall?.count, 53)
+})
+
+test('W38: the Finishing Blow lane is the modifier tally, hand-read', { skip: missing(W38) }, () => {
+  // JOS-437, and hand-read exactly the way every other number in this file was: grepping this
+  // fixture for `(Finishing Blow)` returns TEN of the player's own melee lines —
+  //   172 + 224 + 99 + 74 + 176 + 177 + 105 + 519 + 20 + 27 = 1,593
+  // — and the lane is that tally and nothing else. It is read off `SourceStat.mods`, which the
+  // parser has been filling since Task #51 while no surface consumed it, so this lane's arrival
+  // ADDED NO DAMAGE ANYWHERE: the melee category above is still 513 hits for 36,227, with these
+  // ten inside it.
+  installSpellDb(undefined)
+  const { eng, lastTs } = replay(W38)
+  const zone = segment(eng, lastTs, 'zone')
+  const fb = zone.procs.lanes?.find((l) => l.name === 'Finishing Blow')
+  assert.ok(fb, 'the lane is serialized')
+  assert.equal(fb.count, 10)
+  assert.equal(fb.directDamage, 1593)
+  assert.equal(fb.origin, 'aa')
+  assert.deepEqual(catOf(you(zone), 'melee'), { hits: 513, total: 36227 })
 })

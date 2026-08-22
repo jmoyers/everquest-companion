@@ -12,6 +12,9 @@
 //     the app does to keep a window visible is ever written back over it.
 //   * Every window is FITTED to the displays that exist at the moment it is placed — at creation
 //     and again whenever the monitor arrangement changes under a running app.
+//   * …and that fit MOVES AS LITTLE AS IT CAN (JOS-433, the last check below). A window parked
+//     along the bottom edge of the screen is a placement somebody chose, not a window that needs
+//     rescuing, so it is left alone — the correction is for a window the user cannot reach.
 //
 // Together those make a docking round trip lossless: undocked, the overlay is drawn on the laptop
 // panel while the store still says "on the right-hand monitor"; docked again, the same fit puts it
@@ -108,6 +111,53 @@ async function storeBounds(overlay: Page, bounds: Bounds): Promise<void> {
 
 const key = (b: Bounds | null): string => (b ? `${b.x},${b.y},${b.width},${b.height}` : '(none)')
 
+/** The primary display's PHYSICAL rectangle, taskbar included — whatever screen this box has. */
+function primaryScreen(app: ElectronApplication): Promise<Bounds> {
+  return app.evaluate(({ screen }) => screen.getPrimaryDisplay().bounds)
+}
+
+/**
+ * JOS-433: A WINDOW PARKED ALONG THE BOTTOM OF THE SCREEN STAYS THERE.
+ *
+ * The v1.6.0 report — two meters along the bottom edge, "every time I login all the windows move
+ * upward and I have to reposition them", and nothing of the sort at the top. The geometry is pinned
+ * in tests/displayFit.test.mts against screens this machine does not have (one pixel of overhang
+ * used to cost a whole taskbar of upward movement); what only the real app can show is that the
+ * relaxed fit is the one WIRED to the display change — that main, told its monitors moved, leaves
+ * this window exactly where it is instead of lifting it clear of the taskbar.
+ *
+ * TWO PIXELS PAST THE PHYSICAL EDGE, because that is the state the report is about and it is not an
+ * exotic one: a frameless window's body drags past the bottom edge quite happily, and
+ * overlayBounds.ts records that `setBounds` can come back a pixel off on a scaled display — so a
+ * meter somebody parks flush with the bottom is stored a pixel or two over often enough.
+ *
+ * Compared with a small tolerance for that same scaled-display round trip. The defect it is
+ * standing in for is not a pixel, it is a taskbar: the old behaviour moved this window 42px.
+ */
+async function checkBottomAnchorSurvives(app: ElectronApplication, ov: Page): Promise<void> {
+  const screenRect = await primaryScreen(app)
+  const parked: Bounds = {
+    x: Math.max(screenRect.x, screenRect.x + screenRect.width - 380 - 40),
+    y: screenRect.y + screenRect.height - 320 + 2,
+    width: 380,
+    height: 320
+  }
+  await storeBounds(ov, parked)
+  await announceDisplayChange(app)
+  const near = (b: Bounds | null): boolean => b !== null && Math.abs(b.y - parked.y) <= 2 && Math.abs(b.x - parked.x) <= 2
+  const settled = await settle(() => fightPlacement(app), (p) => near(p.bounds), { timeoutMs: 10_000 })
+  check(
+    'JOS-433: a meter parked over the bottom edge is still there after a display change',
+    near(settled.bounds),
+    `${key(settled.bounds)} (parked at ${key(parked)})`
+  )
+  check(
+    '…and the store still holds the rectangle the user chose',
+    key(await storedBounds(ov)) === key(parked),
+    key(await storedBounds(ov))
+  )
+}
+
 /** A rectangle on no display this machine has — the reporter's second monitor, after the fact. */
 const LOST_MONITOR: Bounds = { x: 9000, y: 9000, width: 380, height: 320 }
 
@@ -165,6 +215,9 @@ export async function stepOverlayDisplay(app: ElectronApplication, page: Page): 
   const kept = await storedBounds(reopened as Page)
   check('…with the stored rectangle STILL untouched, so plugging the monitor back in restores it',
     key(kept) === key(LOST_MONITOR), key(kept))
+
+  // ── JOS-433: the OTHER half of "clamp what is shown" — clamp it as little as possible ──────
+  await checkBottomAnchorSurvives(app, reopened as Page)
 
   // Leave the store somewhere real — every step after this one shares this install. An install
   // that had no stored bounds at all (nothing in this hidden-window run ever moved the window)

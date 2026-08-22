@@ -78,7 +78,7 @@ You say, 'I will pick up froglok legs.'
 The Gobbler says 'Uggh!! Froglok legs!! Me hate smelly legs, but me need it for fat trolls.' 
 
 <div class="facblock">
-* Your faction standing with [[Neriak Ogre]] got better.
+* Your faction standing with [[Neriak Ogre]] got better. (+5)
 </div> 
 {{YouGainExperience}}
 

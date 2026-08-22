@@ -18,6 +18,12 @@
 // there is no choice to draw, and the caption still states which stretch the numbers cover — the
 // same honest degradation `TimescaleBar` shipped with.
 //
+// AND SINCE JOS-436 IT CAN CARRY THE SESSION SPLIT — `New session` plus the history picker, the
+// Details!-style reset (`shared/sessionSegments.ts` holds the research and the model). It is an
+// OPTIONAL group rather than a tenth button, because what it produces is an ordinary custom range:
+// the Loot ledger asks for it, every other surface reads the resulting slice without knowing where
+// it came from, and no id space grew to hold it.
+//
 // THE TWO HALVES ARE SEPARATELY MOUNTABLE (JOS-301). `SliceControls` is the buttons and
 // `SliceCaption` is the sentence under them; `SliceBar` is the pair on ONE line, which is what the
 // loot ledger mounts and has always looked like. `ScopeBar` takes them apart instead — its row
@@ -26,8 +32,9 @@
 // other's text: the words live here, in `SliceCaption`, wherever they are drawn.
 
 import { type JSX } from 'react'
-import { Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Button, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { sliceLabel, type SliceId, type SliceRange, type Timeslice } from '@shared/timeslice'
+import type { SessionSegment } from '@shared/sessionSegments'
 import { formatDateTime } from '../../lib/formatDate'
 
 /** One shape for both ends, whatever the slice: `Aug 5, 18:00`. */
@@ -51,8 +58,19 @@ function fromLocalInput(v: string): number {
   return new Date(v).getTime()
 }
 
-/** The two instants of the custom slice. Rendered only under `custom`, so the bar stays one row
- *  for the eight presets that need no input. */
+/**
+ * The two instants of the custom slice. Rendered only under `custom`, so the bar stays one row
+ * for the eight presets that need no input.
+ *
+ * IT SHOWS WHAT YOU TYPED, NOT WHAT THE RECORD KEPT (JOS-436). `range` is the RAW pick and the
+ * resolved slice's range is the CLAMPED one, and they are different objects for a measured reason:
+ * the reporter's *cannot select a future date on the end time* was this field re-rendering from the
+ * clamped value, so a `To` past the newest log line snapped straight back to it as they typed. The
+ * clamp is right — nothing happened after the last line, and the slice must not claim otherwise —
+ * so the fix is to stop the CONTROL from being the place that says so. An OPEN end (the session
+ * split's `+Infinity`) has no wall time to show at all, and falls back to the clamped edge, which
+ * is the instant that end currently reaches.
+ */
 function CustomRange({
   range,
   onChange,
@@ -85,6 +103,78 @@ function CustomRange({
   )
 }
 
+/**
+ * WHAT THE TWO FIELDS DISPLAY: the raw pick where it has one, the clamped slice where it does not.
+ *
+ * Per END rather than per range, because the session split supplies exactly one open end at a time
+ * and the other half is a real instant the user should still be able to read.
+ */
+function inputRange(custom: SliceRange | null | undefined, resolved: SliceRange): SliceRange {
+  if (!custom) return resolved
+  return {
+    t0: Number.isFinite(custom.t0) ? custom.t0 : resolved.t0,
+    t1: Number.isFinite(custom.t1) ? custom.t1 : resolved.t1
+  }
+}
+
+/**
+ * THE SESSION SPLIT'S TWO CONTROLS (JOS-436) — the reset button and the history picker, the pair
+ * Details! puts in its segment menu.
+ *
+ * The button is ALWAYS drawn where this group is offered at all, because it is the whole ticket:
+ * one click, no slice to select first, no instant to type. The picker appears only once there are
+ * TWO segments to choose between — before the first press there is one stretch of play and a
+ * dropdown with a single row would be a control that cannot do anything.
+ *
+ * No tooltip, no popper: this bar sits directly above the ledger's toolbar (JOS-127), and the
+ * button's own words plus the caption under the bar are the whole explanation.
+ */
+export interface SessionSplitProps {
+  /** Oldest first (`shared/sessionSegments.sessionSegments`). */
+  segments: readonly SessionSegment[]
+  /** The ordinal in force, or null when the slice is not one of these segments. */
+  index: number | null
+  onNew: () => void
+  onPick: (n: number) => void
+}
+
+function SessionSplit({ sessions, testId }: { sessions: SessionSplitProps; testId: string }): JSX.Element {
+  const { segments, index, onNew, onPick } = sessions
+  return (
+    <>
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={onNew}
+        data-testid={`${testId}-new-session`}
+        sx={{ px: 1.1, py: 0.25, fontSize: 11, lineHeight: 1.4, textTransform: 'none', whiteSpace: 'nowrap' }}
+      >
+        New session
+      </Button>
+      {segments.length > 1 && (
+        <TextField
+          select
+          size="small"
+          label="Session"
+          // An empty value is a real state: a preset is in force, so none of these segments is what
+          // the numbers are about, and the picker must not claim one of them is.
+          value={index === null ? '' : String(index)}
+          onChange={(e) => onPick(Number(e.target.value))}
+          data-testid={`${testId}-session-list`}
+          sx={{ minWidth: 150, '& .MuiSelect-select': { fontSize: 12, py: 0.75 } }}
+          slotProps={{ inputLabel: { shrink: true } }}
+        >
+          {[...segments].reverse().map((s) => (
+            <MenuItem key={s.n} value={String(s.n)} data-testid={`${testId}-session-opt-${String(s.n)}`}>
+              {s.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+    </>
+  )
+}
+
 export interface SliceBarProps {
   /** The ids this record can offer, in render order (`shared/timeslice.availableSlices`). */
   available: readonly SliceId[]
@@ -93,16 +183,37 @@ export interface SliceBarProps {
   slice: Timeslice
   onPick: (id: SliceId) => void
   onCustom: (range: SliceRange) => void
+  /** THE RAW custom pick, before the record clamped it (`TimesliceState.custom`). Absent ⇒ the two
+   *  fields fall back to the resolved range, which is what they showed before JOS-436. */
+  custom?: SliceRange | null
+  /** THE SESSION SPLIT (JOS-436), where the surface offers it. Absent ⇒ neither control is drawn,
+   *  which is every surface but the Loot ledger: the instance-reset workflow is a LOOT workflow,
+   *  and the pick it makes is an ordinary custom range that every other surface already reads. */
+  sessions?: SessionSplitProps
   /**
-   * Prefix for this surface's testids: `<prefix>`, `<prefix>-<sliceId>`, `<prefix>-window`, and
-   * `<prefix>-custom-from` / `-custom-to`. Per surface because two slice bars can be mounted at
-   * once (tabs stay mounted), and a shared id would make a selector ambiguous.
+   * Prefix for this surface's testids: `<prefix>`, `<prefix>-<sliceId>`, `<prefix>-window`,
+   * `<prefix>-custom-from` / `-custom-to`, and — where the split is offered —
+   * `<prefix>-new-session`, `<prefix>-session-list`, `<prefix>-session-opt-<n>`. Per surface
+   * because two slice bars can be mounted at once (tabs stay mounted), and a shared id would make a
+   * selector ambiguous.
+   *
+   * EVERY SUFFIX THAT IS NOT A SLICE ID CARRIES A HYPHEN, on purpose: `sliceSteps.mts` reads the
+   * ids a control offers straight off this prefix and drops the hyphenated ones, so a bare
+   * `<prefix>-sessions` would have been read back as a tenth slice that does not exist.
    */
   testId: string
 }
 
 /** THE BUTTONS ALONE — the half that is a control, mountable beside other controls (JOS-301). */
-export function SliceControls({ available, slice, onPick, onCustom, testId }: SliceBarProps): JSX.Element {
+export function SliceControls({
+  available,
+  slice,
+  onPick,
+  onCustom,
+  custom,
+  sessions,
+  testId
+}: SliceBarProps): JSX.Element {
   return (
     <Stack
       direction="row"
@@ -135,7 +246,10 @@ export function SliceControls({ available, slice, onPick, onCustom, testId }: Sl
           ))}
         </ToggleButtonGroup>
       )}
-      {slice.id === 'custom' && <CustomRange range={slice.range} onChange={onCustom} testId={testId} />}
+      {slice.id === 'custom' && (
+        <CustomRange range={inputRange(custom, slice.range)} onChange={onCustom} testId={testId} />
+      )}
+      {sessions && <SessionSplit sessions={sessions} testId={testId} />}
     </Stack>
   )
 }

@@ -1,0 +1,40 @@
+{{Classic Era}}
+
+{{Spellpage|
+
+| spellname = Improved Vampirism II
+| spellicon = 
+
+| description = Increases the damage of lifetaps by up to 25%.  This bonus will decay on spells over level 44.
+
+| classes =
+
+| items_with_effect =
+
+* [[Wine Thief]]
+
+| slots =
+
+| skill = 
+
+| mana = 
+| range = 100
+| casting_time = Instant
+| fizzle_time = 
+| recast_time = 
+| duration = 1:33:00
+| target_type = Self
+| spell_type = Beneficial
+| resist = 
+
+| other =
+
+| msg_cast_on_you =
+| msg_cast_on_other =
+| msg_wears_off =
+
+| where_to_obtain =
+
+}}
+
+[[Category:Focus Effects]]

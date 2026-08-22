@@ -102,4 +102,24 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
       days_after_initiation = 7
     }
   }
+
+  # And a third for the achievements attachment (JOS-441), for the identical reason: a prefix with
+  # no rule matches no rule and lives forever. Same window again, same argument — the three
+  # attachments on one report are one report.
+  rule {
+    id     = "expire-achievements-dumps"
+    status = "Enabled"
+
+    filter {
+      prefix = "achievements/"
+    }
+
+    expiration {
+      days = var.log_object_expiration_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
 }

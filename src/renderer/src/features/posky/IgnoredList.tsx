@@ -55,7 +55,7 @@ export function IgnoredList({
               </Typography>
             )}
             <Box sx={{ flexGrow: 1 }} />
-            <TurnInBadge count={q.turnIns} />
+            <TurnInBadge count={q.turnIns} evidence={q.completionEvidence} />
           </Stack>
         ))}
       </Stack>

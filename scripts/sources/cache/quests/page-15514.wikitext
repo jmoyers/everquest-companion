@@ -43,9 +43,11 @@ You say, 'What job?'
 
 : Royal Guard Lilkus says 'There are many campaigns we administer from within our city, Paineel. Some of these campaigns are threatened or hindered by annoyances. One of these annoyances are the Kobolds that live in the filth of a cave not far from here. Find that lair and kill as many of these beasts as you can. For every kobold molar you return you shall be rewarded.
 
-{{expand}}
+*Head to the Warrens and kill kobolds. Any kobold in the zone has a chance to drop a [[Kobold Molar]].
 
-For each [[Kobold Molar]] that is turned in you receive some gold, and have a small chance of receiving a random piece of ringmail armor, and faction.
+*Return to Royal Guard Lilkus in Paineel and turn in your Kobold Molars. You may turn them in one at a time.
+
+*For each [[Kobold Molar]] that is turned in you receive some gold, and have a small chance of receiving a random piece of ringmail armor, and faction.
 
 : Royal Guard Lilkus says 'Not bad. <name>. Here is your reward. If you stay enough of these dogs. Sheltian may have a more important task for you to perform.'
 
@@ -77,3 +79,4 @@ Level 19 Iksar Shaman - 11 turn-ins resulted in 1% xp gain. June 26, 2022.
 
 [[Category:Quests]]
 [[Category:Paineel]]
+[[Category:Repeatable Turn-in Quests]]

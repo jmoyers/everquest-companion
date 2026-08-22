@@ -128,15 +128,23 @@ test('known Sky items resolve to the knowledge the wiki states', () => {
   // Stable, load-bearing Sky items: a class-Test turn-in and an efreeti drop. Both are
   // asserted on PROPERTIES the page states (LORE/QUEST flags, an icon, a stats block), not
   // on exact text that a wiki edit would churn.
+  //
+  // Nebulous Sapphire lost its LORE flag upstream (wiki edit 2026-08-21, landed with the
+  // 2026-08-22 rescrape — the page now states "No Trade, Quest"), so LORE is asserted only
+  // for Sphinx Claw.
   for (const name of ['Nebulous Sapphire', 'Sphinx Claw']) {
     const entry = index.get(itemKey(name))
     assert.ok(entry, `${name} missing from items.json`)
     assert.equal(entry.page, name)
-    assert.equal(entry.lore, true, `${name} should carry the LORE ITEM flag`)
     assert.equal(entry.quest, true, `${name} should carry the QUEST ITEM flag`)
     assert.ok(typeof entry.iconId === 'number' && entry.iconId > 0, `${name} should carry an icon id`)
-    assert.match(entry.statsBlock ?? '', /LORE ITEM/)
   }
+  const claw = index.get(itemKey('Sphinx Claw'))
+  assert.ok(claw)
+  assert.equal(claw.lore, true, 'Sphinx Claw should carry a lore flag')
+  // The page respelled its flags line "Lore Equipped, No Trade, Quest, Placeable" in the
+  // 2026-08-22 rescrape — Lore Equipped counts as the LORE flag (the Skycleaver rule).
+  assert.match(claw.statsBlock ?? '', /LORE ITEM|Lore Equipped/)
 })
 
 test('the `+N` item level never reaches the database', () => {

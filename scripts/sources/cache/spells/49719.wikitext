@@ -9,6 +9,7 @@
 | items_with_effect = 
 
 <ul><li>  {{:Inlaid Jade Hoop}}
+</li><li> {{:Essence of High Elf (Wormwood)}}
 </li></ul>
 <ul><li>  {{:Guise of the Coercer}}
 </li></ul>

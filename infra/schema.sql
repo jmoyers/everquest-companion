@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS report (
   -- different keys and independent lifetimes, and `forget` deletes them one at a time.
   inventory_json text,
   inventory_key  text,
+  -- The THIRD attachment (JOS-441): the `/outputfile achievements` dump, on the identical terms.
+  -- It exists because three v1.7.0 reports about the achievements import all arrived carrying a
+  -- log and an inventory, and NEITHER could answer the question — the whole defect lived in a
+  -- file nothing sent.
+  achievements_json text,
+  achievements_key  text,
   client_ts   bigint NOT NULL,
   received_at bigint NOT NULL,
   spam_score  integer NOT NULL,
@@ -530,6 +536,16 @@ ALTER TABLE analytics_install ADD COLUMN cohort text;
 ALTER TABLE report ADD COLUMN inventory_json text;
 
 ALTER TABLE report ADD COLUMN inventory_key text;
+
+-- The achievements attachment's two columns on a LIVE cluster (JOS-441). Everything the paragraph
+-- above says applies unchanged, including the ordering law: `REPORT_SQL` names
+-- `achievements_json, achievements_key` unconditionally, so `migrate` runs FIRST, the new Lambda
+-- bundle SECOND, and the client release THIRD. Deploy the bundle before this and every submit
+-- 42703s with the endpoint open; ship the client first and it declares an attachment the server
+-- has no column for, uploading nothing while telling the user it did.
+ALTER TABLE report ADD COLUMN achievements_json text;
+
+ALTER TABLE report ADD COLUMN achievements_key text;
 
 -- The perf cube's two install-level dims on a LIVE cluster (JOS-372). Nullable, never dropped,
 -- and the same shape of migration as the four above — a row written before this ran has NULL in

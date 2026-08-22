@@ -46,6 +46,11 @@
 //
 //   • CUSTOM (`custom`) — the two instants the user picked, clamped to the record, no zone filter.
 //     Always offerable; a surface that has not been given a custom range yet falls back to `All`.
+//     AN END MAY BE OPEN (JOS-436): `+Infinity` clamps to the live edge on every read, so a range
+//     that says "from here on" grows with the log instead of having to be retyped. That is what
+//     `sessionSegments.ts` hands in, and it is why this slice — not a tenth id — is the one the
+//     Details!-style session split rides on. Its `caption` may be SUPPLIED for the same reason:
+//     a segment has a name ("session 2") and `the custom range` would throw it away.
 //
 //   • THE DURATION RUNGS (`d7` / `h24` / `h6` / `h1`) — "the last N of the log", anchored on the
 //     newest event rather than on the clock. They predate this module (JOS-71's timescale) and are
@@ -287,6 +292,14 @@ export interface ResolveSliceArgs {
    *  whole record, which is the honest reading of "a custom range nobody has chosen yet". */
   custom?: SliceRange | null
   /**
+   * WHAT TO CALL THAT CUSTOM RANGE, when the thing that supplied it has a name for it (JOS-436).
+   *
+   * Only `custom` reads it, and only when it is a non-empty string — every preset words itself, and
+   * a preset that could be renamed from a call site is a preset with two definitions. Absent ⇒ `the
+   * custom range`, the wording a hand-typed pair has always had.
+   */
+  customCaption?: string | null
+  /**
    * WHICH TIERS OF THE CURRENT ZONE COUNT (JOS-291). Absent ⇒ `ZONE_SCOPE_DEFAULT` (`allTiers`),
    * which resolves to exactly the slice this function returned before the option existed.
    *
@@ -301,7 +314,17 @@ function wholeRange(bounds: RecordBounds | null): SliceRange {
   return bounds ? { t0: bounds.lo, t1: bounds.hi + TAIL_MS } : { t0: 0, t1: 0 }
 }
 
-/** `range` clamped inside the record, never inverted. */
+/**
+ * `range` clamped inside the record, never inverted.
+ *
+ * IT IS ALSO WHAT RESOLVES AN OPEN END (JOS-436), with no branch of its own: `±Infinity` is
+ * already the identity of these two `Math.min`/`Math.max` pairs, so a range spelled
+ * `[-Infinity, +Infinity)` IS the whole record and `[m, +Infinity)` is "from m to the live edge",
+ * re-read on every render as the log grows. A mark taken from the wall clock can sit PAST the
+ * newest log line, and the result is then an empty range at the end of the record — which is the
+ * honest answer ("nothing has happened in the new session yet") and heals itself the moment the
+ * log catches up.
+ */
 function clamp(range: SliceRange, bounds: RecordBounds | null): SliceRange {
   const whole = wholeRange(bounds)
   const t0 = Math.max(whole.t0, Math.min(range.t0, whole.t1))
@@ -324,9 +347,24 @@ function zoneCaptionOf(zoneName: string | null, scope: ZoneScope): string | null
   return zoneName === null ? null : `${zoneName}, ${ZONE_SCOPE_PHRASE[scope]}`
 }
 
+/**
+ * The supplier's own name for a custom range when it has one (JOS-436) — `session 2` — and the
+ * wording a hand-typed pair has always had when it does not.
+ *
+ * Its own function so `captionOf` stays inside the measured complexity ceiling, and so that the
+ * three ways of saying "nobody named this" (absent, null, empty) are answered in ONE place.
+ */
+function customCaptionOf(supplied?: string | null): string {
+  return supplied === null || supplied === undefined || supplied === '' ? 'the custom range' : supplied
+}
+
 /** How a slice is worded inside a sentence. `zone` is the pair `zoneCaptionOf` composes from, so
  *  the session phrase can slot BETWEEN the name and the membership clause. */
-function captionOf(id: SliceId, zone: { name: string; scope: ZoneScope } | null): string {
+function captionOf(
+  id: SliceId,
+  zone: { name: string; scope: ZoneScope } | null,
+  customCaption?: string | null
+): string {
   switch (id) {
     case 'session':
       return 'this session'
@@ -340,7 +378,7 @@ function captionOf(id: SliceId, zone: { name: string; scope: ZoneScope } | null)
         ? 'this zone this session'
         : `${zone.name} this session, ${ZONE_SCOPE_PHRASE[zone.scope]}`
     case 'custom':
-      return 'the custom range'
+      return customCaptionOf(customCaption)
     case 'all':
       return 'the whole log'
     default:
@@ -389,7 +427,7 @@ export function resolveSlice(args: ResolveSliceArgs): Timeslice {
   return {
     id,
     label: LABELS[id],
-    caption: captionOf(id, zone ? { name: zone.name, scope: where.zoneScope } : null),
+    caption: captionOf(id, zone ? { name: zone.name, scope: where.zoneScope } : null, args.customCaption),
     range: rangeFor(args),
     ...where
   }

@@ -36,10 +36,10 @@ Chesgard Sydwen, in the house of thunder, is willing to reward those who help el
 : Chesgard Sydwen says, 'Good work Bard.  The Karana Bandits have been plaguing the Rainkeepers flock for some time.  Take this as a small reward for your devotion.  Continue the fight against the Karana Bandits.  Ahh... I wish [Cheslin] was equally as skilled.'
 
 <div class="facblock">
-* Your faction with [[Bloodsabers]] has gotten worse.
-* Your faction with [[Guards of Qeynos]] has gotten better.
-* Your faction with [[Priests of Life]] has gotten better.
-* Your faction with [[Knights of Thunder]] has gotten better.
+* Your faction standing with [[Bloodsabers]] has been adjusted by -20.
+* Your faction standing with [[Guards of Qeynos]] has been adjusted by 15.
+* Your faction standing with [[Priests of Life]] has been adjusted by 15.
+* Your faction standing with [[Knights of Thunder]] has been adjusted by 20.
 </div>
 {{YouGainExperience}}
 

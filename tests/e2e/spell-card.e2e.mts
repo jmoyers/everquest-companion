@@ -53,7 +53,9 @@ const CARD = '[data-testid="spell-hover-card"]'
  */
 const HEAL = {
   name: 'Celestial Remedy',
-  stats: { type: 'Beneficial', cast: '4.0s', mana: '75', duration: '24 Sec' },
+  // `recast` joined the block in JOS-444, from the same page and by the same rule as every row
+  // beside it: schema 3 states `recast_time = 1.50 sec`, so the card states 1.5s.
+  stats: { type: 'Beneficial', cast: '4.0s', recast: '1.5s', mana: '75', duration: '24 Sec' },
   effect: 'Increase Hitpoints by 35 per tick',
   classes: 'CLR 19'
 }

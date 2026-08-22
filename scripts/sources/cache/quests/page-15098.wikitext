@@ -1,5 +1,5 @@
-{{Temple Era}}
-[[File:npc_joyce.png|frame|Joyce]]
+{{Classic Era}}
+[[File:npc_joyce.png|right|200px|thumb|]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Temple of Solusek Ro]]
@@ -47,7 +47,7 @@ You say, 'I am interested in the bracelet'
 
 : Joyce says 'I will make you a clay bracelet, but you will need to bring me the proper components. I will need each of the four runes of clay. Three of them can be found in the Rathe Mountains, held by gnomish necromancers. The fourth one is somewhere in the Ocean of Tears, held by a goblin headmaster. Bring me these four components, and I will make you a clay bracelet.' 
 
-'''Find [[Bindlegrob]], [[Sindlegrob]] and [[Findlegrob]] in the Rathe Mountains. (Bindlegrob is up north near Lake Rathe zone in. Sindlegrob and Findlegrob share the same hut south-east of zone. ) ''' Kill them. Loot [[Rune of Clay]] off each of them (they have three separate pieces -- right, left and top.)
+'''Find [[Bindlegrob]], [[Sindlegrob]] and [[Findlegrob]] in the Rathe Mountains. (Findlegrob is up north near Lake Rathe zone in. Sindlegrob and Bindlegrob share the same hut south-east of zone. ) ''' Kill them. Loot [[Rune of Clay]] off each of them (they have three separate pieces -- right, left and top.)
 
 '''Find and kill [[a goblin headmaster]] in the Ocean of Tears (-1206, -8576 ; Island #9) for the bottom piece. Hand the four Runes in and receive a Clay Bracelet:'''
 

@@ -327,9 +327,9 @@ async function consumeQuota(
     execute(QUOTA_SQL, [
       req.installId,
       utcDate(now),
-      // BOTH attachments count against the byte counter (JOS-296). It is the record of what an
-      // install asked this stack to store, and a dump costs the same S3 as a slice does.
-      (req.log?.bytes ?? 0) + (req.inventory?.bytes ?? 0),
+      // EVERY attachment counts against the byte counter (JOS-296, JOS-441). It is the record of
+      // what an install asked this stack to store, and a dump costs the same S3 as a slice does.
+      (req.log?.bytes ?? 0) + (req.inventory?.bytes ?? 0) + (req.achievements?.bytes ?? 0),
       now + QUOTA_TTL_MS,
       config.maxPerInstallPerDay,
     ]),
@@ -394,6 +394,18 @@ function inventoryObjectKey(reportId: string, now: number): string {
   return `inventory/${datePrefix(now)}/${reportId}.txt.gz`
 }
 
+/**
+ * The achievements dump's key (JOS-441) — its own top-level prefix, on the identical argument.
+ *
+ * AND THE IDENTICAL OBLIGATION: a prefix with no lifecycle rule lives forever, so `infra/s3.tf`
+ * grows a third `expire-…-dumps` rule beside this, and `infra/iam.tf` names `achievements/*` in
+ * all three of its attachment statements. A key the presigner may not write is a 403 the client
+ * reports as "not uploaded"; a key with no expiry is a bill.
+ */
+function achievementsObjectKey(reportId: string, now: number): string {
+  return `achievements/${datePrefix(now)}/${reportId}.txt.gz`
+}
+
 // The triage-only columns (severity, cluster_id, dupe_of, disposition, issue_url,
 // triaged_at, redacted_at) are deliberately absent: ingest never writes them, and
 // the GRANT list says INSERT, so it could not amend them afterwards either.
@@ -403,15 +415,18 @@ function inventoryObjectKey(reportId: string, now: number): string {
 // EVERY SUBMIT, which is why this bundle has to be deployed BEFORE the columns are
 // removed from a live cluster (infra/README.md states the ordering).
 //
-// `inventory_json` / `inventory_key` (JOS-296) are named UNCONDITIONALLY, which is why the two
-// `ALTER TABLE report ADD COLUMN` statements in schema.sql have to be applied BEFORE this bundle
-// is deployed — the 42703 trap the paragraph above describes, in the other direction.
+// `inventory_json` / `inventory_key` (JOS-296) and `achievements_json` / `achievements_key`
+// (JOS-441) are named UNCONDITIONALLY, which is why the `ALTER TABLE report ADD COLUMN`
+// statements in schema.sql have to be applied BEFORE this bundle is deployed — the 42703 trap the
+// paragraph above describes, in the other direction. It has now bitten twice in theory and zero
+// times in practice, which is the runbook doing its job (infra/README.md).
 const REPORT_SQL = `INSERT INTO report (
   report_id, install_id, report_type, description,
   channel, app_version, platform, env_json, log_json, log_key,
   inventory_json, inventory_key,
+  achievements_json, achievements_key,
   client_ts, received_at, spam_score, status
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'new')`
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'new')`
 
 const IDEMP_SQL = `INSERT INTO report_idempotency
   (install_id, client_report_id, report_id, expires_at)
@@ -439,6 +454,8 @@ function reportParams(
     req.log ? logObjectKey(reportId, now) : null,
     req.inventory ? JSON.stringify(req.inventory) : null,
     req.inventory ? inventoryObjectKey(reportId, now) : null,
+    req.achievements ? JSON.stringify(req.achievements) : null,
+    req.achievements ? achievementsObjectKey(reportId, now) : null,
     req.clientTs,
     now,
     score,
@@ -550,6 +567,9 @@ async function accept(req: SubmitRequest, now: number): Promise<HttpResult> {
   const inventoryUpload = req.inventory
     ? await mintUpload(inventoryObjectKey(written.reportId, now))
     : null
+  const achievementsUpload = req.achievements
+    ? await mintUpload(achievementsObjectKey(written.reportId, now))
+    : null
   log({
     msg: 'report.created',
     reportId: written.reportId,
@@ -557,8 +577,15 @@ async function accept(req: SubmitRequest, now: number): Promise<HttpResult> {
     score,
     log: req.log !== null,
     inventory: req.inventory !== null,
+    achievements: req.achievements !== null,
   })
-  return json(201, { ok: true, reportId: written.reportId, upload, inventoryUpload })
+  return json(201, {
+    ok: true,
+    reportId: written.reportId,
+    upload,
+    inventoryUpload,
+    achievementsUpload,
+  })
 }
 
 export async function handler(event: HttpEvent): Promise<HttpResult> {

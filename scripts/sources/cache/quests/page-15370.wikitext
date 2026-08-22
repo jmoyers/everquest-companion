@@ -1,4 +1,4 @@
-[[File:npc_astaed_wemor.png|frame|Astaed Wemor]]
+[[File:npc_astaed_wemor.png|Astaed Wemor|thumb|400x400px]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Qeynos|North Qeynos]]

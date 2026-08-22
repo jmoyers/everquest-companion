@@ -33,6 +33,8 @@
 
 == Walkthrough ==
 
+'''''<big>As of 8/18/26 this quest is NOT able to be completed on EQL. Collier is nowhere to be found in Erudin.</big>'''''
+
 Collier may be found at (-1170, -70, 83) in [[Erudin]], on the top floor of the Vasty Deep Inn.
 
 You say, 'Hail, Collier' 

@@ -7,15 +7,20 @@
 // PARSER. Every entity's damage is parsed and recorded exactly as before. The roster decides
 // two things and no more:
 //
-//   1. ADMISSION — whether the engine books a group member's outgoing damage at all. This is
-//      the widening of `classify()`'s gate that the reported bug needed (§3.5): 2,224 parsed
-//      events fell through `attacker not you/pet, target not you → ignore`.
+//   1. ENGAGEMENT LICENCE — whether a combatant's TARGET counts as a mob YOUR fight is engaged
+//      with. A roster member's target does (the mob your group-mate is fighting is the mob you are
+//      fighting); a stranger's does not.
 //   2. THE VIEW ALLOWLIST — which recorded rows the Group scope shows.
 //
-// So a WRONG roster can hide a row; it can never corrupt a number. Removing a member in the UI
-// re-filters rows that are still recorded and still visible under Everyone; switching scope
-// re-filters the same recorded truth. That is what "must not interfere with parser accuracy"
-// means structurally, rather than as a promise.
+// IT NO LONGER DECIDES WHETHER DAMAGE IS RECORDED AT ALL (JOS-430, owner ruling 2026-08-20). It
+// used to: `classify()` booked a name only if the roster had admitted it, so an empty roster
+// recorded nobody and "Everyone" could not show what nothing had recorded. Every player-vs-mob row
+// is recorded now, whatever the roster says (src/main/combat/otherCombatants.ts).
+//
+// So the promise below is TRUE now rather than aspirational: a WRONG roster can hide a row; it can
+// never corrupt a number. Removing a member in the UI re-filters rows that are still recorded and
+// still visible under Everyone; switching scope re-filters the same recorded truth. That is what
+// "must not interfere with parser accuracy" means structurally, rather than as a promise.
 //
 // This module is PURE: zero imports, no `node:`, no Electron, no DOM. It compiles under both
 // tsconfigs.
@@ -112,14 +117,17 @@ export interface RosterView {
    *  as a hostile. */
   readonly members: ReadonlySet<string>
   /**
-   * Canonical keys the engine may ADMIT outgoing damage from — every name that has been in the
-   * roster since the last epoch or self-leave, INCLUDING ones since removed.
+   * Canonical keys the engine treats as GROUP MEMBERS for attribution — every name that has been
+   * in the roster since the last epoch or self-leave, INCLUDING ones since removed.
    *
-   * Wider than `members` on purpose, and it is what gives the Everyone scope a meaning. If
-   * admission tracked the live roster exactly, a member who left an hour ago would have their
-   * recorded damage stay in the aggregates while every new line was dropped, and — worse — a
-   * user REMOVING someone in the popover would stop recording their damage, which would make a
-   * view-layer edit corrupt a number. It cannot: admission never shrinks on a user edit.
+   * Wider than `members` on purpose: a member who left an hour ago is still the person whose row
+   * carries that fight's damage, and a user REMOVING someone in the popover must only ever hide a
+   * row. It never shrinks, which is also what lets a recorded row's `SourceKind` upgrade from
+   * `'other'` to `'member'` MONOTONICALLY when the roster finally learns a name (shared/combat.ts).
+   *
+   * SINCE JOS-430 IT NO LONGER GATES RECORDING. A name outside this set is still recorded — as
+   * `'other'`, aggregate-only, engaging nothing. What this set buys is the engagement licence and
+   * the Group scope, not the row's existence.
    */
   readonly admitted: ReadonlySet<string>
   /** The log's own spelling for an admitted key, for the meter row's label. */
@@ -142,10 +150,11 @@ export const EMPTY_ROSTER_VIEW: RosterView = {
  *
  *   'you'      you + your pets. Today's behavior, unchanged, and still what a solo player sees.
  *   'group'    you + your pets + the current roster.
- *   'everyone' every recorded source, including members who have since left the group. THE
- *              DEFAULT (JOS-229) — an inferred roster can be incomplete as easily as empty, and
- *              the only scope that can hide nobody is the one that filters nobody. The constant
- *              itself lives in renderer features/combat/combatPrefs.ts, which argues it.
+ *   'everyone' EVERY combatant the log named — members who have since left, and (since JOS-430)
+ *              everyone the roster never knew about at all. THE DEFAULT (JOS-229) — an inferred
+ *              roster can be incomplete as easily as empty, and the only scope that can hide
+ *              nobody is the one that filters nobody. The constant itself lives in renderer
+ *              features/combat/combatPrefs.ts, which argues it.
  */
 export type MeterScope = 'you' | 'group' | 'everyone'
 
@@ -185,7 +194,7 @@ export const SCOPE_LABEL: Record<MeterScope, string> = {
 export const SCOPE_HINT: Record<MeterScope, string> = {
   you: 'You and your pets only',
   group: 'You, your pets and everyone on your group roster',
-  everyone: 'Every source the meter recorded, including people who have since left your group'
+  everyone: 'Every combatant the log named, including people your group roster never knew about'
 }
 
 /** The scope chip's text: the chosen scope, plus the fallback reason when Group has nothing to
@@ -201,17 +210,39 @@ export function nextScope(scope: MeterScope): MeterScope {
 }
 
 /**
+ * The source kinds this filter knows about. Spelled out rather than imported from
+ * `shared/combat.ts`: this module is PURE (zero imports, see the header) so that the roster module,
+ * the engine and both renderer bundles can all compile against it, and `combat.ts` already imports
+ * `RosterSnap` from here — the one-way edge is worth keeping one-way.
+ * `tests/meterScope.test.mts` pins the two unions together so they cannot drift.
+ */
+export type ScopeKind = 'you' | 'pet' | 'member' | 'enemy' | 'allyPet' | 'other'
+
+/** The three kinds whose rows belong to somebody OTHER than you — the ones scope filters. A
+ *  `'member'` and an `'other'` row are the same shape of thing (a combatant with a canonical key
+ *  in its id); the kind only says whether the roster has learned the name yet, and Group has to
+ *  ask the roster either way. */
+export function isScopedKind(kind: ScopeKind): boolean {
+  return kind === 'member' || kind === 'allyPet' || kind === 'other'
+}
+
+/**
  * THE ROW FILTER. `kind` is the recorded source kind and `key` is the canonical member key for
- * a 'member' row (ignored otherwise).
+ * a 'member'/'other' row (ignored otherwise).
  *
  * Incoming rows ('enemy') are never filtered — scope is about WHOSE DAMAGE, and the incoming
  * meter is always about what is hitting YOU. Mobs hitting your group are deliberately out of
  * the model (design doc §3.5); nothing here pretends otherwise.
+ *
+ * `'other'` (JOS-430) filters exactly like `'member'` and NOT by its kind: a name the roster
+ * has not learned is not on the roster, so Group hides it and Everyone shows it — which is the
+ * whole ruling ("Everyone means any fight the log can see"). Asking the ROSTER rather than the
+ * kind is what keeps the two answers from being able to disagree while a name is being upgraded.
  */
 export function scopeAllows(
   scope: MeterScope,
   roster: RosterSnap,
-  kind: 'you' | 'pet' | 'member' | 'enemy' | 'allyPet',
+  kind: ScopeKind,
   key?: string
 ): boolean {
   if (kind === 'enemy') return true
@@ -220,7 +251,7 @@ export function scopeAllows(
   // the row belongs to a person, so "show me my group" must mean the same thing whether that
   // person is swinging themselves or their charmed giant is doing it for them. Under the You scope
   // it is hidden for the same reason a group-mate's row is — it is not yours.
-  if (kind !== 'member' && kind !== 'allyPet') return true // you + your pets are in every scope
+  if (!isScopedKind(kind)) return true // you + your pets are in every scope
   if (eff === 'you') return false
   if (eff === 'everyone') return true
   return key !== undefined && roster.members.some((m) => m.key === key)

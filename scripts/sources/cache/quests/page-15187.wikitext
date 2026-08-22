@@ -44,7 +44,7 @@ You say, 'What boon?'
 
 '''Receive A Dusty Old Leg Bone.'''
 
-Now go find a Paladin guildmaster by the name of [[Valeron Dushire]].
+Now go find the Paladin guildmaster in North Freeport by the name of [[Valeron Dushire]].
 
 You say, 'Hail, Valeron Dushire'
 
@@ -70,15 +70,15 @@ You say, 'I accept.'
 
 '''You now need to collect six bones, a shield, a sword and a coffin. These are the items and locations:'''. *These are not actual bones, they are small bags that you pick up.
 
-[[File:Unrest Bone Spawns.png|thumb|Unrest Ghost Pit with both quest items spawned.]]
+[[File:Unrest Bone Spawns.png|thumb|Unrest Ghost Pit with both [[A Dusty Old Backbone]] and [[Dusty Old Finger Bones]] ground spawns present.]]
 # A [[Dusty Old Skull]] - Minotaur caves in [[Steamfont Mountains]] in Meldrath's room.
 # [[A Dusty Old Leg Bone]] - You received this from talking to Diggs Duggun in [[Beholder's Maze]].
 # [[Dusty Ribcage]] - The Garden in [[Mistmoore Castle]].  This is actually in the Fountain Room #7 on the map. This can also spawn in the same room as  [[A Dusty Old Backbone]] in Unrest.
-# [[A Dusty Old Backbone]] - Ghost Room Pit in [[Unrest]].  Go in the basement, then through the invisible wall, go through the lava, and the bag is in the pit.
-# [[A Dusty Old Jawbone]] - Underwater Ice Cave in [[Everfrost Peaks]]. There are emblems on the wall in the cave. The item is under the third emblem at about 4535, -5235.
+# [[A Dusty Old Backbone]] and [[Dusty Ribcage]] - Ghost Room Pit in [[Unrest]].  Go in the basement, then through the invisible wall, go through the lava, and the bag is in the pit.
+# [[A Dusty Old Jawbone]] - Underwater Ice Cave (Miragul's area) in [[Everfrost Peaks]]. There are emblems on the wall in the cave. The item is under the third emblem at about 4535, -5235.
 # [[A Dusty Broken Sword]] - In the mines of North [[Kaladim]] in the water. Ground spawn in the water at roughly +761, +291.
 # [[A Dusty Broken Shield]] - On a ledge on right cliffs in [[Erudin]] from the docks.  Ground spawn at -605, -725.  You must swim from the docks to reach the shield.
-# [[Dusty Old Finger Bones]] - Inside Phinigel Autropos's room in [[Kedge Keep]]. Beware Swirlspine Seahorse (4 of them, 51 Cleric’s) can see invis! So bring a group! Swim down through the Star which is in the center of the room. There's an alcove on the SOUTH WALL with a large rock, and the bag spawns to the LEFT of the rock. Exact Location is neg 150, pos 127, neg 270. (proper spawn location updated July '17) (This spawned on top of the large rock in the south alcove on 08/01/2026.)
+# [[Dusty Old Finger Bones]] - Inside Phinigel Autropos's room in [[Kedge Keep]]. Beware Swirlspine Seahorse (4 of them, 51 Cleric’s) can see invis! So bring a group! Swim down through the Star which is in the center of the room. There's an alcove on the SOUTH WALL with a large rock, and the bag spawns to the LEFT of the rock. Exact Location is neg 150, pos 127, neg 270.
 [[File:Dust_Old_Finger_Bones.png]]
 ''*NOTE:'' The respawn timer on bones seems to be 20 minutes. Tested 6/30/2022 with two Paladins in Unrest and Mistmoore.
 
@@ -132,9 +132,9 @@ A Tortured Revenant's corpse says 'At last I can rest..'
 : Simon Aldicott says, 'Thank you Knight. With this task accomplished, I shall reward you with this scroll. It is an ancient spell that only the holiest of knights may cast. Remember your duty!'
 
 <div class="facblock">
-* Your faction standing with [[Priests of Marr]] got better.
-* Your faction standing with [[The Freeport Militia]] got worse.
-* Your faction standing with [[Knights of Truth]] got better.
+* Your faction standing with Priests of Marr has been adjusted by 300.
+* Your faction standing with The Freeport Militia has been adjusted by -30.
+* Your faction standing with Knights of Truth has been adjusted by 45.
 </div>
 {{YouGainExperience}}
 

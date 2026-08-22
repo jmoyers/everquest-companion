@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Elixir of Replenishment I
+| spellicon =
+| description = Hastens your natural healing, allowing you to recover hit points faster.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Distillate of Replenishment I]].
+
+| items_with_effect =
+
+<ul><li> {{:Distillate of Replenishment I}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Increase Current HP by 1 per tick }}
+
+| skill =
+| mana = 100
+| range = 100
+| casting_time = 6.00
+| fizzle_time = 0.00
+| recast_time = 1.50
+| duration = 30 minutes
+| target_type = Self
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = You begin to regenerate.
+| msg_cast_on_other = Someone  begins to regenerate.
+| msg_wears_off = You have stopped regenerating.
+}}

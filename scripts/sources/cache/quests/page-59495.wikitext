@@ -1,0 +1,36 @@
+{{Classic Era}}
+<div style="float:right; padding-left: 20px;">[[File:Void_touched_potential_task.jpg]]</div>
+{| class="questTopTable"
+! ''' Start Zone: '''
+| [[The Hole]], [[Kedge Keep]], [[Permafrost]], [[Nagafen's Lair]], [[Oasis of Marr]], [[Feerrott]]
+|-
+! ''' Quest Giver: '''
+| [[voidling]]
+|-
+! ''' Minimum Level: '''
+| Various
+|-
+! ''' Classes: '''
+| All
+|-
+! ''' Related Zones: '''
+| [[The Hole]], [[Kedge Keep]], [[Permafrost]], [[Nagafen's Lair]], [[Plane of Hate]], [[Plane of Fear]]
+|-
+! ''' Related NPCs: '''
+| [[Master Yael]], [[Phinigel Autropos]], [[Lady Vox]], [[Lord Nagafen]], [[Innoruuk]], [[Cazic Thule]]
+|}
+
+== Reward ==
+
+<ul><li> {{:Void-Touched Potential}}
+</li></ul>
+
+== Walkthrough ==
+
+Quest is to kill one of the Raid bosses listed above.  Quest can be done once per boss, for a total of three quests and rewards each week.
+
+After earning 3 void-touched potentials, you will have to wait until 8AM Tuesday PDT to earn more.
+
+*Note: If you have three Void-Touched Potential in your inventory already, this quest will not be given until at least one is used.
+
+[[Category:Quests]]

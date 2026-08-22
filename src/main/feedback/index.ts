@@ -23,6 +23,7 @@ import { dialog } from 'electron'
 import { statSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import type {
+  FeedbackAchievementsPreview,
   FeedbackEnv,
   FeedbackInventoryPreview,
   LogSliceMeta
@@ -30,7 +31,15 @@ import type {
 import { logError } from '../errorLog'
 import { getMainWindow } from '../windows'
 import { feedbackEndpointConfigured } from './net'
-import { activeInventoryPath, activeLog, cachedSlice, currentInventory, feedbackEnv } from './submit'
+import {
+  activeAchievementsPath,
+  activeInventoryPath,
+  activeLog,
+  cachedSlice,
+  currentAchievements,
+  currentInventory,
+  feedbackEnv
+} from './submit'
 import { queuedCount } from './state'
 
 export { installId } from './state'
@@ -52,6 +61,12 @@ export interface FeedbackContext {
   /** The dump's mtime, epoch ms, or null. The JOS-253 freshness truth, on the context so the
    *  dialog can state the age before anything is read. */
   inventoryUpdatedAt: number | null
+  /** Is there a `/outputfile achievements` dump on disk (JOS-441)? Same disabled-with-a-hint
+   *  treatment, and on this kind the hint is the point: the players whose reports motivated the
+   *  attachment had all just run the command, and the ones who have not need to be told it exists. */
+  achievementsAvailable: boolean
+  /** That dump's mtime, epoch ms, or null. */
+  achievementsUpdatedAt: number | null
 }
 
 /**
@@ -71,7 +86,7 @@ export interface FeedbackSlicePreview extends LogSliceMeta {
  * does for the same question. Null when the file went away between the listing and the stat,
  * which is "no dump" and not an error to render.
  */
-function inventoryMtime(path: string): number | null {
+function dumpMtime(path: string): number | null {
   try {
     return Math.floor(statSync(path).mtimeMs)
   } catch {
@@ -89,7 +104,9 @@ function inventoryMtime(path: string): number | null {
  */
 export async function feedbackContext(): Promise<FeedbackContext> {
   const dump = activeInventoryPath()
-  const updatedAt = dump === null ? null : inventoryMtime(dump.path)
+  const updatedAt = dump === null ? null : dumpMtime(dump.path)
+  const ach = activeAchievementsPath()
+  const achUpdatedAt = ach === null ? null : dumpMtime(ach.path)
   return {
     env: await feedbackEnv(),
     endpointConfigured: feedbackEndpointConfigured(),
@@ -98,7 +115,9 @@ export async function feedbackContext(): Promise<FeedbackContext> {
     // A path whose stat failed is a file that is no longer there — both halves go together, the
     // same atomicity `outputFileStatus` enforces for the freshness line everywhere else.
     inventoryAvailable: updatedAt !== null,
-    inventoryUpdatedAt: updatedAt
+    inventoryUpdatedAt: updatedAt,
+    achievementsAvailable: achUpdatedAt !== null,
+    achievementsUpdatedAt: achUpdatedAt
   }
 }
 
@@ -118,6 +137,28 @@ export async function buildInventoryPreview(): Promise<FeedbackInventoryPreview>
       previewLines: [],
       truncatedPreview: false,
       fileName: activeInventoryPath()?.fileName ?? null
+    }
+  }
+  const { bytes, lines, updatedAt, sha256, previewLines, truncatedPreview, fileName } = dump
+  return {
+    meta: { bytes, lines, updatedAt, sha256 },
+    unavailable: null,
+    previewLines,
+    truncatedPreview,
+    fileName
+  }
+}
+
+/** The achievements dump's preview (JOS-441) — the same contract, over its own packager. */
+export async function buildAchievementsPreview(): Promise<FeedbackAchievementsPreview> {
+  const dump = await currentAchievements()
+  if (!dump.ok) {
+    return {
+      meta: null,
+      unavailable: dump.reason,
+      previewLines: [],
+      truncatedPreview: false,
+      fileName: activeAchievementsPath()?.fileName ?? null
     }
   }
   const { bytes, lines, updatedAt, sha256, previewLines, truncatedPreview, fileName } = dump

@@ -51,14 +51,15 @@ You say, 'What Seax?'
 : Lysbith McNaff says 'Ye're becoming a fine champion o' Halas. Take th' Seax. May ye always defend Halas!' 
 
 <div class="facblock">
-* Your faction standing with [[Wolves of the North]] got better.
-* Your faction standing with [[Shamen of Justice]] got better.
-* Your faction standing with [[Merchants of Halas]] got better.
-* Your faction standing with [[Steel Warriors]] got better.
+* Your faction standing with [[Wolves of the North]] has been adjusted by 20.
+* Your faction standing with [[Shamen of Justice]] has been adjusted by 5.
+* Your faction standing with [[Merchants of Halas]] has been adjusted by 5.
+* Your faction standing with [[Rogues of the White Rose]] has been adjusted by 5.
+* Your faction standing with [[Steel Warriors]] has been adjusted by 5.
 </div> 
 {{exp}}
 
-You receive Seax, a piercing weapon usable by Rogues.
+You receive [[Seax]], a piercing weapon usable by Rogues.
 
 [[Category:Quests]]
 [[Category:Halas]]

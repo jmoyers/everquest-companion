@@ -1,0 +1,35 @@
+{{Classic Era}}
+{{Spellpage|
+
+| spellname = Greater Mystical Infusion
+| spellicon =
+| description = Expands your target's mind, granting them an increased mana pool for up to 20 minutes.
+
+| classes =
+
+This spell cannot be cast directly. It is triggered by drinking a [[Greater Mystical Infusion]].
+
+| items_with_effect =
+
+<ul><li> {{:Greater Mystical Infusion}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 4 | Increase Max Mana by 100 }}
+
+| skill =
+| mana = 0
+| range = 100
+| casting_time = 0.00
+| fizzle_time = 0.00
+| recast_time = 0.00
+| duration = 20 minutes
+| target_type = Single
+| spell_type = Beneficial
+| resist = Unresistable
+
+| msg_cast_on_you = Your mind expands.
+| msg_cast_on_other = Someone's mind expands.
+| msg_wears_off = Your mind returns to normal.
+}}

@@ -6,6 +6,12 @@
 | description = Cloaks you in a shimmering illusion that makes you appear to be a Wood Elf.
 
 | classes = * [[Enchanter]] - Level 5
+
+| items_with_effect = 
+
+<ul><li> {{:Essence of Wood Elf (Wormwood)}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Illusion: 4 }}

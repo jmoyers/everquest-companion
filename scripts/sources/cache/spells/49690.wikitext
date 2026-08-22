@@ -5,6 +5,12 @@
 | description = Cloaks you in a shimmering illusion that makes you appear to be a Human.
 
 | classes = * [[Enchanter]] - Level 2
+
+| items_with_effect = 
+
+<ul><li> {{:Essence of Human (Wormwood)}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Illusion: 1 }}

@@ -34,4 +34,4 @@
 | TableLocations = [[East Freeport]]
 | TableEra = {{{TableEra|Classic}}}
 
-}}
+|Notes:=}}

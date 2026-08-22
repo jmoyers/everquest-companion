@@ -19,6 +19,7 @@
 </li><li> {{:Pearlescent Mask}}
 </li><li> {{:Razing Sword of Skarlon}}
 </li><li> {{:Silvery Two Handed Axe}}
+</li><li> {{:Potion of Wolves Blood}}
 </li><li> See also items with [[Ultravision]]
 </li><li> See also items with [[Truesight]]
 </li></ul>

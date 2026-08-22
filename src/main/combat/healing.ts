@@ -163,6 +163,115 @@ export class HealAccum {
   addAbsorbedDamageShield(): void {
     this.mit.absorbedDamageShields += 1
   }
+
+  /** A DEEP COPY. The merge (combat/mergeSessions.ts) is pure, so it may not hand back a ledger
+   *  that aliases either input's counters. Lives here because the row shapes are module-private. */
+  clone(): HealAccum {
+    const copy = new HealAccum()
+    copy.friendly = cloneSources(this.friendly)
+    copy.hostile = cloneSources(this.hostile)
+    copy.mit = { ...this.mit }
+    copy.unstated = new Map(this.unstated)
+    return copy
+  }
+
+  /**
+   * FOLD A LATER LEDGER INTO THIS ONE — the healing half of the merge-back proof obligation
+   * (JOS-322). Every field here is a SUM, an EXTREMUM or a LATEST-WINS label, which is precisely
+   * why the split is reversible: nothing in this ledger is a rate or a mean, and `overhealPct` /
+   * `hps` are derived at VIEW time from the totals rather than stored.
+   *
+   * `min` follows the accumulator's own sentinel rule — `undefined` means "nothing landed yet", so
+   * the merged minimum is the smaller of whichever sides actually have one — and `kind` follows
+   * `add`'s: the LATEST attribution wins, and `next` is the later ledger.
+   */
+  absorb(next: HealAccum): void {
+    absorbSources(this.friendly, next.friendly)
+    absorbSources(this.hostile, next.hostile)
+    const m = this.mit
+    const n = next.mit
+    m.runeTotal += n.runeTotal
+    m.runeCount += n.runeCount
+    m.runeMax = Math.max(m.runeMax, n.runeMax)
+    assignMin(m, 'runeMin', minOf(m.runeMin, n.runeMin))
+    m.absorbedSwings += n.absorbedSwings
+    m.absorbedDamageShields += n.absorbedDamageShields
+    for (const [k, v] of next.unstated) this.unstated.set(k, (this.unstated.get(k) ?? 0) + v)
+  }
+}
+
+/** The smaller of two optional minima under the accumulator's own sentinel rule: `undefined` is
+ *  "no landed line on this side", never a zero to be dragged into the answer. */
+function minOf(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b
+  if (b === undefined) return a
+  return Math.min(a, b)
+}
+
+/**
+ * Write an optional minimum WITHOUT MINTING THE KEY when there is nothing to say.
+ *
+ * `min: undefined` and an absent `min` are different objects to a deep comparison, and the
+ * byte-identity gate (JOS-322) compares a merged ledger against one that was never split — where a
+ * lane with no landed line simply has no `min` property at all. So an absent minimum stays absent.
+ */
+function assignMin<K extends string>(o: Partial<Record<K, number>>, key: K, v: number | undefined): void {
+  if (v !== undefined) o[key] = v
+}
+
+function cloneSpell(s: HealSpellStat): HealSpellStat {
+  return { ...s }
+}
+
+function cloneSource(s: HealSourceStat): HealSourceStat {
+  const bySpell = new Map<string, HealSpellStat>()
+  for (const [sk, sv] of s.bySpell) bySpell.set(sk, cloneSpell(sv))
+  return { ...s, bySpell }
+}
+
+function cloneSources(m: Map<string, HealSourceStat>): Map<string, HealSourceStat> {
+  const out = new Map<string, HealSourceStat>()
+  for (const [k, s] of m) out.set(k, cloneSource(s))
+  return out
+}
+
+/** Sum one heal ledger's rows into another's, row by row and lane by lane. */
+function absorbSources(into: Map<string, HealSourceStat>, from: Map<string, HealSourceStat>): void {
+  for (const [k, s] of from) {
+    const cur = into.get(k)
+    if (!cur) {
+      into.set(k, cloneSource(s))
+      continue
+    }
+    cur.name = s.name
+    cur.kind = s.kind
+    cur.total += s.total
+    cur.count += s.count
+    cur.crits += s.crits
+    cur.max = Math.max(cur.max, s.max)
+    assignMin(cur, 'min', minOf(cur.min, s.min))
+    cur.overheal += s.overheal
+    cur.fullOverheal += s.fullOverheal
+    absorbSpells(cur.bySpell, s.bySpell)
+  }
+}
+
+/** The lane half of `absorbSources` — same five sums, same extremum, same sentinel rule. */
+function absorbSpells(into: Map<string, HealSpellStat>, from: Map<string, HealSpellStat>): void {
+  for (const [sk, sv] of from) {
+    const lane = into.get(sk)
+    if (!lane) {
+      into.set(sk, cloneSpell(sv))
+      continue
+    }
+    lane.total += sv.total
+    lane.count += sv.count
+    lane.crits += sv.crits
+    lane.max = Math.max(lane.max, sv.max)
+    assignMin(lane, 'min', minOf(lane.min, sv.min))
+    lane.overheal += sv.overheal
+    lane.fullOverheal += sv.fullOverheal
+  }
 }
 
 function add(

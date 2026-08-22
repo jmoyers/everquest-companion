@@ -43,6 +43,9 @@ import { parseEvent } from '../src/main/log/parser.ts'
 import { installSpellDb } from '../src/main/log/rulesets.ts'
 import { loadSpellDb, spellCorrectionsReport, matchCastOnOtherSuffix } from '../src/main/data/spellDb.ts'
 import { applySpellCorrections, SPELL_CORRECTIONS } from '../src/main/data/spellCorrections.ts'
+// The layer that runs BEFORE this one at load. Read by exactly one assertion here — see the
+// idempotence test's own note for why the shipped order is load-bearing for its accounting.
+import { applySpellRemovals } from '../src/main/data/spellRemovals.ts'
 import { classesForSpell } from '../src/main/data/spellClasses.ts'
 import { buildLevelUnlocks } from '../src/main/data/levelUnlocks.ts'
 import { BuffsModule } from '../src/main/modules/buffs.ts'
@@ -224,7 +227,17 @@ test('JOS-161: a MESSAGE correction still writes only the first row of a duplica
 // ---------------------------------------------------------------------------------------------
 
 test('applying the overlay twice is applying it once', () => {
-  const first = applySpellCorrections(RAW)
+  // READ THROUGH THE REMOVALS SEAM, which is the list the shipped overlay actually sees
+  // (`spellDb.ts` runs removals first) — and since JOS-440 that is load-bearing for the last
+  // assertion rather than tidiness. `applyOne` counts a NAME correction's second pass by how many
+  // rows now bear the DESTINATION name, which is right whenever the rename is the only reason any
+  // row has it. The invisibility twins are the case where it is not: the raw scrape carries a
+  // second page ALREADY named `Invisibility Versus Undead`, so on RAW the second pass counts two
+  // rows for a correction that wrote one, and `satisfied` over-reads by exactly one. That duplicate
+  // page is what the removals layer drops, so the shipped list has no such collision and the
+  // identity below is the honest one. Every other assertion in this file still reads RAW.
+  const seen = applySpellRemovals(RAW).spells
+  const first = applySpellCorrections(seen)
   const second = applySpellCorrections(first.spells)
   assert.deepEqual(second.spells, first.spells, 'the second pass must be a no-op on the entries')
   assert.equal(second.report.applied, 0, 'nothing left to apply')

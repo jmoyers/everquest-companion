@@ -19,7 +19,8 @@ import {
   encounterName,
   type Encounter,
   type StanceRaw,
-  type ZoneSession
+  type ZoneSession,
+  type ZoneSessionClose
 } from './encounter'
 import type { EngineState } from './state'
 import { isSlowCapable } from '../../shared/poisons'
@@ -223,7 +224,7 @@ export function finalizeCurrent(st: EngineState): void {
  * it. Also finalizes any still-open current encounter's duration into the session totals via the
  * caller ordering (finalizeCurrent runs first in the zone handler).
  */
-export function finalizeZoneSession(st: EngineState): void {
+export function finalizeZoneSession(st: EngineState, closedBy: ZoneSessionClose = 'zone'): void {
   if (st.zoneAgg.out.size === 0 && st.zoneAgg.inc.size === 0) return
   const id = `zs${++st.zoneSeq}`
   const zone = st.zone ?? 'Session'
@@ -233,6 +234,7 @@ export function finalizeZoneSession(st: EngineState): void {
     id,
     zone,
     agg: st.zoneAgg,
+    closedBy,
     startTs: st.zoneStartTs,
     lastTs: st.zoneLastTs,
     finalizedMs: st.zoneFinalizedMs,
@@ -240,6 +242,7 @@ export function finalizeZoneSession(st: EngineState): void {
     summary: {
       id,
       zone,
+      closedBy,
       startTs: st.zoneStartTs,
       endTs: st.zoneLastTs,
       total,
@@ -249,6 +252,37 @@ export function finalizeZoneSession(st: EngineState): void {
   }
   st.zoneHistory.push(session)
   if (st.zoneHistory.length > ZONE_HISTORY_CAP) st.zoneHistory.shift()
+}
+
+/**
+ * MINT FRESH ZONE ACCUMULATORS — the second half of every stay boundary, extracted (JOS-322)
+ * because there are now TWO callers and one of them must not be allowed to drift: the zone line
+ * (ingest.ts) and the SESSION MARK (engine.sessionMark).
+ *
+ * THE MARK IS THIS AND NOTHING ELSE. Everything the zone case does BESIDES this pair — retiring
+ * the world's mobs, breaking charm, zoning the ally model, stamping the ring — is a statement
+ * about the ROOM changing, and the mark makes no such statement: you did not leave, so your pet
+ * survives, the mez holds, the coats stay on the blades and the session-level state timeline runs
+ * straight through the boundary (segment views clip spans to the record's own span at read time,
+ * so a stance running across a mark reads correctly in BOTH records).
+ */
+export function resetZoneAccumulators(st: EngineState): void {
+  st.zoneAgg = new Agg()
+  st.zoneFinalizedMs = 0
+  st.zoneActiveMs = 0
+  st.zoneStartTs = 0
+  st.zoneLastTs = 0
+}
+
+/**
+ * THE ONE WORD A ZONE SESSION IS CALLED BY (JOS-322). A stay the WORLD ended is that zone's
+ * `overall`; a stay the USER ended with the app-wide "New session" mark is that zone's `session`,
+ * which is the word loot and leveling already print for the very same click. One concept, one
+ * vocabulary, decided from the record so the picker, the overlay header and the panel crumb can
+ * never disagree about it.
+ */
+export function zoneSessionWord(closedBy: ZoneSessionClose | undefined): string {
+  return closedBy === 'mark' ? 'session' : 'overall'
 }
 
 /**

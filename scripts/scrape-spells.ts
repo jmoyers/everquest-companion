@@ -61,11 +61,11 @@ const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (+https://github.com/jmoyers/everquest-companion) spell catalog'
 
 /** Milliseconds between HTTP requests. Sequential, never concurrent. */
-const THROTTLE_MS = 750
+const THROTTLE_MS = 1000
 /** Pageids per query. MEASURED ceiling — 51 returns 200 OK with zero pages (AGENTS.md). */
 const BATCH = 50
 /** The scrape schema this script writes (SpellDbFile.schema). */
-const SCHEMA = 2
+const SCHEMA = 3
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/spells')
@@ -403,6 +403,10 @@ function parseSpell(title: string, fields: Record<string, string>): SpellEntry {
   const durationText = clean(fields.duration)
   const castRaw = clean(fields.casting_time)
   const castSec = castRaw ? parseFloat(castRaw) : NaN
+  // Schema 3: the re-use timer, read exactly the way casting_time is. The template writes
+  // `recast_time = 1.50 sec`; a page that omits the field stays absent, never 0.
+  const recastRaw = clean(fields.recast_time)
+  const recastSec = recastRaw ? parseFloat(recastRaw) : NaN
   const manaRaw = clean(fields.mana)
   const mana = manaRaw && /^\d+$/.test(manaRaw) ? Number(manaRaw) : undefined
   // Illusion detection: the effects/slots/description/other text mentioning "Illusion".
@@ -417,6 +421,7 @@ function parseSpell(title: string, fields: Record<string, string>): SpellEntry {
     durationText,
     durationMs: parseDurationMs(durationText),
     castTimeMs: Number.isFinite(castSec) ? Math.round(castSec * 1000) : undefined,
+    ...(Number.isFinite(recastSec) ? { recastMs: Math.round(recastSec * 1000) } : {}),
     targetType: clean(fields.target_type),
     spellType: clean(fields.spell_type),
     classes: clean(fields.classes),

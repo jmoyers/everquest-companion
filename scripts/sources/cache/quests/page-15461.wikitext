@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_larkon_theardor.png|frame|Larkon Theardor]]
+[[File:npc_larkon_theardor.png|thumb|Larkon Theardor]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Ak'Anon]]

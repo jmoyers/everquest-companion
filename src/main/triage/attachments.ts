@@ -34,9 +34,11 @@ import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { sanitizeMultiline } from '../../shared/sanitizeText'
 import {
+  achievementsNotes,
   inventoryNotes,
   rescrubNotes,
   rescrubSlice,
+  sanitizeAchievements,
   sanitizeInventory,
   type InventoryDownload,
   type Row,
@@ -50,6 +52,8 @@ const SLICE_DIR = join(TRIAGE_DIR, 'slices')
 /** Downloaded inventory dumps (JOS-296). Its own directory beside `slices/`, so `ls` answers
  *  "what have I got locally" per attachment kind and neither can shadow the other's filenames. */
 const INVENTORY_DIR = join(TRIAGE_DIR, 'inventory')
+/** Downloaded achievements dumps (JOS-441), on the same one-directory-per-kind rule. */
+const ACHIEVEMENTS_DIR = join(TRIAGE_DIR, 'achievements')
 
 const num = (v: unknown, fallback = 0): number => (typeof v === 'number' ? v : fallback)
 /** A text column, sanitized — the same rule store.ts applies to every client-supplied string. */
@@ -68,10 +72,19 @@ export function inventoryKeyOf(row: Row): string | null {
   return key.length > 0 ? key : null
 }
 
+/** The achievements dump's S3 key (JOS-441), or null when the report carries none. */
+export function achievementsKeyOf(row: Row): string | null {
+  const key = str(row.achievements_key)
+  return key.length > 0 ? key : null
+}
+
 /** Every attachment object a report owns. THE deletion list — `forget` and `wipe` iterate this
- *  rather than naming `log_key` and hoping somebody remembers to add the next one. */
+ *  rather than naming `log_key` and hoping somebody remembers to add the next one. (JOS-441 is
+ *  the second time that hope would have been misplaced, and it cost one line here instead.) */
 export function attachmentKeysOf(row: Row): string[] {
-  return [logKeyOf(row), inventoryKeyOf(row)].filter((k): k is string => k !== null)
+  return [logKeyOf(row), inventoryKeyOf(row), achievementsKeyOf(row)].filter(
+    (k): k is string => k !== null
+  )
 }
 
 /** Did the upload actually land? One HeadObject, which is why no S3 event Lambda exists.
@@ -157,6 +170,28 @@ export async function downloadInventory(
   return { path: dl.path, cleaned: dl.cleaned, fromLegacyCache: dl.fromLegacyCache }
 }
 
+/**
+ * An achievements dump, sanitized on read, at .triage/achievements/<reportId>.txt (JOS-441).
+ *
+ * The same shape and the same refusal to scrub, on this file's own sweep
+ * (src/main/feedback/achievements.ts). Its own directory so `ls .triage/achievements` answers
+ * "which reports carried one" — which, for the ticket this was built for, is the question.
+ */
+export async function downloadAchievements(
+  c: Clients,
+  reportId: string,
+  key: string
+): Promise<InventoryDownload> {
+  const dest = join(ACHIEVEMENTS_DIR, `${reportId}.txt`)
+  const meta = join(ACHIEVEMENTS_DIR, `${reportId}.sanitize.json`)
+  const dl = await downloadAttachment(
+    c,
+    { dir: ACHIEVEMENTS_DIR, dest, meta, key },
+    sanitizeAchievements
+  )
+  return { path: dl.path, cleaned: dl.cleaned, fromLegacyCache: dl.fromLegacyCache }
+}
+
 /** Delete ONE attachment object. Named for the slice historically; it takes any key, and
  *  `attachmentKeysOf` is what makes sure every one of a report's objects is passed to it. */
 export async function deleteSlice(c: Clients, key: string): Promise<void> {
@@ -215,6 +250,15 @@ export async function attachmentReports(
       await reportOne(c, 'inventory export', invKey, async () => {
         const dump = await downloadInventory(c, reportId, invKey)
         return { path: dump.path, notes: inventoryNotes(dump) }
+      })
+    )
+  }
+  const achKey = achievementsKeyOf(row)
+  if (achKey !== null) {
+    out.push(
+      await reportOne(c, 'achievements export', achKey, async () => {
+        const dump = await downloadAchievements(c, reportId, achKey)
+        return { path: dump.path, notes: achievementsNotes(dump) }
       })
     )
   }

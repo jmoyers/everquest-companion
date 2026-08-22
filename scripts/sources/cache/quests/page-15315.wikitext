@@ -9,7 +9,7 @@ __NOTOC__
 | [[Romar Sunto]]
 |-
 ! ''' Minimum Level: '''
-| 35 (to start, 44 to use)
+| 35 (to start, 41 to use)
 |-
 ! ''' Classes: '''
 | [[Enchanter]]
@@ -32,7 +32,7 @@ __NOTOC__
 * Get [[Coin Pouch]] from [[Romar Sunto]] in The Temple of Solusek Ro
 * Collect the coins from cities across the world:
 ** Azia - '''[[Ak'anon]]''' - Near great wheel (not in water) (+1990, -260, -125).  It's on the West side of the water wheel, then North a bit right at the Star light thing.
-** Beza - '''[[Erudin|Erudin Palace]]''' - In the Caster's Guild zone, go one level up from the zone-in teleporter. It's in the fountain with rocks in it. (+703, +740, +44).
+** Beza - '''[[Erudin|Erudin Palace]]''' - In the Caster's Guild zone (Erudin Palace), go one level up from the zone-in teleporter. It's in the fountain with rocks in it. (+703, +740, +44).
 ** Caza - '''[[Felwithe|Northern Felwithe]]''' - in the fishing pond (-110, -790, -50).
 ** Dena - '''[[West Freeport]]''' - In the pool under the Academy of Arcane Science (Caster Guild) (129, -750, -80).
 ** Ena - '''[[Grobb]]''' - in pool near bar #6 on map. When you enter the zone and go across the first bridge the small pool on the right. (+197, -261).

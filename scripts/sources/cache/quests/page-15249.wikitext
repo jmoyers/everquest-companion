@@ -1,5 +1,5 @@
 {{Classic Era}}
-[[File:npc_Trantor_Everhot.png|frame|Trantor Everhot]]
+[[File:npc_trantor_everhot.png|thumb|Trantor Everhot]]
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Kaladim|North Kaladim]]
@@ -27,7 +27,7 @@
 
 == Walkthrough ==
 
-'''(If you are doing this to unlock the Dwarf Race, it took 805 Tumpy Tonics on an Ogre with Agnostic Diety to get Ally)'''
+'''(If you are doing this to unlock the Dwarf Race, it took 805 Tumpy Tonics on an Agnostic Ogre to get to Ally.)'''
 
 ''[[Trantor Everhot]] paths between three locations: 402, -156, 15 upstairs in the Everhot Forge; 657, -197, 3 outside the Grey Bloom Farms next to the oven; and 507, 314, -33 next to a kiln near the entrance to the mines.''
 
@@ -43,7 +43,7 @@ You say, 'What Tumpy Tonics'
 
 : Trantor Everhot says' Aaah!! I love Tumpy Tonics. They were created by Tumpy Irontoe. He was once a member of the famed Irontoe Brigade. Since they disbanded and left for parts unknown he decided to stay in Kaladim and open Irontoe's, the finest well in Faydwer.'
 
-[[File:Npc_tumpy_irontoe.png|frame|Tumpy Irontoe (Kaladim)]]
+[[File:Npc_tumpy_irontoe.png|thumb|Tumpy Irontoe (Kaladim)]]
 
 ''[[Tumpy Irontoe]] is located at 177, 313, 3 inside Irontoe's Eats in [[South Kaladim]].''
 

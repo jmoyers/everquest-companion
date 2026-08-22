@@ -25,7 +25,8 @@
  *  4. Writes src/renderer/src/data/eqlegends/quests.json, sorted by page title
  *     (deterministic), consumed by src/main/itemLookup.ts as a local-first source.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 110ms delay,
+ * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 1s delay
+ * (owner ruling 2026-08-22 — fan-run servers; bulk API batching does the heavy lifting),
  * exponential backoff honouring Retry-After on 429/5xx, disk cache so a re-run is nearly
  * free, and partial runs resume instead of duplicating work.
  */
@@ -42,7 +43,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/quests')
 const OUT_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/quests.json')
 
-const DELAY_MS = 110
+const DELAY_MS = 1000
 const MAX_RETRIES = 5
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))

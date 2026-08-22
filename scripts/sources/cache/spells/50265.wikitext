@@ -9,6 +9,12 @@
 
 * [[Shaman]] - Level 10 (Autogranted)
 
+
+| items_with_effect = 
+
+<ul><li> {{:Potion of Charming Deceit}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Increase CHA by 13 (L14) to 15 (L18) }}

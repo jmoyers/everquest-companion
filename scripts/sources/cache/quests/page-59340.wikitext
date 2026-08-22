@@ -1,0 +1,84 @@
+{{Classic Era}}
+
+[[File:npc_saemey_wirewhisker.png|frame|Saemey Wirewhisker]]
+{| class="questTopTable"
+! ''' Start Zone: '''
+| [[Stonebrunt Mountains]]
+|-
+! ''' Quest Giver: '''
+| [[Saemey Wirewhisker]]
+|-
+! ''' Minimum Level: '''
+| 20
+|-
+! ''' Classes: '''
+| Any
+|-
+! ''' Related Zones: '''
+| [[Stonebrunt Mountains]]
+|-
+! ''' Related NPCs: '''
+| [[a jungle spiritling]], [[A mountain spiritling]], [[A valley spiritling]]
+|-
+! ''' Related Quests: '''
+| [[Spirit Aid]]
+|-
+|}
+
+== Reward ==
+
+<ul><li> {{:Kejek Spirit Powder}}
+</li></ul>
+
+== Walkthrough ==
+'''Travel to the Kejek Village located in [[Stonebrunt Mountains]] by going through the Warrens. Travel to Kejek village and locate [[Saemey Wirewhisker]]'''<br>
+
+''Apprehensive is high enough for hand-ins. (Will dubious work?)''
+
+You say, 'Hail, Saemey Wirewhisker'
+
+: [[Saemey Wirewhisker]] says 'Welcome to Kejek friend. I am the seer of this village for I have been gifted by the spirits with an affinity for their realm. The barrier between the spirit and physical realms is thin in these lands. The heretics know this and must be prevented from committing [atrocities] similar to those that have been committed in the past. 
+
+You say, 'What sort of atrocities?'
+
+: Saemey Wirewhisker says 'Long ago when our noble ancestors the Vah Shir were destroyed by an explosion that devastated the warring Heretic and Erudin armies an evil creature by the name of Tserrina Syl'Tor was attracted to the sudden abundance of new spirits in these lands. Tserrina was capable of capturing these spirits before they were able to cross over beyond the mortal realm and through her dark magic transformed them into a [crystalline shadow] substance. 
+
+You say, 'What crystalline shadow substance?'
+
+: Saemey Wirewhisker says 'The crystalline shadow substance was used as building blocks for Tserrina's tower on an Island near the frozen lands to the south as well as fashioned into armor and weapons for her mindless servants. Emylie Steelclaws has developed a means to purify the armor and weapons using the special properties of our Kejek forge and a smithy hammer blessed by the Titan Spirits. The purifying process transfers the imprisoned spirits into [soul orbs]. Ask Emylie about the purification process. 
+
+You say, 'What are soul orbs?'
+
+: Saemey Wirewhisker says 'I have perfected a ritual that will free the imprisoned spirits within the soul orbs. I simply require some kejek [spirit powder] to scrawl the proper sigils and a soul orb upon which to perform the ceremony. My apprentice will perform the ceremony on fading soul orbs. Simply bring him a fading soul orb and some kejek spirit powder. 
+
+You say, 'What is kejek spirit powder?'
+
+: Saemey Wirewhisker says 'The spirit power of which I speak is composed of ground spiritling stones. I will grind some powder for you if you would bring me a Valley Spiritling Stone, a Jungle Spiritling Stone, and a Mountain Spiritling Stone. Collecting the stones does not truly harm the spiritlings for when slain in this realm their essence simply disperses until it eventually reforms into a new spiritling. 
+
+Hunt down the three types of 'spiritlings' and collect a stone from each one:
+
+* [[A jungle spiritling]] (green)
+** [[Jungle Spiritling Stone]]
+* [[A mountain spiritling]] (pink)
+** [[Mountain Spiritling Stone]]
+* [[A valley spiritling]] (yellow)
+** [[Mountain Spiritling Stone]]
+
+The jungle spiritlings mostly spawn in the southern third of the zone, the mountain spiritlings mostly spawn in the northern third of the zone, and the valley spiritlings mostly spawn in the middle third of the zone, though there is some overlap. Tracking helps here a lot.
+
+Turn the three Spiritling Stones in to Saemey:
+
+: Saemey Wirewhisker grinds the spiritling stones in a mortar and pestle with foreign runes scratched into the ceramic. 'This powder will assist in matters concerning the contacting or freeing of spirits.'
+
+'''You receive between 1 - 4 [[Kejek Spirit Powder]].'''<br>
+<div class="facblock">
+* Your faction standing with [[Kejek Village]] has been adjusted by 5.
+* Your faction standing with [[Peace Keepers]] has been adjusted by 5.
+</div> 
+{{exp}}
+
+The [[Kejek Spirit Powder]] is required for [[Spirit Aid]].
+
+----
+[[Category:Quests]]
+[[Category:Stonebrunt Mountains]]

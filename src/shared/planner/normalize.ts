@@ -6,7 +6,9 @@
 // and invent slots nobody wrote; unknown tokens are RETURNED instead, so a rescrape that adds a
 // token turns the test red rather than silently dropping items out of the planner.
 //
-// MEASURED SLOT INVENTORY (32 distinct tokens across every stats block that states a Slot:):
+// MEASURED SLOT INVENTORY (40 distinct tokens across every stats block that states a Slot:;
+// re-measured 2026-08-22 — the Mistmoore-rework wiki wave added eight Title Case spellings,
+// all absorbed by the case fold: Waist Wrist Feet Neck Arms Shoulders Fingers Ear):
 //   canonical  PRIMARY 1706 · SECONDARY 1166 · CHEST 517 · HEAD 475 · NECK 445 · WRIST 445 ·
 //              HANDS 378 · FEET 362 · LEGS 344 · ARMS 330 · RANGE 290 · WAIST 274 · FACE 272 ·
 //              BACK 264 · SHOULDERS 255 · FINGER 217 · EAR 116 · AMMO 88
@@ -16,9 +18,10 @@
 //   noise      "BACK," 2 (trailing comma from "BACK, SHOULDER") · "/" 1 (from "PRIMARY / SECONDARY")
 //   absent     CHARM — zero pages. See types.ts: the slot does not exist here.
 //
-// MEASURED CLASS INVENTORY (23 distinct tokens): the 16 ClassAbbr codes, plus ALL 5509 / All 1,
-//   NONE 204 / None 23, the prose marker `except` 757, and two level annotations "(35)" "(48)"
-//   (one page: "Class: CLR (35) PAL (48)") which are dropped as noise.
+// MEASURED CLASS INVENTORY (24 distinct tokens): the 16 ClassAbbr codes (+ `War`, the one
+//   Title Case code the 2026-08-22 rescrape added — the case fold absorbs it), plus ALL 5509 /
+//   All 1, NONE 204 / None 23, the prose marker `except` 757, and two level annotations
+//   "(35)" "(48)" (one page: "Class: CLR (35) PAL (48)") which are dropped as noise.
 
 import { CLASS_ABBRS, isClassAbbr, type ClassAbbr } from '../classCombo'
 import type { ItemEffectKind } from '../itemStats'

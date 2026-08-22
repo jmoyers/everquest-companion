@@ -23,12 +23,18 @@ import type { SpellResistTable } from '../../shared/resistTypes'
 import { spellCanonKey } from '../log/parseCommon'
 
 /**
- * The client's hitpoint slots for one catalog spell name, or undefined when there is nothing to add.
+ * The client's facts for one catalog spell name, or undefined when there is nothing to add.
  *
- * Undefined for all three of "no client install", "no row for this name" and "a row with no
- * effect-0 slot" — they are one answer to the caller (`spellMetricsAt` falls back to nothing) and
- * distinguishing them here would only invite a surface to say something about a file the user may
- * legitimately not have.
+ * Undefined for "no client install", "no row for this name", and a row that states neither
+ * hitpoint slots nor a re-use timer — they are one answer to the caller (`spellMetricsAt` falls
+ * back to nothing) and distinguishing them here would only invite a surface to say something about
+ * a file the user may legitimately not have.
+ *
+ * THE ROW IS RETURNED WHOLE, which is what lets a field added to `SpellResistInfo` reach the reader
+ * without a line of plumbing here — `ClientHpFacts` is the subset `shared/spellMetrics.ts` names.
+ * JOS-444's `recastMs` arrives that way, and it is also why the gate above grew a second arm: a
+ * spell whose WIKI page states the hitpoint line and omits the recast has no effect-0 slot to
+ * qualify on, and the denominator of its sustained dps is exactly what the client row is for.
  */
 export function clientHpFor(
   table: SpellResistTable | null | undefined,
@@ -36,5 +42,7 @@ export function clientHpFor(
 ): ClientHpFacts | undefined {
   if (!table) return undefined
   const info = table[spellCanonKey(name)]
-  return info?.hp && info.hp.length > 0 ? info : undefined
+  if (!info) return undefined
+  const hasHp = info.hp !== undefined && info.hp.length > 0
+  return hasHp || info.recastMs !== undefined ? info : undefined
 }

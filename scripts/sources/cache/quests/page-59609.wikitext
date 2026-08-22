@@ -1,0 +1,88 @@
+{{Classic Era}}
+{| class="questTopTable"
+! ''' Start Zone: '''
+| [[Rathe Mountains]]
+|-
+! ''' Quest Giver: '''
+| [[Gaz Commander Faltip]]
+|-
+! ''' Minimum Level: '''
+| 30+
+|-
+! ''' Classes: '''
+| All
+|-
+! ''' Related Zones: '''
+| [[Rathe Mountains]]
+|-
+! ''' Related NPCs: '''
+| [[A Troll Greenblood]], [[A Troll Marauder]], [[A Tier'Dal Spellbinder]], [[A Tier'Dal Priest]]
+|}
+
+== General Information ==
+The Soldier's Brooch is a set of Range slot items with a level 30 minimum requirement, but the quest is easy to do at that level.  The set of items granted all start with the name "Soldier's Brooch Of", and there are versions for most classes.
+
+== Rewards ==
+
+You can pick whichever brooch suits your build.
+
+All eight brooches are LORE EQUIPPED, NO TRADE, Range slot, Req Level 30, Race: ALL. Their stats are compared below so you can pick the best one for your class — click an item name for its full page.
+
+{| class="wikitable sortable"
+! Class !! Reward !! AC !! HP !! Mana !! STR !! STA !! AGI !! DEX !! WIS !! INT !! CHA !! SV Magic !! SV Fire !! SV Cold !! SV Disease !! SV Poison !! WT
+|-
+| Wizard || [[Soldier's Brooch of the Arcane]] || 3 || 15 || 25 ||  || 4 ||  || 1 ||  || 4 ||  || 1 || 1 || 1 ||  ||  || 0.5
+|-
+| Shadow Knight || [[Soldier's Brooch of the Corrupt]] || 3 || 15 || 25 ||  || 4 ||  ||  ||  || 4 || 1 ||  || 1 || 1 ||  || 1 || 0.1
+|-
+| Necromancer || [[Soldier's Brooch of the Darkened]] || 6 || 15 || 25 ||  || 4 ||  || 1 ||  || 4 ||  || 1 || 1 || 1 ||  ||  || 0.1
+|-
+| Cleric || [[Soldier's Brooch of the Robust]] || 5 || 15 || 25 || 1 || 4 ||  ||  || 4 ||  ||  || 1 || 1 || 1 ||  ||  || 0.5
+|-
+| Shaman || [[Soldier's Brooch of the Spirited]] || 4 || 15 || 25 ||  || 1 ||  ||  || 4 ||  || 4 || 1 ||  ||  || 1 || 1 || 0.5
+|-
+| Warrior || [[Soldier's Brooch of the Stalwart]] || 7 || 30 ||  || 4 || 4 ||  || 1 ||  ||  ||  || 1 || 1 || 1 ||  ||  || 0.5
+|-
+| Rogue/Monk || [[Soldier's Brooch of the Stealthy]] || 4 || 25 ||  ||  || 1 || 4 || 4 ||  ||  ||  || 1 || 1 || 1 ||  ||  || 0.1
+|-
+| Paladin || [[Soldier's Brooch of the Virtuous]] || 6 || 15 || 25 || 4 || 1 ||  ||  || 4 ||  ||  || 1 || 1 || 1 ||  ||  || 0.5
+|}
+
+== Guide ==
+
+Simply trade in one of each Insignia item from the following mobs to [[Gaz Commander Faltip]] (-1576, -255 in [[Rathe Mountains]]).
+
+; You say, 'Hail, Gaz Commander Faltip'
+: Gaz Commander Faltip says, 'Strength of Marr to you, young Dar. We have had some disturbing news from our spies along the troll front lines. It seems that those malicious brutes have continued their relations with the Dark Elves, even after retaking their city. Recent intelligence suggests that the Trolls plan to use the Dark Elven teleportation magic to enter the Mountains to the north of here, and small groups of Trolls have been seen exploring the areas to the north, presumably experimenting with the magic and it's abilities to teleport into the mountains. These [groups] must be [dispatched] as soon as you spot them.'
+
+; You say, 'groups'
+: Gaz Commander Faltip says, 'I am glad to hear that you are willing to help us dispatch these rogue groups of Trolls and Dark Elves. Once you have taken care of this, you will need to return to me with proof that the task is complete, and for this, their insignias should work just fine. With the help of our very skilled Scribes and Scryers, those very same insignias may be able to be used to give us more information as to what exactly they plan to do out here.'
+
+Each of the targets for this quest can be found at the same place. (+1187, +2479 in [[Rathe Mountains]]).  You can farm the turnin before talking to [[Gaz Commander Faltip]].
+
+* [[A Troll Greenblood]]{{CheckboxList}}
+:*[[Troll Greenblood Insignia]]
+{{End}}
+* [[A Troll Marauder]]{{CheckboxList}}
+:*[[Troll Basher Insignia]]
+{{End}}
+* [[A Tier'Dal Spellbinder]]{{CheckboxList}}
+:*[[Tier'Dal Arcane Insignia]]
+{{End}}
+* [[A Tier'Dal Priest]]{{CheckboxList}}
+:*[[Tier'Dal Priest Insignia]]
+{{End}}
+
+; You offered 1 Troll Greenblood Insignia to Gaz Commander Faltip.
+; You offered 1 Teir`Dal Arcane Insignia to Gaz Commander Faltip.
+; You offered 1 Troll Basher Insignia to Gaz Commander Faltip.
+; You offered 1 Teir`Dal Priest Insignia to Gaz Commander Faltip.
+
+: Gaz Commander Faltip says, 'You've done quite well for yourself, and for the Guktan Army, though we are far from being safe just yet. I'm still receiving reports of these groups appearing in different areas of the Mountains, though I can't be sure if these were from before or after your actions. Regardless, I appreciate your efforts, and please make sure to keep an eye out for more of these groups.'
+
+* Your faction standing with [[Protectors of Gukta]] has been adjusted by 5.
+{{Exp}}
+
+After turning in the insignia, the quest rewards window appears so you can choose your reward.
+
+[[Category:Quests]]

@@ -21,6 +21,13 @@
 // export is loaded and NOT being counted. The one state that used to say nothing was the one the
 // four reports were all standing in.
 //
+// AND JOS-431 PUT A RE-READ BACK ON THAT LINE, which is not a revert of the button JOS-268 deleted.
+// What went was a full-height outlined control beside the dropdown, born `disabled` on the default
+// source, that could only redo what the app had already done. What is there now is one quiet word
+// INSIDE the freshness row, next to the two instants that are its own receipt — for the session
+// where "the app follows the file" turned out not to be true (report 01M0FMGA4DQRMG46290GWVVHQ6:
+// the dump was fresh on disk and the tab showed a days-old timestamp until a restart).
+//
 // The three pickers lead, in the order a player narrows: class (who am I), island (where am I),
 // boss (what am I standing in front of) — the WHERE facets sit beside the WHO facet rather than
 // beside the search box, because all three answer "which quests are mine right now".
@@ -36,7 +43,7 @@
 // was the same: the poppers go, here and in every file that draws this tab. Hover text that
 // survives is a native `title` — an OS tooltip is not in the DOM and has no hit area at all.
 
-import { type JSX, memo, useState } from 'react'
+import { type JSX, memo, useCallback, useState } from 'react'
 import {
   Box,
   Checkbox,
@@ -360,6 +367,26 @@ export const InventorySource = memo(function InventorySource({
   onCountSource: (s: CountSource) => void
   inventoryLoadedAt: number | null
 }): JSX.Element {
+  /**
+   * RE-READ THE DUMP, FROM THE LINE THAT DATES IT (JOS-431).
+   *
+   * The ask is the reporter's own ("is there a way to refresh, or a dropdown to select an
+   * inventory file?" — 01M0FMGA4DQRMG46290GWVVHQ6), and it is here rather than threaded down from
+   * `PoskyView` because there is nothing for a parent to own: main answers this by PUSHING
+   * (`inventory:reload` + `progress`), which is the same path the automatic re-read takes, so
+   * `useProgress`, the freshness line and every other dump-fed surface update from one place. A
+   * prop would have been the same call, drilled through four callers of this component.
+   *
+   * NOT the second half of the ask. A dropdown to pick an inventory FILE is a second discovery
+   * model beside `preferredOutputFile`, and JOS-431 is a robustness ticket: the watcher fix is
+   * what makes the app find the right file, and this is the door for the day it still does not.
+   */
+  const refresh = useCallback(() => {
+    // Fire and forget, and a rejection is not news: main never throws here (it answers a missing
+    // dump with `ok: false`), and the two stamps on the line beside this button are what tell the
+    // player whether anything moved.
+    void window.eq.reloadInventory().catch(() => undefined)
+  }, [])
   return (
     <Box sx={{ position: 'relative', display: 'inline-flex' }}>
       {/* This one carried a three-sentence popper explaining what each source counted, and it
@@ -426,6 +453,7 @@ export const InventorySource = memo(function InventorySource({
               quiet
               kind="inventory"
               loadedAt={inventoryLoadedAt}
+              onRefresh={refresh}
               testId="posky-inventory-fresh"
             />
           ) : (

@@ -21,6 +21,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseEvent } from '../src/main/log/parser'
 import { CombatEngine } from '../src/main/combat/engine'
+import { ZONE_HISTORY_CAP } from '../src/main/combat/encounter'
 import { LIVE_SELECTION, scopeOptions } from '../src/renderer/src/features/combat/dashboardData'
 
 function feed(eng: CombatEngine, lines: string[]): number {
@@ -123,7 +124,7 @@ test('Z1: a zone change finalizes the prior zone aggregate into a selectable ses
   assert.ok(sel.selected!.name.includes('Befallen'))
 })
 
-test('Z2: zone-session history is capped at 20 finalized sessions', () => {
+test('Z2: zone-session history is capped at ZONE_HISTORY_CAP finalized sessions', () => {
   const eng = new CombatEngine()
   eng.setLive()
   eng.setPlayerName('Primitive')
@@ -132,8 +133,12 @@ test('Z2: zone-session history is capped at 20 finalized sessions', () => {
     const ev = parseEvent(raw, seq++)
     if (ev) eng.ingestEvent(ev, false)
   }
-  // 25 zones, each with one damage line, then a final zone to flush the 25th.
-  for (let i = 0; i < 25; i++) {
+  // Two more zones than the ring can hold, each with one damage line, then a final zone to flush
+  // the last. Counted OFF THE CONSTANT since JOS-322 raised it 20 → 24 (one click now mints a mark
+  // AND a zone session, and the two rings must reach equally far) — a frozen 20 here would have
+  // made a deliberate owner ruling look like a regression.
+  const zones = ZONE_HISTORY_CAP + 2
+  for (let i = 0; i < zones; i++) {
     const mm = String(i).padStart(2, '0')
     ing(`[Sun Jul 19 10:${mm}:00 2026] You have entered Zone${i}.`)
     ing(`[Sun Jul 19 10:${mm}:01 2026] You crush a mob for 5 points of damage.`)
@@ -141,9 +146,12 @@ test('Z2: zone-session history is capped at 20 finalized sessions', () => {
   ing('[Sun Jul 19 11:00:00 2026] You have entered Final.')
   const snap = eng.snapshot(Date.parse('Sun Jul 19 11:00:01 2026'), {})
   const finalized = snap.zoneSessions.filter((z) => !z.live)
-  assert.equal(finalized.length, 20, 'only the last 20 finalized zone sessions are retained')
-  // Newest-first: the most recent finalized zone is Zone24.
-  assert.equal(finalized[0].zone, 'Zone24')
+  assert.equal(finalized.length, ZONE_HISTORY_CAP, 'only the last ZONE_HISTORY_CAP sessions are retained')
+  // Newest-first: the most recent finalized zone is the last one entered before `Final`.
+  assert.equal(finalized[0].zone, `Zone${String(zones - 1)}`)
+  // …and every one of them says a ZONE LINE closed it, which is what keeps them out of the
+  // merge-back path (JOS-322: only a MARK leaves a boundary the engine may remove).
+  assert.ok(finalized.every((z) => z.closedBy === 'zone'), 'a zone line closed each of these')
 })
 
 // ============================================================================

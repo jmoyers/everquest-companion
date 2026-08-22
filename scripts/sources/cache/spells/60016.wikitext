@@ -1,0 +1,51 @@
+{{Classic Era}}
+
+{{Spellpage|
+
+| spellname = Lifebite
+| spellicon = 47
+
+| description = Drains your target of life energy, siphoning between 42 and 42 hit points.
+
+| classes =
+
+* [[Necromancer]] - Level 8 (Autogranted)
+* [[Shadow Knight]] - Level 10 (Autogranted)
+
+| items_with_effect =
+
+<ul><li> {{:Cherista's Fangs}}
+</li></ul>
+
+| slots =
+
+{{SpellSlotRow | 1 | Decrease Hitpoints by 42 to 42 }}
+{{SpellSlotRow | 2 | Increase Hitpoints by 42 to 42 (Self)}}
+
+| skill = [[Skill Alteration|Alteration]]
+
+| mana = 35
+| range = 200
+| casting_time = 1.75 sec
+| fizzle_time = 1.75 sec
+| recast_time = 1 sec
+| duration = Instant
+| target_type = Lifetap
+| spell_type = Detrimental
+| resist = Magic: (-200)
+
+| other =
+
+| msg_cast_on_you = You feel your life force drain away.
+| msg_cast_on_other = Someone staggers.
+| msg_wears_off =
+
+| where_to_obtain =
+
+<ul><li>[[Shadow Knight#Spell Vendors|Shadow Knight Spell Vendors]]
+</li><li>[[Necromancer#Spell Vendors|Necromancer Spell Vendors]]
+</li></ul>
+
+}}
+
+[[Category:Focus Effects]]

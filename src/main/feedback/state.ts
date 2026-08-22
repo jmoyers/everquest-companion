@@ -27,6 +27,7 @@ import {
   UUID_V4_RE,
   type FeedbackDraft,
   type FeedbackEnv,
+  type AchievementsDumpMeta,
   type InventoryDumpMeta,
   type LogSliceMeta
 } from '../../shared/feedback'
@@ -59,6 +60,9 @@ export interface QueuedReport {
   gzFile?: string
   inventory?: InventoryDumpMeta | null
   inventoryGzFile?: string
+  /** The THIRD attachment (JOS-441), optional on exactly the same terms. */
+  achievements?: AchievementsDumpMeta | null
+  achievementsGzFile?: string
   attempts: number
   nextAttemptAt: number
   queuedAt: number
@@ -180,6 +184,12 @@ export function pendingInventoryGzPath(entry: QueuedReport): string | null {
   return pendingPath(entry.inventoryGzFile)
 }
 
+/** Absolute path of a queue entry's spooled ACHIEVEMENTS gz (JOS-441), or null when none. */
+export function pendingAchievementsGzPath(entry: QueuedReport): string | null {
+  if (entry.achievementsGzFile === undefined) return null
+  return pendingPath(entry.achievementsGzFile)
+}
+
 function readSpooled(path: string | null, what: string): Buffer | null {
   if (path === null || !existsSync(path)) return null
   try {
@@ -200,6 +210,11 @@ export function readPendingInventoryGz(entry: QueuedReport): Buffer | null {
   return readSpooled(pendingInventoryGzPath(entry), 'inventory gz')
 }
 
+/** The achievements dump's spooled gz. Missing ⇒ null, and the report goes without it. */
+export function readPendingAchievementsGz(entry: QueuedReport): Buffer | null {
+  return readSpooled(pendingAchievementsGzPath(entry), 'achievements gz')
+}
+
 /**
  * Queue a report for a later attempt. Returns false when the queue is full — the caller tells
  * the user, rather than silently dropping either this report or an older one.
@@ -209,7 +224,10 @@ export function readPendingInventoryGz(entry: QueuedReport): Buffer | null {
  * reportId back, never a duplicate row). Two files rather than one archive because the two legs
  * are independent everywhere else too — a dump that fails to spool must not cost the slice.
  */
-export function enqueue(entry: QueuedReport, gz: { log: Buffer | null; inventory: Buffer | null }): boolean {
+export function enqueue(
+  entry: QueuedReport,
+  gz: { log: Buffer | null; inventory: Buffer | null; achievements?: Buffer | null }
+): boolean {
   const state = readState()
   if (state.queue.length >= MAX_QUEUE) return false
   const next = { ...entry }
@@ -237,16 +255,33 @@ export function enqueue(entry: QueuedReport, gz: { log: Buffer | null; inventory
       next.inventory = null
     }
   }
+  if (gz.achievements !== null && gz.achievements !== undefined) {
+    try {
+      const file = `${entry.clientReportId}.achievements.gz`
+      writeFileSync(join(pendingDir(), file), gz.achievements)
+      next.achievementsGzFile = file
+    } catch (err) {
+      logError('main:feedbackState', {
+        message: 'pending achievements gz write failed; queuing without it',
+        err
+      })
+      next.achievements = null
+    }
+  }
   writeState({ ...state, queue: [...state.queue, next] })
   return true
 }
 
-/** Remove an entry (sent, dropped, or aged out) and unlink BOTH of its spooled attachments. */
+/** Remove an entry (sent, dropped, or aged out) and unlink ALL of its spooled attachments. */
 export function removeQueued(clientReportId: string): void {
   const state = readState()
   const entry = state.queue.find((e) => e.clientReportId === clientReportId)
   if (entry) {
-    for (const path of [pendingGzPath(entry), pendingInventoryGzPath(entry)]) {
+    for (const path of [
+      pendingGzPath(entry),
+      pendingInventoryGzPath(entry),
+      pendingAchievementsGzPath(entry)
+    ]) {
       if (path !== null) rmSync(path, { force: true })
     }
   }

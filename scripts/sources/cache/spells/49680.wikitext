@@ -5,6 +5,12 @@
 | description = Cloaks you in a shimmering illusion that makes you appear to be a Half-Elf.
 
 | classes = * [[Enchanter]] - Level 3
+
+| items_with_effect = 
+
+<ul><li> {{:Essence of Half Elf (Wormwood)}}
+</li></ul>
+
 | slots = 
 
 {{SpellSlotRow | 1 | Illusion: 7 }}

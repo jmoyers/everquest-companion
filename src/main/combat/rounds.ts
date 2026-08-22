@@ -374,7 +374,60 @@ export class RoundAccum {
     return this.lanes.size === 0 && this.pending.size === 0
   }
 
+  /** A DEEP COPY — every tally and the open second alike. The merge (combat/mergeSessions.ts) is
+   *  pure, so it may not hand back a structure that aliases either input's counters. */
+  clone(): RoundAccum {
+    const copy = new RoundAccum()
+    for (const [k, v] of this.lanes) copy.lanes.set(k, cloneLane(v))
+    copy.openSecond = this.openSecond
+    for (const [k, v] of this.pending) copy.pending.set(k, { verb: v.verb, skill: v.skill, seq: [...v.seq] })
+    for (const key of ROUND_EXCLUSIONS) copy.excluded[key] = this.excluded[key]
+    return copy
+  }
+
+  /**
+   * FOLD A LATER ACCUMULATOR'S SWINGS INTO THIS ONE, as if they had simply followed ours — the
+   * round half of the merge-back proof obligation (JOS-322, `mergeSessions.ts`).
+   *
+   * THE OPEN SECOND IS THE WHOLE SUBTLETY, and it is why this is a method rather than a field-wise
+   * sum. An unsplit fold flushes the second WE left open at the moment `next`'s first swing
+   * arrives; the split fold never flushed it, because nothing else was ever folded into us. So:
+   *
+   *   - `next` folded at least one countable swing ⇒ FLUSH ours (exactly what the unsplit fold did
+   *     at that instant), add the lane tallies, and inherit `next`'s open second verbatim.
+   *   - `next` folded none ⇒ nothing flushed ours in the reference either, so our open second is
+   *     still the open second, untouched.
+   *
+   * THE ENUMERATED EDGE (stated, not papered over): if `next`'s first countable swing falls in the
+   * SAME second we left open — which can only happen when the mark landed MID-ROUND — the unsplit
+   * fold would have joined those swings into ONE round and this joins them as two. Excluded swings
+   * are pure counters and always sum exactly.
+   */
+  absorb(next: RoundAccum): void {
+    for (const key of ROUND_EXCLUSIONS) this.excluded[key] += next.excluded[key]
+    if (next.lanes.size === 0 && next.pending.size === 0) return
+    this.flush()
+    for (const [k, v] of next.lanes) {
+      const lane = this.lanes.get(k)
+      if (!lane) {
+        this.lanes.set(k, cloneLane(v))
+        continue
+      }
+      lane.skill = v.skill
+      for (let i = 0; i < lane.buckets.length; i++) lane.buckets[i] += v.buckets[i]
+      lane.rounds += v.rounds
+      lane.multiRounds += v.multiRounds
+      lane.fannedRounds += v.fannedRounds
+    }
+    this.openSecond = next.openSecond
+    this.pending = new Map()
+    for (const [k, v] of next.pending) this.pending.set(k, { verb: v.verb, skill: v.skill, seq: [...v.seq] })
+  }
 }
+
+/** The exclusion keys, as a list — so a merge iterates them instead of naming four fields twice
+ *  and silently missing the fifth the day one is added. */
+const ROUND_EXCLUSIONS: readonly RoundExclusion[] = ['frenzy', 'riposte', 'flurry', 'rampage']
 
 function cloneLane(l: RoundLaneTally): RoundLaneTally {
   return { ...l, buckets: [...l.buckets] }

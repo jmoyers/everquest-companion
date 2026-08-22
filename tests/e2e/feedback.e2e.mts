@@ -50,6 +50,8 @@ const PREVIEW = '[data-testid="feedback-preview"]'
 const PREVIEW_META = '[data-testid="feedback-preview-meta"]'
 const INV_META = '[data-testid="feedback-inventory-meta"]'
 const INV_PREVIEW = '[data-testid="feedback-inventory-preview"]'
+/** The third attachment's own preview (JOS-441) — its own testids, never the inventory's. */
+const ACH_META = '[data-testid="feedback-achievements-meta"]'
 /** How long main may take to tail + window + scrub + gzip a slice of the real log. */
 const SLICE_WAIT_MS = 30_000
 /** Reading + gzipping a ~10 KB dump is fast, but it still crosses IPC behind a React effect. */
@@ -417,6 +419,79 @@ async function stepInventoryPreview(page: Page): Promise<void> {
   await page.click('[data-testid="feedback-attach-inventory"] input')
 }
 
+/**
+ * THE THIRD ATTACHMENT (JOS-441) — its OWN box, its OWN disclosure, its OWN preview.
+ *
+ * WHY IT IS ASSERTED SEPARATELY AND NOT FOLDED INTO THE STEP ABOVE: consent here is per-FILE, and
+ * the failure this guards against is precisely a shared tick. The two exports say different things
+ * about a player and carry different disclosures, so a run where ticking one sent the other would
+ * be consent to something the user was never shown. Two independent boxes, proved by un-ticking
+ * one and watching the other's preview stay.
+ *
+ * The harness stages the REAL committed dump (`Primitive_freeport-Achievements.txt`) into the fake
+ * install beside the inventory one, so what the dialog previews is a file the game actually wrote.
+ */
+async function stepAttachAchievements(page: Page): Promise<void> {
+  const readCheck = (): Promise<boolean | null> =>
+    page.evaluate(
+      () =>
+        (
+          document.querySelector(
+            '[data-testid="feedback-attach-achievements"] input'
+          ) as HTMLInputElement | null
+        )?.checked ?? null
+    )
+  const checked = await settle(readCheck, (c) => c === true, { timeoutMs: 8_000 })
+  check(
+    'a bug report ticks "attach my achievements export" BY DEFAULT, like its sibling',
+    checked === true,
+    String(checked)
+  )
+
+  const dialog = (await textOf(page, DIALOG)).replace(/\s+/g, ' ')
+  check(
+    'the dialog states what THIS export is, and that it does not even carry the character name',
+    dialog.includes('Your achievements export is included') &&
+      dialog.includes('does not even carry your character'),
+    dialog.includes('Your achievements export is included') ? 'present' : 'the disclosure is missing'
+  )
+
+  const seen = await settle(() => countOf(page, ACH_META), (n) => n > 0, {
+    timeoutMs: DUMP_WAIT_MS,
+    pollMs: 200
+  })
+  if (!check('main packaged the staged achievements export for preview', seen > 0)) {
+    const empty = (await textOf(page, '[data-testid="feedback-achievements-empty"]')).replace(
+      /\s+/g,
+      ' '
+    )
+    note(`the dialog said: ${empty.slice(0, 140)}`)
+    return
+  }
+
+  const meta = (await textOf(page, ACH_META)).replace(/\s+/g, ' ')
+  const states =
+    /^updated /.test(meta) &&
+    /[\d,]+ rows/.test(meta) &&
+    /-Achievements\.txt/.test(meta) &&
+    /\d+(\.\d+)? (KB|MB) compressed/.test(meta)
+  check(
+    'the preview states it in the SAME vocabulary as the inventory one, naming ITS file',
+    states,
+    meta.slice(0, 140)
+  )
+
+  // THE CONSENT IS PER FILE. Un-ticking the achievements box must not disturb the inventory one.
+  await page.click('[data-testid="feedback-attach-achievements"] input')
+  const gone = await settle(() => countOf(page, ACH_META), (n) => n === 0, { timeoutMs: 8_000 })
+  check('un-ticking THIS box takes only its own preview away', gone === 0, `${String(gone)} left`)
+  check(
+    '…and the inventory export is still attached, because the two ticks are not one tick',
+    (await countOf(page, INV_META)) > 0
+  )
+  await page.click('[data-testid="feedback-attach-achievements"] input')
+}
+
 async function main(): Promise<void> {
   buildIfStale()
 
@@ -426,7 +501,9 @@ async function main(): Promise<void> {
   // stepAttachInventory). The slice half of this spec is unaffected — the dump lives in the
   // install ROOT, the log in `Logs\`.
   const { app, close } = await launchOnFixture('e2e-feedback.log', {
-    inventory: 'Primitive_freeport-Inventory.txt'
+    inventory: 'Primitive_freeport-Inventory.txt',
+    // …and the achievements export beside it (JOS-441), for the same reason and in the same root.
+    achievements: 'Primitive_freeport-Achievements.txt'
   })
 
   let page: Page | null = null
@@ -445,6 +522,7 @@ async function main(): Promise<void> {
       await stepValidatorGate(page)
       await stepAttachAndPreview(page)
       await stepAttachInventory(page)
+      await stepAttachAchievements(page)
     }
 
     // A missing IPC handler shows up here first (`invoke` rejects into an unhandled rejection),

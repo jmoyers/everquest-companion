@@ -35,8 +35,12 @@ import type { ResistTableWorkerReply } from '../resistTableWorker'
  *      version-1 cache is not upgradeable in place: the fields were never read out of the file, so
  *      the only way to get them is the re-parse this bump forces. It costs one launch's worth of
  *      worker time per install, once.
+ *   3  JOS-444 - the re-use timer (`recastMs`, field 10). The same argument as 2: a version-2
+ *      cache was written before anything read that column, so the field can only come from a
+ *      re-parse, and a sustained dps with a missing denominator is a wrong number rather than an
+ *      absent one.
  */
-export const SPELL_RESIST_CACHE_VERSION = 2
+export const SPELL_RESIST_CACHE_VERSION = 3
 
 interface CacheFile {
   version: number

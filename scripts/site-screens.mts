@@ -423,7 +423,10 @@ async function main(): Promise<void> {
   log('launch: hidden Electron (EQ_E2E=1) against the real log…')
   const app: ElectronApplication = await electron.launch({
     executablePath: electronBinary(),
-    args: [MAIN_ENTRY],
+    // `--mute-audio` for the same reason the e2e harness passes it (JOS-443): this drives the real
+    // app on the owner's desktop while he is using it, and a screenshot run is not a reason to
+    // make a noise. Chromium's switch silences the output only — nothing about what is captured.
+    args: [MAIN_ENTRY, '--mute-audio'],
     cwd: ROOT,
     env: { ...process.env, EQ_E2E: '1', EQ_E2E_USER_DATA: USER_DATA, NODE_ENV: 'production' },
     timeout: 60_000

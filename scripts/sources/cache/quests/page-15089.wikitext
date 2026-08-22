@@ -1,5 +1,7 @@
 {{Classic Era}}
 
+[[File:npc_an_undead_knight.png|thumb|right|an undead knight]]
+
 {| class="questTopTable"
 ! ''' Start Zone: '''
 | [[Temple of Solusek Ro]]
@@ -45,14 +47,10 @@ The undead knight to the RIGHT (say: I seek the darkforge armor) makes: Gauntlet
 |Darkforge Vambraces
 }}
 
-== Fashion ==
-
-[[File:Geykaken.jpg|center|Complete Darkforge Set worn by the Dark Knight Geykaken Ofnyahm]]
-
-
 == Walkthrough ==
+
 === Checklist ===
-[[File:npc_an_undead_knight.png|thumb|right|an undead knight]]
+
 {{CheckboxList}}
 === [[Darkforge Bracer]] ===
 *[[Decayed Left Bracer]]
@@ -127,6 +125,10 @@ The undead knight to the RIGHT (say: I seek the darkforge armor) makes: Gauntlet
 | Left and Right Decayed arm
 | [[Qeynos Kite Shield ]] (Qeynos guards).
 |}
+
+== Fashion ==
+
+[[File:Geykaken.jpg|center|Complete Darkforge Set worn by the Dark Knight Geykaken Ofnyahm]]
 
 [[Category:Quests]]
 [[Category:Temple of Solusek Ro]]

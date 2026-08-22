@@ -39,7 +39,8 @@
  * the live fallback uses. The committed record is therefore the identical shape a live lookup
  * would have produced; there is no second parser to drift.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 110ms delay,
+ * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 1s delay
+ * (owner ruling 2026-08-22 — fan-run servers; bulk API batching does the heavy lifting),
  * exponential backoff honouring Retry-After on 429/5xx, a disk cache under
  * scripts/sources/cache/items so a warm re-run hits the network ZERO times, and partial runs
  * resume batch-by-batch instead of duplicating work (a batch file is written only after its
@@ -58,7 +59,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/items')
 const OUT_PATH = resolve(HERE, '../src/main/data/items.json')
 
-const DELAY_MS = 110
+const DELAY_MS = 1000
 const MAX_RETRIES = 5
 /** MEASURED anonymous multi-value limit (see header) — 60 ids silently returns nothing. */
 const BATCH = 50
@@ -83,7 +84,9 @@ function describeRequest(params: Record<string, string>): string {
 
 /** One serialized GET with exponential backoff on 429/5xx (honours Retry-After). */
 async function api<T>(params: Record<string, string>): Promise<T> {
-  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', ...params }).toString()}`
+  // maxlag=5: MediaWiki's own bot-courtesy contract — the server refuses the request outright
+  // when replication lag exceeds 5s, instead of straining to serve it (owner ruling 2026-08-22).
+  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', maxlag: '5', ...params }).toString()}`
   let wait = 1000
   for (let attempt = 0; ; attempt++) {
     let res: Response
@@ -97,7 +100,14 @@ async function api<T>(params: Record<string, string>): Promise<T> {
     }
     if (res.ok) {
       await sleep(DELAY_MS)
-      return (await res.json()) as T
+      const j = (await res.json()) as T
+      // A maxlag deferral arrives as HTTP 200 with an error body and a Retry-After header.
+      if ((j as { error?: { code?: string } }).error?.code === 'maxlag' && attempt < MAX_RETRIES) {
+        await sleep(retryDelayMs(res, wait))
+        wait *= 2
+        continue
+      }
+      return j
     }
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
       await sleep(retryDelayMs(res, wait))

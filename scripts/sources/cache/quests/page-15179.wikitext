@@ -28,7 +28,7 @@
 
 == Walkthrough ==
 
-''[[Fabian]] is located at 132.27, -797.48, 6.87  in [[Freeport|East Freeport]] inside the Grub 'n Grog Tavern.''
+''[[Fabian]] is located at (14, -749)  in [[Freeport|East Freeport]] inside the Grub 'n Grog Tavern.''
 
 You say, 'Hail, Fabian'
 : Fabian says, 'Greetings, merry gentlefolk! If you enjoy the music, please feel free to cross my palm with gold.'
