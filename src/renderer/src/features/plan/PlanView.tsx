@@ -78,6 +78,7 @@ import { CURRENT_ERA_LABEL, useEraOnly } from '../planner/plannerData'
 import type { MobTarget } from '../mobs/mobTarget'
 import PlanBracketCard from './PlanBracketCard'
 import { usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
+import { planBlurb } from './planBlurb'
 
 /** What each role is CALLED. A `Record` so a fifth role is a type error here (the `VIEW_LABELS` trick). */
 const ROLE_LABEL: Record<GearRole, string> = {
@@ -315,6 +316,19 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
         setEraOnly={setEraOnly}
         stated={stated}
       />
+
+      {/* WHAT THE PICK LOOKS FOR (owner ask, 2026-08-22): one paragraph, the full width of the tab,
+          under the pickers and above the first bracket. It is the pickers' hover made visible and
+          it changes with the pick — the focus's weights and weapon shape, then what the picked
+          classes can actually use (the class gate, in the player's words). `planBlurb.ts`. */}
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        data-testid="plan-blurb"
+        sx={{ mb: 1, px: 0.5, flexShrink: 0 }}
+      >
+        {planBlurb(role, classes.classes)}
+      </Typography>
 
       {/* The cards' own bounded scroller: a seven-card route grows THIS box, never the page. */}
       <Box sx={{ flexGrow: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} data-testid="plan-route">
