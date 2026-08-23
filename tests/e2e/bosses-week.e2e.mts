@@ -46,6 +46,16 @@
  * `makeUserData()` hands both launches the same dir, so launch 2 reads the localStorage launch 1
  * wrote through a real process exit.
  *
+ * STAGED ON A FIXTURE since the portability fix: this spec used to bare-`launchApp`, which leans
+ * on a REAL EverQuest install being auto-discoverable — true on the owner's machine, false in
+ * most other places, where the app (rightly) opened on the no-logs-found onboarding and the
+ * Bosses tab never mounted, so the whole spec red before its first assertion. The committed
+ * telemetry fixture is enough on its own: its `You have slain Lord Nagafen!` is a roster kill,
+ * which gives the defeated filter something real to keep and the by-loadout view its one honest
+ * `unknown` section (a kill no combo interval covers). Nothing this spec asserts wants more —
+ * WHICH rungs are green is deliberately not asserted (the header's rule), so the fixture's fixed
+ * dates cannot rot it.
+ *
  * WHY IT NEVER TAKES THE SCREEN: `EQ_E2E=1` (src/main/e2e.ts) shows no window, skips the
  * single-instance lock, and points `userData` at a throwaway temp dir per launch.
  *
@@ -61,14 +71,15 @@ import {
   note,
   reportRun,
   settle,
-  settleGone,
   settleStable,
   waitHydrated
 } from './appHarness.mjs'
-import { launchApp, mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+import { launchOnFixture, stageFixture } from './logFixture.mjs'
 import { stepLoadoutSectionsAreHonest } from './loadoutSectionSteps.mjs'
+// The tab round trip, out of this file for the ceiling's sake — see its header.
+import { awayAndBack, openBosses } from './bossesNav.mjs'
 
-const NAV_BOSSES = '[data-testid="nav-bosses"]'
 const NAV_OVERVIEW = '[data-testid="nav-overview"]'
 /** The toggle group under test, and its two buttons. */
 const MODE = '[data-testid="boss-mode"]'
@@ -377,30 +388,8 @@ async function stepDefeatedOnlyIsAllTime(page: Page): Promise<number> {
 }
 
 /** Open the Bosses tab and wait for its toolbar. Safe when the tab is already the open one. */
-async function openBosses(page: Page, timeoutMs = 60_000): Promise<boolean> {
-  await page.click(NAV_BOSSES, { timeout: 30_000 })
-  return page.waitForSelector(MODE, { timeout: timeoutMs }).then(
-    () => true,
-    () => false
-  )
-}
 
-/**
- * Leave for another tab, and confirm the Bosses view is really gone. This is the step the bug
- * lived in: the assertion after it means nothing unless `BossView` was actually unmounted here.
- */
-async function leaveBosses(page: Page): Promise<boolean> {
-  await page.click(NAV_OVERVIEW, { timeout: 30_000 })
-  return settleGone(page, MODE, { timeoutMs: 15_000 })
-}
 
-/** Away to the Overview and back to Bosses, with the unmount actually asserted in between. */
-async function awayAndBack(page: Page): Promise<boolean> {
-  if (!check('leaving the Bosses tab unmounts it (the mode toggle is gone)', await leaveBosses(page))) {
-    return false
-  }
-  return check('…and the Bosses tab comes back', await openBosses(page))
-}
 
 /** Click a mode button and wait for the group to report the mode we asked for. */
 async function setMode(page: Page, button: string, want: string): Promise<string | null> {
@@ -616,9 +605,12 @@ async function main(): Promise<void> {
   // OWNED BY THIS SPEC, not by either launch: the restart assertion IS the dir outliving a
   // process, so `launchApp` must not delete what it did not create.
   const userData = makeUserData()
+  // Staged ONCE and handed to both launches (an owned fixture would be disposed by launch 1's
+  // close, taking the install out from under the restart half).
+  const log = stageFixture('e2e-telemetry.log')
   try {
     console.log('launch 1: a fresh install - the default, the ladder, and both round trips…')
-    const first = await launchApp({ userData })
+    const first = await launchOnFixture(log, { userData })
     let page: Page | null = null
     try {
       page = await mainWindow(first.app)
@@ -637,7 +629,7 @@ async function main(): Promise<void> {
     }
 
     console.log('launch 2: the SAME userData dir, a new process - This week must still be there…')
-    const second = await launchApp({ userData })
+    const second = await launchOnFixture(log, { userData })
     let restarted: Page | null = null
     try {
       restarted = await mainWindow(second.app)
@@ -648,6 +640,7 @@ async function main(): Promise<void> {
       await second.close()
     }
   } finally {
+    await log.dispose()
     await removeUserData(userData)
   }
 

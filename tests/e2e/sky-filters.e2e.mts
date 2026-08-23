@@ -77,7 +77,11 @@ import {
   settleGone,
   settleStable
 } from './appHarness.mjs'
-import { launchApp, mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+import { mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+import { launchOnFixture, stageFixture } from './logFixture.mjs'
+// The FIFTH copy of this consolidated away — levelingLayoutSteps' own comment called the fourth
+// "a consolidation ticket, not a reason to skip it".
+import { dismissFirstRunNotice } from './levelingLayoutSteps.mjs'
 // The remount guard (JOS-279) — see `skyMount` below and that module's header for the argument.
 import { mountGuard, type MountGuard } from './viewRemount.mjs'
 
@@ -171,12 +175,18 @@ function expandedNames(page: Page): Promise<string[]> {
  * THE PRECONDITION EVERY EXPANDED-ROW ASSERTION IN THIS FILE RESTS ON, and which for six ledgered
  * runs was left to luck (AGENTS.md's flake ledger; fixed in JOS-279).
  *
- * This spec launches against the machine's OWN growing log rather than a staged fixture, so the
- * `viewKey` rebuilds `App` pushes as the historical fold lands arrive while the spec is already
- * driving the tab — and a rebuild remounts `PoskyView`, which closes an accordion the step opened
- * one line ago. That is correct app behaviour and a false failure: the steps below ask whether
- * FAVORITING collapses the list and whether CLOSING a panel unmounts it, never whether a character
- * rebuild does. `viewRemount.mts` carries the whole argument and the vocabulary.
+ * This spec USED to launch against the machine's own growing log, so the `viewKey` rebuilds
+ * `App` pushes as the historical fold lands arrive while the spec is already driving the tab —
+ * and a rebuild remounts `PoskyView`, which closes an accordion the step opened one line ago.
+ * That is correct app behaviour and a false failure: the steps below ask whether FAVORITING
+ * collapses the list and whether CLOSING a panel unmounts it, never whether a character rebuild
+ * does. `viewRemount.mts` carries the whole argument and the vocabulary.
+ *
+ * The spec is staged on a fixture now (the portability fix — a bare launch needs a REAL install
+ * to be discoverable, and on a machine without one the Sky tab never mounted at all). A small
+ * fixed log makes the guard's job easy, but the guard STAYS: it is the stated precondition of
+ * every expanded-row step, six ledgered flakes say what its absence costs, and the fold of even a
+ * small log still lands while launch-adjacent steps run.
  *
  * The anchor is the Sky tab's own sub-tab strip: inside the keyed subtree, and mounted whichever
  * sub-tab is showing.
@@ -215,19 +225,6 @@ async function clearPick(page: Page, picker: string): Promise<void> {
   await page.keyboard.press('Escape')
 }
 
-/**
- * Answer the analytics first-run notice, which a FRESH userData always shows and which sits at the
- * BOTTOM CENTRE of the window until it is answered — directly over the list footer JOS-191's steps
- * click. Nothing in this file cares about analytics, so "turn it off" is the quiet answer (the perf
- * and text-size specs make the same call for the same reason).
- */
-async function dismissFirstRunNotice(page: Page): Promise<void> {
-  const notice = '[data-testid="telemetry-notice"]'
-  await page.waitForSelector(notice, { timeout: 30_000 }).catch(() => undefined)
-  if ((await countOf(page, notice)) === 0) return
-  await page.click('[data-testid="telemetry-notice-off"]')
-  check('the analytics first-run notice can be answered out of the way', await settleGone(page, notice, { timeoutMs: 8_000 }))
-}
 
 /** Open the Sky tab and wait for its toolbar. Safe when the tab is already the open one. */
 async function openSky(page: Page, timeoutMs = 60_000): Promise<boolean> {
@@ -668,9 +665,13 @@ async function main(): Promise<void> {
   // OWNED BY THIS SPEC, not by either launch: the restart assertion IS the dir outliving a
   // process, so `launchApp` must not delete what it did not create.
   const userData = makeUserData()
+  // Staged ONCE and handed to both launches (an owned fixture would be disposed by launch 1's
+  // close, taking the install out from under the restart half). The Sky tab's subject is BUNDLED
+  // data — quests, islands, bosses — so the smallest committed fixture is enough to boot on.
+  const log = stageFixture('e2e-telemetry.log')
   try {
     console.log('launch 1: a fresh install — default, tab round trip, the un-tick, the pair, and the facets…')
-    const first = await launchApp({ userData })
+    const first = await launchOnFixture(log, { userData })
     let page: Page | null = null
     try {
       page = await mainWindow(first.app)
@@ -709,7 +710,7 @@ async function main(): Promise<void> {
     }
 
     console.log('launch 2: the SAME userData dir, a new process — the tick must still be there…')
-    const second = await launchApp({ userData })
+    const second = await launchOnFixture(log, { userData })
     let restarted: Page | null = null
     try {
       restarted = await mainWindow(second.app)
@@ -720,6 +721,7 @@ async function main(): Promise<void> {
       await second.close()
     }
   } finally {
+    await log.dispose()
     await removeUserData(userData)
   }
 
