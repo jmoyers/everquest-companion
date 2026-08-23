@@ -32,6 +32,7 @@ import { auditSpellSubjects } from './data/spellSubjectAudit'
 // beside its three siblings because the pass has two callers over one catalog — see that file.
 import { spellEraReport } from './data/spellEra'
 import { CombatEngine } from './combat/engine'
+import { ChatArchive } from './chatArchive'
 import { ModuleRegistry } from './modules/registry'
 import { createModules } from './modules/wiring'
 import { resistLedgerSeam } from './resist/store'
@@ -302,6 +303,13 @@ combat.setRoster(rosterModule)
 // costs a rebuild.
 combat.setCombo(comboModule)
 bus.subscribe((ev, live) => combat.ingestEvent(ev, live))
+// THE DURABLE HALF OF CHAT CAPTURE — a pure bus sink that appends LIVE `chat` lines to a file so
+// the save outlives the game's log rotation (src/main/chatArchive.ts). Order is free: it reads no
+// other consumer's state and pushes nothing back onto the bus. It ignores replayed events, so this
+// subscription does nothing during the historical scan; session.ts points it at the active
+// character on every world reset. The in-app VIEWER is the `chat` MODULE, registered above.
+export const chatArchive = new ChatArchive()
+bus.subscribe((ev, live) => chatArchive.onEvent(ev, live))
 // Item-knowledge prefetch (Task #53): when a LIVE loot event arrives, warm the
 // "what's this for" cache in the background (throttled by itemLookup's serialized queue
 // + persistent cache) so the answer is ready by the time the user clicks the item. LIVE

@@ -195,6 +195,24 @@ export interface StoreShape {
    * ceiling.
    */
   closeToTray?: CloseToTrayPrefs
+  /**
+   * WHETHER THE CHAT VIEWER ALSO SAVES LIVE CHAT TO A FILE (chat capture). A single boolean:
+   * `true` ⇒ chatArchive.ts appends each live chat line to `<userData>/chat/<name_server>.jsonl`
+   * so it outlives the log the game rotates; `false` ⇒ the in-app Chat viewer still works (it is
+   * rebuilt from the log every launch), but nothing is written to disk.
+   *
+   * DEFAULTS TO ON — the feature the tab exists for is saving chat, and the same words already sit
+   * uncensored in the game's own log on the same disk, so the durable copy adds reach, not
+   * exposure. (A maintainer who prefers the more conservative default flips the `?? true` in
+   * storeChatCapture.ts to `?? false`; nothing else changes.) It carries NO content off the
+   * machine either way — see the ChatEvent header.
+   *
+   * ADDITIVE + OPTIONAL ⇒ no schema bump, no migration — the `closeToTray` carve-out above. Like
+   * it, the default is ON, and for the same reason it needs no migration: nothing downstream ever
+   * has to tell a stored default from an inherited one — every reader just defaults. Accessor in
+   * `storeChatCapture.ts` (store.ts is at its line ceiling).
+   */
+  chatCapture?: boolean
   // `eqExclusiveNoticeDismissedVersion` (JOS-368) LIVED HERE and was removed by JOS-375 with the
   // note it remembered — the game's Fullscreen setting is a borderless window on this client, so
   // the advice could never be true. Migration 12 → 13 deletes the key from any store that has it.

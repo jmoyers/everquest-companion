@@ -14,6 +14,7 @@ export type View =
   | 'alerts'
   | 'leveling'
   | 'loot'
+  | 'chat'
   | 'planner'
   // The GEAR PLANNER's search surface (JOS-284) — the candidate index over every equippable item.
   // It was a top-level nav row of its own until JOS-324; it is now the FIRST TAB of the gear area
@@ -61,6 +62,7 @@ export const VIEW_LABELS: Record<View, string> = {
   alerts: 'Alerts',
   leveling: 'Leveling',
   loot: 'Loot',
+  chat: 'Chat',
   // THE TAB IS CALLED EXALTATIONS (owner, 2026-08-06, JOS-42). "Planner" described what the
   // surface does for us; "Exaltations" names the game system the player came here about. The
   // `planner` view id, its route, its `eq.planner.*` keys and every `planner-*` testid are
@@ -90,6 +92,7 @@ const KNOWN_VIEWS: View[] = [
   'alerts',
   'leveling',
   'loot',
+  'chat',
   'planner',
   'gear',
   'wishlist',

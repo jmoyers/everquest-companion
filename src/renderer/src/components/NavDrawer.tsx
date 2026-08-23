@@ -7,6 +7,7 @@ import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
+import ChatIcon from '@mui/icons-material/Chat'
 import TimerIcon from '@mui/icons-material/Timer'
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'
 import PetsIcon from '@mui/icons-material/Pets'
@@ -100,6 +101,9 @@ const ROWS: NavRow[] = [
   { view: 'bosses', icon: <EmojiEventsIcon /> },
   { view: 'posky', icon: <ShieldMoonIcon /> },
   { view: 'alerts', icon: <NotificationsActiveIcon /> },
+  // Chat sits beside Alerts: both are the log's WORDS rather than its numbers — one you subscribe
+  // to as rules, the other you read as a feed.
+  { view: 'chat', icon: <ChatIcon /> },
   { view: 'leveling', icon: <TrendingUpIcon /> },
   { view: 'buffs', icon: <AutoFixHighIcon /> },
   // Respawn clocks (JOS-194) sit beside Buffs because both tabs are the same shape of answer —

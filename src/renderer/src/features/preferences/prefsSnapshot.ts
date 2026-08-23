@@ -136,6 +136,9 @@ export interface PrefsSnapshot {
    *  TWO other controls (the tray menu's checkbox and the title bar's overlay-menu row), so this
    *  entry is kept current by main's pushes as well as by the card's own writes — see App.tsx. */
   closeToTray: CloseToTrayPrefs
+  /** Chat — whether the Chat tab also SAVES live chat to a file (chat capture). ON by default; its
+   *  card is the only control, so unlike closeToTray it needs no push from main. */
+  chatCapture: boolean
   /** Overlays — the celebration toast's open-state and its lock. */
   toast: ToastSeed
   /** Overlays — the alert banner's open-state, lock and knobs. It ships OFF, which is exactly the
@@ -192,6 +195,7 @@ export interface PrefsReader {
   getOverlayBgAlpha: () => Promise<OverlayBgAlphaPrefs>
   getOverlayBgAlphas: () => Promise<Record<OverlayKind, number>>
   getCloseToTray: () => Promise<CloseToTrayPrefs>
+  getChatCapture: () => Promise<boolean>
   getOverlayState: () => Promise<Record<OverlayKind, boolean>>
   getToastConfig: () => Promise<OverlayConfig>
   getAlertBannerConfig: () => Promise<OverlayConfig>
@@ -230,6 +234,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     overlayBgAlpha,
     overlayBgAlphas,
     closeToTray,
+    chatCapture,
     overlayState,
     toastConfig,
     bannerConfig,
@@ -257,6 +262,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     eq.getOverlayBgAlpha(),
     eq.getOverlayBgAlphas(),
     eq.getCloseToTray(),
+    eq.getChatCapture(),
     eq.getOverlayState(),
     eq.getToastConfig(),
     eq.getAlertBannerConfig(),
@@ -291,6 +297,7 @@ export async function readPrefsSnapshot(eq: PrefsReader): Promise<PrefsSnapshot>
     overlayBgAlphas,
     overlayOpen: overlayState,
     closeToTray,
+    chatCapture,
     toast: { open: overlayState.toast, locked: toastConfig.locked },
     // The knobs go through the same normalizer main's store reads with, so the cache can never
     // hold an out-of-range hold or line count (the `uiScale` argument, on a different blob).

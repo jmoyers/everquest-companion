@@ -360,6 +360,10 @@ export const IPC = {
   // the tray menu's checkbox, or the popover's `Always quit instead`. Payload CloseToTrayPrefs.
   // Without it the Preferences switch and the tray checkbox would be two answers to one question.
   onCloseToTray: 'closeToTray:changed',
+  // ---- the chat viewer also saves to a file (chat capture; storeChatCapture.ts) ----
+  // renderer(main app) -> main: read / set the "save live chat to a file" switch. A plain boolean.
+  chatCaptureGet: 'chatCapture:get',
+  chatCaptureSet: 'chatCapture:set',
   // ---- the tray popover (JOS-139) ----
   // renderer(tray notice window ONLY) -> main. Three SENDS and no reads: the card states what
   // just happened and offers the three ways out of it, and every one of them is a decision main

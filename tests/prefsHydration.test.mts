@@ -80,6 +80,8 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     // reversal) — and the one with TWO other controls (the tray menu's checkbox and the title bar's
     // overlay-menu row) that can move it while this pane is closed.
     getCloseToTray: answer('getCloseToTray', { enabled: true, noticeAcknowledged: true }),
+    // The chat-capture switch (chat capture) — default ON, one control, no push.
+    getChatCapture: answer('getChatCapture', true),
     // The open-state map. THREE fields of it become the toast / banner / con-card cards' seeds, and
     // since JOS-408 the WHOLE map is also kept, for the Overlays rows' `closed` tag — one read,
     // four readers, which is the point of a batch.
@@ -117,11 +119,11 @@ test('one read answers every card in the pane, and it snaps the text size to the
   const { reader, calls } = stubReader()
   const snap = await readPrefsSnapshot(reader)
 
-  // TWENTY-SIX reads, one batch (JOS-405 added the overlays' text size and its twelve per-kind
-  // values; JOS-407 the same pair for transparency). The number is not the claim; the claim is
-  // that the gate asks each question exactly once, so a pane that mounts does not stampede the
-  // store.
-  assert.equal(calls(), 26, 'every read fires exactly once')
+  // TWENTY-SEVEN reads, one batch (JOS-405 added the overlays' text size and its twelve per-kind
+  // values; JOS-407 the same pair for transparency; chat capture added the save-to-file switch).
+  // The number is not the claim; the claim is that the gate asks each question exactly once, so a
+  // pane that mounts does not stampede the store.
+  assert.equal(calls(), 27, 'every read fires exactly once')
 
   // The overlays' size (JOS-405), which is TWO facts read together for the toast pair's reason:
   // the shared stepper and the twelve rows are one control group, and a frame where the size was
@@ -200,7 +202,7 @@ test('two mounts in one frame share ONE batch', async () => {
   resetPrefsSnapshotForTests()
   const { reader, calls } = stubReader()
   const [a, b] = await Promise.all([loadPrefsSnapshot(reader), loadPrefsSnapshot(reader)])
-  assert.equal(calls(), 26, 'not fifty-two')
+  assert.equal(calls(), 27, 'not fifty-four')
   assert.equal(a, b)
   resetPrefsSnapshotForTests()
 })
