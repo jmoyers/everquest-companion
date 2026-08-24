@@ -171,6 +171,34 @@ export function RankChip({
   )
 }
 
+/**
+ * `out of era` — the wiki's verdict on a spell's page, as the item card's own label and colour
+ * (`PlannerChips.EraChip`'s warning outline).
+ *
+ * Drawn on the rows that are DRAWN rather than folded: every search result, and the level rows once
+ * the disclosure has been opened. Null where the sidecar said nothing, because silence is not a
+ * verdict (law 1).
+ *
+ * EXPORTED for the best-spells search next door (JOS-450), which shows out-of-era results in place
+ * for exactly this list's reason — a search answers the question the player typed. One component so
+ * the two surfaces cannot end up with two wordings, the `outOfEraLabel` arrangement one further.
+ */
+export function OutOfEraChip({ outOfEra }: { outOfEra: boolean | undefined }): JSX.Element | null {
+  if (outOfEra !== true) return null
+  return (
+    <Tooltip title="The wiki marks this spell's page out of era: it belongs to an expansion this server has not opened.">
+      <Chip
+        size="small"
+        label="out of era"
+        data-testid="unlock-out-of-era"
+        color="warning"
+        variant="outlined"
+        sx={{ height: 17, fontSize: 10, '& .MuiChip-label': { px: 0.6 } }}
+      />
+    </Tooltip>
+  )
+}
+
 /** One clause of the detail line. `dim` is for the ones that are context rather than the answer. */
 function Note({ text, testid, dim }: { text: string; testid: string; dim?: boolean }): JSX.Element {
   return (
@@ -366,21 +394,8 @@ function Row({
           />
         </Tooltip>
       )}
-      {/* THE ERA CHIP — the item card's own label and colour (`PlannerChips.EraChip`'s warning
-          outline), on the rows that are drawn rather than folded: every search result, and the
-          level rows once the disclosure has been opened. */}
-      {row.spell?.outOfEra === true && (
-        <Tooltip title="The wiki marks this spell's page out of era: it belongs to an expansion this server has not opened.">
-          <Chip
-            size="small"
-            label="out of era"
-            data-testid="unlock-out-of-era"
-            color="warning"
-            variant="outlined"
-            sx={{ height: 17, fontSize: 10, '& .MuiChip-label': { px: 0.6 } }}
-          />
-        </Tooltip>
-      )}
+      {/* THE ERA CHIP, its own component since JOS-450 so the readout next door draws the same one. */}
+      <OutOfEraChip outOfEra={row.spell?.outOfEra} />
       <ClassChips row={row} resolved={resolved} />
     </Stack>
       <RowDetail row={row} resolved={resolved} sets={sets} />

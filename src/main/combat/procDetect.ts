@@ -144,7 +144,7 @@
 // meeting a spell that fires more than once per cast.
 //
 // A rain spell delivers a FIXED NUMBER OF WAVES from ONE cast (owner's ruling and the game's
-// mechanic — src/main/combat/rainSpells.ts carries the measurement). `origin` lets one cast
+// mechanic — src/main/data/rainSpells.ts carries the measurement). `origin` lets one cast
 // record explain ONE INSTANT, which is exactly right for the AoE it was written for — four
 // `Earthquake` lines in one second, one cast — and exactly wrong for a rain, whose second wave
 // lands three seconds later with the same cast behind it. The first wave scored `cast`, every
@@ -162,7 +162,7 @@
 // owns — is the defect that was reported.
 
 import { spellCanonKey } from '../log/parseCommon'
-import { isRainSpell } from './rainSpells'
+import { isRainSpell } from '../data/rainSpells'
 import type { DamageType } from '../../shared/combat'
 
 /**

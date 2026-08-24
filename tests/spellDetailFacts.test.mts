@@ -267,6 +267,36 @@ test('D18 the record carries the row’s own figures, read at the level the spel
   assert.ok((nuke.metrics?.damage ?? 0) > 0, 'a nuke states damage')
 })
 
+test('D20 (JOS-447) the card states BOTH readings when a rank is observed, and one when it is not', () => {
+  // The card has the room the table does not, so it prints the spell as the catalog describes it
+  // AND the spell as you own it. Garrison's is read at the level a wizard gains it (18), where the
+  // wiki's ramp states 272; at the VIII the owner's log has watched, six percent a rank floored
+  // gives 272 + floor(272 * 48 / 100) = 402.
+  const base = buildSpellDetail(db, "Garrison's Mighty Mana Shock")
+  assert.equal(base.metricsLevel, 18)
+  assert.equal(base.metrics?.damage, 272)
+  assert.equal(base.metricsAtRank, undefined, 'no rank observed, so no second line to draw')
+  assert.equal(base.metricsRank, undefined)
+
+  const at = buildSpellDetail(db, "Garrison's Mighty Mana Shock", [], { rank: 8 })
+  assert.equal(at.metrics?.damage, 272, 'the first line is still the catalog`s own number')
+  assert.equal(at.metricsRank, 8)
+  assert.equal(at.metricsAtRank?.damage, 402)
+  // Both readings divide by the same casting cycle, so the pair is comparable on its face.
+  assert.equal(at.metrics?.recastMs, at.metricsAtRank?.recastMs)
+
+  // AND RANK 1 IS BASE, the same reading `scaleSpellDamage` takes and the same one the `yours:`
+  // pill takes - a card must not grow a second line that restates the first.
+  const one = buildSpellDetail(db, "Garrison's Mighty Mana Shock", [], { rank: 1 })
+  assert.equal(one.metricsAtRank, undefined)
+  assert.equal(one.metricsRank, undefined)
+
+  // A spell with no figures at all gains no rank line either, whatever rank is handed in.
+  const none = buildSpellDetail(db, 'Clarity', [], { rank: 5 })
+  assert.equal(none.metrics, undefined)
+  assert.equal(none.metricsAtRank, undefined)
+})
+
 test('D19 a spell with no hitpoint line states no figures at all — never a zero', () => {
   const d = buildSpellDetail(db, 'Clarity')
   assert.equal(d.metrics, undefined)

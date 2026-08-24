@@ -69,8 +69,14 @@ export interface UnlockSearchResults {
 
 export const EMPTY_UNLOCK_SEARCH: UnlockSearchResults = { rows: [], matched: 0, hidden: 0 }
 
-/** The unlock row as the shared matcher reads it. `usageCount` is absent by design — see below. */
-function searchable(spell: UnlockSpell): SearchableSpell {
+/**
+ * The unlock row as the shared matcher reads it. `usageCount` is absent by design — see below.
+ *
+ * EXPORTED because the best-spells readout searches the SAME corpus with the SAME matcher
+ * (JOS-450). A second copy of these five fields would be a second answer to "what does a query
+ * match against", and the two would drift the first time a field was added to the dataset.
+ */
+export function unlockSearchSurface(spell: UnlockSpell): SearchableSpell {
   return {
     name: spell.name,
     searchText: spell.searchText ?? spell.name.toLowerCase(),
@@ -80,8 +86,13 @@ function searchable(spell: UnlockSpell): SearchableSpell {
   }
 }
 
-/** One class per entry at its LOWEST stated level, ascending by level then class code. */
-function foldLevels(pairs: readonly SearchClassLevel[]): SearchClassLevel[] {
+/**
+ * One class per entry at its LOWEST stated level, ascending by level then class code.
+ *
+ * EXPORTED for the same reason as the surface above: the best-spells search draws the same
+ * `CLR 24 · PAL 30` chips off the same fold (JOS-450).
+ */
+export function foldClassLevels(pairs: readonly SearchClassLevel[]): SearchClassLevel[] {
   const lowest = new Map<ClassAbbr, number>()
   for (const p of pairs) {
     const seen = lowest.get(p.cls)
@@ -104,7 +115,7 @@ function earlierFor(levels: readonly SearchClassLevel[], ctx: UnlockSearchContex
 
 /** One matching spell as a row: its chips, its scoped context, and the level it sorts on. */
 function searchRow(spell: UnlockSpell, pairs: readonly SearchClassLevel[], q: CompiledSpellQuery, ctx: UnlockSearchContext): UnlockRow {
-  const levels = foldLevels(pairs)
+  const levels = foldClassLevels(pairs)
   // The pairs that satisfied the query — and, when the row got in on its TEXT alone (a bare number
   // matching a rank numeral, say), every pair it has. A row always sorts on a level it really has.
   const matched = matchedClassLevels(levels, q)
@@ -142,7 +153,7 @@ export function searchUnlockSpells(
   const q = compileSpellQuery(tokens)
   const byName = new Map<string, { spell: UnlockSpell; pairs: SearchClassLevel[] }>()
   for (const spell of spells) {
-    if (!matchesCompiledQuery(searchable(spell), q)) continue
+    if (!matchesCompiledQuery(unlockSearchSurface(spell), q)) continue
     const key = spell.name.toLowerCase()
     const seen = byName.get(key)
     if (seen) seen.pairs.push(...spell.at)

@@ -39,8 +39,20 @@ import type { ResistTableWorkerReply } from '../resistTableWorker'
  *      cache was written before anything read that column, so the field can only come from a
  *      re-parse, and a sustained dps with a missing denominator is a wrong number rather than an
  *      absent one.
+ *   4  JOS-449 - the AE target cap (`aeMaxTargets`, field 143). MISSED AT MERGE and caught by the
+ *      owner in the field the same day: his AOE tab read Supernova at the default four targets
+ *      (4,848 at rank VII) instead of the client's eight, because his machine held a version-3
+ *      cache written before anything read that column. The parser change shipped without this
+ *      bump, which is exactly the staleness this constant exists to make impossible.
+ *   5  JOS-451 - the mana column (`mana`, field 14) and TWO MORE HITPOINT EFFECT IDS in `hp` (100
+ *      heal-over-time, 334 the bard pulse). Both halves are unreachable from a version-4 cache for
+ *      the same reason 2, 3 and 4 were: the fields were never written into it. And the second half
+ *      is what the owner's own report turns on - a version-4 cache carries no effect-100 slot for
+ *      `Ethereal Cleansing`, so the client curve that fixes his 40-instead-of-400 heal-over-time
+ *      would simply not be there to read. Bumped in the SAME commit as the parser change, which is
+ *      the whole lesson of 4.
  */
-export const SPELL_RESIST_CACHE_VERSION = 3
+export const SPELL_RESIST_CACHE_VERSION = 5
 
 interface CacheFile {
   version: number

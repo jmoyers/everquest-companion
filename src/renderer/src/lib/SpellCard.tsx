@@ -34,6 +34,7 @@ import {
   spellStatRows
 } from '@shared/spellDetail'
 import { spellMetricsParts } from '@shared/spellMetrics'
+import { romanRank } from '@shared/spellLines'
 import { nameStatesRank, observedRankLabel, observedRankRow } from '@shared/spellRanks'
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, CardSection, LABEL_STYLE, MoreLine, TEXT_STYLE } from './hoverCards'
 import { Tooltip } from './Tooltip'
@@ -161,11 +162,23 @@ function Figures({ detail }: { detail: SpellDetail }): JSX.Element | null {
   const parts = spellMetricsParts(detail.metrics)
   if (parts.length === 0) return null
   const at = detail.metricsLevel === undefined ? '' : ` at level ${String(detail.metricsLevel)}`
+  const atRank =
+    detail.metricsAtRank === undefined || detail.metricsRank === undefined
+      ? null
+      : spellMetricsParts(detail.metricsAtRank)
   return (
     <CardSection label={`Worth${at}:`}>
       <div style={TEXT_STYLE} data-testid="spell-card-figures">
         {parts.join(' · ')}
       </div>
+      {/* BOTH READINGS, LABELLED (JOS-447). The line above is the spell as the catalog describes it
+          and this one is the spell as you own it; the card is the surface with room for the pair,
+          which is exactly why the table below settles for one number and the `yours:` chip. */}
+      {atRank !== null && atRank.length > 0 && (
+        <div style={TEXT_STYLE} data-testid="spell-card-figures-at-rank" data-rank={String(detail.metricsRank)}>
+          {`at ${romanRank(detail.metricsRank ?? 0)}: ${atRank.join(' · ')}`}
+        </div>
+      )}
     </CardSection>
   )
 }

@@ -36,13 +36,76 @@
 // same claim as `hps 0`; it is absent from the healing side entirely, and a null column value sorts
 // LAST in both directions rather than being read as the worst answer.
 //
+// ── FOUR TABLES, NOT TWO (JOS-448, owner ask 2026-08-22) ───────────────────────────────────────
+//
+// "a section for dots / section for dd / section for heal / section for hot". The split is a
+// PARTITION OF EACH SIDE ON A FLAG THE METRICS ALREADY STATE — `dot` for damage that arrives per
+// tick, `hot` for healing that does, both written by `spellMetricsAt` and neither re-derived here.
+// Nothing about the ranking changes: a table is still `{shown, outOfEra}` sorted on one column, and
+// the two damage tables rank on `dps` while the two healing ones rank on `hps`.
+//
+// It is a real question rather than a filter for tidiness. A DoT's `dps` is its whole total spread
+// over the duration it runs for, so it competes with a nuke on a measure neither spell is played on:
+// you cast the nuke again and you do not re-cast the DoT until it drops. Ranking them apart lets
+// each list be read the way it is actually used.
+//
+// A SPELL WITH BOTH A DAMAGE AND A HEALING SIDE IS IN TWO OF THE FOUR, exactly as it was in both
+// sections before — one damage table and one healing table, never two of the same colour. A lifetap
+// is damage-only before it ever reaches this file (`spellMetricsAt` owns that rule).
+//
+// ── AND EVERY ROW IS READ AT ITS MOTE RANK (JOS-447, owner ask 2026-08-23) ─────────────────────
+//
+// "in the table its showing 333 damage rather than the upgraded damage. to decide whether im going
+// to use a different spell, i want to compare upgraded damage to the max i have of a different
+// spell. then it would be nice to simulate upgrade of a separate spell to understand."
+//
+// So a row's figures are taken at `max(observed rank, simulated rank)`. The OBSERVED half is
+// JOS-446's map, joined by spell LINE (`observedRankRow` strips the numeral, which is the only join
+// that works against a catalog that spells ~1,800 of its ~1,900 lines without one). The SIMULATED
+// half is the panel's slider, and MAX is what keeps the two honest together: a slider at IV must not
+// pull a spell the log has watched you cast at VIII back down to IV.
+//
+// The arithmetic itself is not here and is not the item engine's either - `shared/spellScale.ts`
+// holds it, fitted to the owner's own log, and its header carries the measurement and the two
+// places the numbers this file prints will read LOW for a levelled spell.
+//
 // Pure, node-tested (tests/bestSpells.test.mts), RELATIVE value imports — the mobSearch precedent.
 
+import { aeHits, aeMaxTargets, aoeAssumptionLabel, isAeTargetType } from './aoeSpells'
 import type { ClassAbbr } from './classCombo'
 import { comboClassSet, type ComboClasses, type LevelUnlockData, type UnlockSpell } from './levelUnlocks'
 import { spellMetricsAt, type SpellMetrics } from './spellMetrics'
+import { observedRankRow, type ObservedSpellRanksSnap } from './spellRanks'
+import { effectiveSpellRank, normalizeSpellRank } from './spellScale'
 
-/** Which of the seven numbers a table is ranked on. */
+// ── AND A FIFTH TAB THAT POINTS AT A PACK (JOS-449, owner ask 2026-08-23) ──────────────────────
+//
+// "lets include rain spells in DD by default. lets also have a separate AOE tab that assumes max
+// target count."
+//
+// TWO TABS BECAUSE THERE ARE TWO QUESTIONS, and one table has never been able to answer both. The
+// DD tab is what a spell does to the mob in front of you; AOE is what it does to the pull you just
+// gathered. Every other tab here is a PARTITION of the corpus on a flag the metrics already state —
+// this one is the same corpus READ AGAIN, at a different hit count, which is why it is the one tab
+// whose rows are built by a second fold rather than filtered out of the first.
+//
+// THE RAINS ARE WHAT MADE IT NECESSARY. The wiki's effect line for a rain states ONE WAVE, so
+// `Frost Storm` read 512 damage and ranked ~30th in a wizard's DD table at 50 when it is really
+// three waves of 512 and one of the best nukes he can buy. `src/main/data/rainSpells.ts` carries
+// the roster and the three instruments behind it; `shared/aoeSpells.ts` carries the arithmetic and
+// the target-cap assumption. Neither is re-decided here: a row arrives with `waves` and
+// `aeMaxTargets` already resolved main-side, exactly like `recastMs`.
+//
+// AND THE ASSUMPTION IS VISIBLE (owner ruling). `BestSpells.aoeTargets` is the marker the panel
+// prints — computed from the rows actually in force, not from the constant, so a reader whose
+// client states a spell its own cap sees the count that was really used.
+//
+// A SPELL CAN THEREFORE BE IN THREE TABS: `Frost Storm` is a DD row at 1,536 and an AOE row at
+// 2,048, and a hypothetical area DoT would be a DoT row and an AOE row. That is not double-counting
+// — it is the same spell answering two different questions, the way a spell that damages and heals
+// has always been in one tab of each side.
+
+/** Which of the eight numbers a table is ranked on. `hits` draws on the AOE tab alone. */
 export type BestSpellColumn =
   | 'dps'
   | 'damage'
@@ -51,29 +114,81 @@ export type BestSpellColumn =
   | 'heal'
   | 'healPerMana'
   | 'mana'
+  | 'hits'
 
-/** The two answers the owner asked for: best damage spells, best healing spells. */
-export type BestSpellSide = 'damage' | 'heal'
+/** The four answers the owner asked for in JOS-448, plus JOS-449's area reading. */
+export type BestSpellTab = 'dd' | 'dot' | 'aoe' | 'heal' | 'hot'
 
 /**
- * THE COLUMNS EACH SIDE DRAWS, and why there are two lists rather than one seven-wide table.
+ * The tabs, in draw order. The one vocabulary: sorts, columns and `bestSpellsAt` all key on it.
+ *
+ * AOE SITS BETWEEN DoT AND Heal, with the other damage tabs rather than at the end: the reader
+ * comparing a nuke against a rain against a pack pull is doing one job, and the healing pair is a
+ * different one. It is last of the three so the two single-target answers stay adjacent.
+ */
+export const TAB_ORDER: readonly BestSpellTab[] = ['dd', 'dot', 'aoe', 'heal', 'hot']
+
+/** Tab labels, single-sourced so a test can pin the words. Game spellings, no em dashes. */
+export const TAB_LABEL: Record<BestSpellTab, string> = {
+  dd: 'DD',
+  dot: 'DoT',
+  aoe: 'AOE',
+  heal: 'Heal',
+  hot: 'HoT'
+}
+
+/** Which SIDE of the metrics a tab reads. AOE is a damage tab; there is no area healing reading. */
+export const TAB_SIDE: Record<BestSpellTab, 'damage' | 'heal'> = {
+  dd: 'damage',
+  dot: 'damage',
+  aoe: 'damage',
+  heal: 'heal',
+  hot: 'heal'
+}
+
+/**
+ * THE COLUMNS EACH TAB DRAWS, and why there are two lists rather than one seven-wide table.
  *
  * The readout lives in the Leveling tab's RIGHT column, which is a third of the row at `lg` and has
  * a 260px floor at the app's own minimum width. Seven numeric columns there is ~30px each, which is
  * not a table anybody can read. Every one of the seven is still present and still sortable — split
- * across the two sides, each holding the four that mean something for it. `mana` appears in both
- * because "what does this cost" is the same question on either side.
+ * across the two SIDES, each holding the four that mean something for it. `mana` appears in both
+ * because "what does this cost" is the same question either way.
+ *
+ * The four tabs are two per side, so the column set is the SIDE's: DD and DoT draw the damage four,
+ * Heal and HoT the healing four. Splitting the columns further per tab would make the DoT table a
+ * different shape from the DD table for no gain, and the tabs are already the thing that separates
+ * them.
  *
  * The RANK column is the side's headline (`dps` / `hps`) and is the default sort, which is the
  * owner's ask read literally: best damage spells by dps, best healing by hps.
  */
-export const SIDE_COLUMNS: Record<BestSpellSide, readonly BestSpellColumn[]> = {
+export const SIDE_COLUMNS: Record<'damage' | 'heal', readonly BestSpellColumn[]> = {
   damage: ['dps', 'damage', 'mana', 'damagePerMana'],
   heal: ['hps', 'heal', 'mana', 'healPerMana']
 }
 
-/** The column a side opens on. */
-export const SIDE_RANK_COLUMN: Record<BestSpellSide, BestSpellColumn> = { damage: 'dps', heal: 'hps' }
+/**
+ * THE AOE TAB'S FIVE (owner ask 2026-08-23: "we need another column that talks about hits
+ * simulated - so 8 for supernova, 4 for rain"). `hits` sits beside `dmg` because it is the number
+ * `dmg` was multiplied by, and only THIS tab draws it: on the single-target tabs the count is 3
+ * for a rain and 1 for everything else, which the wave arithmetic already says without a column.
+ */
+const AOE_COLUMNS: readonly BestSpellColumn[] = ['dps', 'damage', 'hits', 'mana', 'damagePerMana']
+
+/** The columns one tab draws: its side's — plus the hit count on the area reading alone. */
+export function tabColumns(tab: BestSpellTab): readonly BestSpellColumn[] {
+  return tab === 'aoe' ? AOE_COLUMNS : SIDE_COLUMNS[TAB_SIDE[tab]]
+}
+
+/** The column a tab opens on. */
+export const TAB_RANK_COLUMN: Record<BestSpellTab, BestSpellColumn> = {
+  dd: 'dps',
+  dot: 'dps',
+  aoe: 'dps',
+  heal: 'hps',
+  hot: 'hps'
+}
 
 /** Header text, single-sourced so a test can pin the words. No em dashes anywhere near a player. */
 export const COLUMN_LABEL: Record<BestSpellColumn, string> = {
@@ -83,7 +198,8 @@ export const COLUMN_LABEL: Record<BestSpellColumn, string> = {
   hps: 'hps',
   heal: 'heal',
   healPerMana: 'heal/mana',
-  mana: 'mana'
+  mana: 'mana',
+  hits: 'hits'
 }
 
 /** The longer sentence behind a header, for the tooltip. Stated once, beside the label. */
@@ -94,7 +210,8 @@ export const COLUMN_TITLE: Record<BestSpellColumn, string> = {
   hps: 'sustained healing per second over one casting cycle: the cast plus the longer of the duration and the re-use timer',
   heal: 'total base healing at this level, every tick included',
   healPerMana: 'total healing divided by the mana it costs',
-  mana: 'what the spell costs to cast'
+  mana: 'what the spell costs to cast',
+  hits: 'how many times one cast lands at the assumed target count: the number the damage total was multiplied by'
 }
 
 /** One ranked spell. `metrics` is read AT THE VIEWED LEVEL - the whole point of the file. */
@@ -109,10 +226,55 @@ export interface BestSpellRow {
   metrics: SpellMetrics
   /** The wiki badges this spell's page out of era. `false` is a real answer here; absent is not. */
   outOfEra: boolean
+  /**
+   * The mote rank `metrics` was evaluated at, 0..10 - `max(observed, simulated)` (JOS-447). 0 is the
+   * base spell, and it is what every row reads before anybody touches the slider.
+   */
+  rank: number
+  /** The rank the LOG has actually seen this line at, when it has seen one above base. 0 otherwise. */
+  observedRank: number
+  /**
+   * THE TARGET COUNT THIS ROW'S FIGURES ASSUME (JOS-449). 1 on every tab but AOE, where it is the
+   * spell's own cap or `DEFAULT_AE_MAX_TARGETS`.
+   *
+   * On the row rather than on the table because the table is allowed to be MIXED: a reader with a
+   * client install gets 4 for a targeted AE and 8 for a PB AE in the same list, and the marker over
+   * it (`BestSpells.aoeTargets`) is computed from these.
+   */
+  targets: number
+  /**
+   * HOW MANY TIMES ONE CAST LANDS in this reading — the number the damage total was multiplied by,
+   * and the `hits` column's cell (owner ask 2026-08-23). Differs from `targets` exactly where the
+   * mechanics are odd: a rain over a 4-target pack is 4 hits (the cap), the same rain on one mob is
+   * 3 (its waves), Supernova over its 8 is 8. Computed by `spellHitsFor`, the same call the metrics
+   * divide by, so the printed count can never drift from the arithmetic.
+   */
+  hits: number
 }
 
-/** One side of the readout, split the way `UnlockList` splits a level list. */
-export interface BestSpellsSide {
+/**
+ * THE QUESTION THE READOUT IS BEING ASKED, beyond the level: how to sort each of the four tables,
+ * and what to assume about mote ranks.
+ *
+ * One object rather than three parameters because the repo's factoring rule caps a function at
+ * four and `bestSpellsAt` already spends three on the data, the loadout and the level. They belong
+ * together anyway: all three are the READER's question, where the first three arguments are the
+ * world. Only `sorts` is required; a view with no rank fields is the base reading this file gave
+ * before JOS-447 existed, byte for byte.
+ */
+export interface BestSpellsView {
+  sorts: Record<BestSpellTab, BestSpellSort>
+  /** JOS-446's observed-rank map, joined by spell line key. Null before hydration, which is base. */
+  observed?: ObservedSpellRanksSnap | null
+  /**
+   * The panel's simulate slider, 0..10. Every row is lifted to AT LEAST this rank; a row already
+   * above it keeps its own (`effectiveSpellRank`), which is the owner's ask read literally.
+   */
+  simulate?: number
+}
+
+/** One tab's table, split the way `UnlockList` splits a level list. */
+export interface BestSpellsTable {
   /** in-era and unknown, already sorted - what the table draws. */
   shown: BestSpellRow[]
   /** positively out of era, same sort - what the disclosure holds. */
@@ -133,15 +295,37 @@ export interface BestSpells {
   classes: ClassAbbr[]
   /** true when the loadout was only narrowed: the rows are an UPPER BOUND, like every other join */
   ambiguous: boolean
-  damage: BestSpellsSide
-  heal: BestSpellsSide
+  /** One table per tab, always all five - an empty tab is an honest answer, never a missing one. */
+  tabs: Record<BestSpellTab, BestSpellsTable>
+  /**
+   * THE AOE TAB'S VISIBLE ASSUMPTION (JOS-449), already worded: `x4 targets`, or the range where a
+   * client install gave two different caps to two rows. The panel prints it and decides nothing.
+   */
+  aoeTargets: string
 }
 
-const EMPTY_SIDE: BestSpellsSide = { shown: [], outOfEra: [] }
+const emptyTables = (): Record<BestSpellTab, BestSpellsTable> => ({
+  dd: { shown: [], outOfEra: [] },
+  dot: { shown: [], outOfEra: [] },
+  aoe: { shown: [], outOfEra: [] },
+  heal: { shown: [], outOfEra: [] },
+  hot: { shown: [], outOfEra: [] }
+})
 
-/** The default sort for a side: its own rank column, best first. */
-export function defaultSort(side: BestSpellSide): BestSpellSort {
-  return { column: SIDE_RANK_COLUMN[side], desc: true }
+/** The default sort for a tab: its own rank column, best first. */
+export function defaultSort(tab: BestSpellTab): BestSpellSort {
+  return { column: TAB_RANK_COLUMN[tab], desc: true }
+}
+
+/** All five defaults at once - the state a freshly mounted panel opens with. */
+export function defaultSorts(): Record<BestSpellTab, BestSpellSort> {
+  return {
+    dd: defaultSort('dd'),
+    dot: defaultSort('dot'),
+    aoe: defaultSort('aoe'),
+    heal: defaultSort('heal'),
+    hot: defaultSort('hot')
+  }
 }
 
 /**
@@ -152,6 +336,7 @@ export function defaultSort(side: BestSpellSide): BestSpellSort {
  */
 export function columnValue(row: BestSpellRow, column: BestSpellColumn): number | null {
   if (column === 'mana') return row.mana
+  if (column === 'hits') return row.hits
   return row.metrics[column] ?? null
 }
 
@@ -163,7 +348,23 @@ export function columnValue(row: BestSpellRow, column: BestSpellColumn): number 
  * an unlock row at the gain level the same arithmetic rather than two derivations that agree today.
  * A spell whose lines never crossed the wire simply has no figures and no row.
  */
-export function spellMetricsForLevel(spell: UnlockSpell, level: number): SpellMetrics | undefined {
+/**
+ * HOW MANY TIMES ONE CAST LANDS at a target count: the waves main resolved, against however many
+ * targets the reading asks about, under the spell's cap. ONE function because two readers need the
+ * same number — the metrics divide by it and the `hits` COLUMN prints it (owner ask 2026-08-23:
+ * "we need another column that talks about hits simulated - so 8 for supernova, 4 for rain") — and
+ * two expressions would let the printed count drift from the one the figures used.
+ */
+export function spellHitsFor(spell: UnlockSpell, targets: number): number {
+  return aeHits(spell.waves ?? 1, targets, aeMaxTargets(spell.aeMaxTargets))
+}
+
+export function spellMetricsForLevel(
+  spell: UnlockSpell,
+  level: number,
+  rank = 0,
+  targets = 1
+): SpellMetrics | undefined {
   const input = {
     effects: spell.hpLines,
     mana: spell.mana,
@@ -172,16 +373,35 @@ export function spellMetricsForLevel(spell: UnlockSpell, level: number): SpellMe
     // `writeFigures`. Passing it as the input field means `withRecast` never re-asks the client.
     recastMs: spell.recastMs,
     durationMs: spell.durationMs,
-    targetType: spell.targetType
+    targetType: spell.targetType,
+    // The mote rank rides the same input for the same reason: `spellMetricsAt` resolves it once and
+    // both of its folds scale by that one number (JOS-447).
+    rank,
+    // AND HOW MANY TIMES THE CAST LANDS (JOS-449): `targets` 1 gives a rain its three waves and
+    // every other spell the single hit it has always had.
+    hits: spellHitsFor(spell, targets)
   }
   return spellMetricsAt(input, level, spell.clientHp)
 }
 
 /**
+ * The target count one AOE row's figures assume: the spell's own client cap, or the default.
+ *
+ * EXPORTED for the search fold next door (JOS-450), which reads the same corpus at the same
+ * assumption when the AOE tab is the one asking.
+ */
+export function targetsFor(spell: UnlockSpell): number {
+  return aeMaxTargets(spell.aeMaxTargets)
+}
+
+/**
  * The loadout classes that have this spell at or below `level`, and the level it first became
  * theirs. Null when nobody in the loadout owns it yet - the row does not exist at this level.
+ *
+ * EXPORTED since JOS-450: a search result asks the same question of a spell nobody in the loadout
+ * owns, and "is this one of mine yet" must have exactly one answer on this tab.
  */
-function ownedBy(
+export function ownedBy(
   spell: UnlockSpell,
   want: ReadonlySet<string>,
   level: number
@@ -199,6 +419,17 @@ function ownedBy(
   }
 }
 
+/**
+ * THE MANA A ROW PRINTS: the catalog's figure, or null where the page states none.
+ *
+ * NEVER 0 AS A STAND-IN, and that is the whole of the rule - a `dmg/mana` ranking handed a zero
+ * cost would crown a spell whose price the wiki simply did not record. One function since JOS-450,
+ * because the search fold builds rows of the same shape and a second ternary is a second answer.
+ */
+export function catalogMana(spell: UnlockSpell): number | null {
+  return typeof spell.mana === 'number' && spell.mana > 0 ? spell.mana : null
+}
+
 /** A duplicate wiki page for a spell already in the fold: it can only widen the row, never add one. */
 function mergeOwned(row: BestSpellRow, owned: { classes: ClassAbbr[]; gainedAt: number }): void {
   const classes = new Set([...row.classes, ...owned.classes])
@@ -213,9 +444,20 @@ function mergeOwned(row: BestSpellRow, owned: { classes: ClassAbbr[]; gainedAt: 
  * duplicate page would put the same spell in the table two rows apart. The first record wins, and
  * a later record of the same name only widens the class list - it is the same spell.
  */
-function ownedRows(data: LevelUnlockData, want: ReadonlySet<string>, level: number): BestSpellRow[] {
+function ownedRows(
+  data: LevelUnlockData,
+  want: ReadonlySet<string>,
+  level: number,
+  fold: RowFold
+): BestSpellRow[] {
+  const view = fold.view
+  const simulate = normalizeSpellRank(view.simulate)
   const byName = new Map<string, BestSpellRow>()
   for (const spell of data.spells) {
+    // THE AREA READING IS A DIFFERENT CORPUS, not a filter applied later: a spell that hits one
+    // creature has no max-target figure at all, and giving it one would put every nuke in the game
+    // in a tab about pulls.
+    if (fold.area && !isAeTargetType(spell.targetType)) continue
     const owned = ownedBy(spell, want, level)
     if (!owned) continue
     const key = spell.name.toLowerCase()
@@ -224,18 +466,38 @@ function ownedRows(data: LevelUnlockData, want: ReadonlySet<string>, level: numb
       mergeOwned(seen, owned)
       continue
     }
-    const metrics = spellMetricsForLevel(spell, level)
+    // JOS-446's map is keyed by spell LINE, so the join is the display name and `observedRankRow`
+    // strips the numeral - the catalog spells ~1,800 of its rows with no numeral at all.
+    const observedRank = normalizeSpellRank(observedRankRow(view.observed, spell.name)?.rank)
+    const rank = effectiveSpellRank(observedRank, simulate)
+    const targets = fold.area ? targetsFor(spell) : 1
+    const metrics = spellMetricsForLevel(spell, level, rank, targets)
     if (!metrics) continue
     byName.set(key, {
       name: spell.name,
       gainedAt: owned.gainedAt,
       classes: owned.classes,
-      mana: typeof spell.mana === 'number' && spell.mana > 0 ? spell.mana : null,
+      mana: catalogMana(spell),
       metrics,
-      outOfEra: spell.outOfEra === true
+      outOfEra: spell.outOfEra === true,
+      rank,
+      observedRank,
+      targets,
+      hits: spellHitsFor(spell, targets)
     })
   }
   return [...byName.values()]
+}
+
+/**
+ * WHICH READING A FOLD IS TAKING. One object rather than a fifth parameter, for the repo's
+ * four-argument cap and because the two fields really are one thought: what question is being asked
+ * of the corpus.
+ */
+interface RowFold {
+  view: BestSpellsView
+  /** True for the AOE reading: AE-shaped spells only, each figured at its own max target count. */
+  area: boolean
 }
 
 /**
@@ -257,17 +519,53 @@ function compareRows(a: BestSpellRow, b: BestSpellRow, sort: BestSpellSort): num
   return a.name.localeCompare(b.name)
 }
 
-/** The same sort the table applies, exported so a caller can re-rank without rebuilding the rows. */
-export function sortBestSpells(rows: readonly BestSpellRow[], sort: BestSpellSort): BestSpellRow[] {
+/**
+ * The same sort the table applies, exported so a caller can re-rank without rebuilding the rows.
+ *
+ * GENERIC since JOS-450 so a WIDER row keeps its own type through the sort: a search result is a
+ * `BestSpellRow` plus its class-level chips, and a sort that handed back the narrow row would make
+ * the caller cast the chips back on.
+ */
+export function sortBestSpells<T extends BestSpellRow>(rows: readonly T[], sort: BestSpellSort): T[] {
   return [...rows].sort((a, b) => compareRows(a, b, sort))
 }
 
-/** One side's rows, split by the era rule and sorted. `has` says which figure puts a row here. */
-function sideOf(
+/**
+ * WHICH TAB A SPELL BELONGS IN, asked once per tab per row.
+ *
+ * The presence of the SIDE's total decides whether the row exists at all, and the side's over-time
+ * flag decides which of that side's two tabs holds it. The flag is read POSITIVELY on the tick
+ * tables and as "not true" on the instant ones, so a metrics record that states nothing lands in DD
+ * or Heal rather than vanishing between the two - the same reading `outOfEra` gets everywhere in
+ * this app (silence is not a verdict, law 1).
+ */
+const TAB_MEMBER: Record<BestSpellTab, (m: SpellMetrics) => boolean> = {
+  dd: (m) => m.damage !== undefined && m.dot !== true,
+  dot: (m) => m.damage !== undefined && m.dot === true,
+  // AOE IS NOT SPLIT ON THE OVER-TIME FLAG, and that is deliberate rather than an oversight: the
+  // shape test that puts a row in this tab has already happened (`ownedRows` builds a different
+  // corpus for it), and splitting eleven area spells into two tabs of five would spend a tab to
+  // separate lists nobody reads apart. The row still marks itself `over Ns` in its tooltip.
+  aoe: (m) => m.damage !== undefined,
+  heal: (m) => m.heal !== undefined && m.hot !== true,
+  hot: (m) => m.heal !== undefined && m.hot === true
+}
+
+/**
+ * Does one metrics record belong in one tab? The membership table above, as the one function two
+ * folds ask (JOS-450 added the second: the whole-catalog search answers on the tab in front of the
+ * reader, and it must place a row exactly where the ranked table would have).
+ */
+export function spellInTab(tab: BestSpellTab, metrics: SpellMetrics): boolean {
+  return TAB_MEMBER[tab](metrics)
+}
+
+/** One tab's rows, split by the era rule and sorted. `has` says which figure puts a row here. */
+function tableOf(
   rows: readonly BestSpellRow[],
   has: (m: SpellMetrics) => boolean,
   sort: BestSpellSort
-): BestSpellsSide {
+): BestSpellsTable {
   const shown: BestSpellRow[] = []
   const outOfEra: BestSpellRow[] = []
   for (const row of rows) {
@@ -278,28 +576,39 @@ function sideOf(
 }
 
 /**
- * THE WHOLE READOUT. Pure over the dataset, the loadout, the level and the two sorts - so the panel
+ * THE WHOLE READOUT. Pure over the dataset, the loadout, the level and the four sorts - so the panel
  * re-ranks by calling this again and nothing is cached that could disagree with what is drawn.
  *
- * A spell that both damages and heals appears on BOTH sides, which is the honest answer: it really
- * is a candidate for either job. A lifetap appears on the damage side only, because `spellMetricsAt`
- * already refuses to read the caster's own recovery as healing (its own header states why).
+ * A spell that both damages and heals appears in one DAMAGE tab AND one HEALING tab, which is the
+ * honest answer: it really is a candidate for either job. It can never be in both tabs of one side,
+ * because a side's over-time flag is one boolean. A lifetap reaches only the damage tabs, because
+ * `spellMetricsAt` already refuses to read the caster's own recovery as healing (its header says
+ * why).
  */
 export function bestSpellsAt(
   data: LevelUnlockData,
   combo: ComboClasses,
   level: number,
-  sorts: Record<BestSpellSide, BestSpellSort>
+  view: BestSpellsView
 ): BestSpells {
   const classes = comboClassSet(combo)
   const base = { level, classes, ambiguous: combo.ambiguous }
   if (classes.length === 0 || !Number.isFinite(level)) {
-    return { ...base, classes: [], damage: EMPTY_SIDE, heal: EMPTY_SIDE }
+    return { ...base, classes: [], tabs: emptyTables(), aoeTargets: aoeAssumptionLabel([]) }
   }
-  const rows = ownedRows(data, new Set<string>(classes), level)
-  return {
-    ...base,
-    damage: sideOf(rows, (m) => m.damage !== undefined, sorts.damage),
-    heal: sideOf(rows, (m) => m.heal !== undefined, sorts.heal)
+  const want = new Set<string>(classes)
+  const rows = ownedRows(data, want, level, { view, area: false })
+  // THE SECOND FOLD (JOS-449), over the AE-shaped spells only. It costs what the first costs on
+  // ~11% of the corpus, and it is a second fold rather than a second metrics field on one row
+  // because everything downstream - `columnValue`, `compareRows`, the panel's cells - then reads a
+  // row's figures the same way whichever tab drew it.
+  const areaRows = ownedRows(data, want, level, { view, area: true })
+  const tabs = emptyTables()
+  for (const tab of TAB_ORDER) {
+    tabs[tab] = tableOf(tab === 'aoe' ? areaRows : rows, TAB_MEMBER[tab], view.sorts[tab])
   }
+  const aoeTargets = aoeAssumptionLabel(
+    [...tabs.aoe.shown, ...tabs.aoe.outOfEra].map((r) => r.targets)
+  )
+  return { ...base, tabs, aoeTargets }
 }

@@ -16,9 +16,20 @@
 //   0    spell id                       1    name
 //   8    cast time, ms                  10   recast (re-use) time, ms (JOS-444)
 //   11   buff duration formula (JOS-396) 12  buff duration
+//   14   mana (JOS-451)
 //   29   resist type (see axisFromResistType)
 //   30   target type                    36..51  class levels, WAR..BER (255 = cannot use)
-//   78   resist adjust                  172  effect slots, `$`-separated
+//   78   resist adjust                  143  aemaxtargets (JOS-449)
+//   172  effect slots, `$`-separated
+//
+// FIELD 14 IS THE MANA COST, verified the way 10 and 143 were — against the committed catalog rather
+// than against a struct listing (owner's install, 2026-08-23). Over the 1,873 catalog spells that
+// join a client row it agrees EXACTLY on 1,787 of them (95.4%), 553 of those on a shared zero and
+// 1,234 on a shared positive number: Complete Heal 350, Odium 409, Garrison's Mighty Mana Shock 105,
+// Ethereal Cleansing 150, Denon's Desperate Dirge 800. Of the 86 that disagree, 8 are the wiki
+// stating no mana where the client states one (every last one an NPC-only or unlearnable row), 6 the
+// reverse, and 72 two positive numbers that differ — a re-tune, which is a catalog question and not
+// this file's.
 //
 // FIELD 10 IS THE RECAST AND FIELD 9 IS NOT, which is the only trap in that line and is measured
 // rather than reasoned (owner's install, 2026-08-22). Field 9 is the RECOVERY time — the cooldown
@@ -46,6 +57,24 @@
 // EFFECT IDS THIS FILE CARES ABOUT: 0 hitpoints (the damage slot, which decides fixed vs
 // variable), 46 fire / 47 cold / 48 poison / 49 disease / 50 magic / 111 all (the tash and malo
 // family), 22 charm and 31 mesmerize (the two that carry a hard level cap).
+//
+// AND TWO MORE EFFECT IDS STATE A HITPOINT MAGNITUDE (JOS-451), which the FIGURES list `hp` reads
+// and the resist estimator's `hpSlot` deliberately does not:
+//
+//   100  heal over time. Ethereal Cleansing (3683) is `1|100|10|0|103|100` and its wiki page says
+//        `Increase Hitpoints by 10 per tick`; Celestial Remedy, Celestial Health, Celestial
+//        Cleansing, Celestial Healing and Primal Remedy all pair an effect-100 slot with a
+//        hitpoint line on the page. It is the HoT spelling, and effect 0 is not used for one.
+//   334  the bard's pulsing hitpoint effect. Five wiki pages name the magnitude of a 334 slot as a
+//        hitpoint change and nothing else on the row states one: Chords of Dissonance
+//        (`334|-2|109|0`, page `Decrease Hitpoints by 2 per tick`), Denon's Disruptive Discord
+//        (`-4`), Denon's Bereavement (`-30`), Selo's Chords of Cessation (`-2`) and Song of
+//        Midnight (`-1`).
+//
+// `hpSlot` STAYS EFFECT 0 ALONE on purpose. It answers one question for the resist estimator — is
+// this spell's damage a fixed number — and widening it would change what the ledger, the fold and
+// the con card are reading, for no gain: neither a HoT nor a bard pulse is a spell the estimator
+// fits a resist from.
 
 import { axisFromResistType, type ResistAxis, type ResistDebuffSlot, type SpellHpSlot, type SpellResistInfo, type SpellResistTable } from '../../shared/resistTypes'
 import { spellCanonKey } from '../log/parseCommon'
@@ -56,6 +85,8 @@ const F_CAST_MS = 8
 const F_RECAST_MS = 10
 const F_DURATION_FORMULA = 11
 const F_DURATION = 12
+/** Mana (JOS-451) — see `manaField` and the header for the measurement behind the index. */
+const F_MANA = 14
 const F_RESIST_TYPE = 29
 const F_TARGET_TYPE = 30
 const F_CLASS_FIRST = 36
@@ -63,12 +94,17 @@ const F_CLASS_COUNT = 16
 /** Index of the bard among the sixteen class-level fields (WAR CLR PAL RNG SHD DRU MNK BRD …). */
 const CLASS_BARD = 7
 const F_RESIST_ADJ = 78
+/** `aemaxtargets` (JOS-449) — see `aeTargetsField` for the measurement behind the index. */
+const F_AE_MAX_TARGETS = 143
 const F_SLOTS = 172
 
 const EFFECT_HITPOINTS = 0
 const EFFECT_CHARM = 22
 const EFFECT_MEZ = 31
 const EFFECT_ALL_RESISTS = 111
+
+/** Every effect id that states a HITPOINT magnitude, for the figures list. See the header. */
+const HP_EFFECTS: ReadonlySet<number> = new Set([EFFECT_HITPOINTS, 100, 334])
 
 const RESIST_EFFECTS: Record<number, ResistAxis> = {
   46: 'fire',
@@ -141,10 +177,11 @@ function hpSlotOf(slots: readonly Slot[]): SpellResistInfo['hpSlot'] {
 }
 
 /**
- * EVERY effect-0 slot, in file order, marked per-tick or not (JOS-396).
+ * EVERY hitpoint slot, in file order, marked per-tick or not (JOS-396; the effect set widened to
+ * `HP_EFFECTS` by JOS-451).
  *
  * `perTick` is one question of the ROW rather than of the slot — does this spell have a duration at
- * all — and it is written onto each slot because that is where the reader needs it: an effect-0 slot
+ * all — and it is written onto each slot because that is where the reader needs it: a hitpoint slot
  * on a duration spell is a DoT/HoT/regen line that lands every tick, and on an instant spell it is
  * the whole hit. Odium's `2|0|-217|0|103|325` with duration formula 7 is the first kind; Bolt of
  * Karana's `1|0|-200|0|100|200` with formula 0 is the second.
@@ -152,7 +189,7 @@ function hpSlotOf(slots: readonly Slot[]): SpellResistInfo['hpSlot'] {
 function hpSlotsOf(slots: readonly Slot[], perTick: boolean): SpellHpSlot[] | undefined {
   const out: SpellHpSlot[] = []
   for (const s of slots) {
-    if (s.effect === EFFECT_HITPOINTS) out.push({ base: s.base, max: s.max, calc: s.calc, perTick })
+    if (HP_EFFECTS.has(s.effect)) out.push({ base: s.base, max: s.max, calc: s.calc, perTick })
   }
   return out.length > 0 ? out : undefined
 }
@@ -183,6 +220,36 @@ function recastField(f: readonly string[]): { recastMs?: number } {
   return ms > 0 ? { recastMs: ms } : {}
 }
 
+/**
+ * Field 143, `aemaxtargets`, present only when POSITIVE (JOS-449) — a spreadable fragment for
+ * `recastField`'s reason, and absent-means-nothing for the same reason too: 71,864 of the file's
+ * 73,971 rows read 0 there, which is what a single-target spell says.
+ *
+ * MEASURED against the owner's install (2026-08-23) rather than taken from a struct listing: the
+ * column reads 4 on every one of the 23 rains, 4 on 45 of the 46 Targeted AE rows in the committed
+ * catalog, 8 on a PB AE and 0 on every `Single` row. `Denon's Desperate Dirge` is the one targeted
+ * AE that disagrees with its own page — the client says 5 where the wiki prose says "up to 8
+ * enemies" — and the client wins, on the same grounds `spells_us.txt` wins on names.
+ */
+function aeTargetsField(f: readonly string[]): { aeMaxTargets?: number } {
+  const n = Number(f[F_AE_MAX_TARGETS]) || 0
+  return n > 0 ? { aeMaxTargets: n } : {}
+}
+
+/**
+ * Field 14, the mana cost, present only when POSITIVE (JOS-451) — a spreadable fragment for
+ * `recastField`'s reason, and absent-means-nothing for `aeTargetsField`'s: a 0 in that column is
+ * what a bard song and every other free ability says, and the catalog already says it too.
+ *
+ * It answers exactly one question, and narrowly: a spell whose PAGE states no mana or states 0
+ * while the client states a positive one (`resolveSpellMana`, shared/spellMetrics.ts). Where both
+ * state a positive number the wiki still wins, which is the standing law and not re-opened here.
+ */
+function manaField(f: readonly string[]): { mana?: number } {
+  const n = Number(f[F_MANA]) || 0
+  return n > 0 ? { mana: n } : {}
+}
+
 function rowInfo(f: readonly string[]): SpellResistInfo {
   const slots = parseSlots(f[F_SLOTS])
   const { bardOnly } = classLevels(f)
@@ -191,6 +258,8 @@ function rowInfo(f: readonly string[]): SpellResistInfo {
     resistAdj: Number(f[F_RESIST_ADJ]) || 0,
     castMs: Number(f[F_CAST_MS]) || 0,
     ...recastField(f),
+    ...aeTargetsField(f),
+    ...manaField(f),
     targetType: Number(f[F_TARGET_TYPE]) || 0,
   }
   const hp = hpSlotOf(slots)

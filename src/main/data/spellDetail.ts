@@ -20,8 +20,19 @@ import { parseSpellClassLevels, parseSpellRank, spellLineKey } from '../../share
 import type { SpellResistTable } from '../../shared/resistTypes'
 import type { SpellEntry } from '../../shared/types'
 import { clientHpFor } from './clientSpellHp'
+import { rainWaves } from './rainSpells'
+import { aeHits, aeMaxTargets } from '../../shared/aoeSpells'
 import { spellEffectClasses } from './spellEffectClass'
+import { normalizeSpellRank } from '../../shared/spellScale'
 import { spellNature, type SpellDb } from './spellDb'
+
+/** The outside witnesses the join consults when the caller has them. Both optional, both default off. */
+export interface SpellDetailSources {
+  /** the parsed `spells_us.txt` table, or null/absent - a FALLBACK inside `spellMetricsAt`. */
+  client?: SpellResistTable | null
+  /** the mote rank this character has been observed holding for the line (JOS-446). */
+  rank?: number
+}
 
 /** The record for a name no row of the DB carries. `found: false` is an answer, not an error. */
 function notFound(queried: string): SpellDetail {
@@ -115,12 +126,17 @@ function dbRowFor(db: SpellDb, name: string): SpellEntry | undefined {
  * `observedRanks` is the caller's slice of `AlertsSnap.spellLastCast` - display names, rank intact.
  * An empty list is normal (a fresh character, or the alerts module not yet warm) and simply leaves
  * the lineage to whatever the DB states.
+ *
+ * `sources` carries the two things that are NOT the DB and not the lineage: the client's spell
+ * table (the hitpoint fallback) and the mote rank this character holds. They are one object rather
+ * than two more parameters because the repo's factoring rule caps a function at four, and because
+ * both are the same kind of thing - an outside witness the join consults if it is there.
  */
 export function buildSpellDetail(
   db: SpellDb,
   queried: string,
   observedRanks: readonly string[] = [],
-  client: SpellResistTable | null = null
+  sources: SpellDetailSources = {}
 ): SpellDetail {
   const name = queried.trim()
   if (!name) return notFound(queried)
@@ -132,7 +148,7 @@ export function buildSpellDetail(
     name: entry.name,
     found: true,
     ...statedFields(entry),
-    ...worthFields(entry, classLevels, client),
+    ...worthFields(entry, classLevels, sources),
     nature: spellNature(entry.spellType),
     illusion: entry.illusion,
     classLevels,
@@ -157,15 +173,31 @@ export function buildSpellDetail(
  * finished) simply means the card behaves exactly as it did before this ticket — and because this
  * record is rebuilt on every invoke rather than cached, the next hover after the table resolves
  * carries the figures with no invalidation to arrange.
+ *
+ * AND A RAIN IS READ AT ITS WAVE TOTAL (JOS-449), on ONE target, which is the same reading the
+ * unlock row and the best-spells DD table take. The card is what the best-spells table's own
+ * tooltip prints, so a card saying `dmg 512` under a row saying `dmg 1536` would be the panel
+ * disagreeing with itself on hover. `src/main/data/rainSpells.ts` carries the roster and the
+ * evidence; the AOE reading is the leveling panel's and is not offered here, because a card has no
+ * place to state the assumption it would rest on.
  */
 function worthFields(
   e: SpellEntry,
   classLevels: readonly { level: number }[],
-  client: SpellResistTable | null
+  sources: SpellDetailSources
 ): Partial<SpellDetail> {
   const level = classLevels.length > 0 ? Math.min(...classLevels.map((c) => c.level)) : 1
-  const metrics = spellMetricsAt(e, level, clientHpFor(client, e.name))
-  return metrics ? { metrics, metricsLevel: level } : {}
+  const client = clientHpFor(sources.client ?? null, e.name)
+  const spell = { ...e, hits: aeHits(rainWaves(e.name), 1, aeMaxTargets(client?.aeMaxTargets)) }
+  const metrics = spellMetricsAt(spell, level, client)
+  if (!metrics) return {}
+  // AND THE SAME READING AT THE RANK THE PLAYER HOLDS (JOS-447). Second call rather than a second
+  // reader, so the two lines on the card cannot disagree about anything but the rank. Skipped
+  // entirely at base, where the two would be the same numbers printed twice.
+  const rank = normalizeSpellRank(sources.rank)
+  if (rank === 0) return { metrics, metricsLevel: level }
+  const atRank = spellMetricsAt({ ...spell, rank }, level, client)
+  return atRank ? { metrics, metricsLevel: level, metricsAtRank: atRank, metricsRank: rank } : { metrics, metricsLevel: level }
 }
 
 /**

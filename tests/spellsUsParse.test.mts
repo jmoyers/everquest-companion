@@ -51,6 +51,8 @@ function row(spec: {
   durationFormula?: number
   /** Field 12 — the cap the formula clamps to. */
   duration?: number
+  /** Field 14 — the mana cost (JOS-451). 0 means the spell is free. */
+  mana?: number
   resistType?: number
   targetType?: number
   resistAdj?: number
@@ -65,6 +67,7 @@ function row(spec: {
     recastMs: 0,
     durationFormula: 0,
     duration: 0,
+    mana: 0,
     resistType: 0,
     targetType: 0,
     resistAdj: 0,
@@ -80,6 +83,7 @@ function row(spec: {
   f[10] = String(s.recastMs)
   f[11] = String(s.durationFormula)
   f[12] = String(s.duration)
+  f[14] = String(s.mana)
   f[29] = String(s.resistType)
   f[30] = String(s.targetType)
   for (let i = 0; i < 16; i++) f[36 + i] = '255'
@@ -111,7 +115,7 @@ const SMITE = row({ id: 1234, name: 'Divine Might Strike', castMs: 0, resistType
 // JOS-396, verbatim from the owner's install 2026-08-16. THE TICKET'S CASE: the wiki's slot table
 // for Odium lists `Increase Curse Counter by 8` and no hitpoint line at all; the client carries
 // both, and slot 2 is the damage the shaman actually does.
-const ODIUM = row({ id: 4093, name: 'Odium', castMs: 3000, recovery: 1500, recastMs: 6000, durationFormula: 7, duration: 5, resistType: 1, targetType: 5, classes: { [SHM]: 43 }, slots: '1|116|8|0|100|0$2|0|-217|0|103|325' })
+const ODIUM = row({ id: 4093, name: 'Odium', castMs: 3000, recovery: 1500, recastMs: 6000, durationFormula: 7, duration: 5, mana: 409, resistType: 1, targetType: 5, classes: { [SHM]: 43 }, slots: '1|116|8|0|100|0$2|0|-217|0|103|325' })
 // A PERMANENT duration (formula 50) over a per-tick drain — the necromancer's Lich. The client
 // states a RATE and no length, which is a total nobody can compute; the fold refuses it, and the
 // parse's job is only to record the 50 faithfully so the fold can.
@@ -127,10 +131,15 @@ const DIVINE_CENSURE = row({ id: 14234, name: 'Divine Censure', castMs: 3000, re
 const GARRISON = row({ id: 2552, name: "Garrison's Mighty Mana Shock", castMs: 3000, recovery: 1500, recastMs: 1500, resistType: 1, targetType: 5, classes: { [WIZ]: 18 }, slots: '1|0|-200|0|105|333' })
 // The other half of the discrimination: field 9 says 1500 and field 10 says 0. Complete Heal has
 // NO re-use timer, and a parser reading field 9 would give it one.
-const COMPLETE_HEAL = row({ id: 1292, name: 'Complete Heal', castMs: 1000, recovery: 1500, recastMs: 0, durationFormula: 3, duration: 75, resistType: 0, targetType: 5, slots: '1|101|1|0|100|1' })
+const COMPLETE_HEAL = row({ id: 1292, name: 'Complete Heal', castMs: 1000, recovery: 1500, recastMs: 0, durationFormula: 3, duration: 75, mana: 350, resistType: 0, targetType: 5, slots: '1|101|1|0|100|1' })
+// JOS-451, verbatim from the owner's install 2026-08-23. THE TICKET'S CASE: the wiki's page for
+// this spell states `Increase Hitpoints by 10 per tick` and the client states a level curve whose
+// BASE is that 10 — plus two a level, capped at 100, four ticks. And the slot is EFFECT 100, the
+// heal-over-time spelling, which the effect-0-only reader could never see at all.
+const ETHEREAL_CLEANSING = row({ id: 3683, name: 'Ethereal Cleansing', castMs: 1500, recovery: 1500, recastMs: 30000, durationFormula: 3, duration: 4, mana: 150, resistType: 0, targetType: 51, classes: { [PAL]: 44 }, slots: '1|100|10|0|103|100' })
 
 const TABLE = parseSpellsUs(
-  [TASHANI, MALAISEMENT, MESMERIZATION, CHAOS_FLUX, CHAOS_FLUX_NPC, SMITING_STRIKE, SCORCHING_ARROW, SCORCHING_ARROW_IV, CHORDS, SMITE, ODIUM, LICH, DIVINE_CENSURE, GARRISON, COMPLETE_HEAL].join('\n') + '\n'
+  [TASHANI, MALAISEMENT, MESMERIZATION, CHAOS_FLUX, CHAOS_FLUX_NPC, SMITING_STRIKE, SCORCHING_ARROW, SCORCHING_ARROW_IV, CHORDS, SMITE, ODIUM, LICH, DIVINE_CENSURE, GARRISON, COMPLETE_HEAL, ETHEREAL_CLEANSING].join('\n') + '\n'
 )
 
 test('the axis comes from field 29, and the four unmodellable kinds come back null', () => {
@@ -262,6 +271,34 @@ test('JOS-396: a row with no hitpoint slot carries neither field', () => {
   assert.equal(TABLE['smiting strike'].hpDuration, undefined)
   assert.equal(TABLE.tashani.hp, undefined)
   assert.equal(TABLE.tashani.hpDuration, undefined)
+})
+
+test('JOS-451: the mana cost is FIELD 14, and a zero there is an absence', () => {
+  // Verified against the committed catalog rather than a struct listing: over the 1,873 catalog
+  // spells that join a client row, field 14 agrees exactly on 1,787 of them.
+  assert.equal(TABLE['complete heal'].mana, 350)
+  assert.equal(TABLE.odium.mana, 409)
+  assert.equal(TABLE['ethereal cleansing'].mana, 150)
+  // A bard song is free, and the file says so with a 0. Storing it would put a field on half the
+  // table to state what its absence states — the same rule field 10 and field 143 follow.
+  assert.equal(TABLE['chords of dissonance'].mana, undefined)
+  assert.equal(TABLE.tashani.mana, undefined)
+})
+
+test('JOS-451: a HITPOINT SLOT is effect 0, 100 or 334 — and `hpSlot` is still effect 0 alone', () => {
+  // Effect 100 is the heal-over-time spelling and effect 0 is not used for one. Ethereal Cleansing
+  // has NO effect-0 slot, so before this ticket the whole spell carried no client facts at all.
+  assert.deepEqual(TABLE['ethereal cleansing'].hp, [{ base: 10, max: 100, calc: 103, perTick: true }])
+  assert.deepEqual(TABLE['ethereal cleansing'].hpDuration, { formula: 3, value: 4 })
+  // Effect 334 is the bard's pulsing hitpoint effect: five wiki pages name a 334 slot's magnitude
+  // as a hitpoint change, and Chords of Dissonance is one of them (`Decrease Hitpoints by 2 per
+  // tick`, client `1|334|-2|0|109|0`).
+  assert.deepEqual(TABLE['chords of dissonance'].hp, [{ base: -2, max: 0, calc: 109, perTick: false }])
+  // AND THE RESIST ESTIMATOR'S READER IS UNTOUCHED. `hpSlot` answers one question — is this
+  // spell's damage a fixed number — and neither a HoT nor a bard pulse is a spell it fits from.
+  assert.equal(TABLE['ethereal cleansing'].hpSlot, undefined)
+  assert.equal(TABLE['chords of dissonance'].hpSlot, undefined)
+  assert.deepEqual(TABLE.odium.hpSlot, { base: -217, max: 325, calc: 103 })
 })
 
 test('a malformed row is skipped rather than half-read', () => {
