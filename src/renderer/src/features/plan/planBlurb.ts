@@ -33,7 +33,7 @@ const FOCUS_BLURB: Record<GearRole, string> = {
   dualwield:
     "Dual wield weighs melee damage: the weapon's damage per delay first, then ATK, STR, DEX and any haste you do not already have. Takes only one-handers, in both hands.",
   range:
-    "Ranged weighs fighting from the range slot: DEX first (the accuracy stat for bows and throwing), then the weapon's damage per delay, ATK and haste. Takes only bows and throwing weapons in the range slot; both hands stay open.",
+    "Ranged weighs fighting from the range slot: DEX first (the accuracy stat for bows and throwing), then the weapon's damage per delay, ATK, STR and haste. STR still counts - it feeds attack for every attack type - it just ranks below DEX here, where for a melee build it ranks above. Takes only bows and throwing weapons in the range slot; both hands stay open.",
   dd:
     'Caster DD weighs burst: your casting stat and the mana pool you walk in with, regen second, CHA only if you charm or mez. Any weapon.',
   dot:

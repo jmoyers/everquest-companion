@@ -33,6 +33,13 @@ test('every focus has a reading, opens with its own picker label, and says what 
   assert.match(planBlurb('dps2h', []), /damage bonus/)
   assert.doesNotMatch(planBlurb('dps1h', []), /damage bonus/)
   assert.match(planBlurb('range', []), /DEX first/)
+  // …AND IT SAYS STR IS STILL COUNTED (owner, 2026-08-22: "so STR isn't used in ranged at all?? confused").
+  // The weight was always 0.8 and the paragraph did not mention it, which read as zero. A reading that
+  // names the stats in rank order has to name the ones that rank LOW too, or its silence is a claim.
+  assert.match(planBlurb('range', []), /STR still counts/)
+  for (const melee of ['dps', 'dps1h', 'dps2h', 'dualwield'] as const) {
+    assert.match(planBlurb(melee, []), /STR/, `${melee} names STR too`)
+  }
 })
 
 test('the class sentence is the class gate in the player\'s words', () => {
