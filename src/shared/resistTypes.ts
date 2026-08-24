@@ -228,7 +228,8 @@ export interface ResistDebuffSlot {
 }
 
 /**
- * ONE EFFECT-0 (HITPOINT) SLOT, unevaluated (JOS-396).
+ * ONE HITPOINT SLOT, unevaluated (JOS-396; effect 0 alone until JOS-451 added 100 and 334 — the
+ * effect ids and the evidence for each are in spellsUsParse.ts's header).
  *
  * `base`, `max` and `calc` are the file's own three numbers and nothing has been done to them: the
  * magnitude at a level is `clientHpMagnitudeAt` in shared/spellMetrics.ts, which is where the
@@ -279,13 +280,35 @@ export interface SpellResistInfo {
    * spellsUsParse.ts, where both are measured.
    */
   recastMs?: number
+  /**
+   * THE MOST TARGETS ONE CAST CAN STRIKE, field 143 (`aemaxtargets`), present only when positive
+   * (JOS-449).
+   *
+   * Here for `recastMs`'s reason exactly: nothing else states it. The wiki says it in prose on a
+   * handful of pages and says nothing at all on most, while the client states it per spell for
+   * every area spell in the game — 4 on all 23 rains and on 45 of the 46 targeted AEs in the
+   * committed catalog, 8 on a PB AE. `shared/aoeSpells.ts` is what reads it, and it has a stated
+   * default for the reader who has no EverQuest install to read.
+   */
+  aeMaxTargets?: number
+  /**
+   * THE MANA COST, field 14, present only when POSITIVE (JOS-451).
+   *
+   * Here for `recastMs`'s reason and read under a rule that is narrower than either of its
+   * neighbours': it answers ONLY where the wiki's page states no mana at all or states a zero
+   * (`resolveSpellMana` in shared/spellMetrics.ts). Two positive numbers that disagree are a
+   * catalog question — the client's own column disagrees with the page on 72 of the 1,234 rows
+   * where both state one — and the standing law leaves those to the wiki.
+   */
+  mana?: number
   targetType: number
   /** Slot-1-through-N effect 0 (hitpoints), when the spell has one. Drives fixed-vs-variable. */
   hpSlot?: { base: number; max: number; calc: number }
   /**
-   * EVERY effect-0 slot, in file order, and the duration they run over (JOS-396).
+   * EVERY hitpoint slot, in file order, and the duration they run over (JOS-396). Effect 0, plus
+   * the HoT (100) and bard-pulse (334) spellings JOS-451 measured.
    *
-   * `hpSlot` above is the FIRST of these and stays exactly as it was: the resist estimator asks one
+   * `hpSlot` above is the first effect-0 one and stays exactly as it was: the resist estimator asks one
    * question of it ("is this spell's damage a fixed number?") and a shape change there would ripple
    * through the ledger, the fold and the con card for no gain. This is the second reader's shape —
    * the spell card's and the unlock row's, which need the whole list, the per-tick verdict and the

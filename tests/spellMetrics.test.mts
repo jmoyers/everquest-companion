@@ -67,12 +67,23 @@ function metrics(spell: SpellMetricsInput, level: number): SpellMetrics {
 }
 
 test('R1 the nine pinned shapes read to the right magnitude at a stated level', () => {
-  // 1. the bare constant (160 rows; Asp Venom Strike states exactly this)
+  // 1. the bare constant (160 rows; Asp Venom Strike states exactly this). `flat` is JOS-451's
+  //    marker for exactly this shape - one number, no level range - and it is the precondition of
+  //    the client-curve rule, so it is asserted on every shape below rather than only where it is
+  //    true.
   assert.deepEqual(parseHpLine('Decrease Hitpoints by 100', 1), {
     amount: 100,
     direction: 'down',
-    perTick: false
+    perTick: false,
+    flat: true
   })
+  assert.equal(read('Decrease Hitpoints by 1 (L1) to 51 (L100)', 50).flat, undefined, 'a ramp is not flat')
+  assert.equal(read('Decrease Hitpoints by 7 to 12', 1).flat, undefined, 'a range is not flat')
+  assert.equal(
+    read('Increase Hitpoints between 165 and 190 for two additional ticks.', 50).flat,
+    undefined,
+    'between/and is not flat'
+  )
 
   // 2. the two-point ramp (161 rows) — linear inside, clamped outside
   const ramp = 'Decrease Hitpoints by 1 (L1) to 51 (L100)'
@@ -87,7 +98,8 @@ test('R1 the nine pinned shapes read to the right magnitude at a stated level', 
   assert.deepEqual(parseHpLine('Decrease Hitpoints by 10 per tick', 40), {
     amount: 10,
     direction: 'down',
-    perTick: true
+    perTick: true,
+    flat: true
   })
 
   // 4. the per-tick ramp with the marker OUTSIDE the range clause (17 rows; Blood of Pain)
@@ -109,7 +121,8 @@ test('R1 the nine pinned shapes read to the right magnitude at a stated level', 
   assert.deepEqual(parseHpLine('Increase Hitpoints by 1 per tick', 10), {
     amount: 1,
     direction: 'up',
-    perTick: true
+    perTick: true,
+    flat: true
   })
 
   // 7. the increase-side per-tick ramp (Chloroplast)
@@ -147,6 +160,7 @@ test('R2 the casing and spelling variants the thirteen scrape passes left behind
     amount: 300,
     direction: 'up',
     perTick: false,
+    flat: true,
     statedTicks: 4
   })
   assert.equal(read('Increase Hitpoints by 5000 after three ticks.', 1).perTick, false)

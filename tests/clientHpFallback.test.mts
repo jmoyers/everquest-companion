@@ -28,6 +28,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SpellResistTable } from '../src/shared/resistTypes'
 import { spellMetricsAt, spellMetricsParts } from '../src/shared/spellMetrics'
+import { spellMetricsForLevel } from '../src/shared/bestSpells'
 import { clientHpFor } from '../src/main/data/clientSpellHp'
 import { buildLevelUnlocks, resetLevelUnlocksCache } from '../src/main/data/levelUnlocks'
 import { buildSpellDetail } from '../src/main/data/spellDetail'
@@ -104,7 +105,7 @@ test('C3 the CARD is the same numbers, from the same function, at the same level
   const db = loadSpellDb()
   assert.equal(buildSpellDetail(db, 'Odium').metrics, undefined, 'the report, on the card')
 
-  const card = buildSpellDetail(db, 'Odium', [], CLIENT)
+  const card = buildSpellDetail(db, 'Odium', [], { client: CLIENT })
   assert.equal(card.metricsLevel, 43, 'shaman 43 — the level the line becomes yours')
   assert.deepEqual(card.metrics, ODIUM_FIGURES)
   assert.deepEqual(spellMetricsParts(card.metrics ?? {}), ODIUM_PARTS)
@@ -153,7 +154,7 @@ test('C5 no spell that already had wiki figures moves — the wiki stays primary
 test('C6 the card is unchanged for every spell whose page states its own hitpoint line', () => {
   const db = loadSpellDb()
   for (const name of ['Superior Healing', 'Ice Comet', 'Anarchy', 'Clarity', 'Siphon']) {
-    assert.deepEqual(buildSpellDetail(db, name, [], CLIENT), buildSpellDetail(db, name), `${name} moved`)
+    assert.deepEqual(buildSpellDetail(db, name, [], { client: CLIENT }), buildSpellDetail(db, name), `${name} moved`)
   }
 })
 
@@ -185,4 +186,121 @@ test('C7 a client row reaches the reader on its recast alone, and the page still
   assert.equal(spellMetricsAt(page, 50)?.dps, 100, 'and without an install, the cast alone')
   // A page that states its own is untouched by the row beside it.
   assert.equal(spellMetricsAt({ ...page, recastMs: 1500 }, 50, facts)?.dps, 66.7)
+})
+
+// ── JOS-451 — THE THIRD READING ON THE SAME JOIN: the page's number was WRONG ──────────────────
+//
+// THE REPORT (owner, 2026-08-23): "HOTs seem broken, like ethereal cleansing". The paladin row read
+// `heal 40`. The wiki's page for the spell states `Increase Hitpoints by 10 per tick` and the
+// client's row 3683 states `1|100|10|0|103|100` — the same 10, plus two a level, capped at 100. The
+// page transcribed the BASE of a level curve and dropped the curve, so the app faithfully drew a
+// tenth of the spell.
+//
+// TWO DELIVERY CLAIMS ARE NEW HERE and neither is arithmetic (that is spellMetrics R17-R20):
+//
+//   5. THE CLIENT ROW HAS TO TRAVEL. A wiki-lined spell did not carry `clientHp` across the wire,
+//      because the only reason to carry it was a page that said nothing. The best-spells readout
+//      re-evaluates at the level being VIEWED, so without the row a paladin browsing at 50 would
+//      get the broken 40 back from the same dataset that shows 392 on the unlock card.
+//   6. THE ROW'S MANA COLUMN AND ITS `dmg/mana` COME FROM ONE RESOLUTION, main-side.
+//
+// The client row below is transcribed from spell 3683 of the owner's install on 2026-08-23.
+
+const ETHEREAL: SpellResistTable = {
+  'ethereal cleansing': {
+    axis: null,
+    resistAdj: 0,
+    castMs: 1500,
+    recastMs: 30_000,
+    mana: 150,
+    targetType: 51,
+    hp: [{ base: 10, max: 100, calc: 103, perTick: true }],
+    hpDuration: { formula: 3, value: 4 }
+  }
+}
+
+/** 10 + 2x44 = 98 a tick at the level a paladin gains it, four ticks, 150 mana, a 30s re-use timer. */
+const ETHEREAL_FIGURES = {
+  heal: 392,
+  healPerMana: 2.6,
+  hps: 12.4,
+  hot: true,
+  overSec: 24,
+  recastMs: 30_000,
+  clientCurve: true
+}
+
+test('C8 THE REPORT: the paladin heal-over-time reads the client curve, on the row and the card', () => {
+  resetLevelUnlocksCache()
+  try {
+    const before = buildLevelUnlocks(null).spells.find((s) => s.name === 'Ethereal Cleansing')
+    assert.equal(before?.metrics?.heal, 40, 'the defect, as the owner saw it')
+
+    resetLevelUnlocksCache()
+    const after = buildLevelUnlocks(ETHEREAL).spells.find((s) => s.name === 'Ethereal Cleansing')
+    assert.deepEqual(after?.metrics, ETHEREAL_FIGURES)
+    // CLAIM 5: the client row rides along even though the page states a hitpoint line, so a reader
+    // asking at ANOTHER level gets the curve rather than the transcribed base.
+    assert.deepEqual(after?.clientHp, ETHEREAL['ethereal cleansing'])
+    assert.deepEqual(after?.hpLines, ['Increase Hitpoints by 10 per tick'])
+    assert.ok(after)
+    // …and the re-evaluation the best-spells readout performs agrees: at 50 the cap binds at 100 a
+    // tick, which is the acceptance the ticket names. Without the row it would read 40 here.
+    assert.equal(spellMetricsForLevel(after, 50)?.heal, 400)
+    assert.equal(spellMetricsForLevel(after, 50)?.healPerMana, 2.7)
+
+    // The card is the same numbers from the same function, at the level the spell becomes yours.
+    const card = buildSpellDetail(loadSpellDb(), 'Ethereal Cleansing', [], { client: ETHEREAL })
+    assert.equal(card.metricsLevel, 44)
+    assert.deepEqual(card.metrics, ETHEREAL_FIGURES)
+    assert.deepEqual(spellMetricsParts(card.metrics ?? {}), [
+      'heal 392',
+      'hps 12',
+      '2.6 heal/mana',
+      'over 24s',
+      'recast 30s'
+    ])
+  } finally {
+    resetLevelUnlocksCache()
+  }
+})
+
+test('C9 and every other spell in the dataset is byte-identical', () => {
+  resetLevelUnlocksCache()
+  try {
+    const plain = buildLevelUnlocks(null).spells.map((s) => JSON.stringify(s))
+    resetLevelUnlocksCache()
+    const withClient = buildLevelUnlocks(ETHEREAL).spells
+    const moved = withClient.filter((s, i) => plain[i] !== JSON.stringify(s)).map((s) => s.name)
+    assert.deepEqual(moved, ['Ethereal Cleansing'])
+  } finally {
+    resetLevelUnlocksCache()
+  }
+})
+
+test('C10 the mana column is resolved main-side, once, and only over a stated zero', () => {
+  // `mana` is ABSENT on the song, not 0 — the parser writes the field only when the column is
+  // positive (`manaField`, spellsUsParse.ts), so a free spell reaches this table with no field at
+  // all and these rows are what the real parse produces for those two ids.
+  const zeroMana: SpellResistTable = {
+    'chords of dissonance': { axis: 'magic', resistAdj: -100, castMs: 3000, targetType: 4 },
+    'denon`s desperate dirge': { axis: 'magic', resistAdj: 0, castMs: 3000, mana: 800, targetType: 8 }
+  }
+  // CENSUS (2026-08-23): NO catalog spell placed at a level is in the wiki-silent/client-positive
+  // shape — the eight rows that are, are all NPC-only or unlearnable. So the mana rule moves nothing
+  // on today's data, and that is asserted rather than left to be discovered by a re-scrape.
+  resetLevelUnlocksCache()
+  try {
+    const plain = buildLevelUnlocks(null).spells.map((s) => `${s.name}:${String(s.mana ?? '')}`)
+    resetLevelUnlocksCache()
+    const withClient = buildLevelUnlocks(zeroMana).spells.map((s) => `${s.name}:${String(s.mana ?? '')}`)
+    assert.deepEqual(withClient, plain)
+  } finally {
+    resetLevelUnlocksCache()
+  }
+  // The client charges 0 for every bard song the catalog charges 0 for, which is why nothing moved:
+  // the only mana-costing bard rows in the owner's file are `Denon's Desperate Dirge` (800, which
+  // the catalog already states) and the level-75-and-up `Denon's Dirge of ...` line.
+  assert.equal(clientHpFor(zeroMana, 'Chords of Dissonance'), undefined, 'a stated 0 is not a fact to carry')
+  assert.equal(clientHpFor(zeroMana, "Denon`s Desperate Dirge")?.mana, 800)
 })

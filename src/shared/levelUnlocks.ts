@@ -96,6 +96,25 @@ export interface UnlockSpell {
    */
   recastMs?: number
   /**
+   * HOW MANY WAVES ONE CAST DELIVERS (JOS-449), present only for a RAIN — absent is the ordinary
+   * spell that lands once, and no row ever carries a 1.
+   *
+   * Resolved main-side by `src/main/data/rainSpells.ts`, whose header carries the whole
+   * three-instrument derivation, because the sentence the roster is derived from is a wiki page's
+   * `description` and that field does not ship in `spells.json`. A far-end reader gets the count
+   * and multiplies, which is the same arrangement `recastMs` above has: the resolution happens once
+   * and the two ends cannot disagree about it.
+   */
+  waves?: number
+  /**
+   * THE MOST TARGETS ONE CAST CAN STRIKE, as the PLAYER'S OWN CLIENT states it (JOS-449, field 143).
+   *
+   * Absent on a machine with no `spells_us.txt`, and absent for every single-target spell even
+   * where there is one. `shared/aoeSpells.ts` has the default that answers for the first case and
+   * the reason it is 4; the second case never asks.
+   */
+  aeMaxTargets?: number
+  /**
    * The spell THIS one replaces, per class that gains it (JOS-391) — the shipped spell-line
    * research, joined main-side (`src/main/data/spellLineLookup.ts`).
    *

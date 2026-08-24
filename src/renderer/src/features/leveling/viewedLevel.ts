@@ -2,8 +2,9 @@
 //
 // It lived inside `NewAtLevelPanel` while that panel was the only thing that had a level to show.
 // The best-spells readout is the second, it sits in the OTHER column, and the owner's ask is that
-// stepping the level re-ranks it — so the state has to be above both of them. The alternative was a
-// second stepper, which is two levels on one screen with no way to tell which one a table is about.
+// stepping the level re-ranks it — so the state has to be above both of them. Both panels draw a
+// stepper now (owner ask 2026-08-23), and that is safe for exactly this reason: two handles on ONE
+// state always show one number, where two states would have been two levels on one screen.
 //
 // `null` MEANS "FOLLOW THE CHARACTER", not "level 1". That distinction is what keeps the tab
 // tracking dings until the reader steps it, and what makes the `back to N` chip a return to the

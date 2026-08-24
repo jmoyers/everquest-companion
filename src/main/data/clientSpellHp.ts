@@ -25,10 +25,10 @@ import { spellCanonKey } from '../log/parseCommon'
 /**
  * The client's facts for one catalog spell name, or undefined when there is nothing to add.
  *
- * Undefined for "no client install", "no row for this name", and a row that states neither
- * hitpoint slots nor a re-use timer — they are one answer to the caller (`spellMetricsAt` falls
- * back to nothing) and distinguishing them here would only invite a surface to say something about
- * a file the user may legitimately not have.
+ * Undefined for "no client install", "no row for this name", and a row that states none of the
+ * three things this reader can use — hitpoint slots, a re-use timer, a mana cost — because they are
+ * one answer to the caller (`spellMetricsAt` falls back to nothing) and distinguishing them here
+ * would only invite a surface to say something about a file the user may legitimately not have.
  *
  * THE ROW IS RETURNED WHOLE, which is what lets a field added to `SpellResistInfo` reach the reader
  * without a line of plumbing here — `ClientHpFacts` is the subset `shared/spellMetrics.ts` names.
@@ -44,5 +44,5 @@ export function clientHpFor(
   const info = table[spellCanonKey(name)]
   if (!info) return undefined
   const hasHp = info.hp !== undefined && info.hp.length > 0
-  return hasHp || info.recastMs !== undefined ? info : undefined
+  return hasHp || info.recastMs !== undefined || info.mana !== undefined ? info : undefined
 }
