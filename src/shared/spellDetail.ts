@@ -98,6 +98,21 @@ export interface SpellDetail {
    * unlock dataset uses. Stated because a ramp's numbers mean nothing without it.
    */
   metricsLevel?: number
+  /**
+   * THE SAME FIGURES AT THE RANK YOU HAVE BEEN OBSERVED HOLDING (JOS-447), or absent when the log
+   * has never watched this line above base.
+   *
+   * The card states BOTH because it has the room the table does not: `metrics` is the spell as the
+   * catalog describes it and this is the spell as you own it, and a player deciding whether to
+   * spend motes needs to see the two side by side. Read by the SAME `spellMetricsAt` in the same
+   * pass, so the two lines cannot be two derivations that agree today.
+   *
+   * DAMAGE IS THE ONLY AXIS THAT MOVES in v1 - shared/spellScale.ts's header carries the fit and
+   * the direction of the error on the rest.
+   */
+  metricsAtRank?: SpellMetrics
+  /** The rank `metricsAtRank` was read at, 2..10. Absent whenever `metricsAtRank` is. */
+  metricsRank?: number
   /** per-class entry levels for the LINE (never for the rank - the DB has no per-rank levels). */
   classLevels: { cls: string; level: number }[]
   msgCastOnYou?: string

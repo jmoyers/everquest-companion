@@ -15,16 +15,25 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { parseEvent } from '../src/main/log/parser'
 import { installSpellDb } from '../src/main/log/rulesets'
 import { CombatEngine } from '../src/main/combat/engine'
-import { RAIN_SPELL_NAMES, isRainSpell } from '../src/main/combat/rainSpells'
+import {
+  MESSAGE_RAIN_NAMES,
+  RAIN_PAGES,
+  RAIN_SPELL_NAMES,
+  isRainSpell,
+  rainWaves
+} from '../src/main/data/rainSpells'
+import { DEFAULT_AE_MAX_TARGETS, aeHits } from '../src/shared/aoeSpells'
+import spellsJson from '../src/main/data/spells.json'
 import { procEligibleDamage } from '../src/main/combat/procDetect'
 import { groupByTarget } from '../src/renderer/src/features/combat/dashboardData'
 import type { SegmentView, SourceView } from '../src/shared/combat'
+import type { SpellDbFile } from '../src/shared/types'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -186,35 +195,85 @@ test('the pre-fix answer, stated so the regression is legible', () => {
 })
 
 // ---------------------------------------------------------------------------------------
-// 3. THE ROSTER — derived from the DB, pinned here
+// 3. THE ROSTER — a registry of 23, audited against the two derivations it came from
 // ---------------------------------------------------------------------------------------
+//
+// JOS-449 widened the roster from 17 to 23 and gave every row a wave COUNT. The three instruments
+// and the whole sweep are in `src/main/data/rainSpells.ts`'s header; what is pinned here is that
+// the shipped registry still AGREES with the sources it was derived from, so a re-scrape that adds,
+// removes or re-words a rain goes red rather than drifting silently.
 
-test('the rain roster is exactly what the shipped spell DB says rains down', () => {
-  // Read off src/main/data/spells.json by `\brains? down\b` over its two cast messages. A
-  // re-scrape that widens or narrows this list fails HERE rather than drifting silently, which
-  // is the same bar spellEffectClass.ts's derived classes are held to.
+test('THE CENSUS: 23 rains, named, every one of them three waves', () => {
   assert.deepEqual([...RAIN_SPELL_NAMES], [
+    'Avalanche',
+    'Blizzard',
+    'Cascade of Hail',
     'Energy Storm',
     'Firestorm',
     'Frost Storm',
     'Gale of Poison',
+    'Icestrike',
     'Lava Storm',
     'Lightning Storm',
     'Manastorm',
+    'Pogonip',
     'Poison Storm',
     'Rain of Blades',
     'Rain of Fire',
     'Rain of Lava',
     'Rain of Spikes',
     'Rain of Swords',
+    'Sirocco',
     'Tears of Druzzil',
     'Tears of Prexus',
     'Tears of Solusek',
     'Torrent of Poison'
   ])
-  // Three classes cast them — Wizard, Magician, Shaman — which is the whole rain population of
-  // the era this app ships knowledge for.
-  assert.equal(RAIN_SPELL_NAMES.length, 17)
+  assert.equal(RAIN_SPELL_NAMES.length, 23)
+  assert.equal(RAIN_PAGES.length, 23)
+  // NOT ONE PAGE IN THE WHOLE CACHE STATES A COUNT OTHER THAN THREE, which is the finding this
+  // uniform 3 records. It is spelled per row so a four-wave rain would be expressible; the day one
+  // appears, this assertion is the thing that has to be re-argued.
+  for (const p of RAIN_PAGES) assert.equal(p.waves, 3, p.name)
+  // Every row cites its page. A row that cannot is a hand list, which is the thing this is not.
+  for (const p of RAIN_PAGES) {
+    assert.ok(p.quote.length > 40, `${p.name} has no page quote`)
+    assert.match(p.quote, /wave/i, `${p.name}'s quote does not state waves: ${p.quote}`)
+  }
+})
+
+test('THE AUDIT: the registry still equals what the committed wikitext cache derives', () => {
+  // THE SWEEP, RE-RUN. `scripts/sources/cache/spells` is committed (see .gitignore's note on which
+  // caches are), so this costs no network and re-reads the exact source the roster was built from:
+  // every damage spell in the catalog whose page `description` states waves. A re-scrape that adds
+  // a rain, drops one, or re-words a page out of the pattern fails HERE.
+  const derived = derivedRainsFromCache()
+  assert.ok(derived.length > 0, 'the wikitext cache is present and parseable')
+  assert.deepEqual(derived, [...RAIN_SPELL_NAMES])
+})
+
+test('the CAST-MESSAGE instrument is still a strict subset — the two can never quietly diverge', () => {
+  // JOS-414 derived 17 rains from `\brains? down\b` over the DB's own cast messages. Those 17 are
+  // still derived at runtime and must all be in the registry; the six the registry adds are the
+  // ones whose message never says the word ("You are pelted by hailstones.").
+  for (const name of MESSAGE_RAIN_NAMES) {
+    assert.equal(isRainSpell(name), true, `${name} says it rains down but is not in the registry`)
+  }
+  assert.equal(MESSAGE_RAIN_NAMES.length, 17)
+  const added = RAIN_SPELL_NAMES.filter((n) => !MESSAGE_RAIN_NAMES.includes(n))
+  assert.deepEqual(added, ['Avalanche', 'Blizzard', 'Cascade of Hail', 'Icestrike', 'Pogonip', 'Sirocco'])
+})
+
+test('the three EXCLUSIONS are out, and each one is out for a stated reason', () => {
+  // Reads `AEDuration 7500` like every rain and its page agrees it is applied like one, but: "it
+  // does not deal direct damage on each wave, rather it applies a DoT for 3 or 4 ticks". Its only
+  // effect line is `Decrease Hitpoints by 125 per tick`, already totalled as a DoT.
+  assert.equal(isRainSpell('Strike of Thunder'), false)
+  // `AEDuration 7500`, no wave prose, "This AE is cast by Ixiblat Fer and Noble Dojorn".
+  assert.equal(isRainSpell('Efreeti Fire'), false)
+  // "Targeted AoE / Rain Type spell without waves. Hits up to 4 creatures max." An area spell that
+  // belongs in the AOE tab and lands ONCE per target.
+  assert.equal(isRainSpell('Circle of Force'), false)
 })
 
 test('membership is rank-blind, and the drain family is NOT in it', () => {
@@ -228,6 +287,93 @@ test('membership is rank-blind, and the drain family is NOT in it', () => {
   // …and an ordinary single-hit nuke of the same school stays eligible.
   assert.equal(isRainSpell('Anarchy'), false)
 })
+
+test('the wave COUNT answers the same way, and everything else answers one', () => {
+  assert.equal(rainWaves('Frost Storm'), 3)
+  assert.equal(rainWaves('frost storm'), 3)
+  assert.equal(rainWaves('Rain of Fire II'), 3, 'rank-blind, like membership')
+  assert.equal(rainWaves('Anarchy'), 1, 'not a rain: one landing, which is what every caller wants')
+  assert.equal(rainWaves('Strike of Thunder'), 1)
+})
+
+// ---------------------------------------------------------------------------------------
+// 4. THE MAGNITUDE IS PER WAVE — the evidence the x3 rests on
+// ---------------------------------------------------------------------------------------
+
+test('the log lands the CATALOG\'S OWN stated magnitude ON EACH WAVE, not split across them', () => {
+  // THIS IS THE LOAD-BEARING CLAIM OF JOS-449. `Lava Storm`'s page states one line,
+  // `Decrease Hitpoints by 401`, and the synthetic-but-real-shaped cast above lands 401 THREE
+  // TIMES per target. If the stated figure were the whole cast, each wave would land ~134.
+  //
+  // Mined from the owner's real log for the same conclusion (JOS-449's diagnosis, kept here as the
+  // record because the casters are third parties and their slices never become fixtures):
+  //   Kreljnok's Lava Storm  605 at :23, 605 at :26, 488 at :29  (three waves ~3s apart, one mob)
+  //   Nilmeca's Lava Storm   392..409 per landing against the catalog's stated 401
+  //   Eklipz's Firestorm     45 / 45 / 45 at 2-6s spacing, trailing 21 (a partial)
+  const stated = 401
+  const { eng, lastTs } = replay(RAIN_CAST)
+  const tl = eng.snapshot(lastTs, { selectedId: 'e1', timeline: true }).timeline
+  assert.ok(tl)
+  const { rows } = groupByTarget(tl)
+  const shaman = rows.find((r) => /kobold shaman/i.test(r.target))
+  assert.ok(shaman)
+  assert.equal(shaman.total, stated * 3, 'one mob, three waves, the stated magnitude each time')
+  assert.equal(shaman.total / stated, rainWaves('Lava Storm'), 'and the roster states that count')
+})
+
+test('the SINGLE-TARGET total is waves, and the MAX-TARGET total is the four-hit cap', () => {
+  // The two readings the DD tab and the AOE tab take, over the same registry number.
+  const waves = rainWaves('Frost Storm')
+  assert.equal(aeHits(waves, 1, DEFAULT_AE_MAX_TARGETS), 3)
+  assert.equal(aeHits(waves, DEFAULT_AE_MAX_TARGETS, DEFAULT_AE_MAX_TARGETS), 4)
+})
+
+/**
+ * THE SWEEP, RE-RUN OVER THE COMMITTED CACHE — the audit's instrument.
+ *
+ * Reads each `<pageid>.wikitext` for its `spellname` and `description`, keeps the ones that are
+ * DAMAGE spells in the committed catalog, and answers the ones whose description states a COUNT of
+ * waves. The count is what makes the pattern safe: a bare `/waves?/` also matches `Circle of Force`
+ * ("Targeted AoE / Rain Type spell without waves"), `Wave of Flame` and `Waves of the Deep Sea`
+ * ("with a wave of water"), which is three false positives out of 26.
+ *
+ * ONE exclusion is applied by NAME, and it is justified in the test above: `Strike of Thunder`
+ * really does say "three waves" and really is not one of these. A name list is the right shape for
+ * "here is a known counter-example"; it would be the wrong shape for the roster itself.
+ */
+function derivedRainsFromCache(): string[] {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'sources', 'cache', 'spells')
+  if (!existsSync(dir)) return []
+  const damage = new Map(
+    (spellsJson as SpellDbFile).spells
+      .filter((s) => (s.effects ?? []).some((e) => /^decrease\s+(current\s+)?hit\s?points?/i.test(e)))
+      .map((s) => [s.name, s])
+  )
+  const NOT_A_RAIN = new Set(['Strike of Thunder'])
+  const out = new Set<string>()
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.wikitext')) continue
+    const txt = readFileSync(join(dir, file), 'utf8')
+    const name = wikiField(txt, 'spellname')
+    if (!name || !damage.has(name) || NOT_A_RAIN.has(name)) continue
+    if (WAVE_COUNT_RE.test(wikiField(txt, 'description'))) out.add(name)
+  }
+  return [...out].sort()
+}
+
+/**
+ * A COUNT of waves, in every spelling the cache actually uses:
+ *   `three waves of 125`  `falls in three waves`  `1-3 waves of 540`  `(x3 waves?)`  `Each wave`
+ */
+const WAVE_COUNT_RE =
+  /\b(?:one|two|three|four|five|six|x?\d+(?:\s*-\s*\d+)?)\s+waves?\b|\beach\s+wave\b/i
+
+/** One `| field = value` out of a `Spellpagesmart` template, flattened to a single line. */
+function wikiField(txt: string, name: string): string {
+  const re = new RegExp(`\\n\\s*\\|\\s*${name}\\s*=\\s*([\\s\\S]*?)(?=\\n\\s*\\|\\s*[a-zA-Z_]+\\s*=|\\n\\}\\})`)
+  const m = re.exec(txt)
+  return m ? m[1].trim().replace(/\s+/g, ' ') : ''
+}
 
 test('the proc gate refuses a rain outright, on every damage type', () => {
   assert.equal(procEligibleDamage('spell', 'Anarchy'), true)

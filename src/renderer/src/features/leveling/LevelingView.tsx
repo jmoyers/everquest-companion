@@ -61,7 +61,7 @@ import { NewAtLevelPanel } from './NewAtLevelPanel'
 // the right column can exist on a log the charts cannot draw.
 import { BestSpellsPanel, useBestSpellsVisible } from './BestSpellsPanel'
 // The tab's viewed level, lifted out of `NewAtLevelPanel` the day a second panel needed it.
-import { useViewedLevel } from './viewedLevel'
+import { useViewedLevel, type ViewedLevel } from './viewedLevel'
 // The RIGHT column, whole: the AA ledger, the in-window drops and the progress feed, plus the
 // `FeedItem` shape `buildFeed` below fills. Split out at the measured max-lines ceiling (JOS-300),
 // on the LevelingHeroes precedent — the column is a composition over a scope and nothing else here
@@ -479,7 +479,8 @@ function ChartsColumn(p: {
  */
 function RightColumn(p: {
   present: boolean
-  level: number
+  /** The tab's ONE viewed-level state, whole — the readout carries its own stepper now. */
+  viewed: ViewedLevel
   charted: { scope: ScopedStats } | null
   spends: AASpendEvent[]
   allocated: number
@@ -493,7 +494,7 @@ function RightColumn(p: {
       sx={{ flex: { xs: '0 0 auto', lg: 1 }, minWidth: { lg: 260 } }}
       data-testid="leveling-right-column"
     >
-      <BestSpellsPanel level={p.level} />
+      <BestSpellsPanel viewed={p.viewed} />
       {p.charted && (
         <LedgerColumn
           spends={p.spends}
@@ -708,7 +709,7 @@ export default function LevelingView({
 
         <RightColumn
           present={bestSpells || charted !== null}
-          level={viewed.level}
+          viewed={viewed}
           charted={charted}
           spends={spends}
           allocated={aa.aaSpent}

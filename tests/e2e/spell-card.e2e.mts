@@ -23,6 +23,8 @@
  *
  * Run: `npm run test:e2e -- spell-card`.
  */
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Page } from 'playwright-core'
 import {
   buildIfStale,
@@ -30,6 +32,7 @@ import {
   dumpArtifacts,
   failures,
   hoverAt,
+  note,
   reportRun,
   settle,
   settleGone
@@ -74,6 +77,8 @@ interface CardRead {
   classes: string
   lineage: string
   members: string[]
+  /** The figures line (JOS-391), or '' when the card states none. */
+  figures: string
 }
 
 /**
@@ -85,7 +90,7 @@ function readCard(page: Page): Promise<CardRead> {
   return page.evaluate((sel) => {
     const el = document.querySelector(sel)
     if (!el) {
-      return { present: false, spell: '', stats: {}, effects: [], classes: '', lineage: '', members: [] }
+      return { present: false, spell: '', stats: {}, effects: [], classes: '', lineage: '', members: [], figures: '' }
     }
     const stats: Record<string, string> = {}
     for (const r of Array.from(el.querySelectorAll('[data-testid="spell-card-stat"]'))) {
@@ -104,7 +109,8 @@ function readCard(page: Page): Promise<CardRead> {
       lineage: (el.querySelector('[data-testid="spell-card-lineage"]')?.textContent ?? '').trim(),
       members: Array.from(el.querySelectorAll('[data-testid="spell-card-rank-member"]')).map((n) =>
         (n.textContent ?? '').trim()
-      )
+      ),
+      figures: (el.querySelector('[data-testid="spell-card-figures"]')?.textContent ?? '').trim()
     }
   }, CARD)
 }
@@ -122,7 +128,9 @@ async function openCardFor(page: Page, spell: string): Promise<CardRead> {
     { timeoutMs: 15_000 }
   )
   const pointed = await hoverAt(page, NAME, 0.4, 0.5)
-  if (!pointed) return { present: false, spell: '', stats: {}, effects: [], classes: '', lineage: '', members: [] }
+  if (!pointed) {
+    return { present: false, spell: '', stats: {}, effects: [], classes: '', lineage: '', members: [], figures: '' }
+  }
   // The popper opens behind an enterDelay and the body then fetches over IPC, so "the card is in
   // the DOM" is not the condition — "the card has an answer in it" is (wave E3: wait for the
   // condition, never for the clock).
@@ -169,6 +177,53 @@ async function checkTheHeal(page: Page): Promise<void> {
     'a field the wiki page omits draws NO row at all',
     card.stats.instrument === undefined,
     `instrument row: ${card.stats.instrument ?? '(absent, correct)'}`
+  )
+  await closeCard(page)
+}
+
+/**
+ * JOS-451 — THE FIGURES ON THE CARD READ THE CLIENT'S CURVE, in a running app, over the real IPC.
+ *
+ * `Celestial Remedy` is already the heal this spec draws, and it is one of the four spells whose
+ * wiki page transcribed the BASE of a level curve and dropped the curve: the page says
+ * `Increase Hitpoints by 35 per tick` and the client's row says base 35, one more a level, capped
+ * at 65 — so at the cleric's own 19 it is 54 a tick over four ticks, 216 rather than 140.
+ *
+ * WHAT ONLY A RUNNING APP CAN SHOW, and the reason this is not left to the unit pins: the client
+ * table is parsed on a WORKER, cached to `<userData>/spell-resist-cache.json` under a version this
+ * ticket bumped, and reaches the `spells:detail` handler through an await that JOS-449 had to
+ * repair. Every one of those is between the parse and the number, and none of them is visible to a
+ * test that calls `buildSpellDetail` directly.
+ *
+ * AND IT DEGRADES HONESTLY. `spells_us.txt` is Daybreak's file and this repo may carry neither it
+ * nor a derivative, so the harness LINKS the real install's copy in (`{ spells: true }`, the
+ * JOS-382 carve-out). A machine with no EverQuest install gets no link, and the step says so and
+ * asserts the wiki-only number instead — which is the same supported state the mob-resists spec
+ * has always branched on.
+ */
+async function checkTheClientCurve(page: Page, staged: boolean): Promise<void> {
+  const card = await openCardFor(page, HEAL.name)
+  if (!check(`pointing at ${HEAL.name} opens its card again`, card.present)) return
+  if (!staged) {
+    note('no client spells_us.txt on this machine - asserting the wiki-only reading instead')
+    check(
+      'with no client file the card states the page’s own flat number',
+      card.figures.includes('heal 140'),
+      card.figures || '(no figures line)'
+    )
+  } else {
+    check(
+      'THE TICKET: the card reads the client’s curve, not the base the page transcribed',
+      card.figures.includes('heal 216'),
+      `${card.figures || '(no figures line)'} · the page alone would say heal 140`
+    )
+  }
+  // The EFFECT LIST is untouched either way: it is what the wiki says, and this ticket changed
+  // which number the figures are computed from, never what the page is quoted as saying.
+  check(
+    'and the quoted effect line is still the wiki’s, verbatim',
+    card.effects.length === 1 && card.effects[0] === HEAL.effect,
+    card.effects.join(' | ') || '(none)'
   )
   await closeCard(page)
 }
@@ -294,7 +349,11 @@ async function openPicker(page: Page): Promise<number> {
 async function main(): Promise<void> {
   buildIfStale()
 
-  const log = stageFixture('e2e-voice.log')
+  // `{ spells: true }` links the real install's `spells_us.txt` in (JOS-451, the JOS-382
+  // carve-out). It is what `checkTheClientCurve` needs, and it changes nothing for the other
+  // steps: every value they assert is the committed catalog's.
+  const log = stageFixture('e2e-voice.log', { spells: true })
+  const staged = existsSync(join(log.installDir, 'spells_us.txt'))
   const userData = makeUserData()
 
   console.log('launch: hidden Electron (EQ_E2E=1) against tests/fixtures/e2e-voice.log…')
@@ -311,6 +370,7 @@ async function main(): Promise<void> {
     const rows = await openPicker(page)
     if (check('the suggestion picker is showing spell rows', rows > 0, `${String(rows)} rows`)) {
       await checkTheHeal(page)
+      await checkTheClientCurve(page, staged)
       await checkTheSong(page)
       await checkTheLineRanks(page)
     }

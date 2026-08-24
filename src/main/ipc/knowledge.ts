@@ -10,12 +10,20 @@ import { buildSpellDetail } from '../data/spellDetail'
 import { lookupItem } from '../itemLookup'
 import { lookupMob } from '../mobLookup'
 import { registry, spellDb } from '../pipeline'
-// THE CLIENT'S SPELL TABLE, READ AT THE HANDLER (JOS-396). `spellTableNow()` is the already-resolved
-// table or null — never a promise, so nothing here waits on a 38 MB parse. Reading it HERE, on every
-// invoke, is what makes the fallback lazy: the table lands on a worker some seconds into a cold
-// launch, and the next read after it lands is the one that carries the figures.
-import { spellTableNow } from '../resist/spellTable'
+// THE CLIENT'S SPELL TABLE, AWAITED AT THE HANDLER (JOS-396, inverted 2026-08-23). This imported
+// `spellTableNow()` — the already-resolved table or null, so nothing waited on the parse — and the
+// laziness was the bug once the renderer began pulling once-per-window datasets folded FROM the
+// table: a hydration that beat the parse kept a clientless dataset all session (the owner's
+// Supernova at four targets, the launch after a cache-version bump forced the full re-parse).
+// `spellTable()` is the load promise itself; it settles once per run and every later await is
+// already-resolved, so the wait is paid exactly where the race was.
+import { spellTable } from '../resist/spellTable'
 import type { AlertsSnap } from '../../shared/alertTypes'
+import {
+  OBSERVED_SPELL_RANKS_MODULE_ID,
+  observedRankRow,
+  type ObservedSpellRanksSnap
+} from '../../shared/spellRanks'
 import type { BuffsSnap } from '../../shared/types'
 
 export function registerKnowledgeIpc(): void {
@@ -33,8 +41,16 @@ export function registerKnowledgeIpc(): void {
   // this shipped (src/main/data/levelUnlocks.ts says so at the seam); the flag is VALIDATED, not
   // trusted, like every other renderer-supplied argument at a handler. A bare invoke — the
   // wizard's — still gets the wizard's catalog, unchanged and no larger than it was.
-  ipcMain.handle(IPC.spellsCatalog, (_e, req: unknown) => {
-    if (isUnlocksRequest(req)) return buildLevelUnlocks(spellTableNow())
+  ipcMain.handle(IPC.spellsCatalog, async (_e, req: unknown) => {
+    // AWAITED, NOT SAMPLED (2026-08-23, owner field report). This read `spellTableNow()` — the
+    // table if it happened to be loaded — and the renderer pulls this dataset ONCE per window on a
+    // premise that died when the client table joined the fold (recastMs fallback, clientHp,
+    // aeMaxTargets): a hydration that beat the parse got a clientless dataset for the whole
+    // session. The owner hit exactly that on the launch after the v4 cache bump forced a full
+    // re-parse — Supernova at the default four targets all session. `spellTable()` resolves when
+    // the parse settles (ok, missing or unloadable), so the one pull now always carries whatever
+    // client facts this machine has; a missing install still folds clientless, as a value.
+    if (isUnlocksRequest(req)) return buildLevelUnlocks(await spellTable())
     const usage = new Map<string, number>()
     const lastSeen = new Map<string, number>()
     const snap = registry.get('buffs')?.snapshot()?.state as BuffsSnap | undefined
@@ -59,10 +75,25 @@ export function registerKnowledgeIpc(): void {
   //
   // The argument is a renderer string, so it is VALIDATED rather than trusted: anything that is
   // not a string is answered with the same not-found record an unknown spell gets.
-  ipcMain.handle(IPC.spellsDetail, (_e, name: unknown) => {
+  // AND THE MOTE RANK COMES FROM THE OBSERVED-RANK MODULE (JOS-447), read off the registry the same
+  // way. It is a SECOND rank source beside `spellLastCast` on purpose and they answer different
+  // questions: the alerts map names the rank display strings a lineage can list, while JOS-446's
+  // fold answers "the highest rank this character holds" over merges as well as casts - which is
+  // the number the `yours: VIII` pill already states, and therefore the number the at-rank figures
+  // beside it have to be read at, or the card would contradict itself.
+  ipcMain.handle(IPC.spellsDetail, async (_e, name: unknown) => {
     const snap = registry.get('alerts')?.snapshot()?.state as AlertsSnap | undefined
     const observed = Object.keys(snap?.spellLastCast ?? {})
-    return buildSpellDetail(spellDb, typeof name === 'string' ? name : '', observed, spellTableNow())
+    const wanted = typeof name === 'string' ? name : ''
+    const rankSnap = registry.get(OBSERVED_SPELL_RANKS_MODULE_ID)?.snapshot()?.state as
+      | ObservedSpellRanksSnap
+      | undefined
+    return buildSpellDetail(spellDb, wanted, observed, {
+      // Awaited for the unlocks handler's reason, one hover earlier: a card opened in the first
+      // seconds of a launch would otherwise state clientless facts for that one open.
+      client: await spellTable(),
+      rank: observedRankRow(rankSnap, wanted)?.rank
+    })
   })
 
   // ---- item knowledge ("what's this lore/quest item for", Task #53) ----

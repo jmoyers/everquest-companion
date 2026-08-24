@@ -66,7 +66,11 @@
  *   9. and clicking a row opens that item's Loot drill-down (with its own per-zone drop-rate
  *      table) through the app's ONE navigation seam, so Back NAMES the Leveling tab and returns
  *      here (the JOS-43 law, on the app's newest cross-view link). Steps 8/9 live in
- *      `dropSteps.mts` — this spec is at the repo's max-lines budget.
+ *      `dropSteps.mts` — this spec is at the repo's max-lines budget;
+ *   10. (JOS-450) and the best-spells readout SEARCHES the whole catalog: typing swaps its ranked
+ *      table for results, a spell no class in this loadout can learn is drawn as a row of that
+ *      readout wearing its own class-level chip, and clearing the box hands the table back. It runs
+ *      inside step 6f's sequence and lives in `bestSpellsSearchSteps.mts`.
  *
  * FRESH-MACHINE HONESTY. A machine with no EQ logs mounts no feature view at all, and a
  * character whose log carries fewer than two dings and fewer than two AA gains draws no chart —
