@@ -35,13 +35,18 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   LOC_MARKERS_KEY,
-  clearLocMarker,
+  MAX_TYPED,
+  TYPED_COLORS,
+  addTypedMarker,
+  clearPlayerMarker,
+  clearTypedMarker,
   formatLoc,
   loadLocMarkers,
-  locMarkerFor,
   parseLoc,
+  playerMarkerFor,
   saveLocMarkers,
-  setLocMarker,
+  setPlayerMarker,
+  typedMarkersFor,
   type LocStore
 } from '../src/renderer/src/features/maps/locMarker'
 import { fit, mapFromLoc, project } from '../src/renderer/src/features/maps/mapGeometry'
@@ -254,56 +259,132 @@ test('what the chip states round-trips back through the parser', () => {
   assert.deepEqual(loc(formatLoc(there)), there)
 })
 
-// ---- 6. sticking around ---------------------------------------------------------------------
+// ---- 6. sticking around, and the colour cycle (JOS-98 wave 4) --------------------------------
 
-test('a marker is remembered PER ZONE, and one zone’s marker is not another’s', () => {
+/** The colours of a zone's typed markers, in add order — the whole subject of the cycle tests. */
+function colorsOf(marks: ReturnType<typeof addTypedMarker>, zone: string): string[] {
+  return typedMarkersFor(marks, zone).map((m) => m.color)
+}
+
+test('a marker is remembered PER ZONE, and one zone’s markers are not another’s', () => {
   const store = fakeStore()
-  let marks = setLocMarker({}, 'oasis', { ns: 613, ew: 51, z: 0 })
-  marks = setLocMarker(marks, 'northkarana', { ns: -1, ew: -2, z: -3 })
+  let marks = addTypedMarker({}, 'oasis', { ns: 613, ew: 51, z: 0 })
+  marks = addTypedMarker(marks, 'northkarana', { ns: -1, ew: -2, z: -3 })
   saveLocMarkers(marks, store)
 
   const back = loadLocMarkers(store)
   assert.deepEqual(back, marks, 'the whole set crosses the store intact')
-  assert.deepEqual(locMarkerFor(back, 'oasis'), { ns: 613, ew: 51, z: 0 })
-  assert.deepEqual(locMarkerFor(back, 'northkarana'), { ns: -1, ew: -2, z: -3 })
-  // A zone with no marker, and the no-map-open case, are both the honest null.
-  assert.equal(locMarkerFor(back, 'freporte'), null)
-  assert.equal(locMarkerFor(back, null), null)
+  assert.deepEqual(typedMarkersFor(back, 'oasis'), [{ loc: { ns: 613, ew: 51, z: 0 }, color: 'blue' }])
+  assert.deepEqual(typedMarkersFor(back, 'northkarana'), [{ loc: { ns: -1, ew: -2, z: -3 }, color: 'blue' }])
+  // A zone with no marker, and the no-map-open case, are both the honest empty.
+  assert.deepEqual(typedMarkersFor(back, 'freporte'), [])
+  assert.deepEqual(typedMarkersFor(back, null), [])
 })
 
-test('entering a new loc REPLACES this zone’s marker — one marker per zone is the scope', () => {
-  const first = setLocMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 })
-  const second = setLocMarker(first, 'oasis', { ns: 4, ew: 5, z: 6 })
-  assert.deepEqual(second, { oasis: { ns: 4, ew: 5, z: 6 } })
-  assert.equal(Object.keys(second).length, 1, 'never a list to manage')
+test('typed markers and the player marker are INDEPENDENT — one never disturbs the other', () => {
+  let marks = addTypedMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 })
+  marks = setPlayerMarker(marks, 'oasis', { ns: 4, ew: 5, z: 6 })
+  assert.deepEqual(playerMarkerFor(marks, 'oasis'), { ns: 4, ew: 5, z: 6 })
+  assert.deepEqual(colorsOf(marks, 'oasis'), ['blue'], 'the player set did not touch the typed list')
+  // Adding more typed markers leaves the scraped one where it was.
+  marks = addTypedMarker(marks, 'oasis', { ns: 7, ew: 8, z: 9 })
+  assert.deepEqual(playerMarkerFor(marks, 'oasis'), { ns: 4, ew: 5, z: 6 })
+  // …and re-scraping leaves the typed list untouched.
+  marks = setPlayerMarker(marks, 'oasis', { ns: 10, ew: 11, z: 12 })
+  assert.deepEqual(colorsOf(marks, 'oasis'), ['blue', 'green'])
 })
 
-test('clearing removes THIS zone’s marker and leaves every other zone alone', () => {
-  let marks = setLocMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 })
-  marks = setLocMarker(marks, 'gfaydark', { ns: 4, ew: 5, z: 6 })
-  const cleared = clearLocMarker(marks, 'oasis')
-  assert.equal(locMarkerFor(cleared, 'oasis'), null)
-  assert.deepEqual(locMarkerFor(cleared, 'gfaydark'), { ns: 4, ew: 5, z: 6 })
-  // Clearing a zone that has none is a no-op that does not churn the object.
-  assert.equal(clearLocMarker(cleared, 'oasis'), cleared)
-  // …and the removal survives the store, rather than being resurrected by a stale write.
+test('adding markers claims colours in cycle order — blue, green, yellow, violet', () => {
+  let marks: ReturnType<typeof addTypedMarker> = {}
+  for (let i = 0; i < MAX_TYPED; i++) marks = addTypedMarker(marks, 'oasis', { ns: i, ew: 0, z: 0 })
+  assert.deepEqual(colorsOf(marks, 'oasis'), [...TYPED_COLORS])
+  assert.equal(typedMarkersFor(marks, 'oasis').length, MAX_TYPED, 'four markers, one per colour')
+})
+
+test('clearing a colour frees it, and the next add takes the FIRST unused colour', () => {
+  let marks: ReturnType<typeof addTypedMarker> = {}
+  for (let i = 0; i < MAX_TYPED; i++) marks = addTypedMarker(marks, 'oasis', { ns: i, ew: 0, z: 0 })
+  // Free green (the 2nd). The next add fills the hole rather than appending a 5th of a new colour.
+  marks = clearTypedMarker(marks, 'oasis', 'green')
+  assert.deepEqual(colorsOf(marks, 'oasis'), ['blue', 'yellow', 'violet'])
+  marks = addTypedMarker(marks, 'oasis', { ns: 99, ew: 0, z: 0 })
+  assert.deepEqual(colorsOf(marks, 'oasis'), ['blue', 'yellow', 'violet', 'green'], 'green reused')
+})
+
+test('AT CAPACITY the oldest marker is evicted and its colour cycles to the new one', () => {
+  let marks: ReturnType<typeof addTypedMarker> = {}
+  for (let i = 0; i < MAX_TYPED; i++) marks = addTypedMarker(marks, 'oasis', { ns: i, ew: 0, z: 0 })
+  // The oldest is blue at ns 0. A fifth add drops it, reuses blue, and stays at four total.
+  marks = addTypedMarker(marks, 'oasis', { ns: 500, ew: 0, z: 0 })
+  const after = typedMarkersFor(marks, 'oasis')
+  assert.equal(after.length, MAX_TYPED, 'never more than four typed markers')
+  assert.deepEqual(after.map((m) => m.color), ['green', 'yellow', 'violet', 'blue'], 'blue cycled to the newest')
+  assert.deepEqual(after[after.length - 1], { loc: { ns: 500, ew: 0, z: 0 }, color: 'blue' })
+  assert.ok(!after.some((m) => m.loc.ns === 0), 'the evicted oldest is gone')
+})
+
+test('clearing one typed colour leaves the others and the player, and clearing all drops the zone', () => {
+  let marks = addTypedMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 }) // blue
+  marks = addTypedMarker(marks, 'oasis', { ns: 4, ew: 5, z: 6 }) // green
+  marks = setPlayerMarker(marks, 'oasis', { ns: 7, ew: 8, z: 9 })
+  const noBlue = clearTypedMarker(marks, 'oasis', 'blue')
+  assert.deepEqual(colorsOf(noBlue, 'oasis'), ['green'], 'only blue went')
+  assert.deepEqual(playerMarkerFor(noBlue, 'oasis'), { ns: 7, ew: 8, z: 9 }, 'the player marker is untouched')
+  // Clearing a colour the zone does not have is a no-op that does not churn the object.
+  assert.equal(clearTypedMarker(noBlue, 'oasis', 'violet'), noBlue)
+  // Clear the last typed AND the player ⇒ the zone key is dropped entirely (no empty shell).
+  const noTyped = clearTypedMarker(noBlue, 'oasis', 'green')
+  assert.deepEqual(noTyped, { oasis: { player: { ns: 7, ew: 8, z: 9 } } }, 'the player alone keeps the zone')
+  const empty = clearPlayerMarker(noTyped, 'oasis')
+  assert.deepEqual(empty, {})
+  assert.ok(!('oasis' in empty), 'the zone key is dropped when nothing remains')
+})
+
+test('clearing survives the store and leaves every other zone alone', () => {
+  let marks = addTypedMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 })
+  marks = addTypedMarker(marks, 'gfaydark', { ns: 4, ew: 5, z: 6 })
+  const cleared = clearTypedMarker(marks, 'oasis', 'blue')
+  assert.deepEqual(typedMarkersFor(cleared, 'oasis'), [])
+  assert.deepEqual(colorsOf(cleared, 'gfaydark'), ['blue'])
   const store = fakeStore()
   saveLocMarkers(cleared, store)
-  assert.equal(locMarkerFor(loadLocMarkers(store), 'oasis'), null)
+  assert.deepEqual(typedMarkersFor(loadLocMarkers(store), 'oasis'), [])
+})
+
+test('a LEGACY bare {ns,ew,z} loads as one blue TYPED marker — a pre-wave-3 marker survives upgrade', () => {
+  // Before the split, the box wrote a bare EqLoc under the zone key; it was always the typed mark.
+  const store = fakeStore({ [LOC_MARKERS_KEY]: JSON.stringify({ oasis: { ns: 613, ew: 51, z: 0 } }) })
+  assert.deepEqual(loadLocMarkers(store), { oasis: { typed: [{ loc: { ns: 613, ew: 51, z: 0 }, color: 'blue' }] } })
+})
+
+test('a wave-3 SINGLE typed reading loads as one blue typed marker', () => {
+  const store = fakeStore({ [LOC_MARKERS_KEY]: JSON.stringify({ sro: { typed: { ns: 1, ew: 2, z: 3 }, player: { ns: 4, ew: 5, z: 6 } } }) })
+  assert.deepEqual(loadLocMarkers(store), {
+    sro: { typed: [{ loc: { ns: 1, ew: 2, z: 3 }, color: 'blue' }], player: { ns: 4, ew: 5, z: 6 } }
+  })
 })
 
 test('a corrupt entry is dropped ALONE — one bad zone cannot take the others with it', () => {
   const store = fakeStore({
     [LOC_MARKERS_KEY]: JSON.stringify({
-      oasis: { ns: 613, ew: 51, z: 0 },
-      broken: { ns: 'north', ew: 51, z: 0 },
-      partial: { ns: 1 },
+      oasis: { typed: [{ loc: { ns: 613, ew: 51, z: 0 }, color: 'yellow' }], player: { ns: 1, ew: 2, z: 3 } },
+      legacy: { ns: 7, ew: 8, z: 9 }, // the bare pre-wave-3 shape, still read as one blue typed
+      halfBad: { typed: [{ loc: { ns: 'north', ew: 51, z: 0 } }, { loc: { ns: 4, ew: 5, z: 6 }, color: 'violet' }] },
+      duped: { typed: [{ loc: { ns: 1, ew: 1, z: 1 }, color: 'blue' }, { loc: { ns: 2, ew: 2, z: 2 }, color: 'blue' }] },
       nulled: null,
       wrong: 'nope',
-      '': { ns: 1, ew: 2, z: 3 }
+      '': { typed: [{ loc: { ns: 1, ew: 2, z: 3 }, color: 'blue' }] }
     })
   })
-  assert.deepEqual(loadLocMarkers(store), { oasis: { ns: 613, ew: 51, z: 0 } })
+  assert.deepEqual(loadLocMarkers(store), {
+    // A stored colour is honoured.
+    oasis: { typed: [{ loc: { ns: 613, ew: 51, z: 0 }, color: 'yellow' }], player: { ns: 1, ew: 2, z: 3 } },
+    legacy: { typed: [{ loc: { ns: 7, ew: 8, z: 9 }, color: 'blue' }] },
+    // The unreadable element drops; the good one keeps its stated colour.
+    halfBad: { typed: [{ loc: { ns: 4, ew: 5, z: 6 }, color: 'violet' }] },
+    // A duplicate colour is reassigned to the first unused one rather than dropped.
+    duped: { typed: [{ loc: { ns: 1, ew: 1, z: 1 }, color: 'blue' }, { loc: { ns: 2, ew: 2, z: 2 }, color: 'green' }] }
+  })
 })
 
 test('an absent, empty or unparseable store reads as no markers, never as a throw', () => {
@@ -317,6 +398,6 @@ test('an absent, empty or unparseable store reads as no markers, never as a thro
 test('the key is the one the app has shipped — a rename would silently drop every saved marker', () => {
   assert.equal(LOC_MARKERS_KEY, 'eq.maps.loc')
   const store = fakeStore()
-  saveLocMarkers({ oasis: { ns: 1, ew: 2, z: 3 } }, store)
-  assert.equal(store.data['eq.maps.loc'], '{"oasis":{"ns":1,"ew":2,"z":3}}')
+  saveLocMarkers(addTypedMarker({}, 'oasis', { ns: 1, ew: 2, z: 3 }), store)
+  assert.equal(store.data['eq.maps.loc'], '{"oasis":{"typed":[{"loc":{"ns":1,"ew":2,"z":3},"color":"blue"}]}}')
 })

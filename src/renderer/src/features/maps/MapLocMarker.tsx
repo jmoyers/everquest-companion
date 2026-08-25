@@ -1,28 +1,29 @@
-// THE TYPED-/loc MARKER — one dot, in a colour nothing else on this surface uses (JOS-98).
+// THE /loc CROSSHAIRS — up to TWO dots, each in a colour nothing else on this surface uses (JOS-98).
 //
-// A THIRD AUTHORITY NEEDS A THIRD SYMBOL. The surface already carries two, and a user must never
-// have to ask which source a mark came from:
+// A DISTINCT AUTHORITY NEEDS A DISTINCT SYMBOL. The surface already carries the map file's own
+// labels (round dots in the pack author's category colours — recolouring them destroys meaning) and
+// the app's own finds (spawn pins, the search flash, the selection ring — all the theme's WARNING
+// tone, "the app found this for you"). The crosshairs are neither; they are the positions a /loc
+// stated, so they take a crosshair shape ("this exact point", not "something is around here") and a
+// colour of their own — and there are two of them, from two sources the user must be able to tell
+// apart at a glance (JOS-98 wave 3):
 //
-//   * the MAP FILE's own labels — round dots in the pack author's colours, because those colours
-//     ENCODE a category (zone connection, banker, merchant…) and recolouring them destroys meaning;
-//   * the WIKI's spawn pins, the search-jump flash and the selection ring — all the theme's warning
-//     tone, because they are all "the app found this for you".
+//   * the TYPED readings the user PASTED into the box — up to four, each in one of a fixed cycle of
+//     colours (blue, green, yellow, violet) so several marked spots stay told apart.
+//   * `player` — the reading the LOG scraped, i.e. where the character stood. A light RED, so "where
+//                I am" and "a spot I marked" never read as the same dot.
 //
-// This is neither. It is the one position on the map the USER stated, so it takes the theme's info
-// tone and a crosshair rather than a pin or a ring — a shape that reads as "this exact point"
-// rather than "something is around here". It is also the only mark on the surface that PERSISTS
-// across a restart, which is the other reason it cannot look like the search flash.
+// Both PERSIST across a restart, which is the other reason neither can look like the search flash.
 //
 // INERT, like the label and pin layers: `pointerEvents:'none'` on the frame so drag-to-pan works
-// straight through it, re-enabled on the crosshair itself so its tooltip works. Clearing it is
-// deliberately NOT a click on the map — the toolbar's chip owns that, next to the box the loc was
-// typed into, so the affordance sits where the user's attention already is and a stray click on a
-// map can never delete something they typed.
+// straight through it, re-enabled on the crosshair itself so its tooltip works. Clearing one is
+// deliberately NOT a click on the map — the toolbar's chips own that, next to the box, so a stray
+// click on a map can never delete something the user is relying on.
 
 import type { JSX } from 'react'
 import { useTheme } from '@mui/material'
 import type { EqLoc } from './mapGeometry'
-import { formatLoc } from './locMarker'
+import { formatLoc, MARKER_COLOR_HEX, type MarkerColor } from './locMarker'
 import type { MapViewport } from './useMapViewport'
 
 /** Outer diameter of the ring, CSS pixels. Fixed, like the pins: a mark is not a distance. */
@@ -31,7 +32,12 @@ const RING_PX = 18
 const TICK_PX = 7
 
 export interface MapLocMarkerProps {
-  /** Where the user said they were, in MAP coordinates — already through `mapFromLoc`. */
+  /**
+   * Which crosshair this is: one of the four typed colours, or the scraped `'player'` position. It
+   * decides the colour, the test id, and the tooltip's words.
+   */
+  variant: MarkerColor | 'player'
+  /** Where the reading is, in MAP coordinates — already through `mapFromLoc`. */
   at: { x: number; y: number }
   /** The reading itself, so the tooltip can state it in the game's own words and order. */
   loc: EqLoc
@@ -43,15 +49,24 @@ function tick(color: string, style: React.CSSProperties): JSX.Element {
   return <span style={{ position: 'absolute', background: color, ...style }} />
 }
 
-export function MapLocMarker({ at, loc, vp }: MapLocMarkerProps): JSX.Element {
-  const color = useTheme().palette.info.main
+export function MapLocMarker({ variant, at, loc, vp }: MapLocMarkerProps): JSX.Element {
+  const palette = useTheme().palette
+  const isPlayer = variant === 'player'
+  // A light red for where you are (`error.light`, the theme's light red — legible in both themes),
+  // else the typed colour's fixed hex. Player is one symbol; the typed ones are four of a set.
+  const color = isPlayer ? palette.error.light : MARKER_COLOR_HEX[variant]
+  const testId = isPlayer ? 'maps-loc-marker-player' : 'maps-loc-marker'
+  // The crosshair is inert (centering is the chip's job), so its tooltip only IDENTIFIES the mark —
+  // the "click to center" half lives on the chip, which is the thing you actually click.
+  const title = isPlayer ? 'Most recent player /loc' : 'Manual marker'
   const p = vp.toScreen(at.x, at.y)
   const half = RING_PX / 2
   const arm = { width: 2, height: TICK_PX, marginLeft: -1 } as const
   const bar = { height: 2, width: TICK_PX, marginTop: -1 } as const
   return (
     <div
-      data-testid="maps-loc-marker"
+      data-testid={testId}
+      data-color={variant}
       data-loc={formatLoc(loc)}
       style={{
         position: 'absolute',
@@ -64,7 +79,7 @@ export function MapLocMarker({ at, loc, vp }: MapLocMarkerProps): JSX.Element {
       }}
     >
       <span
-        title={`The location you entered - /loc ${formatLoc(loc)}`}
+        title={title}
         style={{
           position: 'absolute',
           left: -half,

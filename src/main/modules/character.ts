@@ -35,6 +35,8 @@ export class CharacterModule implements EqModule<CharacterSnap, CharacterDelta> 
   private character: CharacterRef | null = null
   private zone: string | undefined
   private level: LevelStatement | undefined
+  /** The last LIVE `/loc`, cleared on every zone change — see CharacterSnap.loc for why transient. */
+  private loc: CharacterSnap['loc']
   /** See the header: the module's OWN revision, monotonic for the life of the process. */
   private rev = 0
   private pending: CharacterDelta = {}
@@ -45,6 +47,7 @@ export class CharacterModule implements EqModule<CharacterSnap, CharacterDelta> 
     // character switch must not carry the previous character's zone or level into the new one.
     this.zone = undefined
     this.level = undefined
+    this.loc = undefined
     this.pending = {}
     this.rev++
   }
@@ -56,12 +59,15 @@ export class CharacterModule implements EqModule<CharacterSnap, CharacterDelta> 
     this.rev++
   }
 
-  onEvent(ev: LogEvent): void {
+  // `live` defaults to false so a one-arg caller (the unit tests, and any direct driver) gets
+  // replay semantics — the /loc auto-place is a LIVE-only effect, and false is the safe read.
+  onEvent(ev: LogEvent, live = false): void {
     if (ev.kind === 'epoch') {
       // Character rebirth (epochDetector.ts): the level and zone of the wiped character say
       // nothing about this one. The ref is index.ts's and stays.
       this.zone = undefined
       this.level = undefined
+      this.clearLoc()
       this.pending.zone = undefined
       this.pending.level = undefined
       this.rev++
@@ -70,6 +76,21 @@ export class CharacterModule implements EqModule<CharacterSnap, CharacterDelta> 
     if (ev.kind === 'zone' && ev.zone !== this.zone) {
       this.zone = ev.zone
       this.pending.zone = ev.zone
+      // A /loc reading belongs to the zone it was taken in; leaving that zone retires it, so the
+      // reading you took in East Freeport can never place a crosshair on the Commonlands map you
+      // just walked into. Pushing `loc: undefined` (not erasing the marker) is what a consumer
+      // reads as "nothing to auto-place now" — see CharacterSnap.loc.
+      this.clearLoc()
+      this.rev++
+      return
+    }
+    // WHERE YOU ARE (JOS-98 wave 2), LIVE ONLY. The historical replay folds /loc lines like every
+    // other module (the `live` flag gates nothing in the fold itself) but must NOT set this: a /loc
+    // from days ago would otherwise place a marker on launch and overwrite the one you typed by
+    // hand. So the guard is here, at the one field where a stale value would be user-visible.
+    if (ev.kind === 'loc' && live) {
+      this.loc = ev.loc
+      this.pending.loc = ev.loc
       this.rev++
       return
     }
@@ -103,10 +124,17 @@ export class CharacterModule implements EqModule<CharacterSnap, CharacterDelta> 
     this.rev++
   }
 
+  /** Drop the last /loc, staging the clear only when there was one to drop. Callers own the rev. */
+  private clearLoc(): void {
+    if (this.loc === undefined) return
+    this.loc = undefined
+    this.pending.loc = undefined
+  }
+
   snapshot(): { seq: number; state: CharacterSnap } {
     return {
       seq: this.rev,
-      state: { character: this.character, zone: this.zone, level: this.level }
+      state: { character: this.character, zone: this.zone, level: this.level, loc: this.loc }
     }
   }
 

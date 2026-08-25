@@ -95,10 +95,18 @@ function zoneOf(page: Page): Promise<string> {
   )
 }
 
-/** The reading the drawn crosshair was placed from, or `null` when nothing is drawn. */
+/** The reading the FIRST drawn crosshair was placed from, or `null` when nothing is drawn. */
 function markerLocOf(page: Page): Promise<string | null> {
   return page.evaluate(
     (sel) => document.querySelector(sel)?.getAttribute('data-loc') ?? null,
+    LOC_MARKER
+  )
+}
+
+/** Every typed crosshair's reading, in DOM (add) order — the subject of the multi-marker steps. */
+function markerLocsOf(page: Page): Promise<string[]> {
+  return page.evaluate(
+    (sel) => [...document.querySelectorAll(sel)].map((el) => el.getAttribute('data-loc') ?? ''),
     LOC_MARKER
   )
 }
@@ -302,25 +310,44 @@ async function stepSurvivesTabs(page: Page): Promise<void> {
   check('…and the toolbar still states it', (await chipTextOf(page)) !== '')
 }
 
-/** 6. ENTERING ANOTHER LOC REPLACES IT — one marker per zone, never a list. */
-async function stepReplace(page: Page, anchor: Anchor): Promise<void> {
-  const before = await markerLocOf(page)
-  // A point 40 units north-east of the anchor: a real, different position on the same map.
-  await typeLoc(page, `${String(-anchor.y + 40)}, ${String(-anchor.x - 40)}, ${String(anchor.z)}`)
-  const after = await settle(() => markerLocOf(page), (l) => l !== before, { timeoutMs: 10_000 })
-  check('entering another /loc REPLACES the marker', after !== before, `${String(before)} → ${String(after)}`)
-  check('…and there is still exactly one', (await countOf(page, LOC_MARKER)) === 1)
-  const stored = await storedOf(page)
-  check('…with one entry stored for this zone, not two', (stored?.match(/"ns"/g) ?? []).length === 1, String(stored))
+/** 6. ENTERING MORE LOCS ADDS MARKERS — up to four, then the colour cycle evicts the oldest. */
+async function stepAddMore(page: Page, anchor: Anchor): Promise<void> {
+  const start = await markerLocsOf(page)
+  check('one marker is on the map to begin with', start.length === 1, String(start.length))
+  // Three more real, distinct positions on the same map — four markers, four colours.
+  for (const [dy, dx] of [[40, -40], [-60, 60], [90, 80]] as const) {
+    await typeLoc(page, `${String(-anchor.y + dy)}, ${String(-anchor.x + dx)}, ${String(anchor.z)}`)
+  }
+  const four = await settle(() => countOf(page, LOC_MARKER), (c) => c === 4, { timeoutMs: 12_000 })
+  check('typing more /locs ADDS markers rather than replacing', four === 4, String(four))
+  check('…and each is stated by its own chip', (await countOf(page, LOC_CHIP)) === 4)
+  const stored4 = await storedOf(page)
+  check('…stored as four coloured entries for this zone', (stored4?.match(/"color"/g) ?? []).length === 4, String(stored4))
+
+  // A FIFTH add cannot make a fifth marker: the oldest is evicted, its colour cycles to the new one.
+  const oldest = (await markerLocsOf(page))[0]
+  await typeLoc(page, `${String(-anchor.y + 200)}, ${String(-anchor.x + 10)}, ${String(anchor.z)}`)
+  const after = await settle(
+    () => markerLocsOf(page),
+    (ls) => ls.length === 4 && !ls.includes(oldest),
+    { timeoutMs: 12_000 }
+  )
+  check('a fifth /loc never makes a fifth marker — the cap holds at four', after.length === 4, String(after.length))
+  check('…and it evicts the OLDEST, cycling the colour', !after.includes(oldest), `${oldest} should be gone`)
 }
 
-/** 7. CLEARING REMOVES IT — from the map, from the toolbar and from the store. */
+/** 7. CLEARING REMOVES THEM — every marker, from the map, the toolbar and the store. */
 async function stepClear(page: Page, zone: string): Promise<void> {
-  await page.click(LOC_CLEAR, { timeout: 15_000 })
-  check('clearing the chip removes the marker from the map', await settleGone(page, LOC_MARKER, { timeoutMs: 8000 }))
-  check('…and the chip with it', (await countOf(page, LOC_CHIP)) === 0)
+  // Several markers are down; clear each in turn (the ✕ always removes the first chip).
+  for (let guard = 8; guard > 0 && (await countOf(page, LOC_MARKER)) > 0; guard--) {
+    const n = await countOf(page, LOC_MARKER)
+    await page.click(LOC_CLEAR, { timeout: 15_000 })
+    await settle(() => countOf(page, LOC_MARKER), (c) => c < n, { timeoutMs: 8000 })
+  }
+  check('clearing the chips removes every marker from the map', await settleGone(page, LOC_MARKER, { timeoutMs: 8000 }))
+  check('…and the chips with them', (await countOf(page, LOC_CHIP)) === 0)
   const stored = await settle(() => storedOf(page), (s) => s == null || !s.includes(`"${zone}"`), { timeoutMs: 8000 })
-  check('…and it is gone from the store, not merely off the screen', stored == null || !stored.includes(`"${zone}"`), String(stored))
+  check('…and they are gone from the store, not merely off the screen', stored == null || !stored.includes(`"${zone}"`), String(stored))
 }
 
 /** Everything launch 1 asserts. Returns the reading left placed for launch 2, or null when skipped. */
@@ -343,7 +370,7 @@ async function firstLaunch(page: Page): Promise<{ zone: string; loc: string } | 
   await stepLandmark(page, anchor)
   await stepStated(page, zone, anchor)
   await stepSurvivesTabs(page)
-  await stepReplace(page, anchor)
+  await stepAddMore(page, anchor)
   await stepClear(page, zone)
 
   // Arm the restart: place one last marker and hand its reading to launch 2.
@@ -394,7 +421,7 @@ async function main(): Promise<void> {
   const userData = makeUserData()
   const log = stageFixture('e2e-maps.log', { maps: true })
   try {
-    console.log('launch 1: refuse a bad loc, place a good one on a landmark, tab round trip, replace, clear…')
+    console.log('launch 1: refuse a bad loc, place one on a landmark, tab round trip, add up to four + cycle, clear…')
     const first = await launchOnFixture(log, { userData })
     let placed: { zone: string; loc: string } | null = null
     try {

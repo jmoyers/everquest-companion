@@ -1,15 +1,19 @@
-// THE ONE PLACE A POSITION CAN ENTER THIS APP (JOS-98) — type or paste a `/loc`, get a marker.
+// THE PLACE POSITIONS ARE TYPED INTO THIS APP (JOS-98) — paste a `/loc`, get a coloured marker; plus
+// the chips that state every marker a zone holds.
+//
+// UP TO FIVE CHIPS, ONE BOX (JOS-98 wave 4). The box ADDS a typed marker — up to four, each a spot
+// you name (which may not be where you stand), coloured blue → green → yellow → violet as you add
+// them and cycling as you clear and re-add. The RED `player` chip sets itself from the log every
+// time you /loc in game. Each chip centres on its marker on click and removes it on ✕, so a stale
+// dot — of any colour — is never stuck on the map with no way to reach it.
 //
 // WHY A TEXT BOX ON A TOOLBAR THAT "DESCRIBES THE DRAWING". Because this control describes the
-// drawing: it states the one position drawn on the surface, and it is the only way to put one
-// there. The log never says where you are standing, so the alternative to a box is no marker at
-// all — which is what the header used to say, in the flat voice of something that could not be
-// fixed. It can be fixed; the user just has to say the number.
+// drawing: it states the positions drawn on the surface, and the box is the only way to put a typed
+// one there.
 //
-// THE FIELD EMPTIES ON SUCCESS AND THE CHIP TAKES OVER. Two controls, two jobs: the box is where a
-// loc goes IN, the chip is what the app currently BELIEVES — stated in the game's own words and
-// order so it can be checked against the game window without translation. A box that kept the text
-// would be claiming to be both, and a marker you cleared would still be sitting in it.
+// THE FIELD EMPTIES ON SUCCESS AND THE CHIPS TAKE OVER. Two kinds of control, two jobs: the box is
+// where a loc goes IN, the chips are what the app currently BELIEVES — stated in the game's own
+// words and order so they can be checked against the game window without translation.
 //
 // A REFUSAL IS PROSE AND IT STAYS PUT. The message names what the parser choked on and does not
 // vanish on a timer — the user is about to retype something, and an error that disappears while
@@ -31,21 +35,36 @@ import { Chip, IconButton, Stack, TextField, Typography } from '@mui/material'
 import AddLocationAltIcon from '@mui/icons-material/AddLocationAlt'
 import CancelIcon from '@mui/icons-material/Cancel'
 import PlaceIcon from '@mui/icons-material/Place'
+import MyLocationIcon from '@mui/icons-material/MyLocation'
 import type { EqLoc } from './mapGeometry'
-import { formatLoc, parseLoc } from './locMarker'
+import { formatLoc, MARKER_COLOR_HEX, parseLoc, type MarkerColor, type TypedMarker } from './locMarker'
 
 export interface MapLocFieldProps {
-  /** This zone's remembered marker, or null when it has none. */
-  marker: EqLoc | null
-  /** A well-formed reading was entered — place it, and remember it for this zone. */
+  /** This zone's TYPED markers (up to four, coloured), set from the box. */
+  typed: readonly TypedMarker[]
+  /** This zone's PLAYER marker (light red), scraped from the log, or null. */
+  player: EqLoc | null
+  /** A well-formed reading was entered — ADD it as a typed marker for this zone. */
   onPlace: (loc: EqLoc) => void
-  /** Centre the view on the marker that is already placed. */
-  onShow: () => void
-  /** Forget this zone's marker. The only thing that ends one, besides entering another. */
-  onClear: () => void
+  /** Centre the view on the typed marker of this colour. */
+  onShowTyped: (color: MarkerColor) => void
+  /** Forget this zone's typed marker of this colour. */
+  onClearTyped: (color: MarkerColor) => void
+  /** Centre the view on the player marker. */
+  onShowPlayer: () => void
+  /** Forget this zone's player marker (it re-appears the next time you /loc in this zone). */
+  onClearPlayer: () => void
 }
 
-export default function MapLocField({ marker, onPlace, onShow, onClear }: MapLocFieldProps): JSX.Element {
+export default function MapLocField({
+  typed,
+  player,
+  onPlace,
+  onShowTyped,
+  onClearTyped,
+  onShowPlayer,
+  onClearPlayer
+}: MapLocFieldProps): JSX.Element {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -99,25 +118,62 @@ export default function MapLocField({ marker, onPlace, onShow, onClear }: MapLoc
           <AddLocationAltIcon fontSize="small" />
         </IconButton>
       </span>
-      {marker != null && (
+      {/* WHERE YOU ARE, scraped from the log (light red). It has no box — it sets itself when you
+          /loc in game — but it gets the same centre/clear chip so a stale dot is never stuck on the
+          map. `error.light` matches the crosshair's own colour (MapLocMarker). */}
+      {player != null && (
         <Chip
           size="small"
-          color="info"
           variant="outlined"
-          icon={<PlaceIcon />}
-          data-testid="maps-loc-chip"
-          title="The location you entered. Click to centre on it; ✕ to remove it."
-          label={formatLoc(marker)}
-          onClick={onShow}
-          onDelete={onClear}
-          // NAMED, because the chip carries TWO icons and they do OPPOSITE things: the leading
-          // Place icon is part of the click target that centres on the marker, and this one
-          // deletes it. MUI's own class names distinguish them, but a spec that clicks
-          // `[chip] svg` gets the first — which is how the clear affordance was first asserted
-          // green while doing nothing at all.
-          deleteIcon={<CancelIcon data-testid="maps-loc-clear" titleAccess="Remove this marker" />}
+          icon={<MyLocationIcon />}
+          data-testid="maps-loc-chip-player"
+          title="Most recent player /loc, click to center."
+          label={formatLoc(player)}
+          onClick={onShowPlayer}
+          onDelete={onClearPlayer}
+          deleteIcon={<CancelIcon data-testid="maps-loc-clear-player" titleAccess="Remove your position marker" />}
+          sx={{
+            color: 'error.light',
+            borderColor: 'error.light',
+            '& .MuiChip-icon': { color: 'error.light' },
+            '& .MuiChip-deleteIcon': { color: 'error.light' }
+          }}
         />
       )}
+      {/* ONE CHIP PER TYPED MARKER, in the marker's own colour. NEWEST FIRST — the row grows outward
+          from the red player chip on the left, so the freshest mark is always the one next to it and
+          the oldest sits at the far right, which is the one the cycle drops next. `typed` is stored
+          oldest-first, so the display is reversed. All share the `maps-loc-chip` test id (a
+          `data-color` tells them apart) so a count is the number placed. */}
+      {[...typed].reverse().map((m) => {
+        const hex = MARKER_COLOR_HEX[m.color]
+        return (
+          <Chip
+            key={m.color}
+            size="small"
+            variant="outlined"
+            icon={<PlaceIcon />}
+            data-testid="maps-loc-chip"
+            data-color={m.color}
+            title="Manual marker, click to center."
+            label={formatLoc(m.loc)}
+            onClick={() => { onShowTyped(m.color) }}
+            onDelete={() => { onClearTyped(m.color) }}
+            // NAMED, because the chip carries TWO icons and they do OPPOSITE things: the leading
+            // Place icon is part of the click target that centres on the marker, and this one
+            // deletes it. MUI's own class names distinguish them, but a spec that clicks
+            // `[chip] svg` gets the first — which is how the clear affordance was first asserted
+            // green while doing nothing at all.
+            deleteIcon={<CancelIcon data-testid="maps-loc-clear" data-color={m.color} titleAccess="Remove this marker" />}
+            sx={{
+              color: hex,
+              borderColor: hex,
+              '& .MuiChip-icon': { color: hex },
+              '& .MuiChip-deleteIcon': { color: hex }
+            }}
+          />
+        )
+      })}
       {error != null && (
         <Typography variant="caption" color="error" data-testid="maps-loc-error" sx={{ maxWidth: 420 }}>
           {error}

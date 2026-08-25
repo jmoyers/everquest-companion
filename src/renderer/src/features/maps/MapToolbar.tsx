@@ -70,6 +70,7 @@ import ExploreIcon from '@mui/icons-material/Explore'
 import type { MapLayer, MapPackInfo, MapPackPrefs, ZoneShort } from '@shared/maps'
 import { bandLabel, type FloorBand } from './floorSlice'
 import type { EqLoc, LayerMask } from './mapGeometry'
+import type { MarkerColor, TypedMarker } from './locMarker'
 import ZoneSelect from './MapZoneSelect'
 import MapLocField from './MapLocField'
 import type { ZoneMode } from './zoneFollow'
@@ -249,11 +250,14 @@ export interface MapToolbarProps {
   packs: readonly MapPackInfo[]
   prefs: MapPackPrefs
   onPrefs: (prefs: MapPackPrefs) => void
-  /** This zone's typed-/loc marker, or null when it has none (JOS-98). */
-  locMarker: EqLoc | null
+  /** This zone's TYPED markers (up to four, coloured) and PLAYER marker (light red) (JOS-98). */
+  typedMarkers: readonly TypedMarker[]
+  playerMarker: EqLoc | null
   onPlaceLoc: (loc: EqLoc) => void
-  onShowLoc: () => void
-  onClearLoc: () => void
+  onShowTyped: (color: MarkerColor) => void
+  onClearTyped: (color: MarkerColor) => void
+  onShowPlayer: () => void
+  onClearPlayer: () => void
   /** The view is tighter than the whole zone — zoom-out and Fit have something to do. */
   zoomedIn: boolean
   /** > 1 zooms in, < 1 out, around the pane centre. */
@@ -315,7 +319,8 @@ function PackSelect({
 function DrawnControls(props: MapToolbarProps): JSX.Element {
   const { layers, onLayers, bands, floor, onFloor, packs, prefs, onPrefs } = props
   const { zoomedIn, onZoom, onFit } = props
-  const { locMarker, onPlaceLoc, onShowLoc, onClearLoc } = props
+  const { typedMarkers, playerMarker, onPlaceLoc } = props
+  const { onShowTyped, onClearTyped, onShowPlayer, onClearPlayer } = props
   const on = TOGGLEABLE.filter((t) => layers[t.layer]).map((t) => String(t.layer))
   return (
     <>
@@ -385,9 +390,17 @@ function DrawnControls(props: MapToolbarProps): JSX.Element {
         }}
       />
 
-      {/* The one position the app can hold, and the only way one gets in (JOS-98). It belongs on
-          this row for the row's own reason: it describes what is DRAWN on the surface. */}
-      <MapLocField marker={locMarker} onPlace={onPlaceLoc} onShow={onShowLoc} onClear={onClearLoc} />
+      {/* The two positions the app can hold, and the only way one is typed in (JOS-98). It belongs
+          on this row for the row's own reason: it describes what is DRAWN on the surface. */}
+      <MapLocField
+        typed={typedMarkers}
+        player={playerMarker}
+        onPlace={onPlaceLoc}
+        onShowTyped={onShowTyped}
+        onClearTyped={onClearTyped}
+        onShowPlayer={onShowPlayer}
+        onClearPlayer={onClearPlayer}
+      />
     </>
   )
 }

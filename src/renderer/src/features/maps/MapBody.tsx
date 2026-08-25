@@ -33,6 +33,7 @@ import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
 import { paneOverlay, type PaneOverlay, type ZonePaneState } from './useMapPane'
 import { mapFromLoc, type EqLoc, type LayerMask } from './mapGeometry'
+import type { TypedMarker } from './locMarker'
 import { bandRange, type FloorBand } from './floorSlice'
 import type { MapViewport } from './useMapViewport'
 import { Tooltip } from '../../lib/Tooltip'
@@ -162,7 +163,8 @@ function MapSurface({
   bands,
   floor,
   marker,
-  locMarker,
+  typedMarkers,
+  playerMarker,
   pane
 }: {
   data: MapData
@@ -172,8 +174,10 @@ function MapSurface({
   bands: readonly FloorBand[]
   floor: number | null
   marker: Marker | null
-  /** The `/loc` the user typed for THIS zone, still in the game's own axes (JOS-98). */
-  locMarker: EqLoc | null
+  /** The `/loc`s the user TYPED for THIS zone (up to four, coloured), in the game's own axes. */
+  typedMarkers: readonly TypedMarker[]
+  /** The `/loc` the LOG scraped for THIS zone (light red) — where the character stood. */
+  playerMarker: EqLoc | null
   /** The sidebar's contribution, or null when it is closed and draws nothing. */
   pane: PaneOverlay | null
 }): JSX.Element {
@@ -209,9 +213,13 @@ function MapSurface({
       {pane != null && <MapMobPins pins={pane.pins} vp={vp} selectedId={pane.selectedId} />}
       {ringAt != null && <MarkerRing at={ringAt} size={26} testId="maps-pane-marker" />}
       {at != null && <MarkerRing at={at} size={22} testId="maps-marker" />}
-      {/* THE ONE SEAM, AGAIN: the typed reading reaches the screen through `mapFromLoc` and then
-          the same `project` every other mark uses. Nothing here knows which way north is. */}
-      {locMarker != null && <MapLocMarker at={mapFromLoc(locMarker)} loc={locMarker} vp={vp} />}
+      {/* THE ONE SEAM, AGAIN: each reading reaches the screen through `mapFromLoc` and then the
+          same `project` every other mark uses. Nothing here knows which way north is. The player
+          crosshair draws first so a pasted mark sitting on the same spot stays on top. */}
+      {playerMarker != null && <MapLocMarker variant="player" at={mapFromLoc(playerMarker)} loc={playerMarker} vp={vp} />}
+      {typedMarkers.map((m) => (
+        <MapLocMarker key={m.color} variant={m.color} at={mapFromLoc(m.loc)} loc={m.loc} vp={vp} />
+      ))}
     </Box>
   )
 }
@@ -254,15 +262,17 @@ export interface MapBodyProps {
   /** The LONG zone name the catalog was joined on, for the sidebar's own honesty. */
   zoneName: string | null
   marker: Marker | null
-  /** This zone's typed-/loc marker, or null. Persistent, unlike `marker` above it. */
-  locMarker: EqLoc | null
+  /** This zone's TYPED markers (coloured), up to four. Persistent, unlike `marker` above it. */
+  typedMarkers: readonly TypedMarker[]
+  /** This zone's PLAYER marker (light red), scraped from the log, or null. Also persistent. */
+  playerMarker: EqLoc | null
   /** A cross-zone hit was clicked — `useSearchJump`'s handler, which changes zone first. */
   onJump: (to: JumpTarget) => void
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
-  const { locMarker } = props
+  const { typedMarkers, playerMarker } = props
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (
@@ -274,7 +284,8 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           bands={bands}
           floor={floor}
           marker={marker}
-          locMarker={locMarker}
+          typedMarkers={typedMarkers}
+          playerMarker={playerMarker}
           pane={paneOverlay(pane)}
         />
       ) : (
