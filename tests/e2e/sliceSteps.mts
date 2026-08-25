@@ -32,6 +32,9 @@ const BASIS = '[data-testid="leveling-basis"]'
 /** The elapsed span the panel says its numbers cover — `RangeStats.durationMs`, which under a zone
  *  slice is Σ of the ADMITTED VISITS. The number the owner's bug report was about. */
 const DURATION = '[data-testid="leveling-range-duration"]'
+/** …and what that span LEFT OUT (JOS-454): `of <range> selected · <zone>, <membership>`, drawn
+ *  beside the elapsed number whenever the zone membership admitted less than the whole range. */
+const MEMBERSHIP = '[data-testid="leveling-range-membership"]'
 const LOOT_SLICE = '[data-testid="loot-slice"]'
 const LOOT_SUMMARY = '[data-testid="loot-summary"]'
 const LOOT_RATES = '[data-testid="loot-rates"]'
@@ -231,6 +234,14 @@ async function checkTierScopedElapsed(page: Page): Promise<void> {
   )
   const captionEvery = (await textOf(page, CAPTION)).replace(/\s+/g, ' ')
   check('…and the caption says which membership the span belongs to', captionEvery.includes('every tier'), captionEvery)
+
+  // JOS-454, ON THE PANEL ITSELF. The caption above is a different box, and the owner's report was
+  // that the elapsed number contradicted the two instants printed beside it with nothing in
+  // between: a 1h51m selection reading `15m`, and no zone or tier named anywhere on the panel. So
+  // the shortfall is stated where the shortfall is — the same line, one look.
+  const short = (await textOf(page, MEMBERSHIP)).replace(/\s+/g, ' ')
+  check('the panel says how much of the range that span left out, beside the span', short !== '', short)
+  check('…and names the membership that left it out, in the same words the caption used', /every tier/.test(short), short)
 
   // THE BROADCAST PATH, not the click path: this is exactly what the overlay's footer button does.
   await page.evaluate(() =>

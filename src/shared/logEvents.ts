@@ -560,9 +560,20 @@ export interface CcWakeEvent extends LogEventBase {
 export interface PetClaimEvent extends LogEventBase {
   kind: 'petClaim'
   name: string
-  /** WHICH line said so. Never a behavioural switch — it is what the engine's debug line, an
-   *  alert author and a test read to tell an ordered pet from an interrogated one. */
-  via: 'tell' | 'leader'
+  /**
+   * WHICH line said so. Never a behavioural switch — it is what the engine's debug line, an
+   * alert author and a test read to tell an ordered pet from an interrogated one.
+   *
+   * `petBuff` IS NOT PARSED FROM A LINE (JOS-454). The other two are single sentences and
+   * `parseEvent` emits them; the third binding signal (JOS-188 — your own `targetType: Pet` cast,
+   * armed, then resolved by a named landing) is a PAIR of lines and therefore per-stream state,
+   * which is why it lived inside the combat engine and nowhere else. The engine now hands that
+   * state transition back to the bus as this event (`combat/petClaims.ts bindPetBuffLanding`), so
+   * the four other models that already bind `petClaim` — progression's kill credit, the buff
+   * module's pet slot, the roster, the resist fold — learn a pet the meter had bound all along.
+   * It is the derived-event seam `petClaims.ts` named and refused to solve with a second arm.
+   */
+  via: 'tell' | 'leader' | 'petBuff'
 }
 
 /**

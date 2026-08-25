@@ -96,8 +96,25 @@ const LOOT_RE_PLAIN = /^You have looted (?:(\d+) |an? )?(.+?)(?: from (.+?) corp
 // (tolerated everywhere). Dispositions: 'currency'/'hoard'/'depot' are all KEPT storage
 // (count toward held/quest progress); 'sold' was vendored — GONE, never held;
 // 'combined' consumed the looted copy AND a held copy to create the upgraded `created`
-// item (every one of the 293 real combine lines creates `<same base> +N`), so it nets
+// item (every one of the 847 real combine lines creates `<same base> +N`), so it nets
 // ZERO held. The one held-count rule lives in computeHeldCounts (renderer).
+//
+// RE-CENSUSED 2026-08-23 (JOS-453) after the 2026-08-18 patch, which the owner reported as
+// printing loot lines "the parser has never seen". IT DOES NOT: a full-log sweep of all 12,045
+// loot events found ZERO unmatched `You looted` lines — the four regexes above claim every one,
+// and the only five unclaimed lines containing "looted" are player chat about looting, which
+// they correctly refuse. What the patch DID change is the population, not the grammar:
+//   · ` +N` ON THE LOOTED ITEM IS NOW ROUTINE — 2,213 loot lines carry one. The name is kept
+//     VERBATIM here and folded at the counting boundary by `itemCountKey`/`itemTierKey` (law 2).
+//   · TWO COMBINE SUB-SHAPES no committed fixture had pinned, both long-standing rather than new,
+//     and both now in `tests/fixtures/w47-autosell-patch.log`: 106 lines where the created tier
+//     EQUALS the looted one (`Ethereal Mist Greaves +4 … to create an Ethereal Mist Greaves +4` —
+//     a merge that did not climb), and 345 where the LOOTED copy is tierless and the created name
+//     carries the only ` +N` on the line (`Lustrous Russet Vambraces … to create a … +6`). The
+//     `created` capture is what itemTiers folds, so both land correctly.
+//   · Disposition mix over the whole log: sold 8,816 · dashed/kept 1,707 · combined 847 ·
+//     destroyed 367 · hoard 161 · currency 144 · depot 3. `sold` dominating at 73% is what made
+//     the gear-ownership misread visible enough to report (shared/lootDisposition.ts `isKept`).
 const LOOT_CURRENCY_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse and stored it in your currency\.?$/
 const LOOT_SOLD_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse and sold it for (?:free|[\d,]+ (?:platinum|gold|silver|copper).*?)\.?$/
 const LOOT_STORED_RE = /^You looted (?:(\d+) |an? )?(.+?) from (.+?) corpse and stored it in your (Dragon Hoard|tradeskill depot)\.?$/
@@ -249,10 +266,11 @@ const AA_IMPROVED_RE = /^You have improved (.+?) (\d+) at a cost of/
 //         there; what changed is that something else now needs the line.
 //
 //   EXISTS, DELIBERATELY NOT PARSED (nothing to model — see the reason on each)
-//   302×  `You looted <item> from <mob>'s corpse to create a <item> +N` — an AUTO-merge on
+//   847×  `You looted <item> from <mob>'s corpse to create a <item> +N` — an AUTO-merge on
 //         pickup. ALREADY parsed by the loot family as disposition:'combined' + `created`
-//         (every one of the 302 creates `<same base> +N`), so a second matcher would
-//         double-count. The itemTiers module folds it from the loot event.
+//         (every one of the 847 creates `<same base> +N` — re-verified 2026-08-23, zero
+//         cross-base), so a second matcher would double-count. The itemTiers module folds it
+//         from the loot event, which is where the `to create … +N` tier evidence enters.
 //  6433×  `Your <Item> (Exaltation) shimmers briefly.` / `feels alive with power.` /
 //         `flickers with a pale light.` / `pulses with light as your vision sharpens.`
 //         A socketed exaltation FIRING. It names the exaltation's SOURCE item, never the

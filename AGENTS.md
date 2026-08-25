@@ -1124,13 +1124,27 @@ the full per-lane evidence lives in docs/agents-archive.md.
   The renderer holds NO dismiss state (the snapshot's `petNudge` is absent
   in every state but the one). Full story: docs/agents-archive.md.
   A pet-claim tell from a name EVER seen charmed re-arms the charmed set,
-  never the permanent one (`everCharmed`). STILL NOT CLOSED, named: a pet
-  its owner neither buffs nor orders stays invisible (order it once), and
-  `modules/buffs.ts`'s entity-level succession still waits for the tell —
-  closing that needs a derived-event seam feeding both models, never a
-  second arm in buffs.ts. Goldens: `p2-pet-arc-bound.log`,
-  `p3-pet-upgraded-buff-bound.log`, petBuffBind/petClaimWindows tests. Full
-  measurements: docs/agents-archive.md.
+  never the permanent one (`everCharmed`).
+  **AND THE PET-BUFF RUNG IS NO LONGER THE COMBAT MODEL'S ALONE (JOS-454).**
+  It was a state transition inside the engine — the arm is per-stream, so
+  `parseEvent` cannot emit it — and this entry used to name the two ways out
+  and rule for the first: a derived-event seam feeding both models, never a
+  second arm. The seam is built. `bindPetBuffLanding` emits a derived
+  `petClaim {via:'petBuff'}` on `bus.emitDerived` (Task #47's queue, the one
+  `buffExpired` rides), and every model that already binds a `petClaim` —
+  progression's kill credit, buffs.ts's entity succession, roster, the
+  resist fold — learns the pet at the instant the meter does. ONE PRODUCER,
+  ONE KIND, and the producer IGNORES its own kind (`ingestPetClaim`), which
+  is what makes it provably loop-free. The ARM AND THE GATE ARE UNTOUCHED,
+  so which names bind has not moved — only who is told. WHAT BOUGHT IT: the
+  owner's summoned necro pet Vibartik, bound in the engine at 13:42:43 by
+  `Augment Death` and not by the progression fold until his first tell at
+  14:37:53, whose four kills in that gap read as `4 kills by others seen` on
+  a Leveling panel sitting under a meter that had him. STILL NOT CLOSED: a
+  pet its owner neither buffs nor orders stays invisible (order it once).
+  Goldens: `p2-pet-arc-bound.log`, `p3-pet-upgraded-buff-bound.log`,
+  `p4-pet-buff-kill-credit.log`, petBuffBind/petClaimWindows/
+  petBuffKillCredit tests. Full measurements: docs/agents-archive.md.
 - Exp: `You gain (party )?experience!( (N.NN%))?` — the percent is an
   INCREMENT of the current level bar (sums to ~100 between dings);
   unstated ⇒ at the cap, modeled `pct: undefined` never 0. The exp line

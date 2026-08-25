@@ -26,11 +26,11 @@
 //     (law 1): a spell the sidecar never answered for is shown plainly, exactly as UnlockList does.
 //   * the LOADOUT RULES — `comboClassSet` is the queried set, an unresolved slot only widens it, and
 //     an unknown loadout answers empty rather than ranking the whole game.
-//   * the CAVEATS — these are base figures with no crits, focus, AA or resist in them
-//     (spellMetrics.ts's header states them). The per-second figures ARE recast-aware sustained
-//     ones (JOS-444): `UnlockSpell.recastMs` rides the wire resolved, so a re-evaluation here
-//     divides by the same casting cycle main's own snapshot did. The panel says `directional`
-//     once, like its neighbour.
+//   * the CAVEATS — these are base figures with no crits, AA or resist in them (spellMetrics.ts's
+//     header states them; FOCUS came off that list in JOS-452 and is applied here when a reader has
+//     a dump loaded). The per-second figures ARE recast-aware sustained ones (JOS-444):
+//     `UnlockSpell.recastMs` rides the wire resolved, so a re-evaluation here divides by the same
+//     casting cycle main's own snapshot did. The panel says `directional` once, like its neighbour.
 //
 // AND AN ABSENT FIGURE IS NEVER A ZERO. A spell with no healing line has no `hps`, which is not the
 // same claim as `hps 0`; it is absent from the healing side entirely, and a null column value sorts
@@ -77,6 +77,28 @@ import { comboClassSet, type ComboClasses, type LevelUnlockData, type UnlockSpel
 import { spellMetricsAt, type SpellMetrics } from './spellMetrics'
 import { observedRankRow, type ObservedSpellRanksSnap } from './spellRanks'
 import { effectiveSpellRank, normalizeSpellRank } from './spellScale'
+import { bestWornFocus, wornFocusLabel, type FocusKind, type WornFocus } from './wornFocus'
+
+// ── AND EVERY FIGURE WEARS YOUR GEAR SINCE JOS-452 (owner ask 2026-08-23) ──────────────────────
+//
+// "research focus effects and see if we can simulate - based on what you're wearing. pay attention
+// to level range etc."
+//
+// The fourth overlay, and the same shape as the three before it: the resolution happens elsewhere
+// (`shared/wornFocus.ts` owns the qualification test and the level-range decay; main resolves WHICH
+// effects are worn off the character's dump) and this file only asks for a number and passes it
+// down. Absent means no focus and a byte-identical table.
+//
+// TWO THINGS ARE DECIDED HERE AND NOWHERE ELSE, both because only this file knows them:
+//
+//   * THE SPELL'S LEVEL IS ITS GAIN LEVEL, never the level being viewed. `Limit Max Level: 44` is a
+//     statement about the spell, so a wizard reading his L18 nuke at 50 still gets the full focus —
+//     what decays is a spell GAINED above the cap, not a spell CAST above it. Where a loadout could
+//     be more than one class the lowest gain level answers, which is the number every other join in
+//     this app already uses for a spell.
+//   * THE MARKER IS PER TAB. A damage focus says nothing about the Heal table, so each table carries
+//     its own `wornFocus` computed from the rows IN it, and a tab where nothing was focused says
+//     nothing at all rather than borrowing the tab next door's percentage.
 
 // ── AND A FIFTH TAB THAT POINTS AT A PACK (JOS-449, owner ask 2026-08-23) ──────────────────────
 //
@@ -250,6 +272,26 @@ export interface BestSpellRow {
    * divide by, so the printed count can never drift from the arithmetic.
    */
   hits: number
+  /**
+   * THE WORN FOCUS THAT ANSWERED (JOS-452) — one entry per SIDE that had one, absent when nothing
+   * the player is wearing qualifies for this spell.
+   *
+   * Both sides can be present at once (a spell that damages and heals is in one tab of each), and
+   * an entry names the ITEM as well as the effect, which is the owner's ask read literally: the
+   * card has to be able to say which piece of gear did this.
+   */
+  focus?: BestSpellFocus[]
+}
+
+/** One side of one row's figures, and what lifted it. */
+export interface BestSpellFocus {
+  side: FocusKind
+  /** the resolved percent: the middle of the focus's band, after the level rule. Always positive. */
+  pct: number
+  /** the effect's own name, verbatim ("Improved Damage II") */
+  effect: string
+  /** the item wearing it, as the dump named it ("Polished Mithril Mask (Exaltation)") */
+  item: string
 }
 
 /**
@@ -271,6 +313,12 @@ export interface BestSpellsView {
    * above it keeps its own (`effectiveSpellRank`), which is the owner's ask read literally.
    */
   simulate?: number
+  /**
+   * THE FOCUS EFFECTS THE CHARACTER IS WEARING (JOS-452), resolved main-side off their newest
+   * `/outputfile inventory` dump and handed in whole. Absent or empty is the base reading this file
+   * gave before JOS-452 existed, figure for figure.
+   */
+  focus?: readonly WornFocus[]
 }
 
 /** One tab's table, split the way `UnlockList` splits a level list. */
@@ -279,6 +327,12 @@ export interface BestSpellsTable {
   shown: BestSpellRow[]
   /** positively out of era, same sort - what the disclosure holds. */
   outOfEra: BestSpellRow[]
+  /**
+   * THIS TAB'S VISIBLE FOCUS MARKER (JOS-452), already worded: `worn +11%`, or the range where the
+   * rows in it were focused by different amounts. Null when nothing in this table was focused at
+   * all, which is what keeps the marker off a tab it has nothing to say about.
+   */
+  wornFocus: string | null
 }
 
 /** Which column a side is ranked on, and which way. */
@@ -304,12 +358,14 @@ export interface BestSpells {
   aoeTargets: string
 }
 
+const emptyTable = (): BestSpellsTable => ({ shown: [], outOfEra: [], wornFocus: null })
+
 const emptyTables = (): Record<BestSpellTab, BestSpellsTable> => ({
-  dd: { shown: [], outOfEra: [] },
-  dot: { shown: [], outOfEra: [] },
-  aoe: { shown: [], outOfEra: [] },
-  heal: { shown: [], outOfEra: [] },
-  hot: { shown: [], outOfEra: [] }
+  dd: emptyTable(),
+  dot: emptyTable(),
+  aoe: emptyTable(),
+  heal: emptyTable(),
+  hot: emptyTable()
 })
 
 /** The default sort for a tab: its own rank column, best first. */
@@ -359,12 +415,29 @@ export function spellHitsFor(spell: UnlockSpell, targets: number): number {
   return aeHits(spell.waves ?? 1, targets, aeMaxTargets(spell.aeMaxTargets))
 }
 
+/**
+ * THE READING ONE ROW IS TAKEN AT: the mote rank, the target count, and the worn focus percentages
+ * already resolved for this spell.
+ *
+ * One object rather than three trailing arguments, for the repo's four-parameter cap and because it
+ * grew a fourth member the day JOS-452 landed. Every field defaults to "the base reading", so
+ * `spellMetricsForLevel(spell, level)` is the catalog's own figures with nothing on them.
+ */
+export interface MetricsReading {
+  rank?: number
+  targets?: number
+  /** the worn DAMAGE focus percent for this spell; absent or 0 is no focus */
+  focusDamagePct?: number
+  /** the worn HEALING focus percent for this spell; absent or 0 is no focus */
+  focusHealPct?: number
+}
+
 export function spellMetricsForLevel(
   spell: UnlockSpell,
   level: number,
-  rank = 0,
-  targets = 1
+  reading: MetricsReading = {}
 ): SpellMetrics | undefined {
+  const { rank = 0, targets = 1 } = reading
   const input = {
     effects: spell.hpLines,
     mana: spell.mana,
@@ -379,9 +452,46 @@ export function spellMetricsForLevel(
     rank,
     // AND HOW MANY TIMES THE CAST LANDS (JOS-449): `targets` 1 gives a rain its three waves and
     // every other spell the single hit it has always had.
-    hits: spellHitsFor(spell, targets)
+    hits: spellHitsFor(spell, targets),
+    // AND WHAT YOUR GEAR ADDS (JOS-452), resolved by `rowFocus` below against this same spell so the
+    // percentage the figures used and the percentage the marker prints are one number.
+    focusDamagePct: reading.focusDamagePct,
+    focusHealPct: reading.focusHealPct
   }
   return spellMetricsAt(input, level, spell.clientHp)
+}
+
+/**
+ * THE FOCUS ENTRIES FOR ONE SPELL, one per side that had a qualifying effect on.
+ *
+ * The spell's LEVEL here is its gain level, not the level being viewed — see this file's JOS-452
+ * note. Everything else the qualification test needs (`spellType`, `durationMs`, `targetType`) is
+ * already on the unlock row verbatim, so nothing is re-derived.
+ */
+export function rowFocus(
+  spell: UnlockSpell,
+  worn: readonly WornFocus[],
+  gainedAt: number
+): BestSpellFocus[] {
+  if (worn.length === 0) return []
+  const facts = {
+    name: spell.name,
+    level: gainedAt,
+    spellType: spell.spellType,
+    durationMs: spell.durationMs,
+    targetType: spell.targetType
+  }
+  const out: BestSpellFocus[] = []
+  for (const side of ['damage', 'heal'] as const) {
+    const hit = bestWornFocus(worn, side, facts)
+    if (hit) out.push({ side, pct: hit.pct, effect: hit.focus.effect, item: hit.focus.item })
+  }
+  return out
+}
+
+/** One side's resolved percent out of the row's entries, or undefined when that side had none. */
+export function pctOfSide(focus: readonly BestSpellFocus[], side: FocusKind): number | undefined {
+  return focus.find((f) => f.side === side)?.pct
 }
 
 /**
@@ -466,27 +576,58 @@ function ownedRows(
       mergeOwned(seen, owned)
       continue
     }
-    // JOS-446's map is keyed by spell LINE, so the join is the display name and `observedRankRow`
-    // strips the numeral - the catalog spells ~1,800 of its rows with no numeral at all.
-    const observedRank = normalizeSpellRank(observedRankRow(view.observed, spell.name)?.rank)
-    const rank = effectiveSpellRank(observedRank, simulate)
-    const targets = fold.area ? targetsFor(spell) : 1
-    const metrics = spellMetricsForLevel(spell, level, rank, targets)
-    if (!metrics) continue
-    byName.set(key, {
-      name: spell.name,
-      gainedAt: owned.gainedAt,
-      classes: owned.classes,
-      mana: catalogMana(spell),
-      metrics,
-      outOfEra: spell.outOfEra === true,
-      rank,
-      observedRank,
-      targets,
-      hits: spellHitsFor(spell, targets)
-    })
+    const row = buildRow(spell, { level, simulate, fold }, owned)
+    if (row) byName.set(key, row)
   }
   return [...byName.values()]
+}
+
+/** What the fold has already decided by the time one row is built. */
+interface RowContext {
+  level: number
+  simulate: number
+  fold: RowFold
+}
+
+/**
+ * ONE ROW, at every multiplier this readout knows about: the mote rank, the target count and the
+ * worn focus. Null when the spell has no figures at this level, which is when it has no row.
+ *
+ * Split out of `ownedRows` when JOS-452's focus resolution took that loop past the lint config's
+ * complexity ceiling — the loop decides WHICH spells are rows and this decides what one row SAYS.
+ */
+function buildRow(
+  spell: UnlockSpell,
+  ctx: RowContext,
+  owned: { classes: ClassAbbr[]; gainedAt: number }
+): BestSpellRow | null {
+  const view = ctx.fold.view
+  // JOS-446's map is keyed by spell LINE, so the join is the display name and `observedRankRow`
+  // strips the numeral - the catalog spells ~1,800 of its rows with no numeral at all.
+  const observedRank = normalizeSpellRank(observedRankRow(view.observed, spell.name)?.rank)
+  const rank = effectiveSpellRank(observedRank, ctx.simulate)
+  const targets = ctx.fold.area ? targetsFor(spell) : 1
+  const focus = rowFocus(spell, view.focus ?? [], owned.gainedAt)
+  const metrics = spellMetricsForLevel(spell, ctx.level, {
+    rank,
+    targets,
+    focusDamagePct: pctOfSide(focus, 'damage'),
+    focusHealPct: pctOfSide(focus, 'heal')
+  })
+  if (!metrics) return null
+  return {
+    name: spell.name,
+    gainedAt: owned.gainedAt,
+    classes: owned.classes,
+    mana: catalogMana(spell),
+    metrics,
+    outOfEra: spell.outOfEra === true,
+    rank,
+    observedRank,
+    targets,
+    hits: spellHitsFor(spell, targets),
+    ...(focus.length > 0 ? { focus } : {})
+  }
 }
 
 /**
@@ -560,19 +701,35 @@ export function spellInTab(tab: BestSpellTab, metrics: SpellMetrics): boolean {
   return TAB_MEMBER[tab](metrics)
 }
 
-/** One tab's rows, split by the era rule and sorted. `has` says which figure puts a row here. */
+/**
+ * One tab's rows, split by the era rule and sorted, with the tab's own focus marker.
+ *
+ * The marker reads only THIS TAB'S SIDE and only the rows that ended up here — the `aoeTargets`
+ * arrangement one function over, and for the same reason: a caption computed from anything but the
+ * rows in force is a caption that can state a number the table did not use. Rows behind the era
+ * disclosure count, because they are still in the table.
+ */
 function tableOf(
   rows: readonly BestSpellRow[],
-  has: (m: SpellMetrics) => boolean,
+  tab: BestSpellTab,
   sort: BestSpellSort
 ): BestSpellsTable {
+  const has = TAB_MEMBER[tab]
+  const side = TAB_SIDE[tab]
   const shown: BestSpellRow[] = []
   const outOfEra: BestSpellRow[] = []
+  const pcts: number[] = []
   for (const row of rows) {
     if (!has(row.metrics)) continue
     ;(row.outOfEra ? outOfEra : shown).push(row)
+    const pct = pctOfSide(row.focus ?? [], side)
+    if (pct !== undefined) pcts.push(pct)
   }
-  return { shown: sortBestSpells(shown, sort), outOfEra: sortBestSpells(outOfEra, sort) }
+  return {
+    shown: sortBestSpells(shown, sort),
+    outOfEra: sortBestSpells(outOfEra, sort),
+    wornFocus: wornFocusLabel(pcts)
+  }
 }
 
 /**
@@ -605,7 +762,7 @@ export function bestSpellsAt(
   const areaRows = ownedRows(data, want, level, { view, area: true })
   const tabs = emptyTables()
   for (const tab of TAB_ORDER) {
-    tabs[tab] = tableOf(tab === 'aoe' ? areaRows : rows, TAB_MEMBER[tab], view.sorts[tab])
+    tabs[tab] = tableOf(tab === 'aoe' ? areaRows : rows, tab, view.sorts[tab])
   }
   const aoeTargets = aoeAssumptionLabel(
     [...tabs.aoe.shown, ...tabs.aoe.outOfEra].map((r) => r.targets)

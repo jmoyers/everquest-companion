@@ -22,8 +22,14 @@
 // `./telemetry.ts` names the two events these ride on and points at this file; nothing is
 // re-exported, so there is exactly one place each of these names is spelled.
 //
-// IT IMPORTS NOTHING, like the contract it belongs to: it is read by the validators, the rollup,
-// the doc generator and the ingest Lambda, and it must compile under both of the repo's tsconfigs.
+// IT IMPORTS ONE ZERO-IMPORT SIBLING AND NOTHING ELSE. It used to import nothing at all, like the
+// contract it belongs to; JOS-458 added two more riders whose vocabulary has to be shared with the
+// call sites that PRODUCE them (`shared/perfSeams.ts` — a seam is named at the bracket, in
+// milliseconds, long before anything is bucketed), and that file is itself zero-import. So the
+// properties this rule was protecting are intact: it is read by the validators, the rollup, the
+// doc generator and the ingest Lambda, it drags no runtime dependency into any of them, and it
+// compiles under both of the repo's tsconfigs.
+import type { GcStallStats, SeamStallStats } from './perfSeams'
 //
 // EVERY NUMBER IS A COUNT OR A BUCKET INDEX. There is no field here a character, a zone, a spell,
 // a path or a line of log could go in — the ladders exist so that a millisecond, a byte count or
@@ -165,4 +171,35 @@ export interface SessionStateStats {
   freeMemBucket: number
   /** This app's summed resident memory, as an index into `WORKING_SET_MB_EDGES`. */
   workingSetBucket: number
+}
+
+/**
+ * ALL FIVE RIDERS, AS ONE CARRIER — what `sessionHeartbeat` and `sessionEnd` both extend.
+ *
+ * IT IS A CARRIER RATHER THAN FIVE FIELDS SPELLED TWICE, and that is a factoring decision with a
+ * correctness consequence. `shared/telemetry.ts` sits at the repo's 400-code-line ceiling, and ten
+ * lines of rider declaration across two events is what took it past — but the reason to fix it
+ * HERE rather than by trimming something else is that the two events must never drift: a session
+ * that ends before its first heartbeat is the common case AND is disproportionately the bad one,
+ * so a rider that rode only the heartbeat would be missing from exactly the reports worth having.
+ * Declared once, extended twice, and `Pick<EvSessionHeartbeat, …>` still resolves through it, so
+ * every existing importer is unchanged.
+ *
+ * EVERY GROUP IS INDEPENDENTLY OPTIONAL, and every absence means something specific rather than
+ * zero — the individual declarations say which.
+ */
+export interface SessionRiders {
+  /** How late our two clocks ran since the previous report (JOS-367). Absent: the probe never
+   *  observed a tick, which is not a smooth interval — it is no interval. */
+  live?: LiveStallStats
+  /** What the live tail's reads cost over the same interval. Absent: nothing was attached. */
+  tail?: TailReadStats
+  /** What the app was doing while the two above were measured. */
+  state?: SessionStateStats
+  /** What V8 spent over the same interval (JOS-458). Absent: the GC observer was not running —
+   *  never "no collections happened", which a running observer reports as zeros. */
+  gc?: GcStallStats
+  /** Which of our own seams ran, and what the worst call cost (JOS-458). Absent: none of the six
+   *  ran at all, which — read beside a `live` reading that is not zero — is itself the finding. */
+  seams?: SeamStallStats
 }

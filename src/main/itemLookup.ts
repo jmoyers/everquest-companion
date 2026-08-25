@@ -33,12 +33,15 @@
 // unit-tested in tests/itemLookup.test.mts against verbatim real wikitext.
 
 import { app } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { logError } from './errorLog'
+// THE ATOMIC WRITE, REUSED RATHER THAN RE-SPELLED (the storeFile.ts precedent, JOS-272): this app
+// has ONE answer to writing a whole file, and since JOS-371 it has an asynchronous one.
+import { writeFileDurableAsync } from './telemetry/durableWrite'
 import { normalizeItemName, parseItemWikitext } from './itemLookupParse'
 import { buildQuestItemIndex } from './questItemIndex'
-import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbFile } from './itemsDb'
+import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbEntry, type ItemDbFile } from './itemsDb'
 import { heldClickySpells as clickySpells } from './itemClickies'
 import type { HeldCounts, ItemKnowledge, ItemQuestUse, PoskyData, QuestData } from '../shared/types'
 
@@ -90,8 +93,51 @@ const REQUEST_TIMEOUT_MS = 8000
 const cacheKey = itemKey
 
 // ---- the committed item database (PRIMARY source) ------------------------------
+//
+// WHERE THE 8.6 MB ACTUALLY LIVES, MEASURED (JOS-371) — read this before trying to make the corpus
+// lazy from here, because from here it cannot be made lazy at all.
+//
+// The numbers, taken on the committed file: `items.json` is 8.75 MB on disk, costs 41.8 ms to
+// JSON.parse, and retains a ~20.4 MB object graph for the life of the process. Against a launch
+// whose `dataLoaded` mark lands at ~529 ms and whose `replayDone` lands at ~730 ms, with main's heap
+// at ~71 MB after the fold, that graph is a real 29% of the heap and the parse is a real 24% of the
+// 177 ms between `storeLoaded` and `dataLoaded`.
+//
+// AND THE IMPORT BELOW IS NOT THE ONLY ONE. FIVE main-process modules ES-import this exact JSON
+// module — this file, `ipc/characterSheet.ts`, `ipc/planner.ts`, `mobDropEra.ts` and
+// `planner/wornFocusIndex.ts` — and electron-vite inlines it into the main bundle EXACTLY ONCE for
+// all of them (three of those files say so in their own headers; the built `out/main/index.js` is
+// 15.2 MB, of which this is 8.75). So deleting the import here would move nothing: the bundle would
+// still carry the bytes and module evaluation would still parse them, for four other readers.
+// Removing the corpus from main's heap is a FIVE-FILE change plus a packaging change (the file
+// would have to ship as a resource and be read from disk, which is the exact trap AGENTS.md's
+// toolchain note warns about), and it would still buy nothing while `heldClickySpells` below is
+// called SYNCHRONOUSLY BEFORE THE SCAN REPLAY (session.ts `installClickies`, JOS-438's law: a
+// clicky firing has to be called a click on the pass that folds it) — that call walks the whole
+// corpus on every launch, so a lazily-loaded corpus would simply be loaded eagerly by it.
+//
+// WHAT WAS DONE HERE INSTEAD, because it is what this file actually owns: the three DERIVED indexes
+// below are built on first use rather than at module evaluation. They are 2.4 ms + 0.3 ms + 3.7 ms
+// and 0.47 + 0.07 + 1.49 MB — modest, but every millisecond of it was being charged to
+// `DATA_READY_MS` for a service that nothing asks anything of until the app is live.
+//
+// WHO ASKS DURING A FOLD: NOBODY, and that is checked rather than assumed. `lookupItem` reaches
+// main through exactly two paths — `ipc/knowledge.ts`'s handler (a renderer click) and the
+// eventFeed module's `probeLoot`, which is unreachable from a historical event because
+// `EventFeedModule.onEvent` returns at `if (!live) return` before it. pipeline.ts injects
+// `lookupItem` into the modules and says the same thing at the injection site, and it is DRIVEN
+// rather than argued: `tests/eventFeedWindows.test.mts` case (A) replays two committed fixtures at
+// `live:false` through the real module with a recording lookup double and asserts the double was
+// never called. So a lazy index here is first built by a LIVE loot line or a user's click, never by
+// the replay — nothing about the fold becomes async, and nothing it used to see goes missing.
 
-const itemDb = buildItemDbIndex(itemsJson as unknown as ItemDbFile)
+let itemDbIndex: Map<string, ItemDbEntry> | null = null
+
+/** The committed corpus keyed for lookup, built on first use. See the section header. */
+function itemDb(): Map<string, ItemDbEntry> {
+  itemDbIndex ??= buildItemDbIndex(itemsJson as unknown as ItemDbFile)
+  return itemDbIndex
+}
 
 /**
  * THE HELD-CLICKY CATALOG (JOS-438), bound to the committed DB here because this module already
@@ -112,7 +158,7 @@ export function heldClickySpells(counts: HeldCounts): ReadonlySet<string> {
  * name, and a DB hit must not be the one answer that renames the player's item.
  */
 function dbKnowledge(key: string, display: string): Omit<ItemKnowledge, 'cached'> | null {
-  const entry = itemDb.get(key)
+  const entry = itemDb().get(key)
   return entry ? { ...knowledgeFromDb(entry), name: display } : null
 }
 
@@ -124,19 +170,29 @@ const posky = poskyJson as unknown as PoskyData
  * Index the Plane of Sky dataset by normalized item name → the quests that require it.
  * This is the offline, already-known answer for every Sky class-Test item (runes,
  * Sphinx Claw, Nebulous Sapphire, efreeti drops, …).
+ *
+ * BUILT ON FIRST USE (JOS-371), like the two indexes either side of it: it is only ever read by
+ * `localKnowledge`, which is only ever read by a live lookup, so building it during main's module
+ * evaluation charged `DATA_READY_MS` for an answer nothing had asked for yet.
  */
-const poskyByItem = new Map<string, ItemQuestUse[]>()
-for (const q of posky.quests) {
-  for (const it of q.items) {
-    const key = cacheKey(it.name)
-    const uses = poskyByItem.get(key) ?? []
-    // De-dupe by quest identity (className + name) — the same item appears under many quests.
-    const quest = `${q.className} · ${q.name}`
-    if (!uses.some((u) => u.quest === quest)) {
-      uses.push({ quest, page: q.source, source: 'posky', giver: q.giver })
+let poskyIndex: Map<string, ItemQuestUse[]> | null = null
+function poskyByItem(): Map<string, ItemQuestUse[]> {
+  if (poskyIndex) return poskyIndex
+  const built = new Map<string, ItemQuestUse[]>()
+  for (const q of posky.quests) {
+    for (const it of q.items) {
+      const key = cacheKey(it.name)
+      const uses = built.get(key) ?? []
+      // De-dupe by quest identity (className + name) — the same item appears under many quests.
+      const quest = `${q.className} · ${q.name}`
+      if (!uses.some((u) => u.quest === quest)) {
+        uses.push({ quest, page: q.source, source: 'posky', giver: q.giver })
+      }
+      built.set(key, uses)
     }
-    poskyByItem.set(key, uses)
   }
+  poskyIndex = built
+  return built
 }
 
 // ---- local (wiki quest catalog) cross-ref --------------------------------------
@@ -153,7 +209,11 @@ const questData = questsJson as unknown as QuestData
  * SHIPPED index (this module can't be imported outside Electron). It also attaches each
  * turn-in use's REWARD names, which is what lets the hover card answer "and what do I get".
  */
-const questsByItem = buildQuestItemIndex(questData)
+let questsIndex: ReturnType<typeof buildQuestItemIndex> | null = null
+function questsByItem(): ReturnType<typeof buildQuestItemIndex> {
+  questsIndex ??= buildQuestItemIndex(questData)
+  return questsIndex
+}
 
 /** Quest identity for de-duping across sources: drop a "Class · " prefix + fold case. */
 function questIdentity(s: string): string {
@@ -172,8 +232,8 @@ function questIdentity(s: string): string {
  */
 export function localKnowledge(name: string): ItemQuestUse[] | null {
   const key = cacheKey(name)
-  const posky = poskyByItem.get(key)
-  const quests = questsByItem.get(key)
+  const posky = poskyByItem().get(key)
+  const quests = questsByItem().get(key)
   if (!posky && !quests) return null
   const uses: ItemQuestUse[] = [...(posky ?? [])]
   for (const u of quests ?? []) {
@@ -291,18 +351,47 @@ function loadCache(): Map<string, CacheEntry> {
   return mem
 }
 
+/**
+ * Persist the cache, 1.5 s after the write that dirtied it — off the main thread since JOS-371.
+ *
+ * WHY IT WAS SYNCHRONOUS: for no reason beyond being the shortest way to write a file. The debounce
+ * was already doing the load-bearing work (many lookups in a burst, one write), but the write itself
+ * still stopped the main process — on a LIVE path, once per burst of loot, for as long as the app is
+ * open, and while an overlay holds the mouse a main-thread stall is a system-wide one.
+ *
+ * WHAT GUARANTEES THE SAME THING NOW: `writeFileDurableAsync` — this app's ONE answer to writing a
+ * whole file (temp + fsync + rename, JOS-265), through libuv's threadpool. It is strictly stronger
+ * than what was here: the old `writeFileSync` truncated the live cache FIRST, so a process killed
+ * mid-write left a torn file, and `loadCache` reads a file that will not parse as an EMPTY one —
+ * every item this install had ever resolved, silently gone. The atomic write cannot produce that.
+ *
+ * The debounce latch is what serialises it: `saveTimer` is cleared when the write is SCHEDULED and
+ * `saving` holds until it settles, so a second write can never be started into the first one's
+ * scratch file. A save asked for during a write simply re-arms the timer.
+ */
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let saving = false
 function scheduleSave(): void {
   if (saveTimer) return
   saveTimer = setTimeout(() => {
     saveTimer = null
-    try {
-      const entries: Record<string, CacheEntry> = {}
-      for (const [k, v] of (mem ?? new Map<string, CacheEntry>()).entries()) entries[k] = v
-      writeFileSync(cacheFilePath(), JSON.stringify({ version: CACHE_VERSION, entries } satisfies CacheFile), 'utf8')
-    } catch (err) {
-      logError('main:itemLookup', { message: 'failed writing item-knowledge cache', err })
+    if (saving) {
+      // A write is still in the threadpool. Re-arm rather than race its temp file; the cache only
+      // accretes, so the next write is a superset of the one being skipped.
+      scheduleSave()
+      return
     }
+    saving = true
+    const entries: Record<string, CacheEntry> = {}
+    for (const [k, v] of (mem ?? new Map<string, CacheEntry>()).entries()) entries[k] = v
+    const path = cacheFilePath()
+    void writeFileDurableAsync(dirname(path), path, JSON.stringify({ version: CACHE_VERSION, entries } satisfies CacheFile))
+      .catch((err: unknown) => {
+        logError('main:itemLookup', { message: 'failed writing item-knowledge cache', err })
+      })
+      .finally(() => {
+        saving = false
+      })
   }, 1500)
 }
 
@@ -409,7 +498,7 @@ export async function lookupItem(name: string): Promise<ItemKnowledge> {
  */
 export function prefetchItem(name: string): void {
   const key = cacheKey(name)
-  if (itemDb.has(key)) return // the committed DB already answers this — nothing to warm
+  if (itemDb().has(key)) return // the committed DB already answers this — nothing to warm
   const cache = loadCache()
   const cached = cache.get(key)
   if (cached && cacheHit(cached)) return

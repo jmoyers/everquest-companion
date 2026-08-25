@@ -30,6 +30,7 @@ import { PetNudgeState } from './petNudge'
 import { OtherCombatants } from './otherCombatants'
 import { EMPTY_ROSTER, EMPTY_ROSTER_VIEW, type RosterSnap, type RosterView } from '../../shared/roster'
 import type { ClassifiedLine, CoatSlot } from '../../shared/combat'
+import type { LogEvent } from '../../shared/logEvents'
 import type { ComboInterval } from '../../shared/classCombo'
 
 /** The held-clicky default: no dump loaded, so no ownership evidence and no reclassification.
@@ -289,6 +290,23 @@ export class EngineState {
    * Read as `const p = this.probe; if (p) …` on the hot paths — one field read and one branch.
    */
   probe?: EngineFoldProbe
+
+  /**
+   * WHERE A DERIVED EVENT GOES (JOS-454) — `bus.emitDerived`, wired by pipeline.ts. Undefined in
+   * every test and every script that constructs an engine without a bus, and every emit site is
+   * a no-op then, exactly like `BuffsModule.emitDerived` (Task #47's precedent, which this seam
+   * is a second instance of rather than a new idea).
+   *
+   * ONE PRODUCER, ONE KIND: the engine emits `petClaim{via:'petBuff'}` and nothing else, and it
+   * IGNORES that kind on the way back in (`petClaims.ingestPetClaim`) — the same no-feedback-loop
+   * discipline the buffs module keeps around `buffExpired`.
+   */
+  emitDerived?: (ev: LogEvent, live: boolean) => void
+
+  /** Install/replace the derived-event emitter after construction (pipeline.ts wires the bus). */
+  setDerivedEmitter(fn: (ev: LogEvent, live: boolean) => void): void {
+    this.emitDerived = fn
+  }
 
   /** Enable classification logging (after the historical scan, for the live tail), and
    *  flip HYDRATION off — from here on every snapshot describes the real present. */

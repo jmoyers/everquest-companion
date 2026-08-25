@@ -54,6 +54,12 @@ import {
   type SessionStateStats,
   type TailReadStats
 } from './telemetryLive'
+import {
+  PERF_SEAMS,
+  type GcStallStats,
+  type SeamStallStats,
+  type SeamStatsEntry
+} from './perfSeams'
 import { bucket, fail, flag, whole, type Validated } from './telemetryValidateBase'
 
 export function vSessionStart(o: Record<string, unknown>): Validated<TelemetryEvent> {
@@ -289,9 +295,85 @@ function optionalState(o: Record<string, unknown>): Validated<SessionStateStats 
 }
 
 /**
- * The three JOS-367 riders, validated together and spread onto whichever session report carried
- * them — one helper so `vSessionHeartbeat` and `vSessionEnd` cannot drift apart, and so neither
- * of them is past the repo's complexity ceiling.
+ * WHAT V8 SPENT (JOS-458), the fourth rider. All five or none, for `optionalLive`'s reason: a
+ * pause count with no worst pause beside it cannot say whether V8 collected often or collected
+ * badly, and that distinction is the entire hypothesis.
+ *
+ * The whole group is absent when the observer was not running — a REAL state (an old client, a
+ * platform that refused the hook), and why this is optional rather than zero-filled.
+ */
+function optionalGc(o: Record<string, unknown>): Validated<GcStallStats | undefined> {
+  const raw = o.gc
+  if (raw === undefined || raw === null) return { ok: true, value: undefined }
+  if (!isTelemetryObject(raw)) return fail('gc', 'gc must be an object.')
+  const pauses = whole(raw.pauses, 'gc.pauses', MAX_COUNT)
+  if (!pauses.ok) return pauses
+  const major = whole(raw.majorPauses, 'gc.majorPauses', MAX_COUNT)
+  if (!major.ok) return major
+  const max = bucket(raw.maxBucket, 'gc.maxBucket', LIVE_STALL_MS_EDGES)
+  if (!max.ok) return max
+  const total = bucket(raw.totalBucket, 'gc.totalBucket', LIVE_STALL_MS_EDGES)
+  if (!total.ok) return total
+  const over100 = whole(raw.over100, 'gc.over100', MAX_COUNT)
+  if (!over100.ok) return over100
+  return {
+    ok: true,
+    value: {
+      pauses: pauses.value,
+      majorPauses: major.value,
+      maxBucket: max.value,
+      totalBucket: total.value,
+      over100: over100.value
+    }
+  }
+}
+
+/**
+ * WHICH OF OUR SEAMS RAN (JOS-458), the fifth rider — and THE ONE PLACE ON THIS WIRE WHERE A KEY
+ * CARRIES MEANING, which is why it is walked rather than read.
+ *
+ * The group is a partial record keyed by `PERF_SEAMS`. Every other object on this wire has a fixed
+ * field list, so "construct field by field" is automatic; here the field list IS the enum, and a
+ * validator that iterated the PAYLOAD's own keys would let a forged client write an arbitrary
+ * string into the `usage_daily` dimension column. So the loop is over the compiled array and the
+ * output is built from it: an unknown key is not rejected, it simply has no route across, which is
+ * the same posture every other constructor here takes toward a field it does not name.
+ *
+ * A seam that IS named is all three or none, for the reason above: `calls` without `maxBucket` is
+ * a frequency with no cost beside it.
+ */
+function optionalSeams(o: Record<string, unknown>): Validated<SeamStallStats | undefined> {
+  const raw = o.seams
+  if (raw === undefined || raw === null) return { ok: true, value: undefined }
+  if (!isTelemetryObject(raw)) return fail('seams', 'seams must be an object.')
+  const value: SeamStallStats = {}
+  for (const seam of PERF_SEAMS) {
+    const entry = raw[seam]
+    if (entry === undefined || entry === null) continue
+    const one = seamEntry(entry, seam)
+    if (!one.ok) return one
+    value[seam] = one.value
+  }
+  return { ok: true, value }
+}
+
+/** One named seam's three numbers, split off so `optionalSeams` stays inside the repo's factoring
+ *  ceilings — the `tailBytes` precedent, for the same reason. */
+function seamEntry(raw: unknown, seam: string): Validated<SeamStatsEntry> {
+  if (!isTelemetryObject(raw)) return fail(`seams.${seam}`, `seams.${seam} must be an object.`)
+  const calls = whole(raw.calls, `seams.${seam}.calls`, MAX_COUNT)
+  if (!calls.ok) return calls
+  const max = bucket(raw.maxBucket, `seams.${seam}.maxBucket`, LIVE_STALL_MS_EDGES)
+  if (!max.ok) return max
+  const over100 = whole(raw.over100, `seams.${seam}.over100`, MAX_COUNT)
+  if (!over100.ok) return over100
+  return { ok: true, value: { calls: calls.value, maxBucket: max.value, over100: over100.value } }
+}
+
+/**
+ * The five riders, validated together and spread onto whichever session report carried them — one
+ * helper so `vSessionHeartbeat` and `vSessionEnd` cannot drift apart, and so neither of them is
+ * past the repo's complexity ceiling.
  *
  * Each group is INDEPENDENTLY optional: a client with no tail attached sends `live` and `state`
  * and no `tail`, and an older server that has never heard of any of them copies none of them
@@ -299,19 +381,25 @@ function optionalState(o: Record<string, unknown>): Validated<SessionStateStats 
  */
 function liveRiders(
   o: Record<string, unknown>
-): Validated<Pick<EvSessionHeartbeat, 'live' | 'tail' | 'state'>> {
+): Validated<Pick<EvSessionHeartbeat, 'live' | 'tail' | 'state' | 'gc' | 'seams'>> {
   const live = optionalLive(o)
   if (!live.ok) return live
   const tail = optionalTail(o)
   if (!tail.ok) return tail
   const state = optionalState(o)
   if (!state.ok) return state
+  const gc = optionalGc(o)
+  if (!gc.ok) return gc
+  const seams = optionalSeams(o)
+  if (!seams.ok) return seams
   return {
     ok: true,
     value: {
       ...(live.value === undefined ? {} : { live: live.value }),
       ...(tail.value === undefined ? {} : { tail: tail.value }),
-      ...(state.value === undefined ? {} : { state: state.value })
+      ...(state.value === undefined ? {} : { state: state.value }),
+      ...(gc.value === undefined ? {} : { gc: gc.value }),
+      ...(seams.value === undefined ? {} : { seams: seams.value })
     }
   }
 }

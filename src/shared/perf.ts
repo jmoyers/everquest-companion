@@ -1,5 +1,9 @@
 // shared/perf.ts — THE PURE HALF of performance profiling (docs/plans/perf-profiling.md).
 //
+// One type is imported (`./dataWeight.ts`, JOS-458) and it is TYPE-ONLY, which keeps the
+// zero-runtime-import property below intact: `storeMigrations.ts` still reads this file from
+// module scope before electron-store exists.
+//
 // Everything here is arithmetic and vocabulary: the sample shape main pushes, the startup
 // phase enum and its accounting, the lag thresholds, and the formatters the chip renders. No
 // Electron, no Node, no React — so `tests/perf.test.mts` pins every rule that decides what a
@@ -22,6 +26,8 @@
  * words anyone reading a HUD thinks in — `perfProcessType` maps them, and 'other' is a real
  * bucket rather than a dropped row: memory that exists must appear somewhere or the total lies.
  */
+import type { DataWeightLedger } from './dataWeight'
+
 export type PerfProcessType = 'main' | 'renderer' | 'gpu' | 'utility' | 'other'
 
 /** Fixed render order, so the popover's table rows never reshuffle between samples. */
@@ -524,6 +530,14 @@ export interface StartupProfile {
   /** How long the first megabyte of the historical read took, ms — the cold-disk hint. Absent when
    *  the log is smaller than a megabyte. */
   firstMbMs?: number
+  /**
+   * WHAT THE COMMITTED DATA WEIGHS (JOS-458) — the per-file decomposition of the `dataLoaded`
+   * phase, which has otherwise always been one number. `shared/dataWeight.ts` states why the rows
+   * are generated rather than measured per launch, and which single figure in it is not.
+   *
+   * Absent on a build with no committed ledger, never a fabricated empty one.
+   */
+  data?: DataWeightLedger
   /** Did every phase land? False for a launch that quit early (or crashed) mid-boot. */
   complete: boolean
 }
@@ -625,6 +639,7 @@ export interface StartupProfileMeta {
   stutter?: StartupStutterProbe
   newBytes?: number
   firstMbMs?: number
+  data?: DataWeightLedger
 }
 
 /**
@@ -664,6 +679,9 @@ export function buildProfile(
   if (meta.stutter !== undefined) profile.stutter = meta.stutter
   if (meta.newBytes !== undefined) profile.newBytes = Math.max(0, Math.round(finite(meta.newBytes)))
   if (meta.firstMbMs !== undefined) profile.firstMbMs = round(Math.max(0, finite(meta.firstMbMs)), 1)
+  // Copied rather than re-cleaned: `foldDataWeight` has already rounded and totalled its own
+  // numbers, the same reason `stutter` is copied above.
+  if (meta.data !== undefined) profile.data = meta.data
   return profile
 }
 
@@ -714,6 +732,21 @@ function parseStutterProbe(raw: unknown): StartupStutterProbe | null {
   }
 }
 
+/**
+ * Shape check for the data ledger read back off disk (JOS-458).
+ *
+ * STRUCTURAL rather than field by field, and that is a deliberate difference from its three
+ * neighbours: they are small fixed shapes a reader draws a conclusion from, while this is a table
+ * whose consumers (the bench, and a person) re-read it whole. Its correctness is guarded where it
+ * is WRITTEN — `tests/dataWeight.test.mts` re-reads every listed file's real size against the
+ * committed ledger — so a per-field parser here would be a second, weaker copy of that check
+ * standing between a disposable file and its own author.
+ */
+function parseDataWeight(raw: unknown): DataWeightLedger | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.rows)) return null
+  return raw as unknown as DataWeightLedger
+}
+
 /** Shape check for a profile read back off disk — the file half's parser (never a migration:
  *  a profile is disposable by design, so anything unexpected simply means "no last startup"). */
 export function parseStartupProfile(raw: unknown): StartupProfile | null {
@@ -731,6 +764,7 @@ export function parseStartupProfile(raw: unknown): StartupProfile | null {
   const block = parseBlockStats(raw.block)
   const replay = parseReplayStats(raw.replay)
   const stutter = parseStutterProbe(raw.stutter)
+  const data = parseDataWeight(raw.data)
   return {
     startedAt: finite(raw.startedAt),
     version: typeof raw.version === 'string' ? raw.version : '',
@@ -742,6 +776,7 @@ export function parseStartupProfile(raw: unknown): StartupProfile | null {
     ...(stutter === null ? {} : { stutter }),
     ...optionalCount(raw.newBytes, 'newBytes'),
     ...optionalCount(raw.firstMbMs, 'firstMbMs'),
+    ...(data === null ? {} : { data }),
     complete: raw.complete === true
   }
 }

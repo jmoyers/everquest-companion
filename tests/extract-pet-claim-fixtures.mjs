@@ -198,3 +198,51 @@ const vabantikHits = p3.filter((l) => /\] Vabantik .* for \d+ points? of (\w+ )?
 const vebannHits = p3.filter((l) => /\] Vebann .* for \d+ points? of (\w+ )?damage/.test(l)).length
 if (vabantikHits < 60) throw new Error(`p3-pet-upgraded-buff-bound.log: the successor's hits must survive, got ${vabantikHits}`)
 console.log(`p3-pet-upgraded-buff-bound.log: Vebann ${vebannHits} hits, Vabantik ${vabantikHits} hits, buff bind 149s before the tell`)
+
+// P4 — THE BOUND PET WHOSE KILLS WENT TO NOBODY (Sun Aug 23 13:42–13:53, The Plane of Hate 4
+// (Refined)). JOS-454, and the half of JOS-188 that never left the combat engine.
+//
+// P3 proves the pet-buff rung BINDS. This window proves who was never told:
+//
+//   13:42:27  `You begin casting Cackling Bones.` — the necromancer pet summon. The pet is
+//             Vibartik, a proper-named SUMMONED pet and NOT a charm (the ticket reported him as
+//             a charmed shadow knight; there is no charm broadcast for that name anywhere).
+//   13:42:42  `You begin casting Augment Death.` — a `targetType: Pet` spell.
+//   13:42:43  `Vibartik's eyes gleam with madness.` — the landing. The combat engine binds him
+//             here, on the spot, and the DPS meter has had him ever since.
+//   13:49:08  `A revultant rat has been slain by Vibartik!`
+//   13:52:46  `An evil little imp has been slain by Vibartik!`
+//
+// …and NOT ONE `… Master.'` TELL, in this window or for another 45 minutes after it (the first
+// is at 14:37:53). The ProgressionModule — which is what the Leveling tab's kill counts,
+// levels-per-hour and idle classifier are folded from — knew only the tell and the charm
+// broadcast, so it filed both of those kills as `witnessTs`, somebody else's, under a panel
+// reading "2 kills by others seen" beside a meter that had the pet bound the whole time.
+//
+// The ABSENCE of the tell is the fixture, exactly as in P1: with one, nothing here proves
+// anything.
+const p4 = slice(2442745, 2446766, 'p4-pet-buff-kill-credit.log')
+
+const p4has = (re) => p4.filter((l) => re.test(l)).length
+for (const [re, n, what] of [
+  [/^\[.*\] You begin casting Cackling Bones\.$/, 1, 'the pet summon'],
+  [/^\[.*\] You begin casting Augment Death\.$/, 1, 'the own cast of the pet-only spell'],
+  [/^\[.*\] Vibartik's eyes gleam with madness\.$/, 1, 'the landing that names the pet'],
+  [/^\[.*\] A revultant rat has been slain by Vibartik!$/, 1, "the pet's first kill"],
+  [/^\[.*\] An evil little imp has been slain by Vibartik!$/, 1, "the pet's second kill"]
+]) {
+  const got = p4has(re)
+  if (got !== n) throw new Error(`p4-pet-buff-kill-credit.log: expected ${n} × ${what}, got ${got}`)
+}
+for (const [re, what] of [
+  [/^\[.*\] Vibartik told you, /, 'a pet tell'],
+  [/^\[.*\] Vibartik says, 'My leader is /, 'a leader say'],
+  [/^\[.*\] Vibartik has been charmed\.$/, 'a charm broadcast'],
+  [/^\[.*\] You have entered /, 'a zone line, which would reset the world model mid-arc']
+]) {
+  if (p4has(re) !== 0) throw new Error(`p4-pet-buff-kill-credit.log: ${what} would defeat the fixture`)
+}
+const p4self = p4has(/^\[.*\] You have slain .+!$/)
+const p4exp = p4has(/^\[.*\] You gain experience!/)
+if (p4self < 6) throw new Error(`p4-pet-buff-kill-credit.log: the owner's own kills must survive, got ${p4self}`)
+console.log(`p4-pet-buff-kill-credit.log: ${p4self} self kills, 2 pet kills, ${p4exp} experience lines, 0 tells`)

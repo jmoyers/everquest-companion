@@ -120,7 +120,11 @@ test('THE FAST TICK EXISTS FOR THE CURSOR CALL, so a watcher without one asks fo
   // 10 would fire only to decrement a counter. So the default install gets the cheap loop back.
   assert.deepEqual(watcherCadence(true), {
     tickMs: WATCHER_TICK_MS,
-    foregroundEveryTicks: FOREGROUND_EVERY_TICKS
+    foregroundEveryTicks: FOREGROUND_EVERY_TICKS,
+    // …and NOTHING for the third lane until somebody pins an overlay (JOS-370). This assertion is
+    // the whole of "the hit test cannot make the ring's loop do anything it was not already doing":
+    // a hover rung is a count of ticks, never a faster clock.
+    hoverEveryTicks: 0
   })
   const off = watcherCadence(false)
   assert.equal(off.foregroundEveryTicks, 1, 'one tick per foreground block — there is nothing else')
@@ -175,11 +179,21 @@ test('THE GATE IS BAKED INTO THE THREAD, and a live toggle replaces the thread',
 
 test('THE WORKER SKIPS THE BLOCK, rather than calling and discarding', () => {
   const worker = src('../src/main/presenceWorker.ts')
-  // ONE call site, inside the guarded block — a `cursorShowing()` anywhere else in the loop would
-  // be a cursor read the setting cannot switch off.
-  assert.equal((worker.match(/native\.cursorShowing\(\)/g) ?? []).length, 1)
-  assert.match(worker, /if \(watchCursor\) cursorBlock\(\)/)
-  // …and the surface still declares exactly one cursor call for the whole application.
+  // STILL ONE CALL SITE, and still guarded — a `cursorShowing(` anywhere else in the loop would be
+  // a cursor read no gate can switch off. What the guard says changed in JOS-370 and the change is
+  // stated rather than smuggled: there is now a SECOND consumer of that one call, the hot-zone hit
+  // test that replaced the WH_MOUSE_LL mouse hook, and it is live only while a locked overlay is on
+  // screen with EverQuest in front. The ring's own gate is untouched — with the ring off and
+  // nothing pinned, the disjunction below is false and the call is not reached.
+  assert.equal((worker.match(/native\.cursorShowing\(/g) ?? []).length, 1)
+  assert.match(worker, /watchCursor \|\| hoverOn \? native\.cursorShowing\(hover\.point\) : true/)
+  assert.match(worker, /const hoverOn = hoverEveryTicks > 0 && hover\.active\(\)/)
+  // The RING's own consumer is still gated on the ring's own flag and nothing else, so a hit test
+  // running for a pinned overlay can never start emitting `C` lines for a ring that is off.
+  assert.match(worker, /if \(watchCursor\) cursorBlock\(showing\)/)
+  // …and the surface still declares exactly one cursor call for the whole application. THAT is the
+  // JOS-193 promise that has to survive intact: a cursor tool like Yolomouse shares the cursor with
+  // ONE call of ours, wherever the answer ends up being read.
   const native = src('../src/main/presenceNative.ts')
   assert.equal((native.match(/GetCursorInfo\(/g) ?? []).length, 2, 'the binding and its one call')
 })

@@ -30,7 +30,7 @@
 import { app } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { writeFileDurable } from '../telemetry/durableWrite'
+import { writeFileDurableAsync, writeFileDurableFinal } from '../telemetry/durableWrite'
 import type { MessageOverlay } from '../../shared/types'
 import {
   BASELINE_SOURCE,
@@ -71,26 +71,74 @@ export function loadUserSources(): OverlaySourceCounts[] {
   }
 }
 
-/**
- * Persist the user's register to userData (best-effort; a write error is swallowed).
- *
- * ATOMIC SINCE JOS-419, and it was the last in-place truncating write of a user-knowledge store in
- * the app. `writeFileSync` onto the live path truncates it FIRST: a process killed mid-write — an
- * update's force-quit, a full disk, the power going — left a half-written register, and
- * `loadUserSources` reads a file that will not parse as an EMPTY one. Every message this install
- * had ever learned, silently gone, with nothing on disk to say so. `writeFileDurable` is the same
- * temp+fsync+rename the telemetry ring (JOS-265), the settings store (JOS-272) and the resist
- * ledger (JOS-419) write through, so the file on disk is either the last complete register or the
- * new one and never a half of either.
- */
-export function saveUserOverlay(register: OverlayRegister): void {
+// PERSIST THE USER'S REGISTER — atomically since JOS-419, and off the main thread since JOS-371.
+//
+// ATOMIC SINCE JOS-419, and it was the last in-place truncating write of a user-knowledge store in
+// the app. A `writeFileSync` onto the live path truncates it FIRST: a process killed mid-write — an
+// update's force-quit, a full disk, the power going — left a half-written register, and
+// `loadUserSources` reads a file that will not parse as an EMPTY one. Every message this install had
+// ever learned, silently gone, with nothing on disk to say so. The durable write is the same
+// temp+fsync+rename the telemetry ring (JOS-265), the settings store (JOS-272) and the resist ledger
+// (JOS-419) go through, so the file is either the last complete register or the new one and never a
+// half of either.
+//
+// AND OFF THE THREAD SINCE JOS-371. It was synchronous only because `writeFileDurable` was, and what
+// that meant in practice is that every sixty seconds — session.ts's tick, for the whole time the app
+// is open — the main process stopped to write a file AND fsync it. While one of this app's overlays
+// holds the mouse, a main-thread stall is a system-wide one, and an fsync is exactly the syscall
+// that goes from microseconds to milliseconds on a busy volume. The atomicity argument above is
+// untouched: same steps, same order, `writeFileDurableAsync`.
+//
+// WHAT ASYNC COSTS, and how it is paid: two writes can now overlap, and two overlapping writes would
+// share one `.tmp` path. `writing` is the latch on the periodic saver — a save arriving while one is
+// in flight is dropped rather than queued, which costs at most one 60-second window of a register
+// that only ever accretes, and the next tick writes the superset. The QUIT FINAL cannot be dropped
+// that way, so it writes through its own scratch file instead (`writeFileDurableFinal`).
+
+/** True while a durable write is in libuv's threadpool. See the note above: one at a time. */
+let writing = false
+
+/** The file this register serialises to. One spelling, so the async saver and the quit final can
+ *  never write two different shapes of the same document. */
+function overlayFile(register: OverlayRegister): string {
   const file: OverlayRegisterFile = {
     version: OVERLAY_REGISTER_VERSION,
     updatedAt: register.updatedAt,
     sources: persistableSources(register)
   }
+  return JSON.stringify(file)
+}
+
+export function saveUserOverlay(register: OverlayRegister): void {
+  if (writing) return
+  writing = true
+  const data = overlayFile(register)
+  void writeFileDurableAsync(app.getPath('userData'), userOverlayPath(), data)
+    .catch(() => {
+      // Non-fatal — the overlay is a nicety, not required state.
+    })
+    .finally(() => {
+      writing = false
+    })
+}
+
+/**
+ * THE QUIT FINAL (JOS-371) — the documented synchronous survivor, called from `window-all-closed`
+ * so the final session's observations are not lost between debounced saves. That teardown step
+ * already existed and was already the last save of a run; all that changed is that it is now the
+ * only one that blocks.
+ *
+ * IT WRITES THROUGH ITS OWN SCRATCH FILE, for the reason the telemetry ring's final does: sharing
+ * one `.tmp` with a write that is still in the threadpool is two writers filling one scratch file
+ * with one of them renaming mid-fill — a torn register, which is the exact failure temp+fsync+rename
+ * exists to prevent. With two scratch paths, whichever rename lands last publishes a COMPLETE
+ * register; at quit the process almost always goes before the threadpool write returns, so the
+ * final's own bytes are the ones that survive.
+ */
+export function saveUserOverlaySync(register: OverlayRegister): void {
+  const path = userOverlayPath()
   try {
-    writeFileDurable(app.getPath('userData'), userOverlayPath(), JSON.stringify(file))
+    writeFileDurableFinal(app.getPath('userData'), path, overlayFile(register))
   } catch {
     // Non-fatal — the overlay is a nicety, not required state.
   }

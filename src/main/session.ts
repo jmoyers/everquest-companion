@@ -69,6 +69,12 @@ import { markFunnelStep, noteLinesParsed } from './telemetry'
 import { noteTailLine, stopWatchingForQuietSwitch, watchForQuietSwitch } from './switchNudge'
 import { refreshPresenceEffects, suspendCursorStream } from './presenceEffects'
 import { setHistoricalReplayRunning } from './replayGate'
+// A leaf (see its header) — the two dump loads below are timed seams.
+import { timeSeam } from './perfAttribution'
+// WHO OWNS THE WORLD RIGHT NOW (JOS-457). Every switch takes a turn and re-asks `owns()` after
+// every point it could have been suspended; a turn that has lost touches nothing shared and
+// returns. The whole argument — why a generation and not a queue or a mutex — is in that file.
+import { beginSwitch, type SwitchTurn } from './switchController'
 import { sendToMain, setOverlaysHidden } from './windows'
 import type { CharacterRef, EqConfig } from '../shared/types'
 import type { ScanResult } from './log/scanHistory'
@@ -181,7 +187,15 @@ export async function applyEqDirChange(): Promise<EqConfig> {
   } else {
     // Fresh/empty dir: stop tailing and tell the renderer there's no character,
     // so views show the quiet empty state instead of stale data.
+    //
+    // AND "NO CHARACTER" IS A SWITCH LIKE ANY OTHER (JOS-457), so it takes a turn. Two things ride
+    // on that. A `tailCharacter` still folding under this call would otherwise finish and cheerfully
+    // re-attach the log the user just told us to stop reading; and its replay gate, closed at the
+    // top of its own call, would be left shut by nobody, hiding every overlay until the next switch.
+    // This arm is the owner now, so it is the one that opens the gate.
+    const turn = beginSwitch()
     await tailer?.stop()
+    if (!turn.owns()) return config
     tailer = null
     stopHeartbeat()
     // Nothing is attached, so there is no "our log went quiet" to ask about (JOS-432).
@@ -194,6 +208,12 @@ export async function applyEqDirChange(): Promise<EqConfig> {
     // No character ⇒ no self-`/who` row is identifiable. Clear the name rather than let a
     // stale one attribute the next log's rows to the character we just stopped tailing.
     installCharacterName(undefined)
+    // NOTHING IS FOLDING ANY MORE, and this turn is the one that owns the world — so it is the one
+    // that opens what a preempted switch left shut (JOS-457). Both halves, in the order
+    // `tailCharacter`'s own `finally` uses them, because a bracket left closed by a fold that lost
+    // its turn would gate every delta and hide every overlay until the next character switch.
+    registry.endReplay()
+    setReplayGate(false)
     // Every window that folds a module, not just the main one (JOS-172): an overlay left open
     // over an install whose log went away must empty with everything else.
     sendWorldRebuilt(null)
@@ -353,10 +373,19 @@ function noteParsed(count: number): void {
  * lines the game appended during the (multi-second) scan are read, not dropped,
  * and none are re-read. The tailer is byte-level; we parse each raw line here
  * (continuing the shared seq) and emit onto the same bus with live:true.
+ *
+ * AND THE LINE HANDLER BELONGS TO THE TURN THAT OPENED IT (JOS-457). `Tailer.stop()` is
+ * asynchronous, so a switch that supersedes this one can be several statements into rebuilding the
+ * world before this tailer has actually let go of its file — and every line it delivered in that
+ * window used to enter the NEW character's world with `live:true`, at the old character's seq. The
+ * guard is on ownership rather than on statement order for the reason the whole ticket is: order is
+ * something a later edit can move, and this is checked on the app's hottest path only for lines
+ * that genuinely arrive live, which on a superseded tailer is approximately none.
  */
-function startTailer(logPath: string, startOffset: number): void {
+function startTailer(logPath: string, startOffset: number, turn: SwitchTurn): void {
   tailer = new Tailer(logPath, { startOffset })
   tailer.on('line', (raw) => {
+    if (!turn.owns()) return
     // EVERY raw line, before anything can decide not to understand it (JOS-432): the quiet-switch
     // question is whether our file is being written to at all, not whether we parsed what arrived.
     noteTailLine()
@@ -499,8 +528,55 @@ function setReplayGate(running: boolean): void {
   refreshPresenceEffects()
 }
 
-/** Point the tailer + loot history at a character (used at startup and on switch). */
-export async function tailCharacter(ref: CharacterRef): Promise<TailResult> {
+/**
+ * A switch that lost its turn, on its way out: say so once, and answer NULL.
+ *
+ * A LOG LINE RATHER THAN SILENCE because this is the one thing an owner reproducing a switch storm
+ * needs to see in `errors.log` — how many picks were dropped and which one survived. It is bounded
+ * by how fast a person can use a dropdown, so it cannot flood.
+ *
+ * NULL RATHER THAN A `TailResult` because there is no honest one to give: this call folded a partial
+ * history into a world somebody else has since rebuilt, and every number it could report — events
+ * replayed, bytes read, the duty cycle — would describe work that was thrown away. `startTailing`
+ * already answers `TailResult | null` for the machine with no log at all, and the startup profile
+ * reads it with `res?.` (index.ts), so the absent case was already carried end to end.
+ */
+function preempted(ref: CharacterRef, turn: SwitchTurn): null {
+  logInfo(
+    `[everquest-companion] Switch to ${ref.name}@${ref.server} (gen ${String(turn.gen)}) was preempted by a newer pick; its replay is discarded.`
+  )
+  return null
+}
+
+/**
+ * Point the tailer + loot history at a character (used at startup and on switch).
+ *
+ * ONE SWITCH AT A TIME, AND THE NEWEST ONE WINS (JOS-457). Every path that can change the tailed
+ * character funnels through here — the dropdown's `character:set`, an EQ-dir change, the idle
+ * rescan, the quiet-switch nudge — and until this ticket none of them was guarded, so N quick
+ * dropdown picks ran N whole-log folds CONCURRENTLY, interleaving at every `await` and resetting
+ * the shared world out from under each other. That is the reported lock-up, the random encounters
+ * and the random audio, all three.
+ *
+ * The fix is OWNERSHIP, not ordering. This call takes a turn (switchController.ts) which the next
+ * switch silently revokes, and it re-asks `owns()` after each of its two suspension points. There
+ * are exactly two, and that is a property of the code rather than an accident worth restating:
+ * everything from the first check to `scanLog` runs synchronously, and so does everything from the
+ * second check to the `return` — so the ONLY thing that can interleave with a switch is another
+ * switch's fold, which `ScanOptions.cancelled` stops at its own next suspension point.
+ *
+ * A call that has lost its turn RETURNS NULL, having touched nothing shared: no world reset, no
+ * `tailer` assignment, no heartbeat, no go-live, no push, and — critically — it does NOT open the
+ * replay gate or end the registry's replay bracket. Those close at the top of every switch and are
+ * opened only by the turn that reaches the end still owning the world, which across a storm of
+ * picks is ONE continuous closed state from the first pick to the last winner's `endReplay()`.
+ *
+ * THE WINNER STILL FINISHES PARSING. Nothing here caches, checkpoints or resumes a fold: the
+ * surviving switch replays its whole log from byte zero and hands its own frozen-EOF `endOffset`
+ * to its own tailer, exactly as a lone switch always did.
+ */
+export async function tailCharacter(ref: CharacterRef): Promise<TailResult | null> {
+  const turn = beginSwitch()
   // THE GATE CLOSES FIRST — before the first `await`, so at cold start it is already shut when the
   // composition root goes on to restore the overlays and start the presence features a few
   // statements later. Those windows are then born hidden instead of being shown and hidden again.
@@ -508,6 +584,10 @@ export async function tailCharacter(ref: CharacterRef): Promise<TailResult> {
   // We have a log; the idle rescan (if it was running) has nothing left to look for.
   stopWatchingForFirstLog()
   await tailer?.stop()
+  // SUSPENSION POINT 1, and the check sits BEFORE the assignment on purpose: a superseded call that
+  // nulled this slot would delete the winner's own tailer if the winner had got there first, and
+  // that is defect (5) of the report — the old character's lines feeding the new character's world.
+  if (!turn.owns()) return preempted(ref, turn)
   tailer = null
   // The heartbeat belongs to the character we are leaving; it must not tick (nor push) through
   // the replay that follows. `startHeartbeat()` below re-arms it once the live tail is running.
@@ -563,7 +643,15 @@ export async function tailCharacter(ref: CharacterRef): Promise<TailResult> {
   // difference stays honest if the scan ever starts from somewhere other than zero again.
   const startSeq = seq
   try {
-    scan = await scanLog(ref.logPath, bus, seq, { slicer })
+    // PREEMPTABLE (JOS-457): the fold asks, at each of its own suspension points, whether the call
+    // that started it still owns the world — so a pick made three seconds into a 70-second replay
+    // costs the abandoned fold nothing more and frees the main process for the pick that replaced
+    // it. `slicer` is unchanged: the throttle decides WHEN to pause, this decides whether to resume.
+    scan = await scanLog(ref.logPath, bus, seq, { slicer, cancelled: () => !turn.owns() })
+    // SUSPENSION POINT 2. A preempted fold's `scan` is a partial reading of somebody else's world
+    // and every field of it is a lie about this one, so nothing below may run — `setLive()` least
+    // of all, because going live is what lets the next tick push a half-built world at a renderer.
+    if (!turn.owns()) return preempted(ref, turn)
     // The replay's whole cost, in one call — counted here rather than per line inside the fold so
     // the replay's inner loop is untouched.
     noteParsed(scan.seq - startSeq)
@@ -577,8 +665,17 @@ export async function tailCharacter(ref: CharacterRef): Promise<TailResult> {
     // re-hydrate — and `setReplayGate(false)` brings the windows and the mouse back. `setLive()`
     // stays inside the try, so the meters that come back are live ones rather than a frame of the
     // hydrating placeholder.
-    registry.endReplay()
-    setReplayGate(false)
+    //
+    // AND IT IS OPENED BY THE GENERATION THAT OWNS IT (JOS-457). A superseded call reaches this
+    // `finally` on its way out while a NEWER fold is mid-flight; running these two there is exactly
+    // how the reported alerts escaped — the push path re-opened under a replay that had months of
+    // another character's history still to fold, and every celebration detector read it as news. The
+    // winner's own pass through here is what closes the bracket, and the throw case is unchanged for
+    // it: a fold that owns the world and dies still hands the windows and the registry back.
+    if (turn.owns()) {
+      registry.endReplay()
+      setReplayGate(false)
+    }
   }
   const lootState = lootModule.snapshot().state
   const killState = killsModule.snapshot().state
@@ -589,7 +686,7 @@ export async function tailCharacter(ref: CharacterRef): Promise<TailResult> {
     } mobs, ${lvlState.levels.length} level-ups, ${lvlState.aaGains.length} AA gains, ${lvlState.aaSpends.length} AA buys.`
   )
 
-  startTailer(ref.logPath, scan.endOffset)
+  startTailer(ref.logPath, scan.endOffset, turn)
   startHeartbeat()
   // …and start the quiet clock HERE rather than at the top of this function: a multi-second
   // historical replay is not the log going silent (JOS-432).
@@ -696,22 +793,34 @@ export function inventoryWrittenAt(file: string): number | null {
  * A missing dump is silence, not an error: on a machine where `/outputfile inventory` has never
  * been typed there is nothing to load, and the surfaces already render that as the never-run
  * state (the `/outputfile` registry's own line).
+ *
+ * A TIMED SEAM (JOS-458): a synchronous file read plus a parse plus a clicky re-derivation over
+ * the item corpus, on main, one statement before the rebuild fan-out. The STALENESS GUARD is
+ * outside the bracket and the missing-file arm is inside it, deliberately — a call that was
+ * refused for the wrong character did no work and must not be counted, while a call that went to
+ * the filesystem and found nothing DID, and on a cold disk that probe is the measurement.
  */
 function loadInventoryNow(ref: CharacterRef, why: 'startup' | 'watch'): void {
-  if (character?.logPath !== ref.logPath) return
-  const res = loadInventory(character.name, character.server, inventoryWrittenAt)
-  if (!res) return
-  setInventory(activeCharId(), res.counts, res.source)
-  // A dump is the ONLY evidence that a cast-less firing was a click you made (JOS-438), so a
-  // reload re-derives the set. The live tail folds against the new one from its next line; the
-  // fold that has already happened keeps whatever the persisted dump said, which is the same
-  // rule every other dump-derived surface follows.
-  installClickies()
-  logInfo(
-    `[everquest-companion] Inventory ${why === 'startup' ? 'loaded at startup' : 'auto-reloaded'}: ${res.path}`
-  )
-  sendToMain(IPC.onInventoryReload, { path: res.path, loadedAt: res.loadedAt })
-  sendToMain(IPC.onProgress, getProgress(activeCharId()))
+  // Captured rather than re-read inside the bracket: `character` is module-level and mutable, so
+  // a closure cannot carry the guard's narrowing, and re-reading it would ALSO be a second read of
+  // a value the guard has already ruled on.
+  const who = character
+  if (who?.logPath !== ref.logPath) return
+  timeSeam('inventoryLoad', () => {
+    const res = loadInventory(who.name, who.server, inventoryWrittenAt)
+    if (!res) return
+    setInventory(activeCharId(), res.counts, res.source)
+    // A dump is the ONLY evidence that a cast-less firing was a click you made (JOS-438), so a
+    // reload re-derives the set. The live tail folds against the new one from its next line; the
+    // fold that has already happened keeps whatever the persisted dump said, which is the same
+    // rule every other dump-derived surface follows.
+    installClickies()
+    logInfo(
+      `[everquest-companion] Inventory ${why === 'startup' ? 'loaded at startup' : 'auto-reloaded'}: ${res.path}`
+    )
+    sendToMain(IPC.onInventoryReload, { path: res.path, loadedAt: res.loadedAt })
+    sendToMain(IPC.onProgress, getProgress(activeCharId()))
+  })
 }
 
 /**
@@ -726,16 +835,21 @@ function loadInventoryNow(ref: CharacterRef, why: 'startup' | 'watch'): void {
  * new channel unnecessary.
  */
 function loadAchievementsNow(ref: CharacterRef, why: 'startup' | 'watch'): void {
-  if (character?.logPath !== ref.logPath) return
-  const res = loadAchievements(character.name, character.server)
-  if (!res) return
-  setAchievements(activeCharId(), res.unlocks, res.source)
-  logInfo(
-    `[everquest-companion] Achievements ${
-      why === 'startup' ? 'loaded at startup' : 'auto-reloaded'
-    }: ${res.path} (${String(res.unlocks.length)} class-unlock rewards earned)`
-  )
-  sendToMain(IPC.onProgress, getProgress(activeCharId()))
+  const who = character
+  if (who?.logPath !== ref.logPath) return
+  // A TIMED SEAM, on `loadInventoryNow`'s terms exactly — same shape of work, same second file,
+  // same place in `tailCharacter`, and the guard is likewise outside the bracket.
+  timeSeam('achievementsLoad', () => {
+    const res = loadAchievements(who.name, who.server)
+    if (!res) return
+    setAchievements(activeCharId(), res.unlocks, res.source)
+    logInfo(
+      `[everquest-companion] Achievements ${
+        why === 'startup' ? 'loaded at startup' : 'auto-reloaded'
+      }: ${res.path} (${String(res.unlocks.length)} class-unlock rewards earned)`
+    )
+    sendToMain(IPC.onProgress, getProgress(activeCharId()))
+  })
 }
 
 /** Follow the achievements dump — `startInventoryWatch`'s twin, same registry, same staleness guard. */
@@ -757,7 +871,9 @@ function startAchievementsWatch(ref: CharacterRef): void {
 }
 
 /** Startup entry point: resolve a character and tail it, or idle quietly if there is none.
- *  Resolves to what the replay cost, or null on a machine with no log to tail at all. */
+ *  Resolves to what the replay cost, or null on a machine with no log to tail at all — and, since
+ *  JOS-457, also null when the user picked a different character before the startup fold finished,
+ *  which is the same statement about the same number: this launch's replay was not the one kept. */
 export async function startTailing(): Promise<TailResult | null> {
   const ref = resolveInitialCharacter()
   if (!ref) {

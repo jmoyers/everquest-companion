@@ -53,7 +53,7 @@ import { installOverlaySnap } from './overlaySnapDrag'
 // main window opens — are decided in windowPlacement.ts over the pure geometry in displayFit.ts,
 // so the policy is testable and both windows can never drift into two answers.
 import { mainWindowBounds } from './windowPlacement'
-import { overlayMouseForward, windowsMayShow } from './replayGate'
+import { windowsMayShow } from './replayGate'
 import { allowedExternalUrl, isInternalPageUrl } from './security'
 // WHAT THE X MEANS (JOS-139). One predicate, asked FIRST by the main window's `close` handler
 // below: it answers whether this close is really a hide to the tray, and does the hiding itself.
@@ -510,7 +510,7 @@ export function createMainWindow(): void {
 // fullscreen window on this client (JOS-375) — and an always-on-top overlay composites fine over
 // either (see AGENTS.md). No native helper app is
 // needed — Electron's transparent/frameless + setAlwaysOnTop('screen-saver') +
-// setIgnoreMouseEvents(forward) covers it.
+// setIgnoreMouseEvents covers it.
 //
 // Three KINDS (Task #54; 'events' in Task #59), each an independent window with its own
 // persisted config:
@@ -524,35 +524,53 @@ export function createMainWindow(): void {
 //   - interactive: normal focusable window, -webkit-app-region drag on the header, resize
 //     edges, close/config controls + selector + drill-down visible.
 //   - locked (click-through): mouse events pass through to the game via
-//     setIgnoreMouseEvents(true, {forward:true}); the renderer's hover sensor toggles capture
-//     back on so the hover-revealed pin stays clickable. Never steals focus. No drilling.
+//     setIgnoreMouseEvents(true) — with NO forwarding and therefore no mouse hook (JOS-370). The
+//     hover-revealed pin stays clickable because main flips this call from an off-thread hit test
+//     against the rectangles the window still wants (overlayHotZone.ts / overlayHover.ts), not
+//     because we sit in the machine's mouse path. Never steals focus. No drilling.
 
 /**
  * Set a kind's click-through state. ONE definition, used by the lock toggle below and by the
- * renderer's fine-grained `overlay:setIgnoreMouse` — two call sites disagreeing about
- * `forward` would be a performance bug nobody could see.
+ * renderer's fine-grained `overlay:setIgnoreMouse` — two call sites disagreeing about what
+ * click-through MEANS would be a performance bug nobody could see.
  *
- * WHY `forward` IS PER-KIND. On Windows, `forward:true` installs a low-level mouse hook
- * (WH_MOUSE_LL) owned by the MAIN process: every system mouse event then waits on our message
- * loop, so a blocked main freezes the user's cursor system-wide (measured — it is why the
- * cursor ring deliberately does NOT forward). The METERS pay that cost for a reason: their
- * hover sensor is what re-enables capture over the pin button, and it only ever sees a
- * mouse-move if we forward one. The TOAST has no hover sensor — its capture is driven by its
- * QUEUE (a card is on screen, or it is not), which it learns over IPC — so it would pay the
- * hook for a window that is empty and idle almost all of the time. It does not forward.
+ * ============================ NOTHING OF OURS HOOKS THE MOUSE (JOS-370) ============================
+ * This call used to have a second argument, and removing it is the whole of that ticket.
  *
- * ...AND NOBODY FORWARDS DURING A HISTORICAL REPLAY (JOS-62). "Does this kind forward" is
- * answered by `overlayMouseForward` (replayGate.ts), which folds both rules into ONE place: for
- * the seconds the fold owns the message loop, the hook the meters normally pay for would land
- * squarely on the user's own mouselook — and the window it exists to serve is hidden anyway.
- * Click-through itself is unchanged; only its implementation gets cheaper.
+ * A locked overlay was `setIgnoreMouseEvents(true, {forward:true})`. On Windows, `forward` is
+ * implemented with a LOW-LEVEL MOUSE HOOK (WH_MOUSE_LL) installed in the MAIN process — and a
+ * low-level hook is not an observer, it is a SYNCHRONOUS STOP on the mouse's own path: every mouse
+ * event on the machine, including the ones EverQuest is reading to turn the camera, was delivered
+ * through our message loop and waited there. Three consequences, all of them measured or reported:
+ *
+ *   * ANY STALL OF MAIN BECAME A STALL OF THE MACHINE'S INPUT. A 30 ms hitch in the process that
+ *     tails the log, folds combat and answers IPC was a 30 ms freeze of the user's CURSOR and of
+ *     in-game mouselook. That is the amplifier this whole perf program (JOS-363..372) was chasing:
+ *     our latency stopped being ours.
+ *   * WINDOWS SILENTLY UNHOOKS A SLOW HOOK. Past `LowLevelHooksTimeout` the OS drops the offender
+ *     without telling it, after which the hover pin simply stopped appearing until the overlay was
+ *     re-locked — a feature that decayed rather than failed.
+ *   * IT WAS PAID FOR ONE THING. The hook existed so a pinned window would receive mouse MOVES,
+ *     because moves were the hover sensor that re-enabled capture over the pin.
+ *
+ * So the question is asked from the other side now. Main publishes the RECTANGLES a pinned overlay
+ * still wants the mouse in (overlayHotZone.ts), the PRESENCE WORKER reads the cursor on its own
+ * thread at ~32 ms and reports only the enter/leave edges, and `overlayHover.ts` flips this call
+ * from the answer. Click-through is unchanged from the user's side; the app is simply no longer in
+ * the mouse's path. `forward:` now appears in no `setIgnoreMouseEvents` call in this application,
+ * and tests/overlayLockedSelector.test.mts pins that as source.
+ *
+ * WHAT LEFT WITH IT: the replay gate's mouse half (JOS-62's `overlayMouseForward`). Its whole job
+ * was to drop the hook for the seconds a historical fold owned the message loop, and there is no
+ * hook left to drop. The gate's OVERLAY HIDE/SHOW half is untouched and still the law.
  *
  * ...AND IT IS ALSO WHERE THE CURSOR WATCHDOG LIVES OR DIES (JOS-381). This function is the ONE
  * place an overlay's click-through state changes, so it is the only place that can know when a
  * locked window has taken the mouse — and therefore when the pointer leaving it might never be
  * observed from inside (the task-switcher case). `watchOverlayPointer` starts a watch on exactly
- * that transition and stops it on every path back; nothing about forwarding, focus or z-order is
- * touched by it. See overlayPointerWatch.ts.
+ * that transition and stops it on every path back; nothing about focus or z-order is touched by it.
+ * See overlayPointerWatch.ts. It is the SAFETY NET under the hot-zone sensor rather than a
+ * duplicate of it: the sensor knows a rectangle inside the window, this knows the window.
  */
 export function setOverlayIgnoreMouse(kind: OverlayKind, ignore: boolean): void {
   const w = overlayWindows[kind]
@@ -562,17 +580,32 @@ export function setOverlayIgnoreMouse(kind: OverlayKind, ignore: boolean): void 
   // parked (a strip whose card is still alive, a hover-pin flip in flight) would turn an invisible
   // rectangle into a click-eater over whatever the user switched to. The DESIRED value is
   // remembered instead, and `parkOverlays` re-derives from it on the way back, so a strip with a
-  // live card takes the mouse again the moment the user is back in the game. While parked nothing
-  // forwards either: the WH_MOUSE_LL hook is main-process cost for a window nobody can see.
+  // live card takes the mouse again the moment the user is back in the game. A parked overlay also
+  // publishes no hot zones at all (`overlayWantsHoverZones`), so nothing can ask it to capture.
   overlayDesiredIgnore[kind] = ignore
   const effective = overlaysParkedNow || ignore
-  if (!effective) w.setIgnoreMouseEvents(false)
-  // Parked takes the HOOKLESS form (the cursor ring's own): nobody forwards for a window nobody
-  // can see. The forwarding call below therefore stays the app's ONE hook site.
-  else if (overlaysParkedNow) w.setIgnoreMouseEvents(true)
-  else w.setIgnoreMouseEvents(true, { forward: overlayMouseForward(kind) })
+  // ONE SHAPE, TWO VALUES, NO SECOND ARGUMENT — see the hook note above.
+  w.setIgnoreMouseEvents(effective)
   applyOpaqueStripVisibility(kind, ignore)
   watchOverlayPointer(kind, w, effective)
+  // The click-through state is an input to which rectangles are worth watching, and this is the one
+  // place it changes — so it is the one place that has to say so (JOS-370).
+  overlayHoverStale?.()
+}
+
+// ---- "the hot zones may have moved" — the one signal out of this file (JOS-370) ----------------
+//
+// A REGISTRATION RATHER THAN AN IMPORT, and the direction is the reason. `overlayHover.ts` needs
+// this file (window rectangles, the park state, the capture call) and it needs `presenceEffects.ts`
+// (the watcher ref-count), which needs this file too. Importing it back from here would close that
+// ring; a callback the composition root installs leaves the dependency graph a tree, and it also
+// makes the whole feature absent rather than inert when nobody has wired it — which is what the
+// e2e harness and every unit test that loads this module actually get.
+let overlayHoverStale: (() => void) | null = null
+
+/** Install the "re-derive the hot zones" hook. One owner; `initOverlayHover` is it. */
+export function onOverlayHoverStale(cb: () => void): void {
+  overlayHoverStale = cb
 }
 
 /**
@@ -712,6 +745,10 @@ export function reconcileOverlayDisplays(): void {
     const b = overlayAppliedBounds(kind)
     if (b) applyOverlayBounds(kind, b)
   }
+  // A monitor came or went, so every locked overlay's hot zone moved with its window (JOS-370).
+  // This is the one bounds change a LOCKED overlay can have — it has no drag region, so the user
+  // cannot move it — which is why the publisher does not watch 'moved'/'resized' as well.
+  overlayHoverStale?.()
 }
 
 export function createOverlayWindow(kind: OverlayKind): void {
@@ -862,6 +899,9 @@ export function createOverlayWindow(kind: OverlayKind): void {
     // tick anyway (the rectangle it re-reads comes back null), but a closed window should cost
     // nothing at all, not one more read (JOS-381).
     stopOverlayPointerWatch(kind)
+    // …and it is nobody's HOT ZONE either (JOS-370): a closed window's rectangle has to be retracted
+    // from the watcher, or the hit test keeps asking about pixels that belong to the desktop now.
+    overlayHoverStale?.()
     setOverlayConfig(kind, { open: false })
     // Tell the main app so the TitleBar overlay menu reflects the closed state.
     sendToMain(IPC.onOverlayState, { kind, open: false })
@@ -936,6 +976,12 @@ let overlaysParkedNow = false
 /** The opacity the park state implies for a window being shown or un-parked right now. */
 function parkedOpacity(): 0 | 1 {
   return overlaysParkedNow ? 0 : 1
+}
+
+/** Are the overlays parked (on screen, opacity 0)? Asked by the hot-zone publisher, which must
+ *  never hand an invisible rectangle the mouse — the same hard gate `setOverlayIgnoreMouse` keeps. */
+export function overlaysParked(): boolean {
+  return overlaysParkedNow
 }
 
 /** What each kind last ASKED the mouse mode to be (its queue/hover truth), replayed on un-park. */
@@ -1049,9 +1095,10 @@ export function setOverlaysHidden(hidden: boolean): void {
 //   * `focusable:false` + `type:'toolbar'` + `skipTaskbar` — never takes focus, never appears in
 //     Alt-Tab or the taskbar. A ring that could be focused would be a ring that could steal a
 //     keystroke mid-fight.
-//   * `setIgnoreMouseEvents(true, {forward:true})` — every click passes straight through to the
-//     game. Unlike the overlays there is NO hover sensor and no interactive mode: this window
-//     has nothing to click, so pass-through is unconditional and permanent.
+//   * `setIgnoreMouseEvents(true)` — every click passes straight through to the game, and with no
+//     `forward` and therefore no WH_MOUSE_LL hook. This window has nothing to click, so
+//     pass-through is unconditional and permanent. It was the FIRST window here to refuse the hook
+//     (it is the precedent JOS-62 and then JOS-370 both cite); since JOS-370 every window agrees.
 //   * NO `-webkit-app-region` anywhere in its page — it is not draggable, and cannot become a
 //     window the user accidentally picks up while playing.
 //

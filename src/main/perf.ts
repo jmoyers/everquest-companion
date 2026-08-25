@@ -59,12 +59,20 @@ import {
   type StartupProfile,
   type StartupStutterProbe
 } from '../shared/perf'
+import { formatDataWeight } from '../shared/dataWeight'
 import { startupReplayStats } from '../shared/telemetryStartup'
+// The per-file decomposition of the `dataLoaded` phase (JOS-458). A leaf holding one committed
+// table plus this launch's own heap reading.
+import { dataWeightLedger } from './dataWeight'
 import { logError, logInfo } from './errorLog'
 // THE LIVE HALF of the same subject (JOS-367), in its own leaf module for `tailIoStats.ts`'s two
 // reasons: it is plain data that knows nothing about telemetry, and a leaf cannot join the import
 // cycle that would otherwise form between this file and the seam that drains it.
 import { startLiveProbe, stopLiveProbe } from './livePerfProbe'
+// …and the half that says WHO (JOS-458), started and stopped in lockstep with it and a leaf for
+// the identical two reasons. The two measurements are one window on purpose: a stall's magnitude
+// and its owner have to describe the same seconds or neither can explain the other.
+import { startStallAttribution, stopStallAttribution } from './perfAttribution'
 // The fleet half of the same measurement (JOS-57). Through the telemetry FAÇADE, like every other
 // producer in this app — the wiring may not reach around it into the ring.
 import { noteStartupReplay, scheduleSetupSnapshot } from './telemetry'
@@ -265,6 +273,18 @@ export function markStartupPhase(phase: StartupPhase, opts: MarkOptions = {}): v
     // one on a thread of its own — because a single clock can prove it was late and can never say
     // who made it late, and the freezes this hunts are reported on a machine we do not own.
     startLiveProbe()
+    // …and with them the GC half of the instrument that answers WHO (JOS-458). Same instant, same
+    // window, same argument as the probes beside it: `gc` is a POPULATION the fleet reads as a
+    // rate, and a 1.4M-event fold's garbage is nothing like a running session's, so mixing a boot
+    // into it would move every install's numbers by an amount that depends on the size of its log.
+    //
+    // THE SEAM BRACKETS ARE NOT STARTED HERE AND DO NOT NEED TO BE — they record from process
+    // start, deliberately, because a per-seam max is not a distribution and because the launch's
+    // own first `registryFlush` and `worldRebuilt` fire one statement before THIS MARK is reached.
+    // Gating them on it would have excluded the cold fan-out, which is the single most interesting
+    // instance of the seam the ticket suspects most. `perfAttribution.ts`'s header has the full
+    // argument.
+    startStallAttribution()
   }
   if (startupProfile().complete) writeStartupProfile()
 }
@@ -356,7 +376,12 @@ export function startupProfile(): StartupProfile {
     ...(replayStats === undefined ? {} : { replay: replayStats }),
     ...(stutterStats === undefined ? {} : { stutter: stutterStats }),
     ...(newBytes === undefined ? {} : { newBytes }),
-    ...(firstMbMs === undefined ? {} : { firstMbMs })
+    ...(firstMbMs === undefined ? {} : { firstMbMs }),
+    // UNCONDITIONAL, unlike its neighbours, and that is the difference between a measurement and a
+    // manifest: every other member here is absent on a launch that did not produce it, while the
+    // committed rows describe the BUILD and are true of every launch of it. The one part that is
+    // per-launch (`heapAfterDataMb`) carries its own absence inside the ledger.
+    data: dataWeightLedger()
   })
 }
 
@@ -391,6 +416,13 @@ function logStartupSummary(profile: StartupProfile): void {
     `[everquest-companion] Startup ${String(Math.round(profile.totalMs))}ms` +
       `${replayed}${blocked}${duty}${coldRead(profile)} (${worst}) - profile at ${profilePath()}`
   )
+  // THE DATA LEDGER GETS ITS OWN LINE (JOS-458) rather than another clause on the one above. The
+  // line above describes THIS launch; this one describes the BUILD, and it is the same every time
+  // until a data file changes — which is exactly the property that makes a change to it visible in
+  // errors.log the release it lands, and the reason it must not be buried mid-sentence.
+  if (profile.data !== undefined) {
+    logInfo(`[everquest-companion] ${formatDataWeight(profile.data)}`)
+  }
 }
 
 /**
@@ -556,5 +588,8 @@ export function stopPerfSampler(): void {
 export function stopPerf(): void {
   stopPerfSampler()
   stopLiveProbe()
+  // The GC observer goes with them (JOS-458). It disconnects only — the tallies are left standing
+  // so a `sessionEnd` report composed during the same teardown still carries its last interval.
+  stopStallAttribution()
   flushStartupProfile()
 }

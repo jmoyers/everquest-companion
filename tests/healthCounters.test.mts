@@ -196,8 +196,16 @@ test('THE FOUR WIRED SOURCES are wired where the report says, and the fifth is n
   // nothing else, so no call site can attach a stack, a message or a path even by accident.
   const read = (p: string): string => readFileSync(join(TEST_ROOT, p), 'utf8')
   // 1. errors.log — counted AFTER the append, so a write that threw is not counted as a line.
+  //    THE APPEND IS ASYNCHRONOUS SINCE JOS-371 (one queue, one drain, one batched `appendFile`),
+  //    so the ordering is asserted inside the drain rather than against a per-line
+  //    `appendFileSync`: the `await appendFile(...)` has to come before the loop that counts, and
+  //    the count has to be one call per line in the batch. The SYNC writer beside it — the quit /
+  //    crash final — is asserted the same way, because it is the same rule written twice.
   const errorLog = read('src/main/errorLog.ts')
-  assert.ok(errorLog.indexOf('appendFileSync(path, line)') < errorLog.indexOf('noteErrorLogLine()'))
+  const drain = errorLog.slice(errorLog.indexOf('async function drain('), errorLog.indexOf('function writeLine('))
+  assert.ok(drain.indexOf('await appendFile(path,') < drain.indexOf('for (const _ of batch) noteErrorLogLine()'))
+  const flush = errorLog.slice(errorLog.indexOf('export function flushErrorLogSync('))
+  assert.ok(flush.indexOf('appendFileSync(path,') < flush.indexOf('for (const _ of batch) noteErrorLogLine()'))
   // 2. renderer crash — at the EVENT, not off `logError` (that handler logs twice per crash), so
   //    the increment sits inside the listener and before its first log line.
   const windows = read('src/main/windowErrors.ts')

@@ -252,3 +252,50 @@ test('full-log replay: observed tiers are structurally sound and epoch-clean', {
     assert.equal(current[r.key], undefined, `${r.name} was merged ONLY pre-launch and must not survive`)
   }
 })
+
+// ---- W47 (JOS-453): the auto-merge line as the 2026-08-18 patch prints it ---------------------
+//
+// The ticket asked for the `to create <item> +N` line to feed this module "alongside merge
+// lines". IT ALREADY DOES — `onEvent` has folded `disposition === 'combined' && ev.created` since
+// Task #60, and W31 above proves it on a July span. What W31 could NOT prove is the two combine
+// sub-shapes the 2026-08-23 full-log census turned up, because no committed fixture held one:
+// a merge whose created tier EQUALS the looted one (106 in the log) and a merge whose looted copy
+// is TIERLESS so `created` is the only tier statement on the line (345 in the log).
+
+test('W47 auto-merge tiers: the created name is the evidence, climb or no climb', () => {
+  const tiers = replay(readFixture('w47-autosell-patch.log'))
+
+  // A merge that did NOT climb still states a tier, and still counts as a merge.
+  const greaves = tiers['ethereal mist greaves']
+  assert.ok(greaves, 'the +4 → +4 line made a row')
+  assert.equal(greaves.tier, 4, 'created +4 is the observed tier even though nothing moved')
+  assert.equal(greaves.merges, 1)
+
+  // A TIERLESS looted copy — `created` carries the only plus on the line, and it is what we record.
+  const vambraces = tiers['lustrous russet vambraces']
+  assert.ok(vambraces, 'the tierless looted copy still produced a tier row')
+  assert.equal(vambraces.tier, 6, 'from `to create a Lustrous Russet Vambraces +6`')
+  assert.equal(vambraces.merges, 2, 'two such lines in the window')
+  assert.equal(vambraces.name, 'Lustrous Russet Vambraces', 'the base name, plus stripped')
+
+  const wristguard = tiers['shadow rage wristguard']
+  assert.ok(wristguard && wristguard.tier === 6)
+  const ahlspiess = tiers['shrieking ahlspiess']
+  assert.ok(ahlspiess && ahlspiess.tier === 6)
+
+  // Ordinary climbs, both articles.
+  assert.equal(tiers['indicolite bracer']?.tier, 6, '+4 → +6')
+  assert.equal(tiers['valorium vambraces']?.tier, 5, '+1 → +5')
+  assert.equal(tiers['indicolite vambraces']?.tier, 4, 'tierless → +4')
+
+  // THE NEGATIVE, and it is the ticket's whole point (module header: "Ordinary loot of a `+N` drop
+  // is deliberately NOT evidence"). Two `+4` items in this window were AUTO-SOLD the instant they
+  // dropped. The plus is right there in the line, and it must still mint nothing: the player never
+  // upgraded them and never even held them.
+  assert.equal(tiers['ethereal mist gauntlets'], undefined, 'an auto-sold +4 is not a tier')
+  assert.equal(tiers['shadow rage sleeves'], undefined)
+  assert.equal(tiers['star ruby earring'], undefined, 'a sold +1 is not a tier either')
+
+  // Exactly the seven merged items above, and nothing else in a window full of loot.
+  assert.equal(Object.keys(tiers).length, 7, 'seven distinct items upgraded in the window')
+})

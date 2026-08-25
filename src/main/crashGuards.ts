@@ -26,7 +26,7 @@
 import { app } from 'electron'
 import { watchChildProcessGone } from './childProcessGone'
 import { silenceStdioErrors } from './deadPipe'
-import { logError } from './errorLog'
+import { flushErrorLogSync, logError } from './errorLog'
 
 silenceStdioErrors()
 
@@ -48,9 +48,24 @@ watchChildProcessGone(app, (info) => {
 // failures a blanket rule would swallow. What was wrong was never that EPIPE arrived here; it was
 // that handling it wrote to the thing that had just failed. The general backstop for any error that
 // learns to repeat itself is the per-fingerprint budget inside `logError` (JOS-197).
+// AND THESE TWO HANDLERS ARE WHERE THE ERROR LOG'S ONE SYNCHRONOUS WRITE LIVES (JOS-371).
+//
+// `errorLog.ts` appends asynchronously now — the file sink is a queue drained by one writer, so a
+// burst of errors costs the main thread nothing and a locked overlay is not held over a disk write.
+// That trade is only honest where "later" is a moment that arrives. HERE IT MAY NOT: an uncaught
+// exception is the app's last coherent instant, and a process that dies before the queue drains
+// takes the one line that explains why with it. `flushErrorLogSync` puts everything outstanding on
+// disk in a SINGLE `appendFileSync` before this handler returns.
+//
+// This process does NOT exit on either event (see the note at the top of this file — dev keeps the
+// window and its ErrorBoundary alive), so the flush is belt-and-braces rather than a certainty
+// being served. That is exactly why it is affordable: it costs one syscall on a path that, by
+// construction, is already the rarest one in the app.
 process.on('uncaughtException', (err) => {
   logError('main:uncaughtException', err)
+  flushErrorLogSync()
 })
 process.on('unhandledRejection', (reason) => {
   logError('main:unhandledRejection', reason)
+  flushErrorLogSync()
 })

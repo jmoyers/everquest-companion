@@ -50,15 +50,18 @@
 //   * The validators are TOTAL and side-effect free: every failure is a typed value, nothing
 //     throws, and the same call on the same input always returns the same answer.
 //
-// THE LIVE-SESSION RIDERS LIVE NEXT DOOR TOO, in `./telemetryLive.ts` (JOS-367) — the three
-// optional groups `sessionHeartbeat` / `sessionEnd` carry about a RUNNING session (how late our
-// clocks ran, what the tail's reads cost, what was switched on) plus their three ladders. Split
-// for the same factoring reason the validators were, and reached DIRECTLY by its importers rather
-// than re-exported from here, so every one of those names is spelled in exactly one place. The
-// import below is TYPE-ONLY: this file still emits no runtime import, which is the property the
-// Lambda bundle and `storeMigrations.ts`'s module-scope read both depend on.
+// THE LIVE-SESSION RIDERS LIVE NEXT DOOR TOO, in `./telemetryLive.ts` (JOS-367, extended by
+// JOS-458) — the FIVE optional groups `sessionHeartbeat` / `sessionEnd` carry about a RUNNING
+// session (how late our clocks ran, what the tail's reads cost, what was switched on, what V8
+// spent, and which of our own seams ran) plus their ladders, gathered into one `SessionRiders`
+// carrier the two events EXTEND. Split for the same factoring reason the validators were — this
+// file is at its 400-code-line ceiling and ten lines of rider declaration spelled twice is what
+// took it past — and reached DIRECTLY by its importers rather than re-exported from here, so every
+// one of those names is spelled in exactly one place. The import below is TYPE-ONLY: this file
+// still emits no runtime import, which is the property the Lambda bundle and
+// `storeMigrations.ts`'s module-scope read both depend on.
 
-import type { LiveStallStats, SessionStateStats, TailReadStats } from './telemetryLive'
+import type { SessionRiders } from './telemetryLive'
 
 /** Bumped only for a BREAKING wire change; the server rejects anything else outright. */
 export const TELEMETRY_API_VERSION = 1
@@ -694,21 +697,17 @@ export interface EvSessionStart {
   t: 'sessionStart'
   coldStartMsBucket: number
 }
-export interface EvSessionHeartbeat {
+/** …plus the five OPTIONAL RIDERS both session reports carry, declared once in
+ *  `./telemetryLive.ts SessionRiders` so the two events cannot drift apart. */
+export interface EvSessionHeartbeat extends SessionRiders {
   t: 'sessionHeartbeat'
   uptimeMs: number
   /** Log lines parsed since the previous report. OPTIONAL — see THE ADDITIVE-FIELD RULE below. */
   linesParsed?: number
   /** This launch's startup replay, if it has not been reported yet. Optional, same rule. */
   startup?: StartupReplayStats
-  /** How late our own two clocks ran since the previous report (JOS-367). Optional, same rule. */
-  live?: LiveStallStats
-  /** What the live tail's reads cost over the same interval. Absent when nothing is attached. */
-  tail?: TailReadStats
-  /** What the app was doing while the two above were measured. */
-  state?: SessionStateStats
 }
-export interface EvSessionEnd {
+export interface EvSessionEnd extends SessionRiders {
   t: 'sessionEnd'
   durationMs: number
   viewsVisited: number
@@ -716,10 +715,6 @@ export interface EvSessionEnd {
   linesParsed?: number
   /** This launch's startup replay, if no heartbeat carried it first. Optional, same rule. */
   startup?: StartupReplayStats
-  /** The tail of the live readings, on the same terms as `linesParsed` beside them (JOS-367). */
-  live?: LiveStallStats
-  tail?: TailReadStats
-  state?: SessionStateStats
 }
 
 export interface EvViewDwell {

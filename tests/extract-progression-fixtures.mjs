@@ -103,3 +103,29 @@ slice(669590, 975780, 'wl44-swap-boundary.log')
 // span found that carries all THREE credit shapes with the pet bound INSIDE the window: your
 // own killing blows, a bound pet's, and other players'/mobs' kills that must be witnessed-only.
 slice(492616, 500616, 'wl45-kill-credit.log')
+
+// WL46 ONE PLACE, TWO SPELLINGS, AND THE STEP OUT OF THE INSTANCE — Sun Aug 23 13:37:51 →
+// 15:20:30 (JOS-454). THE OWNER'S SCREENSHOT, VERBATIM: the exact stretch he dragged a selection
+// across, cut to the instant the record stood at when he took it.
+//
+//   13:37:58          `You have entered The Plane of Hate.` — the open world, 76 seconds of it
+//   13:39:14          `You have entered The Plane of Hate 4 (Refined).` — the instance, and the
+//                     next 1h35m of real farming: dings, dozens of kills, the lot
+//   15:14:55          back into `The Plane of Hate 4 (Refined)` for 27 s
+//   15:15:22          `You have entered The Plane of Hate.` — the OPEN WORLD again. Same place,
+//                     a different spelling: `zones.zoneKey` folds both to `plane of hate`,
+//                     `zoneScope.zoneIdKey` does not.
+//   15:16:44          one more plain-Hate zone line, and the record then goes quiet for the rest
+//                     of the window. The last interval is left OPEN, which is the second half of
+//                     the defect: `zoneSegments` closes an open interval at the END OF THE
+//                     RANGE, so an unclamped selection reaching past the record turns the
+//                     chart's trailing gutter into time spent standing in that zone.
+//
+// Under `exactTier` — which is what the exp surfaces OPEN on (JOS-332), and which resolves to
+// the tier the log LAST named, i.e. plain `The Plane of Hate` — the numbers are the plain-Hate
+// visits and nothing else: no kills, no experience, no active time, while the chart above the
+// panel goes on drawing the instance play and its rising curve. That is the whole report.
+//
+// It is a 1h43m span that survives the KEEP filter as a couple of hundred lines, which is why
+// the fixture can be the owner's actual window rather than a miniature of it.
+slice(2441268, 2466682, 'wl46-hate-tier-swap.log')

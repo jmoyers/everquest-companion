@@ -24,7 +24,7 @@ import { resolvedClasses } from '@shared/classCombo'
 import type { ItemUpgradeState } from '@shared/itemUpgrade'
 import { GEAR_INDEX_VERSION, type GearBuildStats, type GearRow } from '@shared/planner/gear'
 import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
-import { isAcquisition } from '@shared/lootDisposition'
+import { isKept } from '@shared/lootDisposition'
 import { useLootHistory } from '../loot/useLootHistory'
 import { useComboSnap } from '../profiles/ClassComboData'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
@@ -184,8 +184,15 @@ export function useGearOwnership(): GearOwnershipState {
   // It costs nothing in the ordinary case — an item you looted and then destroyed one of is still
   // in the set through its own loot rows — and it is only decisive for an item this log has seen
   // exclusively as a destroy, which is exactly the one the Owned column must not claim.
+  //
+  // AND NEITHER ARE AUTO-SELLS (JOS-453). `isAcquisition` was the wrong predicate here: it answers
+  // "did this drop off a mob", which an auto-sold item did. The Owned column asks something else,
+  // and `shared/lootDisposition.ts isKept` is that question — the same law as the destroy, one step
+  // earlier, since the item never reached the bags at all. It is not a rounding error: 73% of the
+  // owner's 12,045 loot events are `sold`, and 467 distinct base names appear in his log ONLY that
+  // way. Each one of them used to print `Looted` in a column that means "you have one".
   const lootedNames = useMemo(
-    () => [...new Set(history.filter(isAcquisition).map((e) => e.item))],
+    () => [...new Set(history.filter(isKept).map((e) => e.item))],
     [history]
   )
 

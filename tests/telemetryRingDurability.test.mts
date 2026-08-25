@@ -47,11 +47,15 @@ import { fileURLToPath } from 'node:url'
 import {
   createWriteGate,
   nodeIo,
+  nodeIoAsync,
   retryDelayMs,
   tempPathFor,
   writeFileDurable,
+  writeFileDurableAsync,
   WRITE_RETRY_BASE_MS,
   WRITE_RETRY_MAX_MS,
+  type AsyncDurableHandle,
+  type AsyncDurableIo,
   type DurableIo
 } from '../src/main/telemetry/durableWrite'
 
@@ -240,7 +244,133 @@ test('THE PAUSE IS ANNOUNCED ONCE: only the success that ENDS one says so', () =
   assert.equal(gate.failures(), 0)
 })
 
-// ---- 6. THE TWO RULES THAT LIVE IN ring.ts ---------------------------------------------------
+// ---- 6. THE SAME WRITE, OFF THE MAIN THREAD (JOS-371) ----------------------------------------
+//
+// The whole of JOS-265 above holds only if the ASYNC writer that replaced the sync one on the live
+// path makes the same four promises. It is asserted the same way — a real temp directory, failures
+// injected step by step — because a durability argument that is only made about the version nobody
+// runs is not an argument.
+
+/** Which async step to fail, and how. The async io has no separate `write`/`fsync`/`close` methods
+ *  (an async fsync needs the HANDLE, not a descriptor), so the step names live on the handle. */
+type AsyncStep = 'mkdir' | 'open' | 'write' | 'sync' | 'close' | 'rename' | 'remove'
+
+/** The async twin of `io()` above: record the call order, optionally fail one step the way a full
+ *  volume fails it (part of the data written, THEN the error). */
+function ioAsync(record: string[], fail?: { at: AsyncStep; partial?: boolean }): AsyncDurableIo {
+  const guard = async (name: AsyncStep): Promise<void> => {
+    record.push(name)
+    if (fail?.at === name) throw enospc()
+  }
+  return {
+    mkdir: async (dir) => {
+      await guard('mkdir')
+      await nodeIoAsync.mkdir(dir)
+    },
+    open: async (path) => {
+      await guard('open')
+      const real = await nodeIoAsync.open(path)
+      const wrapped: AsyncDurableHandle = {
+        write: async (data) => {
+          record.push('write')
+          if (fail?.at === 'write') {
+            if (fail.partial === true) await real.write(data.slice(0, Math.floor(data.length / 2)))
+            throw enospc()
+          }
+          await real.write(data)
+        },
+        sync: async () => {
+          await guard('sync')
+          await real.sync()
+        },
+        close: async () => {
+          record.push('close')
+          await real.close()
+          if (fail?.at === 'close') throw enospc()
+        }
+      }
+      return wrapped
+    },
+    rename: async (from, to) => {
+      await guard('rename')
+      await nodeIoAsync.rename(from, to)
+    },
+    remove: async (path) => {
+      await guard('remove')
+      await nodeIoAsync.remove(path)
+    }
+  }
+}
+
+test('OFF THE THREAD: a write that runs out of space mid-file still leaves no scratch behind', async () => {
+  const dir = scratchDir()
+  try {
+    const path = join(dir, 'telemetry.json')
+    await writeFileDurableAsync(dir, path, '{"version":1,"events":[],"lastBatch":null}', ioAsync([]))
+
+    const calls: string[] = []
+    await assert.rejects(
+      writeFileDurableAsync(
+        dir,
+        path,
+        JSON.stringify({ version: 1, events: Array.from({ length: 200 }, (_, i) => i) }),
+        ioAsync(calls, { at: 'write', partial: true })
+      ),
+      (err: NodeJS.ErrnoException) => err.code === 'ENOSPC'
+    )
+    assert.equal(existsSync(tempPathFor(path)), false, 'the scratch file must not survive a failed write')
+    assert.deepEqual(readdirSync(dir), ['telemetry.json'])
+    assert.ok(calls.indexOf('close') < calls.indexOf('remove'), `close must precede remove; got ${calls.join(',')}`)
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { version: 1, events: [], lastBatch: null })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('OFF THE THREAD: a failed RENAME is survivable the same way', async () => {
+  const dir = scratchDir()
+  try {
+    const path = join(dir, 'telemetry.json')
+    await writeFileDurableAsync(dir, path, '{"version":1,"events":[],"lastBatch":null}', ioAsync([]))
+    await assert.rejects(
+      writeFileDurableAsync(dir, path, '{"version":1,"events":[1,2,3],"lastBatch":null}', ioAsync([], { at: 'rename' }))
+    )
+    assert.equal(existsSync(tempPathFor(path)), false)
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { version: 1, events: [], lastBatch: null })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('OFF THE THREAD: the fsync did NOT go away — it flushes before the rename, exactly as before', async () => {
+  const dir = scratchDir()
+  try {
+    const calls: string[] = []
+    const path = join(dir, 'telemetry.json')
+    await writeFileDurableAsync(dir, path, '{"version":1}', ioAsync(calls))
+    // The sync writer's order, step for step. `sync` is `fsync(2)` through the FileHandle; what
+    // changed is the thread it runs on, never that it runs.
+    assert.deepEqual(calls, ['mkdir', 'open', 'write', 'sync', 'close', 'rename'])
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { version: 1 })
+    assert.deepEqual(readdirSync(dir), ['telemetry.json'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('OFF THE THREAD: the real async io writes a whole file through a real FileHandle', async () => {
+  const dir = scratchDir()
+  try {
+    const path = join(dir, 'telemetry.json')
+    await writeFileDurableAsync(dir, path, '{"version":1,"events":[7],"lastBatch":null}')
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { version: 1, events: [7], lastBatch: null })
+    assert.deepEqual(readdirSync(dir), ['telemetry.json'], 'no scratch file outlives a good write')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---- 7. THE TWO RULES THAT LIVE IN ring.ts ---------------------------------------------------
 
 const RING_SRC = readFileSync(join(ROOT, 'src', 'main', 'telemetry', 'ring.ts'), 'utf8')
 
@@ -253,6 +383,39 @@ test('MEMORY FIRST: writeRing updates the cache BEFORE it consults the gate', ()
     cacheAt < gateAt,
     'a skipped write may cost persistence and NEVER an event: the ring in memory is updated first'
   )
+})
+
+test('ONE WRITE IN FLIGHT: the async ring writer serialises itself and coalesces what is owed', () => {
+  // The sync writer got serialisation for free — a sync call cannot interleave. Two async ones can,
+  // and two interleaved writers share ONE `.tmp` path, so the second would rename a scratch file
+  // the first is still filling. `writing` is the latch; `owed` is the coalescing, and REPLACING
+  // rather than queueing is correct because a ring write is the whole file and the newest ring
+  // already contains every event an older one had.
+  assert.match(RING_SRC, /let writing = false/)
+  assert.match(RING_SRC, /let owed: \{ data: string; now: number \} \| null = null/)
+  const body = RING_SRC.slice(RING_SRC.indexOf('export function writeRing'), RING_SRC.indexOf('export function flushRingSync'))
+  assert.ok(body.indexOf('writeGate.ready(now)') < body.indexOf('owed = {'), 'the gate is still asked before a byte is touched')
+  assert.match(body, /if \(writing\) return\r?\n {2}writing = true\r?\n {2}void drainWrites\(\)/)
+  // …and there is exactly ONE caller of the async durable write in the file: the drain.
+  assert.equal(RING_SRC.match(/writeFileDurableAsync\(/g)?.length, 1)
+})
+
+test('THE QUIT FINAL: the one sync write left in the ring, and a drop outlives an in-flight write', () => {
+  // `sessionEnd` is recorded as the last window closes; an async write scheduled at that moment is
+  // one the process may never turn the event loop for again. `flushRingSync` is the documented
+  // final — the ONLY synchronous durable write left here — and it respects the same gate.
+  assert.equal(RING_SRC.match(/writeFileDurableFinal\(/g)?.length, 1)
+  const flush = RING_SRC.slice(RING_SRC.indexOf('export function flushRingSync'))
+  assert.ok(flush.indexOf('if (owed === null) return') < flush.indexOf('writeFileDurableFinal('))
+  assert.match(flush, /if \(!writeGate\.ready\(now\)\) return/)
+  // NEVER A TORN FILE TO BUY A LAST RECORD: it writes through its OWN scratch file, so it can run
+  // on top of a threadpool write without two writers ever filling one temp.
+  // A drop cannot cancel a write already in the threadpool, so it discards what is owed and asks
+  // the drain to delete again on its way out — the file must not come back after "turn it off".
+  const drop = RING_SRC.slice(RING_SRC.indexOf('export function dropRing'), RING_SRC.indexOf('export function resetRingCache'))
+  assert.match(drop, /owed = null/)
+  assert.match(drop, /if \(writing\) dropDuringWrite = true/)
+  assert.match(RING_SRC, /if \(dropDuringWrite\) \{\r?\n {4}dropDuringWrite = false\r?\n {4}removeRingFiles\(\)/)
 })
 
 test('THE FINGERPRINT SURVIVES THE FIX: the failure message is unchanged, character for character', () => {

@@ -27,11 +27,13 @@ import {
   spellClassLine,
   spellEffectClassLabels,
   spellFactsAreForLine,
+  spellFocusLines,
   spellLineageLine,
   spellLineageMembers,
   spellStatRows,
   type SpellDetail
 } from '../src/shared/spellDetail'
+import { parseWornFocus, type WornFocus } from '../src/shared/wornFocus'
 
 const db = loadSpellDb()
 
@@ -295,6 +297,63 @@ test('D20 (JOS-447) the card states BOTH readings when a rank is observed, and o
   const none = buildSpellDetail(db, 'Clarity', [], { rank: 5 })
   assert.equal(none.metrics, undefined)
   assert.equal(none.metricsAtRank, undefined)
+})
+
+// ---- D21: THE CARD NAMES THE ITEM THAT DID IT (JOS-452) --------------------------------------
+//
+// The readout's marker says `worn +11%` and the card is where a reader finds out WHICH piece of
+// gear is producing it. Three claims: a third figures line exists when a worn focus qualifies, it
+// names the effect AND the item, and it is entirely absent for anybody wearing nothing.
+
+const MASK = ((): WornFocus => {
+  const parsed = parseWornFocus('Improved Damage II', 'Polished Mithril Mask (Exaltation)', [
+    'Increase Spell Damage by 1% to 20%',
+    'Limit Max Level: 44 (lose 5% per level after)',
+    'Limit Effect: Current HP',
+    'Limit Max Duration: 0s',
+    'Limit Type: Detrimental',
+    'Limit Target: Exclude Target AE'
+  ])
+  assert.ok(parsed)
+  return parsed
+})()
+
+test('D21 the card carries a THIRD reading with the player`s gear on, and names the item', () => {
+  const plain = buildSpellDetail(db, "Garrison's Mighty Mana Shock")
+  const worn = buildSpellDetail(db, "Garrison's Mighty Mana Shock", [], { focus: [MASK] })
+  // The first two lines are untouched: the catalog's own figures do not move because of gear.
+  assert.deepEqual(worn.metrics, plain.metrics)
+  // The third is the same spell as you CAST it: its L18 gain-level figure plus the middle of the
+  // 1..20 band the page states.
+  assert.equal(worn.metricsWithFocus?.damage, Number(((plain.metrics?.damage ?? 0) * 1.105).toFixed(1)))
+  assert.deepEqual(worn.focusSources, [
+    { side: 'damage', effect: 'Improved Damage II', item: 'Polished Mithril Mask (Exaltation)', pct: 10.5 }
+  ])
+  assert.deepEqual(spellFocusLines(worn), [
+    'worn +11% damage · Improved Damage II · Polished Mithril Mask (Exaltation)'
+  ])
+  // No em dashes anywhere near a player (AGENTS.md).
+  assert.doesNotMatch(spellFocusLines(worn)[0], /[–—]/)
+})
+
+test('D21 a card with no gear, or gear this spell does not qualify for, says nothing at all', () => {
+  const none = buildSpellDetail(db, "Garrison's Mighty Mana Shock")
+  assert.equal(none.metricsWithFocus, undefined)
+  assert.equal(none.focusSources, undefined)
+  assert.deepEqual(spellFocusLines(none), [])
+  // A damage focus over a HEAL: the qualification test refuses it and the card draws no gear block.
+  const heal = buildSpellDetail(db, 'Superior Healing', [], { focus: [MASK] })
+  assert.ok(heal.metrics?.heal, 'the spell this refusal is about really is a heal')
+  assert.equal(heal.metricsWithFocus, undefined)
+  assert.equal(heal.focusSources, undefined)
+})
+
+test('D21 the gear reading rides the RANK, so the card`s last line is its most complete', () => {
+  const both = buildSpellDetail(db, "Garrison's Mighty Mana Shock", [], { rank: 8, focus: [MASK] })
+  assert.equal(both.metricsAtRank?.damage, 402, 'the rank line is unchanged by gear')
+  // The same 10.5% over the rank figure, which is what a player holding a VIII and wearing the mask
+  // is really casting.
+  assert.equal(both.metricsWithFocus?.damage, 444.2)
 })
 
 test('D19 a spell with no hitpoint line states no figures at all — never a zero', () => {

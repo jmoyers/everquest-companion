@@ -16,9 +16,15 @@
 //
 // ── WHAT THESE NUMBERS ARE, AND WHAT THEY ARE NOT ──────────────────────────────────────────────
 //
-// They are the spell's BASE figures at a stated level: no critical hits, no focus items, no AA
-// multipliers, no spell-damage bonus, no resist. They are DIRECTIONAL - the right instrument for
-// comparing two spells you are choosing between, not a damage meter.
+// They are the spell's BASE figures at a stated level: no critical hits, no AA multipliers, no
+// spell-damage bonus, no resist. They are DIRECTIONAL - the right instrument for comparing two
+// spells you are choosing between, not a damage meter.
+//
+// FOCUS ITEMS USED TO BE ON THAT LIST AND ARE NOT ANY MORE (JOS-452). Where a caller states the
+// worn focus percentages this file applies them, so a reader with an inventory dump loaded is
+// looking at figures that carry his own gear; a caller that states none gets exactly the numbers
+// this file printed before, byte for byte. The overlay is `shared/wornFocus.ts` and the surfaces
+// that turn it on say so in one quiet word.
 //
 // AND THE PER-SECOND FIGURES ARE SUSTAINED ONES SINCE JOS-444, BECAUSE RECAST IS IN THE CATALOG NOW.
 // This header used to say the opposite - "RECAST IS NOT IN THE CATALOG AT ALL" - and it was true
@@ -76,7 +82,15 @@
 //     `UNKNOWN CALC 118 base 406 max 446 attrib Max Hitpoints` - neither is an effect magnitude;
 //     both fail the head test for free.
 
+// AND A THIRD OVERLAY SINCE JOS-452 (`SpellMetricsInput.focusDamagePct` / `focusHealPct`). The
+// header above has always said these figures carry "no focus items"; they now carry the ones YOUR
+// GEAR IS WEARING, when a caller states them. Same arrangement as the two before it: an input this
+// file does not derive, resolved once into `Fold`, multiplied at the single `foldLine` site, and
+// absent means no focus - `applyFocusPct(x, 0)` returns `x` by identity, so every figure printed
+// before JOS-452 is unchanged. The families, the level-range decay and the qualification test live
+// in `shared/wornFocus.ts`, which can be deleted without taking the magnitude reader with it.
 import { normalizeSpellRank, scaleSpellDamage, scaleSpellHeal } from './spellScale'
+import { applyFocusPct } from './wornFocus'
 
 /** A hitpoint line, read: how much, per tick or not, and over how many ticks the line states. */
 export interface HpLine {
@@ -461,6 +475,21 @@ export interface SpellMetricsInput {
    * comes out, in that order, because that is the order the game applies them in.
    */
   hits?: number
+  /**
+   * THE WORN DAMAGE FOCUS, as a percentage, already resolved for THIS spell (JOS-452). Absent, 0 and
+   * anything unreadable are the same answer: no focus, and a byte-identical figure.
+   *
+   * Resolved by the caller and not here, for `hits`'s reason one step further out: which focus
+   * effects a player is wearing is a fact about a `/outputfile inventory` dump, and whether one
+   * QUALIFIES is a fact about the focus's own limit lines. `shared/wornFocus.ts bestWornFocus` owns
+   * both and hands down one number.
+   *
+   * It is a PERCENT rather than a multiplier so that "no focus" is 0 rather than 1, which is the
+   * same absent-is-nothing shape `rank` has and cannot be confused with a multiplier of zero.
+   */
+  focusDamagePct?: number
+  /** The worn HEALING focus, same rule, resolved against the same spell. */
+  focusHealPct?: number
 }
 
 /** One EQ tick. */
@@ -609,15 +638,20 @@ interface Side {
 }
 
 /**
- * The two multipliers resolved ONCE per reading, before either fold runs: the mote rank (JOS-447)
- * and the number of times a cast lands (JOS-449).
+ * The multipliers resolved ONCE per reading, before either fold runs: the mote rank (JOS-447), the
+ * number of times a cast lands (JOS-449) and the worn focus percentages (JOS-452).
  *
- * One object rather than two arguments so `foldLine` stays inside the repo's four-parameter cap and
- * so a third multiplier cannot be added without a name for what it is.
+ * One object rather than separate arguments so `foldLine` stays inside the repo's four-parameter cap
+ * and so a further multiplier cannot be added without a name for what it is - which is exactly the
+ * door JOS-452 came through.
  */
 interface Fold {
   rank: number
   hits: number
+  /** the worn damage focus percent for THIS spell; 0 is no focus */
+  focusDamagePct: number
+  /** the worn healing focus percent for THIS spell; 0 is no focus */
+  focusHealPct: number
 }
 
 /**
@@ -636,10 +670,15 @@ function foldLine(side: Side, line: HpLine, durationTicks: number, fold: Fold): 
   //
   // AND THE WAVES MULTIPLY WHAT THE RANK PRODUCED (JOS-449), in that order and damage-side only -
   // `SpellMetricsInput.hits` states why.
+  //
+  // AND THE WORN FOCUS SITS BETWEEN THEM (JOS-452), which is the order the game applies them in: a
+  // mote rank is part of the spell you own, a focus rolls on top of the spell as it is cast, and the
+  // waves are that cast landing more than once. Each side takes its OWN focus - a damage focus can
+  // never lift a healing line, and the two are resolved separately against the same spell.
   const amount =
     line.direction === 'down'
-      ? scaleSpellDamage(line.amount, fold.rank) * fold.hits
-      : scaleSpellHeal(line.amount, fold.rank)
+      ? applyFocusPct(scaleSpellDamage(line.amount, fold.rank), fold.focusDamagePct) * fold.hits
+      : applyFocusPct(scaleSpellHeal(line.amount, fold.rank), fold.focusHealPct)
   if (!line.perTick) {
     side.total += amount
     return
@@ -719,7 +758,12 @@ export function spellMetricsAt(
 ): SpellMetrics | undefined {
   const spell = withMana(withRecast(input, client), client)
   // Resolved ONCE, here, for `withRecast`'s reason: one number reaches both folds.
-  const fold: Fold = { rank: normalizeSpellRank(spell.rank), hits: hitsOf(spell.hits) }
+  const fold: Fold = {
+    rank: normalizeSpellRank(spell.rank),
+    hits: hitsOf(spell.hits),
+    focusDamagePct: pctOf(spell.focusDamagePct),
+    focusHealPct: pctOf(spell.focusHealPct)
+  }
   const lifetap = spell.targetType === 'Lifetap'
   const durationTicks = ticksOf(spell.durationMs)
   const dmg: Side = { total: 0, overTime: false }
@@ -772,6 +816,11 @@ function withClientCurve(line: HpLine, level: number, client: ClientHpFacts | un
   // `15|101|15`), and flagging a reading that moved nothing would make `clientCurve` mean "the shape
   // matched" when what a reader wants of it is "a number changed".
   return amount === line.amount ? line : { ...line, amount }
+}
+
+/** A focus percent as this file will read it: absent, negative and unreadable all mean no focus. */
+function pctOf(pct: number | null | undefined): number {
+  return typeof pct === 'number' && Number.isFinite(pct) && pct > 0 ? pct : 0
 }
 
 /** A hit count as this file will read it: a whole number, never below one. Absent means one. */

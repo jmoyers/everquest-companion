@@ -47,6 +47,7 @@
 // (`tests/telemetryRingDurability.test.mts`).
 
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdir, open, rename, rm } from 'node:fs/promises'
 
 /**
  * Every `node:fs` call this module makes, as ONE injectable object.
@@ -92,11 +93,22 @@ export const nodeIo: DurableIo = {
   }
 }
 
-/** The scratch file a durable write goes through. Exported because `dropRing` has to delete it:
- *  a failed write can leave one holding events, and "off" that leaves events in a sibling file
- *  is the switch lying in a different filename. */
-export function tempPathFor(path: string): string {
-  return `${path}.tmp`
+/**
+ * The scratch file a durable write goes through. Exported because `dropRing` has to delete it:
+ * a failed write can leave one holding events, and "off" that leaves events in a sibling file
+ * is the switch lying in a different filename.
+ *
+ * `tag` NAMES A SECOND SCRATCH FILE FOR A SECOND WRITER (JOS-371). While the live path wrote
+ * synchronously there was only ever one writer, so one temp path was enough. Now a quit final can
+ * run while an asynchronous write is still in libuv's threadpool, and two writers sharing one
+ * scratch file is two of them filling it with one renaming mid-fill — a TORN file, the precise
+ * failure this whole module exists to make impossible. A tagged path costs nothing and removes the
+ * hazard outright: whichever rename lands last publishes a COMPLETE file, and the loser's bytes
+ * were complete too. Every producer of a tagged temp must delete it wherever it deletes the plain
+ * one.
+ */
+export function tempPathFor(path: string, tag?: string): string {
+  return tag === undefined ? `${path}.tmp` : `${path}.${tag}.tmp`
 }
 
 /**
@@ -110,7 +122,38 @@ export function tempPathFor(path: string): string {
  * it is not knowable, and this module has no logger to decide it with.
  */
 export function writeFileDurable(dir: string, path: string, data: string, io: DurableIo = nodeIo): void {
-  const tmp = tempPathFor(path)
+  writeVia({ dir, path, tmp: tempPathFor(path) }, data, io)
+}
+
+/**
+ * THE QUIT FINAL'S WRITER (JOS-371) — the same durable write, through a DIFFERENT scratch file.
+ *
+ * It exists because the live path is asynchronous now and a shutdown final can therefore run while
+ * a write is still in libuv's threadpool. Two writers sharing one `.tmp` is two of them filling one
+ * scratch file with one renaming mid-fill — a torn file, the precise failure this module exists to
+ * prevent. With two scratch paths, whichever rename lands last publishes a COMPLETE file and the
+ * loser's bytes were complete too; at quit the process almost always goes before the threadpool
+ * write returns, so the final's own bytes are the ones that survive.
+ *
+ * A caller that deletes `tempPathFor(path)` must delete `tempPathFor(path, FINAL_TEMP_TAG)` too.
+ */
+export function writeFileDurableFinal(dir: string, path: string, data: string, io: DurableIo = nodeIo): void {
+  writeVia({ dir, path, tmp: tempPathFor(path, FINAL_TEMP_TAG) }, data, io)
+}
+
+/** The tag the two shutdown finals in this app write under. */
+export const FINAL_TEMP_TAG = 'quit'
+
+/** Where one durable write puts its bytes: the directory to ensure, the live path to publish, and
+ *  the scratch file to fill. A record rather than three more parameters. */
+interface DurableTarget {
+  dir: string
+  path: string
+  tmp: string
+}
+
+/** The write itself. Both exported spellings above are this, with a different scratch file. */
+function writeVia({ dir, path, tmp }: DurableTarget, data: string, io: DurableIo): void {
   io.mkdir(dir)
   let fd: number | null = null
   try {
@@ -130,6 +173,107 @@ export function writeFileDurable(dir: string, path: string, data: string, io: Du
     }
     try {
       io.remove(tmp)
+    } catch {
+      // Nothing further to try. A later successful write truncates it anyway.
+    }
+    throw err
+  }
+}
+
+// ------------------------------------------------------------- the same write, off the thread
+//
+// WHY THE WHOLE THING WAS SYNCHRONOUS (JOS-265, above): because there was one writer on one thread
+// and a sync call is the shortest way to spell "open, write, flush, rename, in that order". The
+// ORDER is the durability argument and nothing about it changes below. What changes is WHOSE thread
+// the four syscalls run on.
+//
+// AND THE FSYNC STAYS — it is the point (see the note above about the two installs that filed
+// `telemetry.json parse failed`). `FileHandle.sync()` is `fsync(2)` exactly as `fsyncSync` is; the
+// only difference is that libuv runs it on a threadpool thread and resolves a promise, so the main
+// process's one thread is not held for the duration of a disk flush. On a volume that is refusing
+// writes — the situation this module was BUILT for — that duration is the whole problem: an fsync
+// against a full or stalling disk is precisely the syscall that takes milliseconds instead of
+// microseconds, and while an overlay holds the mouse a main-thread stall is a system-wide one.
+//
+// SERIALISATION IS THE CALLER'S JOB, and it has to be, because two async writes really CAN
+// interleave where two sync ones could not (`ring.ts`'s header says how it keeps exactly one in
+// flight). That is the one property the sync version gave away for free and this one does not.
+
+/** The async twin of `DurableIo`, for the same reason the sync one exists: a test has to be able to
+ *  fail an individual step the way a full disk fails it, and then read back what was left behind. */
+export interface AsyncDurableIo {
+  mkdir(dir: string): Promise<void>
+  /** Create/truncate for writing. The handle owns write/sync/close, because an async fsync needs
+   *  the handle rather than a bare descriptor. */
+  open(path: string): Promise<AsyncDurableHandle>
+  rename(from: string, to: string): Promise<void>
+  /** Best-effort unlink; missing is not an error. */
+  remove(path: string): Promise<void>
+}
+
+/** One open scratch file. `sync` is `fsync(2)` — THE step a plain temp+rename is missing. */
+export interface AsyncDurableHandle {
+  write(data: string): Promise<void>
+  sync(): Promise<void>
+  close(): Promise<void>
+}
+
+/** The real thing, over `node:fs/promises` — every call lands in libuv's threadpool. */
+export const nodeIoAsync: AsyncDurableIo = {
+  mkdir: async (dir) => {
+    await mkdir(dir, { recursive: true })
+  },
+  open: async (path) => {
+    const fh = await open(path, 'w')
+    return {
+      write: async (data) => {
+        await fh.writeFile(data, 'utf8')
+      },
+      sync: () => fh.sync(),
+      close: () => fh.close()
+    }
+  },
+  rename: (from, to) => rename(from, to),
+  remove: (path) => rm(path, { force: true })
+}
+
+/**
+ * `writeFileDurable`, step for step, off the main thread.
+ *
+ * The order is the sync version's order and for the sync version's reasons: the handle is closed
+ * BEFORE the temp is removed (Windows will not unlink a file with an open handle), the flush happens
+ * BEFORE the rename (that is the point of it), and the rename happens LAST so the live path only
+ * ever names a complete file.
+ *
+ * Rejects with whatever failed. The caller decides what a failed write is worth — from here it is
+ * not knowable, and this module has no logger to decide it with.
+ */
+export async function writeFileDurableAsync(
+  dir: string,
+  path: string,
+  data: string,
+  io: AsyncDurableIo = nodeIoAsync
+): Promise<void> {
+  const tmp = tempPathFor(path)
+  await io.mkdir(dir)
+  let fh: AsyncDurableHandle | null = null
+  try {
+    fh = await io.open(tmp)
+    await fh.write(data)
+    await fh.sync()
+    await fh.close()
+    fh = null
+    await io.rename(tmp, path)
+  } catch (err) {
+    if (fh !== null) {
+      try {
+        await fh.close()
+      } catch {
+        // The descriptor is lost either way; the throw below is the failure worth reporting.
+      }
+    }
+    try {
+      await io.remove(tmp)
     } catch {
       // Nothing further to try. A later successful write truncates it anyway.
     }

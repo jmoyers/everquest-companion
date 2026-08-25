@@ -32,6 +32,13 @@ import {
 } from '../../shared/telemetryLive'
 import { percentile } from '../../shared/perf'
 import type { LiveStallFold } from '../../shared/perfLive'
+import {
+  PERF_SEAMS,
+  type GcStallStats,
+  type GcTally,
+  type SeamStallStats,
+  type SeamTally
+} from '../../shared/perfSeams'
 import type { TailIoSample, TailIoSummary } from '../log/tailIoStats'
 
 const KB = 1024
@@ -62,6 +69,49 @@ export function liveStallStats(fold: LiveStallFold & { coincident?: number }): L
   }
   if (fold.coincident !== undefined) stats.coincident = count(fold.coincident)
   return stats
+}
+
+/**
+ * WHAT V8 SPENT, bucketed (JOS-458).
+ *
+ * `pauses` and `majorPauses` are COUNTS rather than buckets for `coincident`'s reason: they are
+ * small by construction and the number itself is the answer ("four mark-compacts, one of them past
+ * a tenth of a second"), where a decade would say almost nothing. The two millisecond figures ride
+ * `LIVE_STALL_MS_EDGES` — deliberately the same ladder as the main-loop lateness they are meant to
+ * explain, so "GC took 640 ms" and "main was 640 ms late" land in the same row.
+ */
+export function gcStallStats(tally: GcTally): GcStallStats {
+  return {
+    pauses: count(tally.pauses),
+    majorPauses: count(tally.majorPauses),
+    maxBucket: bucketOf(tally.maxMs, LIVE_STALL_MS_EDGES),
+    totalBucket: bucketOf(tally.totalMs, LIVE_STALL_MS_EDGES),
+    over100: count(tally.over100)
+  }
+}
+
+/**
+ * WHICH SEAMS RAN, bucketed (JOS-458).
+ *
+ * IT WALKS `PERF_SEAMS`, NEVER THE TALLY'S OWN KEYS, and that is the bright line made mechanical:
+ * the output can only ever contain members of the compiled enum, so no key a running app could
+ * invent — a module id, a character, a path — has a route onto this wire even if one somehow
+ * reached the tally. A seam with no entry is left ABSENT rather than zero-filled, which is the
+ * distinction `TailReadStats`' omission carries: zeros from a seam that did not run would drag
+ * every fleet figure toward an app that did no work.
+ */
+export function seamStallStats(tally: SeamTally): SeamStallStats {
+  const out: SeamStallStats = {}
+  for (const seam of PERF_SEAMS) {
+    const entry = tally[seam]
+    if (entry === undefined) continue
+    out[seam] = {
+      calls: count(entry.calls),
+      maxBucket: bucketOf(entry.maxMs, LIVE_STALL_MS_EDGES),
+      over100: count(entry.over100Calls)
+    }
+  }
+  return out
 }
 
 /** What the gathering half hands over about the tail: the interval's fold, the samples inside it,

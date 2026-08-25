@@ -35,7 +35,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LogBus } from '../src/main/log/bus'
-import { consumeChunk, scanLog, READ_CHUNK_BYTES, type SplitState } from '../src/main/log/scanHistory'
+import {
+  consumeChunk,
+  scanLog,
+  NEVER_CANCELLED,
+  READ_CHUNK_BYTES,
+  type SplitState
+} from '../src/main/log/scanHistory'
 import { createSlicer, unchunkedSlicer, type Slicer } from '../src/main/log/replaySlicer'
 
 /** The timestamp prefix every line the parser will accept has to carry. */
@@ -56,7 +62,10 @@ async function driveSplit(
 ): Promise<{ lines: string[]; endOffset: number; carried: number }> {
   const lines: string[] = []
   const st: SplitState = { endOffset: 0, leftover: Buffer.alloc(0) }
-  for (const c of chunks) await consumeChunk(c, st, (raw) => lines.push(raw), slicer)
+  // `NEVER_CANCELLED` (JOS-457): this arm is about bytes, and a fold nobody can preempt is what the
+  // splitter's contract has always been.
+  const ctl = { slicer, cancelled: NEVER_CANCELLED }
+  for (const c of chunks) await consumeChunk(c, st, (raw) => lines.push(raw), ctl)
   return { lines, endOffset: st.endOffset, carried: st.leftover.length }
 }
 

@@ -1,38 +1,39 @@
 // ============================================================================
-// replayGate.ts — nothing rides the mouse or the screen until parsing is done.
+// replayGate.ts — nothing rides the screen until parsing is done.
 // ============================================================================
 //
 // THE DEFECT (JOS-62, reported live by the owner): in-game mouselook is JERKY while the app is
-// still reading the log. It is not the renderer and it is not the GPU — it is a Win32 message
-// hook, and it belongs to us.
+// still reading the log. It is not the renderer and it is not the GPU — it was a Win32 message
+// hook, and it belonged to us.
 //
-// A LOCKED overlay is click-through via `setIgnoreMouseEvents(true, {forward:true})`, and on
+// A LOCKED overlay was click-through via `setIgnoreMouseEvents(true, {forward:true})`, and on
 // Windows Electron implements that `forward` with a low-level mouse hook (WH_MOUSE_LL) owned by
 // the MAIN process. Every system mouse event — including the ones EverQuest is reading to turn
-// the camera — is then delivered through OUR message loop. During the historical replay that
-// loop is folding the log in ~12 ms slices (log/replaySlicer.ts), so each mouse event waits
-// behind whichever slice is running. The cursor ring already refuses to forward for exactly this
-// reason (see the comment at its `setIgnoreMouseEvents` call in windows.ts); this module says the
-// same thing about the meters, for the seconds where it matters.
+// the camera — was then delivered through OUR message loop. During the historical replay that
+// loop is folding the log in ~12 ms slices (log/replaySlicer.ts), so each mouse event waited
+// behind whichever slice was running.
 //
-// So while a historical replay is running:
+// THAT HOOK NO LONGER EXISTS AT ALL (JOS-370 — the section below where its predicate used to be).
+// This module's mouse half was the right fix for the seconds it could reach; the app is simply no
+// longer in the machine's mouse path, in any state, so a fold owning the message loop can no
+// longer reach the user's cursor whatever it does. What remains here is the SCREEN half, which was
+// always the other two thirds of the gate:
 //
-//   1. NO WINDOW OF OURS FORWARDS MOUSE EVENTS. A locked overlay is still click-through — it is
-//      just click-through the cheap way, `setIgnoreMouseEvents(true)` with no hook at all. The
-//      only thing it loses is the hover sensor that reveals its pin, and that is not a loss,
-//      because of (2).
-//   2. THE OVERLAYS AND THE RING ARE NOT ON SCREEN. They would be showing half-parsed state
+//   1. THE OVERLAYS AND THE RING ARE NOT ON SCREEN. They would be showing half-parsed state
 //      anyway ("Reading log…"), so there is nothing to hover, nothing to raise, and nothing to
 //      composite over the game.
-//   3. THE 8 ms CURSOR SAMPLER DOES NOT RUN (presenceEffects.ts). Its gate already knows how to
+//   2. THE 8 ms CURSOR SAMPLER DOES NOT RUN (presenceEffects.ts). Its gate already knows how to
 //      say "the ring is not on screen, so read nothing"; the replay is one more reason.
+//   3. …and by (1), nothing publishes a HOT ZONE either: `overlayHover.ts` reads `windowsMayShow()`
+//      as one of its terms, so the hookless sensor that replaced the forwarding is off for the
+//      fold as well — for the honest reason rather than by a rule of its own.
 //
 // WHY A MODULE OF ITS OWN. Three files have to agree about this one boolean — windows.ts (which
-// owns every show/hide and the `forward` flag), presenceEffects.ts (which owns the ring's
-// existence and the sampler) and session.ts (which owns the replay and is therefore the only
-// thing entitled to set it). A flag living in any one of them is a flag the other two import
-// through a cycle. This module imports NOTHING but the E2E flag and a type, which is also what
-// makes the predicates below plain unit tests (tests/replayGate.test.mts) instead of claims.
+// owns every show/hide), presenceEffects.ts (which owns the ring's existence and the sampler) and
+// session.ts (which owns the replay and is therefore the only thing entitled to set it). A flag
+// living in any one of them is a flag the other two import through a cycle. This module imports
+// NOTHING but the E2E flag, which is also what makes the predicates below plain unit tests
+// (tests/replayGate.test.mts) instead of claims.
 //
 // WHAT IT IS NOT. It is not a second opinion about anything persisted. The overlays' locked
 // flag, their open flag and the ring's `enabled` all stay exactly where they were; this gate
@@ -40,7 +41,6 @@
 // persisted value rather than a copy taken on the way in.
 
 import { E2E } from './e2e'
-import type { OverlayKind } from '../shared/types'
 
 /**
  * Is a historical replay folding right now?
@@ -91,25 +91,27 @@ export function windowsMayShow(): boolean {
   return mayShowWindows(E2E, replaying)
 }
 
-/**
- * Does this kind's click-through mode install the WH_MOUSE_LL forwarding hook? PURE.
- *
- * TWO reasons not to, and they are independent:
- *   * no STRIP forwards at all — the celebration toast, the alert banner (JOS-378) and the con card
- *     (JOS-383) drive their capture from their QUEUE, not from a hover sensor, so each would pay
- *     for a system-wide hook over a window that is empty almost all of the time (JOS-40; the rule
- *     was already here for the toast, and the other two are the same window with different words).
- *   * NOBODY forwards during a replay — the hook's cost lands on the user's own mouselook, and
- *     the window it exists for is not even on screen (JOS-62).
- */
-export function overlayForwardsMouse(kind: OverlayKind, replayRunning: boolean): boolean {
-  return kind !== 'toast' && kind !== 'alertBanner' && kind !== 'conCard' && !replayRunning
-}
-
-/** Should this kind's ignore-mouse call forward? (Bound form of `overlayForwardsMouse`.) */
-export function overlayMouseForward(kind: OverlayKind): boolean {
-  return overlayForwardsMouse(kind, replaying)
-}
+// ------------------------------------------- THE MOUSE HALF IS RETIRED (JOS-370)
+//
+// `overlayForwardsMouse(kind, replayRunning)` used to live here, and it was this module's other
+// predicate: which overlay kinds install the WH_MOUSE_LL forwarding hook, and the rule that NOBODY
+// does while a fold owns the message loop. Both halves of it are gone because THE HOOK IS GONE —
+// `setIgnoreMouseEvents` is called with one argument everywhere in this application now, and a
+// locked overlay's hover sensor is an off-thread hit test against published rectangles instead
+// (src/main/overlayHotZone.ts, and the comment law at windows.ts `setOverlayIgnoreMouse`).
+//
+// THIS IS THE FIX JOS-62 WAS AN APPROXIMATION OF, AND IT IS WORTH SAYING SO RATHER THAN DELETING
+// QUIETLY. That ticket's report was jerky in-game mouselook while the app was still reading the
+// log, and its diagnosis was exactly right: the hook is ours, and a mouse event was waiting behind
+// a 12 ms replay slice. What it could do at the time was drop the hook for the SECONDS of the fold.
+// What JOS-370 does is drop it for good, so a stall of ours — during a fold or at any other moment
+// — is no longer a stall of the user's cursor. There is nothing left for a gate to gate.
+//
+// WHAT STAYS, ENTIRELY UNCHANGED: the SHOW/HIDE half above. The overlays and the ring are still off
+// screen for the duration of a fold (they would be showing half-parsed state), the ring's 8 ms
+// sampler is still suspended, and `mayShowWindows` is still the E2E-dominant conjunction it was.
+// The hot-zone publisher reads that same predicate — a window that may not be shown publishes no
+// zones — so the fold costs the new sensor nothing either.
 
 /**
  * What the cursor ring should be doing. PURE — and the sampler gate lives here, so "the 8 ms poll

@@ -256,6 +256,17 @@ export class CombatEngine {
     this.st.world.probe = probe
   }
 
+  /**
+   * WHERE THIS ENGINE'S DERIVED EVENTS GO (JOS-454) — `bus.emitDerived`, wired by pipeline.ts.
+   * One producer, one kind: the JOS-188 pet-buff bind, which is a state transition no line can
+   * state and which four models outside this directory need (combat/petClaims.ts states the
+   * measurement). Unwired everywhere else, and unwired means the engine behaves exactly as it
+   * always did.
+   */
+  setDerivedEmitter(fn: (ev: LogEvent, live: boolean) => void): void {
+    this.st.setDerivedEmitter(fn)
+  }
+
   reset(): void {
     this.st.reset()
   }

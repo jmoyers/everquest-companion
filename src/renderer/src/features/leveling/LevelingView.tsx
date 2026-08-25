@@ -262,6 +262,11 @@ function useLevelingCharts(o: {
             // this tier alone, so the default is the read this tab has always given.
             zoneExactKey: slice.zoneExactKey,
             zoneName: slice.zoneName,
+            // The zone half WORDED, membership and all (JOS-454). A drag replaces the slice's
+            // caption with its own, and the tier clause used to be lost in that swap — which is
+            // how an `exactTier` slice came to answer a 1h51m drag with 15 minutes and name
+            // neither the zone nor the tier that decided it.
+            zoneCaption: slice.zoneCaption,
             label: slice.caption,
             selection: sel,
             combo
@@ -459,7 +464,7 @@ function ChartsColumn(p: {
       />
       {/* ALWAYS mounted since JOS-75: it is the window's own read, narrowed by a drag while one
           exists. Below the plots it explains, so the picture stays the first thing on the tab. */}
-      <RangeStatsPanel stats={scope.stats} scope={scope.kind} onClear={charts.clear} />
+      <RangeStatsPanel stats={scope.stats} scope={scope.kind} zoneCaption={scope.zoneCaption} onClear={charts.clear} />
     </Stack>
   )
 }

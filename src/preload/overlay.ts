@@ -261,6 +261,32 @@ const overlayApi = {
   },
 
   /**
+   * "THE CURSOR IS (NOT) OVER SOMETHING OF YOURS THAT WANTS IT" (JOS-370) — what a locked overlay
+   * has instead of forwarded mouse moves.
+   *
+   * A pinned window used to receive mouse MOVES because main asked Windows to forward them, and
+   * that forwarding is a low-level mouse hook (WH_MOUSE_LL) in OUR process: every mouse event on
+   * the machine then waited on main's message loop, so any stall of ours became a freeze of the
+   * user's cursor and of in-game mouselook. Nothing of ours sits in that path any more. The
+   * presence worker reads the cursor on its own thread, hit-tests it against the rectangles this
+   * window still wants (the header strip, the scroll grip — or the whole window, for the list
+   * kinds), and main pushes the ENTER/LEAVE edges here.
+   *
+   * Receive-only and kind-filtered, like `onConfig`: a window can only ever be told about ITSELF,
+   * and the renderer's answer is the ordinary named-reason capture it already performs for a real
+   * `mouseenter` (renderer/overlay/useOverlayChrome.ts). Once the capture is taken, real mouse
+   * events reach the page again and every existing sensor — selector, popup, scroll grip — works
+   * exactly as it did.
+   */
+  onHover: (cb: (inside: boolean) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { kind: OverlayKind; inside: boolean }): void => {
+      if (payload?.kind === KIND) cb(payload.inside)
+    }
+    ipcRenderer.on(IPC.onOverlayHover, listener)
+    return () => ipcRenderer.removeListener(IPC.onOverlayHover, listener)
+  },
+
+  /**
    * DEEP LINK (Task #64): "take me to this mob in the app". Main raises + focuses the main
    * window and forwards the request to its renderer, which switches to the Mobs tab and opens
    * the mob's page. Fire-and-forget — an overlay never waits on the app it just raised.

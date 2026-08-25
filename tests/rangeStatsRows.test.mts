@@ -24,6 +24,7 @@ import {
   AA_RATE_TITLE,
   AA_RESPEC_CAPTION,
   ACTIVE_TIME_TITLE,
+  MEMBERSHIP_TITLE,
   NONE,
   OFFLINE_CAPTION,
   OFFLINE_TITLE,
@@ -33,6 +34,7 @@ import {
   comboText,
   idleGapsText,
   idleRuleCaption,
+  membershipText,
   offlineGapsText,
   offlineText,
   rangeHeroes,
@@ -313,6 +315,40 @@ test('active/idle text, and the idle rule stated literally', () => {
   assert.ok(!/AFK|offline|away/i.test(idleRuleCaption(IDLE_GAP_MS)), 'the log records events, not presence')
   assert.equal(idleGapsText(stats({ idleGaps: 0 })), null)
   assert.equal(idleGapsText(stats({ idleGaps: 3 })), '3 gaps over 5m')
+})
+
+// JOS-454. `durationMs` under a zone slice is Σ of the ADMITTED VISITS, not `t1 - t0`, and the
+// header prints both numbers side by side with nothing between them. The owner's report is what
+// that costs: a drag over 1h51m of one afternoon read `15m`, because the slice's membership was
+// the tier he had just walked OUT of, and no string on the panel named a zone or a tier. So the
+// shortfall is stated — how much of the selected span the numbers cover, and what admitted it.
+test('the membership line says how much of the range the numbers left out, and why', () => {
+  const sliced = stats({ durationMs: 927_000, t0: T0, t1: T0 + 6_695_000 })
+  assert.equal(
+    membershipText(sliced, 'The Plane of Hate, this tier only'),
+    'of 1h 51m selected · The Plane of Hate, this tier only',
+    'the numbers cover 15m of it — the reader is told both, in the order they read them'
+  )
+  assert.ok(/tier/.test(MEMBERSHIP_TITLE), 'and the hover explains that a TIER can be what excluded the rest')
+  assert.ok(/chart/.test(MEMBERSHIP_TITLE), 'including that the chart above may still be drawing it')
+})
+
+test('no zone in force means no membership line at all', () => {
+  // The unrestricted read: `rangeStats` sets durationMs = t1 - t0, so there is nothing to explain
+  // and this panel prints exactly what it printed before the line existed.
+  const whole = stats({ durationMs: 3 * HOUR })
+  assert.equal(membershipText(whole, null), null)
+  assert.equal(membershipText(whole, undefined), null)
+  assert.equal(membershipText(whole, 'Lower Guk, every tier'), null, 'a slice that admitted all of it says nothing')
+})
+
+test('a sub-second shortfall is not a shortfall — the line is not a permanent second clause', () => {
+  // A bucket-snapped edge can leave a few hundred milliseconds unaccounted; `fmtDuration` prints
+  // whole seconds, so announcing that would put an unreadable clause on every zone-sliced read.
+  const rounding = stats({ durationMs: 3 * HOUR - 400, t0: T0, t1: T0 + 3 * HOUR })
+  assert.equal(membershipText(rounding, 'Lower Guk, every tier'), null)
+  const real = stats({ durationMs: 3 * HOUR - 90 * MIN, t0: T0, t1: T0 + 3 * HOUR })
+  assert.equal(membershipText(real, 'Lower Guk, every tier'), 'of 3h 0m selected · Lower Guk, every tier')
 })
 
 test('the class combo is quoted verbatim, or admitted as unknown', () => {

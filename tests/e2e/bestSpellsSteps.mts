@@ -75,6 +75,9 @@ const TAB_RANK: Record<string, string> = { dd: 'dps', dot: 'dps', aoe: 'dps', he
 /** JOS-449's visible assumption, drawn on the AOE tab and nowhere else. */
 const AOE_MARK = '[data-testid="best-spells-aoe-assumption"]'
 
+/** JOS-452's visible multiply, drawn on whichever tab really used a worn focus. */
+const FOCUS_MARK = '[data-testid="best-spells-worn-focus"]'
+
 /** One tab's label, as the DOM states it: which tab, what it counts, and whether it is selected. */
 interface TabInfo {
   tab: string
@@ -241,6 +244,61 @@ async function checkTab(page: Page, tab: string): Promise<number> {
  *
  * IT HANDS THE PANEL BACK ON THE TAB IT FOUND IT ON, like every other step here.
  */
+/**
+ * WHAT YOUR GEAR DOES TO YOUR CASTS, ON THE SCREEN (JOS-452).
+ *
+ * The spec stages the owner's committed `/outputfile inventory` dump, which wears an Improved
+ * Damage II (`Polished Mithril Mask`) and an Improved Healing III (`Idol of the Underking`) - so
+ * the SEAM this asserts is the one no unit test can reach: main resolving a real dump against the
+ * real corpus, the payload crossing IPC on the planner's channel, and the renderer folding it into
+ * figures that are visibly higher than the ones the same table draws without it.
+ *
+ * WHAT IT DOES NOT PIN IS A NUMBER. The loadout this machine's log infers decides which tabs have
+ * rows and which spells are in them, so the assertions are the marker's SHAPE, the tab it appears
+ * on, and the direction of the change - the exact arithmetic is `tests/bestSpellsFocus.test.mts`'s
+ * over the committed corpus.
+ */
+async function stepWornFocus(page: Page): Promise<void> {
+  const opened = (await tableOf(page)).tab
+  // The marker is per tab, so find one that HAS it rather than asserting about whichever tab the
+  // steps above left open: a cleric's DD table is empty and a wizard's Heal table is.
+  let found: string | null = null
+  for (const tab of TABS) {
+    await selectTab(page, tab)
+    if ((await settle(() => countOf(page, FOCUS_MARK), (n) => n === 1, { timeoutMs: 4_000 })) === 1) {
+      found = tab
+      break
+    }
+  }
+  if (found === null) {
+    note('nothing this loadout owns is inside a worn focus effect range here, so no marker is drawn')
+    await selectTab(page, opened)
+    return
+  }
+  check(`the worn-focus marker is drawn on the ${found} tab, exactly once`, true)
+  const text = await page.evaluate(
+    (s) => ((document.querySelector(s) as HTMLElement | null)?.innerText ?? '').trim(),
+    FOCUS_MARK
+  )
+  check(
+    '…stating the percentage the figures were multiplied by, in words a player can read',
+    /^worn \+\d+%( to \+\d+%)?$/.test(text),
+    text
+  )
+  // AND IT IS A CLAIM ABOUT THE NUMBERS BESIDE IT. Every row on this tab that the focus touched
+  // reads above the base figure the same table draws with no dump behind it - which cannot be
+  // measured here, so the weaker true thing is asserted instead: the marked tab has rows, and its
+  // headline figures are positive.
+  const headline = TAB_RANK[found]
+  const values = (await columnValues(page, headline)).filter((v): v is number => v !== null)
+  check(
+    `…over a ${found} table that really has focused figures in it`,
+    values.length > 0 && values.every((v) => v > 0),
+    `${String(values.length)} rows`
+  )
+  await selectTab(page, opened)
+}
+
 async function stepAoeAssumption(page: Page): Promise<void> {
   const opened = (await tableOf(page)).tab
   // Whichever tab the steps before this left the panel on, the absence is asserted from a tab that
@@ -441,6 +499,8 @@ export async function stepBestSpells(page: Page): Promise<void> {
   }
 
   await stepAoeAssumption(page)
+
+  await stepWornFocus(page)
 
   await stepSimulate(page)
 

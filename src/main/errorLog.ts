@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { appendFileSync, mkdirSync, statSync, writeFileSync } from 'fs'
+import { appendFile, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
 // TWO LEAF MODULES, and their leaf-ness is what makes these imports safe on the error path:
 // `telemetry/collector.ts` imports THIS file (`logInfo`), so anything that lived there would
@@ -138,6 +139,78 @@ function replacer(): (key: string, value: unknown) => unknown {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE FILE SINK, OFF THE MAIN THREAD (JOS-371)
+// ---------------------------------------------------------------------------
+//
+// WHY IT WAS SYNCHRONOUS. `appendFileSync` + `statSync` per line were never a durability decision —
+// they were the shortest way to write a line and to keep the lines IN ORDER. Both properties are
+// what an error log is for: a reader wants the last thing that happened to be the last line, and a
+// log that reorders its own lines is a log that lies about causality.
+//
+// WHAT GUARANTEES THE SAME ORDER NOW. One queue and one drain. `writeLine` appends to `pending` and
+// nothing else; `drain()` is the only writer and it runs at most once at a time (`draining`), so
+// the bytes reach the file in exactly the order the calls were made — the same guarantee the
+// synchronous version got from the fact that a sync call cannot interleave. What is GIVEN UP is
+// "the line is on disk before this function returns", and the two places that mattered keep it:
+// `flushErrorLogSync()` below, called from the quit path and from the crash guards.
+//
+// A DRAIN TAKES EVERY LINE THAT HAS PILED UP IN ONE APPEND, which is the point on the flood path
+// this module already has three caps for (the budget, the report dedupe, the identical-line cap):
+// a burst that used to be N stalls is now one write. The 1 MB rule is asked once per append rather
+// than once per line, which is the same rule — the file is truncated the first time an append finds
+// it over the ceiling, and a batch is at most a few kB.
+
+/** One queued line and the stamp it was made with — the stamp the truncation notice borrows, so
+ *  that notice still dates from the line that overflowed the file rather than from the drain. */
+interface PendingLine {
+  ts: string
+  line: string
+}
+
+/** Lines written but not yet on disk, oldest first. The whole of the ordering guarantee. */
+let pending: PendingLine[] = []
+let draining = false
+
+/** The truncation notice, spelled once so the async and the sync writer cannot drift apart. */
+const truncationNotice = (ts: string): string => `${ts} ${PREFIX} [errorLog] log truncated at ~1MB\n`
+
+/** Apply the 1 MB rule before an append, asynchronously. A file that is not there yet is not over
+ *  the ceiling — `appendFile` creates it — so a failed `stat` is simply nothing to do. */
+async function truncateIfFull(path: string, ts: string): Promise<void> {
+  try {
+    if ((await stat(path)).size > MAX_LOG_BYTES) await writeFile(path, truncationNotice(ts))
+  } catch {
+    // File doesn't exist yet — appendFile will create it.
+  }
+}
+
+/** The ONE writer. Runs until the queue is empty, so nothing can start a second in-flight append. */
+async function drain(): Promise<void> {
+  while (pending.length > 0) {
+    const batch = pending
+    pending = []
+    try {
+      const path = logPath()
+      await truncateIfFull(path, batch[0].ts)
+      await appendFile(path, batch.map((p) => p.line).join(''))
+      // COUNT THE LINES THAT WERE ACTUALLY WRITTEN (JOS-96), after the append rather than before
+      // it: `mainErrorLogLines` is meant to be readable as "lines in this fleet's error logs", so
+      // a write that threw must not be counted. `noteErrorLogLine` is a plain integer add in a
+      // module that imports nothing (telemetry/health.ts says why), so it cannot throw and cannot
+      // re-enter this function. The one-off repeat NOTICE is counted too, and correctly: it is a
+      // line that really was written, and there is at most one per distinct failure per session.
+      for (const _ of batch) noteErrorLogLine()
+    } catch (err) {
+      // Last resort: don't let a logging failure become a new uncaught error. The batch is DROPPED
+      // rather than retried — a queue that grows while the disk refuses is the doomed-write storm
+      // `telemetry/durableWrite.ts` was written to stop, in another file.
+      toConsole('error', [PREFIX, '[errorLog] failed to write errors.log', err])
+    }
+  }
+  draining = false
+}
+
 /**
  * WRITE ONE LINE TO BOTH SINKS. The console arguments are passed separately from the file line
  * because the two have always been formatted differently (the file carries a timestamp, the console
@@ -150,25 +223,41 @@ function replacer(): (key: string, value: unknown) => unknown {
  */
 function writeLine(ts: string, consoleArgs: unknown[], line: string): void {
   toConsole('error', consoleArgs)
+  pending.push({ ts, line })
+  if (draining) return
+  draining = true
+  void drain()
+}
+
+/**
+ * EVERY LINE THIS PROCESS STILL OWES, ON DISK NOW — the ONE synchronous write left on this path,
+ * and the reason the asynchronous appender above is allowed to exist.
+ *
+ * It is for the two moments where "later" does not arrive: `before-quit` (index.ts), after which
+ * the event loop may never turn again, and the process-level crash guards (crashGuards.ts), where
+ * the next thing to run may be nothing at all. Both are documented at their call sites.
+ *
+ * ONE `appendFileSync`, not one per line: the queue is joined and written in a single call, so the
+ * dying process pays for one syscall however many lines it had buffered. The 1 MB rule is applied
+ * exactly as the async path applies it. Idempotent and safe to call repeatedly — an empty queue is
+ * a no-op that touches no file at all.
+ */
+export function flushErrorLogSync(): void {
+  if (pending.length === 0) return
+  const batch = pending
+  pending = []
   try {
     const path = logPath()
     try {
       if (statSync(path).size > MAX_LOG_BYTES) {
-        writeFileSync(path, `${ts} ${PREFIX} [errorLog] log truncated at ~1MB\n`)
+        writeFileSync(path, truncationNotice(batch[0].ts))
       }
     } catch {
       // File doesn't exist yet — appendFileSync will create it.
     }
-    appendFileSync(path, line)
-    // COUNT THE LINE THAT WAS ACTUALLY WRITTEN (JOS-96), after the append rather than before it:
-    // `mainErrorLogLines` is meant to be readable as "lines in this fleet's error logs", so a
-    // write that threw must not be counted as one. `noteErrorLogLine` is a plain integer add in a
-    // module that imports nothing (telemetry/health.ts says why), so it cannot throw and cannot
-    // re-enter this function. The one-off repeat NOTICE is counted too, and correctly: it is a
-    // line that really was written, and there is at most one per distinct failure per session.
-    noteErrorLogLine()
+    appendFileSync(path, batch.map((p) => p.line).join(''))
+    for (const _ of batch) noteErrorLogLine()
   } catch (err) {
-    // Last resort: don't let a logging failure become a new uncaught error.
     toConsole('error', [PREFIX, '[errorLog] failed to write errors.log', err])
   }
 }

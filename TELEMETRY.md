@@ -72,7 +72,7 @@ Once, when the app finishes starting up.
 
 ### `sessionHeartbeat`
 
-Every 10 minutes while the app is open — the "is anyone using it right now" signal. Which moment in those ten minutes it falls on is picked fresh each time the app starts, and every one is nudged a few seconds either way, so that many copies of this app started at the same time do not all call home in the same second — the ten minutes itself never changes. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, and which of its windows and switches were on. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
+Every 10 minutes while the app is open — the "is anyone using it right now" signal. Which moment in those ten minutes it falls on is picked fresh each time the app starts, and every one is nudged a few seconds either way, so that many copies of this app started at the same time do not all call home in the same second — the ten minutes itself never changes. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, which of its windows and switches were on, how long it spent tidying its own memory, and how long six of its own named internal steps took. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
 
 | Field | Values | What it means |
 | --- | --- | --- |
@@ -109,10 +109,18 @@ Every 10 minutes while the app is open — the "is anyone using it right now" si
 | `state.ringOn` | true / false (optional) | Whether the cursor ring was on. |
 | `state.freeMemBucket` | bucket index (optional) | How much free memory the computer had, as a RANGE - a machine with none left pauses everything, including the game. |
 | `state.workingSetBucket` | bucket index (optional) | How much memory THIS APP was using, as a range. The honesty half of the row above. |
+| `gc.pauses` | whole number (optional) | How many times the app stopped briefly to tidy up its own memory. This is normal and constant in every program; it is counted because a long one is a leading suspect for a freeze you would notice. |
+| `gc.majorPauses` | whole number (optional) | How many of those were the big kind - the ones long enough to be worth suspecting. |
+| `gc.maxBucket` | bucket index (optional) | The longest single one of those pauses, as a RANGE (see below) - the same ranges the clock check above uses, so the two can be laid against each other and one can explain the other. |
+| `gc.totalBucket` | bucket index (optional) | How long all of them added up to, as a range. |
+| `gc.over100` | whole number (optional) | How many were longer than a tenth of a second. |
+| `seams.<step>.calls` | whole number (optional) | The app times six of its own internal steps - handing a window its data, handing over the combat model, pushing pending updates, reading your inventory dump, reading your achievements dump, and telling its windows to reload. This is how many times one of them ran. The six names are fixed and built into the app: nothing from your game, your files or your log can ever appear as one. |
+| `seams.<step>.maxBucket` | bucket index (optional) | The longest single run of that step, as a RANGE - so a slow moment can be blamed on the step that actually caused it instead of guessed at. |
+| `seams.<step>.over100` | whole number (optional) | How many runs of that step took more than a tenth of a second. |
 
 ### `sessionEnd`
 
-Once, when the app closes. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, and which of its windows and switches were on. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
+Once, when the app closes. Present on the first of these that follows startup, once per launch: how long reading your log history took, and how smoothly. Reading a log after switching character is deliberately not measured. Every number in the group is a count or a duration; several are ranges rather than exact figures, and which is which is stated field by field below. It also carries how smoothly the app itself was running since the previous one: how late its own timers arrived, how long its reads of your log took, which of its windows and switches were on, how long it spent tidying its own memory, and how long six of its own named internal steps took. All of it is counts and ranges about this computer - no line of your log, and no part of one, is ever sent. Each group is left out entirely when there is nothing to say (no character attached, or the check was not running).
 
 | Field | Values | What it means |
 | --- | --- | --- |
@@ -150,6 +158,14 @@ Once, when the app closes. Present on the first of these that follows startup, o
 | `state.ringOn` | true / false (optional) | Whether the cursor ring was on. |
 | `state.freeMemBucket` | bucket index (optional) | How much free memory the computer had, as a RANGE - a machine with none left pauses everything, including the game. |
 | `state.workingSetBucket` | bucket index (optional) | How much memory THIS APP was using, as a range. The honesty half of the row above. |
+| `gc.pauses` | whole number (optional) | How many times the app stopped briefly to tidy up its own memory. This is normal and constant in every program; it is counted because a long one is a leading suspect for a freeze you would notice. |
+| `gc.majorPauses` | whole number (optional) | How many of those were the big kind - the ones long enough to be worth suspecting. |
+| `gc.maxBucket` | bucket index (optional) | The longest single one of those pauses, as a RANGE (see below) - the same ranges the clock check above uses, so the two can be laid against each other and one can explain the other. |
+| `gc.totalBucket` | bucket index (optional) | How long all of them added up to, as a range. |
+| `gc.over100` | whole number (optional) | How many were longer than a tenth of a second. |
+| `seams.<step>.calls` | whole number (optional) | The app times six of its own internal steps - handing a window its data, handing over the combat model, pushing pending updates, reading your inventory dump, reading your achievements dump, and telling its windows to reload. This is how many times one of them ran. The six names are fixed and built into the app: nothing from your game, your files or your log can ever appear as one. |
+| `seams.<step>.maxBucket` | bucket index (optional) | The longest single run of that step, as a RANGE - so a slow moment can be blamed on the step that actually caused it instead of guessed at. |
+| `seams.<step>.over100` | whole number (optional) | How many runs of that step took more than a tenth of a second. |
 
 ### `viewDwell`
 
