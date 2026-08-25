@@ -19,6 +19,9 @@
 
 import { IPC } from '../shared/ipc'
 import { logInfo } from './errorLog'
+// A leaf (see its header) — it starts at `replayDone` and is imported here only to bracket the
+// rebuild fan-out below.
+import { timeSeam } from './perfAttribution'
 import { LogBus } from './log/bus'
 import { EpochDetector } from './log/epochDetector'
 import { SessionDetector } from './log/sessionDetector'
@@ -52,6 +55,16 @@ import type { AlertsDelta, CharacterRef, HeldCounts, OverlayKind } from '../shar
  */
 export const bus = new LogBus()
 export const combat = new CombatEngine()
+// …AND THE ENGINE HANDS ONE THING BACK (JOS-454): the JOS-188 pet-buff bind, as a derived
+// `petClaim{via:'petBuff'}`. It is the third binding signal, it is a PAIR of lines and therefore
+// per-stream state the parser cannot emit, and until this line it never left the engine — so the
+// Leveling tab filed a bound pet's kills as strangers' for the fifty-five minutes before its first
+// `… Master.'` tell (combat/petClaims.ts carries the measurement). Same emitDerived queue as the
+// buffs module's `buffExpired`, and the engine ignores the kind on the way back in, so there is no
+// feedback loop.
+combat.setDerivedEmitter((ev, live) => {
+  bus.emitDerived(ev, live)
+})
 // Character-epoch detection (Task #49; anchor replaced in Task #50): the OFFICIAL LAUNCH
 // (2026-07-28 00:00 local) is the boundary of a same-name+server character being WIPED +
 // recreated at launch (they reuse the same log file — see epochDetector.ts's beta-wipe
@@ -113,10 +126,19 @@ export function sendToModuleOverlays(channel: string, ...args: unknown[]): void 
  * Every `log:character` send in this process goes through here (session.ts's two, index.ts's
  * live-epoch re-send), so "who is told the world was rebuilt" is answered in one place rather
  * than at each call site — which is precisely how the overlays came to be missing from it.
+ *
+ * A TIMED SEAM (JOS-458), and the one this ticket suspects most. It fires in the minute after a
+ * fold — which is exactly the window the two field reports describe — and its cost is a FAN-OUT:
+ * one `webContents.send` per open module-reading window, each of which serializes the payload and
+ * wakes a renderer that immediately asks for a full snapshot back. The bracket covers OUR half
+ * (the sends), never the renderers' work, so a large number here is main's own bill and nobody
+ * else's.
  */
 export function sendWorldRebuilt(character: CharacterRef | null): void {
-  sendToMain(IPC.onCharacter, character)
-  sendToModuleOverlays(IPC.onCharacter, character)
+  timeSeam('worldRebuilt', () => {
+    sendToMain(IPC.onCharacter, character)
+    sendToModuleOverlays(IPC.onCharacter, character)
+  })
 }
 
 // The extension framework. Modules own their slice of log-derived state and push

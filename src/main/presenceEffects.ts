@@ -17,9 +17,11 @@
 // default". Main's half of that is five rules, all enforced here:
 //
 //   1. NOTHING RUNS WHEN NOTHING IS ON. `presenceNeeded()` gates the watcher itself: with the
-//      ring off and both auto-hide switches at a state that needs no watcher, no child process
-//      exists, no interval exists, and this file's cost is a single subscription that was never
-//      made. That is the default install.
+//      ring off, both auto-hide switches at a state that needs no watcher and nothing PINNED, no
+//      thread exists, no interval exists, and this file's cost is a single subscription that was
+//      never made. That is the default install. (The third term is JOS-370's: a locked overlay's
+//      pin reveal is a cursor hit test on the watcher thread, which is what the app has instead of
+//      a system-wide mouse hook — so it is a reason to hold a watcher, and it lets go on unpin.)
 //   2. THE 8 ms POLL IS THE NARROWEST GATE IN THE APP. It runs only while the ring is ENABLED
 //      *and* EQ is FOCUSED *and* the SYSTEM CURSOR IS VISIBLE *and* the ring window exists.
 //      Alt-tab out of the game — or hold a mouse button for mouselook, which hides the cursor —
@@ -58,10 +60,17 @@ import {
   createCursorRingWindow,
   destroyCursorRingWindow,
   getCursorRingWindow,
+  onOverlayHoverStale,
   parkOverlays,
   setCursorRingBounds,
   setCursorRingVisible
 } from './windows'
+import {
+  initOverlayHover,
+  overlayHoverNeeded,
+  refreshOverlayHover,
+  stopOverlayHover
+} from './overlayHover'
 import { cursorWatchNeeded, presenceNeeded } from '../shared/presencePrefs'
 import type { CursorPoint, PresenceState, ScreenRect } from '../shared/presencePrefs'
 
@@ -265,6 +274,13 @@ function onPresence(state: PresenceState): void {
   try {
     parkOverlays(overlaysShouldHide(state, getOverlayAutoHide()))
     applyRing(state)
+    // The hot zones depend on presence through EXACTLY ONE thing, and since the 2026-08-24 ruling
+    // that is the PARK decided on the line above: an overlay the auto-hide preferences took off
+    // screen retracts every rectangle it holds. EQ merely holding the foreground moves nothing here
+    // any more (overlayHotZone.ts `overlayWantsHoverZones` states why) — so this call is the pass
+    // that publishes what a park/unpark implies, and on any other presence edge it publishes
+    // nothing at all.
+    refreshOverlayHover()
   } catch (err) {
     // A window that died between the check and the call must not kill the watcher pump.
     logError('main:presenceEffects', err)
@@ -283,7 +299,11 @@ function onPresence(state: PresenceState): void {
  */
 export function refreshPresenceEffects(): void {
   const ring = getCursorRing()
-  const needed = presenceNeeded(ring, getOverlayAutoHide())
+  // THE THIRD REASON A WATCHER CAN BE NEEDED (JOS-370): a LOCKED overlay's pin is revealed by a
+  // cursor hit test that runs on the watcher thread, so a pinned meter keeps the watcher alive even
+  // with presence switched off entirely — and lets it go again the moment it is unpinned. See
+  // `presenceNeeded`, which states the trade.
+  const needed = presenceNeeded(ring, getOverlayAutoHide(), overlayHoverNeeded())
   if (!needed) {
     unsubscribe?.()
     unsubscribe = null
@@ -291,8 +311,10 @@ export function refreshPresenceEffects(): void {
     ringOrigin = null
     destroyCursorRingWindow()
     parkOverlays(false)
+    stopOverlayHover()
     return
   }
+  initOverlayHover()
   // THE CURSOR GATE, SET BEFORE THE WATCHER CAN EXIST (JOS-193). This is the only place in the app
   // that reads `cursorRing.enabled` for this purpose, and it runs before the `subscribePresence`
   // below — so the very first watcher of a session is already told whether it may call
@@ -312,9 +334,36 @@ export function refreshPresenceEffects(): void {
   onPresence(presenceSnapshot())
 }
 
-/** Start the presence-driven features. Called once from the composition root, after the
- *  windows exist. A no-op posture (both settings off) costs one store read. */
+/**
+ * Guard for the one re-entrant path this file has (JOS-370). `refreshPresenceEffects` can park the
+ * overlays, parking calls `setOverlayIgnoreMouse`, and that is exactly the signal that says the hot
+ * zones may have moved — which would call back in here. One level of that is harmless and a loop is
+ * not, so the re-entry is dropped: whatever it would have recomputed, the pass already in flight is
+ * about to.
+ */
+let refreshingForOverlays = false
+
+/**
+ * Start the presence-driven features. Called once from the composition root, after the windows
+ * exist. A no-op posture (both settings off, nothing pinned) costs one store read.
+ *
+ * IT IS ALSO WHERE THE OVERLAY SIGNAL IS WIRED, and the direction matters: `windows.ts` publishes
+ * "an overlay's click-through state changed" as a REGISTRATION rather than an import (see
+ * `onOverlayHoverStale` there), so this file — which already depends on both windows and the hover
+ * publisher — is the one place that can join them without closing a cycle. A lock toggle therefore
+ * re-runs the whole pass: the watcher ref-count may have changed (a pinned overlay is a reason on
+ * its own) and so may the rectangles.
+ */
 export function initPresenceEffects(): void {
+  onOverlayHoverStale(() => {
+    if (refreshingForOverlays) return
+    refreshingForOverlays = true
+    try {
+      refreshPresenceEffects()
+    } finally {
+      refreshingForOverlays = false
+    }
+  })
   refreshPresenceEffects()
 }
 
@@ -325,5 +374,6 @@ export function stopPresenceEffects(): void {
   stopStream()
   ringOrigin = null
   destroyCursorRingWindow()
+  stopOverlayHover()
   stopPresence()
 }

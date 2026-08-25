@@ -35,12 +35,20 @@ import { onOverlayPointerExit, overlayPointerExited } from './pointerExit'
 /**
  * WHY A LOCKED OVERLAY EVER CAPTURES THE MOUSE, and why the reason has a NAME.
  *
- * Locked means `setIgnoreMouseEvents(true, {forward:true})`: clicks go to the game, and the
- * renderer still receives mouse MOVES — that forwarding is the hover sensor, and it is already
- * on for every meter kind (windows.ts spells out why the toast is the one kind that does not
- * pay for it). When something under the cursor genuinely needs a click, the renderer asks main
- * to stop ignoring; when it stops needing one, it asks again. No new WH_MOUSE_LL hook is
- * involved in any of this — nothing here changes what forwards.
+ * Locked means `setIgnoreMouseEvents(true)`: clicks go to the game. When something under the
+ * cursor genuinely needs a click, the renderer asks main to stop ignoring; when it stops needing
+ * one, it asks again.
+ *
+ * WHERE THE FIRST OF THOSE ASKS COMES FROM CHANGED IN JOS-370, and it is the whole point of that
+ * ticket. A pinned window used to receive mouse MOVES, because main asked Windows to forward them
+ * — `setIgnoreMouseEvents(true, {forward:true})` — and that forwarding is a system-wide WH_MOUSE_LL
+ * hook owned by our MAIN process. Every mouse event on the machine then waited on main's message
+ * loop, so a 30 ms stall of ours was a 30 ms freeze of the user's cursor and of in-game mouselook,
+ * and past `LowLevelHooksTimeout` Windows silently dropped the hook and the pin quietly stopped
+ * revealing. Nothing of ours is in that path now: the presence WORKER reads the cursor on its own
+ * thread, hit-tests it against the rectangles this window still wants (main/overlayHotZone.ts) and
+ * main pushes the edges over `overlay:hover`. Once capture is taken the page receives real mouse
+ * events again, so every sensor below this line works exactly as it always did.
  *
  * The reasons are NAMED because more than one can be true at once and they end at different
  * moments. The selector popup is the case that forced it (P3): the popup is `position: fixed`
@@ -48,19 +56,24 @@ import { onOverlayPointerExit, overlayPointerExited } from './pointerExit'
  * open list fires the header's `mouseleave` — and a single boolean would drop capture out from
  * under the very list the user is reaching for. Two reasons, released independently, cannot.
  *
+ *   'sensor'   — MAIN says the cursor is in one of this window's hot zones (JOS-370). It is the
+ *                FIRST reason a pinned window can ever hold — nothing else here can fire while the
+ *                window is ignoring the mouse — and it is deliberately the coarsest: main knows a
+ *                rectangle, the four reasons below know the DOM. It is released the moment the
+ *                cursor leaves that rectangle, and by then a finer reason is usually holding.
  *   'window'   — the pointer is anywhere over the overlay. The whole-window sensor the event log
- *                and the pre-P3 meters use: everything is capturable while hovered.
+ *                and the buff/debuff timers use: everything is capturable while hovered.
  *   'selector' — the pointer is over the SELECTOR ROW specifically (P3). The meters use this
  *                instead of 'window', so a locked meter's BODY stays genuinely click-through.
  *   'popup'    — the selector's list is open. Outlives 'selector' by construction (above).
  *   'scroll'   — the pointer is in the SCROLL GRIP: the narrow strip along the right edge of a
  *                content pane that has more rows than it can show (JOS-138, overlayScale.tsx).
  *                It is the reason a pinned overlay can be scrolled at all, and it is deliberately
- *                the narrowest of the four: a wheel notch is only delivered to a window that is
+ *                the narrowest of the five: a wheel notch is only delivered to a window that is
  *                not ignoring the mouse, so scrolling and click-through cannot both be true of the
  *                same pixel, and this is the smallest patch of pixels that buys the scroll.
  */
-export type CaptureReason = 'window' | 'selector' | 'popup' | 'scroll'
+export type CaptureReason = 'sensor' | 'window' | 'selector' | 'popup' | 'scroll'
 
 export interface OverlayChrome {
   /**
@@ -264,6 +277,23 @@ export function useOverlayChrome(): OverlayChrome {
     else reasonsRef.current.delete(reason)
     applyCapture()
   }
+
+  /**
+   * MAIN'S HOT-ZONE SENSOR, as the fifth reason (JOS-370).
+   *
+   * It is reached through a REF for `onOverlayPointerExit`'s reason one block up: the subscription
+   * is made once per window rather than torn down and rebuilt on every render, and `capture` closes
+   * over `locked`, so the ref is also what keeps the guard inside it honest across a lock toggle.
+   *
+   * A LOCK FLIP NEEDS NO SPECIAL CASE HERE, which is worth stating because it is the seam JOS-138
+   * lost a capture at. The effect above clears every reason when `locked` changes; main
+   * simultaneously retracts (or publishes) this window's zones, and the worker's own remembered
+   * answer for the key goes with them — so the very next sample re-announces an ENTER if the
+   * cursor is still there. Both sides forget together, within one 32 ms tick.
+   */
+  const captureRef = useRef(capture)
+  captureRef.current = capture
+  useEffect(() => window.eqOverlay.onHover((inside) => captureRef.current('sensor', inside)), [])
 
   const toggleLock = (): void => {
     const next = !locked

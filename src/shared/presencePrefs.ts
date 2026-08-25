@@ -293,11 +293,31 @@ export function normalizeOverlayAutoHide(value: unknown): OverlayAutoHidePrefs {
  * Does anything need the presence watcher running? The watcher is a worker thread; it starts
  * ONLY when a feature is switched on and stops the moment the last one goes off.
  *
- * Pure + exported because it is the exact predicate the gating tests pin: a user with every
- * one of these off must pay nothing at all.
+ * THE THIRD REASON IS NOT A SETTING (JOS-370), which is why it is a bare boolean rather than a
+ * third prefs blob. `hoverHitTest` is "at least one overlay is open and LOCKED right now" — a
+ * WINDOW STATE, changing whenever the player presses a pin, and `presenceEffects.ts` reads it from
+ * `overlayHover.overlayHoverNeeded()` on the same pass it reads the two settings.
+ *
+ * IT IS HERE BECAUSE A PINNED OVERLAY NEEDS THE WATCHER WHETHER OR NOT PRESENCE IS SWITCHED ON.
+ * A locked overlay's pin is revealed by a cursor hit test that runs on the watcher thread (it used
+ * to be revealed by a WH_MOUSE_LL hook, which cost the whole machine's input path and needed no
+ * watcher at all). So a player who has turned BOTH auto-hide switches off and never wanted a cursor
+ * ring still gets a watcher thread for as long as they keep a meter pinned — and gets it back to
+ * nothing the moment they unpin it. That is the honest trade and it is stated rather than hidden:
+ * the thread is ~0.15 % of one core (presenceProtocol.ts's cadence section prices it), against a
+ * hook that made every stall of ours a stall of the user's cursor.
+ *
+ * DEFAULTED FALSE so the two-argument form — every existing caller, and the gating tests that pin
+ * "a user with every one of these off pays nothing at all" — keeps meaning exactly what it did.
+ *
+ * Pure + exported because it is the exact predicate the gating tests pin.
  */
-export function presenceNeeded(ring: CursorRingPrefs, autoHide: OverlayAutoHidePrefs): boolean {
-  return ring.enabled || autoHide.hideWhenNotRunning || autoHide.hideWhenUnfocused
+export function presenceNeeded(
+  ring: CursorRingPrefs,
+  autoHide: OverlayAutoHidePrefs,
+  hoverHitTest = false
+): boolean {
+  return ring.enabled || autoHide.hideWhenNotRunning || autoHide.hideWhenUnfocused || hoverHitTest
 }
 
 /**

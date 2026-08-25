@@ -42,6 +42,19 @@ export interface ScanResult {
    * wearing this one's name, and there is no cold-read question to ask of a log that small.
    */
   firstMbMs?: number
+  /**
+   * THE FOLD STOPPED EARLY BECAUSE ITS CALLER STOPPED OWNING THE WORLD (JOS-457) — a newer
+   * character switch preempted it (see `ScanOptions.cancelled`).
+   *
+   * PRESENT ONLY WHEN IT HAPPENED, so a completed scan is byte-identical to what it always was and
+   * the two `assert.deepEqual`s in tests/replayChunking.test.mts still describe the whole result.
+   *
+   * When it IS present, EVERY OTHER FIELD IS A PARTIAL READING and none of them means what its own
+   * doc comment says — `endOffset` most of all, because it is the end of the last line folded
+   * rather than the end of the log, and handing it to a Tailer would start the live tail in the
+   * middle of a file. The one honest use for an aborted result is to throw it away.
+   */
+  aborted?: true
 }
 
 /** The read stream's high-water mark, and the size of the "first MB" measured above. One constant
@@ -62,7 +75,42 @@ export interface ScanOptions {
    * compare. There is deliberately no environment variable behind this: see replaySlicer.ts.
    */
   slicer?: Slicer
+  /**
+   * THE ABORT (JOS-457): "does my caller still own the world?", asked at every point this fold is
+   * suspended. Absent means a fold that can never be stopped, which is what every caller but
+   * session.ts wants.
+   *
+   * A CHECK, NOT A SIGNAL, and never an `AbortSignal`: the question is not "has somebody asked me
+   * to stop" but "is the answer I am building still the one anybody wants", and the ONE thing that
+   * can answer that is the switch generation (main/switchController.ts). A signal would be a second
+   * copy of a fact that already has an owner.
+   */
+  cancelled?: () => boolean
 }
+
+/**
+ * THE TWO QUESTIONS A SUSPENDED FOLD ASKS, travelling together because they are asked at the same
+ * instant: the scheduler that decides WHEN to pause, and the check that decides whether coming back
+ * is still wanted.
+ *
+ * One object rather than two parameters because `consumeChunk` already sits at the repo's
+ * `max-params` ceiling of four — and because the pairing is the point. A yield with no ownership
+ * check after it is precisely the hole this ticket closed.
+ */
+export interface FoldControl {
+  slicer: Slicer
+  /**
+   * See `ScanOptions.cancelled`. REQUIRED here, unlike on the public options, and `NEVER_CANCELLED`
+   * is what a caller with nothing to say passes: the check is read inside the splitter's loop, and
+   * an optional call there would put two extra branches on the one function in this file that has
+   * to stay under the repo's complexity ceiling. Defaulting at the boundary is cheaper than
+   * defaulting at the use.
+   */
+  cancelled: () => boolean
+}
+
+/** The fold nobody can stop — every caller that is not a character switch. */
+export const NEVER_CANCELLED = (): boolean => false
 
 /** The two bytes the splitter is looking for. Named because `0x0a` three lines apart in two files
  *  is how a line splitter and a tail quietly stop agreeing about what a line is. */
@@ -131,13 +179,28 @@ export interface SplitState {
  * deterministically is to hand the splitter the two halves as separate buffers: a read stream can
  * be asked for a chunk size, never made to promise one. The end-to-end arm at the real
  * READ_CHUNK_BYTES runs beside it; neither covers the other.
+ *
+ * AND THIS IS WHERE A PREEMPTED FOLD STOPS (JOS-457). Both of the checks live here: one on entry
+ * (the caller's read stream has just handed over a chunk) and one immediately after every
+ * `slicer.yield()` returns, before the next line is folded. That makes the guarantee EXACT rather
+ * than approximate. The main process is single-threaded, so a competing character switch can only
+ * ever begin while this fold is SUSPENDED — and a fold has exactly two ways to be suspended, both
+ * of which resume into one of these two checks. A preempted fold therefore emits ZERO further
+ * events onto the bus; it is not "at most one slice's worth", and it is not a race.
+ *
+ * Nothing is asked PER LINE, so the fold's inner loop costs what it always did — the check rides
+ * the yield it is paired with, which on a real log is once every 12 ms rather than 1.4M times.
  */
 export async function consumeChunk(
   buf: Buffer,
   st: SplitState,
   handle: (raw: string) => void,
-  slicer: Slicer
-): Promise<void> {
+  ctl: FoldControl
+): Promise<'complete' | 'cancelled'> {
+  const { slicer, cancelled } = ctl
+  // The caller's read stream has just resumed with this chunk — one of the two instants a competing
+  // character switch could have run. Asked before a single line of it is folded.
+  if (cancelled()) return 'cancelled'
   let lineStart = 0
   for (let nl = buf.indexOf(NEWLINE, lineStart); nl !== -1; nl = buf.indexOf(NEWLINE, lineStart)) {
     // Bytes for this line = the carry (from prior chunks) + [lineStart..nl] incl. the '\n'.
@@ -151,7 +214,12 @@ export async function consumeChunk(
     if (end > 0) handle(line.toString('utf8', 0, end))
     st.leftover = NO_CARRY
     lineStart = nl + 1
-    if (slicer.expired()) await slicer.yield()
+    if (slicer.expired()) {
+      await slicer.yield()
+      // The other suspension point — see the header. The carry is deliberately left as it is: an
+      // abandoned fold's split state is abandoned with it.
+      if (cancelled()) return 'cancelled'
+    }
   }
   // Carry the trailing partial line to the next chunk, still undecoded. COPIED, never a view: the
   // read stream hands us a fresh megabyte each time, and keeping a subarray of one as the carry
@@ -160,6 +228,7 @@ export async function consumeChunk(
     const tail = buf.subarray(lineStart)
     st.leftover = st.leftover.length > 0 ? Buffer.concat([st.leftover, tail]) : Buffer.from(tail)
   }
+  return 'complete'
 }
 
 /**
@@ -193,6 +262,14 @@ export async function consumeChunk(
  * the scan runs land past S, are never read here, and are read by the tailer as its first bytes.
  * So a longer wall-clock scan simply means more bytes waiting for the tailer — never a line folded
  * twice, never one skipped, whatever the slice budget is.
+ *
+ * PREEMPTABLE (JOS-457, `ScanOptions.cancelled`). Until this ticket a replay could not be stopped
+ * once started, which is what turned six impatient dropdown picks into six concurrent whole-log
+ * folds on the main process. A cancelled fold now returns at its next suspension point with
+ * `aborted: true` and a partial reading its caller must discard. THE HANDOFF ABOVE IS UNTOUCHED and
+ * cannot be reached from here: an aborted scan's caller never owns the world any more, so it never
+ * starts a tailer — the WINNER's scan reads to its own frozen EOF and hands over its own
+ * `endOffset`, exactly as a lone scan always did.
  */
 export async function scanLog(
   logPath: string,
@@ -219,7 +296,11 @@ export async function scanLog(
 
   // Byte-accurate line splitting (see SplitState / consumeChunk).
   const st: SplitState = { endOffset: 0, leftover: NO_CARRY }
-  const slicer = opts.slicer ?? createSlicer()
+  const ctl: FoldControl = {
+    slicer: opts.slicer ?? createSlicer(),
+    cancelled: opts.cancelled ?? NEVER_CANCELLED
+  }
+  let aborted = false
 
   const stream = createReadStream(logPath, {
     start: 0,
@@ -235,7 +316,14 @@ export async function scanLog(
     for await (const chunk of stream) {
       const buf = chunk as Buffer
       coldRead.saw(buf.length)
-      await consumeChunk(buf, st, handle, slicer)
+      // BOTH OF THIS FOLD'S SUSPENSION POINTS ANSWER HERE (JOS-457) — the `for await` above, which
+      // has just resumed with a megabyte from disk, and every `slicer.yield()` inside the splitter.
+      // Breaking out of a `for await` destroys the read stream, so an abandoned fold stops READING
+      // the file as well as folding it.
+      if ((await consumeChunk(buf, st, handle, ctl)) === 'cancelled') {
+        aborted = true
+        break
+      }
     }
   } catch {
     // Partial results are still valid up to endOffset; fall through and return.
@@ -244,7 +332,13 @@ export async function scanLog(
   // A trailing partial line (no final newline) is intentionally NOT counted in
   // endOffset — the tailer will re-read those bytes and complete the line when
   // the game appends the rest, avoiding a dropped/duplicated final entry.
-  return { endOffset: st.endOffset, seq, size, ...coldRead.result() }
+  return {
+    endOffset: st.endOffset,
+    seq,
+    size,
+    ...coldRead.result(),
+    ...(aborted ? { aborted: true as const } : {})
+  }
 }
 
 /**

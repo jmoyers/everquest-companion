@@ -287,6 +287,41 @@ test('THE WIRING: logError has ONE door to the console, and every emitter goes t
   }
 })
 
+test('THE WIRING: the file sink is asynchronous, and the only sync writes left are the finals', () => {
+  // JOS-371. `appendFileSync`/`statSync` per line were a main-thread stall on the app's error path
+  // — and while an overlay holds the mouse, a main-thread stall is a system-wide one. The appender
+  // is a QUEUE with ONE drain now, which is what still guarantees the order a sync call used to get
+  // for free: nothing else may push bytes at the file.
+  const src = read('src/main/errorLog.ts')
+  assert.equal(src.match(/\bawait appendFile\(/g)?.length, 1, 'one async appender')
+  assert.match(src, /let draining = false/)
+  assert.match(src, /if \(draining\) return\r?\n {2}draining = true\r?\n {2}void drain\(\)/)
+  // …and the 1 MB rule did not go anywhere: both writers ask it, both write the SAME notice, and
+  // the notice is spelled once so they cannot drift apart.
+  assert.equal(src.match(/MAX_LOG_BYTES/g)?.length, 3, 'the ceiling, and one test of it per writer')
+  assert.equal(src.match(/truncationNotice\(/g)?.length, 2, 'spelled once, written by both writers')
+  assert.match(src, /await truncateIfFull\(path, batch\[0\]\.ts\)/)
+
+  // THE SYNC SURVIVORS, and there are exactly two calls, both inside the one exported final. Every
+  // other line in this file reaches disk through the queue.
+  const flush = src.slice(src.indexOf('export function flushErrorLogSync('))
+  assert.equal(src.match(/\bappendFileSync\(/g)?.length, 1)
+  assert.equal(src.match(/\bwriteFileSync\(/g)?.length, 1)
+  assert.match(flush, /appendFileSync\(path, batch\.map/)
+  assert.match(flush, /writeFileSync\(path, truncationNotice/)
+
+  // …called from the two places where "later" may never arrive, and from nowhere else in src/main.
+  const guards = read('src/main/crashGuards.ts')
+  assert.match(guards, /logError\('main:uncaughtException', err\)\r?\n {2}flushErrorLogSync\(\)/)
+  assert.match(guards, /logError\('main:unhandledRejection', reason\)\r?\n {2}flushErrorLogSync\(\)/)
+  // The quit final is LAST in `before-quit`, so a teardown step's own error line is in the batch.
+  const index = read('src/main/index.ts')
+  const beforeQuit = index.slice(index.indexOf("app.on('before-quit'"))
+  const body = beforeQuit.slice(0, beforeQuit.indexOf('\n})'))
+  assert.match(body, /flushErrorLogSync\(\)/)
+  assert.ok(body.indexOf('flushStoreForQuit()') < body.indexOf('flushErrorLogSync()'))
+})
+
 test("THE WIRING: crashGuards installs the stdio sink BEFORE it can answer an exception", () => {
   const src = read('src/main/crashGuards.ts')
   assert.ok(src.indexOf('silenceStdioErrors()\n') < src.indexOf("process.on('uncaughtException'"))

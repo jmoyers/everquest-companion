@@ -32,6 +32,19 @@
 //      cannot contain, so the two can never describe disjoint stretches. Clearing it falls back
 //      to the window with no other state involved: the scope is a function of (snapshot,
 //      window, bounds, selection), never a thing anybody stores.
+//
+//      AND IT CLAMPS, EXACTLY LIKE A WINDOW (JOS-454). This used to hand the drag through
+//      VERBATIM — a test asserted the words "never re-clamped to the record" — and rule 2 is the
+//      reason that was wrong: the DRAWN window's right edge sits in the trailing gutter, so a
+//      drag to the right edge of the chart selects instants the log has not reached. MEASURED on
+//      the owner's report: a selection whose header read `15:29:55` over a record that ended at
+//      `15:20:27` handed 9m28s of manufactured silence to the numbers, and because
+//      `zoneSegments` closes a still-OPEN zone interval at the range's end, every one of those
+//      minutes was booked as time standing in that zone. The panel read `15m elapsed · 0s
+//      active`. Rule 2's whole argument — "counting it as time would hand every window a slab of
+//      manufactured silence at its right edge" — never depended on which gesture produced the
+//      edge. The DRAWN band is untouched (the user's rectangle stays where they drew it); only
+//      the stats range is clamped, which is the same split rule 2 already makes.
 
 import type { ProgressionSnap } from '@shared/types'
 import type { ComboSource, RangeStats } from '@shared/progressionStats'
@@ -76,6 +89,17 @@ export interface ScopedStats {
   zoneExactKey: string | null
   /** RAW display name of that zone, for wording. Null when the slice is not restricted. */
   zoneName: string | null
+  /**
+   * THE ZONE HALF, WORDED, MEMBERSHIP AND ALL (`timeslice.zoneCaption` — `Befallen 2 (Adaptive),
+   * this tier only`). Null when the slice is not restricted to a zone.
+   *
+   * It rides on the scope because JOS-454 found the one place the membership went dark: a drag
+   * replaced the slice's caption with its own, and the tier clause — the half that decides
+   * whether 1h35m in an instance counts at all — went with it. The panel that prints the elapsed
+   * span reads this, so the denominator and the membership that produced it are one sentence
+   * (JOS-288's honesty rule).
+   */
+  zoneCaption: string | null
   stats: RangeStats
 }
 
@@ -158,6 +182,11 @@ export interface ScopeArgs {
   label?: string
   /** RAW display name of the restricted zone, for the wording only. */
   zoneName?: string | null
+  /**
+   * The slice's ZONE HALF worded with its membership (`timeslice.zoneCaption`). Absent ⇒ the
+   * wording falls back to `zoneName` alone, which is what every caller that has no slice passes.
+   */
+  zoneCaption?: string | null
 }
 
 /**
@@ -170,11 +199,18 @@ export function scopedStats(args: ScopeArgs): ScopedStats {
   const zoneKey = args.zoneKey ?? null
   const zoneExactKey = args.zoneExactKey ?? null
   const zoneName = args.zoneName ?? null
-  const range = selection ?? args.range ?? statsRangeFor(win, bounds)
+  const zoneCaption = args.zoneCaption ?? zoneName
+  // THE DRAG IS CLAMPED TO THE RECORD (JOS-454, rule 3): the same `statsRangeFor` a window goes
+  // through, for the same reason a window goes through it — the drawn edge the user dragged to
+  // sits in the trailing gutter, and the gutter is not time anybody played.
+  const range = selection ? statsRangeFor(selection, bounds) : (args.range ?? statsRangeFor(win, bounds))
   // A DRAG NARROWS TIME AND NOTHING ELSE (JOS-130). The zone half of a slice is a different
   // dimension from the range half, so a selection drawn while `Zone` is in force still describes
   // that zone — and the wording says both, rather than letting one silently outrank the other.
-  const drag = zoneName ? `${SELECTION_LABEL} in ${zoneName}` : SELECTION_LABEL
+  // It says the MEMBERSHIP too (JOS-454): `zoneCaption` carries the tier clause the slice's own
+  // caption carried, so a drag can no longer quietly drop the half of the sentence that decides
+  // whether the visits it excluded were excluded on purpose.
+  const drag = zoneCaption ? `${SELECTION_LABEL} in ${zoneCaption}` : SELECTION_LABEL
   return {
     kind: selection ? 'selection' : 'window',
     label: selection ? drag : (args.label ?? timescaleLabel(id)),
@@ -182,6 +218,7 @@ export function scopedStats(args: ScopeArgs): ScopedStats {
     zoneKey,
     zoneExactKey,
     zoneName,
+    zoneCaption,
     stats: rangeStats({ snap, range, combo, zoneKey, zoneExactKey })
   }
 }

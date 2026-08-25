@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   WATCHER_STOP_MESSAGE,
+  encodeHoverZones,
   parsePresenceLine,
   watcherCadence,
   type PresenceWorkerInit
@@ -75,13 +76,24 @@ interface Run {
 async function runWorker(
   init: PresenceWorkerInit,
   done: (lines: string[]) => boolean,
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
+  /** What to say DOWNSTREAM, now that this channel runs both ways (JOS-370). */
+  drive: {
+    /** Lines to post the moment the thread exists — today, hot-zone sets. They are queued by
+     *  `worker_threads`, so this cannot race the handler the worker installs. */
+    send?: string[]
+    /** Post something back in REACTION to a line. The only way to drive a sequence whose second
+     *  step must land after the loop has sampled once — see the retraction test. */
+    onLine?: (line: string, post: (l: string) => void) => void
+  } = {}
 ): Promise<Run> {
+  const { send = [], onLine } = drive
   const worker = new Worker(WORKER_TS, {
     workerData: init,
     // The worker entry is TypeScript, so the thread needs the same loader the suite runs under.
     execArgv: ['--import', 'tsx']
   })
+  for (const line of send) worker.postMessage(line)
   const lines: string[] = []
   let exitCode = -1
   const ended = new Promise<number>((resolve) => {
@@ -99,7 +111,10 @@ async function runWorker(
       resolve()
     }
     worker.on('message', (line: unknown) => {
-      if (typeof line === 'string') lines.push(line)
+      if (typeof line === 'string') {
+        lines.push(line)
+        onLine?.(line, (l) => worker.postMessage(l))
+      }
       if (done(lines)) finish()
     })
     worker.on('error', reject)
@@ -251,6 +266,114 @@ test('WITH THE RING OFF THE WATCHER NEVER LOOKS AT THE CURSOR — and still does
   assert.equal(lines.some((l) => l.startsWith('X|')), false, 'and nothing decided to stop')
   const records = lines.map(parsePresenceLine)
   assert.equal(records.includes(null), false, `every line still decodes:\n${lines.join('\n')}`)
+})
+
+// ------------------------------------------------- the hot-zone hit test, RUN (JOS-370)
+//
+// This is the block that replaced a system-wide mouse hook, so it is worth driving on a real
+// thread rather than only in the pure suite (tests/overlayHotZone.test.mts): the parts a unit test
+// cannot see are that the downstream line is understood at all, that the loop re-arms itself onto
+// the hover cadence when a rectangle arrives, and that a watcher holding NO rectangle says nothing.
+//
+// AND IT NEVER ASSUMED EVERQUEST WAS IN FRONT, which is worth saying now that nothing does: the
+// 2026-08-24 ruling removed the game's foreground from the zone-publication gate (main's side, in
+// overlayHotZone.ts), and the worker's side never had it — this loop hit-tests whatever rectangles
+// it has been handed, on a machine where the game is almost certainly not running at all. That is
+// why these assertions did not have to move.
+//
+// IT DOES NOT ASSERT WHERE THE OWNER'S CURSOR IS, because it cannot and must not: the machine
+// running this suite has a real pointer somewhere, and EverQuest may be hiding it (the flake this
+// file already carries a ledger row for). So the two claims are chosen to be true of any cursor —
+// a rectangle covering every representable coordinate gets SOME answer, and a rectangle a million
+// pixels off the desktop gets a definite NO.
+
+/** A rectangle no cursor can be outside of, and one no cursor can be inside. */
+const EVERYWHERE = [{ x: -500_000, y: -500_000, width: 1_000_000, height: 1_000_000 }]
+const NOWHERE = [{ x: 1_000_000, y: 1_000_000, width: 10, height: 10 }]
+
+test('A HOT ZONE IS ANSWERED, AND ONLY ON AN EDGE', { skip: NOT_WINDOWS }, async () => {
+  const init: PresenceWorkerInit = {
+    ...INIT,
+    watchCursor: false,
+    ...watcherCadence(false),
+    runningPollMs: 1
+  }
+  const { lines } = await runWorker(
+    init,
+    (l) => l.some((x) => x.startsWith('V|fight|')) && l.includes('V|overall|0'),
+    60_000,
+    { send: [encodeHoverZones('fight', EVERYWHERE), encodeHoverZones('overall', NOWHERE)] }
+  )
+
+  // The definite half: a rectangle off the edge of every desktop contains no cursor, so the answer
+  // is NO — and it ARRIVES, which is the first-sample rule (a key main has never been told about
+  // gets its answer stated rather than assumed).
+  assert.ok(lines.includes('V|overall|0'), `no answer for the far zone:\n${lines.join('\n')}`)
+  // The any-cursor half: the all-covering rectangle gets an answer too. It is `1` for a visible
+  // pointer and `0` for one EverQuest has hidden for mouselook, and BOTH are correct — a hidden
+  // cursor is not a cursor over anything, which is what releases the capture during a camera turn.
+  assert.ok(lines.some((l) => /^V\|fight\|[01]$/.test(l)), 'the hit test never ran')
+
+  // ONLY ON AN EDGE. The loop samples ~31 times a second; a second copy of an unchanged answer
+  // would mean main being told to re-open a door it is already holding open, every tick, forever.
+  const fight = lines.filter((l) => l.startsWith('V|fight|'))
+  assert.equal(fight.length, 1, `the answer was repeated:\n${fight.join('\n')}`)
+  // And it did not cost the rest of the loop anything: auto-hide's foreground/running/heartbeat
+  // lanes are all still there on the same ~160 ms they always had.
+  assert.ok(lines.some((l) => l.startsWith('F|')), 'the foreground window is still reported')
+  assert.ok(lines.some((l) => l.startsWith('R|')), 'the running scan still runs')
+  // …and the JOS-193 promise survives: the ring is off, so no `C` line was ever emitted, even
+  // though the hit test read the cursor for its own reason.
+  assert.deepEqual(lines.filter((l) => l.startsWith('C')), [], 'a cursor line leaked')
+})
+
+test('A WATCHER WITH NO ZONES SAYS NOTHING ABOUT ANY OF THEM', { skip: NOT_WINDOWS }, async () => {
+  // The zero-cost claim, as an observation. With no rectangle held there is no hit-test block in
+  // the loop at all — this is what a session with nothing pinned, or a player who has alt-tabbed
+  // out of the game, actually runs.
+  const init: PresenceWorkerInit = {
+    ...INIT,
+    watchCursor: false,
+    ...watcherCadence(false),
+    runningPollMs: 1
+  }
+  const { lines } = await runWorker(init, (l) => l.filter((x) => x === 'H').length >= 3)
+  assert.deepEqual(lines.filter((l) => l.startsWith('V')), [], `a hit test ran:\n${lines.join('\n')}`)
+})
+
+test('A RETRACTED ZONE TAKES ITS ANSWER WITH IT', { skip: NOT_WINDOWS }, async () => {
+  // A key whose zones simply go away must not leave main holding a capture nothing will ever end —
+  // the one case where the leave line is NOT redundant with the mouse mode main re-applies itself.
+  const init: PresenceWorkerInit = {
+    ...INIT,
+    watchCursor: false,
+    ...watcherCadence(false),
+    runningPollMs: 1
+  }
+  let retracted = false
+  const { lines } = await runWorker(
+    init,
+    // A heartbeat AFTER the first answer, so the retraction has had ticks to be applied in. Waiting
+    // for a second `V` line would hang on a machine whose pointer EverQuest is hiding: there the
+    // first answer is already `0` and a retraction has nothing to withdraw.
+    (l) => l.some((x) => x.startsWith('V|fight|')) && l.filter((x) => x === 'H').length >= 2,
+    60_000,
+    {
+      send: [encodeHoverZones('fight', EVERYWHERE)],
+      onLine: (line, post) => {
+        // Retract only once the loop has actually SAMPLED. Both lines posted up front would be
+        // applied back to back between two ticks, and the hit test would never have run at all.
+        if (!retracted && line.startsWith('V|fight|')) {
+          retracted = true
+          post(encodeHoverZones('fight', []))
+        }
+      }
+    }
+  )
+  const fight = lines.filter((l) => l.startsWith('V|fight|'))
+  // Either way the LAST word about this key is `0`: a visible pointer was inside and the retraction
+  // withdrew it, a hidden one was never inside and said so. Main is never left holding a capture.
+  assert.equal(fight.at(-1), 'V|fight|0', `the retraction left an answer standing:\n${fight.join('\n')}`)
 })
 
 test('AN UNREADABLE INSTALL ROOT CHANGES NOTHING — the watcher still reports', {

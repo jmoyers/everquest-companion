@@ -41,6 +41,12 @@ export { recordSetupSnapshot, scheduleSetupSnapshot } from './setupSnapshot'
 // The message → one-of-five-words reduction the two failure producers share. Exported from the
 // façade so no call site can import it and then reach one file further into the ring.
 export { classifyFailure } from './failureClass'
+// THE RING'S QUIT FINAL (JOS-371). The ring's durable write moved off the main thread, so the
+// last record of a session — `sessionEnd`, written as the windows close — is scheduled into a
+// process that may never turn its event loop again. This is the one synchronous write left in the
+// ring and the composition root calls it from `before-quit`; it goes through the façade like
+// everything else, because the wiring may not reach around it into ring.ts.
+export { flushRingSync } from './ring'
 // The switch and the notice go through flush.ts, not collector.ts: flipping the pref is only
 // half the job — this session's timers have to come into line with it too, and one function
 // doing both is how the toggle and the modal can never diverge.

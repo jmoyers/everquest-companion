@@ -237,6 +237,8 @@ function ingestWorld(st: EngineState, ev: LogEvent): boolean {
       ingestCharm(st, ev)
       return true
     case 'petClaim':
+      // …INCLUDING THE ONE THIS ENGINE ITSELF DERIVED, which `ingestPetClaim` then refuses
+      // (JOS-454 — the no-feedback-loop guard lives beside the emitter, in petClaims.ts).
       ingestPetClaim(st, ev)
       return true
     case 'allyPetLeader':
@@ -682,7 +684,7 @@ function ingestModifier(st: EngineState, ev: LogEvent): void {
       // …and the SAME stream is where an unordered pet finally names itself (JOS-188). Runs
       // FIRST so the two curated gates below see a world model that already knows whose the
       // buffed entity is. A third disjoint gate over one event, and the only one that binds.
-      if (ev.target !== 'self') bindPetBuffLanding(st, ev.ts, ev.target, names)
+      if (ev.target !== 'self') bindPetBuffLanding(st, ev, names)
       routeDispelLanding(st, ev.ts, ev.target, names)
       // The SAME landing stream also carries the tracked proc-buff spans (§3.2), and — JOS-246 —
       // the procs whose ONLY printed evidence IS a landing. Three disjoint curated gates over one

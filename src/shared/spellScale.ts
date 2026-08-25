@@ -22,8 +22,15 @@
 // gear multiplies it. Measured on BASE-RANK casts against the client's own magnitude formula, the
 // factor is 1.0 in some windows and ~1.2216 in others (Shock of Lightning, Lightning Bolt, Spirit
 // Tap and base-rank Garrison's all read 1.219..1.222 of their computed base in the August windows;
-// Chaos Flux and Anarchy read 1.017 in July). A worn multiplier this app models nowhere and the
-// figures here deliberately exclude (spellMetrics.ts's header: no crits, focus, AA or resist).
+// Chaos Flux and Anarchy read 1.017 in July).
+//
+// MOST OF THAT FACTOR IS NOW EXPLAINED, AND IT IS A WORN FOCUS (JOS-452). The owner looted a
+// Polished Mithril Mask - Improved Damage II, `Increase Spell Damage by 1% to 20%` - on Jul 31,
+// between the July windows and the August ones, and the step is exactly it:
+// `1.2216 = 1.20 x 1.017`. The 1.017 residual is present in the July windows where no damage focus
+// was worn, so it is NOT focus and this app still models it nowhere. `shared/wornFocus.ts` carries
+// the focus half and the histogram proving the bonus rolls per cast rather than applying flat; the
+// numbers in THIS file are unchanged, because the fit is on ratios where the whole factor cancels.
 //
 // So the rank rule is read off RATIOS BETWEEN TWO RANKS OF ONE SPELL, where the worn factor
 // cancels. The owner cast Garrison's at base on 2026-08-06 (levels 19..24) and at VIII on

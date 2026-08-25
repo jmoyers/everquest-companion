@@ -307,6 +307,47 @@ export function idleRuleCaption(idleThresholdMs: number): string {
 }
 
 /**
+ * WHY THE ELAPSED SPAN IS SHORTER THAN THE RANGE IT WAS MEASURED OVER (JOS-454).
+ *
+ * A zone slice's `durationMs` is Σ of the visits its MEMBERSHIP admitted, not `t1 - t0`, and the
+ * header prints both numbers with nothing between them. The owner's report is what that costs: a
+ * drag across 1h51m of a Plane of Hate session read `15m`, because he had stepped out of
+ * `The Plane of Hate 4 (Refined)` into open-world `The Plane of Hate` and the slice opens on
+ * `exactTier` (JOS-332) — so the 1h35m in the instance was not in the slice at all, while the
+ * chart above the panel went on drawing it, bands, rising level curve and all. Nothing on the
+ * panel named a zone, let alone a tier.
+ *
+ * So the shortfall is STATED rather than left to be inferred: how much of the selected span the
+ * numbers actually cover, and which membership decided that. It is the same honesty rule JOS-288
+ * applied to the rate denominators — the span line IS the denominator, so it has to say what it
+ * counted.
+ */
+export const MEMBERSHIP_TITLE =
+  'These numbers cover only the visits this slice admits, so the elapsed span is shorter than the range it was ' +
+  'measured over. Time spent in another zone - or in another tier of this one, while "this tier" is in force - is ' +
+  'left out, even where the chart above still draws it.'
+
+/**
+ * The shortfall line, or null when there is none: `of 1h 51m selected · The Plane of Hate, this
+ * tier only`.
+ *
+ * NULL IS THE COMMON CASE and it has to stay cheap: an unrestricted range's `durationMs` IS
+ * `t1 - t0` (`rangeStats` computes it that way), so an unsliced read prints nothing new and every
+ * string on this panel is byte-identical to what it was. It is also null when a zone slice
+ * happened to admit the whole span — there is no shortfall to explain then, and the ScopeBar's
+ * own caption already names the slice.
+ */
+export function membershipText(stats: RangeStats, zoneCaption: string | null | undefined): string | null {
+  if (!zoneCaption) return null
+  const span = Math.max(0, stats.t1 - stats.t0)
+  // WHOLE SECONDS, because that is the resolution `fmtDuration` prints at: a sub-second remainder
+  // off a bucket-snapped edge is not a shortfall anybody can see, and announcing one would put a
+  // permanent second clause on every zone-sliced read.
+  if (span - stats.durationMs < 1000) return null
+  return `of ${fmtDuration(span)} selected · ${zoneCaption}`
+}
+
+/**
  * WHAT "ACTIVE TIME" MEANS, IN ONE SENTENCE, WHEREVER A RATE DIVIDES BY IT (JOS-249).
  *
  * A 0.22.0 user asked the question this string answers — "is that AFK removed, or any time not in

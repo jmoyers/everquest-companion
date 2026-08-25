@@ -134,17 +134,89 @@ const STATE_FIELDS: DocField[] = [
   }
 ]
 
-/** All three groups, in reading order, spread onto both session reports. */
+/**
+ * The GC group (JOS-458). "Garbage collection" is jargon, so every row here says what it MEANS to
+ * the person reading — the app pausing to tidy its own memory — rather than naming the mechanism
+ * and leaving them to look it up.
+ */
+const GC_FIELDS: DocField[] = [
+  {
+    name: 'gc.pauses',
+    type: OPT_COUNT,
+    note:
+      'How many times the app stopped briefly to tidy up its own memory. This is normal and ' +
+      'constant in every program; it is counted because a long one is a leading suspect for a ' +
+      'freeze you would notice.'
+  },
+  {
+    name: 'gc.majorPauses',
+    type: OPT_COUNT,
+    note: 'How many of those were the big kind - the ones long enough to be worth suspecting.'
+  },
+  {
+    name: 'gc.maxBucket',
+    type: OPT_BUCKET,
+    note:
+      'The longest single one of those pauses, as a RANGE (see below) - the same ranges the clock ' +
+      'check above uses, so the two can be laid against each other and one can explain the other.'
+  },
+  {
+    name: 'gc.totalBucket',
+    type: OPT_BUCKET,
+    note: 'How long all of them added up to, as a range.'
+  },
+  {
+    name: 'gc.over100',
+    type: OPT_COUNT,
+    note: 'How many were longer than a tenth of a second.'
+  }
+]
+
+/**
+ * The seam group. It is the one group whose KEYS carry meaning, so the page says out loud what
+ * those keys can be — a fixed list of six of the app's own internal steps, and nothing else. A
+ * reader who wonders whether a name from their game could appear here should be able to answer it
+ * from this row.
+ */
+const SEAM_FIELDS: DocField[] = [
+  {
+    name: 'seams.<step>.calls',
+    type: OPT_COUNT,
+    note:
+      'The app times six of its own internal steps - handing a window its data, handing over the ' +
+      'combat model, pushing pending updates, reading your inventory dump, reading your ' +
+      'achievements dump, and telling its windows to reload. This is how many times one of them ' +
+      'ran. The six names are fixed and built into the app: nothing from your game, your files ' +
+      'or your log can ever appear as one.'
+  },
+  {
+    name: 'seams.<step>.maxBucket',
+    type: OPT_BUCKET,
+    note:
+      'The longest single run of that step, as a RANGE - so a slow moment can be blamed on the ' +
+      'step that actually caused it instead of guessed at.'
+  },
+  {
+    name: 'seams.<step>.over100',
+    type: OPT_COUNT,
+    note: 'How many runs of that step took more than a tenth of a second.'
+  }
+]
+
+/** All five groups, in reading order, spread onto both session reports. */
 export const LIVE_RIDER_FIELDS: readonly DocField[] = [
   ...LIVE_FIELDS,
   ...TAIL_FIELDS,
-  ...STATE_FIELDS
+  ...STATE_FIELDS,
+  ...GC_FIELDS,
+  ...SEAM_FIELDS
 ]
 
 /** Why the groups are there and when they appear — said once, printed on both events. */
 export const LIVE_RIDER_WHEN =
   'It also carries how smoothly the app itself was running since the previous one: how late its ' +
-  'own timers arrived, how long its reads of your log took, and which of its windows and ' +
-  'switches were on. All of it is counts and ranges about this computer - no line of your log, ' +
-  'and no part of one, is ever sent. Each group is left out entirely when there is nothing to ' +
-  'say (no character attached, or the check was not running).'
+  'own timers arrived, how long its reads of your log took, which of its windows and switches ' +
+  'were on, how long it spent tidying its own memory, and how long six of its own named internal ' +
+  'steps took. All of it is counts and ranges about this computer - no line of your log, and no ' +
+  'part of one, is ever sent. Each group is left out entirely when there is nothing to say (no ' +
+  'character attached, or the check was not running).'

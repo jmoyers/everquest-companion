@@ -26,7 +26,17 @@ export function registerCharacterIpc(): void {
   ipcMain.handle(IPC.setCharacter, async (_e, logPath: string) => {
     const ref = listCharacters().find((c) => c.logPath === logPath) ?? parseLogName(logPath)
     if (!ref) return { ok: false as const, error: 'Character log not found.' }
-    await tailCharacter(ref)
+    // A PICK THAT WAS OVERTAKEN MOVED NOTHING, AND SAYS SO (JOS-457). `tailCharacter` answers null
+    // when a newer selection preempted this one — the owner's rule is that the last pick wins and
+    // the intermediate ones are dropped, never stacked — and `ok:false` is exactly what the title
+    // bar's selector wants: App.tsx's `selectCharacter` writes its state ONLY when main actually
+    // moved, so a dropped pick leaves the selector and the live dot where the surviving pick will
+    // put them a moment later (through `log:character`, which the winner sends).
+    //
+    // NO `error`, deliberately: nothing went wrong. Text here would be a message about the most
+    // ordinary thing a person can do with a dropdown, and the two callers of this channel (the
+    // selector and the quiet-switch nudge) would have to learn to suppress it.
+    if (!(await tailCharacter(ref))) return { ok: false as const }
     return { ok: true as const, character: ref }
   })
 

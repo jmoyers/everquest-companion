@@ -1,10 +1,19 @@
-// The replay gate (src/main/replayGate.ts) — "nothing rides the mouse or the screen until
-// parsing is done" (JOS-62), in test form.
+// The replay gate (src/main/replayGate.ts) — "nothing rides the screen until parsing is done"
+// (JOS-62), in test form.
 //
-// Everything asserted here is PURE: the three predicates that decide whether a window may be
-// shown, whether a locked overlay installs the WH_MOUSE_LL forwarding hook, and what the cursor
-// ring (window + 8 ms sampler) should be doing. No Electron, no windows, no log — so this suite
-// is as cheap and as unskippable as presence/overlayLayout.
+// Everything asserted here is PURE: the two predicates that decide whether a window may be shown
+// and what the cursor ring (window + 8 ms sampler) should be doing. No Electron, no windows, no log
+// — so this suite is as cheap and as unskippable as presence/overlayLayout.
+//
+// THERE USED TO BE A THIRD, and its retirement is JOS-370. `overlayForwardsMouse(kind,
+// replayRunning)` answered "does this kind's click-through install the WH_MOUSE_LL forwarding
+// hook", and its whole job was to drop that hook for the seconds a fold owned the message loop.
+// There is no hook left anywhere in the application to drop — a locked overlay is
+// `setIgnoreMouseEvents(true)` with no second argument and its hover sensor is an off-thread
+// cursor hit test — so the predicate is gone rather than left answering a question nobody asks.
+// The tests it had are replaced, not deleted: the first one below asserts it is UNREACHABLE (a
+// forwarding predicate that came back would be a system-wide mouse hook coming back with it), and
+// tests/overlayLockedSelector.test.mts sweeps every source file for a second argument.
 //
 // The two properties worth pinning are the ones a reviewer would otherwise have to take on
 // trust:
@@ -19,14 +28,14 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   historicalReplayRunning,
   mayShowWindows,
-  overlayForwardsMouse,
   ringDisposition,
   setHistoricalReplayRunning
 } from '../src/main/replayGate'
-import { OVERLAY_KINDS } from '../src/shared/types'
+import * as gate from '../src/main/replayGate'
 
 test('mayShowWindows: E2E dominates, and the replay only ever removes a show', () => {
   assert.equal(mayShowWindows(false, false), true)
@@ -37,41 +46,37 @@ test('mayShowWindows: E2E dominates, and the replay only ever removes a show', (
   assert.equal(mayShowWindows(true, true), false)
 })
 
-test('overlayForwardsMouse: no STRIP ever forwards, and nobody forwards mid-replay', () => {
-  for (const kind of OVERLAY_KINDS) {
-    // Steady state: every meter forwards (its hover sensor is what re-enables capture over the
-    // pin); the three STRIPS are the standing exception (JOS-40 for the celebration toast, JOS-378
-    // for the alert banner, JOS-383 for the con card) — a strip's capture comes from its QUEUE, so
-    // a system-wide hook over a window that is empty almost all of the time would be pure cost.
-    const strip = kind === 'toast' || kind === 'alertBanner' || kind === 'conCard'
-    assert.equal(overlayForwardsMouse(kind, false), !strip, `${kind} outside a replay`)
-    // During the fold NOTHING installs the hook — that hook is the reported jerky mouselook.
-    assert.equal(overlayForwardsMouse(kind, true), false, `${kind} during a replay`)
-  }
+test('THE MOUSE HALF IS RETIRED — nothing here can ask for a forwarding hook (JOS-370)', () => {
+  // The module can no longer answer the question, which is the point: a predicate that still
+  // answered would be one import away from putting a WH_MOUSE_LL hook back in the main process.
+  assert.equal('overlayForwardsMouse' in gate, false)
+  assert.equal('overlayMouseForward' in gate, false)
+  // And the file still SAYS what it was for. JOS-62's report (jerky mouselook during the fold) and
+  // its diagnosis are why this module exists at all; deleting the predicate without the story
+  // would leave the next reader to rediscover both.
+  const text = readFileSync(new URL('../src/main/replayGate.ts', import.meta.url), 'utf8')
+  assert.match(text, /WH_MOUSE_LL/)
+  assert.match(text, /JOS-370/)
 })
 
-test('the gate flips and restores, leaving every kind exactly as it found it', () => {
+test('the gate flips and restores, leaving the show decision exactly as it found it', () => {
   const before = {
     running: historicalReplayRunning(),
-    forward: OVERLAY_KINDS.map((k) => overlayForwardsMouse(k, historicalReplayRunning()))
+    mayShow: mayShowWindows(false, historicalReplayRunning())
   }
   assert.equal(before.running, false, 'nothing is replaying before a replay starts')
 
   setHistoricalReplayRunning(true)
   assert.equal(historicalReplayRunning(), true)
-  for (const kind of OVERLAY_KINDS) {
-    assert.equal(overlayForwardsMouse(kind, historicalReplayRunning()), false)
-  }
   assert.equal(mayShowWindows(false, historicalReplayRunning()), false)
 
   setHistoricalReplayRunning(false)
   assert.equal(historicalReplayRunning(), false)
-  assert.deepEqual(
-    OVERLAY_KINDS.map((k) => overlayForwardsMouse(k, historicalReplayRunning())),
-    before.forward,
-    'every kind is back to the mode it had before the replay'
+  assert.equal(
+    mayShowWindows(false, historicalReplayRunning()),
+    before.mayShow,
+    'the windows are back to the state they were in before the replay'
   )
-  assert.equal(mayShowWindows(false, historicalReplayRunning()), true)
 })
 
 test('ringDisposition: the 8 ms sampler gate, including the replay window', () => {

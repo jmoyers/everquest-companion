@@ -43,7 +43,15 @@
 // Nothing here ever closes an unbalanced bracket to make a truncated file parse.
 
 import { readFileSync, renameSync } from 'node:fs'
-import { createWriteGate, nodeIo, writeFileDurable, type DurableIo } from '../telemetry/durableWrite'
+import {
+  createWriteGate,
+  nodeIo,
+  nodeIoAsync,
+  writeFileDurable,
+  writeFileDurableAsync,
+  type AsyncDurableIo,
+  type DurableIo
+} from '../telemetry/durableWrite'
 import { balancedObjectSequence, parseIf, quarantinePathFor, salvageJsonObject, stripTornPadding } from '../tornJson'
 import { BASELINE_SOURCE_KEY, type ResistRow } from '../../shared/resistTypes'
 
@@ -218,6 +226,9 @@ export interface LedgerWriteOutcome {
 }
 
 export interface LedgerWriter {
+  /** THE LIVE PATH (JOS-371): the same write, off the main thread. */
+  writeAsync(dir: string, path: string, json: string, now?: number): Promise<LedgerWriteOutcome>
+  /** The synchronous twin, kept for a caller that must not return before the bytes are down. */
   write(dir: string, path: string, json: string, now?: number): LedgerWriteOutcome
   /** Forget the pause, the fingerprint and the once-per-session report. For tests and for a reset. */
   reset(): void
@@ -227,33 +238,74 @@ export interface LedgerWriter {
  * ONE WRITER, one failure state, one fingerprint. A closure rather than module state so the store
  * owns exactly one and a test can own a dozen — `createWriteGate`'s own arrangement, for the same
  * reason.
+ *
+ * OFF THE MAIN THREAD SINCE JOS-371. `writeFileDurable` was synchronous, which meant the resist
+ * module's tick stopped the main process to write a file AND fsync it, on a timer, for as long as
+ * the app is open — and while an overlay holds the mouse a main-thread stall is a system-wide one.
+ * `writeAsync` is the same temp+fsync+rename in the same order through libuv's threadpool, so the
+ * atomicity argument in this file's header is untouched; only the thread changed.
+ *
+ * AND THE `writing` LATCH STOPPED BEING HYPOTHETICAL, which is the one thing async really costs.
+ * It was written for a caller that "today cannot re-enter" — every path was synchronous. Now two
+ * writes genuinely CAN overlap, and they share one `.tmp` path, so `busy` is what keeps a second
+ * writer out of the first one's scratch file. A skipped tick costs one snapshot of changed counts
+ * and nothing durable: the in-memory ledger is unaffected and the next tick writes.
  */
-export function createLedgerWriter(io: DurableIo = nodeIo): LedgerWriter {
+export function createLedgerWriter(io: DurableIo = nodeIo, ioAsync: AsyncDurableIo = nodeIoAsync): LedgerWriter {
   const gate = createWriteGate()
   let lastWritten: string | null = null
   let reported = false
-  // SERIALISATION, structurally rather than hopefully. Every call below is synchronous on the main
-  // process's one thread, so today nothing CAN re-enter; the guard is here so that a future caller
-  // reaching this from inside a failure path (an error hook, a shutdown handler) coalesces into the
-  // write already in flight instead of racing its temp file.
   let writing = false
 
+  /** Everything both writers decide before a byte is touched: is one running, is this the same
+   *  bytes we already wrote, is the gate serving out a backoff. One spelling, so the async path
+   *  and the sync path can never answer the same question two ways. The STAMP is computed once by
+   *  the caller and handed to both halves — it is an O(n) walk of the whole ledger text, and
+   *  hashing it twice per write would be paying the coalescing tax twice. */
+  const admit = (stamp: string, now: number): LedgerWriteOutcome | null => {
+    if (writing) return { status: 'busy' }
+    if (stamp === lastWritten) return { status: 'unchanged' }
+    if (!gate.ready(now)) return { status: 'paused' }
+    return null
+  }
+
+  /** …and everything both writers decide afterwards. `err === null` is the success arm. */
+  const settle = (stamp: string, now: number, err: unknown): LedgerWriteOutcome => {
+    if (err === null) {
+      lastWritten = stamp
+      return { status: 'written', recovered: gate.succeeded() }
+    }
+    const { delayMs } = gate.failed(now)
+    const report = !reported
+    reported = true
+    return { status: 'failed', err, delayMs, report }
+  }
+
   return {
-    write(dir, path, json, now = Date.now()) {
-      if (writing) return { status: 'busy' }
+    async writeAsync(dir, path, json, now = Date.now()) {
       const stamp = fingerprint(json)
-      if (stamp === lastWritten) return { status: 'unchanged' }
-      if (!gate.ready(now)) return { status: 'paused' }
+      const refused = admit(stamp, now)
+      if (refused) return refused
+      writing = true
+      try {
+        await writeFileDurableAsync(dir, path, json, ioAsync)
+        return settle(stamp, now, null)
+      } catch (err) {
+        return settle(stamp, now, err)
+      } finally {
+        writing = false
+      }
+    },
+    write(dir, path, json, now = Date.now()) {
+      const stamp = fingerprint(json)
+      const refused = admit(stamp, now)
+      if (refused) return refused
       writing = true
       try {
         writeFileDurable(dir, path, json, io)
-        lastWritten = stamp
-        return { status: 'written', recovered: gate.succeeded() }
+        return settle(stamp, now, null)
       } catch (err) {
-        const { delayMs } = gate.failed(now)
-        const report = !reported
-        reported = true
-        return { status: 'failed', err, delayMs, report }
+        return settle(stamp, now, err)
       } finally {
         writing = false
       }

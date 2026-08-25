@@ -647,7 +647,13 @@ async function main(): Promise<void> {
   // See the header: a fresh dir is what makes "before any selection" mean the same thing on
   // every machine, and every launch gets one.
   console.log('launch: hidden Electron (EQ_E2E=1) against tests/fixtures/e2e-leveling.log…')
-  const { app, close, log } = await launchOnFixture('e2e-leveling.log')
+  // THE INVENTORY DUMP IS STAGED FOR STEP 8's WORN-FOCUS MARKER (JOS-452). The tab itself reads
+  // nothing else from it: the gear compare card lives on another surface, and with no dump the
+  // best-spells readout is byte-identical to what it was, which is what that step's `note` arm
+  // covers. It is the owner's own committed dump, so the focus effects in force are real ones.
+  const { app, close, log } = await launchOnFixture('e2e-leveling.log', {
+    inventory: 'Primitive_freeport-Inventory.txt'
+  })
 
   let page: Page | null = null
   try {

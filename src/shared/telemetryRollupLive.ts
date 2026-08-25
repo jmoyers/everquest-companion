@@ -26,10 +26,11 @@
 // PURE, like the file it came from: it imports the contract's rider types and nothing else, so it
 // bundles into the ingest Lambda and compiles under both tsconfigs.
 
-import type { EvSessionHeartbeat } from './telemetry'
+import { PERF_SEAMS } from './perfSeams'
+import type { SessionRiders } from './telemetryLive'
 
-/** Either session report — both carry the same three optional groups. */
-export type LiveRiderCarrier = Pick<EvSessionHeartbeat, 'live' | 'tail' | 'state'>
+/** Either session report — both extend the same five optional groups (`SessionRiders`). */
+export type LiveRiderCarrier = SessionRiders
 
 /** `add`, as `./telemetryRollup.ts` hands it over: its accumulator stays private to that file. */
 export type AddCounter = (metric: string, dim: string, n: number) => void
@@ -95,7 +96,39 @@ export const LIVE_METRICS = {
   /** dim = index into FREE_MEM_GB_EDGES — the paging hypothesis, per report. */
   stateFreeMem: 'stateFreeMem',
   /** dim = index into WORKING_SET_MB_EDGES — what WE were costing the machine at the time. */
-  stateWorkingSet: 'stateWorkingSet'
+  stateWorkingSet: 'stateWorkingSet',
+  // ---- JOS-458: the attribution riders ------------------------------------------------------
+  /** n = GC pauses observed / mark-compacts among them / pauses past a tenth of a second, summed.
+   *  Read `gcMajor` over `gcPauses`: a fleet whose pause count climbs while the major count holds
+   *  still is scavenging harder, which is not the shape that stops a render thread. */
+  gcPauses: 'gcPauses',
+  gcMajor: 'gcMajor',
+  gcOver100: 'gcOver100',
+  /** dim = index into LIVE_STALL_MS_EDGES — the SAME ladder as `liveStallMax`, deliberately, so
+   *  "V8 paused for 640 ms" and "main was 640 ms late" are one row apart and not one unit apart. */
+  gcMax: 'gcMax',
+  /** n = reports that carried a GC reading at all. `liveVerdicts`' argument, one subject over: an
+   *  interval of zero pauses writes no `gcPauses` row (`add` refuses a non-positive value), and
+   *  without this counter it would be indistinguishable from an install whose observer never
+   *  started — which are opposite facts. */
+  gcReports: 'gcReports',
+  /**
+   * dim = THE SEAM NAME, a member of `PERF_SEAMS` and nothing else. This is the metric the whole
+   * ticket is for: the fleet answer to "which of our own seams owns the stalls".
+   *
+   * n = calls / calls past a tenth of a second. `seamStalls` is the one to read — `seamCalls` is
+   * its denominator, and a seam that is entered a thousand times an hour and is never slow must
+   * not out-rank one entered twice and slow both times.
+   */
+  seamCalls: 'seamCalls',
+  seamStalls: 'seamStalls',
+  /** dim = `<seam>` — one row per report per seam that RAN, so the histogram's total per seam is
+   *  how many reports that seam appeared in, which is the denominator `seamStalls` needs. */
+  seamReports: 'seamReports',
+  /** dim = index into LIVE_STALL_MS_EDGES, dimensioned by BUCKET rather than by seam on purpose:
+   *  the seam is already carried by the three metrics above, and a composite dim would be a
+   *  string this file assembled rather than a value the schema declared. */
+  seamMax: 'seamMax'
 } as const
 
 /** `0` / `1` / `2+` — a window count as a dim. Past two, how many overlays a person keeps open is
@@ -132,6 +165,41 @@ export function foldLiveRiders(add: AddCounter, dimNone: string, ev: LiveRiderCa
   }
   if (tail !== undefined) foldTail(add, dimNone, tail)
   if (state !== undefined) foldState(add, state)
+  if (ev.gc !== undefined) foldGc(add, dimNone, ev.gc)
+  if (ev.seams !== undefined) foldSeams(add, ev.seams)
+}
+
+/** The GC group (JOS-458). `gcReports` is written unconditionally so the three sums have a
+ *  denominator even in the interval where all three are zero — see its declaration. */
+function foldGc(add: AddCounter, dimNone: string, gc: NonNullable<LiveRiderCarrier['gc']>): void {
+  add(LIVE_METRICS.gcReports, dimNone, 1)
+  add(LIVE_METRICS.gcPauses, dimNone, gc.pauses)
+  add(LIVE_METRICS.gcMajor, dimNone, gc.majorPauses)
+  add(LIVE_METRICS.gcOver100, dimNone, gc.over100)
+  add(LIVE_METRICS.gcMax, String(gc.maxBucket), 1)
+}
+
+/**
+ * The seam group (JOS-458).
+ *
+ * IT WALKS `PERF_SEAMS`, NEVER THE PAYLOAD'S KEYS, and that is the same mechanical bright line the
+ * producer keeps: this fold runs INSIDE the ingest Lambda over bytes a client sent, so a key the
+ * schema does not name must not be able to become a dimension in `usage_daily`. The validator
+ * already reconstructs the group field by field; this is the second lock on the same door, in the
+ * one place where a `for…in` would have been the obvious spelling.
+ *
+ * It takes no `dimNone`, unlike its two neighbours: EVERY row this group writes is dimensioned,
+ * because a seam number with no seam beside it would be a sum over six different questions.
+ */
+function foldSeams(add: AddCounter, seams: NonNullable<LiveRiderCarrier['seams']>): void {
+  for (const seam of PERF_SEAMS) {
+    const entry = seams[seam]
+    if (entry === undefined) continue
+    add(LIVE_METRICS.seamReports, seam, 1)
+    add(LIVE_METRICS.seamCalls, seam, entry.calls)
+    add(LIVE_METRICS.seamStalls, seam, entry.over100)
+    add(LIVE_METRICS.seamMax, String(entry.maxBucket), 1)
+  }
 }
 
 /** The tail group, split out so `foldLiveRiders` stays inside the repo's factoring ceilings. */

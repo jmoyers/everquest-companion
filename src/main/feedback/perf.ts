@@ -35,6 +35,7 @@ import type { RawProcessMetric } from '../../shared/perf'
 import { OVERLAY_KINDS } from '../../shared/types'
 import { eqWindowMode } from '../eqWindowMode'
 import { peekLiveTimeline } from '../livePerfProbe'
+import { peekAttributionTimeline } from '../perfAttribution'
 import { peekTailIoTimeline } from '../log/tailIoStats'
 import { getCursorRing, getOverlayAutoHide, getOverlayConfig } from '../store'
 import { gpuCompositingOf, gpuVendorOf } from '../telemetry/setupFacts'
@@ -157,8 +158,22 @@ export async function feedbackPerfBlock(now = Date.now()): Promise<FeedbackPerf 
     // timeout to find that out. `foldFeedbackPerf` would answer `null` anyway — this is the same
     // decision made one step earlier, where it is still free.
     if (timeline.main.length === 0 && timeline.worker.length === 0 && tail.length === 0) return null
+    // THE ATTRIBUTION RINGS ARE PEEKED, NEVER DRAINED (JOS-458) — `peekLiveTimeline`'s posture one
+    // instrument over, and load-bearing: the telemetry seam drains the same instrument's
+    // ACCUMULATOR on its own schedule, and a bug report that consumed the ring would silently cost
+    // the next heartbeat its reading. They are read AFTER the empty check for the same reason the
+    // tail is: a report composed before `replayDone` has no attribution either, and must not pay
+    // for finding that out.
+    const attribution = safely(() => peekAttributionTimeline(now), { seams: [], gc: [] })
     const perf = foldFeedbackPerf(
-      { main: timeline.main, worker: timeline.worker, tail, state: await perfState() },
+      {
+        main: timeline.main,
+        worker: timeline.worker,
+        tail,
+        state: await perfState(),
+        seams: attribution.seams,
+        gc: attribution.gc
+      },
       now
     )
     return perf !== null && perfBytes(perf) <= MAX_PERF_BYTES ? perf : null

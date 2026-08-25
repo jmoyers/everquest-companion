@@ -471,6 +471,15 @@ test('THE CLASS INDEX places nobody by a spell the game does not have', () => {
  * obtainable items in order to hide a spell scroll — a regression bought with a fix. The boundary
  * is worth stating once, here: this layer removes what the app OFFERS the player, never what the
  * app can DESCRIBE.
+ *
+ * AND THE FOURTH IS THE SAME JOIN, ONE TICKET LATER (JOS-452). `wornFocusIndex.ts` takes an item's
+ * `Focus Effect:` line to the spell page of the same name to read the percentage and the level cap
+ * off it. It is `effectIndex.ts`'s join with a different field harvested, so it inherits that
+ * argument whole: a removal states that no player can LEARN a spell, and no player learns a focus
+ * effect - every one of the 68 focus pages in the catalog reads `classes: No eligible class`. The
+ * two names the removals layer carries today (`Invigor`, `Invisibility Versus Undead`) are not
+ * focus effects and neither is anything the layer could plausibly grow, so routing this join
+ * through the seam would buy nothing and would risk blanking a focus the player is really wearing.
  */
 const RAW_IMPORT_EXEMPT: ReadonlyMap<string, string> = new Map([
   ['src/main/combat/charmModel.ts', 'name->boolean roster; unions raw+corrected and walks them in index lockstep'],
@@ -478,6 +487,10 @@ const RAW_IMPORT_EXEMPT: ReadonlyMap<string, string> = new Map([
   [
     'src/main/planner/effectIndex.ts',
     'item Effect: -> spell-page join; 7 committed items carry an Invigor effect and a removed row would blank their one-liners'
+  ],
+  [
+    'src/main/planner/wornFocusIndex.ts',
+    'the same item Focus Effect: -> spell-page join, harvesting the percentage and the level cap; a focus page is learnable by nobody, so a removal can never be about one'
   ]
 ])
 

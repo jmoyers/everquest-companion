@@ -16,6 +16,9 @@
 //   WL44  the loadout swap (Fri Jul 31 16:19 level 50 → Sun Aug 02 02:26 level 13) — the run
 //         split, and no rate fabricated across the unlogged drop.
 //   WL45  kill credit (Thu Jul 30 16:28→16:56) — all three shapes in one zone.
+//   WL46  the tier swap (Sun Aug 23 13:37→15:20) — one place spelled two ways, a visit the log
+//         never closed, and the two mechanisms that between them read a 1h51m Plane of Hate
+//         session as 15 idle minutes (JOS-454).
 //
 // Plus a FULL-LOG tripwire asserting IDENTITIES and floors only (the log is live and grows;
 // frozen counts rot — AND SO DO RATIOS whose denominator is the owner's play, which is what
@@ -29,6 +32,9 @@ import { parseEvent } from '../src/main/log/parser'
 import { EpochDetector, LAUNCH_MS } from '../src/main/log/epochDetector'
 import { EXP_CAP, ProgressionModule } from '../src/main/modules/progression'
 import { rangeStats, type RangeStats } from '../src/shared/progressionStats'
+// The two zone folds WL46 is about (JOS-291): the PLACE, and the exact spelling of the tier.
+import { zoneKey } from '../src/shared/zones'
+import { zoneIdKey } from '../src/shared/zoneScope'
 import type { ProgressionSnap } from '../src/shared/progressionTypes'
 import { readFixture } from './harness.mts'
 import { expPairing, recentPairingRatio } from './progressionJoin.mts'
@@ -463,6 +469,120 @@ test('WL45 kill credit: yours + your pet count; everybody else is witnessed only
   assert.equal(r.expUnstated, 0)
   assert.ok(r.levelEquiv > 0.21 && r.levelEquiv < 0.22)
   assertIdentities(r, 'WL45')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WL46 — THE OWNER'S 2026-08-23 SCREENSHOT, AS BYTES (JOS-454). One place spelled two ways, the
+// step out of the instance, and what a selection across the whole afternoon then reads.
+//
+// tests/fixtures/wl46-hate-tier-swap.log is raw 2441268–2466682 — Sun Aug 23 13:37:51 → 15:20:30,
+// cut at the instant the record stood when he took the shot. The five zone lines are hand-read
+// off the file: plain `The Plane of Hate` (76 s), `The Plane of Hate 4 (Refined)` for 1h35m, a
+// 27-second re-entry to the instance, then plain `The Plane of Hate` twice with the last interval
+// left OPEN.
+//
+// TWO SEPARATE FACTS ARE PINNED HERE, and the report was both of them at once:
+//
+//   1. `exactTier` MEMBERSHIP. `zones.zoneKey` folds both spellings to `plane of hate`, so
+//      `allTiers` sees the whole afternoon; `zoneScope.zoneIdKey` does not, so the tier the log
+//      LAST named — plain Hate, because he had just walked out — admits only the 76 s + 82 s +
+//      the open tail. Every kill, every experience line and the ding are in the instance tier and
+//      fall outside it. This is not a bug in this file's arithmetic; it is JOS-332's opening
+//      ruling meeting a case its own safety argument did not cover, and the numbers below are
+//      what it costs. The FIX for it is on the panel (`rangeStatsRows.membershipText`) — the
+//      elapsed span now says what it left out — and in a ruling, not here.
+//
+//   2. THE OPEN INTERVAL × AN UNCLAMPED RANGE. `zoneSegments` closes a still-open visit at the
+//      END OF THE RANGE, so a range reaching past the record hands the plain-Hate tail every
+//      millisecond of that overhang. The owner's selection ended at 15:29:55 against a record
+//      that had stopped: 13m11s of the 15m27s this reads is chart gutter. `windowScope`'s clamp
+//      (JOS-454) is what removes it, and the second half of this test is the before/after of
+//      exactly that subtraction, over these bytes.
+//
+// One honest note about `activeMs`, so the number is not read as more than it is: in the LIVE
+// record the 13:38 head sits inside a silence that began before the fixture's first line, so the
+// owner's panel read `0s active`. Here the walk has nothing before its own left edge to bracket
+// against, so the head reads as 54 s of activity. The fixture cannot carry a gap whose other end
+// it does not contain, and that is a property of cutting a window, not of the fold.
+test('WL46 tier swap: one place, two spellings, and the visit that is still open', () => {
+  const snap = replay(readFixture('wl46-hate-tier-swap.log'))
+  assert.deepEqual(snap.zoneName, [
+    'The Plane of Hate',
+    'The Plane of Hate 4 (Refined)',
+    'The Plane of Hate 4 (Refined)',
+    'The Plane of Hate',
+    'The Plane of Hate'
+  ])
+  assert.equal(snap.zoneEnd[4], 0, 'he never left the last one, so the log never closed it')
+  // The afternoon's play, all of it inside the instance tier.
+  assert.equal(snap.expTs.length, 68)
+  assert.equal(snap.killTs.length, 65)
+  assert.equal(snap.witnessTs.length, 4)
+  assert.equal(snap.levelTs.length, 1, 'one ding — the curve the owner watched rise')
+})
+
+test('WL46: the tier the log last named excludes the whole session, and says nothing about it', () => {
+  const snap = replay(readFixture('wl46-hate-tier-swap.log'))
+  const range = { t0: T('2026-08-23T13:38:20'), t1: T('2026-08-23T15:29:55') }
+  const place = zoneKey('The Plane of Hate')
+
+  // Unrestricted, and `allTiers` — the same read, because the place fold admits both spellings.
+  const all = rangeStats({ snap, range })
+  const tiers = rangeStats({ snap, range, zoneKey: place })
+  // Every MEASURE agrees — the place fold admits both spellings, which is JOS-130 unchanged. Not
+  // `deepEqual`, and the one field that differs is worth naming: a zone filter clips its idle
+  // spans to the visits, so a silence straddling a zone line is SPLIT and `idleGaps` counts 7
+  // where the unfiltered read counts 4. Same milliseconds, more pieces — `subtractSpans`' own
+  // documented behaviour, and measured here rather than papered over.
+  for (const f of ['durationMs', 'activeMs', 'idleMs', 'kills', 'expSamples', 'levelEquiv'] as const) {
+    assert.equal(tiers[f], all[f], `every tier: ${f} matches the unfiltered read`)
+  }
+  assert.ok(tiers.idleGaps >= all.idleGaps, 'clipping a silence to the visits can only split it further')
+  assert.equal(all.durationMs, range.t1 - range.t0, 'unfiltered, elapsed IS the range')
+  assert.equal(all.kills, 65)
+  assert.equal(all.expSamples, 68)
+
+  // …and the tier he was standing in when he looked.
+  const exact = rangeStats({ snap, range, zoneKey: place, zoneExactKey: zoneIdKey('The Plane of Hate') })
+  assert.equal(exact.durationMs, 927_000, 'THE SCREENSHOT: 15m 27s of a 1h 51m selection')
+  assert.equal(exact.kills, 0, 'every kill was in the instance tier')
+  assert.equal(exact.expSamples, 0)
+  assert.equal(exact.levelEquiv, 0)
+  // 0.0, not an em-dash, and that is the CORRECT reading: `levelsUnknown` nulls a rate only when
+  // experience lines existed and stated no percentage (law 1). Here there were no lines at all,
+  // so zero progress is a fact rather than an absence of one. (On the owner's live record the
+  // active clock was 0 too, which nulls it on the other rule — see this block's header note.)
+  assert.equal(exact.levelsPerHourActive, 0)
+
+  // EXACT IS A NARROWING OF ALL, never a different question (JOS-291) — count for count.
+  const other = rangeStats({ snap, range, zoneKey: place, zoneExactKey: zoneIdKey('The Plane of Hate 4 (Refined)') })
+  assert.equal(exact.durationMs + other.durationMs, all.durationMs, 'the two tiers partition the place')
+  assert.equal(exact.kills + other.kills, all.kills)
+  assert.equal(exact.expSamples + other.expSamples, all.expSamples)
+  assertIdentities(exact, 'WL46 exact')
+  assertIdentities(other, 'WL46 hate4')
+})
+
+test('WL46: an OPEN visit turns every millisecond past the record into time in that zone', () => {
+  const snap = replay(readFixture('wl46-hate-tier-swap.log'))
+  const t0 = T('2026-08-23T13:38:20')
+  const args = { zoneKey: zoneKey('The Plane of Hate'), zoneExactKey: zoneIdKey('The Plane of Hate') }
+
+  // What the chart's trailing gutter selected…
+  const padded = rangeStats({ snap, range: { t0, t1: T('2026-08-23T15:29:55') }, ...args })
+  // …and what the record actually holds. `windowScope.statsRangeFor` is the clamp that makes the
+  // second one the range every number is measured over; this asserts WHY it has to.
+  const clamped = rangeStats({ snap, range: { t0, t1: snap.lastTs + 1 }, ...args })
+
+  assert.equal(clamped.durationMs, 136_001, 'the two real plain-Hate visits, and nothing else')
+  assert.equal(
+    padded.durationMs - clamped.durationMs,
+    T('2026-08-23T15:29:55') - (snap.lastTs + 1),
+    'every millisecond of the overhang was booked as standing in the zone — the open interval absorbs it ALL'
+  )
+  assert.equal(padded.kills, clamped.kills, 'and it invents no events, which is what makes it pure idle')
+  assert.equal(clamped.idleMs, 0, 'the honest range holds no qualifying silence at all')
+  assert.ok(padded.idleMs > 14 * 60_000, 'while the padded one is almost entirely manufactured silence')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

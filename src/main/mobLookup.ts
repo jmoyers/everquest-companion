@@ -46,9 +46,12 @@
 // unit-tested against verbatim real wikitext in tests/considerWindows.test.mts.
 
 import { app } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { logError } from './errorLog'
+// THE ATOMIC WRITE, REUSED RATHER THAN RE-SPELLED (the storeFile.ts precedent, JOS-272): this app
+// has ONE answer to writing a whole file, and since JOS-371 it has an asynchronous one.
+import { writeFileDurableAsync } from './telemetry/durableWrite'
 import { MobLootIndex, mobKey, parseMobWikitext } from './mobLookupParse'
 import { annotateDropEras } from './mobDropEra'
 import { knowledgeFromCatalog, localMobEntry, mergeLocalKnowledge } from './mobLookupLocal'
@@ -208,18 +211,49 @@ function loadCache(): Map<string, CacheEntry> {
   return mem
 }
 
+/**
+ * Persist the cache, 1.5 s after the write that dirtied it — off the main thread since JOS-460.
+ *
+ * WHY IT WAS SYNCHRONOUS: for no reason beyond being the shortest way to write a file — this module
+ * was written field for field against itemLookup.ts, and it inherited that spelling too. The debounce
+ * was already doing the load-bearing work (a burst of `/con`s, one write), but the write itself still
+ * stopped the main process — on a LIVE path, once per burst, for as long as the app is open, and
+ * while an overlay holds the mouse a main-thread stall is a system-wide one.
+ *
+ * WHAT GUARANTEES THE SAME THING NOW: `writeFileDurableAsync` — this app's ONE answer to writing a
+ * whole file (temp + fsync + rename, JOS-265), through libuv's threadpool. It is strictly stronger
+ * than what was here: the old `writeFileSync` truncated the live cache FIRST, so a process killed
+ * mid-write left a torn file, and `loadCache` reads a file that will not parse as an EMPTY one —
+ * every mob this install had ever resolved, silently gone. The atomic write cannot produce that.
+ *
+ * The debounce latch is what serialises it: `saveTimer` is cleared when the write is SCHEDULED and
+ * `saving` holds until it settles, so a second write can never be started into the first one's
+ * scratch file. A save asked for during a write simply re-arms the timer.
+ */
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let saving = false
 function scheduleSave(): void {
   if (saveTimer) return
   saveTimer = setTimeout(() => {
     saveTimer = null
-    try {
-      const entries: Record<string, CacheEntry> = {}
-      for (const [k, v] of (mem ?? new Map<string, CacheEntry>()).entries()) entries[k] = v
-      writeFileSync(cacheFilePath(), JSON.stringify({ version: CACHE_VERSION, entries } satisfies CacheFile), 'utf8')
-    } catch (err) {
-      logError('main:mobLookup', { message: 'failed writing mob-knowledge cache', err })
+    if (saving) {
+      // A write is still in the threadpool. Re-arm rather than race its temp file; every write
+      // serialises the whole live map, so the re-armed one states everything the skipped one would
+      // have — including an alias repair's deletions (`repairAliasCache`).
+      scheduleSave()
+      return
     }
+    saving = true
+    const entries: Record<string, CacheEntry> = {}
+    for (const [k, v] of (mem ?? new Map<string, CacheEntry>()).entries()) entries[k] = v
+    const path = cacheFilePath()
+    void writeFileDurableAsync(dirname(path), path, JSON.stringify({ version: CACHE_VERSION, entries } satisfies CacheFile))
+      .catch((err: unknown) => {
+        logError('main:mobLookup', { message: 'failed writing mob-knowledge cache', err })
+      })
+      .finally(() => {
+        saving = false
+      })
   }, 1500)
 }
 

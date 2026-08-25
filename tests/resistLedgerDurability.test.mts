@@ -399,6 +399,53 @@ test('THE SHIPPED BASELINE IS NEVER SEEDED FROM THE USER FILE, however it arrive
   }
 })
 
+// ---- OFF THE MAIN THREAD (JOS-371) ------------------------------------------------------------
+//
+// The tick that snapshots this ledger runs for as long as the app is open, and it used to stop the
+// main process for a write AND an fsync every time. `writeAsync` is the same temp+fsync+rename in
+// the same order through libuv's threadpool — so everything above still has to be true of it, and
+// one thing that was previously hypothetical becomes load-bearing: two writes CAN now overlap, and
+// they share one `.tmp` path.
+
+/** A real, whole write through the async writer — the ordinary case, over a real directory. */
+test('OFF THE THREAD: an async snapshot lands whole and leaves no scratch file behind', async () => {
+  const dir = scratchDir()
+  try {
+    const path = join(dir, 'resist-ledger.json')
+    const sources: LedgerSource[] = [{ key: 'Primitive@freeport', rows: [row('a_gorge_hound', 'shock of swords')] }]
+    const writer = createLedgerWriter()
+    const out = await writer.writeAsync(dir, path, ledgerText(sources))
+    assert.equal(out.status, 'written')
+    assert.deepEqual(readdirSync(dir), ['resist-ledger.json'], 'no scratch file outlives a good write')
+    assert.deepEqual(loadUserLedgerFile(path, VERSION).sources, sources)
+    // …and the coalescing still works across the async path: identical bytes are not rewritten.
+    assert.equal((await writer.writeAsync(dir, path, ledgerText(sources))).status, 'unchanged')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/** THE LATCH THAT STOPPED BEING HYPOTHETICAL. Two overlapping writers share one `.tmp`, so the
+ *  second must be refused rather than allowed into the first one's scratch file. */
+test('OFF THE THREAD: a second write while one is in flight is BUSY, never a second scratch file', async () => {
+  const dir = scratchDir()
+  try {
+    const path = join(dir, 'resist-ledger.json')
+    const writer = createLedgerWriter()
+    const first = writer.writeAsync(dir, path, ledgerText([{ key: 'A', rows: [row('m', 's', 1)] }]))
+    // Not awaited: this is exactly the overlap the synchronous writer could never produce.
+    const second = await writer.writeAsync(dir, path, ledgerText([{ key: 'B', rows: [row('m', 's', 2)] }]))
+    assert.equal(second.status, 'busy')
+    assert.equal((await first).status, 'written')
+    assert.deepEqual(readdirSync(dir), ['resist-ledger.json'])
+    // A skipped tick costs one snapshot and nothing durable — the next write lands the newer bytes.
+    assert.equal((await writer.writeAsync(dir, path, ledgerText([{ key: 'B', rows: [row('m', 's', 2)] }]))).status, 'written')
+    assert.deepEqual(loadUserLedgerFile(path, VERSION).sources.map((s) => s.key), ['B'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // ---- THE RULES THAT LIVE IN store.ts ----------------------------------------------------------
 
 const STORE_SRC = readFileSync(join(ROOT, 'src', 'main', 'resist', 'store.ts'), 'utf8')
@@ -406,6 +453,12 @@ const STORE_SRC = readFileSync(join(ROOT, 'src', 'main', 'resist', 'store.ts'), 
 test('THE SOURCE PIN: the ledger is not written with a bare writeFileSync any more', () => {
   assert.equal(/writeFileSync/.test(STORE_SRC), false, 'every write goes through the durable writer')
   assert.ok(STORE_SRC.includes('createLedgerWriter'))
+})
+
+test('THE SOURCE PIN: the tick writes through the ASYNC door, and waits for nothing (JOS-371)', () => {
+  assert.match(STORE_SRC, /void writer\s*\r?\n?\s*\.writeAsync\(/)
+  // The sync twin still exists on the writer, but the live path may not reach for it.
+  assert.equal(/writer\.write\(/.test(STORE_SRC), false, 'the periodic snapshot never blocks main')
 })
 
 test('THE FINGERPRINT SURVIVES THE FIX: the failure message is unchanged, character for character', () => {

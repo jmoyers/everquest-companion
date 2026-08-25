@@ -59,6 +59,10 @@ import {
   matchesGear,
   type GearFilters
 } from '../src/renderer/src/features/gear/gearFilter'
+import { isAcquisition, isKept } from '../src/shared/lootDisposition'
+import type { LootDisposition } from '../src/shared/logEvents'
+import { parseEvent } from '../src/main/log/parser'
+import { LootModule } from '../src/main/modules/loot'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
 const REAL_DUMP = readFileSync(join(FIXTURES, 'Primitive_freeport-Inventory.txt'), 'utf8')
@@ -334,4 +338,78 @@ test('the owned filter ANDs with the others rather than replacing them', () => {
   const cloak = { ...gear(CLOAK), name: 'Cloak of Flames', searchKey: 'cloak of flames' }
   assert.equal(matchesGear(cloak, filters({ ownedOnly: true, text: 'cloak' }), deps), true)
   assert.equal(matchesGear(cloak, filters({ ownedOnly: true, text: 'sword' }), deps), false)
+})
+
+// =================================================================================
+// WHAT THE OWNED COLUMN MAY READ (JOS-453) — the auto-sell is not ownership
+// =================================================================================
+//
+// `gearData.ts` filters the loot history before handing names to `gearOwnershipMap`, and until
+// JOS-453 it filtered with `isAcquisition` — which answers "did this drop off a mob", not "do you
+// have one". An auto-sold item answers YES to the first and NO to the second: the game vendored it
+// in the same sentence that reported it. Measured on the owner's log the day it was reported:
+// 8,816 of 12,045 loot events are `sold`, and 467 distinct base names appear NO OTHER WAY — 467
+// items the Owned column called `Looted` that this character has never held.
+//
+// The predicate now lives in `shared/lootDisposition.ts` as `isKept`, beside the two it joins, so
+// the three questions the loot lane can be asked stay written down in one place.
+
+test('isKept answers ownership where isAcquisition answers "did it drop"', () => {
+  // The two that state an item LEAVING you — one after you held it, one before you ever did.
+  assert.equal(isKept({ disposition: 'destroyed' }), false)
+  assert.equal(isKept({ disposition: 'sold' }), false)
+  // …and every disposition that leaves you holding something.
+  assert.equal(isKept({ disposition: undefined }), true, 'plain dashed loot')
+  assert.equal(isKept({ disposition: 'currency' }), true)
+  assert.equal(isKept({ disposition: 'hoard' }), true)
+  assert.equal(isKept({ disposition: 'depot' }), true)
+  // 'combined' consumed the looted copy INTO `created`, whose base name is the same one — you
+  // finish the line owning one, so ownership says yes where the held COUNT nets zero.
+  assert.equal(isKept({ disposition: 'combined' }), true)
+
+  // The split this is all about: the sold row is an acquisition and is not ownership.
+  assert.equal(isAcquisition({ disposition: 'sold' }), true, 'a sold item really did drop')
+  assert.equal(isAcquisition({ disposition: 'destroyed' }), false)
+})
+
+test('W47 real bytes: the auto-sold +4 drops never reach the Owned column', () => {
+  // The REAL Aug 23 Plane of Hate window, through the REAL parser and LootModule, filtered by the
+  // predicate `gearData` ships — so what is asserted here is what the column will say.
+  const mod = new LootModule()
+  mod.reset()
+  let seq = 0
+  for (const raw of readFileSync(join(FIXTURES, 'w47-autosell-patch.log'), 'utf8')
+    .split(/\r?\n/)
+    .filter((l) => l.length > 0)) {
+    const ev = parseEvent(raw, seq++)
+    if (ev) mod.onEvent(ev)
+  }
+  const history = mod.snapshot().state
+
+  const namesOf = (pred: (r: { disposition?: LootDisposition }) => boolean): string[] => [
+    ...new Set(history.filter(pred).map((e) => e.item))
+  ]
+  // No dump at all: every key in the map is there because the LOG put it there, which isolates
+  // the claim being tested from the inventory half of the join.
+  const owned = (names: string[], key: string): boolean =>
+    gearOwnershipMap([], names).get(key)?.looted === true
+
+  const kept = namesOf(isKept)
+  const acquired = namesOf(isAcquisition)
+
+  // THE REGRESSION. Both of these were looted and vendored in the same line.
+  assert.equal(owned(kept, 'ethereal mist gauntlets'), false, 'an auto-sold +4 is not owned')
+  assert.equal(owned(kept, 'shadow rage sleeves'), false)
+  assert.equal(owned(kept, 'crystallized sulfur'), false, '11 sold rows still claim nothing')
+  // …and the old predicate DID claim them, so this test fails if the fix is reverted.
+  assert.equal(owned(acquired, 'ethereal mist gauntlets'), true, 'isAcquisition used to say yes')
+
+  // WHAT MUST STILL BE CLAIMED — the fix has to be narrow or it eats real ownership.
+  assert.equal(owned(kept, 'ruby'), true, 'dashed keeps are owned')
+  assert.equal(owned(kept, 'diamond'), true)
+  assert.equal(owned(kept, 'mote of infinitesimal potential'), true)
+  // The auto-merge: you hold the upgraded copy, and the ` +N` folds onto the base key.
+  assert.equal(owned(kept, 'lustrous russet vambraces'), true, 'a combine leaves you holding one')
+  assert.equal(owned(kept, 'ethereal mist greaves'), true)
+  assert.equal(owned(kept, 'valorium vambraces'), true)
 })

@@ -16,8 +16,11 @@ import type { EngineState } from './state'
 import type { PetClaimEvent } from '../../shared/logEvents'
 
 /** How a pet came to be bound. Only the debug line reads it — every route below is the same
- *  state transition, on purpose (a second retirement path is what law 4 is a scar from). */
-type ClaimVia = PetClaimEvent['via'] | 'petBuff'
+ *  state transition, on purpose (a second retirement path is what law 4 is a scar from).
+ *
+ *  IT IS THE EVENT'S OWN UNION NOW (JOS-454): `petBuff` used to be a local extension because this
+ *  route produced no event, and it produces one now. */
+type ClaimVia = PetClaimEvent['via']
 
 const CLAIM_NOTE: Record<ClaimVia, string> = {
   tell: '',
@@ -77,7 +80,20 @@ function bindPetClaim(st: EngineState, name: string, ts: number, via: ClaimVia):
   }
 }
 
+/**
+ * A parsed claim, bound. …EXCEPT THE ONE THIS ENGINE ITSELF EMITTED (JOS-454).
+ *
+ * `via:'petBuff'` never comes off a line: it is `bindPetBuffLanding` below, handed to the bus so
+ * the four models outside this directory learn the pet, and the bus delivers it straight back
+ * here. Re-binding would be harmless — every route is idempotent and repeated tells are routine —
+ * but it would print a second debug line for a transition that happened once, and it is the guard
+ * that makes the seam PROVABLY loop-free rather than incidentally so. The buffs module keeps
+ * exactly this discipline around `buffExpired` (bus.ts's own note: "no feedback loop is possible:
+ * buffs, the only producer, ignores `buffExpired`"), and the refusal lives HERE, beside the
+ * emitter, so the two can never be moved apart.
+ */
 export function ingestPetClaim(st: EngineState, ev: PetClaimEvent): void {
+  if (ev.via === 'petBuff') return
   bindPetClaim(st, ev.name, ev.ts, ev.via)
 }
 
@@ -145,21 +161,70 @@ export function ingestPetClaim(st: EngineState, ev: PetClaimEvent): void {
  * its three `told you, 'Attacking … Master.'` tells remain the only evidence in it. Same root
  * cause, different half: the answer for them is still to order it once.
  *
- * AND IT IS THE COMBAT MODEL'S BIND ONLY. `modules/buffs.ts` runs its own entity-level pet
- * succession off the `petClaim` LOG EVENT (AGENTS.md law 4: two models, different reach, by
- * measurement rather than oversight), and this rung produces no such event — it is a state
- * transition inside the engine, not a line the parser can emit, because the arm is per-stream
- * state and `parseEvent` is per-line. So the buff module's pet slot still waits for the tell,
- * exactly as it did before this ticket: no worse, not yet better. Making it better means either
- * a derived-event seam the session feeds to both, or a second arm in the buffs module — and a
- * second arm is precisely the duplicated retirement path law 4 is a scar from, so it does not
- * get built on the way past without its own measurement.
+ * IT USED TO BE THE COMBAT MODEL'S BIND ONLY, AND SINCE JOS-454 IT IS NOT. The paragraph that
+ * stood here said the rung produced no event — the arm is per-stream state and `parseEvent` is
+ * per-line — so `modules/buffs.ts`'s pet slot, and the PROGRESSION module's kill credit, and the
+ * roster, and the resist fold all went on waiting for the tell. It named the two ways out and
+ * ruled on them: "either a derived-event seam the session feeds to both, or a second arm in the
+ * buffs module — and a second arm is precisely the duplicated retirement path law 4 is a scar
+ * from". This is the seam, and the measurement that finally bought it:
+ *
+ * THE OWNER'S 2026-08-23 PLANE OF HATE SESSION (JOS-454). `You begin casting Cackling Bones.` at
+ * 13:42:27 summons the necromancer pet `Vibartik`; `Augment Death` (targetType Pet) lands on him
+ * at 13:42:43 and this rung binds him IN THE ENGINE on the spot. His first `… Master.'` tell does
+ * not arrive until 14:37:53 — fifty-five minutes later — and the ProgressionModule, which knows
+ * only the tell and the charm broadcast, spent those fifty-five minutes filing his four kills
+ * (13:49:08, 13:52:46, 13:59:48, 14:03:34) as `witnessTs`, somebody else's. The Leveling tab's
+ * range panel read `4 kills by others seen` over a window in which the meter beside it had the
+ * pet bound the whole time. Replayed through both models side by side, that is exactly the gap:
+ * ENGINE PETS -> Vibartik at 13:42:43, progression silent until the tell.
+ *
+ * SO THE BIND EMITS. The event is `petClaim{via:'petBuff'}` on `bus.emitDerived` (Task #47's
+ * queue — delivered after the primary landing has finished reaching every listener, never
+ * inline), and every model that already understands a `petClaim` learns the pet with no new
+ * field, no new kind and no second arm anywhere. The ARM AND THE GATE ARE UNTOUCHED: the
+ * ownership evidence is still `charm.petBuffLanding` — your own cast, in its own window, with the
+ * landing's candidates containing the spell you were casting — so nothing about WHICH names bind
+ * has moved, only who gets told. That matters for the ticket's other half: the fix credits the
+ * owner's own summoned pet, and cannot credit a nearby NPC's kills, because a nearby NPC never
+ * resolves a cast the player made.
+ *
+ * IT EMITS ONLY WHEN IT ACTUALLY BINDS, and it emits AFTER the bind, so the engine's own state is
+ * already correct when the derived event is queued. No emitter (every test, every script) ⇒ the
+ * bind is exactly what it was before this ticket. It takes the whole LANDING rather than three of
+ * its fields, so the derived event can be stamped with its primary's `seq` — a derived event that
+ * invented its own sequence number would sort against the stream it came out of.
+ *
+ * LIVENESS IS `st.hydrating`, NOT A THREADED FLAG. The buffs module carries a `curLive` because it
+ * derives from a TIMER as well as from the stream; this rung derives only from the line in hand,
+ * and the engine already maintains the same fact — `ingestOne` clears `hydrating` on the first
+ * live event and `setLive()` clears it at the handoff. So a replayed bind stays `live:false` and
+ * never reaches the alert layer as news, with no second copy of the flag to drift.
  */
-export function bindPetBuffLanding(st: EngineState, ts: number, target: string, spellNames: readonly string[]): void {
+export function bindPetBuffLanding(
+  st: EngineState,
+  ev: { seq: number; ts: number; target: string },
+  spellNames: readonly string[]
+): void {
+  const { ts, target } = ev
   if (!st.charm.petBuffLanding(spellNames, ts)) return
   // A landing on YOURSELF is a self-buff the DB mislabels, never a pet (the parser emits
   // target 'self' for the msgCastOnYou form, but the third-person form can still name you when
   // another player's buff lands on you in the same second).
   if (target === '' || idKey(target) === st.playerKey) return
   bindPetClaim(st, target, ts, 'petBuff')
+  st.emitDerived?.(
+    {
+      kind: 'petClaim',
+      seq: ev.seq,
+      ts,
+      // A synthesized human-readable line, in the shape the recent-fires panel and the event feed
+      // render — the same thing `emitBuffExpired` writes, and for the same reason: no log line
+      // says this, so the app has to say it in its own words rather than quote one it never saw.
+      raw: `${target} answered your pet-only spell.`,
+      name: target,
+      via: 'petBuff'
+    },
+    !st.hydrating
+  )
 }

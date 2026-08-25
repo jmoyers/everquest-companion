@@ -35,7 +35,13 @@ import { logError, logInfo } from '../errorLog'
 // The durability half, in its own Electron-free leaf (JOS-265). Its header carries the whole
 // argument — the error store's ENOSPC exemplars, why there is no writer queue and no lock retry,
 // and what the fsync is for. This file keeps only the decisions that need `app` or a logger.
-import { createWriteGate, tempPathFor, writeFileDurable } from './durableWrite'
+import {
+  createWriteGate,
+  FINAL_TEMP_TAG,
+  tempPathFor,
+  writeFileDurableAsync,
+  writeFileDurableFinal
+} from './durableWrite'
 
 /** Bumped only if this file's shape changes. Unreadable/older ⇒ start empty, never migrate. */
 export const TELEMETRY_RING_VERSION = 1
@@ -135,6 +141,75 @@ export function readRing(): TelemetryRing {
 }
 
 /**
+ * THE ONE WRITE IN FLIGHT (JOS-371), and the file that is owed once it lands.
+ *
+ * The durable write is asynchronous now, which is the one property the synchronous version gave
+ * away for free: two of them CAN interleave, and two interleaved writers share one `.tmp` path, so
+ * the second would rename a scratch file the first is still filling. So there is exactly one at a
+ * time. A write that arrives while one is running does not queue — it REPLACES what is owed, because
+ * a ring write is the whole file and the newest ring already contains every event an older one had.
+ * The gate's own coalescing argument, one layer up.
+ */
+let writing = false
+let owed: { data: string; now: number } | null = null
+/** Set when `dropRing` ran while a write was in the threadpool — see its header. */
+let dropDuringWrite = false
+
+/** Report a settled write. Split out so the async path and the sync final say the same two things
+ *  about the same gate — the recovery line once, the failure line with its pause. */
+function noteWriteResult(err: unknown, now: number): void {
+  if (err === null) {
+    if (writeGate.succeeded()) {
+      logInfo('[everquest-companion] telemetry.json is writable again; the buffer was persisted')
+    }
+    return
+  }
+  // THE PAYLOAD IS BYTE-IDENTICAL TO THE ONE 0.18-0.23 FILED, deliberately: the error store's
+  // fingerprint is built from the message and the frames, so keeping this string exact means the
+  // fleet's existing `telemetry.json write failed` families keep aggregating across the fix
+  // instead of splitting in two — and `errorRepeat`'s identical-line cap still recognises the
+  // line. The pause is narrated to the console instead, where a varying number costs nothing.
+  logError('main:telemetryRing', { message: 'telemetry.json write failed', err })
+  const { delayMs } = writeGate.failed(now)
+  logInfo(
+    `[everquest-companion] telemetry.json is unwritable; pausing the buffer's writes for ${Math.round(delayMs / 1000)}s`
+  )
+}
+
+/**
+ * Drain `owed` until nothing is owed. The ONLY caller of the async durable write in this file.
+ *
+ * WHAT IS OWED STAYS OWED UNTIL THE BYTES ARE DOWN, and that is not tidiness — it is the whole
+ * reason the quit final has anything to write. Clearing `owed` on the way IN looked equivalent and
+ * was not: `drainWrites()` runs synchronously up to its first `await`, so a `writeRing` during
+ * `window-all-closed` emptied `owed` in the same tick, `before-quit` then found nothing outstanding,
+ * and the process exited before the threadpool write ever landed. MEASURED: the telemetry e2e's
+ * restart assertions went red on exactly that — the heartbeat's `startupReplay`, `liveStall` and
+ * `errorReport` records never reached the ring on disk.
+ */
+async function drainWrites(): Promise<void> {
+  while (owed !== null) {
+    const pending = owed
+    const dir = app.getPath('userData')
+    try {
+      await writeFileDurableAsync(dir, join(dir, RING_FILE), pending.data)
+      // …and only what THIS write carried is discharged: a newer ring that arrived mid-write is
+      // still owed, and the loop takes it next.
+      if (owed === pending) owed = null
+      noteWriteResult(null, pending.now)
+    } catch (err) {
+      if (owed === pending) owed = null
+      noteWriteResult(err, pending.now)
+    }
+  }
+  writing = false
+  if (dropDuringWrite) {
+    dropDuringWrite = false
+    removeRingFiles()
+  }
+}
+
+/**
  * Persist durably (temp file + flush + rename), and STOP TRYING for a while when the disk says no.
  *
  * THE CACHE IS SET FIRST, BEFORE THE GATE IS ASKED, and that order is the entire reason a paused
@@ -145,33 +220,82 @@ export function readRing(): TelemetryRing {
  *
  * `now` is a parameter for the same reason the rest of this app takes one — the pause is a clock
  * decision and a clock decision should be drivable.
+ *
+ * THE GATE IS ASKED AT EXACTLY THE SAME MOMENT IT ALWAYS WAS (JOS-371): synchronously, here, with
+ * this call's `now`, before a byte is touched — the doomed-write storm is skipped without ever
+ * reaching the disk, which is the whole of `ring.ts:149`'s contract and is unchanged. What moved is
+ * only when the ANSWER comes back: `succeeded()`/`failed(now)` now run when the write settles rather
+ * than before this function returns, and `failed` is handed the `now` of the call that started the
+ * write, so the pause it opens is measured from the same instant it always was.
  */
 export function writeRing(next: TelemetryRing, now = Date.now()): void {
   cached = next
   if (!writeGate.ready(now)) return
+  owed = { data: JSON.stringify(next, null, 2), now }
+  if (writing) return
+  writing = true
+  void drainWrites()
+}
+
+/**
+ * THE LAST WRITE THIS PROCESS OWES, ON DISK NOW — the documented quit final, and the reason the
+ * asynchronous writer above is allowed to exist.
+ *
+ * `window-all-closed` records `sessionEnd` into the ring and then quits; an async write scheduled at
+ * that moment is a write the process may never turn the event loop for again, and the last session's
+ * duration would be lost on every single launch. This is the same temp+fsync+rename, synchronously,
+ * for the one instant where "later" does not arrive.
+ *
+ * It writes only what is OWED — a launch whose last write already landed does no I/O at all — and it
+ * respects the gate exactly as the async path does, so a quit on a full disk does not restart the
+ * storm on its way out.
+ *
+ * IT WRITES THROUGH ITS OWN SCRATCH FILE, and that is what makes it safe to run on top of a write
+ * that is still in the threadpool. Sharing one `.tmp` would be two writers filling one scratch file
+ * with one of them renaming mid-fill — a TORN telemetry.json, the exact failure temp+fsync+rename
+ * exists to make impossible. With two scratch paths, whichever rename lands last publishes a
+ * COMPLETE file and the loser's bytes were complete too; at quit the process almost always goes
+ * before the threadpool write returns, so the last record is the one that survives.
+ */
+export function flushRingSync(): void {
+  if (owed === null) return
+  const { data, now } = owed
+  owed = null
+  if (!writeGate.ready(now)) return
   const dir = app.getPath('userData')
+  const path = join(dir, RING_FILE)
   try {
-    writeFileDurable(dir, join(dir, RING_FILE), JSON.stringify(next, null, 2))
-    if (writeGate.succeeded()) {
-      logInfo('[everquest-companion] telemetry.json is writable again; the buffer was persisted')
-    }
+    writeFileDurableFinal(dir, path, data)
+    noteWriteResult(null, now)
   } catch (err) {
-    // THE PAYLOAD IS BYTE-IDENTICAL TO THE ONE 0.18-0.23 FILED, deliberately: the error store's
-    // fingerprint is built from the message and the frames, so keeping this string exact means the
-    // fleet's existing `telemetry.json write failed` families keep aggregating across the fix
-    // instead of splitting in two — and `errorRepeat`'s identical-line cap still recognises the
-    // line. The pause is narrated to the console instead, where a varying number costs nothing.
-    logError('main:telemetryRing', { message: 'telemetry.json write failed', err })
-    const { delayMs } = writeGate.failed(now)
-    logInfo(
-      `[everquest-companion] telemetry.json is unwritable; pausing the buffer's writes for ${Math.round(delayMs / 1000)}s`
-    )
+    noteWriteResult(err, now)
+  }
+}
+
+/** The live file AND the scratch file (JOS-265). A write that failed part-way leaves
+ *  `telemetry.json.tmp` holding up to a full ring of events; deleting only the live file would leave
+ *  those events on disk after "turn it off" — the same lie `dropRing` exists to prevent, in another
+ *  filename. */
+function removeRingFiles(): void {
+  const path = ringPath()
+  try {
+    rmSync(path, { force: true })
+    rmSync(tempPathFor(path), { force: true })
+    rmSync(tempPathFor(path, FINAL_TEMP_TAG), { force: true })
+  } catch (err) {
+    logError('main:telemetryRing', { message: 'telemetry.json delete failed', err })
   }
 }
 
 /**
  * DROP EVERYTHING, now — the buffer AND the file. This is what "turn it off" means, and what a
  * rotation means: a switch that left 500 events sitting on disk would be a switch that lied.
+ *
+ * AND A DROP HAS TO OUTLIVE AN IN-FLIGHT WRITE (JOS-371). A write in the threadpool cannot be
+ * cancelled and its rename may land AFTER these deletes, re-creating the file the switch just
+ * removed — the sync writer could never do that, because a drop could not begin while a write was
+ * running. What is owed is discarded immediately, and a drop that caught a write mid-flight asks
+ * the drain to delete again on its way out.
  */
 export function dropRing(): void {
   cached = emptyRing()
@@ -179,20 +303,15 @@ export function dropRing(): void {
   // a genuinely different situation, so it starts from a clean gate rather than serving out a
   // fifteen-minute wait the user's switch has just made meaningless.
   writeGate.reset()
-  const path = ringPath()
-  try {
-    rmSync(path, { force: true })
-    // AND THE SCRATCH FILE (JOS-265). A write that failed part-way leaves `telemetry.json.tmp`
-    // holding up to a full ring of events. Deleting only the live file would leave those events on
-    // disk after "turn it off" — the same lie this function exists to prevent, in another filename.
-    rmSync(tempPathFor(path), { force: true })
-  } catch (err) {
-    logError('main:telemetryRing', { message: 'telemetry.json delete failed', err })
-  }
+  owed = null
+  if (writing) dropDuringWrite = true
+  removeRingFiles()
 }
 
 /** Test/dev seam: forget the memoized ring so the next read hits disk again. */
 export function resetRingCache(): void {
   cached = null
   writeGate.reset()
+  owed = null
+  dropDuringWrite = false
 }

@@ -33,6 +33,17 @@
 // reach Electron, the DOM or `node:`.
 
 import { percentile, round } from './perf'
+// THE OTHER HALF OF THE SAME BLOCK (JOS-458) — who owned the hitch, beside how bad it was. Its own
+// file because this one is at its factoring ceiling; see its header for the cut.
+import {
+  foldPerfOwner,
+  formatPerfOwner,
+  validatePerfOwner,
+  type FeedbackPerfGc,
+  type FeedbackPerfSeam,
+  type PerfGcSample,
+  type PerfSeamSample
+} from './feedbackPerfSeams'
 import {
   LIVE_PROBE_REPORT_MS,
   LIVE_STALL_FREEZE_MS,
@@ -64,11 +75,18 @@ export const PERF_ROWS = LIVE_TIMELINE_MS / PERF_INTERVAL_MS
  * `MAX_BODY_BYTES` — 32 KB — with the user's 4,000-character description and both attachment
  * metadata blocks.
  *
- * MEASURED (tests/feedbackPerf.test.mts prints the same figures): a quiet window is 5,832 bytes,
- * a busy one 6,192, and a block with every field at the ceilings below is 7,7xx. The grid is
- * FIXED, so the size barely varies — which is the property that makes 8 KB a tripwire rather than
- * a budget: no shape-valid block can exceed it today, and the day someone adds a seventh column
- * the unit test goes red before the 400s do.
+ * MEASURED, and RE-MEASURED at JOS-458 when the two attribution groups joined the block: a quiet
+ * window is 5,833 bytes, one carrying all six seams and a GC reading is 6,289, and a block with
+ * every field at the ceilings below is 8,087. The grid is FIXED, so the size barely varies — which
+ * is the property that makes 8 KB a tripwire rather than a budget: no shape-valid block can exceed
+ * it today, and the day someone adds a seventh column the unit test goes red before the 400s do.
+ *
+ * THE HEADROOM IS NOW 105 BYTES, and that is said out loud because it is the number the NEXT
+ * person needs. The cap was deliberately NOT raised for JOS-458 — a real block is 6,289 and has
+ * nearly two kilobytes to spare, so nothing a user can produce is near it — but the adversarial
+ * ceiling is close enough that the next field added here must re-price this constant rather than
+ * assume it fits. The block shares `MAX_BODY_BYTES` with 4,000 characters of the user's prose, so
+ * raising it is a decision with a second party, not a formality.
  *
  * The client OMITS an oversize block rather than shrinking it (a half-timeline is a wrong answer
  * that looks like a right one), and the validator refuses one, so a forged payload cannot use
@@ -145,6 +163,18 @@ export interface FeedbackPerf {
   rows: FeedbackPerfRow[]
   summary: FeedbackPerfSummary
   state: FeedbackPerfState
+  /**
+   * WHO OWNED THE SLOW MOMENTS (JOS-458), worst first — so `seams[0]` is the culprit and every
+   * reader names the same one. Absent when no instrumented seam was slow enough to record, which
+   * is a FINDING (it clears all six at once) and not "we did not look"; `formatPerfOwner` says so
+   * in words rather than leaving the reader to infer it from an empty key.
+   *
+   * ADDITIVE, on `optionalMeta`'s terms: absent and null are the same answer, so every client
+   * already installed keeps validating.
+   */
+  seams?: FeedbackPerfSeam[]
+  /** …and what V8 spent over the same window. Absent on the same terms. */
+  gc?: FeedbackPerfGc
 }
 
 /** One tail read cycle, as much of it as this fold needs. */
@@ -162,6 +192,11 @@ export interface PerfFoldInput {
   worker: readonly LiveLateSample[]
   tail: readonly PerfTailSample[]
   state: FeedbackPerfState
+  /** The attribution rings (JOS-458). OPTIONAL so every existing caller and every existing test
+   *  compiles unchanged — and so a build with no attribution instrument folds a block that simply
+   *  does not claim an owner, rather than one that claims there was none. */
+  seams?: readonly PerfSeamSample[]
+  gc?: readonly PerfGcSample[]
 }
 
 const zeroRow = (t: number): FeedbackPerfRow => ({
@@ -223,6 +258,13 @@ export function foldFeedbackPerf(input: PerfFoldInput, now: number): FeedbackPer
   }
 
   const late = main.map((s) => whole(s.lateMs, MAX_PERF_MS))
+  // THE OWNER, over the SAME window the rows were cut from — `windowStart` and the two spans are
+  // passed rather than re-derived, so a seam's `t` addresses a row of THIS block and not of a
+  // block computed a millisecond later.
+  const owner = foldPerfOwner(
+    { seams: input.seams ?? [], gc: input.gc ?? [] },
+    { start: windowStart, spanMs: PERF_ROWS * PERF_INTERVAL_MS, rowMs: PERF_INTERVAL_MS }
+  )
   return {
     intervalMs: PERF_INTERVAL_MS,
     rows,
@@ -232,7 +274,8 @@ export function foldFeedbackPerf(input: PerfFoldInput, now: number): FeedbackPer
       coincident: coincidentWindows(main, worker),
       over500: late.filter((ms) => ms >= LIVE_STALL_FREEZE_MS).length
     },
-    state: input.state
+    state: input.state,
+    ...owner
   }
 }
 
@@ -303,13 +346,22 @@ export function perfSparkline(perf: FeedbackPerf): string {
     .join('')
 }
 
-/** The block as the CLI prints it: three lines, no colour, no cleverness. */
+/**
+ * The block as the CLI prints it: four lines, no colour, no cleverness.
+ *
+ * THE OWNER LINE IS LAST BECAUSE IT IS THE CONCLUSION. The three above it establish that something
+ * happened, how bad it was and on what machine; this one says on WHAT — and it is printed even
+ * when a build carried no attribution at all, because a bug report whose owner line is missing
+ * entirely and one whose owner line says nothing reached the threshold are different reports, and
+ * the reader has to be able to tell them apart at a glance.
+ */
 export function formatPerfBlock(perf: FeedbackPerf): string {
   const minutes = Math.round((perf.rows.length * perf.intervalMs) / 60_000)
   return [
     `perf (last ${minutes} min, ${perf.intervalMs / 1000}s rows): ${formatPerfSummary(perf)}`,
     `  machine: ${formatPerfState(perf)}`,
-    `  main late |${perfSparkline(perf)}| oldest→newest, peak ${perf.summary.maxMainMs}ms`
+    `  main late |${perfSparkline(perf)}| oldest→newest, peak ${perf.summary.maxMainMs}ms`,
+    `  owner: ${formatPerfOwner(perf.seams ?? [], perf.gc ?? null)}`
   ].join('\n')
 }
 
@@ -485,12 +537,18 @@ export function validatePerf(raw: unknown): PerfValidated<FeedbackPerf | null> {
   if (!summary.ok) return summary
   const state = validateState(raw.state)
   if (!state.ok) return state
+  // The two JOS-458 groups, each INDEPENDENTLY optional inside an already-optional block — the
+  // additive-field rule applied one level down, exactly as `startupDiscriminators` applies it
+  // inside the startup reading.
+  const owner = validatePerfOwner(raw)
+  if (!owner.ok) return owner
 
   const value: FeedbackPerf = {
     intervalMs: PERF_INTERVAL_MS,
     rows: rows.value,
     summary: summary.value,
-    state: state.value
+    state: state.value,
+    ...owner.value
   }
   const bytes = perfBytes(value)
   if (bytes > MAX_PERF_BYTES)

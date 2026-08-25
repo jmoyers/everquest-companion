@@ -14,7 +14,8 @@
 // every surface. Each member carries which source named it; see shared/spellDetail.ts for the
 // boundary that arrangement is honest about.
 
-import type { SpellDetail, SpellRankMember } from '../../shared/spellDetail'
+import type { SpellDetail, SpellDetailFocus, SpellRankMember } from '../../shared/spellDetail'
+import { bestWornFocus, type WornFocus } from '../../shared/wornFocus'
 import { spellMetricsAt } from '../../shared/spellMetrics'
 import { parseSpellClassLevels, parseSpellRank, spellLineKey } from '../../shared/spellLines'
 import type { SpellResistTable } from '../../shared/resistTypes'
@@ -26,12 +27,14 @@ import { spellEffectClasses } from './spellEffectClass'
 import { normalizeSpellRank } from '../../shared/spellScale'
 import { spellNature, type SpellDb } from './spellDb'
 
-/** The outside witnesses the join consults when the caller has them. Both optional, both default off. */
+/** The outside witnesses the join consults when the caller has them. All optional, all default off. */
 export interface SpellDetailSources {
   /** the parsed `spells_us.txt` table, or null/absent - a FALLBACK inside `spellMetricsAt`. */
   client?: SpellResistTable | null
   /** the mote rank this character has been observed holding for the line (JOS-446). */
   rank?: number
+  /** the focus effects this character's GEAR puts in force (JOS-452). Absent is no gear reading. */
+  focus?: readonly WornFocus[]
 }
 
 /** The record for a name no row of the DB carries. `found: false` is an answer, not an error. */
@@ -195,9 +198,56 @@ function worthFields(
   // reader, so the two lines on the card cannot disagree about anything but the rank. Skipped
   // entirely at base, where the two would be the same numbers printed twice.
   const rank = normalizeSpellRank(sources.rank)
-  if (rank === 0) return { metrics, metricsLevel: level }
-  const atRank = spellMetricsAt({ ...spell, rank }, level, client)
-  return atRank ? { metrics, metricsLevel: level, metricsAtRank: atRank, metricsRank: rank } : { metrics, metricsLevel: level }
+  const out: Partial<SpellDetail> = { metrics, metricsLevel: level }
+  if (rank > 0) {
+    const atRank = spellMetricsAt({ ...spell, rank }, level, client)
+    if (atRank) {
+      out.metricsAtRank = atRank
+      out.metricsRank = rank
+    }
+  }
+  // AND THE SAME READING WITH THE PLAYER'S GEAR ON (JOS-452). A THIRD call, at the rank when there
+  // is one, so the card's last line is always its most complete. Absent when nothing worn qualifies,
+  // and then the card draws no gear block - which is also every reader with no inventory dump.
+  return { ...out, ...focusFields(e, level, { spell, client, rank }, sources.focus ?? []) }
+}
+
+/** The three things the focus reading needs from `worthFields`, bundled for the parameter cap. */
+interface FocusReading {
+  spell: SpellEntry & { hits: number }
+  client: ReturnType<typeof clientHpFor>
+  rank: number
+}
+
+/**
+ * The gear fields, or nothing at all. `level` is the spell's own gain level, which is both the level
+ * the figures are read at and the level `Limit Max Level` is tested against - the same number, and
+ * the same rule `bestSpells.ts rowFocus` applies on the table beside this card.
+ */
+function focusFields(
+  e: SpellEntry,
+  level: number,
+  reading: FocusReading,
+  worn: readonly WornFocus[]
+): Partial<SpellDetail> {
+  if (worn.length === 0) return {}
+  const facts = { name: e.name, level, spellType: e.spellType, durationMs: e.durationMs ?? undefined, targetType: e.targetType }
+  const sources: SpellDetailFocus[] = []
+  const pct: { focusDamagePct?: number; focusHealPct?: number } = {}
+  for (const side of ['damage', 'heal'] as const) {
+    const hit = bestWornFocus(worn, side, facts)
+    if (!hit) continue
+    sources.push({ side, effect: hit.focus.effect, item: hit.focus.item, pct: hit.pct })
+    if (side === 'damage') pct.focusDamagePct = hit.pct
+    else pct.focusHealPct = hit.pct
+  }
+  if (sources.length === 0) return {}
+  const withFocus = spellMetricsAt(
+    { ...reading.spell, ...(reading.rank > 0 ? { rank: reading.rank } : {}), ...pct },
+    level,
+    reading.client
+  )
+  return withFocus ? { metricsWithFocus: withFocus, focusSources: sources } : {}
 }
 
 /**

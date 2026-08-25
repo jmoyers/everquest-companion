@@ -30,6 +30,9 @@ import { itemKey, type ItemDbFile } from '../itemsDb'
 // The COMMITTED wiki item database — the same module itemLookup.ts imports, so the JSON is
 // inlined into the main bundle exactly once.
 import itemsJson from '../data/items.json'
+// JOS-452 — the worn-focus resolution, memoized on the dump's identity in its own module because
+// the spell card's handler reads the same answer (src/main/planner/wornFocusCurrent.ts says why).
+import { currentWornFocus } from '../planner/wornFocusCurrent'
 
 let index: PlannerIndex | null = null
 let gear: GearIndexPayload | null = null
@@ -115,12 +118,17 @@ export function registerPlannerIpc(): void {
     const character = getActiveCharacter()
     const loaded = loadInventoryDump(character?.name, character?.server)
     if (!loaded) return null
+    // JOS-452 — the focus effects this gear puts in force. Written only when there is something to
+    // say, the `waves`/`aeMaxTargets` rule (levelUnlocks.ts): an empty list is bytes claiming
+    // nothing.
+    const focus = currentWornFocus()
     return {
       path: loaded.path,
       loadedAt: loaded.loadedAt,
       // `itemKey` is applied HERE and not in the shared join: the key is main's definition
       // (itemsDb.ts, law 2) and shared/planner/inventorySlots.ts must stay dependency-free.
-      hosts: equippedHosts(loaded.dump).map((h) => ({ ...h, key: itemKey(h.name) }))
+      hosts: equippedHosts(loaded.dump).map((h) => ({ ...h, key: itemKey(h.name) })),
+      ...(focus.length > 0 ? { focus } : {})
     }
   })
 

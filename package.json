@@ -27,6 +27,7 @@
     "gen:message-overlay": "tsx scripts/gen-message-overlay.ts",
     "gen:resist-baseline": "tsx scripts/gen-resist-baseline.ts",
     "gen:spell-lines": "tsx scripts/gen-spell-lines.ts",
+    "gen:data-weight": "node --expose-gc --import tsx scripts/gen-data-weight.mts",
     "gen:telemetry-doc": "tsx scripts/gen-telemetry-doc.mts",
     "dev:stack": "tsx scripts/dev-feedback-server.mts",
     "fixtures:buffs": "node --import tsx tests/extract-fixtures.mjs",

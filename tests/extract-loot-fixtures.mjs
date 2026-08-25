@@ -69,3 +69,21 @@ slice(1315000, 1315060, 'w33-destroy.log')
 // stack, two singles and one auto-sold (never held) followed by two destroys, so the stack size
 // rule and the subtraction meet on one counting key inside one zone.
 slice(1608330, 1608460, 'w34-destroy-stacks.log')
+// W47 THE AUTO-SELL / AUTO-MERGE PATCH ERA (JOS-453): the Aug 23 15:06–15:27 Plane of Hate
+// session the owner reported. Every window above was cut from JULY / early-August spans where a
+// looted item rarely carried a ` +N`; the 2026-08-18 patch made `+N` drops routine, and this
+// window is the loot family AS IT PRINTS NOW, on one evening's real bytes:
+//   · auto-SELL of a `+N` drop — `Ethereal Mist Gauntlets +4 … and sold it for free.` and
+//     `Shadow Rage Sleeves +4 … for free.` The item came off a corpse and was GONE the same
+//     instant: the case that decides what the gear-ownership census may claim (see
+//     shared/lootDisposition.ts `isKept`).
+//   · auto-MERGE with NO TIER BUMP — `Ethereal Mist Greaves +4 … to create an Ethereal Mist
+//     Greaves +4`. The census below found 106 of these; every earlier fixture's combine lines
+//     climb, so no committed window pinned the equal case before this one.
+//   · auto-MERGE from a TIERLESS looted copy — `Lustrous Russet Vambraces … to create a Lustrous
+//     Russet Vambraces +6` (twice, and `Shadow Rage Wristguard`/`Shrieking Ahlspiess` beside it):
+//     the created name is the ONLY tier statement on the line, which is what itemTiers folds.
+//   · the ordinary climb (`Indicolite Bracer +4 → +6`, `Valorium Vambraces +1 → +5`), a STACKED
+//     auto-sell (`2 Crystallized Sulfur`), dashed keeps (Ruby, Diamond, a Mote) and a mid-window
+//     zone change into `The Plane of Hate 4 (Refined)` so the zone tag is exercised too.
+slice(2465019, 2469700, 'w47-autosell-patch.log')
