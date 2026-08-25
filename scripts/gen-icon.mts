@@ -157,51 +157,55 @@ function encodePng(cv: Canvas): Buffer {
 }
 
 /** Draw the 256x256 master icon. */
-function drawMaster(): Canvas {
-  const S = 256
+function drawMaster(S: number): Canvas {
   const cv = new Canvas(S, S)
   cv.fill(BG)
+  const scale = S / 256
+
   // Rounded inner panel with a subtle border.
-  cv.roundRect({ x0: 16, y0: 16, x1: S - 16, y1: S - 16 }, 40, [58, 48, 26, 255]) // gold-ish border
-  cv.roundRect({ x0: 20, y0: 20, x1: S - 20, y1: S - 20 }, 36, PANEL)
+  const r1 = Math.round(40 * scale)
+  const r2 = Math.round(36 * scale)
+  cv.roundRect({ x0: Math.round(16 * scale), y0: Math.round(16 * scale), x1: S - Math.round(16 * scale), y1: S - Math.round(16 * scale) }, r1, [58, 48, 26, 255]) // gold-ish border
+  cv.roundRect({ x0: Math.round(20 * scale), y0: Math.round(20 * scale), x1: S - Math.round(20 * scale), y1: S - Math.round(20 * scale) }, r2, PANEL)
 
   // "EQC" glyph (was "EQ" — the two-letter mark read as plain "EverQuest", which is
   // exactly the confusion the app must not invite; EQC is the app's own identity).
   // Three narrower letterforms sharing the E/Q language: gold with highlight accents.
-  const strokeW = 12
+  const strokeW = Math.round(12 * scale)
   // One shared cap height (72px) for all three letters — the first draft kept the old
   // 100px E beside 64px rings and read as "Eqc".
-  const top = 88
-  const bot = 168
+  const top = Math.round(88 * scale)
+  const bot = Math.round(168 * scale)
   const midY = (top + bot) / 2 // 128
 
   // --- E ---
-  const eX = 28
-  const eW = 44
+  const eX = Math.round(28 * scale)
+  const eW = Math.round(44 * scale)
   cv.rect({ x0: eX, y0: top, x1: eX + strokeW, y1: bot }, GOLD) // vertical spine
   cv.rect({ x0: eX, y0: top, x1: eX + eW, y1: top + strokeW }, GOLD) // top bar
-  cv.rect({ x0: eX, y0: midY - strokeW / 2, x1: eX + eW - 7, y1: midY + strokeW / 2 }, GOLD) // mid bar
+  cv.rect({ x0: eX, y0: Math.round((midY - 6) * scale), x1: eX + eW - Math.round(7 * scale), y1: Math.round((midY + 6) * scale) }, GOLD) // mid bar
   cv.rect({ x0: eX, y0: bot - strokeW, x1: eX + eW, y1: bot }, GOLD) // bottom bar
-  cv.rect({ x0: eX, y0: top, x1: eX + 4, y1: bot }, GOLD_HI) // highlight along the spine
+  cv.rect({ x0: eX, y0: top, x1: eX + Math.round(4 * scale), y1: bot }, GOLD_HI) // highlight along the spine
 
   // --- Q ---
-  const qcx = 120
-  const qR = 40
+  const qcx = Math.round(120 * scale)
+  const qR = Math.round(40 * scale)
   cv.disc(qcx, midY, { outer: qR, inner: qR - strokeW }, GOLD) // ring
-  cv.disc(qcx, midY, { outer: qR, inner: qR - 4 }, GOLD_HI) // thin bright outer edge
-  cv.disc(qcx, midY, { outer: qR - strokeW + 4, inner: qR - strokeW }, [58, 48, 26, 255]) // inner shadow edge
+  cv.disc(qcx, midY, { outer: qR, inner: qR - Math.round(4 * scale) }, GOLD_HI) // thin bright outer edge
+  cv.disc(qcx, midY, { outer: qR - strokeW + Math.round(4 * scale), inner: qR - strokeW }, [58, 48, 26, 255]) // inner shadow edge
   // Q tail (short diagonal, sized to stop before the C's ring)
-  for (let t = 0; t < 14; t++) {
-    cv.rect({ x0: qcx + 14 + t, y0: midY + 14 + t, x1: qcx + 14 + t + strokeW, y1: midY + 14 + t + strokeW }, GOLD)
+  const q_tail_steps = Math.round(14 * scale)
+  for (let t = 0; t < q_tail_steps; t++) {
+    cv.rect({ x0: qcx + Math.round(14 * scale) + t, y0: midY + Math.round(14 * scale) + t, x1: qcx + Math.round(14 * scale) + t + strokeW, y1: midY + Math.round(14 * scale) + t + strokeW }, GOLD)
   }
 
   // --- C --- (the Q's ring with its right side opened — erased back to panel color)
-  const ccx = 200
-  const cR = 40
+  const ccx = Math.round(200 * scale)
+  const cR = Math.round(40 * scale)
   cv.disc(ccx, midY, { outer: cR, inner: cR - strokeW }, GOLD)
-  cv.disc(ccx, midY, { outer: cR, inner: cR - 4 }, GOLD_HI)
-  cv.disc(ccx, midY, { outer: cR - strokeW + 4, inner: cR - strokeW }, [58, 48, 26, 255])
-  cv.rect({ x0: ccx + 12, y0: midY - 14, x1: ccx + cR + 2, y1: midY + 14 }, PANEL) // the C's opening
+  cv.disc(ccx, midY, { outer: cR, inner: cR - Math.round(4 * scale) }, GOLD_HI)
+  cv.disc(ccx, midY, { outer: cR - strokeW + Math.round(4 * scale), inner: cR - strokeW }, [58, 48, 26, 255])
+  cv.rect({ x0: ccx + Math.round(12 * scale), y0: midY - Math.round(14 * scale), x1: ccx + cR + Math.round(2 * scale), y1: midY + Math.round(14 * scale) }, PANEL) // the C's opening
   return cv
 }
 
@@ -236,17 +240,19 @@ const here = dirname(fileURLToPath(import.meta.url))
 const outDir = join(here, '..', 'build')
 mkdirSync(outDir, { recursive: true })
 
-const master = drawMaster()
-const masterPng = encodePng(master)
-writeFileSync(join(outDir, 'icon.png'), masterPng)
+// macOS requires a 512x512 png source icon for packaging.
+const master512 = drawMaster(512)
+const masterPng512 = encodePng(master512)
+writeFileSync(join(outDir, 'icon.png'), masterPng512)
 
+const master256 = drawMaster(256)
 const sizes = [256, 128, 64, 48, 32, 16]
 const frames = sizes.map((size) => ({
   size,
-  png: encodePng(size === 256 ? master : master.scaleTo(size, size))
+  png: encodePng(size === 256 ? master256 : master256.scaleTo(size, size))
 }))
 const ico = buildIco(frames)
 writeFileSync(join(outDir, 'icon.ico'), ico)
 
-console.log(`wrote build/icon.png (${masterPng.length} bytes, 256x256)`)
+console.log(`wrote build/icon.png (${masterPng512.length} bytes, 512x512)`)
 console.log(`wrote build/icon.ico (${ico.length} bytes, frames: ${sizes.join('/')})`)
