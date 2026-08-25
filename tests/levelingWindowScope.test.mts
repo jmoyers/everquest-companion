@@ -249,13 +249,59 @@ test('a committed selection WINS over the window, and clearing it falls straight
 
   const narrowed = scopedStats({ snap, win, bounds: { lo, hi }, id: 'h24', selection: sel })
   assert.equal(narrowed.kind, 'selection')
-  assert.deepEqual(narrowed.range, sel, 'the selection is the range verbatim — never re-clamped to the record')
+  // The drag sits well inside the record, so the JOS-454 clamp is a no-op on it and the range IS
+  // the gesture. (This assertion used to read "never re-clamped to the record" — see the test
+  // below for the case that overturned the words while leaving this one's numbers alone.)
+  assert.deepEqual(narrowed.range, sel, 'a drag inside the record is the range verbatim')
   assert.deepEqual(narrowed.stats, rangeStats({ snap, range: sel }), 'and it is the SAME derivation, not a second one')
 
   const fallback = scopedStats({ snap, win, bounds: { lo, hi }, id: 'h24', selection: null })
   assert.equal(fallback.kind, 'window')
   assert.deepEqual(fallback.stats, rangeStats({ snap, range: statsRangeFor(win, { lo, hi }) }))
   assert.notDeepEqual(fallback.stats, narrowed.stats, 'the two scopes really are different readings')
+})
+
+// JOS-454. A drag to the right edge of the chart lands in the TRAILING GUTTER — every scale
+// carries one (`chartWindow.TRAILING_FRAC`, 4% of the span) so the current level reads as a
+// plateau instead of a bare endpoint. Rule 2 clamps a WINDOW back to the record for exactly that
+// reason; rule 3 used to hand a SELECTION through untouched, and the two rules were in conflict
+// about the same milliseconds. The owner's report is what the conflict costs: a selection ending
+// 15:29:55 over a record that stopped at 15:20:27 handed 9m28s of manufactured silence to the
+// numbers — and because `zoneSegments` closes a still-OPEN zone visit at the end of the RANGE,
+// under a zone slice all of it was booked as time standing in that zone.
+test('a drag into the trailing gutter is CLAMPED to the record, exactly as a window is', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const win = windowFor(lo, hi, 'full')
+  // The drawn window's right edge, which is what the user can actually drag to.
+  assert.ok(win.t1 > hi, 'the drawn window really does run past the newest event')
+  const gutter = { t0: hi - HOUR, t1: win.t1 }
+
+  const scope = scopedStats({ snap, win, bounds: { lo, hi }, id: 'full', selection: gutter })
+  assert.equal(scope.kind, 'selection', 'it is still the drag that is in force')
+  assert.equal(scope.range.t0, gutter.t0, 'the left edge is inside the record and is untouched')
+  assert.equal(scope.range.t1, hi + 1, 'the right edge stops one millisecond past the newest event')
+  assert.deepEqual(
+    scope.stats,
+    rangeStats({ snap, range: { t0: gutter.t0, t1: hi + 1 } }),
+    'and the numbers are the clamped range — still ONE derivation'
+  )
+  // THE MEASUREMENT THE CLAMP EXISTS FOR: the unclamped read is longer by the whole gutter, and
+  // every millisecond of the difference is silence the log never recorded.
+  const unclamped = rangeStats({ snap, range: gutter })
+  assert.equal(unclamped.durationMs - scope.stats.durationMs, win.t1 - (hi + 1))
+  assert.equal(unclamped.kills, scope.stats.kills, 'the gutter holds no events — it can only add idle')
+  assert.ok(unclamped.idleMs > scope.stats.idleMs)
+})
+
+test('a drag that lies ENTIRELY past the record measures nothing, and says so', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const win = windowFor(lo, hi, 'full')
+  // Possible with a real pointer: the gutter is drawable, so a short drag can sit wholly inside
+  // it. Honest answer is an empty range — never a slab of invented time.
+  const scope = scopedStats({ snap, win, bounds: { lo, hi }, id: 'full', selection: { t0: hi + 5, t1: win.t1 } })
+  assert.equal(scope.range.t0, scope.range.t1, 'clamped to a zero-length range rather than inverted')
+  assert.equal(scope.stats.durationMs, 0)
+  assert.equal(scope.stats.kills, 0)
 })
 
 test('every scope says WHICH stretch it covers, in one spelling per scope', () => {
@@ -331,6 +377,47 @@ test('a drag narrows TIME and keeps the zone — and the wording says both', () 
   assert.equal(scope.zoneKey, 'lower guk', 'the zone survives the drag — it is the other dimension')
   assert.equal(scope.label, `${SELECTION_LABEL} in Lower Guk`)
   assert.deepEqual(scope.stats, rangeStats({ snap, range: sel, zoneKey: 'lower guk' }))
+})
+
+// JOS-454, the wording half. The zone survived the drag; the MEMBERSHIP clause did not. A slice
+// states its zone half as `Befallen 2 (Adaptive), this tier only` (`timeslice.zoneCaption`) and a
+// drag replaced that whole sentence with its own, keeping the zone's raw name and dropping the
+// clause — so under `exactTier` the numbers admitted one spelling of a camp while nothing on the
+// tab said a tier was in force at all. The clause is the half that decides whether an hour of
+// play counts, which makes it the half a caption may not lose.
+test('a drag keeps the MEMBERSHIP clause too, not just the zone name', () => {
+  const { snap, lo, hi } = twoDaySnap()
+  const sel = { t0: T0 + DAY + 30 * MIN, t1: T0 + DAY + 90 * MIN }
+  const args = {
+    snap,
+    win: windowFor(lo, hi, 'full'),
+    bounds: { lo, hi },
+    id: 'full' as const,
+    zoneKey: 'lower guk',
+    zoneName: 'Lower Guk',
+    zoneCaption: 'Lower Guk 2 (Adaptive), this tier only',
+    label: 'Lower Guk 2 (Adaptive), this tier only'
+  }
+  const dragged = scopedStats({ ...args, selection: sel })
+  assert.equal(dragged.zoneCaption, 'Lower Guk 2 (Adaptive), this tier only', 'it rides on the scope')
+  assert.equal(dragged.label, `${SELECTION_LABEL} in Lower Guk 2 (Adaptive), this tier only`)
+
+  // The window under the same slice says the same thing in the slice's own words — one membership,
+  // two scopes, never two answers.
+  const windowed = scopedStats({ ...args, selection: null })
+  assert.equal(windowed.zoneCaption, 'Lower Guk 2 (Adaptive), this tier only')
+  assert.equal(windowed.label, 'Lower Guk 2 (Adaptive), this tier only')
+
+  // A caller with no slice (there are still some) falls back to the raw name, which is what this
+  // function did before the field existed.
+  const bare = scopedStats({ ...args, zoneCaption: undefined, selection: sel })
+  assert.equal(bare.zoneCaption, 'Lower Guk')
+  assert.equal(bare.label, `${SELECTION_LABEL} in Lower Guk`)
+
+  // …and an unrestricted scope has no clause to state, rather than an empty one.
+  const open = scopedStats({ snap, win: windowFor(lo, hi, 'full'), bounds: { lo, hi }, id: 'full', selection: sel })
+  assert.equal(open.zoneCaption, null)
+  assert.equal(open.label, SELECTION_LABEL)
 })
 
 test('omitting all three new inputs is EXACTLY the JOS-71 scope', () => {

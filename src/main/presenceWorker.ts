@@ -27,6 +27,12 @@
 //   * EVERY `foregroundEveryTicks` TICKS (~150 ms): the foreground window, with its image path
 //     memoized per pid.
 //   * EVERY `runningPollMs` (5 s): the process scan, and the heartbeat.
+//   * EVERY `hoverEveryTicks` TICKS (~32 ms), AND ONLY WHILE MAIN HAS HANDED IT A RECTANGLE
+//     (JOS-370): the hot-zone hit test that replaced the WH_MOUSE_LL mouse hook. It shares the
+//     cursor read above rather than making its own — one `GetCursorInfo` per tick answers both —
+//     and it says something only when a key's answer CHANGES, like every other line here. With no
+//     zones held there is no hit-test block in the loop at all and the clock goes back to whatever
+//     main asked for at start, so a session with no pinned overlay pays nothing for any of it.
 //
 // Every line is printed ONLY when it differs from the last one of its kind — except the
 // heartbeat, which is unconditional and is the only thing separating a healthy idle watcher from
@@ -39,8 +45,21 @@
 // about every process on it. The two things it will not paper over are stated at the bottom.
 
 import { parentPort, workerData } from 'node:worker_threads'
-import { loadPresenceNative, type ForegroundWindow, type PresenceNative } from './presenceNative'
-import { WATCHER_STOP_MESSAGE, type PresenceWorkerInit } from './presenceProtocol'
+import {
+  loadPresenceNative,
+  type ForegroundWindow,
+  type MutablePoint,
+  type PresenceNative
+} from './presenceNative'
+import {
+  WATCHER_STOP_MESSAGE,
+  encodeHoverTransition,
+  parseHoverZones,
+  pointInHoverZone,
+  watcherCadence,
+  type HoverZone,
+  type PresenceWorkerInit
+} from './presenceProtocol'
 
 const init = workerData as PresenceWorkerInit
 const port = parentPort
@@ -60,6 +79,80 @@ function say(line: string): void {
   port?.postMessage(line)
 }
 
+/**
+ * THE HOT-ZONE HIT TEST (JOS-370), as a closure of its own so the loop below stays readable.
+ *
+ * It is the whole of what replaced the WH_MOUSE_LL mouse hook: main publishes the rectangles a
+ * pinned overlay still wants the mouse in, this holds them, and one cursor point per sample decides
+ * whether each key's answer moved. It owns no timer — the loop calls it — and it says something
+ * only on an EDGE, like every other block in this file.
+ */
+function makeHover(): {
+  /** The cursor, written by the loop's ONE read per tick and shared with the ring's own block. */
+  readonly point: MutablePoint
+  /** Is anything being watched at all? False means there is no hit test in the loop. */
+  active: () => boolean
+  /** One sample against every held rectangle. */
+  test: (showing: boolean) => void
+  /** Apply one downstream line; true when the on/off state changed and the clock must be re-armed. */
+  apply: (line: string) => boolean
+} {
+  /** key -> the rectangles main wants watched, in physical px. EMPTY is the whole off switch. */
+  const zones = new Map<string, HoverZone[]>()
+  /** key -> what main was last told. Only a CHANGE crosses the wire. */
+  const insideNow = new Map<string, boolean>()
+  const point: MutablePoint = { x: Number.NaN, y: Number.NaN }
+
+  function setInside(key: string, inside: boolean): void {
+    if (insideNow.get(key) === inside) return
+    insideNow.set(key, inside)
+    say(encodeHoverTransition(key, inside))
+  }
+
+  /**
+   * A HIDDEN CURSOR IS NOT A CURSOR OVER ANYTHING, and that is `cursorRingActive`'s rule arriving
+   * one feature over. EverQuest hides the pointer for the duration of mouselook and re-centers it
+   * every frame underneath — so a locked meter sitting anywhere near the middle of the screen would
+   * otherwise take the mouse for the whole of a camera turn and stop being click-through at exactly
+   * the wrong moment. Hidden reads as OUTSIDE every zone, which releases the capture.
+   *
+   * A cursor that could not be READ at all is the other case and gets the opposite answer: nothing
+   * is said and every key keeps what it had (pointerWatch.ts's rule — an unreadable cursor is not a
+   * cursor that left).
+   */
+  function test(showing: boolean): void {
+    if (!Number.isFinite(point.x)) return
+    for (const [key, rects] of zones) {
+      setInside(key, showing && rects.some((z) => pointInHoverZone(point.x, point.y, z)))
+    }
+  }
+
+  /**
+   * A KEY THAT STOPS BEING WATCHED WHILE THE CURSOR IS INSIDE IT GETS ITS LEAVE. Main clears a
+   * key's zones when its overlay unlocks, closes or parks — and in each of those main re-applies
+   * the window's own mouse mode anyway, so the line is redundant there. It is sent regardless,
+   * because the one case it is NOT redundant in is the one that would be invisible: a key whose
+   * zones simply went away leaves main holding a capture nothing left in this loop will ever end.
+   */
+  function apply(line: string): boolean {
+    const update = parseHoverZones(line)
+    if (!update) return false
+    const had = zones.size > 0
+    for (const key of update.key === null ? [...zones.keys()] : [update.key]) {
+      if (update.key !== null && update.zones.length > 0) {
+        zones.set(key, update.zones)
+        continue
+      }
+      zones.delete(key)
+      if (insideNow.get(key) === true) setInside(key, false)
+      insideNow.delete(key)
+    }
+    return had !== (zones.size > 0)
+  }
+
+  return { point, active: () => zones.size > 0, test, apply }
+}
+
 /** The whole loop, once the surface is known to work. */
 function run(native: PresenceNative): void {
   const { eqRootWithSep, runningPollMs, tickMs, foregroundEveryTicks, watchCursor } = init
@@ -72,6 +165,11 @@ function run(native: PresenceNative): void {
   let fgCountdown = 0
   let faults = 0
   let timer: NodeJS.Timeout | null = null
+
+  /** The hot-zone hit test (JOS-370) — see `makeHover`. Inert until main sends a rectangle. */
+  const hover = makeHover()
+  let hoverEveryTicks = 0
+  let hoverCountdown = 0
 
   /** No foreground window at all (a locked session, a switch in flight) reads as pid 0 with an
    *  empty rectangle rather than being withheld: `isEqWindow` declines that, which is the right
@@ -133,8 +231,8 @@ function run(native: PresenceNative): void {
    * app is not in the cursor's message flow, and a tool like Yolomouse has nothing to share it
    * with. `presence.ts` replaces the whole thread when the setting moves.
    */
-  function cursorBlock(): void {
-    const cur = native.cursorShowing() ? 1 : 0
+  function cursorBlock(showing: boolean): void {
+    const cur = showing ? 1 : 0
     if (cur === lastCur) return
     lastCur = cur
     say(`C|${String(cur)}`)
@@ -142,7 +240,18 @@ function run(native: PresenceNative): void {
 
   function tick(): void {
     try {
-      if (watchCursor) cursorBlock()
+      // ONE cursor read per tick, whoever wants it. The hit test rides the ring's `GetCursorInfo`
+      // when the ring is on, and makes the same single call itself when it is not.
+      const hoverOn = hoverEveryTicks > 0 && hover.active()
+      const showing = watchCursor || hoverOn ? native.cursorShowing(hover.point) : true
+      if (watchCursor) cursorBlock(showing)
+      if (hoverOn) {
+        hoverCountdown -= 1
+        if (hoverCountdown <= 0) {
+          hoverCountdown = hoverEveryTicks
+          hover.test(showing)
+        }
+      }
       fgCountdown -= 1
       if (fgCountdown <= 0) {
         fgCountdown = foregroundEveryTicks
@@ -167,6 +276,29 @@ function run(native: PresenceNative): void {
     }
   }
 
+  /**
+   * (Re-)arm the loop for what it is currently watching.
+   *
+   * WITH NO ZONES THE CLOCK IS EXACTLY WHAT MAIN ASKED FOR AT START, untouched — `init` stays
+   * authoritative, so a caller (a test, a future setting) that hands this thread a cadence keeps
+   * it. With zones it is `watcherCadence(watchCursor, true)`, which is the same clock when the ring
+   * is on and the middle rung when it is not (presenceProtocol.ts states both, and their costs).
+   *
+   * IT IS AN EDGE, NOT A PER-MESSAGE CALL. Zone rectangles are re-published whenever an overlay
+   * locks, opens, parks or the game takes the foreground, and tearing down a timer for each of
+   * those would be churn for a clock that did not change — so only the on/off transition re-arms.
+   */
+  function arm(): void {
+    const c = hover.active() ? watcherCadence(watchCursor, true) : null
+    hoverEveryTicks = c?.hoverEveryTicks ?? 0
+    hoverCountdown = 0
+    // The foreground block runs on the next tick whatever the clock just became. It is
+    // change-driven, so an extra look costs one `GetForegroundWindow` and says nothing.
+    fgCountdown = 0
+    if (timer) clearInterval(timer)
+    timer = setInterval(tick, c?.tickMs ?? tickMs)
+  }
+
   timer = setInterval(tick, tickMs)
 
   // THE DELIBERATE STOP (see `WATCHER_STOP_MESSAGE` for the crash that made this a message rather
@@ -174,11 +306,18 @@ function run(native: PresenceNative): void {
   // BETWEEN ticks and never inside a native call — that is the entire safety property. Clearing
   // the interval and closing the port leaves nothing holding the thread, so it ends at 0 on its
   // own. No exit line: a stop main asked for is not a failure and needs no explanation.
+  //
+  // …AND IT IS NOW ALSO THE DOWNSTREAM DOOR (JOS-370). Every other message on this port is a
+  // hot-zone line, decoded by the same rules the upstream codec keeps: a message that is not a
+  // string, or a string that is not a well-formed record, moves nothing at all.
   port?.on('message', (msg: unknown) => {
-    if (msg !== WATCHER_STOP_MESSAGE) return
-    if (timer) clearInterval(timer)
-    timer = null
-    port.close()
+    if (msg === WATCHER_STOP_MESSAGE) {
+      if (timer) clearInterval(timer)
+      timer = null
+      port.close()
+      return
+    }
+    if (typeof msg === 'string' && hover.apply(msg)) arm()
   })
 }
 

@@ -33,6 +33,8 @@ import type { EqModule, ModuleDelta } from './types'
 import type { LogBus, LogEventListener } from '../log/bus'
 // A leaf with no imports of its own (see its header), so this cannot participate in a cycle.
 import { noteReplaying } from '../telemetry/breadcrumbs'
+// Likewise a leaf (`perfAttribution.ts`'s header states the rule it keeps for exactly this import).
+import { timeSeam } from '../perfAttribution'
 
 const FLUSH_THROTTLE_MS = 100
 
@@ -215,13 +217,23 @@ export class ModuleRegistry {
     this.doFlush()
   }
 
-  /** Flush every module now (used to push a character-switch immediately). */
+  /**
+   * Flush every module now (used to push a character-switch immediately).
+   *
+   * A TIMED SEAM (JOS-458): this is every module folding its pending delta at once, on the loop,
+   * because an out-of-band write asked it to — the shape of work that can hold main for the
+   * hundreds of milliseconds two field reports describe. The THROTTLED path (`scheduleFlush` →
+   * `doFlush`) is deliberately not timed: it is the steady state, it is already bounded by
+   * `FLUSH_THROTTLE_MS`, and timing it would fill the seam ring with the app behaving normally.
+   */
   flushNow(): void {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer)
       this.flushTimer = null
     }
-    this.doFlush()
+    timeSeam('registryFlush', () => {
+      this.doFlush()
+    })
   }
 
   private scheduleFlush(): void {

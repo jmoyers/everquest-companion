@@ -75,6 +75,11 @@ import { stepPinnedScroll } from './overlayScrollSteps.mjs'
 // …and JOS-381's: the capture that has to end itself when the cursor walks off under the alt-tab
 // switcher, plus the timer that may only exist while it is held.
 import { stepPointerWatch } from './overlayPointerWatchSteps.mjs'
+// …and JOS-370's: the pin reveal WITHOUT a system-wide mouse hook. The rectangles, the codec and
+// the cadence are pure and unit-pinned; what only the real app can show is that a hit-test edge
+// reported to main opens the window's mouse mode and reaches the renderer, so the pin appears with
+// no mouse event of any kind dispatched into the page.
+import { stepHoverZones } from './overlayHoverZoneSteps.mjs'
 // THE FLOOR A WINDOW CAN BE DRAGGED DOWN TO (JOS-278) — its own module, beside the other steps,
 // because the claim is about the window rather than about this spec's subject.
 import { stepMinimumSize } from './overlayMinSizeSteps.mjs'
@@ -667,6 +672,7 @@ async function main(): Promise<void> {
     await stepLockedSelector(ov)
     await stepPinnedScroll(app, ov, setLocked)
     await stepPointerWatch(app, ov, setLocked)
+    await stepHoverZones(app, ov, setLocked)
     await stepOverlayScope(page, ov, setLocked)
     // Unlocked is a precondition of the measurement (a locked window has no drag region at all),
     // and stepOverlayScope leaves it that way.

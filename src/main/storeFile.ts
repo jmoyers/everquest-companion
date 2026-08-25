@@ -21,6 +21,30 @@
 // pristine copy). At most one small file per schema version the machine has ever held: cheap
 // insurance for a promise that has to hold forever, and since JOS-272 a recovery source as well.
 //
+// AND EVERY WRITE HERE IS STILL SYNCHRONOUS, ON PURPOSE (JOS-371 — read this before "fixing" it).
+//
+// That ticket set out to move this module's writes off the main thread on the premise that the
+// settings store writes synchronously "on every settings change". IT DOES NOT, and the premise was
+// overturned by reading the tree rather than by argument:
+//
+//   * THIS MODULE RUNS EXACTLY ONCE PER LAUNCH, at module scope, from `store.ts:88` — BEFORE
+//     `new Store()` exists and therefore before any reader can see a pre-migration shape (the
+//     settings-migration law in AGENTS.md). It is finished long before `dataLoaded`, let alone
+//     `replayDone`, so nothing it does is on a live path at all. Making it asynchronous would mean
+//     making the whole store's construction asynchronous — every accessor module, every module-scope
+//     read of it — to relocate a stall that happens while there is no window to stall.
+//   * A ROUTINE SETTINGS WRITE NEVER COMES THROUGH HERE. `store.set(...)` is electron-store's, and
+//     conf has gone through the `atomically` package (temp + fsync + rename) since v10 — the note
+//     below already says so. That writer is `atomically.writeFileSync` inside `node_modules/conf`,
+//     which is not something this repo can move off the thread by editing its own source; it would
+//     take a debounced write-behind layer in front of `store.set`, which is a design change with
+//     its own durability argument and its own ticket, not a mechanical async conversion.
+//
+// So the sync calls below stay, and this paragraph is why. What JOS-371 DID move off the thread is
+// every OTHER durable write this app makes while it is running: the telemetry ring (5 min), the
+// learned message overlay (60 s) and the resist ledger (its module's tick). All three go through
+// `writeFileDurableAsync` now, and each keeps one documented synchronous final for quit.
+//
 // EVERY WRITE HERE IS ATOMIC (JOS-272), and it was not. A bare `writeFileSync` onto `<name>.json`
 // was the ONE non-atomic write to the settings file anywhere in this app: electron-store's own
 // `set` has gone through `atomically` (temp + fsync + rename) since conf 10, which is worth

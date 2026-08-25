@@ -128,6 +128,8 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { MAIN_ENTRY, ROOT, buildIfStale, electronBinary, sleep } from '../e2e/appHarness.mjs'
+// The e2e suite's own "which of these pages is the main window" answer — see the call site.
+import { mainWindow } from '../e2e/appWindow.mjs'
 import { printAttribution, runAttribution, type AttributionRun } from './attribution.mjs'
 import { discoverEqRoot, fixedDrives, registryInstallCandidates, rootHasLogs } from '../../src/main/log/discovery'
 import { REPLAY_DUTY } from '../../src/main/log/replaySlicer'
@@ -137,6 +139,7 @@ import {
   type ReplayDutyStats,
   type StartupProfile
 } from '../../src/shared/perf'
+import { formatDataWeight } from '../../src/shared/dataWeight'
 
 // ------------------------------------------------------------------------------- the budgets
 
@@ -146,6 +149,49 @@ import {
  * FAILED here, loudly and on purpose; that failure is the whole reason the change exists.
  */
 const MAX_BLOCK_MS_BUDGET = 50
+
+// ------------------------------------------------------- the post-fold window (JOS-458, goal G2)
+//
+// G2 IS ABOUT A WINDOW THIS BENCH DID NOT USED TO REACH. Every number above stops at `replayDone`,
+// and the two field reports this ticket exists for describe stalls of 250-1186 ms in the minute
+// AFTER it — while the renderer hydrates, every module is snapshotted, the dumps are read and the
+// world-rebuild fan-out fires. So the bench now keeps watching past the profile.
+//
+// HOW, and it is deliberately through EXISTING PRODUCT SURFACE rather than a bench-only channel:
+// the perf HUD's own switch (`window.eq.setPerfHudEnabled`) starts main's 500 ms event-loop lag
+// probe and pushes a `PerfSample` every 2 s, whose `lag.maxMs` is the worst single stall inside
+// that 2 s. A stall of 250 ms cannot hide from a 500 ms self-timing probe. Adding an IPC channel
+// for a test would be product surface a user pays for and never sees.
+//
+// ============================ WHAT THIS NUMBER IS NOT ============================
+// THE HARNESS CANNOT MEASURE G2, and the output says so rather than printing a figure dressed as
+// one. Two honest gaps, both structural:
+//
+//   1. NO WINDOW IS EVER SHOWN. `EQ_E2E=1` is the whole test mode (src/main/e2e.ts) and it never
+//      shows a window, so the renderer NEVER COMPOSITES. A real session's post-fold minute
+//      includes layout, paint and the GPU process doing work this run does not do — and hydration
+//      that races a paint is not hydration that races nothing.
+//   2. NOBODY IS PLAYING. A real post-fold minute has a live tail appending, alerts evaluating and
+//      a person clicking between tabs, each of which asks for snapshots this run never asks for.
+//
+// Both gaps make the harness's number a FLOOR: what it measures is real, and a real session can
+// only be worse. So it is printed and NOT asserted — a budget that can only ever be optimistic
+// would turn G2 into a green light it has not earned. `blocksOver250` from a live install is what
+// closes this goal, and the seam attribution shipped in the same ticket is what that install now
+// carries.
+
+/** What counts as a stall for G2. A quarter second is the magnitude the two field reports name. */
+const POST_FOLD_STALL_MS = 250
+
+/**
+ * How long to keep watching after the profile lands. Thirty seconds rather than the goal's sixty,
+ * because everything the harness CAN see — hydration, the module snapshot burst, both dump loads,
+ * the rebuild fan-out — happens in the first few seconds of it, and the remaining half minute of
+ * an idle hidden app measures the timer quantum at the cost of doubling the bench.
+ *
+ * `EQ_BENCH_POST_FOLD_MS=0` skips the window entirely, for a run that only wants the fold numbers.
+ */
+const POST_FOLD_MS = Number(process.env.EQ_BENCH_POST_FOLD_MS ?? '30000')
 
 /**
  * THE THROUGHPUT FLOOR (plan §3), RE-DERIVED 2026-08-06 (JOS-50) — and now asserted against the
@@ -344,6 +390,88 @@ async function waitForProfile(): Promise<StartupProfile | null> {
   return null
 }
 
+// ------------------------------------------------------- the post-fold observation (JOS-458)
+
+/** What the window saw. `null` when it was skipped or when the HUD refused to start — never a row
+ *  of zeros, which would claim a quiet thirty seconds were observed. */
+interface PostFoldWindow {
+  observedMs: number
+  /** 500 ms lag-probe ticks folded into the 2 s samples below. The denominator: a `maxBlockMs` of
+   *  0 over zero samples is not a smooth window, it is an unobserved one. */
+  lagSamples: number
+  /** 2 s samples collected. */
+  windows: number
+  maxBlockMs: number
+  /** 2 s windows that contained at least one stall of `POST_FOLD_STALL_MS` or worse. It counts
+   *  WINDOWS, not stalls, because `PerfSample.lag` reports a max rather than a list — so it is a
+   *  floor on the stall count, and the name says which. */
+  windowsOverStall: number
+}
+
+/**
+ * Watch the app for `POST_FOLD_MS` after its profile lands, through the HUD's own switch.
+ *
+ * The collector is installed BEFORE the switch is flipped, so the first sample — which arrives
+ * immediately rather than at the next tick, because `perf:setEnabled` starts the sampler in the
+ * same call — is not lost. The switch is turned back off afterwards so nothing about this run's
+ * teardown differs from an ordinary bench boot.
+ */
+async function observePostFold(page: Page): Promise<PostFoldWindow | null> {
+  if (!(POST_FOLD_MS > 0)) return null
+  const started = Date.now()
+  // THE FAILURE IS REPORTED, NOT SWALLOWED. The first run of this window came back `null` and said
+  // nothing about why, which for a bench is worse than not having the number: a measurement that
+  // can quietly become "not observed" is one nobody will notice has stopped working.
+  const installed = await page
+    .evaluate(async () => {
+      const w = window as unknown as {
+        eq?: {
+          onPerfSample?: (
+            cb: (s: { lag: { samples: number; maxMs: number } } | null) => void
+          ) => void
+          setPerfHudEnabled?: (on: boolean) => Promise<unknown>
+        }
+        __benchLag?: { samples: number; maxMs: number }[]
+      }
+      if (typeof w.eq?.onPerfSample !== 'function') return 'no window.eq.onPerfSample'
+      if (typeof w.eq.setPerfHudEnabled !== 'function') return 'no window.eq.setPerfHudEnabled'
+      w.__benchLag = []
+      w.eq.onPerfSample((s) => {
+        if (s !== null) w.__benchLag?.push(s.lag)
+      })
+      try {
+        await w.eq.setPerfHudEnabled(true)
+      } catch (err) {
+        return `setPerfHudEnabled threw: ${String(err)}`
+      }
+      return 'ok'
+    })
+    .catch((err: unknown) => `evaluate threw: ${String(err)}`)
+  if (installed !== 'ok') {
+    console.log(`  post-fold: NOT OBSERVED — ${installed}`)
+    return null
+  }
+  await sleep(POST_FOLD_MS)
+  const lags = await page
+    .evaluate(async () => {
+      const w = window as unknown as {
+        eq: { setPerfHudEnabled: (on: boolean) => Promise<unknown> }
+        __benchLag?: { samples: number; maxMs: number }[]
+      }
+      const out = w.__benchLag ?? []
+      await w.eq.setPerfHudEnabled(false)
+      return out
+    })
+    .catch(() => [] as { samples: number; maxMs: number }[])
+  return {
+    observedMs: Date.now() - started,
+    lagSamples: lags.reduce((n, l) => n + l.samples, 0),
+    windows: lags.length,
+    maxBlockMs: lags.reduce((m, l) => Math.max(m, l.maxMs), 0),
+    windowsOverStall: lags.filter((l) => l.maxMs >= POST_FOLD_STALL_MS).length
+  }
+}
+
 // ------------------------------------------------------------------------------- the readout
 
 interface BenchRun {
@@ -366,6 +494,21 @@ interface BenchRun {
   maxBlockMs: number | null
   blocksOver50Ms: number | null
   blockSamples: number
+  /**
+   * WHAT HAPPENED AFTER THE FOLD (JOS-458, goal G2) — the window the two field reports are about,
+   * which every number above stops short of. Null when it was skipped or could not be observed;
+   * read `POST_FOLD_MS`'s header for the two structural reasons this is a FLOOR and not a G2
+   * verdict.
+   */
+  postFold: PostFoldWindow | null
+  /**
+   * WHAT THE COMMITTED DATA WEIGHS, total bytes (JOS-458). ONE field on the ledger line rather
+   * than the whole table, deliberately: the per-file breakdown is in the profile and on the
+   * startup log line, and what a run-over-run ledger needs is the single number whose MOVEMENT is
+   * the question — "the launch got slower and the corpus grew 900 kB in the same release" is a
+   * sentence this column makes writable. Null on a profile with no ledger.
+   */
+  dataBytes: number | null
   phases: Record<string, number>
   /**
    * WHERE THE FOLD WENT (JOS-55) — the in-process arm's per-consumer table, its parse-only
@@ -408,12 +551,15 @@ function dutyColumns(events: number, duty: ReplayDutyStats | undefined): DutyCol
   }
 }
 
-function foldRun(
-  profile: StartupProfile,
-  input: BenchInput,
-  logPath: string | undefined,
+/** Everything the run knows that is not in the profile. One object rather than four positional
+ *  arguments, so `foldRun` stays inside the repo's four-parameter ceiling as the ledger grows. */
+interface RunExtras {
+  logPath: string | undefined
   attribution: AttributionRun | null
-): BenchRun {
+  postFold: PostFoldWindow | null
+}
+
+function foldRun(profile: StartupProfile, input: BenchInput, extras: RunExtras): BenchRun {
   const phases: Record<string, number> = {}
   for (const p of profile.phases) phases[p.phase] = Math.round(p.durationMs)
   const replayMs = phases.replayDone ?? 0
@@ -423,7 +569,7 @@ function foldRun(
     ts: new Date().toISOString(),
     version: profile.version,
     source: input.source,
-    ...describeLog(logPath),
+    ...describeLog(extras.logPath),
     totalMs: Math.round(profile.totalMs),
     replayMs,
     eventsReplayed: events,
@@ -432,8 +578,10 @@ function foldRun(
     maxBlockMs: block ? block.maxBlockMs : null,
     blocksOver50Ms: block ? block.blocksOver50Ms : null,
     blockSamples: block ? block.samples : 0,
+    postFold: extras.postFold,
+    dataBytes: profile.data ? profile.data.totalBytes : null,
     phases,
-    attribution
+    attribution: extras.attribution
   }
 }
 
@@ -465,13 +613,34 @@ function printTable(run: BenchRun): void {
         ? 'not measured (the probe held no ticks)'
         : `${num(run.maxBlockMs)} ms  (budget ${String(MAX_BLOCK_MS_BUDGET)} ms, ${String(run.blockSamples)} probe ticks)`
     ],
-    ['blocks over 50 ms', run.blocksOver50Ms === null ? 'not measured' : num(run.blocksOver50Ms)]
+    ['blocks over 50 ms', run.blocksOver50Ms === null ? 'not measured' : num(run.blocksOver50Ms)],
+    ['post-fold window', postFoldLine(run.postFold)]
   ]
   console.log('')
   for (const [label, value] of rows) console.log(`  ${label.padEnd(18)} ${value}`)
   console.log('')
   console.log(`  phases: ${Object.entries(run.phases).map(([k, v]) => `${k} ${num(v)}ms`).join(' · ')}`)
   console.log('')
+  if (run.postFold !== null) {
+    // THE CAVEAT TRAVELS WITH THE NUMBER. Printing `0 windows over 250 ms` beside the fold budgets
+    // and saying nothing else would read as G2 met, and this harness structurally cannot say that
+    // — see POST_FOLD_MS's header. It is a floor, and the line says the word.
+    console.log(
+      `  post-fold is a FLOOR, not a G2 verdict: EQ_E2E never shows a window (so the renderer never` +
+        ` composites) and nobody is playing. A real session can only be worse.`
+    )
+    console.log('')
+  }
+}
+
+/** The post-fold row, or why there isn't one. */
+function postFoldLine(w: PostFoldWindow | null): string {
+  if (w === null) return POST_FOLD_MS > 0 ? 'not observed (the HUD switch did not take)' : 'skipped'
+  return (
+    `${num(Math.round(w.observedMs / 1000))} s watched · max block ${num(w.maxBlockMs)} ms · ` +
+    `${num(w.windowsOverStall)} of ${num(w.windows)} 2s windows held a stall >= ${String(POST_FOLD_STALL_MS)} ms ` +
+    `(${num(w.lagSamples)} probe ticks)`
+  )
 }
 
 /**
@@ -571,10 +740,24 @@ async function main(): Promise<void> {
   const app = await launch(input)
   let tailed: CharacterRefLite | null = null
   let profile: StartupProfile | null = null
+  let postFold: PostFoldWindow | null = null
   try {
-    const page = await app.firstWindow({ timeout: 60_000 })
+    // THE MAIN WINDOW, NOT THE FIRST ONE. `firstWindow()` answers with whichever page loaded
+    // first, and the toast overlay defaults OPEN (AGENTS.md, JOS-58's ruling) — so on a normal
+    // boot it is frequently the overlay bundle, which carries `eqOverlay` and not `eq`. The
+    // character read below tolerated that by falling back to the log's file name; the post-fold
+    // window did not, and reported `no window.eq.onPerfSample` on its first run. `mainWindow` is
+    // the e2e suite's existing answer to exactly this and is now what the bench asks too.
+    const page = await mainWindow(app, 60_000)
     profile = await waitForProfile()
     tailed = await activeCharacter(page).catch(() => null)
+    // …and THEN keep watching (JOS-458, G2). It runs after the profile is complete and before the
+    // close, which is the only place it can: the window this measures opens exactly where the
+    // profile stops, and the app has to still be alive to be watched.
+    if (profile) {
+      console.log(`  post-fold: watching for ${String(Math.round(POST_FOLD_MS / 1000))}s past replayDone…`)
+      postFold = await observePostFold(page)
+    }
   } finally {
     await app.close().catch(() => undefined)
   }
@@ -594,8 +777,17 @@ async function main(): Promise<void> {
   const character = characterFor(tailed, foldPath)
   const attribution = character ? await runAttribution(character) : null
 
-  const run = foldRun(profile, input, foldPath, attribution)
+  const run = foldRun(profile, input, { logPath: foldPath, attribution, postFold })
   printTable(run)
+  // THE DATA LEDGER (JOS-458), printed whole rather than as the one column the ledger line carries:
+  // the run-over-run question is answered by `dataBytes`, but the question a person asks the FIRST
+  // time a run gets slower is "which corpus", and that needs the table.
+  console.log(
+    profile.data === undefined
+      ? '  data: no ledger in this profile (run npm run gen:data-weight)'
+      : `  ${formatDataWeight(profile.data)}`
+  )
+  console.log('')
   if (attribution) {
     printAttribution(attribution)
     compareArms(run, attribution)

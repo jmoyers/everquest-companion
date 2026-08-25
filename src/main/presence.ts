@@ -56,6 +56,8 @@ import {
   WATCHER_HEARTBEAT_MS,
   WATCHER_STALE_MS,
   WATCHER_STOP_MESSAGE,
+  HOVER_ZONES_CLEAR,
+  encodeHoverZones,
   describeFocusTransition,
   describeRestartCause,
   eqBoundsInDip,
@@ -66,7 +68,8 @@ import {
   watcherCadence,
   watcherExitStep,
   watcherIsStale,
-  watcherRestartDelayMs
+  watcherRestartDelayMs,
+  type HoverZone
 } from './presenceProtocol'
 import { INITIAL_PRESENCE } from '../shared/presencePrefs'
 import type { PresenceState, ScreenRect } from '../shared/presencePrefs'
@@ -293,6 +296,12 @@ function applyRecord(rec: PresenceRecord): void {
   // Neither is the exit line: it is a note for the log the `'exit'` handler is about to write
   // (`pumpMessage` has already kept it) and says nothing about the world.
   if (rec.t === 'exit') return
+  // Nor is a hot-zone transition (JOS-370): it is an answer about a rectangle main asked about, and
+  // it moves no presence fact. It goes straight to whoever asked — see the section at the foot.
+  if (rec.t === 'hover') {
+    emitHover(rec)
+    return
+  }
   // ANY record means we have actually looked (the watcher emits a `C`, an `F` and an `R` on its
   // very first tick, in that order — the cursor check leads because it is the one that runs on
   // every tick, JOS-120). Until then `observed:false` keeps auto-hide from acting on a default
@@ -675,6 +684,10 @@ function startWatcher(): void {
     handleWatcherGone(w, null)
   })
   w.on('exit', (code) => handleWatcherGone(w, code))
+  // A NEW WATCHER INHERITS THE QUESTION (JOS-370). The hot zones are main's, not the thread's, so a
+  // replacement is told them immediately rather than waiting for the next overlay edge — otherwise
+  // a restart in the middle of a session leaves every pinned overlay unable to reveal its pin.
+  for (const line of hoverZoneLines.values()) if (watchesSomething(line)) w.postMessage(line)
   // The watcher must never be the reason the app stays alive at quit. A worker thread refs the
   // parent's event loop until it exits; `unref` gives that up, and `stopPresence()` on quit is
   // what actually ends it.
@@ -782,4 +795,80 @@ export function stopPresence(): void {
 /** TEST/diagnostic seam: is a watcher alive right now? */
 export function presenceWatcherRunning(): boolean {
   return watcher !== null
+}
+
+// ------------------------------------------------- the HOT-ZONE HIT TEST's two wires (JOS-370)
+//
+// This file is where the watcher thread lives, so it is where both halves of the hit test's
+// transport have to attach — but it deliberately knows nothing about what a zone MEANS. The
+// rectangles arrive already computed and already converted to physical pixels, and a transition is
+// handed on untouched: `overlayHover.ts` owns the policy, `overlayHotZone.ts` owns the geometry,
+// and this is a port. Same division `presenceEffects.ts` has always had against `presenceSnapshot`.
+//
+// IT IS NOT PRESENCE STATE. A hover transition never touches `PresenceState`, never raises
+// `observed`, and never notifies a presence subscriber — it is a fact about a rectangle somebody
+// asked about, not about EverQuest. What it DOES do is count as liveness (`noteSignal`), because a
+// loop that is emitting these is a loop that is turning.
+
+/** What one hot-zone transition says. Validated into an overlay kind by `overlayHover.ts`. */
+export interface HoverTransition {
+  readonly key: string
+  readonly inside: boolean
+}
+
+const hoverListeners = new Set<(t: HoverTransition) => void>()
+/**
+ * The zone lines in force, by key — so a RESTARTED watcher is handed them again on its first
+ * breath. Without this, a wedged thread's replacement would come up blind and a pinned overlay
+ * would quietly stop revealing its pin until the next lock toggle, which is precisely the failure
+ * mode the hook it replaced had (Windows dropping a slow WH_MOUSE_LL hook, silently).
+ */
+const hoverZoneLines = new Map<string, string>()
+
+/**
+ * Publish (or, with an empty list, retract) one key's whole hot-zone set.
+ *
+ * Idempotent by string compare, because the caller re-derives on every overlay/presence edge and
+ * most of those change nothing. A post to a watcher that has already exited is a measured no-op
+ * (see `retire`), and `watcher` is null on every path where there is genuinely nobody to tell.
+ */
+export function setHoverZones(key: string, zones: readonly HoverZone[]): void {
+  const line = encodeHoverZones(key, zones)
+  // THE RETRACTION IS REMEMBERED TOO, and forgetting it was a real bug in the first cut: a key
+  // dropped from this map compares unequal on the very next pass, so an UNLOCKED overlay re-sent
+  // its own "watch nothing" line on every presence change and every capture flip for the rest of
+  // the session. Only what is actually watched is replayed to a restarted watcher (`startWatcher`).
+  if (hoverZoneLines.get(key) === line) return
+  hoverZoneLines.set(key, line)
+  watcher?.postMessage(line)
+}
+
+/** Does this remembered line ask for anything? `Z|<key>` with no rectangles is a retraction, and a
+ *  replacement watcher starts with nothing to retract. */
+function watchesSomething(line: string): boolean {
+  return line.split('|').length > 2
+}
+
+/** Retract every key at once — the feature going off, or a teardown. */
+export function clearHoverZones(): void {
+  if (hoverZoneLines.size === 0) return
+  hoverZoneLines.clear()
+  watcher?.postMessage(HOVER_ZONES_CLEAR)
+}
+
+/** Subscribe to hot-zone transitions. Not ref-counted: it does not start or stop the watcher —
+ *  `presenceNeeded` does, and the hit test is one of the reasons it now answers true. */
+export function subscribeHoverTransitions(cb: (t: HoverTransition) => void): () => void {
+  hoverListeners.add(cb)
+  return () => hoverListeners.delete(cb)
+}
+
+function emitHover(t: HoverTransition): void {
+  for (const cb of hoverListeners) {
+    try {
+      cb(t)
+    } catch (err) {
+      logError('main:presence', err)
+    }
+  }
 }

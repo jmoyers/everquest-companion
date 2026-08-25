@@ -207,6 +207,17 @@ export const IPC = {
   // — but ONLY while a locked overlay is actually capturing (src/main/pointerWatch.ts states the
   // whole performance contract). The renderer treats it exactly like a real leave.
   onOverlayPointerExit: 'overlay:pointerExit',
+  // main -> renderer(overlay): "the cursor is (not) in one of your hot zones" (JOS-370). Payload:
+  // {kind, inside}. ONE-WAY, and it is what a locked overlay has INSTEAD of forwarded mouse moves.
+  //
+  // A locked overlay used to be `setIgnoreMouseEvents(true, {forward:true})`, and that `forward`
+  // installs a system-wide WH_MOUSE_LL hook owned by MAIN — so every mouse event on the machine
+  // waited on our message loop and a stall of ours froze the user's cursor and their mouselook. The
+  // hook is gone. The presence WORKER hit-tests the cursor against the rectangles a pinned window
+  // still wants (src/main/overlayHotZone.ts) and reports only the ENTER/LEAVE edges; main flips the
+  // window's capture and pushes this. The renderer treats it as one more NAMED CAPTURE REASON, so
+  // everything downstream of it — the pin reveal, the selector, the scroll grip — is unchanged.
+  onOverlayHover: 'overlay:hover',
 
   // ---- GLOBAL FIGHT SELECTION (docs/plans/combat-overlay-parity.md P4/P5/P6) ----
   // ONE fight is selected app-wide: picking one in the Combat tab's picker or in ANY

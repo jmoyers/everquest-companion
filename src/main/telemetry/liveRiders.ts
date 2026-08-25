@@ -30,12 +30,13 @@ import type { EvSessionHeartbeat } from '../../shared/telemetry'
 import { peekTailIoTimeline, takeTailIoSummary } from '../log/tailIoStats'
 import { resolveActiveCharacter } from '../log/config'
 import { takeLiveProbeReading } from '../livePerfProbe'
+import { takeGcTally, takeSeamTally } from '../perfAttribution'
 import { getCursorRing, getOverlayAutoHide, getOverlayConfig } from '../store'
 import { overlayStateMap } from '../windows'
-import { liveStallStats, sessionStateStats, tailReadStats } from './liveFacts'
+import { gcStallStats, liveStallStats, seamStallStats, sessionStateStats, tailReadStats } from './liveFacts'
 
-/** The three optional groups, in the shape both session reports spread. */
-type LiveRiders = Pick<EvSessionHeartbeat, 'live' | 'tail' | 'state'>
+/** The five optional groups, in the shape both session reports spread. */
+type LiveRiders = Pick<EvSessionHeartbeat, 'live' | 'tail' | 'state' | 'gc' | 'seams'>
 
 /**
  * When the interval being reported began — `Date.now()` of the previous drain.
@@ -61,6 +62,24 @@ function safely<T>(read: () => T, fallback: T): T {
 function liveGroup(): LiveRiders['live'] {
   const reading = takeLiveProbeReading()
   return reading === null ? undefined : liveStallStats(reading)
+}
+
+/**
+ * THE TWO ATTRIBUTION GROUPS (JOS-458), drained on exactly the terms `liveGroup` is drained on.
+ *
+ * They are separate functions rather than one because their absences mean different things and
+ * neither may borrow the other's: `gc` is absent when the OBSERVER was not running (zeros are a
+ * real reading from a running one), `seams` is absent when NO instrumented seam was entered (which
+ * is not "they were fast" — it is the reading that clears all six at once).
+ */
+function gcGroup(): LiveRiders['gc'] {
+  const tally = takeGcTally()
+  return tally === null ? undefined : gcStallStats(tally)
+}
+
+function seamGroup(): LiveRiders['seams'] {
+  const tally = takeSeamTally()
+  return tally === null ? undefined : seamStallStats(tally)
 }
 
 /**
@@ -114,10 +133,14 @@ function workingSetKb(): number {
 }
 
 /**
- * The three riders for the report about to be written, drained and reset. Spread into
+ * The five riders for the report about to be written, drained and reset. Spread into
  * `sessionHeartbeat` / `sessionEnd` — `{}` for a group with nothing to say, so the property is
  * ABSENT rather than `undefined` (the same three-way distinction `startupField` keeps: the
  * validator's `undefined` arm, JSON's omission and the payload viewer all have to agree).
+ *
+ * EVERY GROUP IS DRAINED THROUGH ITS OWN `safely`, and that is load-bearing rather than tidy: a
+ * report that lost its stall reading because the window layer was mid-teardown would also lose the
+ * seam reading that explains it, and the pair is the whole point.
  */
 export function liveRiderFields(now = Date.now()): LiveRiders {
   const from = since
@@ -125,9 +148,13 @@ export function liveRiderFields(now = Date.now()): LiveRiders {
   const live = safely(liveGroup, undefined)
   const tail = safely(() => tailGroup(from, now), undefined)
   const state = safely(stateGroup, undefined)
+  const gc = safely(gcGroup, undefined)
+  const seams = safely(seamGroup, undefined)
   return {
     ...(live === undefined ? {} : { live }),
     ...(tail === undefined ? {} : { tail }),
-    ...(state === undefined ? {} : { state })
+    ...(state === undefined ? {} : { state }),
+    ...(gc === undefined ? {} : { gc }),
+    ...(seams === undefined ? {} : { seams })
   }
 }

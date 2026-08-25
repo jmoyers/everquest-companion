@@ -30,6 +30,7 @@ import {
   spellClassLine,
   spellEffectClassLabels,
   spellFactsAreForLine,
+  spellFocusLines,
   spellLineageLine,
   spellStatRows
 } from '@shared/spellDetail'
@@ -179,7 +180,37 @@ function Figures({ detail }: { detail: SpellDetail }): JSX.Element | null {
           {`at ${romanRank(detail.metricsRank ?? 0)}: ${atRank.join(' · ')}`}
         </div>
       )}
+      {/* AND A THIRD READING, WITH YOUR GEAR ON (JOS-452). The card is where the readout's quiet
+          `worn +11%` marker is explained, so the figures come first and then the LINE that names
+          which item produced them - the owner's ask read literally. Absent for anybody wearing
+          nothing that qualifies, which is most spells for most players. */}
+      <WithFocus detail={detail} />
     </CardSection>
+  )
+}
+
+/**
+ * The gear reading and its provenance: the focused figures, then one line per side naming the
+ * effect and the item it is worn on.
+ *
+ * A component rather than two more branches inside `Figures` because that function was already at
+ * the lint config's complexity ceiling, and because these two lines are one thought.
+ */
+function WithFocus({ detail }: { detail: SpellDetail }): JSX.Element | null {
+  const parts = detail.metricsWithFocus === undefined ? [] : spellMetricsParts(detail.metricsWithFocus)
+  const lines = spellFocusLines(detail)
+  if (parts.length === 0 || lines.length === 0) return null
+  return (
+    <>
+      <div style={TEXT_STYLE} data-testid="spell-card-figures-with-focus">
+        {`with your gear: ${parts.join(' · ')}`}
+      </div>
+      {lines.map((line) => (
+        <div key={line} style={TEXT_STYLE} data-testid="spell-card-focus-source">
+          {line}
+        </div>
+      ))}
+    </>
   )
 }
 

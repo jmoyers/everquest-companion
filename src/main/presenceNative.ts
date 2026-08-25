@@ -107,14 +107,39 @@ import { EQ_CLIENT_EXES } from './presenceProtocol'
  * translation layer, and every decision made from these answers lives in `presenceProtocol.ts`.
  */
 export interface PresenceNative {
-  /** Is the system cursor being drawn? A failed call answers TRUE — see the failure note above. */
-  cursorShowing(): boolean
+  /**
+   * Is the system cursor being drawn? A failed call answers TRUE — see the failure note above.
+   *
+   * AND WHERE IT IS, FOR FREE (JOS-370). `CURSORINFO` carries `ptScreenPos` in the same struct the
+   * visibility flag lives in, so the hot-zone hit test needs no second syscall and — when the
+   * cursor ring is also on — no second CALL: one `GetCursorInfo` per tick answers both consumers,
+   * which is the ticket's "share the ring's sample rather than sampling twice". Passing `out` is
+   * what asks for the point; the two readers of a Buffer that is already filled are free.
+   *
+   * A FAILED CALL WRITES `NaN` INTO `out.x` rather than leaving the last point in place. That is
+   * `pointerWatch.ts`'s rule as a value: a cursor nobody can read is not a cursor that moved, and
+   * a stale coordinate silently hit-tested against a rectangle is exactly how a capture ends up
+   * held (or dropped) on a fact nobody measured.
+   */
+  cursorShowing(out?: MutablePoint): boolean
   /** The foreground window, or null when there is none (a locked session has no foreground). */
   foreground(): ForegroundWindow | null
   /** A process's full image path, or '' when the kernel will not say. */
   imagePath(pid: number): string
   /** 1 = an EverQuest client is running, 0 = none is, -1 = the enumeration itself failed. */
   eqRunning(rootWithSep: string): number
+}
+
+/**
+ * A cursor position the caller OWNS and this module writes into — never a fresh object.
+ *
+ * The tick loop must not allocate (see the scratch-buffer note below): a returned `{x,y}` would be
+ * one garbage object per tick for the life of the app, which is the same argument that made every
+ * out-parameter here a pre-allocated Buffer.
+ */
+export interface MutablePoint {
+  x: number
+  y: number
 }
 
 /** One reading of the foreground window. `exePath` is filled in by the caller's memo, not here. */
@@ -170,6 +195,8 @@ function isHandle(v: unknown): boolean {
 const RECT_BYTES = 16
 /** CURSORINFO on x64: cbSize(4) flags(4) hCursor(8, aligned) ptScreenPos(8) = 24. */
 const CURSORINFO_BYTES = 24
+/** …and `ptScreenPos` starts at 16: two int32 (x, y) in PHYSICAL screen pixels (JOS-370). */
+const CURSORINFO_POS_OFFSET = 16
 /** CURSORINFO.flags is a BIT FIELD; CURSOR_SHOWING is bit 0. The test is `& 1`, never `!= 0` —
  *  CURSOR_SUPPRESSED (0x2) is set on touch-input machines with the pointer still drawn. */
 const CURSOR_SHOWING = 0x1
@@ -241,11 +268,19 @@ export function loadPresenceNative(): PresenceNative {
   const pidOut = [0]
   const sizeInOut = [0]
 
-  function cursorShowing(): boolean {
+  function cursorShowing(out?: MutablePoint): boolean {
     // cbSize is rewritten every call: GetCursorInfo reads it, and a stale or zero value makes the
     // call fail. It is four bytes.
     cursorBuf.writeUInt32LE(CURSORINFO_BYTES, 0)
-    if (!asBool(GetCursorInfo(cursorBuf))) return true
+    if (!asBool(GetCursorInfo(cursorBuf))) {
+      // Nothing was measured, so nothing is reported — see the `out` note on the interface.
+      if (out) out.x = Number.NaN
+      return true
+    }
+    if (out) {
+      out.x = cursorBuf.readInt32LE(CURSORINFO_POS_OFFSET)
+      out.y = cursorBuf.readInt32LE(CURSORINFO_POS_OFFSET + 4)
+    }
     return (cursorBuf.readUInt32LE(4) & CURSOR_SHOWING) !== 0
   }
 

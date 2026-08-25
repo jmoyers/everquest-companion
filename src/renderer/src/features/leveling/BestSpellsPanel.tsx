@@ -98,6 +98,8 @@ import {
 import { searchBestSpells, EMPTY_BEST_SPELL_SEARCH } from '@shared/bestSpellsSearch'
 import { tokenizeSpellQuery } from '@shared/spellSearch'
 import { AOE_ASSUMPTION_TITLE } from '@shared/aoeSpells'
+import { WORN_FOCUS_TITLE } from '@shared/wornFocus'
+import { useWornFocus } from '../../lib/useWornFocus'
 import { Tooltip } from '../../lib/Tooltip'
 import { outOfEraLabel } from '../mobs/dropEra'
 import { useCurrentComboClasses, useLevelUnlocks } from './useLevelUnlocks'
@@ -250,7 +252,38 @@ function TabTable({
 }
 
 /**
- * THE HEADER LINE: what the readout is, which level it is reading, and the two markers it wears.
+ * ONE QUIET WORD BESIDE `directional`, with the long sentence behind it (the caveat diet).
+ *
+ * Two markers wear this shape now - the AOE tab's target assumption (JOS-449) and the worn-focus
+ * percentage (JOS-452) - and a third would too. Null text draws nothing at all, which is how a
+ * marker stays off a tab it has nothing to say about.
+ */
+function QuietMarker({
+  testid,
+  title,
+  text
+}: {
+  testid: string
+  title: string
+  text: string | null
+}): JSX.Element | null {
+  if (text === null) return null
+  return (
+    <Tooltip title={title}>
+      <Typography
+        variant="caption"
+        color="text.disabled"
+        data-testid={testid}
+        sx={{ textDecoration: 'underline dotted', cursor: 'help' }}
+      >
+        {text}
+      </Typography>
+    </Tooltip>
+  )
+}
+
+/**
+ * THE HEADER LINE: what the readout is, which level it is reading, and the markers it wears.
  *
  * Its own component only for the line budget (AGENTS.md's ceiling is split, never ratcheted) — the
  * panel below grew a search box and a second body with JOS-450. Nothing here is re-decided.
@@ -274,7 +307,8 @@ function ReadoutHeader({
           same click. The stepper's own value line replaces the level the title used to state. */}
       <LevelStepper level={level} onChange={onLevel} testidPrefix="best-spells-level" />
       {/* THE SAME ONE QUIET WORD the panel below says, for the same reason: these are base
-          figures with no crits, focus, AA or resist in them (recast IS in them since JOS-444).
+          figures with no crits, AA or resist in them (recast IS in them since JOS-444, and worn
+          FOCUS since JOS-452, which draws its own marker beside this one when it applied).
           Said once per surface, never on a row (AGENTS.md, the caveat diet). */}
       <Typography variant="caption" color="text.disabled" data-testid="best-spells-directional">
         directional
@@ -285,17 +319,17 @@ function ReadoutHeader({
           the model's (`aoeAssumptionLabel`) so a mixed table cannot be captioned with a number it
           did not use. */}
       {tab === 'aoe' && (
-        <Tooltip title={AOE_ASSUMPTION_TITLE}>
-          <Typography
-            variant="caption"
-            color="text.disabled"
-            data-testid="best-spells-aoe-assumption"
-            sx={{ textDecoration: 'underline dotted', cursor: 'help' }}
-          >
-            {best.aoeTargets}
-          </Typography>
-        </Tooltip>
+        <QuietMarker testid="best-spells-aoe-assumption" title={AOE_ASSUMPTION_TITLE} text={best.aoeTargets} />
       )}
+      {/* THE WORN FOCUS, MADE VISIBLE (JOS-452, owner ask: the multiply must be visible). Drawn
+          only when the tab in front of you really used one, and in the MODEL's own words
+          (`wornFocusLabel`) so a table where two rows were focused by different amounts is
+          captioned with the range it used rather than one row's number. */}
+      <QuietMarker
+        testid="best-spells-worn-focus"
+        title={WORN_FOCUS_TITLE}
+        text={best.tabs[tab].wornFocus}
+      />
       <Box sx={{ flexGrow: 1 }} />
       {best.ambiguous && (
         <Tooltip title="Covers every class your loadout could still be.">
@@ -392,6 +426,9 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
   const combo = useCurrentComboClasses()
   // JOS-446's observed ranks, one subscription for the whole panel (the NewAtLevelPanel arrangement).
   const ranks = useObservedSpellRanks()
+  // JOS-452's worn focus, one subscription for the whole panel (the `ranks` arrangement). An empty
+  // list is the ordinary answer for a character with no dump, and it changes no figure.
+  const focus = useWornFocus()
   const [sorts, setSorts] = useState(defaultSorts)
   const [picked, setPicked] = useState<BestSpellTab | null>(null)
   // THE SIMULATE SLIDER'S STATE, session-only and owned here (JOS-447 — SpellRankSlider's header
@@ -406,8 +443,8 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
   // ~1,450 rows. All four tables are built every time on purpose: the tab labels carry counts, so
   // the tabs you are not looking at are part of what the panel says.
   const best = useMemo(
-    () => bestSpellsAt(data, combo, level, { sorts, observed: ranks, simulate }),
-    [data, combo, level, sorts, ranks, simulate]
+    () => bestSpellsAt(data, combo, level, { sorts, observed: ranks, simulate, focus }),
+    [data, combo, level, sorts, ranks, simulate, focus]
   )
   // UNTIL SOMEBODY PICKS, THE PANEL PICKS THE FIRST TAB THAT HAS ANYTHING IN IT. `dd` is the owner's
   // first-named tab and the right default for the caster this readout was written for, but a cleric
@@ -427,10 +464,13 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
             tab,
             sort: sorts[tab],
             observed: ranks,
-            simulate
+            simulate,
+            // JOS-452 — the results wear the same gear the ranked table does, because the marker
+            // over them is drawn once in the header above BOTH bodies.
+            focus
           })
         : EMPTY_BEST_SPELL_SEARCH,
-    [searching, data, query, best.classes, level, tab, sorts, ranks, simulate]
+    [searching, data, query, best.classes, level, tab, sorts, ranks, simulate, focus]
   )
   // The loadout set the result chips are filled against: a class you could be running, at a glance.
   const loadout = useMemo(() => new Set<string>(best.classes), [best.classes])

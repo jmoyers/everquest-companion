@@ -47,15 +47,19 @@ import { isAeTargetType } from './aoeSpells'
 import {
   catalogMana,
   ownedBy,
+  pctOfSide,
+  rowFocus,
   sortBestSpells,
   spellHitsFor,
   spellInTab,
   spellMetricsForLevel,
   targetsFor,
+  type BestSpellFocus,
   type BestSpellRow,
   type BestSpellSort,
   type BestSpellTab
 } from './bestSpells'
+import type { WornFocus } from './wornFocus'
 import type { ClassAbbr } from './classCombo'
 import type { LevelUnlockData, UnlockSpell } from './levelUnlocks'
 import type { SpellMetrics } from './spellMetrics'
@@ -137,6 +141,14 @@ export interface BestSpellSearchAsk {
   observed?: ObservedSpellRanksSnap | null
   /** the panel's simulate slider, 0..10. Every row reads at `max(observed, this)`. */
   simulate?: number
+  /**
+   * THE FOCUS EFFECTS THE READER IS WEARING (JOS-452), threaded through for the same reason the
+   * ranks are: the marker over this table is the RANKED table's, drawn in the header above both
+   * bodies, so a result read without the reader's gear would sit under a caption stating a
+   * percentage it did not use. A spell outside the loadout is read at its own earliest placement,
+   * which is the level the row prints beside it.
+   */
+  focus?: readonly WornFocus[]
   /** rows mounted at once; the default is `BEST_SPELL_SEARCH_CAP` */
   cap?: number
 }
@@ -171,6 +183,8 @@ interface SpellReading {
   rank: number
   observedRank: number
   targets: number
+  /** JOS-452 — the worn focus that answered, one entry per side. Empty when none did. */
+  focus: BestSpellFocus[]
 }
 
 /**
@@ -182,15 +196,23 @@ interface SpellReading {
  * all, and a heal is not a DD row. The ranks are the readout's own (`max(observed, simulated)`),
  * so a result and a ranked row of the same spell can never disagree about which rung it is read at.
  */
-function readingOf(spell: UnlockSpell, ask: BestSpellSearchAsk): SpellReading | null {
+function readingOf(spell: UnlockSpell, ask: BestSpellSearchAsk, gainedAt: number): SpellReading | null {
   const area = ask.tab === 'aoe'
   if (area && !isAeTargetType(spell.targetType)) return null
   const observedRank = normalizeSpellRank(observedRankRow(ask.observed, spell.name)?.rank)
   const rank = effectiveSpellRank(observedRank, normalizeSpellRank(ask.simulate))
   const targets = area ? targetsFor(spell) : 1
-  const metrics = spellMetricsForLevel(spell, ask.level, rank, targets)
+  // JOS-452 — the reader's own gear, resolved by the SAME function the ranked fold uses so a result
+  // and a ranked row of one spell can never disagree about which item answered for it.
+  const focus = rowFocus(spell, ask.focus ?? [], gainedAt)
+  const metrics = spellMetricsForLevel(spell, ask.level, {
+    rank,
+    targets,
+    focusDamagePct: pctOfSide(focus, 'damage'),
+    focusHealPct: pctOfSide(focus, 'heal')
+  })
   if (!metrics || !spellInTab(ask.tab, metrics)) return null
-  return { metrics, rank, observedRank, targets }
+  return { metrics, rank, observedRank, targets, focus }
 }
 
 /**
@@ -208,13 +230,16 @@ function gainLevelOf(owned: { gainedAt: number } | null, levels: readonly Search
 
 /** One matched spell as a result row, or null when this tab cannot read it. */
 function searchRow(found: FoldedMatch, ask: BestSpellSearchAsk, want: ReadonlySet<string>): BestSpellSearchRow | null {
-  const reading = readingOf(found.spell, ask)
-  if (!reading) return null
+  // The gain level is resolved FIRST since JOS-452: it is the level the row prints and the level the
+  // focus's `Limit Max Level` is tested against, and those two must be one number.
   const levels = foldClassLevels(found.pairs)
   const owned = ownedBy(found.spell, want, ask.level)
+  const gainedAt = gainLevelOf(owned, levels)
+  const reading = readingOf(found.spell, ask, gainedAt)
+  if (!reading) return null
   return {
     name: found.spell.name,
-    gainedAt: gainLevelOf(owned, levels),
+    gainedAt,
     classes: owned?.classes ?? [],
     mana: catalogMana(found.spell),
     metrics: reading.metrics,
@@ -223,6 +248,7 @@ function searchRow(found: FoldedMatch, ask: BestSpellSearchAsk, want: ReadonlySe
     observedRank: reading.observedRank,
     targets: reading.targets,
     hits: spellHitsFor(found.spell, reading.targets),
+    ...(reading.focus.length > 0 ? { focus: reading.focus } : {}),
     levels,
     owned: owned !== null
   }

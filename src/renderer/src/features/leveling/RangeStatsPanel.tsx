@@ -72,6 +72,8 @@ import {
   comboText,
   idleGapsText,
   idleRuleCaption,
+  membershipText,
+  MEMBERSHIP_TITLE,
   offlineGapsText,
   offlineText,
   rangeHeroes,
@@ -88,6 +90,16 @@ export interface RangeStatsPanelProps {
   stats: RangeStats
   /** Which scope produced `stats` — the timescale's window, or a drag that narrowed it. */
   scope: ScopeKind
+  /**
+   * THE ZONE HALF OF THE SCOPE, WORDED, MEMBERSHIP AND ALL (`windowScope.ScopedStats.zoneCaption`
+   * — `The Plane of Hate, this tier only`). Null/absent when the scope is not restricted to a
+   * zone, which is when this panel prints exactly what it always printed.
+   *
+   * It is here because the header's elapsed number is Σ of the ADMITTED visits and the panel used
+   * to name neither the zone nor the tier that admitted them — JOS-454, where a 1h51m drag read
+   * `15m` and nothing on screen said why.
+   */
+  zoneCaption?: string | null
   onClear: () => void
 }
 
@@ -303,7 +315,9 @@ function ZoneTable({ zones, basis }: { zones: RangeStats['zones']; basis: RateBa
   )
 }
 
-function HeaderRow({ stats, scope, onClear }: RangeStatsPanelProps): JSX.Element {
+function HeaderRow({ stats, scope, zoneCaption, onClear }: RangeStatsPanelProps): JSX.Element {
+  // Null unless a zone membership actually left part of the range out — see `membershipText`.
+  const membership = membershipText(stats, zoneCaption)
   return (
     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Typography variant="subtitle2" sx={{ fontWeight: 700 }} data-testid="leveling-range-window">
@@ -317,6 +331,21 @@ function HeaderRow({ stats, scope, onClear }: RangeStatsPanelProps): JSX.Element
       <Typography variant="caption" color="text.secondary" data-testid="leveling-range-duration">
         {fmtDuration(stats.durationMs)}
       </Typography>
+      {/* …AND WHAT THAT NUMBER LEFT OUT (JOS-454). The elapsed span above is Σ of the visits the
+          slice's zone membership ADMITTED; when that is less than the range the header states,
+          this says how much less and which membership did it. Absent — and byte-identical to
+          every read before this ticket — whenever there is no zone in force or nothing was left
+          out. A native title, never a popper (JOS-143). */}
+      {membership && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="leveling-range-membership"
+          title={MEMBERSHIP_TITLE}
+        >
+          {membership}
+        </Typography>
+      )}
       {/* STATE, NOT PROCESS: one word saying these numbers are narrower than the timescale
           above them. Absent for the window, which the timescale bar already names. */}
       {scope === 'selection' && <Chip size="small" variant="outlined" label="selection" sx={CHIP_SX} />}
@@ -343,7 +372,7 @@ function HeaderRow({ stats, scope, onClear }: RangeStatsPanelProps): JSX.Element
   )
 }
 
-export function RangeStatsPanel({ stats, scope, onClear }: RangeStatsPanelProps): JSX.Element {
+export function RangeStatsPanel({ stats, scope, zoneCaption, onClear }: RangeStatsPanelProps): JSX.Element {
   const { basis } = useRateBasis()
   const footnote = unstatedCaption(stats)
   return (
@@ -356,7 +385,7 @@ export function RangeStatsPanel({ stats, scope, onClear }: RangeStatsPanelProps)
       data-testid="leveling-range-stats"
       data-scope={scope}
     >
-      <HeaderRow stats={stats} scope={scope} onClear={onClear} />
+      <HeaderRow stats={stats} scope={scope} zoneCaption={zoneCaption} onClear={onClear} />
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         {rangeHeroes(stats, basis).map((s) => (
           <StatCard key={s.id} stat={s} />

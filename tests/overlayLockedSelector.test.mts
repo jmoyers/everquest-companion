@@ -8,40 +8,95 @@
 // observed without a real always-on-top window and a real cursor (the e2e harness asserts the
 // IPC half of the seam instead — see tests/e2e/overlay-sync.e2e.mts).
 //
-// THE HAZARD IT GUARDS. `setIgnoreMouseEvents(true, {forward:true})` installs a low-level mouse
-// hook (WH_MOUSE_LL) owned by MAIN, so every system mouse event waits on our message loop and a
-// blocked main freezes the user's cursor system-wide (measured — it is why the cursor ring
-// deliberately does not forward). P3 was implemented by REUSING that already-paid-for forwarding
-// on the meter kinds, not by adding a second sensor: the pins below are what keep it that way.
+// THE HAZARD IT GUARDS, AND THE FACT THAT IT IS NOW GONE (JOS-370).
+// `setIgnoreMouseEvents(true, {forward:true})` installs a low-level mouse hook (WH_MOUSE_LL) owned
+// by MAIN, so every system mouse event waited on our message loop and a blocked main froze the
+// user's cursor system-wide. P3 was implemented by REUSING that already-paid-for forwarding on the
+// meter kinds rather than by adding a second sensor — which was the right call while the hook
+// existed, and is why the pins below could always be stated as "no NEW hook".
+//
+// The hook is now gone from the application outright: a locked overlay is `setIgnoreMouseEvents(
+// true)` with no second argument anywhere, and the capture that reveals its pin is flipped by an
+// off-thread cursor hit test against published rectangles (src/main/overlayHotZone.ts). So the
+// first pin below is stronger than it was — the count it asserts is ZERO — and the rest are
+// unchanged, because the RENDERER half of P3 did not move: the named reasons, the header sensor,
+// the grip and the one channel they all ride are exactly what they were.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 
 const src = (rel: string): string => readFileSync(new URL(rel, import.meta.url), 'utf8')
+
+// Source with block and line comments removed — see the sweep below for why they are exempt.
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
+}
+
+/** Every `.ts`/`.tsx` under `rel`, recursively, as paths this file's `src()` can take. */
+function sourcesUnder(rel: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(new URL(rel, import.meta.url), { withFileTypes: true })) {
+    if (entry.isDirectory()) out.push(...sourcesUnder(`${rel}/${entry.name}`))
+    else if (/\.tsx?$/.test(entry.name)) out.push(`${rel}/${entry.name}`)
+  }
+  return out
+}
 
 const METERS = {
   'the damage meter': '../src/renderer/src/overlay/OverlayMeter.tsx',
   'the healing meter': '../src/renderer/src/overlay/HealMeter.tsx'
 }
 
-test('NO NEW HOOK: main still decides forwarding per kind, in exactly one place', () => {
+test('NO HOOK AT ALL: `forward` appears in no setIgnoreMouseEvents call in the application', () => {
+  // THE ACCEPTANCE CRITERION OF JOS-370, AS A SOURCE SWEEP. It is a sweep rather than a check of
+  // windows.ts because the thing being promised is about the whole process: a low-level mouse hook
+  // is per-PROCESS, so one forgotten `forward:true` anywhere puts every mouse event on the machine
+  // back on our message loop and nothing about the other call sites would show it.
+  const files = ['../src/main', '../src/preload', '../src/renderer', '../src/shared']
+  for (const dir of files) {
+    for (const file of sourcesUnder(dir)) {
+      // COMMENTS ARE EXEMPT, AND DELIBERATELY SO: they are where this app records what the hook
+      // was, why it had to go and what pays for the pin instead, and half a dozen files quote the
+      // old call verbatim to do it. The ban is on the CALL.
+      const calls = stripComments(src(file)).match(/setIgnoreMouseEvents\([^)]*\)/g) ?? []
+      for (const call of calls) {
+        assert.doesNotMatch(call, /,/, `${file} passes a second argument: ${call}`)
+        assert.doesNotMatch(call, /forward/, `${file} still forwards: ${call}`)
+      }
+    }
+  }
+})
+
+test('THE HOOK NOTE SURVIVES WHERE THE DECISION LIVES', () => {
   const windows = src('../src/main/windows.ts')
-  // ONE call site FORWARDS, and the STRIP kinds are still the ones that do not pay for the hook.
-  // (The cursor ring's own `setIgnoreMouseEvents(true)` is the deliberate non-forwarding one and
-  // is counted out here by the `{ forward` it does not have.)
-  assert.equal((windows.match(/setIgnoreMouseEvents\(true, \{ forward/g) ?? []).length, 1)
-  // …and it asks ONE predicate what the answer is. The rule moved to replayGate.ts with JOS-62,
-  // which added the second reason not to forward (a historical replay is folding); JOS-378 and
-  // JOS-383 added the second and third exempt kinds (the alert banner and the con card, both
-  // strips on the toast's own terms) and the exemption still lives in exactly one expression.
-  assert.match(windows, /forward: overlayMouseForward\(kind\)/)
-  const gate = src('../src/main/replayGate.ts')
-  assert.match(gate, /kind !== 'toast' && kind !== 'alertBanner' && kind !== 'conCard' && !replayRunning/)
-  // The freeze-hazard note has to survive in BOTH halves: it is the reason the split exists at
-  // all, and now also the reason the replay drops the hook entirely.
+  // The freeze-hazard note is the reason the mechanism is shaped the way it is, so it stays beside
+  // the one call that used to install it — a reader arriving at `setOverlayIgnoreMouse` has to be
+  // told, in place, why there is no second argument and what pays for the pin instead.
   assert.match(windows, /WH_MOUSE_LL/)
+  assert.match(windows, /overlayHotZone|overlayHover/)
+  // The replay gate's mouse half is RETIRED, not merely unused: nothing may still be able to ask
+  // for forwarding. Its show/hide half is untouched and is asserted in tests/replayGate.test.mts.
+  const gate = src('../src/main/replayGate.ts')
+  assert.doesNotMatch(gate, /export function overlayForwardsMouse/)
+  assert.doesNotMatch(gate, /export function overlayMouseForward/)
+  // …and the gate still says what it was for, so the next reader does not rediscover JOS-62.
   assert.match(gate, /WH_MOUSE_LL/)
+})
+
+test('THE PIN IS REVEALED BY A HIT TEST, and it is scoped to the chrome — not the window', () => {
+  const zones = src('../src/main/overlayHotZone.ts')
+  // The three answers, each mirroring the sensor that kind's renderer already runs. A meter that
+  // published its whole window would take back exactly the click-through P3 exists to protect.
+  assert.match(zones, /export type HotZoneStyle = 'chrome' \| 'window' \| 'none'/)
+  assert.match(zones, /const WHOLE_WINDOW_KINDS: OverlayKind\[\] = \['events', 'buffs', 'debuffs'\]/)
+  // The strips never had a hover sensor and must never grow one here: their capture is their queue's.
+  assert.match(zones, /if \(isStripKind\(kind\)\) return 'none'/)
+  // MAIN ONLY EVER OPENS THE DOOR. A main-side release on the way out of the strip would close the
+  // selector popup the user is reaching into — the exact defect the named reasons exist for.
+  const hover = src('../src/main/overlayHover.ts')
+  assert.match(hover, /if \(inside\) setOverlayIgnoreMouse\(kind, false\)/)
+  assert.equal((hover.match(/setOverlayIgnoreMouse\(/g) ?? []).length, 2, 'one call, one import')
 })
 
 test('NO NEW CHANNEL: the capture flip rides the existing fine-grained pass-through', () => {
@@ -54,7 +109,12 @@ test('NO NEW CHANNEL: the capture flip rides the existing fine-grained pass-thro
 
 test('CAPTURE IS A SET OF NAMED REASONS, released independently', () => {
   const chrome = src('../src/renderer/src/overlay/useOverlayChrome.ts')
-  assert.match(chrome, /export type CaptureReason = 'window' \| 'selector' \| 'popup' \| 'scroll'/)
+  // FIVE since JOS-370: 'sensor' is main's hot-zone answer, and it is the FIRST reason a pinned
+  // window can hold — nothing else in the renderer can fire while the window is ignoring the mouse.
+  assert.match(
+    chrome,
+    /export type CaptureReason = 'sensor' \| 'window' \| 'selector' \| 'popup' \| 'scroll'/
+  )
   // The union, not a boolean: the popup is `position: fixed` and therefore not inside the header
   // row, so moving into the open list fires the row's mouseleave. A single boolean would drop
   // capture out from under the list the user is reaching for.
@@ -100,8 +160,9 @@ test('JOS-138: a pinned pane scrolls at its RIGHT EDGE, and nowhere else', () =>
   assert.match(scale, /el\.scrollHeight - el\.clientHeight > 1/)
   // The region test itself: right edge minus the strip, against the pointer's own x.
   assert.match(scale, /ev\.clientX >= el\.getBoundingClientRect\(\)\.right - SCROLL_GRIP_W/)
-  // NO NEW CHANNEL AND NO NEW HOOK (the two pins above): it raises the P3 named reason over the
-  // forwarding the meters already pay for.
+  // NO NEW CHANNEL AND NO HOOK (the pins above): it raises the P3 named reason on the real mouse
+  // events a captured window is already receiving — since JOS-370 that capture is handed over by
+  // main's hot-zone hit test rather than bought with a forwarding hook, and this side is unchanged.
   assert.match(scale, /capture\?\.\('scroll', want\)/)
   // The observable the hidden-window e2e reads, because `setIgnoreMouseEvents` cannot be seen
   // from inside the page.

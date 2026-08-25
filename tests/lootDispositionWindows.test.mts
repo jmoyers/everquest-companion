@@ -26,6 +26,12 @@
 //        Life off Lord Nagafen and one destroyed (held 2); a `Blight, Hammer of the Scourge
 //        +1` looted and destroyed on the same counting key; and two destroys of things the
 //        window never saw arrive, which floor at 0 instead of going negative.
+//   W47  (Aug 23 15:06–15:27, raw 2465019–2469700, JOS-453): the loot family AS THE 2026-08-18
+//        PATCH PRINTS IT — auto-sells of ` +N` drops, an auto-merge that did NOT climb
+//        (`Ethereal Mist Greaves +4 → +4`), auto-merges whose looted copy is TIERLESS so the
+//        created name carries the only ` +N` on the line, a stacked auto-sell, and dashed keeps.
+//        Every earlier window here was cut from July / early-August spans where a looted item
+//        rarely carried a plus; this one pins the shapes the owner actually sees now.
 //   W34  (Aug 12 00:36–00:38, raw 1608330–1608460, JOS-401): destroy meets the stack rule —
 //        a `2 Bone Chips` stack, two singles and one auto-SOLD copy (never held) followed by
 //        two destroys, all on one counting key inside one zone.
@@ -238,4 +244,106 @@ test('the floor is applied PER ROW, so a later loot is a fresh copy and owes an 
   ]
   assert.equal(computeHeldCounts(rows)['bone chips'], 2, 'floor at the destroy, then count forward')
   // max(0, 1 - 3 + 2) would read 0 here, which would silently eat a copy the player just farmed.
+})
+
+// ---- W47: the loot family as the 2026-08-18 patch prints it (JOS-453) -------------------------
+//
+// THE TICKET SAID THE PARSER HAD NEVER SEEN THESE SHAPES. It had: the four auto-disposition
+// regexes have claimed them since Task #40/#47, and a full-log sweep on 2026-08-23 found ZERO
+// unmatched `You looted` lines across all 12,045 loot events. What the patch changed is the
+// POPULATION — ` +N` on the looted item went from rare to routine (2,213 lines) — and the two
+// combine sub-shapes below, which are long-standing but which no committed fixture had pinned.
+// These tests exist so that stays true rather than being re-litigated from a live log next time.
+
+test('W47 auto-sell of a +N drop: the plus survives verbatim and is NEVER held', () => {
+  const rows = replayLoot(readFixture('w47-autosell-patch.log'))
+
+  const gauntlets = rows.find((r) => r.item === 'Ethereal Mist Gauntlets +4')
+  assert.ok(gauntlets, 'the +4 stays on the item name, article stripped')
+  assert.equal(gauntlets!.disposition, 'sold')
+  assert.equal(gauntlets!.source, 'High Priest M`kari')
+
+  const sleeves = rows.find((r) => r.item === 'Shadow Rage Sleeves +4')
+  assert.ok(sleeves && sleeves.disposition === 'sold' && sleeves.source === 'a forsaken revenant')
+
+  // `sold it for free.` and `sold it for <coins>.` are ONE disposition — the price is not modelled.
+  const ring = rows.find((r) => r.item === 'Fire Emerald Ring')
+  assert.ok(ring && ring.disposition === 'sold', '107 platinum sells the same as free')
+
+  // Held counts: an auto-sold item never reaches the bags, plus or no plus.
+  const held = computeHeldCounts(rows)
+  assert.equal(held['ethereal mist gauntlets'] ?? 0, 0, 'the +N folds and still counts zero')
+  assert.equal(held['shadow rage sleeves'] ?? 0, 0)
+  assert.equal(held['fire emerald ring'] ?? 0, 0)
+  // Dashed keeps in the same window are unaffected — this is the control.
+  assert.equal(held['ruby'], 4, 'a 2-stack plus two singles')
+  assert.equal(held['diamond'], 1)
+  assert.equal(held['mote of infinitesimal potential'], 1, 'motes still count as ordinary loot')
+})
+
+test('W47 stacked auto-sell: the digits stay out of the item name', () => {
+  const rows = replayLoot(readFixture('w47-autosell-patch.log'))
+  const sulfur = rows.filter((r) => r.item === 'Crystallized Sulfur')
+  assert.equal(sulfur.length, 11, 'ten singles and one 2-stack, all auto-sold')
+  assert.ok(sulfur.every((r) => r.disposition === 'sold'))
+  assert.equal(sulfur.filter((r) => r.count === 2).length, 1, 'the `2 Crystallized Sulfur` stack')
+  assert.equal(computeHeldCounts(rows)['crystallized sulfur'] ?? 0, 0, 'sold stacks are not held')
+})
+
+test('W47 auto-merge sub-shapes: a merge that did not climb, and a tierless looted copy', () => {
+  const rows = replayLoot(readFixture('w47-autosell-patch.log'))
+  const combined = rows.filter((r) => r.disposition === 'combined')
+  // Hand-read from the fixture: Ethereal Mist Greaves, Indicolite Bracer, Lustrous Russet
+  // Vambraces ×2, Shadow Rage Wristguard, Shrieking Ahlspiess, Valorium Vambraces, Indicolite
+  // Vambraces.
+  assert.equal(combined.length, 8, 'eight auto-merges in the window')
+
+  // SUB-SHAPE 1 — the created tier EQUALS the looted one. 106 of these in the full log, and no
+  // fixture had one before: every W20 combine climbs, so "created is always higher" would have
+  // passed there and been wrong here.
+  const greaves = combined.find((r) => r.item === 'Ethereal Mist Greaves +4')
+  assert.ok(greaves, 'the +4 looted copy parsed')
+  assert.equal(greaves!.created, 'Ethereal Mist Greaves +4', 'created did NOT climb')
+
+  // SUB-SHAPE 2 — the looted copy is TIERLESS and `created` carries the only plus on the line.
+  // 345 of these in the full log. The created name is the whole tier statement (itemTiers folds it).
+  const vambraces = combined.filter((r) => r.item === 'Lustrous Russet Vambraces')
+  assert.equal(vambraces.length, 2, 'two tierless Lustrous Russet Vambraces combines')
+  assert.ok(vambraces.every((r) => r.created === 'Lustrous Russet Vambraces +6'))
+  const wristguard = combined.find((r) => r.item === 'Shadow Rage Wristguard')
+  assert.ok(wristguard && wristguard.created === 'Shadow Rage Wristguard +6')
+  const ahlspiess = combined.find((r) => r.item === 'Shrieking Ahlspiess')
+  assert.ok(ahlspiess && ahlspiess.created === 'Shrieking Ahlspiess +6')
+  // …and the tierless case on the "an" article, where the created plus is only +4.
+  const indicoliteVamb = combined.find((r) => r.item === 'Indicolite Vambraces')
+  assert.ok(indicoliteVamb && indicoliteVamb.created === 'Indicolite Vambraces +4')
+
+  // The ordinary climb still works, on both articles.
+  const bracer = combined.find((r) => r.item === 'Indicolite Bracer +4')
+  assert.ok(bracer && bracer.created === 'Indicolite Bracer +6', '"an" article on both sides')
+  const valorium = combined.find((r) => r.item === 'Valorium Vambraces +1')
+  assert.ok(valorium && valorium.created === 'Valorium Vambraces +5')
+
+  // The invariant the held-count net-zero rule rests on: same base name on both sides, always.
+  const base = (n: string): string => n.replace(/\s*\+\d+$/, '')
+  for (const r of combined) {
+    assert.ok(r.created, `${r.item} carries its created item`)
+    assert.equal(base(r.created!), base(r.item), 'created is the same base item')
+  }
+
+  // Net zero held, whether or not the looted copy stated a tier.
+  const held = computeHeldCounts(rows)
+  assert.equal(held['lustrous russet vambraces'] ?? 0, 0)
+  assert.equal(held['ethereal mist greaves'] ?? 0, 0)
+  assert.equal(held['indicolite bracer'] ?? 0, 0)
+})
+
+test('W47 zone tagging: rows before the first zone line say nothing rather than guessing', () => {
+  const rows = replayLoot(readFixture('w47-autosell-patch.log'))
+  // The window opens mid-session, so the early rows genuinely have no zone to name.
+  const sleeves = rows.find((r) => r.item === 'Shadow Rage Sleeves +4')
+  assert.equal(sleeves!.zone, undefined, 'no zone claimed before the first zone line')
+  // …and after `You have entered The Plane of Hate.` every row carries it.
+  const crown = rows.find((r) => r.item === 'Ruby Crown')
+  assert.equal(crown!.zone, 'The Plane of Hate')
 })
