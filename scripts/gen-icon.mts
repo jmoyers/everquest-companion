@@ -183,7 +183,7 @@ function drawMaster(S: number): Canvas {
   const eW = Math.round(44 * scale)
   cv.rect({ x0: eX, y0: top, x1: eX + strokeW, y1: bot }, GOLD) // vertical spine
   cv.rect({ x0: eX, y0: top, x1: eX + eW, y1: top + strokeW }, GOLD) // top bar
-  cv.rect({ x0: eX, y0: Math.round((midY - 6) * scale), x1: eX + eW - Math.round(7 * scale), y1: Math.round((midY + 6) * scale) }, GOLD) // mid bar
+  cv.rect({ x0: eX, y0: midY - Math.round(strokeW / 2), x1: eX + eW - Math.round(7 * scale), y1: midY + Math.round(strokeW / 2) }, GOLD) // mid bar
   cv.rect({ x0: eX, y0: bot - strokeW, x1: eX + eW, y1: bot }, GOLD) // bottom bar
   cv.rect({ x0: eX, y0: top, x1: eX + Math.round(4 * scale), y1: bot }, GOLD_HI) // highlight along the spine
 
