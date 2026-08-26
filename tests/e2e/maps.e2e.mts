@@ -56,6 +56,9 @@ import {
 } from './appHarness.mjs'
 import { mainWindow } from './appWindow.mjs'
 import { launchOnFixture } from './logFixture.mjs'
+// The branch's three clicks — a pin, a `to <Zone>` label, the row's page door — live next door;
+// this file is at the factoring ceiling (mapPinSteps.mts carries the why of each).
+import { stepConnectionLabel, stepOpenMobDoor, stepPinClick } from './mapPinSteps.mjs'
 
 const NAV = '[data-testid="nav-maps"]'
 const HEADER = '[data-testid="maps-header"]'
@@ -563,9 +566,16 @@ async function stepPane(page: Page): Promise<void> {
   await stepPaneBounds(page)
   await stepPaneFilter(page)
   await stepPaneSelect(page)
+  // The pin's click is the pane row's OPPOSITE on the transform (ring, no centring), so it runs
+  // right after the row step that proved the centring; the page door goes there and back before
+  // anything changes zone.
+  await stepPinClick(page)
+  await stepOpenMobDoor(page)
   await stepPaneClose(page)
   await stepCrossZone(page)
   await stepCrossZoneMob(page)
+  // LAST of all: it leaves you on yet another map.
+  await stepConnectionLabel(page)
 }
 
 async function main(): Promise<void> {

@@ -43,6 +43,19 @@ test('a name the table refuses stays a plain label — no fuzzy guess, no neares
   assert.equal(connectionTarget('to Butcherblock/Ocean of Tears/Qeynos', NONE), null)
 })
 
+test('an AMBIGUOUS city name stays a plain label — the table maps it to null on purpose', () => {
+  // `Freeport` is three maps (freporte/freportn/freportw) and `Kaladim` is two; the zone table
+  // deliberately carries no row for the bare name (zones.ts: "DELIBERATELY NOT IN THE TABLE"),
+  // so a mapmaker's `to_Freeport` must not open one of them on a coin flip. The half-names the
+  // table DOES carry still resolve, which is what makes the refusal a refusal and not a gap.
+  assert.equal(connectionTarget('to Freeport', NONE), null)
+  assert.equal(connectionTarget('to Kaladim', NONE), null)
+  assert.equal(connectionTarget('to Qeynos', NONE), null)
+  assert.equal(connectionTarget('to Neriak', NONE), null)
+  assert.equal(connectionTarget('to East Freeport', NONE), 'freporte')
+  assert.equal(connectionTarget('to North Kaladim', NONE), 'kaladimb')
+})
+
 test('the installed-pack gate: a known stem with no map stays inert; an empty set gates nothing', () => {
   const installed: ReadonlySet<ZoneShort> = new Set(['everfrost'])
   assert.equal(connectionTarget('to Everfrost Peaks', installed), 'everfrost')
