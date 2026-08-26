@@ -17,6 +17,7 @@ import { gearEffectiveHp, gearRatio } from './gearScale'
 // The skill vocabulary is NOT restated here — `weaponType.ts` measured it and folded it, and one
 // fold is what keeps the Gear tab's weapon filter and this policy answering the same question.
 import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
+import { isShieldLike } from './shield'
 
 // =================================================================================================
 // ROLE WEIGHTS — two layers: what the FOCUS values, and what the CLASS can even use
@@ -539,14 +540,16 @@ function derivedTotal(stats: GearStats, weights: RoleWeights): number {
 //
 // AND THE OFFHAND PREDICATE IS CALLED `shieldLike` BECAUSE THAT IS ALL IT CAN HONESTLY CLAIM. No
 // field in the corpus says "this is a shield" — exactly ONE page states `Skill: SHIELD` (Crushbone
-// Fetish, SECONDARY, AC 8) — so the predicate is a SHAPE: a row whose only slot is SECONDARY, that
-// states no weapon skill, and that states an AC. That is 147 rows; 130 of them carry a shield word
-// in the name (Shield, Aegis, Barrier, Buckler, Bulwark, Targ…) and the other 17 are offhand curios
-// with an AC on them — a lute, a giant's sandal, a parrying dagger, a stein. Those 17 are FALSE
-// POSITIVES and are stated as such rather than filtered by a name regex, which would be exactly the
-// fuzzy join law 12 refuses. The bucket it excludes is the one that matters: the 64 SECONDARY-only
-// rows with NO AC (horns, dolls, books, candles) and the 198 multi-slot SECONDARY non-weapons
-// (140 of them PRIMARY+SECONDARY), none of which a tank wants suggested as an offhand.
+// Fetish, SECONDARY, AC 8) — so the answer is a heuristic, and it is `planner/shield.ts`'s: a
+// SECONDARY-slot row whose name speaks a shield word or whose skill reads SHIELD. ONE RULE FOR THE
+// WHOLE FORK (2026-08-25): this module used to carry its own shape (only-slot SECONDARY, no weapon
+// skill, an AC stated — 147 rows) and the gear index carried the word rule (130 rows); measured
+// against each other they agreed on 120, and the ten only the word rule keeps are real shields the
+// shape misses — seven the corpus places in BACK+SECONDARY (Lodizal Shell Shield, Aegis of Life,
+// Shield of the Immaculate…), a buckler stating no AC, a shield stating a Piercing skill — while the
+// 27 only the shape keeps are ten "Guard"/"Barrier" shields and seventeen curios with an AC (a
+// lute, a stein, a sandal). A tank's offhand slot and the Gear tab's Shield pick must not disagree
+// about what a shield is, so the word rule won and lives beside the index that folds it in.
 
 /** What a slot may be filled with, when a role constrains it at all. */
 export type SlotKind = 'weapon-1h' | 'weapon-2h' | 'weapon-ranged' | 'shield-like'
@@ -616,18 +619,11 @@ export function gearHandedness(skill: string | undefined): '1h' | '2h' | null {
   return TWO_HAND.has(type) ? '2h' : null
 }
 
-/**
- * THE SHAPE OF A SHIELD, and no more than that — see the census above for the 147 rows it matches
- * and the 17 of those that are honestly curios rather than shields.
- */
-export function isShieldLike(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>): boolean {
-  if (row.slots.length !== 1 || row.slots[0] !== 'SECONDARY') return false
-  if (weaponTypeOf(row.skill) !== null) return false
-  return row.stats.AC !== undefined
-}
+/** The one shield rule, re-exported so a policy reader has one door — see the census above. */
+export { isShieldLike }
 
 /** Does this row satisfy a slot's stated kind? One dispatch, so the three arms cannot disagree. */
-export function rowIsKind(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>, kind: SlotKind): boolean {
+export function rowIsKind(row: Pick<GearRow, 'slots' | 'skill' | 'name'>, kind: SlotKind): boolean {
   if (kind === 'shield-like') return isShieldLike(row)
   if (kind === 'weapon-ranged') return isRangedWeapon(row.skill)
   return gearHandedness(row.skill) === (kind === 'weapon-1h' ? '1h' : '2h')
@@ -640,7 +636,7 @@ export function rowIsKind(row: Pick<GearRow, 'slots' | 'skill' | 'stats'>, kind:
 export function policyAdmits(
   policy: WeaponSlotPolicy,
   slot: EquipSlot,
-  row: Pick<GearRow, 'slots' | 'skill' | 'stats'>
+  row: Pick<GearRow, 'slots' | 'skill' | 'name'>
 ): boolean {
   if (policy.closed?.includes(slot) === true) return false
   const kind = policy.only?.[slot]

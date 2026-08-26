@@ -39,7 +39,7 @@ import {
   type GearRole
 } from '../src/shared/planner/roleWeights'
 import { buildProgressionPlan, type PlanCorpora, type PlanInputs } from '../src/shared/planner/progressionPlan'
-import { weaponTypeOf } from '../src/shared/planner/weaponType'
+import { weaponTypeOf, normalizeSkillToken } from '../src/shared/planner/weaponType'
 import { zoneLevelKey, type ZoneLevels } from '../src/shared/planner/zoneLevels'
 import type { ConBand } from '../src/shared/conBands'
 
@@ -91,35 +91,34 @@ test('CENSUS: a row that states NO skill is not a weapon, and a weapon-only slot
   assert.equal(ranged.every((r) => gearHandedness(r.skill) === null), true)
 })
 
-test('CENSUS: `isShieldLike` is a SHAPE, and the false positives are stated rather than filtered', () => {
+test('CENSUS: `isShieldLike` is the fork\'s ONE shield rule (planner/shield.ts), and the tank offhand reads it', () => {
   const shields = ROWS.filter((r) => isShieldLike(r))
-  assert.equal(shields.length >= 147, true, `shield-shaped rows: ${shields.length} (was 147)`)
+  assert.equal(shields.length >= 130, true, `shield rows: ${shields.length} (was 130)`)
 
-  // THE SHAPE, restated as three predicates so a future edit cannot loosen one of them unnoticed.
-  assert.equal(shields.every((r) => r.slots.length === 1 && r.slots[0] === 'SECONDARY'), true)
-  assert.equal(shields.every((r) => weaponTypeOf(r.skill) === null), true)
-  assert.equal(shields.every((r) => r.stats.AC !== undefined), true)
+  // THE RULE, restated so a future edit cannot loosen a clause unnoticed: every match sits in the
+  // SECONDARY slot (a "Shield of…" cloak is not a shield), and speaks a shield word or the SHIELD skill.
+  const WORDS = /shield|buckler|aegis|targe|bulwark/i
+  assert.equal(shields.every((r) => r.slots.includes('SECONDARY')), true)
+  assert.equal(shields.every((r) => WORDS.test(r.name) || normalizeSkillToken(r.skill ?? '') === 'SHIELD'), true)
+  assert.equal(shields.some((r) => r.name === 'Crushbone Fetish'), true, 'the one page stating Skill: SHIELD')
 
-  // IT IS NOT A CLAIM OF SHIELD-NESS, and the honest measure of that is how many of them read like
-  // shields: 130 of the 147 carry a shield word, and the rest are offhand curios that happen to
-  // state an AC. The module header names them; this pins that the gap is real and small.
-  const SHIELDISH = /shield|aegis|barrier|buckler|targ|protector|bulwark|guard|ward|orb|crest|kite|tower/i
-  const odd = shields.filter((r) => !SHIELDISH.test(r.name))
-  assert.equal(odd.length <= 25, true, `unshieldish shield-shaped rows: ${odd.length} (was 17)`)
-  assert.equal(odd.some((r) => r.name === 'Crushbone Fetish'), true, 'the one page stating Skill: SHIELD')
-
-  // THE BUCKETS IT KEEPS OUT, which are the reason the AC clause and the SECONDARY-ONLY clause both
-  // exist: horns/dolls/books state no AC, and a PRIMARY+SECONDARY curio is not an offhand choice.
-  const secondaryOnly = ROWS.filter(
-    (r) => r.slots.length === 1 && r.slots[0] === 'SECONDARY' && weaponTypeOf(r.skill) === null
+  // WHY THE WORD RULE WON over the shape this module used to carry (only-slot SECONDARY + no weapon
+  // skill + an AC): the shape missed real shields the corpus places in BACK+SECONDARY, one stating no
+  // AC and one stating a Piercing skill. Each is a shield to a player, and now to the tank policy.
+  for (const name of ['Lodizal Shell Shield', 'Aegis of Life', 'Shield of the Immaculate', 'Froglok Tuk Buckler']) {
+    const row = ROWS.find((r) => r.name === name)
+    if (row !== undefined) assert.equal(isShieldLike(row), true, `${name} reads as a shield`)
+  }
+  // The ONE known false positive is stated rather than filtered (law 12: no fuzzy join to hide it).
+  const stave = ROWS.find((r) => r.name === 'Stave of Shielding')
+  if (stave !== undefined) assert.equal(isShieldLike(stave), true, 'the stated false positive, kept honestly')
+  // And the buckets it keeps out: a PRIMARY-only weapon with "shield" in its name, and an offhand
+  // curio with an AC but no shield word (a lute, a stein) — the seventeen the old shape admitted.
+  assert.equal(ROWS.filter((r) => !r.slots.includes('SECONDARY')).every((r) => !isShieldLike(r)), true)
+  const curios = ROWS.filter(
+    (r) => r.slots.length === 1 && r.slots[0] === 'SECONDARY' && r.stats.AC !== undefined && !WORDS.test(r.name)
   )
-  assert.equal(secondaryOnly.filter((r) => r.stats.AC === undefined).every((r) => !isShieldLike(r)), true)
-  assert.equal(
-    ROWS.filter((r) => r.slots.includes('SECONDARY') && r.slots.length > 1).every((r) => !isShieldLike(r)),
-    true
-  )
-  // And nothing skill-less in that bucket is secretly a weapon: none of them states a DMG.
-  assert.equal(secondaryOnly.every((r) => r.stats.DMG === undefined), true)
+  assert.equal(curios.every((r) => normalizeSkillToken(r.skill ?? '') === 'SHIELD' || !isShieldLike(r)), true)
 })
 
 test('CENSUS: the real corpus answers each policy differently, and none of them is empty', () => {
@@ -132,8 +131,8 @@ test('CENSUS: the real corpus answers each policy differently, and none of them 
   // Dual wield takes one-handers in both hands and nothing else.
   assert.equal(admits('dualwield', 'SECONDARY') >= 757, true)
   assert.equal(admits('dualwield', 'PRIMARY') >= 1044, true)
-  // Tank's offhand is the shield shelf.
-  assert.equal(admits('tank', 'SECONDARY') >= 147, true)
+  // Tank's offhand is the shield shelf - the word rule's 130 (planner/shield.ts), not the old shape's 147.
+  assert.equal(admits('tank', 'SECONDARY') >= 130, true)
   assert.equal(admits('tank', 'SECONDARY') < admits('dualwield', 'SECONDARY'), true)
   // The unconstrained roles see every row their slots reach — today's behaviour, written down.
   for (const role of ['balanced', 'dps', 'dd', 'dot', 'healer'] as const) {
