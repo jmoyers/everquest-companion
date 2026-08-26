@@ -33,6 +33,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { CLASS_ABBRS, MAX_COMBO_SLOTS } from '../src/shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState } from '../src/shared/itemUpgrade'
 import { ITEM_MAX_TIER } from '../src/shared/itemStats'
@@ -420,4 +421,13 @@ test('the 2026-08-15 role widening did not evict a pick anybody already had stor
   assert.equal(sanitizePlanRole('1h'), 'balanced')
   assert.equal(sanitizePlanRole('dual-wield'), 'balanced')
   assert.equal(sanitizePlanRole('DoT'), 'balanced')
+})
+
+test('the `plan` view is LABELLED Recommended (owner, 2026-08-22) while its id and keys stay `plan`', () => {
+  // Read out of the source, the `telemetryContract.test.mts` way: `appViews.ts` reads a vite define
+  // and cannot be imported under plain node. The label is the one thing the rename changed; the
+  // view id, the `eq.plan.*` keys this file's own table names, and every `plan-*` testid did not.
+  const src = readFileSync(new URL('../src/renderer/src/appViews.ts', import.meta.url), 'utf8')
+  assert.match(src, /^\s*plan: 'Recommended',?\s*$/m, 'VIEW_LABELS.plan is Recommended')
+  assert.ok(Object.keys(AREA_FORM_TIER).some((k) => k.startsWith('eq.plan.')), 'the keys are still eq.plan.*')
 })

@@ -113,15 +113,16 @@ export const AREA_FORM_TIER = {
   'eq.planner.item': 'session',
   'eq.planner.open': 'session',
   'eq.planner.search': 'session',
-  // ---- the Plan tab ----
+  // ---- the Recommended tab (view id `plan`) ----
   // BOTH ARE PICKS, so both are restart-scoped by THE RULE above — "what you CHOSE is
   // restart-scoped". Neither is typed, neither is a narrowing you poke out of a list: the role is a
-  // four-option statement about what you are gearing FOR, and the reach is a two-option statement
-  // about who you fight with. They are the shape you gave the route, they are lit controls whenever
+  // closed-list statement about what you are gearing FOR (`PLAN_ROLES`, ten of them since the
+  // weapon and caster builds arrived), and the reach is a two-option statement about who you fight
+  // with. They are the shape you gave the route, they are lit controls whenever
   // the tab is up, and a player who plans as a tank plans as a tank next launch too.
   //
   // THE ERA TOGGLE IS NOT HERE, and its absence is the same decision the table's header records for
-  // the other nine already-persisted keys: the Plan tab shares `eq.planner.era` with the
+  // the other nine already-persisted keys: the Recommended tab shares `eq.planner.era` with the
   // Exaltations tab ON PURPOSE (plannerData.useEraOnly), one answer to "is this server open yet",
   // and re-homing it would give this area two.
   'eq.plan.role': 'restart',
@@ -312,7 +313,7 @@ export function sanitizeUpgrade(raw: unknown): ItemUpgradeState {
   return normalizeUpgradeState({ full: o.full, fraction: o.fraction })
 }
 
-// ---- the Plan tab ------------------------------------------------------------------------------
+// ---- the Recommended tab (view id `plan`) ------------------------------------------------------
 
 /** The con gate the route is read at — `PlanInputs.reach`, spelled once for the two consumers. */
 export type PlanReach = PlanInputs['reach']
@@ -321,7 +322,7 @@ export type PlanReach = PlanInputs['reach']
  * THE TWO CLOSED VOCABULARIES, AS VALUES, AND WHY THEY ARE `Record`s RATHER THAN LISTS.
  *
  * Both unions live in `shared/planner/progressionPlan.ts`, which exports no runtime spelling of
- * either — so a list here would be a second copy that a fifth role added to the fold would silently
+ * either — so a list here would be a second copy that an eleventh role added to the fold would silently
  * leave behind, and the sanitizer would answer `balanced` for a value the plan understands
  * perfectly. `Record<GearRole, true>` is the `VIEW_LABELS` trick from `appViews.ts`: adding a member
  * to the union without naming it HERE is a type error, which is the one moment anyone would

@@ -16,12 +16,14 @@
  * shopping list you can keep.
  *
  * WHAT IT ASSERTS, in order and each for its own reason:
- *   1. The gear area offers a Plan tab and clicking it mounts the view. `GEAR_AREA_VIEWS` derives
- *      the tab bar AND the nav row, so this is also the assertion that adding a fifth face did not
- *      cost the other four theirs (the shared bar is why `gear.e2e` is run beside this one).
+ *   1. The gear area offers a RECOMMENDED tab (view id `plan`, testid `tab-plan` — the label is the
+ *      owner's 2026-08-22 rename and `tests/areaMemory.test.mts` pins it) and clicking it mounts
+ *      the view. `GEAR_AREA_VIEWS` derives the tab bar AND the nav row, so this is also the
+ *      assertion that adding a fifth face did not cost the other four theirs (the shared bar is why
+ *      `gear.e2e` is run beside this one).
  *   2. WITH NO LEVEL STATED, THE TAB SAYS SO. This is the claim the feature would most easily fail
  *      quietly: the fold opens its first bracket AT the character's level, so a default of 1 would
- *      render a confident six-bracket route about a character the log has never described. The
+ *      render a confident seven-bracket route about a character the log has never described. The
  *      staged fixture states no level at all, which makes this the DEFAULT state rather than one
  *      the spec had to contrive.
  *   3. A DING FILLS IT IN, LIVE. `appendAt` writes the exact line the parser matches
@@ -37,6 +39,9 @@
  *      items from the fold, so pressing the button made the answer vanish. Fold rule 9 now FLAGS
  *      instead — a wished item bypasses the upgrade-gap test and sorts first — so the assertion is
  *      inverted with the rule, not softened.
+ *   6b. EACH ROW HAS ITS OWN WISH CONTROL, AND IT TOGGLES. The Gear row's `WishToggle`, on a plan
+ *      row: a second click REMOVES (JOS-343), a third adds back, and the row's `data-wished` follows
+ *      — which is the fold re-reading the wish document, not the control repainting itself.
  *   7. THE GEAR TAB'S HOVER COMPARISON IS ON THESE ROWS (owner ask, 2026-08-15 20:17). Asserted as
  *      mounting the SAME node (`gear-compare-pair`, keyed to the hovered item), because reuse is
  *      the claim — `tests/gearCompare.test.mts` and `gear.e2e` already own what is IN it.
@@ -115,7 +120,7 @@ async function stepMount(page: Page): Promise<boolean> {
   await page.click(NAV, { timeout: 15_000 })
 
   const hasTab = await until(async () => (await countOf(page, TAB)) > 0, 30_000)
-  if (!check('the gear area offers a Plan tab beside the four it already had', hasTab)) {
+  if (!check('the gear area offers a Recommended tab beside the four it already had', hasTab)) {
     const noLogs = (await textOf(page, 'main')).includes('No EverQuest logs found')
     if (noLogs) note('no character logs on this machine — the app shows its fresh-machine empty state')
     return false
@@ -127,7 +132,7 @@ async function stepMount(page: Page): Promise<boolean> {
 
   await page.click(TAB, { timeout: 15_000 })
   const mounted = await until(async () => (await countOf(page, VIEW)) > 0, 30_000)
-  check('clicking the Plan tab mounts the view', mounted)
+  check('clicking the Recommended tab mounts the view', mounted)
   return mounted
 }
 
@@ -315,7 +320,7 @@ async function stepAddBracket(page: Page): Promise<string[]> {
   )
 
   await page.click(TAB, { timeout: 15_000 })
-  if (!check('the Plan tab comes back', await until(async () => (await countOf(page, VIEW)) > 0, 30_000))) return []
+  if (!check('the Recommended tab comes back', await until(async () => (await countOf(page, VIEW)) > 0, 30_000))) return []
   const flagged = await settle(() => flaggedCount(page, keys), (n) => n > 0, { timeoutMs: 20_000 })
   check(
     'the rows STAY on the plan, flagged as wished - a wished item is flagged, never filtered',
@@ -323,6 +328,34 @@ async function stepAddBracket(page: Page): Promise<string[]> {
     `${String(flagged)} of ${String(keys.length)} still drawn, wearing the flag`
   )
   return keys
+}
+
+/** One row's own wish control — the Gear row's `WishToggle`, by the testid this tab gives it. */
+const wishControlOf = (key: string): string => `${targetOf(key)} [data-testid="plan-target-wish"]`
+
+/**
+ * 6b. ONE ROW'S CONTROL, BOTH WAYS.
+ *
+ * The bulk button (step 5) left every target wished, so the first row's control is met in its
+ * REMOVE state — asserted on the control's own `data-wished`, the machine-readable half of its
+ * label. A click takes the wish off, and the claim is read off the ROW's `data-wished`, not the
+ * button's: the row is flagged by the fold from the wish document, so a row that lost its flag is a
+ * store that changed, where a button that repainted could be a button lying. The row must still be
+ * there afterwards (this spec runs with every slot a gap, so it was an upgrade before it was a
+ * wish). A second click puts the wish back through the same `add` the bulk button used.
+ */
+async function stepToggleWish(page: Page, keys: readonly string[]): Promise<void> {
+  const key = keys[0]
+  if (key === undefined) return
+  const control = wishControlOf(key)
+  const flaggedRow = `${targetOf(key)}[data-wished="true"]`
+  if (!check('a wished target row carries its own wish control, in its REMOVE state', (await countOf(page, `${control}[data-wished="true"]`)) === 1, key)) return
+  await page.click(control, { timeout: 15_000 })
+  const removed = await until(async () => (await countOf(page, flaggedRow)) === 0, 20_000)
+  check('clicking it takes the wish OFF - the row stays, and stops wearing the flag', removed && (await countOf(page, targetOf(key))) === 1, key)
+  await page.click(control, { timeout: 15_000 })
+  const back = await until(async () => (await countOf(page, flaggedRow)) === 1, 20_000)
+  check('…and clicking again puts it back, through the same door the bulk button used', back, key)
 }
 
 /**
@@ -403,6 +436,7 @@ async function main(): Promise<void> {
         // costs it nothing (the pair is about the ITEM, not about its wish state) and saves a
         // second read of the route.
         keys = await stepAddBracket(page)
+        await stepToggleWish(page, keys)
         await stepHoverCompare(page, keys)
       }
       const over = await pageOverflow(page)
