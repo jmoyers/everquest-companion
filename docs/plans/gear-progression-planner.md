@@ -164,7 +164,8 @@ percentage counts — the first haste item is a real upgrade; beside a 36% sword
 haste at 0. A stated haste PENALTY scores as one — only the positive margin is clamped.
 **And the number is per slot, on both sides of the gap test (corrected 2026-08-25).**
 `PlanCorpora.ownedHaste` is the list of owned haste SOURCES with the slots each fits
-(`OwnedHaste[]`, folded from the DUMP-PRESENT set in `planOwned.ts`), and the fold reads it through
+(`OwnedHaste[]`, folded from the EQUIPPED set in `planOwned.ts` — owner, 2026-08-25: *"haste should only
+be EQUIPPED items"*; a haste blade in the bank is not haste you have), and the fold reads it through
 `ownedHasteOutside(sources, slot)` — the best haste you would still own with that slot swapped out.
 The haste weapon's own bar therefore keeps full credit for its haste and so does anything offered
 for that slot, which is what lets a strictly better haste weapon clear the bar while a hasteless one

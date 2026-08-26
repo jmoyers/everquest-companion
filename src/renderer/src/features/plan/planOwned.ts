@@ -11,10 +11,16 @@
 //     you loot this epoch, or an exaltation — proof a copy passed through your hands, even if you
 //     melted it (`gearOwnership.ts` rule 2, and `gearData.useOwnedOrLooted`'s own predicate). That
 //     is the fold's `owned` set, the EXCLUSION (rule 8).
-//   * WORN is what sets a slot's BAR and states the haste you have: DUMP-PRESENT copies only. A
-//     looted item the dump does not name is not on your character — sold, banked on another, melted
-//     — and a bar it set would be a bar for something you cannot wear, hiding every real upgrade
-//     under it; a haste item you melted would zero the haste credit of every glove in the game.
+//   * WORN is what sets a slot's BAR and states the haste you have: copies the dump files at an
+//     EQUIPPED location, and nothing else. Owner ruling, 2026-08-25: *"haste should only be
+//     EQUIPPED items"* — haste and bars come from what is EQUIPPED, and a haste blade in the bank is
+//     not haste you have. A looted item the dump does not name is not on your character at all
+//     (sold, banked on another, melted), and a copy in a bag or the bank is not on your character
+//     EITHER for this question — a bar it set would be a bar for something you are not wearing,
+//     hiding every real upgrade under it, and a banked haste blade would zero the haste credit of
+//     every glove in the game. The place is READ, never re-derived: `gearOwnership.ts` already
+//     classified every dump row into `OwnedFact.place` off `ownership.ts placeOfLocation`, and
+//     `'equipped'` is that vocabulary's own word.
 //
 // THE BAR AND THE CANDIDATE ARE SCORED UNDER ONE HASTE RULE (rule 12, the corrected reading): a
 // row's haste is credited only above the haste you would still own with THAT slot swapped out
@@ -38,17 +44,21 @@ import type { GearOwnershipMap } from '../gear/gearOwnership'
 export interface OwnedKeys {
   /** excluded as targets: you do not farm what has passed through your hands */
   held: ReadonlySet<string>
-  /** sets the bars and states the owned haste: what the dump says is on the character */
+  /** sets the bars and states the owned haste: what the dump files as EQUIPPED, nothing else */
   worn: ReadonlySet<string>
 }
 
-/** One pass over the ownership map, both sets. `null` (no dump, no loot) is two empty sets. */
+/**
+ * One pass over the ownership map, both sets. `null` (no dump, no loot) is two empty sets.
+ * A key is WORN when any of its dump facts sits at an equipped location — a copy worn AND a copy
+ * banked is still worn — and HELD when the dump, the log or an exaltation names it anywhere.
+ */
 export function ownedKeysOf(map: GearOwnershipMap | null): OwnedKeys {
   const held = new Set<string>()
   const worn = new Set<string>()
   if (map !== null) {
     for (const [key, o] of map) {
-      if (o.owned) worn.add(key)
+      if (o.facts.some((fact) => fact.place === 'equipped')) worn.add(key)
       if (o.owned || o.looted || o.exaltations > 0) held.add(key)
     }
   }
