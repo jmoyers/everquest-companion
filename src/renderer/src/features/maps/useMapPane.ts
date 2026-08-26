@@ -28,13 +28,14 @@ import {
   labelRows,
   mobRows,
   paneCounts,
+  paneGestures,
   pinsForRows,
-  rowTarget,
   wishedDrops,
   type LabelPaneRow,
   type MapPaneRow,
   type MobPaneRow,
   type PaneCounts,
+  type PaneSelection,
   type PlacedPin
 } from './mobPins'
 
@@ -67,24 +68,29 @@ export interface MapPaneState {
   selectedId: string | null
   /** Where the selected row is, in map coordinates — the ring's position. */
   selectedAt: { x: number; y: number } | null
-  /** `at` overrides the row's own first-pin target — the surface passes the SPECIFIC pin that
-   *  was clicked, so a row with several spawn points rings the one under the cursor. */
+  /** The PANE ROW's click: ring the row and centre the map on it (mobPins.ts `paneGestures`). */
   select: (row: MapPaneRow, at?: { x: number; y: number }) => void
+  /** The PIN's click: ring it where it stands, no centring — `at` is the SPECIFIC pin under the
+   *  cursor, so a row with several spawn points rings that one. */
+  mark: (row: MapPaneRow, at?: { x: number; y: number }) => void
 }
 
 export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPaneArgs): MapPaneState {
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [selected, setSelected] = useState<PaneSelection | null>(null)
   // The box echoes every keystroke; only the filtering waits for the paint to settle.
   const q = useDeferredValue(query)
 
-  const allMobs = useMemo<MobPaneRow[]>(
-    () => (zoneName == null ? [] : mobRows(zoneName, catalog)),
-    [zoneName, catalog]
-  )
-  // The wish-list join — walks the zone's rows, not the catalog, so an edit re-derives cheaply.
+  // The wish-list keys come FIRST because the row walk reads them: a wished common is listed
+  // (mobRows' exemption), so the catalog scan re-runs on a wish edit as well as a zone change.
+  // That is the same 3ms join, on an event that is a click, not a keystroke.
   const wishlist = useWishlist().list
   const wishedKeys = useMemo(() => new Set(wishlist.entries.map((e) => e.itemKey)), [wishlist.entries])
+  const allMobs = useMemo<MobPaneRow[]>(
+    () => (zoneName == null ? [] : mobRows(zoneName, catalog, wishedKeys)),
+    [zoneName, catalog, wishedKeys]
+  )
+  // The wish-list join — walks the zone's rows, not the catalog, so an edit re-derives cheaply.
   const wishes = useMemo(() => {
     const m = new Map<string, readonly string[]>()
     if (wishedKeys.size > 0)
@@ -105,17 +111,8 @@ export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPa
     setSelected(null)
   }, [mapId])
 
-  const select = useCallback(
-    (row: MapPaneRow, at?: { x: number; y: number }) => {
-      const target = at ?? rowTarget(row)
-      // Unlocatable rows are already disabled in the pane; this is the belt-and-braces half, so
-      // no caller can ever produce a ring floating at a position nothing stated.
-      if (target == null) return
-      setSelected({ id: row.id, x: target.x, y: target.y })
-      onCenter(target.x, target.y)
-    },
-    [onCenter]
-  )
+  // The two clicks that select (mobPins.ts carries the why): a row centres, a pin does not.
+  const { select, mark } = useMemo(() => paneGestures(setSelected, onCenter), [onCenter])
 
   return {
     query,
@@ -128,7 +125,8 @@ export function useMapPane({ zoneName, points, catalog, mapId, onCenter }: MapPa
     wishes,
     selectedId: selected?.id ?? null,
     selectedAt: selected ? { x: selected.x, y: selected.y } : null,
-    select
+    select,
+    mark
   }
 }
 
@@ -284,14 +282,15 @@ export function useZonePane(args: {
   return { ...pane, open, setOpen, hits }
 }
 
-/** What the surface needs from the pane: the pins, the selection, the wish-list join, and the one
- *  `select` a clicked pin routes through (MapMobPins.tsx). Null ⇒ draw nothing. */
+/** What the surface needs from the pane: the pins, the selection, the wish-list join, and the
+ *  `mark` a clicked pin routes through (MapMobPins.tsx) — the no-centre half of the selection,
+ *  because the pin is already under the cursor. Null ⇒ draw nothing. */
 export interface PaneOverlay {
   pins: readonly PlacedPin[]
   selectedId: string | null
   selectedAt: { x: number; y: number } | null
   wishes: ReadonlyMap<string, readonly string[]>
-  select: (row: MapPaneRow, at?: { x: number; y: number }) => void
+  mark: (row: MapPaneRow, at?: { x: number; y: number }) => void
 }
 
 export function paneOverlay(pane: ZonePaneState): PaneOverlay | null {
@@ -301,6 +300,6 @@ export function paneOverlay(pane: ZonePaneState): PaneOverlay | null {
     selectedId: pane.selectedId,
     selectedAt: pane.selectedAt,
     wishes: pane.wishes,
-    select: pane.select
+    mark: pane.mark
   }
 }

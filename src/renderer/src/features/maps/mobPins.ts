@@ -39,6 +39,9 @@ import type { MobEntry } from '@shared/types'
 // the `@shared/*` alias exists only inside the vite build, and tests/mapMobPane.test.mts drives
 // this module — against the REAL catalog — under plain `node --import tsx --test`.
 import { sourceItemKey } from '../../lib/itemSources'
+// The article rule is SHARED with the Recommended tab (shared/mobNames.ts): one fold, so the two
+// surfaces cannot disagree about what a common is.
+import { isCommonMob } from '../../../../shared/mobNames'
 import { mobsInZone } from '../mobs/mobZone'
 import { mapFromLoc } from './mapGeometry'
 
@@ -53,21 +56,8 @@ const LEGEND_LAYER = 2
 /** How many pins the surface will draw at once. See `pinsForRows`. */
 export const MAX_PINS = 400
 
-/**
- * `a skeleton` / `an orc pawn` — the game's own convention for a COMMON spawn is the leading
- * article, and the named mobs worth walking to go without one (`skeleton Lrodd`, `the ghoul
- * lord`, Baron Telyx V`Zher). The catalog carries no rarity field (mobTypes.ts keeps it
- * compact on purpose), so the article is the one signal the data itself states.
- *
- * Case-insensitive because the wiki capitalizes some articles (`A Chokidai Growler`). MEASURED
- * over the committed catalog, 2026-08-16: 2,137 of 7,872 pages are articled.
- */
-const COMMON_NAME_RE = /^(a|an)\s/i
-
-/** True for the trash spawns the map pane does not list. Exported for its own test. */
-export function isCommonMob(name: string): boolean {
-  return COMMON_NAME_RE.test(name)
-}
+/** Module-level empty so "nothing wished" is a STABLE reference, never a fresh Set per call. */
+const NO_WISHES: ReadonlySet<string> = new Set()
 
 /** One spawn point, already in MAP coordinates — ready for `vp.toScreen`. */
 export interface MobPin {
@@ -133,14 +123,25 @@ export function mobPins(entry: MobEntry): MobPin[] {
  * screen would be a coin flip dressed as knowledge. Those rows are LISTED — the mob does live
  * here — and the pane states why they carry no pin (world-model law 1).
  *
- * COMMON SPAWNS ARE NOT LISTED AT ALL (owner call, 2026-08-16): the map pane exists for the
- * mobs worth walking to, and a zone's forty `a skeleton`s bury its nameds. `isCommonMob` is the
- * gate; the Mobs tab and the cross-zone search still answer for commons — this is the MAP's
- * filter, not the app's.
+ * COMMON SPAWNS ARE NOT LISTED AT ALL (fork decision, kaltinril, 2026-08-16): the map pane exists
+ * for the mobs worth walking to, and a zone's forty `a skeleton`s bury its nameds. `isCommonMob`
+ * is the gate; the Mobs tab and the cross-zone search still answer for commons — this is the
+ * MAP's filter, not the app's.
+ *
+ * …EXCEPT A COMMON THAT DROPS SOMETHING YOU WISHED FOR. A wish is an explicit statement by the
+ * user (the argument respawnPins.ts makes for a timer watch), and MEASURED over the committed
+ * catalog, 2026-08-25, roughly 1,700 of the 2,156 articled pages carry a drop table — so an
+ * item whose only droppers are `a bandit`-style commons would otherwise never pin, and the wish
+ * lane would be silently empty for most of the corpus. `wished` is the wish list's canonical
+ * item keys; absent or empty, the filter is the plain article rule.
  */
-export function mobRows(zoneRaw: string, catalog: MobEntry[]): MobPaneRow[] {
+export function mobRows(
+  zoneRaw: string,
+  catalog: MobEntry[],
+  wished: ReadonlySet<string> = NO_WISHES
+): MobPaneRow[] {
   return mobsInZone(zoneRaw, catalog)
-    .filter((m) => !isCommonMob(m.name))
+    .filter((m) => !isCommonMob(m.name) || wishedDrops(m, wished).length > 0)
     .map((m) => {
       const zoneCount = m.zones?.length ?? 0
       const ambiguous = zoneCount > 1
@@ -227,6 +228,55 @@ export function rowTarget(row: MapPaneRow): { x: number; y: number } | null {
 /** True when the row can be pinned and centred at all — what the pin affordance is gated on. */
 export function isLocatable(row: MapPaneRow): boolean {
   return rowTarget(row) !== null
+}
+
+/** The selection: which row, and where on the map its ring goes. */
+export interface PaneSelection {
+  id: string
+  x: number
+  y: number
+}
+
+/**
+ * THE TWO CLICKS THAT SELECT, and why they are not one gesture.
+ *
+ * A PANE ROW is off the map by definition, so its click has to bring the row into view: ring it
+ * AND centre on it (zooming in from a fitted view, the search jump's rule). A PIN is already under
+ * the cursor, and centring on it MOVES it — synchronously, before the second click of a
+ * double-click lands — so the double-click that opens the mob's page (MapMobPins.tsx) fell on
+ * empty map or on a neighbour instead. The pin's click therefore rings and does nothing else.
+ *
+ * ONE selection, still: both write through the same `setSelected`, so the ring, the raised pin and
+ * the highlighted row cannot disagree. This is the pure shape of that split so a node test can pin
+ * "a pin does not ask to centre; a row does" without React (tests/mapMobPane.test.mts).
+ */
+export interface PaneGestures {
+  /** The pane row's click: ring it and bring it into view. */
+  select: (row: MapPaneRow, at?: { x: number; y: number }) => void
+  /** The pin's click: ring it where it stands. `at` is the specific pin under the cursor. */
+  mark: (row: MapPaneRow, at?: { x: number; y: number }) => void
+}
+
+export function paneGestures(
+  setSelected: (next: PaneSelection) => void,
+  onCenter: (x: number, y: number) => void
+): PaneGestures {
+  const mark = (row: MapPaneRow, at?: { x: number; y: number }): void => {
+    const target = at ?? rowTarget(row)
+    // Unlocatable rows are already disabled in the pane; this is the belt-and-braces half, so
+    // no caller can ever produce a ring floating at a position nothing stated.
+    if (target == null) return
+    setSelected({ id: row.id, x: target.x, y: target.y })
+  }
+  return {
+    mark,
+    select: (row, at) => {
+      const target = at ?? rowTarget(row)
+      if (target == null) return
+      mark(row, target)
+      onCenter(target.x, target.y)
+    }
+  }
 }
 
 /** One pin about to be drawn: which row it belongs to, where it is, and its React key. */

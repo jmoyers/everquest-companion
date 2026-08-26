@@ -1,5 +1,5 @@
-// respawnPins.ts — the RESPAWN-TIMER pin lane: where the mobs you are timing spawn (user ask,
-// 2026-08-17: "the map should show the location of any mob on a timer").
+// respawnPins.ts — the RESPAWN-TIMER pin lane: where the mobs you are timing spawn (the fork's
+// ask, kaltinril, 2026-08-17: "the map should show the location of any mob on a timer").
 //
 // A THIRD AUTHORITY joins the surface, and like the first two it is never blurred into them:
 // the respawn module's rows are YOUR OWN kills and sightings (src/main/modules/respawn.ts, the
@@ -29,7 +29,7 @@ import type { MobEntry } from '@shared/types'
 import type { ZoneShort } from '@shared/maps'
 import type { RespawnRow } from '@shared/respawn'
 import { formatRespawnDuration, respawnReading } from '../../../../shared/respawn'
-import { zoneShortName } from '../../../../shared/zones'
+import { ZONES, zoneShortName } from '../../../../shared/zones'
 import { mobKey } from '../../../../shared/mobKey'
 import { mobsInZone } from '../mobs/mobZone'
 import { mobPins, type MobPin } from './mobPins'
@@ -46,30 +46,46 @@ export interface TimerPin {
 }
 
 /**
- * The timer rows that belong to the map on screen, joined to their spawn points.
+ * The catalog side of the join for ONE drawn map: the stem, and its zone's rows keyed by `mobKey`.
  *
- * `zoneStem` is the DRAWN map (`data.zone`); `zoneName` is the same long name the pane's catalog
- * join uses (`mobsInZone` owns the folding, exactly as mobRows says). Both null-safe: no map, no
- * lane.
+ * KEYED ON THE STEM AND NOTHING ELSE. The lane used to take the stem AND the pane's long zone name
+ * as two arguments, and MapBody paired `data.zone` with the name of the zone being OPENED — which
+ * are different places for the length of a fetch, because useMapData keeps the previous map on
+ * screen while the next one loads. Rows filtered by the old map, names indexed from the new zone's
+ * catalog: diamonds from the wrong bestiary during every zone switch. Deriving the long name from
+ * the stem HERE (the zone table's own spelling — `mobsInZone` folds it exactly as it folds the
+ * log's) makes the mismatch unwritable, and lets the hook memoize this walk on the stem alone
+ * rather than rebuilding a 7,866-row index on every one-second respawn delta.
  */
-export function timerPinRows(
-  rows: readonly RespawnRow[],
-  zoneStem: ZoneShort | null,
-  zoneName: string | null,
-  catalog: MobEntry[]
-): TimerPin[] {
-  if (zoneStem == null || zoneName == null || rows.length === 0) return []
-  const here = rows.filter((r) => zoneShortName(r.zone) === zoneStem)
-  if (here.length === 0) return []
-  // The catalog side of the name join, keyed by `mobKey` on BOTH sides — the fold shared/mobKey.ts
-  // exists for (quote fold, whitespace); a plain-lowercase join would miss a backticked name.
-  const index = new Map<string, MobEntry>()
-  for (const m of mobsInZone(zoneName, catalog)) {
-    const k = mobKey(m.name)
-    if (!index.has(k)) index.set(k, m)
-  }
+export interface TimerZone {
+  stem: ZoneShort
+  /** `mobKey` → catalog row. The fold shared/mobKey.ts exists for (quote fold, whitespace); a
+   *  plain-lowercase join would miss a backticked name. First page wins on a collision. */
+  byKey: ReadonlyMap<string, MobEntry>
+}
+
+export function timerZone(stem: ZoneShort | null, catalog: MobEntry[]): TimerZone | null {
+  if (stem == null) return null
+  const name = ZONES.find((z) => z.short === stem)?.name
+  // A stem the table does not carry has no bestiary to join — an empty index, not a guess.
+  const byKey = new Map<string, MobEntry>()
+  if (name !== undefined)
+    for (const m of mobsInZone(name, catalog)) {
+      const k = mobKey(m.name)
+      if (!byKey.has(k)) byKey.set(k, m)
+    }
+  return { stem, byKey }
+}
+
+/**
+ * The timer rows that belong to the map on screen, joined to their spawn points. Null-safe on
+ * the zone: no map, no lane.
+ */
+export function timerPinRows(rows: readonly RespawnRow[], zone: TimerZone | null): TimerPin[] {
+  if (zone == null || rows.length === 0) return []
+  const here = rows.filter((r) => zoneShortName(r.zone) === zone.stem)
   return here.map((r) => {
-    const entry = index.get(mobKey(r.display))
+    const entry = zone.byKey.get(mobKey(r.display))
     // A multi-zone page's numbers cannot be attributed to this map — mobRows' rule, restated
     // here because this lane reads the catalog directly rather than through the pane's rows.
     const pins = entry === undefined || (entry.zones?.length ?? 0) > 1 ? [] : mobPins(entry)
@@ -77,33 +93,39 @@ export function timerPinRows(
   })
 }
 
-/**
- * What a timer pin says, at `nowMs`. Leads with the clock because that is what the lane is FOR;
- * the wording keeps the module's own honesty — an elapsed estimate is "due", never "up".
- */
-export function timerPinText(t: TimerPin, nowMs: number): string {
-  const r = respawnReading(t.row, nowMs)
-  if (r.due) {
-    const over = r.overdueMs > 0 ? ` (${formatRespawnDuration(r.overdueMs / 1000)} ago)` : ''
-    return `${t.display} - respawn due${over}`
-  }
-  if (r.remainingMs !== undefined) {
-    return `${t.display} - respawns in ${formatRespawnDuration(r.remainingMs / 1000)}`
-  }
-  // No estimate: the clock only knows when it started. Say that, and nothing more.
-  return `${t.display} - killed ${formatRespawnDuration(r.elapsedMs / 1000)} ago, no respawn estimate`
+/** Both strings a timer pin wears, from ONE reading of the clock. */
+export interface TimerPinLabels {
+  /** The whole sentence — the hover and the native title. */
+  text: string
+  /** The clock alone — worn under the diamond all the time. */
+  clock: string
 }
 
 /**
- * The clock ALONE — the label a timer pin wears all the time (user ask, 2026-08-18: the time
- * until it spawns, on the mob), where the hover still tells the whole `timerPinText` story.
- * "due" when it is; "?" when the clock only knows when it started — a duration would be a guess,
- * and the hover already says why.
+ * What a timer pin says, at `nowMs`, read ONCE: the layer ticks at 1 Hz over every placed pin,
+ * and the title, the clock and the hover used to each call `respawnReading` for themselves.
+ *
+ * `text` leads with the clock because that is what the lane is FOR, and keeps the module's own
+ * honesty — an elapsed estimate is "due", never "up"; no estimate admits it. `clock` is the label
+ * a timer pin wears all the time (the fork's ask, kaltinril, 2026-08-18: the time until it
+ * spawns, on the mob): "due" when it is, "?" when the clock only knows when it started — a
+ * duration would be a guess, and the hover already says why.
  */
-export function timerPinClock(t: TimerPin, nowMs: number): string {
+export function timerPinLabels(t: TimerPin, nowMs: number): TimerPinLabels {
   const r = respawnReading(t.row, nowMs)
-  if (r.due) return 'due'
-  return r.remainingMs === undefined ? '?' : formatRespawnDuration(r.remainingMs / 1000)
+  if (r.due) {
+    const over = r.overdueMs > 0 ? ` (${formatRespawnDuration(r.overdueMs / 1000)} ago)` : ''
+    return { text: `${t.display} - respawn due${over}`, clock: 'due' }
+  }
+  if (r.remainingMs !== undefined) {
+    const left = formatRespawnDuration(r.remainingMs / 1000)
+    return { text: `${t.display} - respawns in ${left}`, clock: left }
+  }
+  // No estimate: the clock only knows when it started. Say that, and nothing more.
+  return {
+    text: `${t.display} - killed ${formatRespawnDuration(r.elapsedMs / 1000)} ago, no respawn estimate`,
+    clock: '?'
+  }
 }
 
 /** The drawable subset, in row order. Split out so the surface and the tests share the gate. */

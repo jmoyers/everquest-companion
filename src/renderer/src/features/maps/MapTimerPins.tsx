@@ -25,26 +25,27 @@ import { useTheme } from '@mui/material'
 import type { ZoneShort } from '@shared/maps'
 import { MOB_CATALOG } from '../mobs/mobSearch'
 import { useRespawnSnap, useSecondsClock } from '../timers/useRespawn'
-import { placeableTimerPins, timerPinClock, timerPinRows, timerPinText, type TimerPin } from './respawnPins'
+import { PinHoverCard, pinTextStyle } from './mapPinChrome'
+import { placeableTimerPins, timerPinLabels, timerPinRows, timerZone, type TimerPin } from './respawnPins'
 import type { MapViewport } from './useMapViewport'
 
 /** Diamond edge in CSS pixels — under the teardrop's 9, so a shared spawn point shows both. */
 const PIN_PX = 8
 
-/** The label halo, verbatim from MapMobPins — the error tone is light in both themes too. */
-const HALO =
-  '-1px 0 0 rgba(0,0,0,0.85), 1px 0 0 rgba(0,0,0,0.85), 0 -1px 0 rgba(0,0,0,0.85), 0 1px 0 rgba(0,0,0,0.85)'
-
 /**
  * The zone's timer rows, joined and memoized — the ONE derivation both this layer and any
  * future pane count read. Subscribes the respawn module (the Timers tab's snapshot transport).
+ *
+ * TWO MEMOS, ON PURPOSE. The catalog index is a 7,866-row walk and changes only with the DRAWN
+ * map; the respawn snapshot's rows change on every module delta, which under a running clock is
+ * often. Keying the index on the stem alone means a delta re-joins sixty rows against a map,
+ * not the map against the catalog. The stem is `data.zone` — the map on screen, never the one
+ * being fetched (respawnPins.ts `timerZone` says why that distinction was a bug).
  */
-export function useTimerPins(zoneStem: ZoneShort | null, zoneName: string | null): TimerPin[] {
+export function useTimerPins(zoneStem: ZoneShort | null): TimerPin[] {
   const snap = useRespawnSnap()
-  return useMemo(
-    () => timerPinRows(snap.rows, zoneStem, zoneName, MOB_CATALOG),
-    [snap.rows, zoneStem, zoneName]
-  )
+  const zone = useMemo(() => timerZone(zoneStem, MOB_CATALOG), [zoneStem])
+  return useMemo(() => timerPinRows(snap.rows, zone), [snap.rows, zone])
 }
 
 export function MapTimerPins({ timers, vp }: { timers: readonly TimerPin[]; vp: MapViewport }): JSX.Element {
@@ -65,17 +66,24 @@ export function MapTimerPins({ timers, vp }: { timers: readonly TimerPin[]; vp: 
       }
     return out
   }, [timers, toScreen])
+  // The clock is read ONCE per pin per tick — the title, the worn clock and the hover all draw
+  // from this, where each used to call `respawnReading` for itself.
+  const labels = useMemo(
+    () => new Map(placed.map((pp) => [pp.key, timerPinLabels(pp.t, now)] as const)),
+    [placed, now]
+  )
+  const hovered = placed.find((pp) => pp.key === hover)
 
   return (
     <div
       data-testid="maps-timer-pins"
       style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
     >
-      {placed.map(({ t, key, at }) => (
+      {placed.map(({ key, at }) => (
         <span
           key={key}
           data-testid="maps-timer-pin"
-          title={timerPinText(t, now)}
+          title={labels.get(key)?.text}
           onMouseEnter={() => {
             setHover(key)
           }}
@@ -99,10 +107,10 @@ export function MapTimerPins({ timers, vp }: { timers: readonly TimerPin[]; vp: 
           }}
         />
       ))}
-      {/* THE CLOCK, WORN ALL THE TIME (user ask, 2026-08-18): the whole point of watching a mob
-          is knowing when, and a clock behind a hover is a clock you have to go and read. Just the
-          duration — the mob's name and the full sentence stay on the hover, where they were. */}
-      {placed.map(({ t, key, at }) => (
+      {/* THE CLOCK, WORN ALL THE TIME (the fork's ask, kaltinril, 2026-08-18): the whole point of
+          watching a mob is knowing when, and a clock behind a hover is a clock you have to go and
+          read. Just the duration — the mob's name and the full sentence stay on the hover. */}
+      {placed.map(({ key, at }) => (
         <span
           key={`clock-${key}`}
           data-testid="maps-timer-pin-clock"
@@ -113,37 +121,21 @@ export function MapTimerPins({ timers, vp }: { timers: readonly TimerPin[]; vp: 
             transform: 'translate(-50%, 0)',
             pointerEvents: 'none',
             zIndex: 3,
-            font: '11px/1.1 inherit',
-            color: pinColor,
-            textShadow: HALO,
-            whiteSpace: 'nowrap'
+            ...pinTextStyle(pinColor, 11)
           }}
         >
-          {timerPinClock(t, now)}
+          {labels.get(key)?.clock}
         </span>
       ))}
-      {placed
-        .filter((pp) => pp.key === hover)
-        .map(({ t, key, at }) => (
-          <span
-            key={`hover-${key}`}
-            data-testid="maps-timer-pin-name"
-            style={{
-              position: 'absolute',
-              left: at.px,
-              top: at.py - PIN_PX,
-              transform: 'translate(-50%, -100%)',
-              pointerEvents: 'none',
-              zIndex: 4,
-              font: '12px/1.1 inherit',
-              color: pinColor,
-              textShadow: HALO,
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {timerPinText(t, now)}
-          </span>
-        ))}
+      {hovered !== undefined && (
+        <PinHoverCard
+          testId="maps-timer-pin-name"
+          at={hovered.at}
+          lift={PIN_PX}
+          color={pinColor}
+          text={labels.get(hovered.key)?.text ?? ''}
+        />
+      )}
     </div>
   )
 }

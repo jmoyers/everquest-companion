@@ -29,9 +29,9 @@ import type { JumpTarget } from './crossZone'
 import { MapCanvas } from './MapCanvas'
 import { MapPointsLayer, labelPosition } from './MapPointsLayer'
 import { MapMobPins } from './MapMobPins'
-// The respawn-timer lane (user ask, 2026-08-17): where the mobs you are timing spawn. The hook
-// subscribes the respawn module; the layer draws a third, clearly different symbol. Both headers
-// carry the contracts.
+// The respawn-timer lane (the fork's ask, kaltinril, 2026-08-17): where the mobs you are timing
+// spawn. The hook subscribes the respawn module; the layer draws a third, clearly different
+// symbol. Both headers carry the contracts.
 import { MapTimerPins, useTimerPins } from './MapTimerPins'
 import type { TimerPin } from './respawnPins'
 import { MapLocMarker } from './MapLocMarker'
@@ -247,7 +247,7 @@ function MapSurface({
           vp={vp}
           selectedId={pane.selectedId}
           wishes={pane.wishes}
-          onSelect={pane.select}
+          onMark={pane.mark}
           onOpenMob={onOpenMob}
         />
       )}
@@ -314,9 +314,12 @@ export interface MapBodyProps {
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
   const { locMarker, zones, onOpenMob, onOpenLoot } = props
-  // The respawn-timer join for the map ON SCREEN (`data.zone`, like every overlay). Subscribed
-  // here rather than in MapsView so the view above stays ignorant of the respawn module.
-  const timers = useTimerPins(data?.zone ?? null, zoneName)
+  // The respawn-timer join for the map ON SCREEN (`data.zone`, like every overlay) — and ONLY
+  // that stem: `zoneName` is the zone being opened, and useMapData keeps the previous `data`
+  // while the next loads, so pairing the two here drew the old map's rows against the new
+  // zone's catalog for the length of a fetch. Subscribed here rather than in MapsView so the
+  // view above stays ignorant of the respawn module.
+  const timers = useTimerPins(data?.zone ?? null)
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (

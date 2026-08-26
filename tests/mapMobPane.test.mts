@@ -29,15 +29,16 @@ import { parseMobLocations } from '../src/main/mobLookupParse'
 import {
   MAX_PINS,
   filterPaneRows,
-  isCommonMob,
   isLocatable,
   labelRows,
   mobPins,
   mobRows,
   paneCounts,
+  paneGestures,
   pinsForRows,
   rowTarget,
   wishedDrops,
+  type MapPaneRow,
   type MobPaneRow
 } from '../src/renderer/src/features/maps/mobPins'
 import { MOB_CATALOG } from '../src/renderer/src/features/mobs/mobSearch'
@@ -128,14 +129,61 @@ test('mobRows lists the zone’s mobs, lowest level first, and marks which are p
   assert.equal(rowTarget(rows[1]), null)
 })
 
-test('isCommonMob is the game’s own article convention, case-insensitive, prefix-anchored', () => {
-  assert.equal(isCommonMob('a mummy'), true)
-  assert.equal(isCommonMob('an orc pawn'), true)
-  assert.equal(isCommonMob('A Chokidai Growler'), true, 'the wiki capitalizes some articles')
-  assert.equal(isCommonMob('the ghoul lord'), false, 'lowercase `the` is a classic NAMED spelling')
-  assert.equal(isCommonMob('Asaka L`Rei'), false)
-  assert.equal(isCommonMob('Arisen Thaumaturgist'), false, '`a`/`an` must be whole words')
-  assert.equal(isCommonMob('Anaconda'), false)
+// The article rule itself (`isCommonMob`) is shared/mobNames.ts, pinned by tests/mobNames.test.mts
+// — one fold for the map pins and the Recommended tab. What is pinned HERE is how the map USES it.
+
+test('a common that drops a wished item is listed and pinned — a wish is an explicit statement', () => {
+  const bandit: MobEntry = {
+    page: 'A Bandit (Najena)',
+    name: 'a bandit',
+    level: '8',
+    zones: ['Najena'],
+    loc: [{ ns: 5, ew: 5 }],
+    drops: ['Rusty Dagger', 'Bandit Sash +1']
+  }
+  const wished = new Set(['bandit sash'])
+  const rows = mobRows('Najena', [...CATALOG, bandit], wished)
+  const row = rows.find((r) => r.name === 'a bandit')
+  assert.ok(row, 'the wished common is listed')
+  assert.equal(isLocatable(row), true, '…and pinnable, on the same stated position any row uses')
+  assert.deepEqual(wishedDrops(row.entry, wished), ['Bandit Sash +1'], 'the pin can name the drop')
+  // The same common, nothing wished for: the plain article rule, exactly as before.
+  assert.equal(mobRows('Najena', [...CATALOG, bandit]).some((r) => r.name === 'a bandit'), false)
+  assert.equal(
+    mobRows('Najena', [...CATALOG, bandit], new Set(['cloak of flames'])).some((r) => r.name === 'a bandit'),
+    false,
+    'a wish for something this common does not drop earns it nothing'
+  )
+})
+
+test('the two clicks that select: a pane row centres, a pin does not', () => {
+  const rows = mobRows('Najena', CATALOG)
+  const placed = rows[0]
+  const centred: [number, number][] = []
+  const selected: { id: string; x: number; y: number }[] = []
+  const { select, mark } = paneGestures(
+    (s) => {
+      selected.push(s)
+    },
+    (x, y) => {
+      centred.push([x, y])
+    }
+  )
+  // THE PIN: rings the specific point under the cursor and asks for NO centring — centring would
+  // move the pin out from under the second click of a double-click.
+  mark(placed, { x: 7, y: 9 })
+  assert.deepEqual(selected, [{ id: 'Placed One', x: 7, y: 9 }])
+  assert.deepEqual(centred, [], 'a pin click never asks the viewport to move')
+  // THE PANE ROW: the same selection write, PLUS the centring — the row is off the map.
+  select(placed)
+  assert.deepEqual(selected.at(-1), { id: 'Placed One', x: -200, y: -100 })
+  assert.deepEqual(centred, [[-200, -100]])
+  // Neither gesture can ring a position nothing stated.
+  const unplaced: MapPaneRow = rows[1]
+  mark(unplaced)
+  select(unplaced)
+  assert.equal(selected.length, 2)
+  assert.equal(centred.length, 1)
 })
 
 test('wishedDrops joins on the canonical item key and dedupes upgrade suffixes', () => {
