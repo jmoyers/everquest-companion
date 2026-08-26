@@ -41,6 +41,7 @@ import {
   type GearRow
 } from '../src/shared/planner/gear'
 import { gearRatio, scaleGearRow, scaleGearStats } from '../src/shared/planner/gearScale'
+import { isShieldLike } from '../src/shared/planner/shield'
 import {
   WEAPON_TYPES,
   weaponPicksMatch,
@@ -544,6 +545,55 @@ test('the era chip names the BANNER when the banner is what decided (never the d
   const velious = rows.find((r) => r.eraTag === 'Velious' && eraHides(r, true))
   assert.ok(velious, 'no Velious-bannered row is hidden — the corpus changed shape')
   assert.equal(eraChip(velious)?.label, 'Velious')
+})
+
+test('THE DROP TRIO IS ON THE WIRE (2026-08-25, ruling 4): aligned, deduped, absent when nobody names the item', () => {
+  // Floors, never today's numbers: the catalog names 5,357 item keys and the item pages add their
+  // own `|dropsfrom`, so most equippable rows arrive with a source. Printed so a wave can watch it.
+  console.log(`  ${String(index.stats.dropRows)} rows carry drop sources · ${String(index.stats.shieldRows)} read as shields`)
+  assert.ok(index.stats.dropRows >= 3_000, `only ${String(index.stats.dropRows)} rows carry drop sources`)
+  assert.equal(index.stats.dropRows, rows.filter((r) => r.dropMobs !== undefined).length, 'the census counts the rows')
+  for (const r of rows) {
+    if (r.dropMobs === undefined) {
+      // ABSENT is all four at once - never one array without the other three.
+      assert.equal(r.dropZones, undefined, `${r.name}: zones without mobs`)
+      assert.equal(r.dropLevels, undefined, `${r.name}: levels without mobs`)
+      assert.equal(r.dropPages, undefined, `${r.name}: pages without mobs`)
+      continue
+    }
+    assert.ok(r.dropMobs.length > 0, `${r.name}: an empty drop list is an invented "drops from nothing"`)
+    // ALIGNED: level i and page i belong to mob i, so the cell can pair them honestly.
+    assert.equal(r.dropLevels?.length, r.dropMobs.length, `${r.name}: levels misaligned`)
+    assert.equal(r.dropPages?.length, r.dropMobs.length, `${r.name}: pages misaligned`)
+    assert.equal(new Set(r.dropMobs.map((m) => m.toLowerCase())).size, r.dropMobs.length, `${r.name}: a mob listed twice`)
+    assert.equal(new Set(r.dropZones).size, r.dropZones?.length, `${r.name}: a zone listed twice`)
+    assert.ok(r.dropMobs.every((m) => m.trim() === m && m !== ''), `${r.name}: an untrimmed or empty mob`)
+  }
+  // ANCHOR - Ghoulbane, the source-index test's own: the shin lord, Upper Guk, level 30, its page.
+  const ghoulbane = byKey.get('ghoulbane')
+  assert.ok(ghoulbane?.dropMobs !== undefined)
+  const i = ghoulbane.dropMobs.indexOf('the froglok shin lord')
+  assert.ok(i >= 0, `ghoulbane drops from ${ghoulbane.dropMobs.join(', ')}`)
+  assert.equal(ghoulbane.dropLevels?.[i], '30')
+  assert.equal(ghoulbane.dropPages?.[i], 'The froglok shin lord')
+  assert.ok(ghoulbane.dropZones?.includes('Upper Guk'))
+  // THE NAME DEDUPE IS NOT REDUNDANT (shared/itemSources.dropDetails): "a bandit" is four catalog
+  // pages, and the cell says it once with the first page's level and link.
+  const sash = byKey.get('bandit sash')
+  assert.ok(sash?.dropMobs !== undefined)
+  assert.equal(sash.dropMobs.filter((m) => m === 'a bandit').length, 1, `bandit sash: ${sash.dropMobs.join(', ')}`)
+  assert.ok(sash.dropZones!.length >= 2, 'but every bandit zone is a place the sash drops in')
+})
+
+test('the shield flag is answered at build, by the shared rule, for the census it states', () => {
+  // 130 on the 2026-08-25 corpus (shield.ts carries the measurement against the plan branch's other
+  // predicate). A floor, because the wiki grows - and an identity with the rule, because the flag
+  // and the Weapon-type pick must be one answer.
+  assert.ok(index.stats.shieldRows >= 120, `only ${String(index.stats.shieldRows)} shields`)
+  assert.equal(index.stats.shieldRows, rows.filter((r) => r.shield === true).length)
+  for (const r of rows) assert.equal(r.shield === true, isShieldLike(r), `${r.name}: the flag disagrees with the rule`)
+  assert.equal(byKey.get('lodizal shell shield')?.shield, true, 'a BACK+SECONDARY shield is a shield')
+  assert.equal(byKey.get('thelvorn, blade of light')?.shield, undefined, 'a sword states no flag rather than false')
 })
 
 test('the payload states its version and the corpus it was built from', () => {

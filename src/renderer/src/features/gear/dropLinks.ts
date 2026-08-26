@@ -1,4 +1,4 @@
-// gear/dropLinks.ts — what the drop trio's names OPEN (user ask, 2026-08-17).
+// gear/dropLinks.ts — what the drop trio's names OPEN (fork decision, kaltinril 2026-08-17).
 //
 // The Zone / Level / Mob columns state where an item comes from; this module is the door half of
 // that statement, so a Gear row can hand its reader to the surfaces that already exist rather
@@ -45,7 +45,8 @@ function entryForPage(page: string, catalog: readonly MobEntry[]): MobEntry | un
 
 /**
  * The `MobTarget` a drop-mob cell opens. `page` is `dropPages[i]` — `''` when the witness stated
- * none (gearData.dropDetails keeps the arrays aligned), which degrades to the bare-name target.
+ * none (`shared/itemSources.dropDetails` keeps the arrays aligned at build), which degrades to
+ * the bare-name target.
  * `catalog` is injectable for the node tests; callers pass nothing.
  */
 export function dropMobTarget(

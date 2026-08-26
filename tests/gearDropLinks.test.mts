@@ -1,4 +1,4 @@
-// GEAR TAB — the drop trio's doors (user ask, 2026-08-17). dropLinks.ts turns a drop cell's
+// GEAR TAB — the drop trio's doors (fork decision, kaltinril 2026-08-17). dropLinks.ts turns a drop cell's
 // names into the app's existing destinations: a zone spelling into the map stem the Maps tab
 // opens, a mob name + witness page into the `MobTarget` the mob page takes. What this file pins
 // is the REFUSE-OVER-GUESS structure, not any particular zone table row:

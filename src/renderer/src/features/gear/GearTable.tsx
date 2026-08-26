@@ -47,7 +47,7 @@
 // per-row action at all, while the Exaltations donor rows kept theirs (JOS-326 re-aimed that button
 // at the wish list). This restores the parity: same door (`useWishlist`), same document, same
 // dedupe. JOS-335 deliberately did NOT restore a COLUMN — the control shared the item name's cell
-// exactly as the `+` did — but the user overruled that too (2026-08-15): the name paid for the
+// exactly as the `+` did — but kaltinril overruled that too (fork decision, 2026-08-15): the name paid for the
 // lodger at every narrow pane, so the control now has the narrow `wish` column below.
 //
 // …AND SINCE JOS-343 THAT GESTURE IS THE DONOR ROW'S CONTROL, WORD FOR WORD, AND IT TOGGLES (owner
@@ -87,7 +87,7 @@ import WishToggle from '../wishlist/WishToggle'
 import type { ClassAbbr } from '@shared/classCombo'
 import type { MobTarget } from '../mobs/mobTarget'
 import type { ZoneShort } from '@shared/maps'
-// The drop trio's doors (user ask, 2026-08-17) — both resolutions refuse-over-guess; see its header.
+// The drop trio's doors (fork decision, kaltinril 2026-08-17) — both resolutions refuse-over-guess; see its header.
 import { dropMobTarget, dropZoneTarget } from './dropLinks'
 
 /** Dense row height (px), MUI `size="small"` — the number the windowing hook is handed. */
@@ -159,7 +159,7 @@ export interface GearTableProps {
    */
   onOpenLoot?: (item: string) => void
   /**
-   * OPEN A DROP-MOB'S PAGE (user ask, 2026-08-17) — the Mob cell's first name becomes the same
+   * OPEN A DROP-MOB'S PAGE (fork decision, kaltinril 2026-08-17) — the Mob cell's first name becomes the same
    * door the Sky dropper cell and Overview's kill cards already open, `App`'s `openMob`. The target is
    * pinned by the catalog page the witness carried (`dropPages`, dropLinks.ts) so an ambiguous
    * name lands on the page the drop was stated on. Absent, the cell is the plain text it was.
@@ -187,7 +187,7 @@ export interface GearTableProps {
    */
   onToggleWish?: (row: GearViewRow, wished: boolean) => void
   /**
-   * The user's dragged column widths (user ask, 2026-08-15), `null` until they have dragged one —
+   * The user's dragged column widths (fork decision, kaltinril 2026-08-15), `null` until they have dragged one —
    * `useGearPrefs.widths`, localStorage-backed like the other two view choices. `onWidths` receives
    * the whole next map on every drag tick, or `null` from the double-click reset.
    */
@@ -346,7 +346,7 @@ const GearLine = memo(function GearLine({
             name share this cell with the era chip, and the FIXED_ROW contract above is what keeps
             all three one clipped line rather than two. */}
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
-          {/* THE ITEM'S OWN ICON (user ask, 2026-08-15), off the PERMANENT image cache — the same
+          {/* THE ITEM'S OWN ICON (fork decision, kaltinril 2026-08-15), off the PERMANENT image cache — the same
               `eqimg://` door the ItemWindow draws through (imageCache.ts: bundled art, then disk,
               then ONE polite fetch stored forever), so a windowed scroll costs no wiki traffic. A
               404 hides itself; a row whose corpus page named no icon simply leads with the name. */}
@@ -375,7 +375,7 @@ const GearLine = memo(function GearLine({
           <EraChip subject={row} />
         </Stack>
       </TableCell>
-      {/* THE WISH CONTROL'S OWN COLUMN (user ruling, 2026-08-15) — it shared the Item cell from
+      {/* THE WISH CONTROL'S OWN COLUMN (fork decision, kaltinril 2026-08-15) — it shared the Item cell from
           JOS-335 until today, and the name paid for it at every narrow pane. The header ("Wish
           list") carries the words, so the button can be the compact pair. Empty until the document has
           loaded — the same absent-not-disabled rule the cell followed inside the Item column. */}
@@ -390,7 +390,7 @@ const GearLine = memo(function GearLine({
           <TableCell title={row.dropZones.join(' · ')}>
             <OverflowCell values={row.dropZones} open={dropZoneOpen(row, on.openMapZone)} />
           </TableCell>
-          {/* dropLevels[i] IS dropMobs[i]'s level (gearData.dropDetails), so the title can pair them. */}
+          {/* dropLevels[i] IS dropMobs[i]'s level (shared/itemSources.dropDetails, at build), so the title can pair them. */}
           <TableCell title={row.dropMobs.map((m, i) => `${m}: ${row.dropLevels[i] === '' ? '?' : row.dropLevels[i]}`).join(' · ')}>
             {row.dropLevels[0] ?? ''}
           </TableCell>
@@ -454,7 +454,7 @@ export default function GearTable({
   // state, and the ids the pixel-mode width sum walks.
   const allIds = gearColumnIds(columns, showDrops, ownership !== null)
   const span = allIds.length
-  // THE USER'S DRAGGED WIDTHS WIN WHOLE (user ask, 2026-08-15): any stored map puts the entire
+  // THE USER'S DRAGGED WIDTHS WIN WHOLE (fork decision, kaltinril 2026-08-15): any stored map puts the entire
   // table in stated pixels — a dragged column beside percentage ones would reflow on every pane
   // resize, which is the opposite of "stick". A column the map has no entry for (a numeric column
   // picked after the drag) takes the pixel-mode default, so it arrives at a legible width instead
