@@ -20,7 +20,7 @@
 //   * the LEVEL is `useStatedLevel` — the later of your last ding and your own `/who` row, with the
 //     cue and the age it was stated at (JOS-192). It is the one input this view cannot ask for, and
 //     when nothing has stated it the tab says exactly that and draws no route. A default of 1 would
-//     be a confident six-bracket plan about a character the log has never described;
+//     be a confident seven-bracket plan about a character the log has never described;
 //   * the CLASS TRIO is `useGearClasses` — THE SAME PIN THE GEAR TAB USES (plan §4), key and all
 //     (`eq.gear.classes`), so pinning a trio on either tab pins it for the reading of both. The
 //     offer chip is that hook's own `offer`/`adopt`, drawn here as `plan-class-offer` beside the
@@ -80,7 +80,7 @@ import PlanBracketCard from './PlanBracketCard'
 import { usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
 import { planBlurb } from './planBlurb'
 
-/** What each role is CALLED. A `Record` so a fifth role is a type error here (the `VIEW_LABELS` trick). */
+/** What each role is CALLED. A `Record` so an eleventh role is a type error here (the `VIEW_LABELS` trick). */
 const ROLE_LABEL: Record<GearRole, string> = {
   balanced: 'Balanced',
   tank: 'Tank',
@@ -103,10 +103,10 @@ const REACH_LABEL: Record<PlanReach, string> = {
   group: 'Group'
 }
 
-const ROLE_HINT =
-  'What the route ranks items for. The weights are an invented ordering, not a game stat - a tank plan and a dps plan simply order the same corpus differently. The same weights score what you already own: an item is listed only if it beats your best in at least one slot it fits, and a wished item always shows. The weapon roles also constrain the weapon slots: 2H DPS suggests two-handers and never offers an offhand, dual wield wants one-handers in both hands, 1H DPS constrains the main hand, and Tank takes only shield-shaped offhands. Caster DD and Caster DoT rank nearly alike - no stat in the corpus tells burst apart from a dot.'
-const REACH_HINT =
-  'The hardest fight the route will send you to. Solo tops out at blue and white; a group raises the ceiling by one band. Anything easier always makes the list.'
+// ONE CLAUSE EACH (the tooltip diet): the hover names the control, and the blurb under the pickers
+// (`planBlurb.ts`) is where a pick's weights and weapon shape are spelled out, per role, on request.
+const ROLE_HINT = 'What the route ranks items for'
+const REACH_HINT = 'The hardest fight the route will send you to'
 
 interface PicksProps {
   role: GearRole
@@ -220,7 +220,7 @@ function PlanHeader(props: HeaderProps): JSX.Element {
           variant="outlined"
           label={`detected: ${classes.offer.join(' ')}`}
           data-testid="plan-class-offer"
-          title="What the app currently infers you are running. Click to plan for it."
+          title="Plan for the classes the app detected"
           onClick={classes.adopt}
           sx={{ flexShrink: 0 }}
         />
@@ -230,7 +230,7 @@ function PlanHeader(props: HeaderProps): JSX.Element {
         size="small"
         label="Current era"
         data-testid="plan-era-toggle"
-        title={`Keep the route inside ${CURRENT_ERA_LABEL}. Shared with the Exaltations tab - one answer per machine.`}
+        title={`Keep the route inside ${CURRENT_ERA_LABEL}`}
         color={eraOnly ? 'primary' : 'default'}
         variant={eraOnly ? 'filled' : 'outlined'}
         onClick={() => {
@@ -248,16 +248,18 @@ function PlanHeader(props: HeaderProps): JSX.Element {
  * The one sentence an empty page says, and the three silences are DIFFERENT silences.
  *
  * No stated level is not "no plan" — it is the app declining to invent the input the whole route
- * opens at. An unready index is a load. An empty route under a stated level is the corpus saying it
- * has nothing left to state above here, which is a real answer and the same one the fold's own
- * trailing-silence trim produces.
+ * opens at, and the sentence names what would state one, because a page that merely said "no plan"
+ * would leave the reader with no move to make. An unready index is a load. An empty route under a
+ * stated level is the corpus saying it has nothing left to state above here, which is a real answer
+ * and the same one the fold's own trailing-silence trim produces — stated as the fact it is, not as
+ * a tour of the gates that produced it (state, never process).
  */
 function emptyText(level: number | null, ready: boolean): string {
   if (level === null) {
-    return 'No line has stated your level yet. A level-up ("Welcome to level N!") or your own /who row is what states it - the route opens at the level you are, so there is nothing honest to draw until one of them does.'
+    return 'No line has stated your level yet - a level-up ("Welcome to level N!") or your own /who row states it.'
   }
   if (!ready) return 'Reading the item database…'
-  return `Nothing above level ${String(level)} to plan: no zone this era profiles for experience at those levels, and nothing dropping inside your reach that beats what you already own. Widening the reach, switching the era chip off, or picking a different role is what has more to say.`
+  return `Nothing above level ${String(level)} beats what you own, inside this reach and era.`
 }
 
 export interface PlanViewProps {
@@ -296,13 +298,15 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   // memo inside the hook is stable.
   const compare = useGearCompare(rows, ITEM_UPGRADE_BASE)
   // THE ROLE GOES IN TOO: it scores the OWNED side of the gap test as well as the candidate side, so
-  // switching role re-reads what you have rather than merely re-sorting what you might get.
-  const corpora = usePlanCorpora(rows, ownership.map, wishes.list, { role, classes: classes.classes })
+  // switching role re-reads what you have rather than merely re-sorting what you might get. The
+  // wish list goes to the ROUTE and not the corpora (planData's header): a wish click re-cuts the
+  // brackets, never re-scores the corpus.
+  const corpora = usePlanCorpora(rows, ownership.map, { role, classes: classes.classes })
   const picks = useMemo(
     () => ({ classes: classes.classes, role, reach, eraOnly }),
     [classes.classes, role, reach, eraOnly]
   )
-  const route = usePlanRoute(stated.level, picks, corpora)
+  const route = usePlanRoute(stated.level, picks, corpora, wishes.list)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }} data-testid="plan-view">
@@ -341,6 +345,7 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
             onOpenLoot={onOpenLoot}
             onOpenMapZone={onOpenMapZone}
             onOpenMob={onOpenMob}
+            onToggleWish={wishes.toggle}
           />
         ))}
         {route.length === 0 && (

@@ -55,7 +55,9 @@
 // names and mob text now genuinely run out of room — they ellipsize inside their one `minWidth: 0`
 // group while every chip stays `flexShrink: 0`, and the facts that got clipped are on the row's
 // `title` instead. A tile that widened to fit its longest item name would break the grid's columns
-// and put the page back into the sideways scroll the standing law forbids.
+// and put the page back into the sideways scroll the standing law forbids. The wish control is the
+// one exception, and it is the shared control's own rule (`WishToggle`, JOS-346): it shrinks beside
+// the name rather than refusing to, and its label clips with the full sentence still on its title.
 
 import { useState, type JSX } from 'react'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
@@ -72,26 +74,31 @@ import { itemIconUrl } from '../../lib/ItemWindow'
 // guarantees and the measured geometry that made the anchoring law what it is.
 import { GearRowCompare } from '../gear/GearCompareCard'
 import type { GearCompareData } from '../gear/gearData'
+import { isCommonMob } from '@shared/mobNames'
 import type { MobTarget } from '../mobs/mobTarget'
 import { DonorName } from '../planner/PlannerChips'
 import { CellLink } from '../../lib/CellLink'
-import { isCommonMob } from './planData'
+// THE ONE WISH CONTROL (JOS-343/346): the same component the Gear and Exaltations rows draw, with the
+// same two sentences, so a reader who learned it on one tab meets no second spelling here.
+import WishToggle from '../wishlist/WishToggle'
+import { mobEntryOf } from './planData'
 
-/** What each band means for a plan, said once — the chip's hover wherever one is drawn. */
+/**
+ * What each band means for a plan, said once — the chip's hover wherever one is drawn. ONE CLAUSE
+ * EACH (the tooltip diet): the colour and where the fight sits, nothing about what to do with it.
+ */
 const BAND_HINT: Record<ConBand, string> = {
-  trivial: 'Grey: far below you, and the easiest farm there is. Fine for loot, worthless for exp.',
-  safe: 'Blue: comfortably below you.',
-  even: 'White: an even fight at this level.',
-  risky: 'Above you - the log`s "would wipe the floor with you!" range.',
+  trivial: 'Grey - far below you.',
+  safe: 'Blue - below you.',
+  even: 'White - an even fight.',
+  risky: 'Above you.',
   deadly: 'Well above you.'
 }
 
 /** A `+N` trip: the refusal, worded. Plan §3, fold rule 2. */
-const TIER_UNSTATED_HINT =
-  'Nothing states how hard a tiered creature is. The catalog gives no level for any +N mob, so this line says where to go and declines to guess the fight.'
+const TIER_UNSTATED_HINT = 'No level is stated for a +N mob.'
 /** …and the OTHER silence: a base zone whose mobs state no level, so there is no profile to read. */
-const UNPROFILED_HINT =
-  'No mob the catalog places in this zone states a level, so this app has no profile to con it against.'
+const UNPROFILED_HINT = 'No mob in this zone states a level.'
 
 /** `safe` / `even` / `difficulty unstated` — never a colour the game does not state (see below). */
 function BandChip({ band, plus }: { band: ConBand | null; plus: number | null }): JSX.Element {
@@ -120,27 +127,22 @@ function mobText(target: GearTarget): string {
 }
 
 /**
- * ALREADY ON THE WISH LIST. It is a FLAG and not a filter (fold rule 9): a wished item bypasses the
- * upgrade-gap test and sorts first, so the row is here precisely BECAUSE it is wished, and saying
- * nothing would leave a reader wondering why an item they own the intent to get keeps leading.
+ * THE MOB CLICK, with the page the item page named PINNED (`GearTarget.mobPage` → `MobTarget.entry`).
+ * A name resolves to one page of possibly several; the entry is the row the wiki actually linked, so
+ * the Mobs tab opens on that one. A page the catalog does not hold falls back to the bare name, which
+ * is what the click did before the pin existed.
  */
-function WishedChip(): JSX.Element {
-  return (
-    <Chip
-      size="small"
-      variant="outlined"
-      color="primary"
-      label="wished"
-      data-testid="plan-wished"
-      title="Already on your wish list. A wished item skips the upgrade test and leads the run - you asking for it outranks any score this app computes."
-      sx={{ flexShrink: 0 }}
-    />
-  )
+function mobTargetOf(target: GearTarget): MobTarget {
+  const entry = mobEntryOf(target.mobPage ?? target.mob)
+  return entry === undefined ? { mob: target.mob } : { mob: target.mob, entry }
 }
 
 /**
  * ONE TARGET. The item name is the Loot drill-down AND the hover comparison — the same two
- * affordances a gear search row carries, reached the same two ways.
+ * affordances a gear search row carries, reached the same two ways — and the wish control is the
+ * gear search row's own (`WishToggle`), reading the fold's `wished` flag. A wished row is here
+ * precisely BECAUSE it is wished (rule 9: flagged, never filtered), and the control's REMOVE state
+ * is what says so; there is no second chip restating it.
  *
  * An icon only when the corpus has one; `itemIconUrl` is the app's permanent image cache, so a miss
  * 404s and `onError` hides the element, exactly as it does in the item window and the loot dialog.
@@ -150,7 +152,8 @@ function TargetRow({
   runBand,
   compare,
   onOpenLoot,
-  onOpenMob
+  onOpenMob,
+  onToggleWish
 }: {
   target: GearTarget
   /** the band its RUN heading already printed — see the chip rule below */
@@ -159,6 +162,8 @@ function TargetRow({
   onOpenLoot?: (item: string) => void
   /** the witness mob's door to its page (App's `openMob`); absent, the plain text it was */
   onOpenMob?: ((t: MobTarget) => void) | undefined
+  /** on or off the wish list (`usePlanWishes.toggle`); absent until the document has loaded */
+  onToggleWish?: ((t: GearTarget) => void) | undefined
 }): JSX.Element {
   const name = <DonorName name={target.name} bold onOpen={onOpenLoot} />
   // NAMED, BASE-ZONE witnesses only (owner ruling, 2026-08-18): a `+N` witness names a creature
@@ -174,14 +179,11 @@ function TargetRow({
       data-testid="plan-target"
       data-item-key={target.key}
       data-wished={target.wished ? 'true' : undefined}
-      // THE SCORE LIVES HERE AND NOWHERE ELSE. `roleValue` is a heuristic rank with an invented
-      // weights table behind it, so it is worth saying what ordered the list and it is not worth a
-      // column that would read like a stat off the item page.
-      //
-      // AND SINCE THE TILE LAYOUT, THE WITNESS RIDES ALONG. In a ~320px column the mob text is the
-      // first thing to ellipsize, so the hover carries what the row had to clip — the alternative
-      // (letting the tile grow to fit) is the one thing the grid must not do.
-      title={`${target.name} - ${mobText(target)}. Ranked ${String(target.score)} for this role - a heuristic ordering, not a game stat.`}
+      // THE WITNESS RIDES ON THE HOVER. In a ~320px column the mob text is the first thing to
+      // ellipsize, so the hover carries what the row had to clip — the alternative (letting the
+      // tile grow to fit) is the one thing the grid must not do. Nothing else does: the score that
+      // ordered the list is a heuristic and the tooltip diet says a rank is not a thing to footnote.
+      title={`${target.name} - ${mobText(target)}`}
       sx={{ flexWrap: 'nowrap', minWidth: 0, py: 0.25, pl: 1 }}
     >
       {target.iconId !== undefined && (
@@ -207,7 +209,7 @@ function TargetRow({
         <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
           {mobLinked ? (
             <>
-              <CellLink text={target.mob} onOpen={() => { onOpenMob({ mob: target.mob }) }} />
+              <CellLink text={target.mob} onOpen={() => { onOpenMob(mobTargetOf(target)) }} />
               {target.mobLevel === null ? '' : ` (Lvl ${String(target.mobLevel)})`}
             </>
           ) : (
@@ -215,7 +217,16 @@ function TargetRow({
           )}
         </Typography>
       </Box>
-      {target.wished && <WishedChip />}
+      {onToggleWish !== undefined && (
+        <WishToggle
+          name={target.name}
+          wished={target.wished}
+          testId="plan-target-wish"
+          onToggle={() => {
+            onToggleWish(target)
+          }}
+        />
+      )}
       {/* THE BAND ONLY WHEN IT ADDS SOMETHING. A run's heading already states one band for the whole
           trip, and inside a ~320px tile repeating it on every row costs the width the item name needs
           — worst case a `+N` run printing "difficulty unstated" four times in a column that fits it
@@ -236,6 +247,8 @@ export interface PlanRunTileProps {
   onOpenMapZone?: (zone: ZoneShort) => void
   /** a named witness mob's door to its page (App's `openMob`) — TargetRow states the gate */
   onOpenMob?: (t: MobTarget) => void
+  /** each row's wish control (`usePlanWishes.toggle`); absent until the wish document has loaded */
+  onToggleWish?: (t: GearTarget) => void
 }
 
 /**
@@ -243,17 +256,19 @@ export interface PlanRunTileProps {
  * — up to three of them.
  *
  * THE TESTIDS ARE UNCHANGED THROUGH THE RELAYOUT (`plan-run`, `plan-run-head`, `plan-target`,
- * `plan-band`, `plan-wished`) and so is the DOM nesting the specs read: a `plan-run` still holds one
- * `plan-run-head` and its `plan-target`s as descendants. `tests/e2e/plan.e2e.mts` walks exactly that
- * shape, and a layout change that renamed a hook would have made a visual tweak look like a
- * behaviour change in the one suite that cannot be run casually.
+ * `plan-band`; `plan-target-wish` is the per-row control, and the `plan-wished` chip it replaced is
+ * gone — `data-wished` on the row was always the statement the specs read) and so is the DOM
+ * nesting the specs read: a `plan-run` still holds one `plan-run-head` and its `plan-target`s as
+ * descendants. `tests/e2e/plan.e2e.mts` walks exactly that shape, and a layout change that renamed
+ * a hook would have made a visual tweak look like a behaviour change in the one suite that cannot
+ * be run casually.
  *
  * THE COUNT IS IN THE HEADING because the heading is all that survives a fold: "Befallen +4 · 3" is
  * still an answer when the items are hidden, where a bare zone name would leave a reader unable to
  * tell a rich trip from a thin one without opening every tile. It is rendered as its own node so the
  * chevron and the count cannot be mistaken for part of the place's name.
  */
-export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone, onOpenMob }: PlanRunTileProps): JSX.Element {
+export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone, onOpenMob, onToggleWish }: PlanRunTileProps): JSX.Element {
   const [collapsed, setCollapsed] = useState(false)
   // The trip's door to its map (user ruling, 2026-08-18) — its own button BESIDE the heading,
   // because the heading IS the fold button and a control inside a control answers to neither.
@@ -321,12 +336,7 @@ export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone, o
             {runLabel(run)}
           </Typography>
           <BandChip band={run.band} plus={run.plus} />
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ flexShrink: 0 }}
-            title={`${String(run.targets.length)} listed here - the fold caps a run at three.`}
-          >
+          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
             {run.targets.length}
           </Typography>
         </Stack>
@@ -353,6 +363,7 @@ export default function PlanRunTile({ run, compare, onOpenLoot, onOpenMapZone, o
             compare={compare}
             onOpenLoot={onOpenLoot}
             onOpenMob={onOpenMob}
+            onToggleWish={onToggleWish}
           />
         ))}
     </Box>

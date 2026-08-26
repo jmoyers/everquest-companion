@@ -19,7 +19,7 @@
 // LEARNED from one machine's consider history, and a fold that reached for it directly could not be
 // tested against a band table whose shape the test controls. The renderer passes `conBand`.
 //
-// ELEVEN RULES THE FOLD REFUSES TO BEND:
+// THIRTEEN RULES THE FOLD REFUSES TO BEND:
 //
 //   1. AN EMPTY CLASS LIST IS UNKNOWN, NEVER "NOBODY" (`GearRow.classes`, law 1). An item whose page
 //      stated no classes — or stated them unreadably — is KEPT for every trio. Excluding it would
@@ -88,22 +88,31 @@
 //  12. HASTE IS AN AFTERTHOUGHT — CREDITED ONLY ABOVE WHAT YOU OWN (owner ruling, 2026-08-22, after
 //      the route offered a 9% haste glove to a character swinging a 36% haste sword: *"haste should
 //      be an afterthought, only added in if haste doesn't exist"*). Worn haste does not stack, so a
-//      candidate's haste term counts only the part above `PlanCorpora.ownedHaste`, the best haste
-//      the player already has (`roleValue`'s third argument). Absent or 0 means none owned, and the
-//      full percentage counts — the first haste item IS an upgrade. THE BARS STAY AT FULL CREDIT on
-//      purpose: the owned item that IS the haste source keeps its haste in its own slot's bar, so the
-//      route never tells you to swap your haste weapon for a hasteless one that "scores" higher.
+//      haste term counts only the part above THE HASTE YOU WOULD STILL OWN WITH THIS ITEM WORN —
+//      the best haste among owned items that do not sit in the slot being scored
+//      (`PlanCorpora.ownedHaste`, read through `ownedHasteOutside`). Absent or empty means none
+//      owned, and the full percentage counts — the first haste item IS an upgrade.
+//      ONE RULE ON BOTH SIDES OF THE GAP TEST, and it has to be per slot (corrected 2026-08-25;
+//      the first cut scored candidates above the global best and the bars at full credit, which
+//      meant the slot holding the haste source could never be upgraded — a candidate had to beat
+//      the sword's haste with no haste of its own). Per slot, the three cases all come out right:
+//      the 9% glove under a 36% sword scores its haste at 0, because swapping the GLOVE keeps the
+//      sword; a 40% sword replacing the 36% one gets full haste credit, because swapping the
+//      sword's slot is what loses the 36 — and so does the 36% bar it has to beat, so a HASTELESS
+//      sword with a slightly better ratio does not clear it. `roleValue` never sees a slot; the
+//      fold hands it the right number for the one it is scoring.
 //  13. THE SCORE IS FOCUS × CLASS (owner rulings 2026-08-22, `roleWeights.ts` header). The role says
 //      what a stat is WORTH; the picked trio says which stats are LIVE — which attribute is your
 //      mana, whether CHA, BACKSTAB or endurance do anything for you. `PlanInputs.classes` reaches
-//      `roleValue` for the candidates here and for the bars in `planData.ts ownedBars`, the SAME
+//      `roleValue` for the candidates here and for the bars in `planOwned.ts ownedSide`, the SAME
 //      trio on both sides, so a bar and the item measured against it are read through one gate.
 //      An empty trio gates nothing (law 1: unknown, never "nobody").
 //
 // TWO PLACES THIS DIVERGES FROM THE PLAN DOC, both reported rather than smuggled:
-//   * §2.4 says exp zones are "era-legal zones". `PlanCorpora` carries no zone-era witness, so the
-//     gate here reads `era.ts layeredVerdict` on the zone name alone and drops only a POSITIVE
-//     out-of-era. `unknown` is KEPT for a zone, where the gear rule hides it — see `expZonesFor`.
+//   * §2.4's first draft said exp zones are "era-legal zones". `PlanCorpora` carries no zone-era
+//     witness, so the gate here reads `era.ts layeredVerdict` on the zone name alone and drops only
+//     a POSITIVE out-of-era. `unknown` is KEPT for a zone, where the gear rule hides it — see
+//     `expZonesFor`. (The doc states the shipped rule now; the reason it differs is kept here.)
 //   * The era verdict for an ITEM reads layers 1-2 (`layeredVerdict`). LAYER 3 — `GearRow.eraDerived`
 //     — is NOT consulted, because the fold that weighs it against the other layers lives in the
 //     renderer (`features/planner/plannerData.ts donorEra`) and re-implementing it here would create
@@ -162,6 +171,14 @@ export interface GearTarget {
   plus: number | null
   /** the BASE mob spelling, so a caller can look it up; the renderer composes `mob +plus` */
   mob: string
+  /**
+   * THE DROPPER AS THE ITEM PAGE SPELLED IT — the wiki page its `|dropsfrom` linked, tier suffix
+   * and all. `mob` is the join key for a LEVEL; this is the join key for a PAGE (`MobEntry.page`),
+   * which is what lets a click land on the row the item page actually named where a name alone
+   * can mean nine of them. Every fold-built target carries one; optional so a hand-built target
+   * need not invent a page.
+   */
+  mobPage?: string
   /** the level the CATALOG states for that mob, or `null`. See `witnessesOf` for the +N split. */
   mobLevel: number | null
   /** the con verdict at the earliest level in the bracket where it qualifies — `null` for a +N */
@@ -245,8 +262,13 @@ export interface PlanCorpora {
   /**
    * item keys already on the wish list — FLAGGED, not excluded (`GearTarget.wished`). The plan seeds
    * that document and then keeps routing to it; it never silently drops a thing the user asked for.
+   *
+   * OPTIONAL, because the renderer does not hand it in HERE: a wish is the one input that moves on
+   * a click, and it is read by `routeFromPool` alone so that a click re-runs the bracket fold over
+   * the scored pool and never the scoring itself (`candidatePool`, ~6.8k rows). `buildProgressionPlan`
+   * — the one-shot door the tests use — reads it from here; absent is nothing wished.
    */
-  wished: ReadonlySet<string>
+  wished?: ReadonlySet<string>
   /**
    * THE BAR EACH SLOT HAS TO BEAT: the role-scored best OWNED item per equip slot, computed by the
    * caller (the renderer folds it out of ownership + `roleValue`; the tests build it by hand).
@@ -266,12 +288,34 @@ export interface PlanCorpora {
    */
   ownedBestBySlot?: ReadonlyMap<EquipSlot, number>
   /**
-   * THE BEST HASTE PERCENTAGE THE PLAYER ALREADY OWNS (rule 12), read by `candidatesOf` so a
-   * candidate's haste is credited only above it. OPTIONAL with the same additive contract as
-   * `ownedBestBySlot`: absent reads as 0 — nothing owned, full credit — which is exactly the answer
-   * the fold gave before the rule existed.
+   * THE HASTE THE PLAYER ALREADY OWNS AND WHERE IT SITS (rule 12): one entry per owned row that
+   * states a `HASTE`, with the slots that row fits. The fold reads it per slot through
+   * `ownedHasteOutside`, so a candidate for the haste weapon's own slot is credited against the
+   * haste it would still have AFTER the swap, and the caller (`planOwned.ts`) scores the bars the
+   * same way. OPTIONAL with the same additive contract as `ownedBestBySlot`: absent or empty reads
+   * as none owned, full credit — exactly the answer the fold gave before the rule existed.
    */
-  ownedHaste?: number
+  ownedHaste?: readonly OwnedHaste[]
+}
+
+/** One owned haste source: what it states, and every slot it could be worn in. */
+export interface OwnedHaste {
+  haste: number
+  slots: readonly EquipSlot[]
+}
+
+/**
+ * THE HASTE YOU WOULD STILL OWN WITH `slot` FILLED BY SOMETHING ELSE — the best haste among owned
+ * rows that do not fit there. `roleValue`'s `ownedHaste` for anything scored INTO that slot, on
+ * both sides of the gap test (rule 12). The ownership map does not say where a row is WORN, so a
+ * row is taken to occupy every slot it fits, the same reading `ownedBestBySlot` makes of it.
+ */
+export function ownedHasteOutside(sources: readonly OwnedHaste[] | undefined, slot: EquipSlot): number {
+  let best = 0
+  for (const source of sources ?? []) {
+    if (!source.slots.includes(slot) && source.haste > best) best = source.haste
+  }
+  return best
 }
 
 // ---- the constants, each with the reason it is that number ------------------------------------
@@ -295,7 +339,8 @@ const RUN_TARGET_CAP = 3
 /** SIX RUNS PER BRACKET, same disclosure. A bracket is an evening's advice, not an atlas. */
 const RUN_CAP = 6
 /**
- * THE HARD BACKSTOP: six default brackets past the current level. The horizon is meant to be
+ * THE HARD BACKSTOP: seven default brackets — the one the character is in and six past it, since
+ * the loop runs `from <= start + 36` inclusive. The horizon is meant to be
  * DATA-driven (see `buildProgressionPlan`), and this exists only so a corpus that keeps answering
  * cannot loop forever. It is NOT a level cap claim — this file states no level cap, because the
  * server's is not in any data this repo holds.
@@ -330,15 +375,26 @@ interface Witness {
   zone: string
   plus: number | null
   mob: string
+  /** the page spelling, untouched — `GearTarget.mobPage` */
+  mobPage: string
   mobLevel: number | null
 }
 
-/** A gear row that survived the filters, with its witnesses resolved and its score computed once. */
-interface Candidate {
+/**
+ * A gear row that survived every filter the wish list cannot override, with its witnesses resolved
+ * and its score computed ONCE — the unit `candidatePool` emits and `routeFromPool` reads.
+ *
+ * `upgrade` is the gap test's verdict (rule 8, through the policy of rule 10), carried rather than
+ * applied, because the one gate that can override it — a wish (rule 9) — is the one input that is
+ * NOT in the pool's dependencies. Opaque to callers: a pool is passed back in, never read.
+ */
+export interface PlanCandidate {
   row: GearRow
   witnesses: Witness[]
+  /** the score at its BEST home — what a target is ranked by */
   score: number
-  wished: boolean
+  /** beats the bar somewhere the role is listening */
+  upgrade: boolean
 }
 
 /** What the bracket fold needs, bundled — four positional arguments is the ceiling. */
@@ -347,7 +403,9 @@ interface PlanCtx {
   /** the reach CEILING — every band a target's fight may read (rule 5), not a window */
   gate: readonly ConBand[]
   eraOnly: boolean
-  candidates: Candidate[]
+  candidates: readonly PlanCandidate[]
+  /** what the user has asked for — the flag on every target (rule 9) */
+  wished: ReadonlySet<string>
 }
 
 /**
@@ -434,6 +492,7 @@ function witnessOf(
     zone: (zonePlus === null ? zoneRaw : zonePlus.base).trim(),
     plus: tierOf(zonePlus, mobPlus),
     mob,
+    mobPage: source.mob,
     mobLevel: mobPlus === null ? mobLevel(mob) : null
   }
 }
@@ -488,7 +547,7 @@ function qualify(witness: Witness, bracket: Bracket, ctx: PlanCtx): { band: ConB
 }
 
 /** The first witness of a candidate that qualifies for this bracket, as a target — or `null`. */
-function targetOf(candidate: Candidate, bracket: Bracket, ctx: PlanCtx): GearTarget | null {
+function targetOf(candidate: PlanCandidate, bracket: Bracket, ctx: PlanCtx): GearTarget | null {
   for (const witness of candidate.witnesses) {
     const verdict = qualify(witness, bracket, ctx)
     if (verdict === null) continue
@@ -499,10 +558,11 @@ function targetOf(candidate: Candidate, bracket: Bracket, ctx: PlanCtx): GearTar
       zone: witness.zone,
       plus: witness.plus,
       mob: witness.mob,
+      mobPage: witness.mobPage,
       mobLevel: witness.mobLevel,
       band: verdict.band,
       score: candidate.score,
-      wished: candidate.wished
+      wished: ctx.wished.has(candidate.row.key)
     }
   }
   return null
@@ -644,22 +704,23 @@ function expZonesFor(
   return picks.slice(0, EXP_ZONE_CAP)
 }
 
-/** What the admission test reads, bundled: the row's score, the owned bars, the role's policy. */
+/** What the admission test reads, bundled: the row's per-slot scores, the owned bars, the role's policy. */
 interface AdmitGate {
-  score: number
+  /** the row's score in each slot it fits, aligned with `row.slots` — see `scoresOf` */
+  bySlot: readonly number[]
   bars: ReadonlyMap<EquipSlot, number> | undefined
   policy: WeaponSlotPolicy
 }
 
 /**
  * IS THIS AN UPGRADE? — the admission test (rule 8). A GAP test rather than a ranking, now read
- * THROUGH the role's weapon-slot policy (rule 11).
+ * THROUGH the role's weapon-slot policy (rule 10).
  *
  * An item is in when there is AT LEAST ONE slot it fits where BOTH are true: the role would take a
- * suggestion for that slot at all (`policyAdmits`), and its score STRICTLY beats the best owned
- * score there. A two-hander that beats your PRIMARY is worth the trip even if your SECONDARY is
- * better still; a ring that beats neither finger is not; and under a 2H role a shield fits nowhere
- * the role is listening, whatever it scores.
+ * suggestion for that slot at all (`policyAdmits`), and its score IN THAT SLOT STRICTLY beats the
+ * best owned score there. A two-hander that beats your PRIMARY is worth the trip even if your
+ * SECONDARY is better still; a ring that beats neither finger is not; and under a 2H role a shield
+ * fits nowhere the role is listening, whatever it scores.
  *
  * A SLOT THE MAP DOES NOT NAME IS A GAP and admits anything wearable — see `PlanCorpora
  * .ownedBestBySlot` for why absent is read as "nothing stated there" rather than "an owned zero".
@@ -670,37 +731,65 @@ interface AdmitGate {
  * offhand: it is closed because the ROLE says so, not because anything is known to be worn there.
  */
 function isUpgrade(row: GearRow, gate: AdmitGate): boolean {
-  return row.slots.some((slot) => {
+  return row.slots.some((slot, i) => {
     if (!policyAdmits(gate.policy, slot, row)) return false
     if (gate.bars === undefined) return true
     const best = gate.bars.get(slot)
-    return best === undefined || gate.score > best
+    return best === undefined || gate.bySlot[i] > best
   })
 }
 
-/** Every gear row that could ever be a target, filtered once and scored once (not per bracket). */
-function candidatesOf(inputs: PlanInputs, corpora: PlanCorpora): Candidate[] {
-  const out: Candidate[] = []
-  const policy = ROLE_WEAPON_POLICY[inputs.role]
+/** The three inputs the POOL depends on — everything in `PlanInputs` except the level. */
+export type PlanScope = Pick<PlanInputs, 'classes' | 'role' | 'eraOnly'>
+
+/**
+ * THE ROW'S SCORE IN EACH SLOT IT FITS, and the best of them (rule 12).
+ *
+ * Only the haste term can differ between two slots — it is credited against the haste you would
+ * still own with THAT slot swapped out (`ownedHasteOutside`) — so a row that states no `HASTE` is
+ * scored once and the number is shared. `best` is what a target is RANKED by: the slot where the
+ * item is worth most is the slot you would wear it in.
+ */
+function scoresOf(row: GearRow, scope: PlanScope, corpora: PlanCorpora): { best: number; bySlot: number[] } {
+  const ctx = { classes: scope.classes }
+  if (row.stats.HASTE === undefined || row.slots.length === 0) {
+    const one = roleValue(row.stats, scope.role, ctx)
+    return { best: one, bySlot: row.slots.map(() => one) }
+  }
+  const bySlot = row.slots.map((slot) =>
+    roleValue(row.stats, scope.role, { ...ctx, ownedHaste: ownedHasteOutside(corpora.ownedHaste, slot) })
+  )
+  return { best: Math.max(...bySlot), bySlot }
+}
+
+/**
+ * EVERY GEAR ROW THAT COULD EVER BE A TARGET, filtered once and scored once — not per bracket, and
+ * NOT PER WISH. This is the expensive half of the plan (every row of the corpus through `roleValue`
+ * and the witness resolve) and its dependencies are the scope, the corpus and what is owned; a
+ * click on a wish control changes none of them, so the renderer memoizes this on exactly those and
+ * re-runs only `routeFromPool` when the wish list moves.
+ *
+ * The gap test's verdict is CARRIED (`upgrade`) rather than applied here, because the wish list can
+ * overrule it and the wish list is not an input of this function.
+ */
+export function candidatePool(scope: PlanScope, corpora: PlanCorpora): PlanCandidate[] {
+  const out: PlanCandidate[] = []
+  const policy = ROLE_WEAPON_POLICY[scope.role]
   for (const row of corpora.gear) {
     if (corpora.owned.has(row.key)) continue
-    if (!wearable(row, inputs.classes)) continue
-    if (!eraLegal(row, inputs.eraOnly)) continue
+    if (!wearable(row, scope.classes)) continue
+    if (!eraLegal(row, scope.eraOnly)) continue
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
-    const score = roleValue(row.stats, inputs.role, { ownedHaste: corpora.ownedHaste, classes: inputs.classes })
-    // A WISHED ITEM SKIPS THE GAP TEST **AND THE POLICY**. The user declaring they want a thing is
-    // the strongest statement about it anywhere in this corpus, and it outranks both a score this
-    // file's own header calls invented and a loadout shape inferred from a picker. The policy exists
-    // to stop UNSOLICITED suggestions; a wish is the opposite of unsolicited, so a 2H player who has
-    // wish-listed a shield is told where to get their shield. Every other gate — era, reach,
-    // wearability — still applies.
-    const wished = corpora.wished.has(row.key)
-    if (!wished && !isUpgrade(row, { score, bars: corpora.ownedBestBySlot, policy })) continue
-    out.push({ row, witnesses, score, wished })
+    const { best, bySlot } = scoresOf(row, scope, corpora)
+    const upgrade = isUpgrade(row, { bySlot, bars: corpora.ownedBestBySlot, policy })
+    out.push({ row, witnesses, score: best, upgrade })
   }
   return out
 }
+
+/** `buildProgressionPlan`'s reading of an absent `PlanCorpora.wished`. */
+const NO_WISHES: ReadonlySet<string> = new Set()
 
 /**
  * Is this bracket silent — nowhere to grind and nothing to go and get?
@@ -726,15 +815,42 @@ function isQuiet(bracket: PlanBracket): boolean {
  *
  * Bracket midpoint is `floor((from + to) / 2)`: the con model is stated in whole levels on both
  * sides, so asking it about level 46.5 would be asking a question the game never answers.
+ *
+ * TWO DOORS. This one is the one-shot: pool and route in one call, the wish set read off the
+ * corpora. `routeFromPool` is the renderer's, taking a pool it has already memoized and the wish
+ * set as its own argument — see `candidatePool` for why the split is worth a second signature.
  */
 export function buildProgressionPlan(inputs: PlanInputs, corpora: PlanCorpora): PlanBracket[] {
+  return routeFromPool(inputs, corpora, candidatePool(inputs, corpora), corpora.wished ?? NO_WISHES)
+}
+
+/**
+ * THE ROUTE, from a pool `candidatePool` built for the SAME scope (`inputs.classes`, `role`,
+ * `eraOnly`) and the same corpora — the caller keeps them in step, and the renderer does it by
+ * memoizing the pool on exactly those. `wished` is the one input that moves on a click and it is
+ * read here alone.
+ *
+ * A WISHED ITEM SKIPS THE GAP TEST **AND THE POLICY** (rule 9). The user declaring they want a thing
+ * is the strongest statement about it anywhere in this corpus, and it outranks both a score this
+ * file's own header calls invented and a loadout shape inferred from a picker. The policy exists to
+ * stop UNSOLICITED suggestions; a wish is the opposite of unsolicited, so a 2H player who has
+ * wish-listed a shield is told where to get their shield. Every other gate — era, reach,
+ * wearability — still applies, because the pool applied them.
+ */
+export function routeFromPool(
+  inputs: PlanInputs,
+  corpora: PlanCorpora,
+  pool: readonly PlanCandidate[],
+  wished: ReadonlySet<string>
+): PlanBracket[] {
   const size = Math.max(1, Math.floor(inputs.bracketSize ?? DEFAULT_BRACKET_SIZE))
   const start = Math.max(1, Math.floor(inputs.level))
   const ctx: PlanCtx = {
     corpora,
     gate: inputs.reach === 'group' ? GROUP_GATE : SOLO_GATE,
     eraOnly: inputs.eraOnly,
-    candidates: candidatesOf(inputs, corpora)
+    candidates: pool.filter((c) => c.upgrade || wished.has(c.row.key)),
+    wished
   }
   const used = new Set<string>()
   const route: PlanBracket[] = []

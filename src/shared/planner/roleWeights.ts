@@ -407,9 +407,11 @@ export function roleStatKeys(role: GearRole): readonly GearStatKey[] {
 /** The two inputs the class layer and the haste rule need beside the item and the focus. */
 export interface RoleContext {
   /**
-   * THE BEST HASTE PERCENTAGE THE PLAYER ALREADY OWNS. Worn haste does not stack, so an item's
-   * haste is credited only ABOVE this; 0 (the default) is "none owned" and the full percentage
-   * counts, because the first haste item is a real upgrade.
+   * THE HASTE PERCENTAGE THE PLAYER WOULD STILL OWN WITH THIS ITEM WORN. Worn haste does not
+   * stack, so an item's haste is credited only ABOVE this; 0 (the default) is "none owned" and the
+   * full percentage counts, because the first haste item is a real upgrade. The plan fold hands in
+   * the best haste owned OUTSIDE the slot being scored (`progressionPlan.ts ownedHasteOutside`), so
+   * a haste weapon and its own replacement are read under one number.
    */
   ownedHaste?: number
   /** the picked classes; EMPTY is unknown and gates nothing (law 1), not "nobody" */
@@ -431,6 +433,7 @@ export interface RoleContext {
  * counts only the part of the item's haste ABOVE `ctx.ownedHaste`, which is 0 for anything at or
  * below — the same line `gearScale.ts ignoreHaste` draws, made automatic here instead of a toggle.
  * The same weight table reads it, so "afterthought" is the credit rule, not a quieter coefficient.
+ * A NEGATIVE stated haste is a penalty and scores as one, whatever is owned (`hasteCredit`).
  *
  * THE CLASS GATE (the file header): INT and WIS count at the focus's `manaStat` weight only for the
  * attribute the picked classes actually cast from; MP, mana regen, CHA, BACKSTAB and endurance
@@ -456,10 +459,20 @@ function statedTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate, own
     const stated = stats[key]
     const coefficient = weights.stats[key]
     if (stated === undefined || coefficient === undefined || !statIsLive(key, gate)) continue
-    const value = key === 'HASTE' ? Math.max(0, stated - ownedHaste) : stated
+    const value = key === 'HASTE' ? hasteCredit(stated, ownedHaste) : stated
     total += value * coefficient
   }
   return total
+}
+
+/**
+ * THE HASTE TERM: only the part ABOVE what you already own counts, and a stated PENALTY counts in
+ * full. The clamp is on the positive margin alone — `-5` haste beside a 36% sword is still a stated
+ * negative number, and rounding it up to 0 would be the one place `roleValue` quietly improved on
+ * what the page said (the "a stated penalty scores that penalty" clause above).
+ */
+function hasteCredit(stated: number, ownedHaste: number): number {
+  return stated < 0 ? stated : Math.max(0, stated - ownedHaste)
 }
 
 /** The mana-stat row, landed on whichever attribute(s) the trio casts from. */
@@ -498,8 +511,8 @@ function derivedTotal(stats: GearStats, weights: RoleWeights): number {
 //
 // SO POLICY IS A SECOND, SEPARATE TABLE. Weights answer "what is this item worth"; policy answers
 // "would I ever put something there at all, and what". Two questions, two tables, and a role picks
-// one of each — which is what lets `dps1h`, `dps2h` and `dualwield` share ONE weights profile
-// (`MELEE_DPS`) and still produce three different plans.
+// one of each — which is what lets `dps1h` and `dualwield` share ONE weights profile
+// (`ONE_HAND_DPS`, and `dps2h` differs from it by one stat) and still produce three different plans.
 //
 // THE KINDNESS PREDICATES ARE READ OFF THE CORPUS, NEVER INVENTED, and the skill vocabulary is not
 // restated here: `weaponType.ts` already folded the wiki's fifteen `Skill:` spellings into nine
@@ -553,9 +566,9 @@ export interface WeaponSlotPolicy {
 /**
  * THE POLICY TABLE — the one place a role's loadout shape is stated.
  *
- * RANGE IS DELIBERATELY UNTOUCHED by every row. A bow or a thrown stack is a third weapon that
- * neither hand competes with, and no ask has ever been about it; constraining it would be inventing
- * a rule out of symmetry.
+ * RANGE IS UNTOUCHED BY EVERY ROW BUT `range`'S OWN. A bow or a thrown stack is a third weapon that
+ * neither hand competes with, and for the hand-fighting builds constraining it would be inventing a
+ * rule out of symmetry; the one focus that fights FROM that slot is the one row that names it.
  *
  * THE FIVE ROLES WITH NO ENTRY BEHAVE EXACTLY AS THEY DID BEFORE THIS TABLE EXISTED (`balanced`,
  * `dps`, `dd`, `dot`, `healer`) — an empty policy is not a new default, it is today's behaviour

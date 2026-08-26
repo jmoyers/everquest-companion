@@ -15,6 +15,8 @@
 //   2. A WISHED ITEM IS FLAGGED, NOT FILTERED — it bypasses the gap test and sorts first.
 //   2b. HASTE IS CREDITED ONLY ABOVE WHAT YOU OWN (rule 12) — the 9%-glove-over-a-36%-sword case —
 //      and the melee dps profile reads NO caster stat (the same day's ruling).
+//      (The per-slot reading of that rule, the haste penalty, and the pool/wish seam are in
+//      `progressionPlanSeams.test.mts` — this file met the same 400-line ceiling on 2026-08-25.)
 //   3. RUNS. A +N run groups separately from its base zone; THE BURIAL CASE (a low-scoring Refined
 //      run still gets its line beside raid loot — the bug this shape exists for); the two caps; run
 //      ordering; and that `targets` and `runs` are two views of one admitted pool.
@@ -29,6 +31,7 @@ import type { GearRow } from '../src/shared/planner/gear'
 import {
   buildProgressionPlan,
   roleValue,
+  type OwnedHaste,
   type PlanBracket,
   type PlanCorpora,
   type PlanInputs
@@ -312,17 +315,21 @@ test('a haste item is worth only the haste you do NOT already have — the 9% gl
   assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', { ownedHaste: 36 }), 0.4)
   assert.equal(GRIPS_BAR, 14.25)
   const bars = new Map([['HANDS', GRIPS_BAR] as const])
-  const plan = (ownedHaste?: number): string[] =>
+  // The owned haste is a SOURCE with a slot (rule 12 is per slot — `progressionPlanSeams.test.mts`);
+  // the sword sits in the main hand, which is not where a glove goes, so its haste counts against
+  // the glove in full.
+  const sword = (haste: number): OwnedHaste[] => [{ haste, slots: ['PRIMARY'] }]
+  const plan = (ownedHaste?: readonly OwnedHaste[]): string[] =>
     buildProgressionPlan(inputs({ role: 'dps' }), corpora({ gear: [HASTE_GLOVES], ownedBestBySlot: bars, ownedHaste }))
       .flatMap(names)
   // NOTHING OWNED: the first haste item is a real upgrade, and the route says so.
   assert.deepEqual(plan(undefined), ['Sporali Gloves'], 'absent reads as none owned — full credit')
-  assert.deepEqual(plan(0), ['Sporali Gloves'])
+  assert.deepEqual(plan([]), ['Sporali Gloves'], 'and so does an empty list')
   // THE SWORD: worn haste does not stack, so the glove is out — the case that was wrong.
-  assert.deepEqual(plan(36), [], 'a 9% glove is dead weight beside a 36% sword')
-  assert.deepEqual(plan(9), [], 'at exactly what you own, the term is 0 — not negative, not a tie on haste')
+  assert.deepEqual(plan(sword(36)), [], 'a 9% glove is dead weight beside a 36% sword')
+  assert.deepEqual(plan(sword(9)), [], 'at exactly what you own, the term is 0 — not negative, not a tie on haste')
   // ABOVE WHAT YOU OWN, only the difference counts: 4 points over a 5% belt is 16 + 0.4, still in.
-  assert.deepEqual(plan(5), ['Sporali Gloves'])
+  assert.deepEqual(plan(sword(5)), ['Sporali Gloves'])
   assert.equal(roleValue(HASTE_GLOVES.stats, 'dps', { ownedHaste: 5 }), 16.4)
 })
 

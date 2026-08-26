@@ -45,7 +45,7 @@
 
 import type { JSX } from 'react'
 import { Box, Button, Chip, Stack, Typography } from '@mui/material'
-import type { PlanBracket, ZonePick } from '@shared/planner/progressionPlan'
+import type { GearTarget, PlanBracket, ZonePick } from '@shared/planner/progressionPlan'
 import type { ZoneShort } from '@shared/maps'
 // The catalog-spelling fold, refuse-over-guess: only a zone the table resolves becomes a door.
 import { zoneShortNameFromCatalog } from '@shared/zones'
@@ -68,8 +68,9 @@ const RUN_TILE_MIN = 320
 
 /**
  * One exp zone. The band is what the zone's MEDIAN mob cons at the bracket midpoint, and the hover
- * carries the spread and the sample size — because a zone with a level-6 entrance and a level-40
- * basement has a median that describes neither, and the fold says so in as many words.
+ * carries the median and the low end — one clause, because a zone with a level-6 entrance and a
+ * level-40 basement has a median that describes neither, and two numbers say so where a sentence
+ * about sampling would only footnote them (the tooltip diet).
  */
 function ZoneChip({ pick, onOpenMapZone }: { pick: ZonePick; onOpenMapZone?: ((zone: ZoneShort) => void) | undefined }): JSX.Element {
   // A trip's name opens the map to make it (user ruling, 2026-08-18) — exactly when the table
@@ -81,7 +82,7 @@ function ZoneChip({ pick, onOpenMapZone }: { pick: ZonePick; onOpenMapZone?: ((z
       variant="outlined"
       data-testid="plan-zone"
       label={`${pick.zone} · ${pick.band}`}
-      title={`Median mob level ${String(pick.median)}, lowest ${String(pick.low)} - from ${String(pick.sampled)} stated mob levels. A median is a coarse stand-in for a zone, not its range.`}
+      title={`Median mob level ${String(pick.median)}, lowest ${String(pick.low)}`}
       onClick={stem === null || onOpenMapZone === undefined ? undefined : () => { onOpenMapZone(stem) }}
       sx={{ flexShrink: 0, maxWidth: 320 }}
     />
@@ -99,6 +100,8 @@ export interface PlanBracketCardProps {
   onOpenMapZone?: (zone: ZoneShort) => void
   /** a named witness mob's door to its page (App's `openMob`); absent, plain text */
   onOpenMob?: (t: MobTarget) => void
+  /** each target row's wish control (`usePlanWishes.toggle`); absent until the document has loaded */
+  onToggleWish?: (t: GearTarget) => void
 }
 
 /**
@@ -114,7 +117,7 @@ export interface PlanBracketCardProps {
  * rows STAY afterwards, wearing the `wished` flag: rule 9 flags rather than filters, so pressing
  * this does not make the answer disappear.
  */
-export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, onOpenMapZone, onOpenMob }: PlanBracketCardProps): JSX.Element {
+export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, onOpenMapZone, onOpenMob, onToggleWish }: PlanBracketCardProps): JSX.Element {
   const addable = bracketTargets(bracket).length
   return (
     <Box
@@ -132,7 +135,7 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, o
           ))}
           {bracket.expZones.length === 0 && (
             <Typography variant="caption" color="text.secondary" noWrap>
-              no zone this era profiles for experience at these levels
+              no exp zone at these levels
             </Typography>
           )}
         </Box>
@@ -141,7 +144,7 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, o
             size="small"
             variant="outlined"
             data-testid="plan-add-bracket"
-            title="Adds every item listed under this bracket`s runs to the Wish list. They stay on the card afterwards, flagged as wished - the plan keeps routing you to a thing you asked for."
+            title="Add every item under this bracket's runs to the wish list"
             onClick={() => {
               onAdd(bracket)
             }}
@@ -171,12 +174,14 @@ export default function PlanBracketCard({ bracket, onAdd, compare, onOpenLoot, o
             onOpenLoot={onOpenLoot}
             onOpenMapZone={onOpenMapZone}
             onOpenMob={onOpenMob}
+            onToggleWish={onToggleWish}
           />
         ))}
       </Box>
+      {/* STATE, NOT PROCESS: the one fact — nothing here beats what you wear — and no advice. */}
       {bracket.runs.length === 0 && (
         <Typography variant="caption" color="text.secondary" data-testid="plan-no-targets" sx={{ display: 'block', mt: 0.5 }}>
-          Nothing here beats what you are already wearing - grind it, and keep going.
+          Nothing here beats what you are wearing.
         </Typography>
       )}
     </Box>

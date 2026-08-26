@@ -6,13 +6,14 @@
 // wished for — precisely so the fold can be tested against synthetic corpora with no renderer
 // anywhere near it. THIS FILE IS THE PRODUCTION WIRING OF THAT PARAMETER and it is deliberately
 // the only place the two halves meet: no component below reaches for a catalog, a store or an IPC
-// channel, and no rule about what belongs in a route lives here.
+// channel, and no rule about what belongs in a route lives here. The one pure fold this file used
+// to hold — the owned side of the gap test — is `planOwned.ts` now, so it can be node-tested.
 //
 // THE TWO CATALOG FOLDS ARE BUILT ONCE PER WINDOW, LAZILY — the `lib/itemSources.ts` precedent,
 // and for the same three reasons it states. `MOB_CATALOG` is 7,872 immutable rows compiled into
-// this bundle, the Plan tab may never be opened this session, and a `useMemo` per mount would
-// re-fold the whole catalog every time a tab switch remounted the view. Module scope with a lazy
-// singleton is the shape that answers all three.
+// this bundle, the Recommended tab may never be opened this session, and a `useMemo` per mount
+// would re-fold the whole catalog every time a tab switch remounted the view. Module scope with a
+// lazy singleton is the shape that answers all three.
 //
 // THE MOB KEY IS THE FOLD `mergeItemSources` ALREADY USES — trim, case-fold, and nothing else. It
 // is joining two halves of one wiki that disagree about capitalisation constantly (the item page's
@@ -28,16 +29,23 @@
 // so taking the maximum is the CAUTIOUS read, the same direction `conBands.SEED_BANDS` rounds its
 // unsampled risky/deadly split ("a plan that calls a mob risky when it is deadly gets someone
 // killed; the reverse wastes a pull"). Taking the minimum would advertise a camp you cannot hold.
+//
+// THE PLAN IS TWO MEMOS, NOT ONE, AND THE SEAM IS THE WISH LIST. `candidatePool` is the expensive
+// half (every one of ~6.8k rows scored and witness-resolved) and depends on the corpus, what is
+// owned, the role, the trio and the era chip. `routeFromPool` is the cheap half and is the only
+// one that reads the wish set — so a click on a wish control re-cuts the brackets over the pool and
+// never re-scores the corpus. The first cut keyed one memo on everything and paid the full fold per
+// wish.
 
 import { useCallback, useMemo } from 'react'
 import type { ClassAbbr } from '@shared/classCombo'
 import { conBand } from '@shared/conBands'
+import type { MobEntry } from '@shared/mobTypes'
 import type { GearRow } from '@shared/planner/gear'
-import type { EquipSlot } from '@shared/planner/types'
 import type { WishList } from '@shared/planner/wishlist'
 import {
-  buildProgressionPlan,
-  roleValue,
+  candidatePool,
+  routeFromPool,
   type GearRole,
   type GearTarget,
   type PlanBracket,
@@ -49,11 +57,13 @@ import type { PlanReach } from '../gear/areaMemory'
 import type { GearOwnershipMap } from '../gear/gearOwnership'
 import { useWishlist } from '../wishlist/useWishlist'
 import { wishFromGear } from '../wishlist/wishSearch'
+import { ownedKeysOf, ownedSide } from './planOwned'
 
-// ---- the two catalog folds ---------------------------------------------------------------------
+// ---- the catalog folds ------------------------------------------------------------------------
 
 let PROFILES: ReadonlyMap<string, ZoneLevels> | null = null
 let MOB_LEVELS: ReadonlyMap<string, number> | null = null
+let MOB_PAGES: ReadonlyMap<string, MobEntry> | null = null
 
 /** Every zone the catalog places a levelled mob in, profiled. Built on first use — see the header. */
 export function zoneProfiles(): ReadonlyMap<string, ZoneLevels> {
@@ -92,144 +102,26 @@ export function mobLevelOf(name: string): number | null {
 }
 
 /**
- * `a skeleton` / `an orc pawn` — the game's own convention for a COMMON spawn is the leading
- * article, and the named mobs go without one. The catalog carries no rarity field, so the article
- * is the one signal the data itself states; case-insensitive because the wiki capitalizes some
- * articles. The same rule the Maps pane applies to its pin roster — kept per-feature because each
- * branch of this fork must stand alone against main (PR 35 spells it in maps/mobPins.ts).
- *
- * HERE it gates the mob-page link (owner ruling, 2026-08-18: *only for named mobs*): a common's
- * bare name can mean nine different pages ("a bandit"), so a link on one would land on a guess.
+ * THE CATALOG ROW FOR A WIKI PAGE TITLE, or `undefined` — the identity pin a mob click carries
+ * (`MobTarget.entry`). Keyed on `MobEntry.page`, not `name`, because that is what an item page's
+ * `|dropsfrom` links (`GearTarget.mobPage`) and a page is one row where a name can be nine. The
+ * same trim-and-case-fold as the level join, for the same two-halves-of-one-wiki reason. Eleven
+ * pages share a title in the committed catalog; the first wins, which is the lookup `useMobKnowledge`
+ * would make anyway.
  */
-const COMMON_NAME_RE = /^(a|an)\s/i
-
-export function isCommonMob(name: string): boolean {
-  return COMMON_NAME_RE.test(name)
+export function mobEntryOf(page: string): MobEntry | undefined {
+  if (MOB_PAGES === null) {
+    const out = new Map<string, MobEntry>()
+    for (const mob of MOB_CATALOG) {
+      const key = mobKey(mob.page)
+      if (!out.has(key)) out.set(key, mob)
+    }
+    MOB_PAGES = out
+  }
+  return MOB_PAGES.get(mobKey(page))
 }
 
 // ---- the corpora ------------------------------------------------------------------------------
-
-/**
- * WHAT THIS CHARACTER ALREADY HAS, as the fold's `owned` set.
- *
- * The predicate is `gearData.useOwnedOrLooted`'s, restated over the map rather than per row because
- * the fold wants a SET and that hook wants a row predicate. All three arms are kept for the reason
- * `gearOwnership.ts` gives (rule 2): an exaltation is proof a copy passed through this character's
- * hands, and a route that offered you an item you have already melted would be answering a question
- * nobody asked.
- */
-function ownedKeys(map: GearOwnershipMap | null): ReadonlySet<string> {
-  const out = new Set<string>()
-  if (map === null) return out
-  for (const [key, o] of map) {
-    if (o.owned || o.looted || o.exaltations > 0) out.add(key)
-  }
-  return out
-}
-
-/**
- * THE BAR EACH SLOT HAS TO BEAT — the half of the plan that makes it "look at what I have"
- * (owner, 2026-08-15: *"i should be able to gear my guy up, so it needs to look at what I have and
- * the best in slot"*), and the production side of `PlanCorpora.ownedBestBySlot`.
- *
- * ONE OWNED ITEM RAISES EVERY SLOT IT FITS, and the bar is the MAX rather than a sum or an average:
- * the question the fold asks is "would this beat what I would actually wear there", and what you
- * would wear there is your best. An earring that fits two ear cells raises both.
- *
- * BASE STATS, LIKE THE TARGETS THEY ARE COMPARED AGAINST (fold rule 6, the owner's *"base stats can
- * be used, that's fine, because we can upgrade"*). `useGearIndex` hands out the UNSCALED corpus, so
- * this is base-against-base by construction — and it has to be, because the owned copy's real `+N`
- * is a fact off the dump while a drop's tier is a thing you have not earned yet. Scoring the owned
- * side at its merged tier would raise every bar past every drop and empty the route.
- *
- * A KEY THE CORPUS HAS NO ROW FOR CONTRIBUTES NOTHING (law 1). Ownership is read from the player's
- * dump and their loot history, both of which name items this scrape may not describe; a row we
- * cannot score is not a bar of zero, it is a slot this map declines to speak for — which the fold
- * then reads as a gap and keeps offering upgrades into. That is the honest failure direction.
- */
-function ownedBars(
-  owned: ReadonlySet<string>,
-  byKey: ReadonlyMap<string, GearRow>,
-  role: GearRole,
-  classes: readonly ClassAbbr[]
-): ReadonlyMap<EquipSlot, number> {
-  const bars = new Map<EquipSlot, number>()
-  for (const key of owned) {
-    const row = byKey.get(key)
-    if (row === undefined) continue
-    // THE SAME CLASS GATE THE CANDIDATES ARE READ THROUGH (fold rule 13) — a bar and the item
-    // measured against it must agree on which stats are live, or a warrior's INT glove would set a
-    // bar its own replacement is not allowed to clear. No owned haste on this side: the bars keep
-    // full haste credit on purpose (rule 12).
-    const score = roleValue(row.stats, role, { classes })
-    for (const slot of row.slots) {
-      const held = bars.get(slot)
-      if (held === undefined || score > held) bars.set(slot, score)
-    }
-  }
-  return bars
-}
-
-/**
- * THE HASTE THE PLAYER ALREADY HAS — the production side of `PlanCorpora.ownedHaste` (rule 12): the
- * best `HASTE` any owned row states, or 0 when none does. Read off the same owned set and the same
- * unscaled corpus as the bars, for the same base-against-base reason. Haste is a percentage the
- * `+N` tier does not move, so base is not even an approximation here.
- */
-function ownedHasteOf(owned: ReadonlySet<string>, byKey: ReadonlyMap<string, GearRow>): number {
-  let best = 0
-  for (const key of owned) {
-    const haste = byKey.get(key)?.stats.HASTE
-    if (haste !== undefined && haste > best) best = haste
-  }
-  return best
-}
-
-/**
- * The fold's whole world, memoized on the things that actually move: the corpus (once per window),
- * the ownership join (a dump re-read or a loot line), the wish list document (a click), the ROLE
- * and the CLASS TRIO (a pick — either re-scores the owned side as well as the candidate side, so
- * the bars move with it; the trio because the class gate decides which stats a bar may count).
- *
- * The two catalog folds and `conBand` are constants, so they are not dependencies — which is what
- * keeps a keystroke on another tab from re-planning a route.
- *
- * AN EMPTY BAR MAP IS THE SAME STATEMENT AS AN ABSENT ONE, so this always passes a map rather than
- * branching: `ownedBestBySlot` reads a missing slot as a gap, and a map with no entries has every
- * slot missing. A character who has never run `/outputfile` and looted nothing therefore gets
- * exactly the documented default — every slot a gap, every wearable drop an upgrade.
- */
-export function usePlanCorpora(
-  rows: readonly GearRow[],
-  ownership: GearOwnershipMap | null,
-  list: WishList,
-  picks: Pick<PlanPicks, 'role' | 'classes'>
-): PlanCorpora {
-  // Destructured so the memos key on the two values and not on the pick object's identity.
-  const { role, classes } = picks
-  const owned = useMemo(() => ownedKeys(ownership), [ownership])
-  const entries = list.entries
-  const wished = useMemo(() => new Set(entries.map((e) => e.itemKey)), [entries])
-  // Keyed on the ARRAY identity, which `useGearIndex` holds stable for the life of the window, so
-  // this 6,766-entry map is built once per window and never per pick — `useGearCompare` builds the
-  // same map next door for the hover cards and for the same reason.
-  const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
-  const ownedBestBySlot = useMemo(() => ownedBars(owned, byKey, role, classes), [owned, byKey, role, classes])
-  const ownedHaste = useMemo(() => ownedHasteOf(owned, byKey), [owned, byKey])
-  return useMemo(
-    () => ({
-      gear: rows,
-      profiles: zoneProfiles(),
-      mobLevel: mobLevelOf,
-      con: conBand,
-      owned,
-      wished,
-      ownedBestBySlot,
-      ownedHaste
-    }),
-    [rows, owned, wished, ownedBestBySlot, ownedHaste]
-  )
-}
 
 /** What the player told the header. The level arrives separately because it can be UNSTATED. */
 export interface PlanPicks {
@@ -240,23 +132,72 @@ export interface PlanPicks {
 }
 
 /**
+ * The fold's world MINUS the wish list, memoized on the things that actually move: the corpus (once
+ * per window), the ownership join (a dump re-read or a loot line), the ROLE and the CLASS TRIO (a
+ * pick — either re-scores the owned side as well as the candidate side, so the bars move with it;
+ * the trio because the class gate decides which stats a bar may count).
+ *
+ * The two catalog folds and `conBand` are constants, so they are not dependencies — which is what
+ * keeps a keystroke on another tab from re-planning a route. The wish list is NOT here either, on
+ * purpose: see the header, and `usePlanRoute` for where it goes in.
+ *
+ * AN EMPTY BAR MAP IS THE SAME STATEMENT AS AN ABSENT ONE, so this always passes a map rather than
+ * branching: `ownedBestBySlot` reads a missing slot as a gap, and a map with no entries has every
+ * slot missing. A character who has never run `/outputfile` and looted nothing therefore gets
+ * exactly the documented default — every slot a gap, every wearable drop an upgrade.
+ */
+export function usePlanCorpora(
+  rows: readonly GearRow[],
+  ownership: GearOwnershipMap | null,
+  picks: Pick<PlanPicks, 'role' | 'classes'>
+): PlanCorpora {
+  // Destructured so the memos key on the two values and not on the pick object's identity.
+  const { role, classes } = picks
+  const keys = useMemo(() => ownedKeysOf(ownership), [ownership])
+  // Keyed on the ARRAY identity, which `useGearIndex` holds stable for the life of the window, so
+  // this 6,766-entry map is built once per window and never per pick — `useGearCompare` builds the
+  // same map next door for the hover cards and for the same reason.
+  const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
+  const side = useMemo(() => ownedSide(keys.worn, byKey, role, classes), [keys, byKey, role, classes])
+  return useMemo(
+    () => ({
+      gear: rows,
+      profiles: zoneProfiles(),
+      mobLevel: mobLevelOf,
+      con: conBand,
+      owned: keys.held,
+      ownedBestBySlot: side.bars,
+      ownedHaste: side.haste
+    }),
+    [rows, keys, side]
+  )
+}
+
+/**
  * The route, or `[]` when nothing has stated a level.
  *
- * NO GUESSED LEVEL, EVER. `buildProgressionPlan` opens its first bracket at the character's current
- * level, so handing it a default would print a confident six-bracket route about a character the
- * log has never described. An empty route with the view's own empty state beside it is the honest
+ * NO GUESSED LEVEL, EVER. `routeFromPool` opens its first bracket at the character's current level,
+ * so handing it a default would print a confident seven-bracket route about a character the log
+ * has never described. An empty route with the view's own empty state beside it is the honest
  * answer, and the moment a ding or a `/who` lands it fills in with no other change.
+ *
+ * TWO MEMOS (the header): the pool on the scope and the corpora, the route on the pool, the level,
+ * the reach and the wish set. A wish click touches the second alone.
  */
 export function usePlanRoute(
   level: number | null,
   picks: PlanPicks,
-  corpora: PlanCorpora
+  corpora: PlanCorpora,
+  list: WishList
 ): PlanBracket[] {
   const { classes, role, reach, eraOnly } = picks
+  const entries = list.entries
+  const wished = useMemo(() => new Set(entries.map((e) => e.itemKey)), [entries])
+  const pool = useMemo(() => candidatePool({ classes, role, eraOnly }, corpora), [classes, role, eraOnly, corpora])
   return useMemo(() => {
     if (level === null) return []
-    return buildProgressionPlan({ level, classes, role, reach, eraOnly }, corpora)
-  }, [level, classes, role, reach, eraOnly, corpora])
+    return routeFromPool({ level, classes, role, reach, eraOnly }, corpora, pool, wished)
+  }, [level, classes, role, reach, eraOnly, corpora, pool, wished])
 }
 
 /**
@@ -284,13 +225,19 @@ export function bracketTargets(bracket: PlanBracket): GearTarget[] {
 }
 
 /**
- * THE ONE DOOR OUT OF THIS TAB: a bracket's targets, onto the wish list.
+ * THE DOORS OUT OF THIS TAB: a bracket's targets onto the wish list, and one target on or off it.
  *
- * It is `useWishlist.add` per target and nothing else — the same call `wishFromGear` feeds from the
- * Gear tab's per-row control, so a wish written by the plan and one written by hand are the same
- * bytes, `source: 'user'` included. NOT `seed`/`applySeed`: that door is once-forever by design
+ * Both are `useWishlist.add` per target and nothing else — the same call `wishFromGear` feeds from
+ * the Gear tab's per-row control, so a wish written by the plan and one written by hand are the
+ * same bytes, `source: 'user'` included. NOT `seed`/`applySeed`: that door is once-forever by design
  * (the exaltation plan's one-time fill), and a bracket button is a thing you press whenever you
  * like. Already-wished targets are a no-op, because the document dedupes by `itemKey`.
+ *
+ * `toggle` is the per-row control's (`WishToggle`, the one component both the Gear and Exaltations
+ * rows use): add when the target is not on the list, `remove` when it is — the same `removeWish`
+ * fold the Wish list tab's own per-row remove calls, so there is exactly one deletion shape in the
+ * app. It reads the target's own `wished` flag, which the fold set from the same document one memo
+ * earlier, rather than searching the list a second time.
  *
  * AND THE ROWS STAY ON THE CARD AFTERWARDS (fold rule 9, and it is a reversal worth naming: the
  * first cut of this tab dropped them). A wished item is FLAGGED, not filtered — it bypasses the
@@ -298,17 +245,18 @@ export function bracketTargets(bracket: PlanBracket): GearTarget[] {
  * statement in the corpus and a route that went quiet about it would be hiding the answer to the
  * question that was just asked.
  *
- * IT IS UNDEFINED UNTIL THE DOCUMENT HAS LOADED — the absent-not-disabled rule, exactly as
+ * BOTH ARE UNDEFINED UNTIL THE DOCUMENT HAS LOADED — the absent-not-disabled rule, exactly as
  * `GearView.useGearWishes` argues it: before `ready` the empty list is a default rather than an
- * answer, and a button that wrote against it could duplicate nothing and would still be a control
+ * answer, and a control that wrote against it could duplicate nothing and would still be a control
  * offered over a document nobody has read.
  */
 export function usePlanWishes(): {
   list: WishList
   addBracket?: (bracket: PlanBracket) => void
+  toggle?: (target: GearTarget) => void
 } {
   const wishlist = useWishlist()
-  const { add, ready } = wishlist
+  const { add, remove, ready } = wishlist
   const addBracket = useCallback(
     (bracket: PlanBracket) => {
       const now = Date.now()
@@ -316,5 +264,12 @@ export function usePlanWishes(): {
     },
     [add]
   )
-  return { list: wishlist.list, addBracket: ready ? addBracket : undefined }
+  const toggle = useCallback(
+    (target: GearTarget) => {
+      if (target.wished) remove(target.key)
+      else add(wishFromGear(target, Date.now()))
+    },
+    [add, remove]
+  )
+  return { list: wishlist.list, addBracket: ready ? addBracket : undefined, toggle: ready ? toggle : undefined }
 }
