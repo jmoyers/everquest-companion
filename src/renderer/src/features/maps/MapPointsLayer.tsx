@@ -22,8 +22,10 @@
 //   * THE LAYER ITSELF IS INERT. `pointerEvents: 'none'` on the container so drag-to-pan works
 //     everywhere, re-enabled on the labels and dots alone so their tooltips still work. The one
 //     gesture on a glyph is the CONNECTION LINK: a `to_…` label the zone table resolves
-//     (zoneLinks.ts) opens that zone's map on click, and its pointer-down stops propagating so
-//     the surface can never mistake the press for the start of a pan.
+//     (zoneLinks.ts) opens that zone's map on click — and on Enter/Space, since a linked glyph
+//     is a `role="button"` a keyboard can reach (mapPinChrome.tsx). The press itself falls
+//     through: the surface captures the pointer only once it has MOVED (useMapViewport.ts), so a
+//     drag can start on a label and a still click still opens the map.
 //
 // HOVER IS NOT PART OF THE LAYOUT, on purpose. Feeding the hovered point into the collision pass
 // as a top-priority symbol would re-run placement and shuffle every other label the instant the
@@ -34,6 +36,7 @@
 
 import { useMemo, useState, type JSX } from 'react'
 import type { MapPoint, ZoneShort } from '@shared/maps'
+import { onActivateKey } from './mapPinChrome'
 import { expandRect, visiblePoints, type LayerMask, type ScreenPos } from './mapGeometry'
 import { LABEL_FONT_PX, layoutLabels, type LabelSlot } from './labelLayout'
 import { inActiveBand, type FloorBand } from './floorSlice'
@@ -122,15 +125,11 @@ function Label({ p, at, onHover, index, onOpen, raised }: GlyphProps & { raised?
       onMouseLeave={() => {
         onHover(null)
       }}
-      // Stop the press, not just the click: the surface's pointer-down starts a drag and takes
-      // pointer capture, and a captured pointer's click never reaches this span in Chromium.
-      onPointerDown={
-        onOpen == null
-          ? undefined
-          : (ev) => {
-              ev.stopPropagation()
-            }
-      }
+      // A linked label is a button a keyboard can reach; an inert one carries no role, no stop
+      // and no key, so the tab order holds only the labels that DO something.
+      role={onOpen == null ? undefined : 'button'}
+      tabIndex={onOpen == null ? undefined : 0}
+      onKeyDown={onActivateKey(onOpen)}
       onClick={onOpen ?? undefined}
       style={{
         position: 'absolute',
@@ -169,13 +168,9 @@ function Dot({ p, at, onHover, index, onOpen }: GlyphProps): JSX.Element {
       onMouseLeave={() => {
         onHover(null)
       }}
-      onPointerDown={
-        onOpen == null
-          ? undefined
-          : (ev) => {
-              ev.stopPropagation()
-            }
-      }
+      role={onOpen == null ? undefined : 'button'}
+      tabIndex={onOpen == null ? undefined : 0}
+      onKeyDown={onActivateKey(onOpen)}
       onClick={onOpen ?? undefined}
       style={{
         position: 'absolute',
