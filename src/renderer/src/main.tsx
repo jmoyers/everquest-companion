@@ -8,6 +8,10 @@ import { ErrorBoundary } from './lib/ErrorBoundary'
 // The mouse's Back button (JOS-201). ABOVE App on purpose — the app-level answer is a fallback
 // SLOT rather than a stack entry, and effects run children-first; see appBack.tsx's header.
 import { AppBackProvider } from './appBack'
+// The data server's client (JOS-484, docs/plans/data-server.md). It mounts a context whose value is
+// NULL on every launch without `EQC_ENGINE=1` — which is every launch a user makes — and the
+// surfaces behind it draw nothing when it is. See lib/engineProvider.tsx.
+import { EngineProvider } from './lib/engineProvider'
 import { DEV_TOOLS, DEV_TOOLS_DEFINE, OWNER_TOOLS } from './devFlags'
 import { currentViewId } from './lib/currentView'
 
@@ -77,7 +81,12 @@ ReactDOM.createRoot(container).render(
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <AppBackProvider>
-          <App />
+          {/* INSIDE AppBackProvider, not above it: this one holds no fallback slot and cares
+              nothing about effect order — it is a plain value provider, and it belongs as close to
+              the views that read it as the tree allows. */}
+          <EngineProvider>
+            <App />
+          </EngineProvider>
         </AppBackProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -1,0 +1,81 @@
+{
+  "moment": "handshake and the skeleton echo",
+  "source": "JOS-464 (not a plan-doc moment - the four numbered moments are 01-04)",
+  "note": "Hello is the FIRST message on every connection. The token here is a throwaway 64-hex sample of the shape mintToken() produces; it is not a secret and never was one. The echo pair is the whole phase-0 skeleton: a message crosses the seam and comes back with no game logic anywhere. The error reply shows the refusal envelope on an op the engine does not know. The attach carries BOTH of its params — logPath and the optional stateDir (JOS-496 item 3) — because this is the production handshake and the app pushes both; 07-defines-and-fires attaches with logPath alone, so the two fixtures between them prove the optional field round-trips present AND absent.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "op": "hello",
+        "token": "0f7d2c9a4b1e6538aa03d7c5e9124f86b0d3a7c1e2f4085967ab3cd12e4f7089",
+        "protocolVersion": 1
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "hello",
+        "ok": true,
+        "engineVersion": "0.1.0",
+        "protocolVersion": 1
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 1, "op": "echo", "params": { "text": "hello engine" } }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 1, "ok": true, "result": { "text": "hello engine" } }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 2, "op": "session.health", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": { "status": "idle", "epoch": 0, "uptimeMs": 1420 }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 3,
+        "op": "session.attach",
+        "params": {
+          "logPath": "C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs\\eqlog_Primitive_freeport.txt",
+          "stateDir": "C:\\Users\\Public\\AppData\\Roaming\\everquest-companion"
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 3, "ok": true, "result": { "epoch": 1, "accepted": true } }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 4, "op": "session.progress", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 4, "ok": true, "result": { "subscription": 4, "subscribed": true } }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 5, "op": "view.unsubscribe", "params": { "subscription": 7 } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "error",
+        "id": 5,
+        "ok": false,
+        "error": { "code": "notFound", "message": "no open subscription 7" }
+      }
+    }
+  ]
+}

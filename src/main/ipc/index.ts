@@ -50,6 +50,19 @@ import { registerConCardIpc } from '../conCard'
 import { registerTrayIpc } from '../tray'
 import { registerWindowIpc } from './windowControls'
 import { registerWorldIpc } from './world'
+// The data server's renderer brokerage (JOS-484). It lives beside the supervisor that owns the
+// launch it hands out (src/main/dataServer/), like the toast and con-card producer channels above,
+// rather than in a file here — everything it does is socket + port lifecycle.
+import { registerRendererBrokerIpc } from '../dataServer/rendererBroker'
+// WHO DRAWS THE CON CARD (JOS-496, boundary verdict 2). Under serve the engine resolves the card
+// and `dataServer/conCardServe.ts` opens the window, so the TypeScript hook — which today calls
+// synchronously into Electron from inside the fold — stands down. Composed HERE and passed as a
+// predicate, for two reasons written out at `registerConCardIpc`: `conCard.ts` sits downstream of
+// the serve receiver so an import would close a module cycle, and the question can only be answered
+// honestly per `/con` rather than once at registration, because `shimServing()` alone is true on
+// every checkout with no engine binary at all.
+import { engineServeReadiness } from '../dataServer/engineClientHost'
+import { shimServing } from '../dataServer/serveShim'
 
 export function registerIpc(): void {
   registerCharacterIpc()
@@ -73,7 +86,7 @@ export function registerIpc(): void {
   registerWindowIpc()
   registerToastIpc()
   registerAlertBannerIpc()
-  registerConCardIpc()
+  registerConCardIpc(() => shimServing() && engineServeReadiness().ok)
   registerTrayIpc()
   registerClipboardIpc()
   registerFeedbackIpc()
@@ -90,4 +103,9 @@ export function registerIpc(): void {
   // handler rather than around this call, so it is a decision a test can watch being made.
   // See ./dev.ts.
   registerDevIpc()
+  // Registered in EVERY build too, and for the same reason: the handler refuses when there is no
+  // engine on this launch — since JOS-495 that means `EQC_ENGINE=0` or a checkout with no binary,
+  // rather than the default it used to be. One gate, in engineHost.ts — a second `if` around this
+  // call would be a second place to forget.
+  registerRendererBrokerIpc()
 }

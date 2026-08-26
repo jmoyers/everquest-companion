@@ -1,0 +1,16 @@
+[package]
+name = "eqlog"
+description = "The EverQuest Legends log parser: bytes in, canonical events out (JOS-469 phase 1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
+iana-time-zone = "0.1"

@@ -1,0 +1,20 @@
+{
+  "moment": "character switch / engine restart",
+  "source": "docs/plans/data-server.md, the subscription diff protocol",
+  "note": "Rule (3): the epoch bump is CONNECTION-WIDE and carries no subscription id - it is the world's generation, not any one view's. The client drops all state on it. Each open subscription then gets its own fresh reset when the fold lands; here subscription 7 is re-reset at epoch 4 with an empty window, because the new character has looted nothing yet. Resume is always re-query.",
+  "messages": [
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "epoch",
+        "epoch": 4,
+        "reason": "attach",
+        "progress": { "pct": 62.4, "events": 1571003 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "id": 7, "kind": "reset", "epoch": 4, "total": 0, "rows": [] }
+    }
+  ]
+}

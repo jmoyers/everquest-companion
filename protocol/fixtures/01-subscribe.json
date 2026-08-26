@@ -1,0 +1,73 @@
+{
+  "moment": "subscribe",
+  "source": "docs/plans/data-server.md, the subscription diff protocol",
+  "note": "Rule (1): reset-then-diffs. The request is ACKNOWLEDGED first and the data starts with the reset - the ack says the subscription exists, the reset says what is in it, and they are separate messages because a subscription can be opened over a view whose first fold has not landed yet. The window asked for fifty rows; the reset below carries the first three of them verbatim and elides the rest, which is what the plan doc's ellipsis stands for. `total` is the view's whole size, not the window's.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 7,
+        "op": "view.subscribe",
+        "params": {
+          "source": "loot.ledger",
+          "filter": { "session": "current" },
+          "sort": [["at", "desc"]],
+          "window": { "offset": 0, "limit": 50 }
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 7,
+        "ok": true,
+        "result": { "subscription": 7, "subscribed": true }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "id": 7,
+        "kind": "reset",
+        "epoch": 3,
+        "total": 1834,
+        "rows": [
+          {
+            "key": "loot:9412",
+            "cells": {
+              "at": "21:14:07",
+              "item": "Cloak of Flames",
+              "from": "a fire giant warlord",
+              "zone": "Nagafen's Lair",
+              "qty": 1,
+              "mine": true
+            }
+          },
+          {
+            "key": "loot:9411",
+            "cells": {
+              "at": "21:13:52",
+              "item": "Flowing Black Silk Sash",
+              "from": "a fire giant warlord",
+              "zone": "Nagafen's Lair",
+              "qty": 1,
+              "mine": false
+            }
+          },
+          {
+            "key": "loot:9410",
+            "cells": {
+              "at": "21:11:19",
+              "item": "Giant Warlord Bracer",
+              "from": "a fire giant warlord",
+              "zone": "Nagafen's Lair",
+              "qty": 2,
+              "mine": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

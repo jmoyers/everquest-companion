@@ -237,6 +237,49 @@ async function muteEveryWindow(app: ElectronApplication): Promise<void> {
     .catch(() => undefined)
 }
 
+/**
+ * THE SUITE RUNS ENGINE-ON, AND THAT IS THE DEFAULT (JOS-490).
+ *
+ * `EQC_ENGINE=1` spawns the real Rust engine beside the app; `EQC_ENGINE_SERVE=1` lets it ANSWER
+ * three of the app's own read IPCs (`src/main/dataServer/serveShim.ts` — `module:getSnapshot`,
+ * `combat:snapshot`, `combat:searchFights`). Every spec in this suite asserts through `window.eq`,
+ * so with both flags on every one of them is now a regression proof for the cutover: the same
+ * assertions, against answers that came out of the engine.
+ *
+ * IT IS THE HARNESS'S DEFAULT RATHER THAN A PER-SPEC OPT-IN because an opt-in proves the specs that
+ * remembered. The deletion release rests on the claim that the engine's answers are the app's
+ * answers EVERYWHERE, and a claim of that shape is only worth what its least-remembered surface is
+ * worth. A spec added tomorrow gets the engine without its author having to know this file exists.
+ *
+ * AND THE ABSENCE CONTRACT SURVIVES, INVERTED. `engine-boots.e2e.mts` asserts what a launch with no
+ * engine looks like, and it now says so by NAMING `ENGINE_OFF` below — which is a better test than
+ * the silence it replaced, because a harness that quietly stopped setting the flags could never fail
+ * an absence assertion that was merely the default.
+ *
+ * THE PRODUCT IS UNCHANGED BY ANY OF THIS. `engineHost.ts` states that `EQ_E2E` is deliberately not
+ * a gate on the engine: the flags are what a developer sets in a shell, and the harness is now
+ * simply a developer who always sets them.
+ *
+ * AND SINCE JOS-495 BOTH LINES ARE REDUNDANT — the product defaults to them — SO THEY STAY: naming
+ * what the suite runs is belt and braces across a default flip, and a harness whose engine-on claim
+ * rested on somebody else's default would go quietly TS-only the day that default moved again.
+ */
+const ENGINE_ON: Readonly<Record<string, string>> = {
+  EQC_ENGINE: '1',
+  EQC_ENGINE_SERVE: '1'
+}
+
+/**
+ * THE OPT-OUT, NAMED SO IT CAN BE GREPPED. Pass it as `env` to launch the app with no engine at all.
+ *
+ * ONE FLAG IS ENOUGH and the second is deliberately left set: `serveShim.ts` computes
+ * `SERVING = engineEnabled() && EQC_ENGINE_SERVE === '1'`, so the serve flag is MEANINGLESS ALONE by
+ * the product's own one-gate rule. Spelling `EQC_ENGINE_SERVE: '0'` here would be a second thing to
+ * keep in step with a rule this repo already keeps in one place — and a launch that carries the
+ * serve flag with no engine is itself a small proof that the gate holds.
+ */
+export const ENGINE_OFF: Readonly<Record<string, string>> = { EQC_ENGINE: '0' }
+
 /** A launched app, its userData dir, and the teardown that matches how the dir was obtained. */
 export interface LaunchedApp {
   readonly app: ElectronApplication
@@ -261,7 +304,8 @@ export interface LaunchedApp {
  *
  * Pass `env` only when the assertion is ABOUT a launch-time environment the app reads before it
  * can be driven — `EQ_DISABLE_GPU`, whose whole point is that it is decided before Electron is
- * ready and therefore cannot be flipped through any bridge (JOS-40). It is merged LAST, so a
+ * ready and therefore cannot be flipped through any bridge (JOS-40), or `ENGINE_OFF` above, which
+ * is how the one spec whose subject is the engine's ABSENCE says so. It is merged LAST, so a
  * spec can override the harness's own variables deliberately rather than by accident.
  */
 export async function launchApp(
@@ -273,7 +317,11 @@ export async function launchApp(
     ...process.env,
     EQ_E2E: '1',
     EQ_E2E_USER_DATA: userData,
-    NODE_ENV: 'production'
+    NODE_ENV: 'production',
+    // THE SUITE'S DEFAULT (JOS-490) — see `ENGINE_ON` above. Stated after the ambient environment so
+    // a shell that exports its own answer cannot decide what the suite proves, and before
+    // `opts.env`, which is the one thing that may.
+    ...ENGINE_ON
   }
   if (opts.installDir !== undefined) env.EQ_INSTALL_DIR = opts.installDir
   else delete env.EQ_INSTALL_DIR

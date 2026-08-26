@@ -150,7 +150,16 @@ test('A QUIT FINAL WRITES THROUGH ITS OWN SCRATCH FILE — never a torn file for
   // The two writers that CAN be dropped are dropped instead of racing: the overlay's periodic saver
   // and the ledger's writer both refuse while one is in flight, and both losses are bounded by a
   // cadence that was already their accepted loss.
-  assert.match(read('src/main/data/overlayPersistence.ts'), /export function saveUserOverlay\(register: OverlayRegister\): void \{\r?\n {2}if \(writing\) return/)
+  // THE IN-FLIGHT LATCH IS NOW THE SECOND GUARD, NOT THE FIRST (JOS-497 item 2). The ownership
+  // question comes before it and asks something different: `writing` is "is THIS process mid-write",
+  // and `appOwnsArtifacts()` is "does this process write this file at all on this launch" — under
+  // serve the engine owns `message-overlay.json`. Both are still here and the drop-rather-than-queue
+  // claim this test makes is untouched; only the order changed, so the pin is widened to allow the
+  // ownership guard in front rather than loosened to stop checking.
+  assert.match(
+    read('src/main/data/overlayPersistence.ts'),
+    /export function saveUserOverlay\(register: OverlayRegister\): void \{\r?\n {2}if \(!appOwnsArtifacts\(\)\) return\r?\n {2}if \(writing\) return/
+  )
   assert.match(read('src/main/resist/ledgerFile.ts'), /if \(writing\) return \{ status: 'busy' \}/)
 })
 

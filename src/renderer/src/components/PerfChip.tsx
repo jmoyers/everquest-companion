@@ -30,6 +30,8 @@ import {
   type PerfSeverity
 } from '@shared/perf'
 import { usePerfHud } from '../lib/perfHud'
+import { useEnginePerf } from '../lib/enginePerfHud'
+import PerfEngineSection from './PerfEngineSection'
 import { Tooltip } from '../lib/Tooltip'
 
 /** Chip colour per severity. 'normal' stays the bar's own quiet grey — a HUD you can leave on
@@ -113,10 +115,27 @@ function LagFacts({ sample, longtasks }: { sample: PerfHudSample; longtasks: num
   )
 }
 
-/** Everything behind the chip. Split out so `PerfChip` itself stays a mount + a popover. */
-function PerfDetail({ ring, latest }: { ring: PerfHudSample[]; latest: PerfHudSample }): JSX.Element {
+/**
+ * Everything behind the chip. Split out so `PerfChip` itself stays a mount + a popover.
+ *
+ * `open` IS PASSED IN RATHER THAN INFERRED FROM BEING MOUNTED (JOS-483). The engine section polls a
+ * child process over a socket while it is being looked at, and "am I being looked at" must be a
+ * fact this component is TOLD rather than one it deduces from MUI's unmount behaviour — a Popover
+ * that grew `keepMounted` one day would otherwise silently turn a five-second poll into a
+ * session-long one, which is exactly the cost that section is not allowed to have.
+ */
+function PerfDetail({
+  ring,
+  latest,
+  open
+}: {
+  ring: PerfHudSample[]
+  latest: PerfHudSample
+  open: boolean
+}): JSX.Element {
   const severity = lagSeverity(latest.lag)
   const longtasks = ring.reduce((n, s) => n + s.longtasks, 0)
+  const engine = useEnginePerf(open)
   return (
     <Stack spacing={1} sx={{ p: 1.5, minWidth: 280 }} data-testid="perf-popover">
       <Typography variant="subtitle2">{formatChip(latest)}</Typography>
@@ -128,6 +147,10 @@ function PerfDetail({ ring, latest }: { ring: PerfHudSample[]; latest: PerfHudSa
       <TypeTable sample={latest} />
       <Divider />
       <LagFacts sample={latest} longtasks={longtasks} />
+      {/* The engine is a process this app spawned rather than one Chromium did, so it is absent
+          from the table above by construction — this is where it appears (owner ruling 19). It
+          renders nothing at all in a build with no engine. */}
+      <PerfEngineSection sample={engine} />
       <Typography variant="caption" sx={{ color: SEVERITY_COLOR[severity] }}>
         {severity === 'normal'
           ? 'The app is keeping up. High CPU here with a low event-loop figure is work, not lag.'
@@ -197,7 +220,7 @@ export default function PerfChip(): JSX.Element | null {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <PerfDetail ring={ring} latest={latest} />
+        <PerfDetail ring={ring} latest={latest} open={open} />
       </Popover>
     </Box>
   )

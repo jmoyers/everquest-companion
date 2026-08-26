@@ -718,7 +718,50 @@ export interface ModuleDelta<Delta = unknown> {
 export interface ModuleSnapshot<Snap = unknown> {
   seq: number
   state: Snap
+  /**
+   * WHICH WORLD ANSWERED THIS READ (JOS-493). Absent — and therefore false — in every launch that
+   * is not serving from the engine, which is what keeps the flag-off shape byte for byte the one
+   * this reply has always had.
+   *
+   * `true` means the compat shim took the ENGINE's arm (src/main/dataServer/serveShim.ts), so `seq`
+   * is a cursor in the ENGINE's numbering space. A folder holding such a snapshot must ride
+   * `module:changed` and must NOT fold `module:delta`, whose seqs are the TypeScript fold's — see
+   * `IPC.onModuleChanged`. It is a fact about the ANSWER rather than about the launch, because the
+   * shim decides per call: an engine that is still folding falls back, and the very next read may
+   * be served.
+   */
+  served?: true
 }
+
+/**
+ * Payload of the `module:changed` push (JOS-493) — a name and a cursor, and nothing else. It is the
+ * app-side relay of the protocol's own `ModuleChangedMessage`, so the state it names is fetched
+ * back through `module:getSnapshot` exactly as the boundary intends.
+ */
+export interface ModuleChanged {
+  /** The module whose cursor moved, or `MODULE_WORLD_CHANGED`. */
+  moduleId: string
+  /** The module's own published seq, in the numbering space of the world that is serving reads.
+   *  `-1` on a world change, where there is no cursor to compare a held snapshot against. */
+  seq: number
+}
+
+/**
+ * "THE WORLD THAT ANSWERS YOUR SNAPSHOT READS CHANGED — ask again" (JOS-493).
+ *
+ * A module id nothing registers, sent on `module:changed` when the ENGINE starts or stops being the
+ * one that answers. It is not a cursor and carries none: the two events it marks are the engine's
+ * fold going live (the shim starts serving, so a window holding the app's own state should take the
+ * engine's) and the engine going away (the shim falls back, so a window holding the engine's state
+ * would otherwise sit frozen — it ignores `module:delta` precisely because it was being served).
+ *
+ * WHY A WILDCARD RATHER THAN A THIRD CHANNEL. `onCharacter` is the app's existing "throw it away
+ * and ask again", and reusing it would have been one line — but it also remounts every view and
+ * clears the live dot (App.tsx), which is a visible product event and not what a flag flipping
+ * behind the app means. This says the one thing that actually happened, to the one set of listeners
+ * that care.
+ */
+export const MODULE_WORLD_CHANGED = '*'
 
 /** loot module. Delta = loot rows appended since the last flush. */
 export type LootSnap = LootEvent[]

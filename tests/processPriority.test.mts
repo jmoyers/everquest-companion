@@ -9,7 +9,7 @@
 // reprioritising the machine running the test suite, and the interesting half (EPERM, ESRCH, a
 // silent revert by Chromium's priority manager) cannot be produced on demand at all.
 //
-// FOUR CLAIMS, and they fail in different directions:
+// FIVE CLAIMS, and they fail in different directions:
 //
 //   1. THE SELECTION. Main plus every live renderer, deduped, with the not-yet-spawned `0` that
 //      `getOSProcessId()` returns for a brand-new webContents dropped rather than passed to the
@@ -21,6 +21,9 @@
 //      is, because that is the one shape a silent Chromium re-raise takes.
 //   4. THE RE-APPLY. `did-finish-load` and a window's `show` both put the class back, and the
 //      switch going off restores NORMAL rather than leaving processes where they were.
+//   5. THE ENGINE (JOS-459 phase 0). The data-server child joins the set through `setEnginePid`,
+//      follows the SAME switch as the rest of the app, and never leaves a dead pid behind — a pid
+//      is reused by the OS, and lowering a stranger's process is the one outcome forbidden here.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -31,6 +34,7 @@ import {
   priorityIsSupported,
   resetProcessPriorityForTests,
   selectPriorityPids,
+  setEnginePid,
   setYieldToGame,
   type PriorityOs,
   type PriorityWebContents,
@@ -262,6 +266,88 @@ test('a machine that refuses is reported ONCE per pass, and never crashes the ap
   assert.match(String(w.errors[0]), /EPERM/)
   assert.equal(os.sets.length, 0)
   resetProcessPriorityForTests()
+})
+
+// ---- 5. the data-server engine (JOS-459 phase 0) -----------------------------------------
+
+test('THE ENGINE JOINS THE SET, and a respawn is a new pid rather than a stale one', () => {
+  const w = wire(true)
+  assert.deepEqual(w.os.sets, [{ pid: 100, priority: BELOW_NORMAL }])
+  // The supervisor's `onPid`, both edges. Applied IMMEDIATELY rather than at the next window event:
+  // this session's processes must never disagree with what the setting says.
+  setEnginePid(7000)
+  assert.deepEqual(w.os.sets.at(-1), { pid: 7000, priority: BELOW_NORMAL }, 'the plan: below-normal')
+  // A crash. The old pid must not survive its process — a pid is reused by the OS, and lowering a
+  // stranger's process is the one outcome this module must never produce.
+  setEnginePid(null)
+  const afterGone = w.os.sets.length
+  setYieldToGame(true)
+  assert.deepEqual(
+    w.os.sets.slice(afterGone).map((s) => s.pid),
+    [100],
+    'with no engine, the set is main again'
+  )
+  setEnginePid(7001)
+  assert.deepEqual(w.os.sets.at(-1), { pid: 7001, priority: BELOW_NORMAL })
+  resetProcessPriorityForTests()
+})
+
+test('the engine follows the SAME switch as the rest of the app', () => {
+  // A judgement, stated where it can be checked: a user who turns "yield to the game" off has said
+  // the companion should not de-prioritise itself, and the engine IS the companion. A hard-coded
+  // below-normal here would make the switch quietly partial — on the busiest process.
+  const w = wire(true)
+  setEnginePid(7100)
+  setYieldToGame(false)
+  const back = w.os.sets.slice(-2)
+  assert.deepEqual(back, [
+    { pid: 100, priority: NORMAL },
+    { pid: 7100, priority: NORMAL }
+  ])
+  resetProcessPriorityForTests()
+})
+
+test('an engine pid known before the module is wired is still lowered when it is', () => {
+  // The engine can be spawned before `initProcessPriority` runs, and on a machine where priority is
+  // unsupported; in both cases the pid is still the truth, which is why it lives outside the wiring
+  // state. `initProcessPriority` directly rather than `wire`, which resets the module first — and
+  // the reset clears the engine pid deliberately, so one test's fake engine cannot leak into the
+  // next test's expectations.
+  resetProcessPriorityForTests()
+  const os = stubOs()
+  setEnginePid(7200)
+  initProcessPriority({
+    mainPid: 100,
+    enabled: true,
+    onWebContentsCreated: () => undefined,
+    onWindowCreated: () => undefined,
+    os,
+    platform: 'win32',
+    e2e: false
+  })
+  assert.deepEqual(os.sets, [
+    { pid: 100, priority: BELOW_NORMAL },
+    { pid: 7200, priority: BELOW_NORMAL }
+  ])
+  // And a nonsense pid is dropped rather than handed to the OS — `setPriority(0, …)` means "the
+  // caller's group" on some platforms, which is the whole process tree of the session.
+  const before = os.sets.length
+  setEnginePid(0)
+  assert.deepEqual(
+    os.sets.slice(before).map((s) => s.pid),
+    [100],
+    'zero is not a pid; the engine simply leaves the set'
+  )
+  resetProcessPriorityForTests()
+})
+
+test('the pid list carries child processes after main and the renderers', () => {
+  assert.deepEqual(
+    selectPriorityPids({ mainPid: 100, rendererPids: [200], childPids: [7000, 200, 0] }),
+    [100, 200, 7000],
+    'deduped against the renderers, and a zero pid is still dropped'
+  )
+  assert.deepEqual(selectPriorityPids({ mainPid: 100, rendererPids: [] }), [100], 'absent means none')
 })
 
 test('an unsupported platform subscribes to nothing at all', () => {

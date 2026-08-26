@@ -1,0 +1,36 @@
+[package]
+name = "engined"
+description = "The engine process (JOS-466/JOS-474): the spawn contract, loopback TCP, the protocol's ops answered from generated types, and the ingest that folds one log — scan then live tail — behind one sink trait."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# DELIBERATELY DEPENDENCY-LIGHT: std::net plus one thread per connection, and the contract crate.
+# An async runtime buys nothing at this scale - the app opens one connection per renderer, a
+# handful in total - and it would be the largest thing in the engine's dependency tree on the day
+# the binary joins the code-signing set. If a later phase measures a reason, adding it is a change
+# inside this crate and nothing above it moves.
+protocol = { path = "../protocol" }
+# `serde` is named only for the `Serialize` BOUND on the one helper that turns a typed `*.define`
+# payload into the JSON the fold reads (`ops::json`). It is already in this tree under
+# `serde_json`; naming it adds no dependency, it makes an existing one addressable.
+serde.workspace = true
+serde_json.workspace = true
+
+# THE PARSER AND THE TAIL, as a library. Both halves of ingest are proven standalone (JOS-469's
+# byte-identity oracle, JOS-472's scan-equivalence oracle) and this crate re-decides neither.
+eqlog = { path = "../eqlog" }
+
+# THE FOLD, as a library (JOS-478). Twenty modules proven against the TS snapshots on all six
+# slices; this crate re-decides none of that either. It reaches ingest through ONE trait, and the
+# whole of the join is `src/foldsink.rs`.
+fold = { path = "../fold" }
+
+# THE COMMITTED CORPORA (JOS-486). One process-wide instance, shared by the ingest thread (the
+# fold's own item/mob probes) and by every connection thread (the `knowledge.*` ops) — boundary
+# verdict 5's "the mutual dependency dissolves in-process", literally. It depends on `fold` and not
+# the reverse, which is why `parity` links none of the 12 MB.
+knowledge = { path = "../knowledge" }

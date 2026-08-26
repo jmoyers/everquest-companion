@@ -564,6 +564,15 @@ async function stepSeenOnLogEvidence(page: Page, overlay: Page, log: FixtureLog)
   await page.click(`[data-testid="respawn-row"][data-respawn-mob="${OWN_MOB}"] [data-testid="respawn-confirm-sighting"]`, {
     timeout: 15_000
   })
+  // PARK THE POINTER (JOS-493). The click above leaves it on a control whose MUI tooltip is
+  // INTERACTIVE, so the popper keeps `pointer-events: auto` over the row it belongs to — and the
+  // very next step clicks Unwatch, a sibling in that same row. In a passing run the assertions in
+  // between move on quickly enough that it never bites; when the claim below FAILS, the pointer
+  // stays put and every later step is unclickable, so a single red check turns into a 15-second
+  // click timeout, a harness error and the spec's whole 5-minute cap — hiding the twenty checks
+  // after it. MEASURED exactly that way on this ticket. It weakens nothing: the tooltip's own
+  // behaviour is `loot-sort.e2e.mts`'s subject, and the settle below reads the DOM, not the pointer.
+  await page.mouse.move(0, 0)
   const rebased = await settle(() => clocks(page, 'respawn-row'), (r) => find(r, OWN_MOB)?.basis === 'sighting', {
     timeoutMs: 30_000
   })

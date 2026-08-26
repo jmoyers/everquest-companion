@@ -47,7 +47,7 @@ import { createModules } from '../../src/main/modules/wiring'
 import { installCharacterName, installSpellDb } from '../../src/main/log/rulesets'
 import { MobLootIndex } from '../../src/main/mobLookupParse'
 import { scanLog } from '../../src/main/log/scanHistory'
-import { unchunkedSlicer } from '../../src/main/log/replaySlicer'
+import { unchunkedSlicer, type Slicer } from '../../src/main/log/replaySlicer'
 import baselineJson from '../../src/main/data/messageOverlay.baseline.json'
 import type { MessageOverlay } from '../../src/shared/types'
 
@@ -211,6 +211,47 @@ class FoldTimer implements ModuleDispatchTimer, LogBusProbe {
 
 // ------------------------------------------------------------------------------------ the world
 
+/** What a caller may install into the world besides the modules themselves. */
+export interface WorldOpts {
+  /** The JOS-55 attribution seam. */
+  timer?: FoldTimer
+  /** The JOS-59 engine-section probe. */
+  sections?: SectionTimer
+  /**
+   * A listener subscribed BEFORE the registry attaches — i.e. ahead of all 20 modules and of
+   * every tail consumer. The golden recorder (JOS-465) uses it: phase 1's artifact is what the
+   * PARSER emitted, and the only place that is observable unmodified is the head of the
+   * registration order.
+   */
+  observe?: LogEventListener
+  /**
+   * PIN THE CONSTRUCTION CLOCK (JOS-465). `RespawnModule` seeds its ordering clock from
+   * `Date.now()` at construction and at `reset()` — correctly, a fresh fold is entitled to
+   * today's reading (`tests/foldDeterminism.test.mts` says so by name) — and nothing advances it
+   * during a bench fold, so it survives into `snapshot()` and ORDERS THE ROWS. That makes a
+   * respawn snapshot a statement about WHEN THE WORLD WAS BUILT, and a golden recorded on Monday
+   * would not re-check on Tuesday.
+   *
+   * So the recorder passes an instant derived from the LOG — the same class of value the combat
+   * oracle's `now` is — and the world is constructed under it. Absent (every timing arm, and
+   * `foldForOracle`), nothing is pinned and the behaviour is exactly what it always was.
+   *
+   * The pin covers CONSTRUCTION ONLY. The fold itself is audited separately and reads no clock
+   * at all (`tests/foldDeterminism.test.mts`), which is the guarantee that makes the pin
+   * sufficient rather than merely helpful.
+   */
+  constructionNowMs?: number
+}
+
+/** The world's handles: everything a caller might need to read state back out of. */
+export interface World {
+  bus: LogBus
+  combat: CombatEngine
+  registry: ModuleRegistry
+  /** `modules.ordered`' ids, in registration order — the order wiring.ts declares. */
+  moduleIds: string[]
+}
+
 /**
  * Build the fold's consumers exactly as the app builds them: the module registry over
  * `createModules`' ordered list, then the combat engine (with the roster seam installed before it
@@ -219,10 +260,30 @@ class FoldTimer implements ModuleDispatchTimer, LogBusProbe {
  */
 function buildWorld(
   character: { name: string; server: string; logPath: string },
+  opts: WorldOpts = {}
+): World {
+  const { timer, sections } = opts
+  const realNow = Date.now
+  if (opts.constructionNowMs !== undefined) {
+    const pinned = opts.constructionNowMs
+    Date.now = (): number => pinned
+  }
+  try {
+    return construct(character, opts, timer, sections)
+  } finally {
+    Date.now = realNow
+  }
+}
+
+/** buildWorld's body, split out so the clock pin above is a plain try/finally around one call. */
+function construct(
+  character: { name: string; server: string; logPath: string },
+  opts: WorldOpts,
   timer?: FoldTimer,
   sections?: SectionTimer
-): { bus: LogBus; combat: CombatEngine } {
+): World {
   const bus = new LogBus(timer)
+  if (opts.observe) bus.subscribe(opts.observe)
   const modules = createModules({
     overlays: [BASELINE],
     // The shared own-loot index the consider module folds every loot event into. Electron-free,
@@ -267,7 +328,35 @@ function buildWorld(
   bus.subscribe(timer ? timer.wrap('combat engine', ingest) : ingest)
   bus.subscribe(timer ? timer.wrap('epoch detector', observeEpoch) : observeEpoch)
   bus.subscribe(timer ? timer.wrap('offline-gap detector', observeSession) : observeSession)
-  return { bus, combat }
+  return { bus, combat, registry, moduleIds: modules.ordered.map((m) => m.id) }
+}
+
+/**
+ * THE GOLDEN RECORDER'S FOLD (JOS-465): `foldForOracle` widened by exactly two things — a
+ * pre-module observer and a pinned construction clock — and handing back the REGISTRY as well as
+ * the engine, because phase 2's artifact is every module's published snapshot.
+ *
+ * `slicer` is a parameter for the slicer-invariance pin: the same recorder is run under
+ * `unchunkedSlicer()` and under the budgeted/resting arms and the artifacts must not move
+ * (`tests/replayChunking.test.mts`'s 5-arm precedent, applied to the whole world instead of one
+ * module). A golden is only accepted once that holds.
+ */
+export async function foldForGoldens(
+  character: { name: string; server: string; logPath: string },
+  opts: { observe?: LogEventListener; constructionNowMs: number; slicer?: Slicer }
+): Promise<{ world: World; events: number; lastTs: number }> {
+  const world = buildWorld(character, {
+    observe: opts.observe,
+    constructionNowMs: opts.constructionNowMs
+  })
+  let lastTs = 0
+  world.bus.subscribe((ev) => {
+    if (ev.ts > lastTs) lastTs = ev.ts
+  })
+  const res = await scanLog(character.logPath, world.bus, 0, {
+    slicer: opts.slicer ?? unchunkedSlicer()
+  })
+  return { world, events: res.seq, lastTs }
 }
 
 /**
@@ -281,7 +370,7 @@ export async function foldForOracle(character: {
   server: string
   logPath: string
 }): Promise<{ combat: CombatEngine; events: number; lastTs: number }> {
-  const { bus, combat } = buildWorld(character)
+  const { bus, combat } = buildWorld(character, {})
   let lastTs = 0
   bus.subscribe((ev) => {
     if (ev.ts > lastTs) lastTs = ev.ts
@@ -371,7 +460,7 @@ export async function foldFull(
   timed: boolean
 ): Promise<FoldResult> {
   const timer = timed ? new FoldTimer() : undefined
-  const { bus } = buildWorld(character, timer)
+  const { bus } = buildWorld(character, { timer })
   const t0 = performance.now()
   const res = await scanLog(character.logPath, bus, 0, { slicer: unchunkedSlicer() })
   const ms = performance.now() - t0
@@ -399,7 +488,7 @@ export async function foldSections(character: {
   logPath: string
 }): Promise<FoldResult> {
   const sections = new SectionTimer()
-  const { bus } = buildWorld(character, undefined, sections)
+  const { bus } = buildWorld(character, { sections })
   const t0 = performance.now()
   const res = await scanLog(character.logPath, bus, 0, { slicer: unchunkedSlicer() })
   const ms = performance.now() - t0

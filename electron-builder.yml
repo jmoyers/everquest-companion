@@ -54,6 +54,50 @@ files:
   # with the exclusion, then a real synthesis in the packed app — zero wavs produced). It has
   # to ship. Do not re-litigate this without repeating that experiment.
 
+# THE ENGINE SHIPS (JOS-473, data-server phase 3). `engine/crates/engined` is a Rust process the
+# app supervises (src/main/dataServer/engineHost.ts); `npm run build:engine` produces the RELEASE
+# binary and the two `dist` scripts run it before electron-builder. Until this block existed a
+# packaged build probed `resourcesPath/engine/engined.exe`, found nothing, and logged an absence —
+# the honest state, and now the wrong one.
+#
+# WHY `extraResources` AND NOT `files`: this lands OUTSIDE the asar, beside it under `resources/`,
+# which is where `engineBinaryCandidates` (engineProtocol.ts) probes first among the packaged
+# candidates. A native executable cannot be launched from inside an asar at all, so the archive
+# was never an option — and because it never enters the archive there is no `asarUnpack` entry to
+# add. `tests/enginePackaging.test.mts` pins this destination against the resolver's own candidate
+# list, so a rename on either side is a red test rather than a silent "no engine here".
+#
+# A DIRECTORY WITH A FILTER, NOT A FILE PATH, AND THAT IS THE SIGNING DECISION (ruling 16: the
+# engine joins the code-signing set like any shipped executable). Measured in app-builder-lib 26,
+# `fileMatcher.copyFiles`: a matcher whose `from` is a FILE is copied with `copyOrLinkFile` and
+# NEVER sees the sign transformer; only the DIRECTORY branch is handed
+# `WinPackager.createTransformerForExtraFiles`, which wraps every `.exe` it copies so that
+# `signIf(dest)` runs on the packaged copy — i.e. `from: engine/target/release/engined.exe` would
+# ship a working but UNSIGNED engine inside a signed installer, and nothing would say so. The
+# filter is what keeps the rest of cargo's release directory (deps/, build/, incremental/, the
+# .pdb) out: `createFilter` prunes non-matching directories before walking them.
+#
+# ONE COST OF THE DIRECTORY SHAPE, KNOWN AND ACCEPTED: the asar-integrity pass (`asar/integrity.ts`
+# computeData) walks this same `from` with `matcherFilter(file, stats) || stats.isDirectory()` — the
+# `||` means the filter prunes FILES but never DIRECTORIES, so that pass stats everything under
+# `engine/target/release` (191 files here; it grows with a developer's build history) to find the one
+# file it keeps. Bounded and cheap today. If a release tree ever gets big enough to be felt, the
+# answer is to stage the binary into a directory of its own rather than to make this a file matcher,
+# which would silently unsign it.
+#
+# THE SIGNED COPY IS A COPY. That same transformer disables hard-linking whenever it is present
+# (`FileCopier.copy`), so signing writes to the file under `release/` and never reaches back into
+# `engine/target/release/` — a local `dist` cannot leave a mutated binary in the cargo tree.
+#
+# A MISSING BINARY IS A WARNING HERE, NOT AN ERROR ("file source doesn't exist", then carry on),
+# which would ship an installer with no engine and no failure. That is why `scripts/build-engine.mts`
+# asserts the binary exists after cargo returns, and why the packaging CI steps run it.
+extraResources:
+  - from: engine/target/release
+    to: engine
+    filter:
+      - engined.exe
+
 asarUnpack:
   - resources/**
   # The FIRST native module in the tree (voice alerts, docs/plans/voice-alerts.md W3), and the

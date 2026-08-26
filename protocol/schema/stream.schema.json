@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://everquest-companion.local/protocol/stream",
+  "title": "Data-server protocol — the subscription diff protocol",
+  "description": "The four rules, verbatim from docs/plans/data-server.md: (1) reset-then-diffs — every subscription opens with a full `reset` of the window; (2) newest-wins coalescing per batch (~10 Hz live), an `update` carries only changed cells; (3) every message carries `epoch`, the world's generation — a character switch or engine restart bumps it, the client drops state and takes the fresh reset, and RESUME IS ALWAYS RE-QUERY (reconnect-after-crash is a character switch); (4) rows are render-ready.",
+  "$defs": {
+    "Epoch": {
+      "title": "Epoch",
+      "description": "The world's generation. Monotonic within one engine process. A client that sees an epoch it did not expect DROPS ALL STATE and waits for the reset — it never reconciles across a bump.",
+      "type": "integer"
+    },
+
+    "RowKey": {
+      "title": "RowKey",
+      "description": "Stable identity of a row within one view, e.g. `loot:9413` or `ally:Primitive`. Unique inside a subscription; meaningless outside it.",
+      "type": "string"
+    },
+
+    "Cell": {
+      "title": "Cell",
+      "description": "ONE RENDER-READY VALUE. The renderer never munges domain data (owner ruling), so a cell is what the pixel says: already formatted, already rounded, already sorted into place. Numbers stay numbers only where the renderer needs the magnitude (a bar width, a share).",
+      "type": ["string", "number", "boolean", "null"]
+    },
+
+    "Cells": {
+      "title": "Cells",
+      "description": "A row's fields by name. Open by design — the field set is the VIEW's contract, not the protocol's, so a new column is not a protocol change.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Cell" }
+    },
+
+    "Row": {
+      "title": "Row",
+      "description": "One render-ready row: its key and its cells. THE KEY IS OUTSIDE THE CELLS on purpose — an `update` op carries `cells` alone, so reset rows and diff updates have to agree on where the identity lives or a client cannot apply a diff to a row it already holds.",
+      "type": "object",
+      "properties": {
+        "key": { "$ref": "#/$defs/RowKey" },
+        "cells": { "$ref": "#/$defs/Cells" }
+      },
+      "required": ["key", "cells"],
+      "additionalProperties": false
+    },
+
+    "ResetMessage": {
+      "title": "ResetMessage",
+      "description": "The whole window, as of now. Every subscription opens with one, and every epoch bump produces a new one once the fold lands.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["reset"] },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "epoch": { "$ref": "#/$defs/Epoch" },
+        "total": {
+          "description": "How many rows the view holds in total, ignoring the window — what a `1–50 of 1834` line reads off.",
+          "type": "integer"
+        },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Row" }
+        }
+      },
+      "required": ["kind", "id", "epoch", "total", "rows"],
+      "additionalProperties": false
+    },
+
+    "DiffMessage": {
+      "title": "DiffMessage",
+      "description": "One coalesced batch of changes to the open window. Ops apply IN ORDER. `total` is present only when it moved.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["diff"] },
+        "id": { "$ref": "#/$defs/RequestId" },
+        "epoch": { "$ref": "#/$defs/Epoch" },
+        "total": { "type": "integer" },
+        "ops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DiffOp" }
+        }
+      },
+      "required": ["kind", "id", "epoch", "ops"],
+      "additionalProperties": false
+    },
+
+    "DiffOp": {
+      "title": "DiffOp",
+      "oneOf": [
+        { "$ref": "#/$defs/InsertOp" },
+        { "$ref": "#/$defs/UpdateOp" },
+        { "$ref": "#/$defs/DropOp" }
+      ]
+    },
+
+    "InsertOp": {
+      "title": "InsertOp",
+      "description": "A row entered the window. EXACTLY ONE of `before`/`after` is present and names an anchor row already in the window; neither present means the window was empty. That constraint is not expressible here without an if/then the Rust generator cannot read, so it is enforced in code and pinned by test.",
+      "type": "object",
+      "properties": {
+        "op": { "type": "string", "enum": ["insert"] },
+        "before": { "$ref": "#/$defs/RowKey" },
+        "after": { "$ref": "#/$defs/RowKey" },
+        "row": { "$ref": "#/$defs/Row" }
+      },
+      "required": ["op", "row"],
+      "additionalProperties": false
+    },
+
+    "UpdateOp": {
+      "title": "UpdateOp",
+      "description": "CHANGED CELLS ONLY. A cell absent from `cells` is unchanged, never cleared — clearing is an explicit null.",
+      "type": "object",
+      "properties": {
+        "op": { "type": "string", "enum": ["update"] },
+        "key": { "$ref": "#/$defs/RowKey" },
+        "cells": { "$ref": "#/$defs/Cells" }
+      },
+      "required": ["op", "key", "cells"],
+      "additionalProperties": false
+    },
+
+    "DropOp": {
+      "title": "DropOp",
+      "description": "A row left the window. It may still exist in the view — a newest-first window pushes the oldest row out on every insert.",
+      "type": "object",
+      "properties": {
+        "op": { "type": "string", "enum": ["drop"] },
+        "key": { "$ref": "#/$defs/RowKey" }
+      },
+      "required": ["op", "key"],
+      "additionalProperties": false
+    },
+
+    "EpochMessage": {
+      "title": "EpochMessage",
+      "description": "CONNECTION-WIDE, and therefore the one stream message with no `id`: the world's generation belongs to the connection, not to any subscription. It announces a bump (`attach`, `restart`) or reports fold progress within the current generation (`progress`, which never changes `epoch`). After a bump every open subscription receives its own fresh reset when the fold lands.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["epoch"] },
+        "epoch": { "$ref": "#/$defs/Epoch" },
+        "reason": { "$ref": "#/$defs/EpochReason" },
+        "progress": { "$ref": "#/$defs/FoldProgress" }
+      },
+      "required": ["kind", "epoch", "reason"],
+      "additionalProperties": false
+    },
+
+    "FireMessage": {
+      "title": "FireMessage",
+      "description": "AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in these four fields, so no client ever has to hold the definition the fire came from.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["fire"] },
+        "at": {
+          "description": "When it fired, on THE LOG'S OWN CLOCK — the `ts` of the event that matched, never the host's wall clock. A fire is a statement about the log (ruling 18 law 1).",
+          "type": "integer"
+        },
+        "rule": {
+          "description": "The alert's LABEL — `AlertDefinition.name`. What fired, in the words the user gave it, so a log line or a banner needs nothing else to be readable.",
+          "type": "string"
+        },
+        "sound": {
+          "description": "THE KEY THE APP WOULD PLAY: `<packId>/<soundId>`, joined from the definition's `sound` reference, which is exactly how the renderer's sound cache is keyed. Resolved here rather than sent as a reference for the conCard reason — an app that had to look the definition back up to know what to play would be holding a second copy of the rule set, which is the coupling this boundary exists to delete.",
+          "type": "string"
+        },
+        "message": {
+          "description": "THE TEXT THAT MATCHED — the log line the trigger fired on, which is what `FiredAlert.matchedText` has always carried and what the event log prints beside the alert's name.",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "at", "rule", "sound", "message"],
+      "additionalProperties": false
+    },
+
+    "KnowledgeMissMessage": {
+      "title": "KnowledgeMissMessage",
+      "description": "THE ENGINE COULD NOT ANSWER A NAME, AND THE APP OWNS THE NETWORK (boundary verdict 5: \"The wiki FETCH stays app-side in v1 — app fetches on an engine miss-event and pushes the result in — so the engine ships without a network stack. Scrape throttles preserved.\"). This is that miss-event, and the answer comes back as a `knowledge.define` command.\n\nCONNECTION-WIDE, AND THEREFORE CARRYING NO `id` — the `EpochMessage`/`FireMessage` precedent. A miss belongs to the PROCESS rather than to any subscription or any request: the same name is missing whether it was asked for by a `knowledge.item` op on one connection or by the fold's own probe on the ingest thread, and every window on this app would want the same fetch made once.\n\nIT CARRIES NO `epoch` EITHER, and that is the `FireMessage` argument exactly. Every frame that carries a generation describes WINDOW STATE a client has to reconcile across a bump; this describes the CORPUS, which is committed data plus an overlay that survives an attach (a character switch is not the app withdrawing what it fetched). There is nothing to drop and nothing to re-request, so a generation number would be a field with no reader.\n\nEACH NAME IS ANNOUNCED AT MOST ONCE PER PROCESS. A stacked loot burst probes one name many times and a `/con` ring re-cons the same mob three times in five seconds; asking the app to fetch each of those would be the engine breaking the etiquette law on the app's behalf. A `knowledge.define` for the name makes every later lookup a hit, so nothing has to un-remember anything.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["knowledgeMiss"] },
+        "domain": { "$ref": "#/$defs/KnowledgePushDomain" },
+        "name": {
+          "description": "The name to look up, in the spelling the FETCH should use — the display name for an item (what `resolvePage(display)` searches for), and for a mob the CANONICAL spelling the raid roster states, because that is the spelling the wiki and the committed catalog use. Never a folded key: a key is a join handle and the wiki has no page for one.",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "domain", "name"],
+      "additionalProperties": false
+    },
+
+    "ModuleChangedMessage": {
+      "title": "ModuleChangedMessage",
+      "description": "A MODULE'S PUBLISHED STATE MOVED — the dirty bit, and nothing more. CONNECTION-WIDE and carrying no `id`, on the `FireMessage` precedent: a module belongs to the world rather than to any subscription. IT CARRIES NO STATE, DELIBERATELY. The whole payload is a name and a cursor, so a client that is not showing that module pays one small frame and ignores it, and a client that is re-fetches through `module.snapshot` — which is the op that already exists and the only place a module's shape is stated. A frame that carried the state would be `module.snapshot` pushed at a cadence nobody asked for, which is the per-window snapshot fan-out this whole boundary exists to delete. IT IS COALESCED TO ONE PER MODULE PER SERVE BEAT (~10 Hz, `views::SERVE_EVERY`), not one per event: a busy tail moves a module's seq many times between two beats and the newest cursor is the whole answer — the same newest-wins rule rule 2 states for diffs. Nothing is sent for a module whose seq did not move, so an idle session pays nothing. IT IS NOT AN EPOCH AND DOES NOT REPLACE ONE: a bump still means drop-everything-and-take-the-reset, and a `moduleChanged` inside one generation means only `there is something newer to fetch`.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["moduleChanged"] },
+        "module": {
+          "description": "The module's id, exactly as the registry spells it and exactly as `module.snapshot` takes it — `loot`, `kills`, `buffTimers`.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The module's OWN published seq as of this beat — the same cursor `ModuleSnapshotResult.seq` carries, so a client holding a snapshot compares the two numbers and refetches only when this one is ahead. For the four modules that publish a private revision counter (combo, character, respawn, buffTimers) it is that counter, because a preference push advances no log seq.",
+          "type": "integer"
+        }
+      },
+      "required": ["kind", "module", "seq"],
+      "additionalProperties": false
+    },
+
+    "ConCardMessage": {
+      "title": "ConCardMessage",
+      "description": "ONE LIVE `/con`, AS A FINISHED CARD (boundary verdict 2). The fold used to call synchronously INTO Electron — `considerModule.setConCardHook` — and the verdict inverts that: the engine emits the card and main only opens the overlay window. CONNECTION-WIDE, carrying no `id` and no `epoch`, on the `FireMessage` precedent and for its reasons: a con belongs to the world rather than to any subscription, and it is a thing that HAPPENED once, with no window state to reconcile across a generation. LIVE ONLY, STRUCTURALLY — a historical fold reaches this nowhere, so a startup replay of a month of logs draws nothing. It is the same boundary law a fire obeys and the same one `main/conCard.ts` states as its third refusal. SELF-CONTAINED BY LAW: the overlay window has no knowledge service, no ledger and no store, so everything the card draws is in this frame and the window fetches nothing (`shared/conCard.ts ConCardPayload`, whose field set this is). TWO OF THE APP'S THREE REFUSALS ARE NOT HERE, and both absences are argued rather than overlooked. The re-open suppression is a fact about the PERSON — a card they closed within the last minute, measured on the wall clock they live on — and it is driven by a window event (`con:card-closed`) that never reaches the fold; it stays with the window that owns it. The PLAYER refusal (`conCardIsPlayer`) needs the committed mob catalog to answer, and applying only its name-shape half would refuse a card for every proper-named NPC the app draws one for today (Innoruuk, Blugurg) — a regression dressed as a port. It arrives with the knowledge surface; until then the app's own gate still stands in front of the overlay.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["conCard"] },
+        "at": {
+          "description": "When the `/con` happened, on THE LOG'S OWN CLOCK — the `ts` of the consider event, never the host's. Spelled `at` here rather than `ts` because that is what every other connection-wide frame the engine sends calls its instant (`FireMessage.at`), and one vocabulary for one concept is worth a rename in the app-side shim.",
+          "type": "integer"
+        },
+        "id": {
+          "description": "QUEUE IDENTITY: the canonical mob key (`shared/mobKey.ts mobKey`). A re-con REFRESHES the card on screen rather than stacking a second one, which is what the overlay's card queue keys off.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The mob's display name as the log printed it, whitespace-collapsed and capped (`cappedName`) — a rendering guarantee, not taste: a 40 kB mob name cannot push a card off the screen.",
+          "type": "string"
+        },
+        "level": {
+          "description": "The level the con line stated. Every con line in the real log states one; absent when this one did not.",
+          "type": "integer"
+        },
+        "zone": {
+          "description": "The zone the player was in when they conned. Absent before the first zone line of the fold.",
+          "type": "string"
+        },
+        "rare": {
+          "description": "The ` - a rare creature - ` infix was on the line. Absent rather than false when it was not, which is the shape the app's payload has.",
+          "type": "boolean"
+        },
+        "chips": {
+          "description": "ALWAYS FIVE, ALWAYS IN `RESIST_AXES` ORDER (magic, fire, cold, poison, disease). All five are present whatever the ledger has seen, because `we have not seen fire cast on this` and `fire is fine` are different statements and a missing chip says neither.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConCardChip" }
+        },
+        "spellData": {
+          "description": "FALSE WHEN THE CLIENT'S `spells_us.txt` COULD NOT BE READ, and the card says so instead of drawing five identical `not enough data` chips with no explanation. It is false in every frame this build sends: the spell-table parse is boundary verdict 7 and has not moved engine-side yet, so this engine takes the SAME branch `mobResistProfile` takes app-side when the table is absent — five empty chips and this flag down. That is the app's own honest answer under the same condition rather than a stub, and it is named in the engine README as the gap the con-card cutover waits on.",
+          "type": "boolean"
+        }
+      },
+      "required": ["kind", "at", "id", "name", "chips", "spellData"],
+      "additionalProperties": false
+    },
+
+    "ConCardChip": {
+      "title": "ConCardChip",
+      "description": "ONE AXIS CHIP (`shared/conCard.ts ConCardChip`). IT CARRIES NUMBERS, NOT SENTENCES, and that is the same decision the app made: the words on the chip (`R 126 (110-144)`, `n=32`) are the mob page's own vocabulary, built by the one derivation both surfaces read, and a wire carrying finished strings would be a second copy of it that drifts the first time a word changes. This is the one place the render-ready rule bends, and it bends the way the app already bent it. ABSENT IS THE EMPTY CELL. `tag`, `benchmark` and `fit` are optional here where the app's type spells them `| null`, and the two say the same thing: a con card is a WHOLE CARD every time, so absence has no second meaning to be confused with — unlike a diff's `cells`, where absent means unchanged and null means cleared. The three travel together: a chip has all of them or none of them. `tag` is the guidance band, absent when nothing at all has been observed on this axis AND when the fit is PINNED — a posterior that slid off the end of the grid is the model saying it cannot answer, and a card that printed a band anyway would be inventing one. `benchmark` is the two landing chances behind that band at the viewer's level, plus the same pair at each end of the interval. `fit` is the estimate and its 95% interval, wide at a low `n`, which is the honest display of a thin cell rather than a reason to withhold it.",
+      "type": "object",
+      "properties": {
+        "axis": { "$ref": "#/$defs/ResistAxis" },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "benchmark": { "$ref": "#/$defs/ResistAxisBenchmark" },
+        "pinned": {
+          "description": "The fit ran out of grid: no number, no band, and the raw resist rate instead.",
+          "type": "boolean"
+        },
+        "empirical": { "$ref": "#/$defs/ResistEmpirical" },
+        "npcOnly": {
+          "description": "Every observation behind this axis came from a pet or another creature. The chip says so.",
+          "type": "boolean"
+        },
+        "n": {
+          "description": "OBSERVATIONS THAT COULD HAVE GONE EITHER WAY — `ResistEstimate.nInformative`, not `n`. The two are the same number on most cells and part company exactly where a proc dominates, which is where an older chip claimed eighty observations off eight.",
+          "type": "integer"
+        },
+        "nTotal": {
+          "description": "Everything the fit saw, informative or not. Printed beside `n` when they differ.",
+          "type": "integer"
+        },
+        "fit": { "$ref": "#/$defs/ResistFit" }
+      },
+      "required": ["axis", "pinned", "empirical", "npcOnly", "n", "nTotal"],
+      "additionalProperties": false
+    },
+
+    "ResistAxis": {
+      "title": "ResistAxis",
+      "description": "`shared/resistTypes.ts ResistAxis`. The display order is this list's order and every surface uses all five of it.",
+      "type": "string",
+      "enum": ["magic", "fire", "cold", "poison", "disease"]
+    },
+
+    "ResistTag": {
+      "title": "ResistTag",
+      "description": "`shared/resistTypes.ts ResistTag` — the scannable word. NO ACRONYMS, EVER (owner ruling): the axis word is the only label this app prints for an axis, and these four are the only bands.",
+      "type": "string",
+      "enum": ["weak", "normal", "resistant", "very resistant"]
+    },
+
+    "ResistGuidance": {
+      "title": "ResistGuidance",
+      "description": "`shared/resistTypes.ts ResistGuidance` — the sentence under the word. The same three bands read twice: `resistant` means `needs overchannel`, every time, on every surface.",
+      "type": "string",
+      "enum": [
+        "should land",
+        "needs overchannel",
+        "may not land even with overchannel"
+      ]
+    },
+
+    "ResistEmpirical": {
+      "title": "ResistEmpirical",
+      "description": "What the informative observations said, with no model in the way: how many there were and how many of them resisted.",
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer" },
+        "resisted": { "type": "integer" }
+      },
+      "required": ["total", "resisted"],
+      "additionalProperties": false
+    },
+
+    "ResistFit": {
+      "title": "ResistFit",
+      "description": "The posterior's point estimate and the ends of its 95% interval, in resist points. Clamped at zero for DISPLAY app-side — the grid runs below zero because `rc` does, and `R -150` is noise on a card while `R 0` is the same statement in the reader's units.",
+      "type": "object",
+      "properties": {
+        "R": { "type": "number" },
+        "lo": { "type": "number" },
+        "hi": { "type": "number" }
+      },
+      "required": ["R", "lo", "hi"],
+      "additionalProperties": false
+    },
+
+    "ResistAxisBenchmark": {
+      "title": "ResistAxisBenchmark",
+      "description": "`shared/resistTypes.ts ResistAxisBenchmark` — the answer at the estimate, and the answer at each end of the interval, so a surface prints the uncertainty in the reader's own units. `atLo` is the OPTIMISTIC end (the low R) and `atHi` the pessimistic one: the interval's ends CROSS when they are mapped through the level formula, and naming them after the R they came from is what stops a surface printing the range backwards.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "mobLevel": { "type": ["integer", "null"] },
+        "atMobLevel": { "type": "boolean" },
+        "pPlain": { "type": "number" },
+        "pOver": { "type": "number" },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "guidance": { "$ref": "#/$defs/ResistGuidance" },
+        "atLo": { "$ref": "#/$defs/ResistBenchmark" },
+        "atHi": { "$ref": "#/$defs/ResistBenchmark" }
+      },
+      "required": [
+        "level",
+        "mobLevel",
+        "atMobLevel",
+        "pPlain",
+        "pOver",
+        "tag",
+        "guidance",
+        "atLo",
+        "atHi"
+      ],
+      "additionalProperties": false
+    },
+
+    "ResistBenchmark": {
+      "title": "ResistBenchmark",
+      "description": "ONE EVALUATION OF THE BENCHMARK (`shared/resistTypes.ts ResistBenchmark`): the two probabilities the tag is drawn from, and how they were evaluated. `level` is the caster level `rc0` was computed at; `atMobLevel` says the viewer's own level was not known, so the benchmark is an EVEN-LEVEL cast and the surfaces say `at the mob's level`.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "mobLevel": { "type": ["integer", "null"] },
+        "atMobLevel": { "type": "boolean" },
+        "pPlain": {
+          "description": "P(a rank-0, adjust-0, all-or-nothing spell lands), 0 to 1.",
+          "type": "number"
+        },
+        "pOver": {
+          "description": "The same, with the overchannel invocation up.",
+          "type": "number"
+        },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "guidance": { "$ref": "#/$defs/ResistGuidance" }
+      },
+      "required": [
+        "level",
+        "mobLevel",
+        "atMobLevel",
+        "pPlain",
+        "pOver",
+        "tag",
+        "guidance"
+      ],
+      "additionalProperties": false
+    },
+
+    "EpochReason": {
+      "title": "EpochReason",
+      "type": "string",
+      "enum": ["attach", "restart", "progress"]
+    },
+
+    "FoldProgress": {
+      "title": "FoldProgress",
+      "description": "What the loading UI reads. Present while a fold is running and on the bump that starts one.",
+      "type": "object",
+      "properties": {
+        "pct": {
+          "description": "How far the fold has got, 0 to 100, FRACTIONAL. The engine emits the number it actually measured and does not pre-round it: rounding is a display decision and belongs to whoever is drawing the bar. That is not in tension with the renderer-never-munges rule - that rule is about DOMAIN data (no client-side filtering, sorting or aggregation of the world), and formatting a progress readout for the pixel it lands on is not domain work. A NOTE FOR WORKED EXAMPLES: Rust serializes an f64 whole value as X.0, so a fixture carrying `62` would come back `62.0` and stop being byte-verbatim across the two languages. Examples therefore use a genuinely fractional value (62.4), which round-trips identically in both.",
+          "type": "number"
+        },
+        "events": { "type": "integer" }
+      },
+      "required": ["pct", "events"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -14,6 +14,20 @@ release/
 .vite/
 devlog.txt
 
+# THE ENGINE (engine/, JOS-459). `target/` is cargo's build directory — hundreds of MB of object
+# files and dependency builds, machine-specific and fully regenerable. `Cargo.lock` is deliberately
+# NOT ignored: it is the reproducibility record for a workspace whose committed artifact
+# (crates/protocol/src/generated.rs) has to come out byte-identical on the dev box and the CI
+# runner, and it is exactly the kind of thing that should be reviewed in a diff.
+engine/target/
+# …AND EVERY OTHER CARGO TARGET DIRECTORY IN THIS TREE (JOS-496). A worktree agent cannot build into
+# `engine/target/` while the owner's dev app is running out of it, so every brief in this program
+# tells the worker to set `CARGO_TARGET_DIR` to a sibling — `target-verify`, `target-<agent>`, one
+# per contender. Those are the same hundreds of megabytes of regenerable object files, and the
+# pattern is here rather than each agent remembering to clean up: MEASURED, one `git add -A --
+# engine` staged 5,118 build artifacts into a commit before this line existed.
+engine/target-*/
+
 # downloaded sound packs (audio binaries — `npm run fetch:packs` restores them; the app
 # also self-provisions the default pack at runtime). peon/sc_marine are no longer shipped
 # defaults but stay ignored so an existing dev's local copies never get committed.
@@ -31,6 +45,13 @@ tests/e2e/artifacts/
 # the contract; the bytes stay local (the bench falls back to the machine's own log and says so).
 .bench/
 tests/bench/fixtures/
+# THE GOLDEN ORACLE'S ARTIFACTS (JOS-465, `npm run oracle:record`). Covered by the line above
+# already — stated again on its own because the two directories are ignored for DIFFERENT
+# reasons and a future negation of `tests/bench/fixtures/` must not quietly publish these.
+# `slices/` is the owner's real game log; `goldens/` is that log SERIALIZED EVENT BY EVENT,
+# which is the same private bytes in a more readable form, at ~4x the size, plus every module's
+# folded state. Regenerable in two commands (goldens/README.md); never committed, never shared.
+tests/bench/fixtures/goldens/
 
 # MOB-SCRAPER wikitext cache (Task #63). The quests/spells caches ARE committed — they are ~900
 # and ~2k small files and they make a re-scrape free for anyone. The mob corpus is 7,879 pages /

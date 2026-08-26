@@ -21,6 +21,14 @@
 // ticket genuinely needs to launch something, it adds itself to `SPAWNERS` below with its reason
 // in the same breath.
 //
+// AND ONE HAS (JOS-467, 2026-08-24). The data-server engine is a shipped child process, on the
+// owner's explicit correction that PowerShell was the AV trigger and child processes were not
+// (docs/plans/data-server.md, ruling 16). So the headline above is now precisely: nothing under
+// `src/` starts a process EXCEPT through the two modules named in `SPAWNERS`, whose arguments are
+// written there. The PowerShell half of this file is unchanged and unweakened — it is the half
+// that carried the actual defect, and it still admits no exceptions beyond three sentences of
+// user-facing prose.
+//
 // `tests/presence.test.mts` pins what the presence watcher DOES and `tests/presenceWorker.test.mts`
 // runs it; neither can see this, because neither reads a file it did not import.
 
@@ -142,15 +150,34 @@ test('NO SHIPPED CODE CAN NAME POWERSHELL — the watcher launches nothing at al
 })
 
 /**
- * The one module allowed to launch a process, and it is not in a shipped build.
+ * The modules allowed to launch a process. TWO, each with its argument stated here, which is the
+ * bargain this file's header offers: a ticket that genuinely needs to launch something adds itself
+ * with its reason in the same breath.
  *
- * `src/main/triage/store.ts` runs `terraform output -json` for the operator's backlog client. It
- * is reached only through a dynamic import gated on `!app.isPackaged`, and its dependencies are
+ * `main/triage/store.ts` runs `terraform output -json` for the operator's backlog client. It is
+ * reached only through a dynamic import gated on `!app.isPackaged`, and its dependencies are
  * devDependencies that electron-builder never installs — so in a packaged app the require cannot
  * resolve at all. That is a property of the PACKAGING, not a promise about a boolean, and it is
  * spelled out at the `externalizeDeps` line in electron.vite.config.ts.
+ *
+ * `main/dataServer/engineHost.ts` spawns the DATA-SERVER ENGINE (JOS-459 phase 0), and it is the
+ * first thing added here that is meant to ship. THE OWNER'S CORRECTION IS WHY (docs/plans/
+ * data-server.md, ruling 16, 2026-08-24, verbatim in the plan): **PowerShell was the AV trigger,
+ * not child processes.** JOS-182/184 removed `powershell.exe`, `reg.exe` and `wmic` because THOSE
+ * BINARIES trip behavioural heuristics — an app compiling C# at runtime to enumerate every process
+ * on the machine is reading an infostealer's résumé aloud. Launching a signed executable this
+ * project built, which talks to its parent over a pipe and a loopback socket, is what every
+ * database client and language server on the machine does.
+ *
+ * The three conditions that keep it honest, and none of them is a promise about intentions:
+ *   * IT NEVER SHELLS OUT TO POWERSHELL. The first test in this file is what enforces that, and it
+ *     reads every string literal in the tree including this module's.
+ *   * IT SPAWNS ONE NAMED BINARY, resolved from a fixed candidate list (`engineBinaryCandidates`,
+ *     pinned by tests/dataServerEngineProtocol.test.mts) — never a command line, never a shell,
+ *     never a path from a config file or the wire.
+ *   * IT JOINS THE CODE-SIGNING SET like any other shipped executable (phase 3).
  */
-const SPAWNERS = new Set(['main/triage/store.ts'])
+const SPAWNERS = new Set(['main/triage/store.ts', 'main/dataServer/engineHost.ts'])
 
 /** Every module specifier a file imports or re-exports. */
 function importSpecifiers(file: string): string[] {
@@ -170,7 +197,7 @@ function importSpecifiers(file: string): string[] {
   return out
 }
 
-test('NOTHING UNDER src/ CAN START A PROCESS — one exemption, and it never ships', () => {
+test('NOTHING UNDER src/ CAN START A PROCESS — two exemptions, each argued above', () => {
   const files = sourceFiles(SRC_ROOT)
   const offenders: string[] = []
   let exempted = 0

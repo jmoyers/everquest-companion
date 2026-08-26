@@ -5,6 +5,11 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { normalizeEarlyWarnSec } from '../../shared/earlyWarning'
+// THE ENGINE'S COPY OF THE SAME PREFERENCE (JOS-482, boundary verdict 3). Additive: the store is
+// still persistence truth and `alertsModule.setDefs` is still what keeps THIS process's evaluator in
+// sync — the push is a fourth line after those two, and it is a no-op on a launch that asked for no
+// engine. See dataServer/appKnowledge.ts for why the payload is not threaded through here.
+import { pushAppKnowledge } from '../dataServer/definePush'
 import { alertsModule, eventFeedModule, registry } from '../pipeline'
 import {
   deleteAlert,
@@ -52,11 +57,13 @@ export function registerAlertsIpc(): void {
   ipcMain.handle(IPC.saveAlert, (_e, def: AlertDef) => {
     const list = saveAlert(sanitizeEarlyWarn(sanitizeCooldownScope(def)))
     alertsModule.setDefs(list) // keep the live evaluator in sync
+    pushAppKnowledge('alerts.define') // …and the engine's, when there is one
     return list
   })
   ipcMain.handle(IPC.deleteAlert, (_e, id: string) => {
     const list = deleteAlert(id)
     alertsModule.setDefs(list)
+    pushAppKnowledge('alerts.define')
     return list
   })
   // test = return the def so the renderer plays its sound directly (no live fire).
@@ -65,6 +72,7 @@ export function registerAlertsIpc(): void {
   ipcMain.handle(IPC.resetAlerts, () => {
     const list = resetAlerts()
     alertsModule.setDefs(list)
+    pushAppKnowledge('alerts.define')
     return list
   })
   // renderer reports an 'app'-triggered fire (bossDefeat) so the module's recent-
