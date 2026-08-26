@@ -32,7 +32,7 @@
 // filter runs on a deferred value, and the catalog is an ES-imported JSON already bundled for
 // main's mob lookup. No IPC, no network, works offline.
 
-import { type JSX, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { type JSX, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -58,6 +58,7 @@ import { killIndex, killsBaselineStale, killsFor, mergeKillsDelta } from '@share
 import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
+import { parkReturn, takeReturn } from '../../lib/navReturn'
 import { useModule } from '../../lib/useModule'
 import { CellLink } from '../../lib/CellLink'
 import { dropZoneTarget } from '../gear/dropLinks'
@@ -96,7 +97,7 @@ function MobResultRow({
 }: {
   entry: MobEntry
   kills: KillMap
-  /** a zone spelling's door to its map (user ruling, 2026-08-18: cross-link things); the row's
+  /** a zone spelling's door to its map (fork decision, kaltinril 2026-08-18: cross-link things); the row's
    *  own click still opens the mob — CellLink stops the propagation */
   onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
   onOpen: (t: MobTarget) => void
@@ -292,7 +293,7 @@ function MobDrill({
   kills: KillMap
   nav?: NavBack
   onClose: () => void
-  /** the drop dialog's route to the Loot tab (user ask, 2026-08-17) — MobPage passes it through */
+  /** the drop dialog's route to the Loot tab (fork decision, kaltinril 2026-08-17) — MobPage passes it through */
   onOpenLoot?: (item: string) => void
   /** the page's zone line's route to the Maps tab — MobPage passes it through the same way */
   onOpenMapZone?: (zone: ZoneShort) => void
@@ -326,6 +327,30 @@ function MobDrill({
 }
 
 /**
+ * THE DRILL STATE, AND THE PAGE THAT COMES BACK WITH THE TAB (fork decision, kaltinril 2026-08-25 -
+ * lib/navReturn.ts). This view unmounts on every tab switch, so a drop dialog's "Open in Loot"
+ * used to say `Back to Mobs` and land on the search list. The drill is PARKED whenever the view
+ * leaves the screen and TAKEN only when a Back is what brought it back; a deep-linked `target`
+ * still wins, and every other arrival - the nav row, a bare opener - opens on the browse surface
+ * exactly as before. The take runs in the state INITIALIZER so the page is there on the first
+ * paint (React uses the first initializer result, so StrictMode's second call reading `null` is
+ * the one it discards); the park reads a ref so the unmount sees the drill as it last rendered.
+ */
+function useDrill(target: MobTarget | null | undefined): [MobTarget | null, (t: MobTarget | null) => void] {
+  const [drill, setDrill] = useState<MobTarget | null>(() => {
+    // Taken UNCONDITIONALLY, so a deep link arriving over a stale Back note spends the note too.
+    const parked = takeReturn('mobs') as MobTarget | null
+    return target ?? parked
+  })
+  const drillRef = useRef(drill)
+  useEffect(() => {
+    drillRef.current = drill
+  }, [drill])
+  useEffect(() => () => parkReturn('mobs', drillRef.current), [])
+  return [drill, setDrill]
+}
+
+/**
  * @param target             a mob to open on arrival (a deep link from the events overlay, or a
  *                           raid target card). Re-applied whenever `targetNonce` changes, so
  *                           asking for the SAME mob twice opens it twice instead of looking
@@ -352,7 +377,7 @@ export default function MobsView({
   onTargetConsumed?: () => void
   nav?: NavBack
   /**
-   * The item drill-down's route to the Loot tab (user ask, 2026-08-17) — App's `openLoot`,
+   * The item drill-down's route to the Loot tab (fork decision, kaltinril 2026-08-17) — App's `openLoot`,
    * the same contract the Gear and Wishlist names use. Threaded, never imported: this view
    * knows nothing about the router, only that a page it shows may hand an item onward.
    */
@@ -362,7 +387,7 @@ export default function MobsView({
 }): JSX.Element {
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
-  const [drill, setDrill] = useState<MobTarget | null>(target ?? null)
+  const [drill, setDrill] = useDrill(target)
   // A NATIVE drill — a row on this tab's own surfaces. It ends whatever journey a link parked, so
   // Back below means the browse surface, which is where the reader genuinely came from.
   const openNative = (t: MobTarget): void => {

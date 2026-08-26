@@ -379,7 +379,7 @@ export function MobPage({
 }: {
   target: MobTarget
   kills: KillMap
-  /** the drop dialog's route onward to the Loot tab (user ask, 2026-08-17); absent, no button */
+  /** the drop dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17); absent, no button */
   onOpenLoot?: (item: string) => void
   /** the zone line's route to the Maps tab; absent, the zone stays the plain caption it was */
   onOpenMapZone?: (zone: ZoneShort) => void

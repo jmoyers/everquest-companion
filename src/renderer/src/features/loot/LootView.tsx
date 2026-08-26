@@ -37,6 +37,7 @@ import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
 import type { MobTarget } from '../mobs/mobTarget'
 import { useBackTarget } from '../../appBack'
+import { noteBack } from '../../lib/navReturn'
 import { useWindowedRows } from '../../lib/useWindowedRows'
 import { itemCountKey } from '../../lib/itemName'
 import type { InventoryRow } from '../inventory/reconcile'
@@ -198,8 +199,15 @@ function LootDetailTakeover(p: TakeoverProps): JSX.Element {
   // which registers it for as long as this pane is on screen. Never a second opinion about what
   // Back means here. The ledger behind it registers nothing — it has no Back affordance — so a
   // press there falls through to the app-level origin walk.
+  //
+  // AND IT SAYS WHERE IT WENT (lib/navReturn.ts): the origin's view is noted the moment the walk
+  // navigates, so a receiver that parked a page when it left - the mob page whose drop dialog sent
+  // the reader here - can open on that page rather than its list. The origin is read BEFORE
+  // `back()` consumes it.
   const back = (): boolean => {
+    const origin = nav?.origin
     if (!nav?.back()) detail.close()
+    else if (origin) noteBack(origin.view)
     return true
   }
   useBackTarget(back)

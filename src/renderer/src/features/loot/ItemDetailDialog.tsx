@@ -169,7 +169,7 @@ function aggregateLoot(events: LootEvent[]): LootBreakdown {
 }
 
 /**
- * ADD THIS ITEM TO THE WISH LIST, from the drill-down (user ask, 2026-08-15: the gesture the Gear
+ * ADD THIS ITEM TO THE WISH LIST, from the drill-down (fork decision, kaltinril 2026-08-15: the gesture the Gear
  * rows already have, on the surface where you are LOOKING at the item). Same control, same builder,
  * same key: `sourceItemKey(name)` is `itemKey(name)` re-applied renderer-side, so a wish written
  * here and one written from the Gear table are one wish — the document dedupes them by that key.
@@ -397,8 +397,8 @@ export function ItemDetailDialog({
   open: boolean
   onClose: () => void
   /**
-   * The route OUT of the dialog chrome and into the Loot tab's own pane on this item (user ask,
-   * 2026-08-17) — the same drill the Gear and Wishlist names deep-link to, with the breadcrumb,
+   * The route OUT of the dialog chrome and into the Loot tab's own pane on this item (fork decision,
+   * kaltinril 2026-08-17) — the same drill the Gear and Wishlist names deep-link to, with the breadcrumb,
    * the timeslice and the reconcile counts this dialog deliberately does not carry. Optional
    * because the dialog's host must have the router in hand (the Mobs tab does); absent draws
    * nothing rather than a dead button.
@@ -418,7 +418,10 @@ export function ItemDetailDialog({
               size="small"
               onClick={() => {
                 // Close first: navigation unmounts the host view, and a dialog left "open" on an
-                // unmounting page is a transition the user never asked to watch.
+                // unmounting page is a transition the user never asked to watch. The page itself
+                // is not lost with the view: MobsView parks its drill as it unmounts and the Loot
+                // pane's Back notes where it went (lib/navReturn.ts), so `Back to Mobs` lands on
+                // the mob whose dialog this was, not on the search list it used to.
                 onClose()
                 onOpenLoot(item)
               }}

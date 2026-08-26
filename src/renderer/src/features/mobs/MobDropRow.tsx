@@ -240,7 +240,7 @@ export function ItemDrillDown({
   item: string
   family?: boolean
   onClose: () => void
-  /** the dialog's route onward to the Loot tab (user ask, 2026-08-17) — see ItemDetailDialog */
+  /** the dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17) — see ItemDetailDialog */
   onOpenLoot?: (item: string) => void
 }): JSX.Element {
   const history = useModule<LootSnap, LootDelta>('loot', (s, d) => [...s, ...d.appended])
