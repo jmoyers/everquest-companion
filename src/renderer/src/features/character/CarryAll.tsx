@@ -187,6 +187,7 @@ export default function CarryAll({ carry }: { carry: CarryAllData }): JSX.Elemen
 
   const rows = useMemo(() => {
     const q = normalizeQuery(deferred)
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CarryRow. Becomes a view descriptor when the source lands.
     return carry.rows.filter(
       (r) => (lane === null || r.lane === lane) && (q === '' || r.searchKey.includes(q))
     )

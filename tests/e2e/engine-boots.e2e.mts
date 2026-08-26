@@ -9,14 +9,16 @@
  * spawn_contract.rs` drives the whole contract with no app and no TypeScript — and neither of them
  * can see the thing this file is about: THE TWO REAL BINARIES, agreeing, in the running product.
  *
- * WHY THE APP IS STILL ASKED FOR AN ENGINE BY NAME. `EQC_ENGINE` is the only switch (engineHost.ts)
- * and since JOS-495 it is an ESCAPE HATCH rather than an opt-in — every launch gets an engine unless
- * something says `EQC_ENGINE=0`. `EQ_E2E` is deliberately NOT a second gate there: the flag is a
- * thing a developer sets in a shell, and since JOS-490 the harness is a developer who always sets it
- * (`appWindow.mts ENGINE_ON`, which is what makes the whole suite a regression proof for the
- * cutover). So this spec's opt-in is doubly redundant and kept anyway, because a spec whose subject
- * IS the flag should name it — and the absence half at step 5 opts OUT by name (`ENGINE_OFF`), which
- * after the flip is the ONLY way to reach that path at all.
+ * THERE IS NO FLAG LEFT TO ASK WITH (JOS-499). `EQC_ENGINE` was the one switch and it is deleted
+ * along with the fold it used to select against: every launch gets an engine, because there is no
+ * other world to run. So this spec no longer opts in, and step 5 no longer opts OUT — the absence it
+ * asserts is the one a user can really have, a build with no engine BINARY, arranged by launching
+ * from a directory the resolver can find nothing under (`NO_ENGINE_CWD`).
+ *
+ * THAT IS A BETTER TEST THAN THE FLAG WAS, for the same reason the flag was better than silence: it
+ * asks the PRODUCT's own question (`engineBinaryCandidates` + `resolveEngineBinary`) rather than a
+ * gate written to be asked. The user-facing half of that contract — the app boots, says so honestly,
+ * invents no data and does not crash — is `tests/e2e/engine-absent.e2e.mts`.
  *
  * HOW READINESS IS OBSERVED, and why the spec KILLS the engine to see it.
  * `supervisor.ts reachedReady` narrates through `logInfo`, i.e. `console.log` in the main process,
@@ -47,12 +49,13 @@
  *     token at all; that asymmetry IS the design (`shared/dataServer/token.ts`).
  *   * QUIT TAKES IT — the polite path (stdin EOF, exit 0, no escalation to `kill`) said out loud by
  *     the app, and then no `engined.exe` of ours left in the process table.
- *   * and WITHOUT the flag there is no engine at all — asserted at both ends, because absence is
+ *   * and with NO BINARY there is no engine at all — asserted at both ends, because absence is
  *     the claim a missed log line could fake: no child while it runs, and no shutdown narration on
  *     the way out (an engine that had existed would say goodbye).
  *
  * Run: `npm run test:e2e -- engine-boots`
  */
+import { tmpdir } from 'node:os'
 import { PROTOCOL_VERSION } from '../../src/shared/dataServer/protocol.generated'
 import {
   buildEngineIfStale,
@@ -63,7 +66,7 @@ import {
   reportRun,
   sleep
 } from './appHarness.mjs'
-import { ENGINE_OFF, closeWindows, mainWindow } from './appWindow.mjs'
+import { closeWindows, mainWindow } from './appWindow.mjs'
 import { launchOnFixture, type FixtureLaunch } from './logFixture.mjs'
 import {
   engineDescendantsOf,
@@ -83,6 +86,18 @@ import {
  *  log SAYS — phase 0's engine opens no file and folds nothing — so the input is chosen to make the
  *  replay cheap and to keep the app on a staged install rather than the owner's real one. */
 const FIXTURE = 'e2e-telemetry.log'
+
+/**
+ * A DIRECTORY WITH NO `engine/target/**` UNDER IT — which is how a launch is given no engine BINARY
+ * to find (JOS-499, replacing the retired `EQC_ENGINE=0` opt-out).
+ *
+ * `engineBinaryCandidates` builds its list from `app.getAppPath()` and `process.cwd()`. The former
+ * is the built `out/main` directory, which carries no engine; pointing the latter at the OS temp
+ * dir leaves the resolver with nothing to find, so it narrates the absence and the supervisor never
+ * spawns. That is the PRODUCT's own resolution path answering honestly rather than a flag telling
+ * it to pretend — and it is the state a real user can actually be in.
+ */
+const NO_ENGINE_CWD = tmpdir()
 
 /**
  * How long absence is given to prove itself on the second launch.
@@ -214,7 +229,24 @@ async function stepQuit(launch: FixtureLaunch, out: AppOutput, pids: readonly nu
     out.said('closing stdin (the shutdown signal)'),
     out.said('escalating to kill') ? 'and then ESCALATED TO KILL' : 'no escalation'
   )
-  check('…and the engine takes the hint: exit 0, the contract’s own ending', bowedOut)
+  // THE NARRATION IS STDOUT FROM A PROCESS THAT IS QUITTING, so whether it exists is a race the
+  // app is allowed to win — `stopEngine` deliberately does not wait, and a release-built engine
+  // shifted the odds enough to fail this claim on a healthy machine (JOS-501 integration, twice in
+  // one evening). The durable half replaces it: a NONZERO shutdown exit is an `errors.log` entry
+  // with its own name (`EngineShutdownExit`, supervisor.ts `onExit`), so "no such entry, and the
+  // escalation never armed" states the same contract in evidence that survives the app's death.
+  // The stdout sentence stays as the fast path — when the engine wins the race, no file is read.
+  const cleanEnding =
+    bowedOut ||
+    (!out.said('escalating to kill') &&
+      !(
+        await settleErrorLog(launch.userData, (text) => text.includes('EngineShutdownExit'), 2_000)
+      ).includes('EngineShutdownExit'))
+  check(
+    '…and the engine takes the hint: exit 0, the contract’s own ending',
+    cleanEnding,
+    bowedOut ? 'said out loud' : 'app quit before narrating; errors.log carries no EngineShutdownExit'
+  )
   const left = await settleTable((table) => pids.every((pid) => !table.pids.includes(pid)), 15_000)
   const orphans = pids.filter((pid) => left.pids.includes(pid))
   check(
@@ -249,7 +281,7 @@ async function stepQuit(launch: FixtureLaunch, out: AppOutput, pids: readonly nu
  */
 async function stepAbsence(): Promise<void> {
   const before = engineTable().pids
-  const launch = await launchOnFixture(FIXTURE, { env: { ...ENGINE_OFF } })
+  const launch = await launchOnFixture(FIXTURE, { cwd: NO_ENGINE_CWD, waitForEngine: false })
   const out = tapOutput(launch.app)
   try {
     await mainWindow(launch.app)
@@ -258,7 +290,7 @@ async function stepAbsence(): Promise<void> {
     const table = engineTable()
     const kin = engineDescendantsOf(table, appPid) ?? table.pids.filter((pid) => !before.includes(pid))
     check(
-      'with EQC_ENGINE=0 — the harness’s named opt-out from an engine-on suite — no engine is spawned at all',
+      'with no engine BINARY reachable, no engine is spawned at all',
       kin.length === 0,
       kin.length === 0 ? `none, ${String(ABSENCE_WINDOW_MS / 1000)}s after the window came up` : kin.join(', ')
     )
@@ -288,7 +320,7 @@ async function main(): Promise<void> {
     note(`${String(before.length)} engined.exe already running before this spec launched anything — they are excluded, not killed`)
   }
 
-  const launch = await launchOnFixture(FIXTURE, { env: { EQC_ENGINE: '1' } })
+  const launch = await launchOnFixture(FIXTURE)
   // FIRST, before anything is driven: everything the app prints from here on is evidence, and the
   // spec's own actions are what cause the lines it asserts about.
   const out = tapOutput(launch.app)

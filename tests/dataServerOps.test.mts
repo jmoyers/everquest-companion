@@ -42,6 +42,8 @@ const EVERY_OP: RequestOp[] = [
   'session.progress',
   'module.snapshot',
   'perf.snapshot',
+  'perf.budgets',
+  'perf.timeline',
   'view.subscribe',
   'view.unsubscribe',
   'alerts.define',
@@ -59,7 +61,9 @@ const EVERY_OP: RequestOp[] = [
   'knowledge.search',
   'knowledge.define',
   'resist.levels',
-  'resist.spell'
+  'resist.spell',
+  'logs.setDir',
+  'logs.list'
 ]
 
 test('the registry names every op, and the compile-time pin agrees', () => {
@@ -85,6 +89,24 @@ test('EVERY GUARD IS DISCRIMINATING — no two ops accept each other’s result'
     // is a guard that cannot tell them apart — so `serve` is the discriminator, and this shape
     // carrying `status` is what makes that a real assertion in the matrix below.
     'perf.snapshot': { status: 'live', epoch: 2, uptimeMs: 925, ingest: {}, serve: [] },
+    // THE TRAP SHAPES, per this file's convention: a budget that measured NOTHING (the state a
+    // just-launched engine is in, and the one a guard reading truthiness rather than `in` would
+    // get wrong), and an EMPTY ring (the commonest honest timeline answer). Neither carries
+    // `uptimeMs`, which is the schema decision that keeps `session.health`'s negation one clause
+    // long — if a later hand adds it, this matrix is what says so.
+    'perf.budgets': {
+      epoch: 2,
+      budgets: [
+        {
+          id: 'foldRate',
+          label: 'fold rate',
+          limit: 'at least 1.0 MB/s',
+          verdict: 'unmeasured',
+          note: 'nothing has folded yet'
+        }
+      ]
+    },
+    'perf.timeline': { epoch: 2, capacity: 30, cadenceMs: 10_000, timeline: [] },
     'view.subscribe': { subscription: 7, subscribed: true },
     'view.unsubscribe': { subscription: 7, subscribed: false },
     // The five defines share `DefineAck` the way the three above share `SubscribeAck`, and for the
@@ -159,7 +181,17 @@ test('EVERY GUARD IS DISCRIMINATING — no two ops accept each other’s result'
       spellName: 'Tashani',
       table: 'missing',
       path: 'C:/nowhere/EverQuest Legends/spells_us.txt'
-    }
+    },
+    // LOG DISCOVERY (JOS-498). The push answers with the ack six ops already share — one directory
+    // is not a list, so there is no `count`, and it joins the family below rather than pretending to
+    // a discriminator it cannot have.
+    'logs.setDir': { applied: true },
+    // AND THE LIST'S SHAPE IS THE EMPTY ONE, deliberately, for the reason `resist.levels`'s is: an
+    // install where nobody has typed `/log on` is a real answer with no rows in it, and a guard that
+    // read `characters` for truthiness rather than with `in` would call the correct picker's own
+    // reply a wrong shape. The `dir` and `readable` beside it are what make it an ANSWER rather than
+    // a silence, and they are deliberately NOT what the guard reads.
+    'logs.list': { dir: 'C:/EverQuest Legends/Logs', readable: 'ok', characters: [] }
   }
   for (const op of EVERY_OP) {
     assert.equal(RESULT_GUARDS[op](shapes[op]), true, `${op} refused its own result`)
@@ -182,7 +214,12 @@ test('EVERY GUARD IS DISCRIMINATING — no two ops accept each other’s result'
       // is not one by LAW: it carries one entry rather than a whole set, which the schema argues at
       // length beside the op. The ack it answers with is the same ack, so the guard cannot separate
       // it from the other five, and pretending otherwise would be a guard that lies.
-      'knowledge.define'
+      'knowledge.define',
+      // `logs.setDir` joins for the same reason as `knowledge.define` and from the other direction
+      // (JOS-498): it is a define BY SHAPE and not by LAW — one directory rather than a whole set,
+      // and no fold input at all — and one directory is not a list, so its ack carries no `count`
+      // and nothing could tell it from `buffTrust.define`'s.
+      'logs.setDir'
     ]),
     // The three lookups mean one shape. They are separable by VALUE (`domain`) and not by guard,
     // which is the honest place to draw that line: a guard is a shape check, not a content check.

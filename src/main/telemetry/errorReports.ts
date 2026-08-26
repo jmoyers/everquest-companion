@@ -115,7 +115,7 @@ import {
   bucketOf,
   MAX_SESSION_FINGERPRINTS,
   SESSION_AGE_MS_EDGES,
-  TELEMETRY_BREADCRUMB_KINDS,
+  isBreadcrumbKind,
   TELEMETRY_ERROR_VIEWS,
   type EvErrorReport,
   type TelemetryBreadcrumb,
@@ -125,20 +125,25 @@ import {
 import { currentMode, readBreadcrumbs, resetBreadcrumbs } from './breadcrumbs'
 
 /**
- * The ring's crumbs, narrowed onto the wire's closed enum.
+ * The ring's crumbs, narrowed onto what the wire admits.
  *
- * `breadcrumbs.ts` types its `kind` as a bare `string` because it may not import the enum — it
- * has to stay import-free to be callable from `LogBus.emit` — so the narrowing happens HERE,
- * at the one boundary where the two meet. It is a real FILTER and not a cast: every value it
- * sees today is a `LogEventKind` and so is a member, but a kind added to the parser and
- * forgotten in the duplicated wire list would otherwise fail the whole event at the validator
- * and take a real crash report down with it. Dropping one crumb is the cheaper failure, and
- * `tests/errorReportContract.test.mts` pins the two lists equal so it should never happen.
+ * `breadcrumbs.ts` types its `kind` as a bare `string` because it may not import the contract — it
+ * has to stay import-free to be callable from the hottest paths in the process — so the narrowing
+ * happens HERE, at the one boundary where the two meet. It is a real FILTER and not a cast: a kind
+ * the contract does not admit would otherwise fail the whole event at the validator and take a
+ * real crash report down with it, and dropping one crumb is the cheaper failure.
+ *
+ * THAT FAIL-SAFE IS ALSO HOW THE RING DIED FOR A WHOLE RELEASE (JOS-501). JOS-499 pointed the ring
+ * at the engine's cursors, writing `module:<id>`, and nothing in the contract admitted that shape —
+ * so this filter did exactly what it promises and dropped every crumb, in silence, on every report
+ * the deletion release shipped. The lesson is not that the filter is wrong; it is that a fail-safe
+ * drop needs a test above it. `isBreadcrumbKind` is now the ONE predicate both this and the
+ * validator ask, and `tests/errorReportContract.test.mts` audits it against the engine's own module
+ * list so a producer and the contract cannot disagree again without something going red.
  */
 function wireCrumbs(): TelemetryBreadcrumb[] {
-  const known = TELEMETRY_BREADCRUMB_KINDS as readonly string[]
   return readBreadcrumbs()
-    .filter((c) => known.includes(c.kind))
+    .filter((c) => isBreadcrumbKind(c.kind))
     .map((c) => ({ kind: c.kind as TelemetryBreadcrumbKind, offsetMs: c.offsetMs }))
 }
 

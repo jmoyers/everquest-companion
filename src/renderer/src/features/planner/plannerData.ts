@@ -221,6 +221,7 @@ function latestZoneEra(zones: readonly string[]): Era | null {
 /** Catalog zones ∪ the zones the item page named. One list, deduped, order irrelevant to a fold. */
 function eraZones(subject: EraSubject): string[] {
   const catalog = sourcesFor(subject.key).flatMap((s) => s.zones)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives { mob: string; zone?: string | undefined; }. Becomes a view descriptor when the source lands.
   const page = (subject.wikiSources ?? []).flatMap((s) => (s.zone === undefined ? [] : [s.zone]))
   return [...new Set([...catalog, ...page, ...(subject.zones ?? [])])]
 }

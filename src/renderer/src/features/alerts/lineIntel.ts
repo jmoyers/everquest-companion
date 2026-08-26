@@ -165,6 +165,7 @@ export function useUpgradeOffers(
   const { dismissed, dismiss } = useOfferDismissals()
 
   const offers = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives RankUpgradeOffer. Becomes a view descriptor when the source lands.
     () => detectRankUpgrades(alerts, [...lines.values()]).filter((o) => !dismissed.has(o.id)),
     [alerts, lines, dismissed]
   )
@@ -192,6 +193,7 @@ export function usePoisonSlowOffers(
 ): PoisonSlowOffers {
   const { dismissed, dismiss } = useOfferDismissals()
   const offers = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives PoisonSlowOffer. Becomes a view descriptor when the source lands.
     () => detectPoisonSlowOffers(alerts, poisonSlowSeen).filter((o) => !dismissed.has(o.id)),
     [alerts, poisonSlowSeen, dismissed]
   )

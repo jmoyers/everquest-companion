@@ -56,18 +56,33 @@ test('MAIN STAMPS Date.now() EXACTLY ONCE, and the engine gets that very number'
   assert.equal(stamps.length, 1, 'a second clock read is a second boundary')
   assert.match(mod, /const at = Date\.now\(\)/)
   // The SAME identifier reaches the engine and the mark list. Anything else — a fresh read, an
-  // argument off the wire, a rounded copy — would be two instants wearing one name.
-  assert.match(mod, /combat\.sessionMark\(at\)/, 'the engine split must use the stamped instant')
+  // argument off the wire, a rounded copy — would be two instants wearing one name. The engine
+  // half is the SERVED command since JOS-499; this process's own combat engine is deleted, so
+  // the one remaining reader of the stamp on that side is the wire.
+  assert.match(mod, /serveSessionMark\(at\)/, 'the engine split must use the stamped instant')
   assert.match(mod, /addSessionMark\(marks, at\)/, 'and so must the loot split')
 })
 
-test('the engine is asked FIRST, so a refusal leaves no mark claiming a split that never happened', () => {
+test('THE APP NO LONGER ASKS PERMISSION TO SPLIT — the refusal arm was a second world', () => {
+  // WHAT THIS PINNED. `combat.sessionMark(at)` was asked FIRST and a `false` returned early, so
+  // a mark could never be recorded claiming a split this process's own engine had refused —
+  // "both halves or neither".
+  //
+  // THERE IS ONE HALF NOW (JOS-499). The engine that could refuse is deleted; the served command
+  // is fire-and-forget by construction (`serveCommands.ts`: the person has already been answered
+  // and an engine that said no is a dev-log line rather than a failed press), and the engine
+  // applies the same refusal to its own records without this process needing to hear it.
+  //
+  // SO THE CLAIM INVERTS AND IS STILL WORTH MAKING: nothing may gate the mark on an answer, and
+  // the mark must be recorded unconditionally, because a press that recorded nothing when the
+  // socket was down would lose a split the person can see they made.
   const mod = code('../src/main/sessionMarks.ts')
-  const engineAt = mod.indexOf('combat.sessionMark(at)')
+  assert.doesNotMatch(mod, /if \(!serveSessionMark/, 'the press is never gated on the wire')
+  const serveAt = mod.indexOf('serveSessionMark(at)')
   const markAt = mod.indexOf('addSessionMark(marks, at)')
-  assert.ok(engineAt >= 0 && markAt >= 0)
-  assert.ok(engineAt < markAt, 'the mark was recorded before the engine had agreed to split')
-  assert.match(mod, /if \(!combat\.sessionMark\(at\)\) return marks/, 'both halves or neither')
+  assert.ok(serveAt >= 0 && markAt >= 0)
+  // …and no early exit sits BETWEEN the two, which is where a dropped split would hide.
+  assert.doesNotMatch(mod.slice(serveAt, markAt), /return/, 'nothing may bail out between the halves')
 })
 
 test('THE PRESS CARRIES NO PAYLOAD — a renderer cannot supply an instant, so it cannot supply a bad one', () => {

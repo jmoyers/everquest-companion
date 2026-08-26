@@ -19,7 +19,6 @@ import { RESIST_AXES, type ResistAxis, type ResistRow } from '../../shared/resis
 import { BASELINE_SOURCE_KEY } from '../../shared/resistTypes'
 import { mobKey } from '../../shared/mobKey'
 import { resolveMobIdentity } from '../mobAliases'
-import { characterModule, resistModule } from '../pipeline'
 // THE MIRROR (JOS-496). `viewerLevel` is read on every draw from inside a synchronous profile
 // builder, so it cannot be a query — see `serveMirrors.ts` for the third shape and its price.
 import { mirroredModuleState } from '../dataServer/serveMirrors'
@@ -105,9 +104,12 @@ function allLedgerRows(): ResistRow[] {
  * be one `??` — a mirrored state is never null and a level of 0 is not a level.
  */
 function viewerLevel(): number | null {
+  // THE MIRROR IS THE ONLY ARM NOW (JOS-499). It used to fall back to this process's own
+  // `character` module for every launch with no engine and every moment before one went live;
+  // there is no such module, so an unmirrored moment answers `null` — which is what this
+  // function has always returned when the level is unknown, and what its callers already draw.
   const mirrored = mirroredModuleState('character') as CharacterSnap | null
-  const snap = mirrored ?? characterModule.snapshot().state
-  return snap.level?.level ?? null
+  return mirrored?.level?.level ?? null
 }
 
 /**
@@ -141,7 +143,9 @@ export interface ServedMobLevel {
  * own fold, which folds its own key exactly as it always has.
  */
 export async function servedMobLevel(display: string): Promise<ServedMobLevel> {
-  const fact = await serveMobLevel(display, () => resistModule.levelOf(mobKey(display), display))
+  // NO SECOND FOLD TO ASK (JOS-499): an engine that cannot answer means nobody can, and `null` is
+  // the answer `levelOf` has always given for a creature nothing has ever conned.
+  const fact = await serveMobLevel(display, () => null)
   return { display, fact }
 }
 
@@ -165,10 +169,10 @@ export function resistProfileDeps(level?: ServedMobLevel): ProfileDeps {
     // mismatch arm and the no-box arm are the same arm on purpose: both mean "nobody resolved this
     // creature", and this process's own fold is what has always answered that.
     //
-    // …WHICH IS ALSO THE FLAG-OFF PATH, unchanged. `EQC_ENGINE_SERVE=0` makes `serveMobLevel` fall
-    // straight through to this same fold read, so nothing about a launch with no engine moved.
-    levelOf: (key, display) =>
-      level?.display === display ? level.fact : resistModule.levelOf(key, display),
+    // AND THE MISMATCH ARM IS SIMPLY `null` NOW (JOS-499). It used to reach this process's own
+    // fold; there is none, and a creature nobody resolved has no level — which is exactly what
+    // the profile builder has always drawn for an unknown mob.
+    levelOf: (_key, display) => (level?.display === display ? level.fact : null),
     viewerLevel,
     frozenAt: () => baselineFrozenAt(),
     // READ HERE, ON EVERY DRAW (JOS-385). The ledger folded those rows whatever this says; this is

@@ -63,6 +63,7 @@ import {
 } from './appHarness.mjs'
 import { closeWindows, mainWindow } from './appWindow.mjs'
 import { launchOnFixture } from './logFixture.mjs'
+import { stepEnginePerfPanel } from './enginePerfSteps.mjs'
 
 const FIXTURE = 'wl40-farm-run.log'
 
@@ -249,6 +250,15 @@ async function main(): Promise<void> {
         )
       }
     }
+    // THE PERFORMANCE PANEL'S ENGINE SECTION, ON THIS SPEC'S BACK (ruling 19 — JOS-483's rows and
+    // JOS-502's budgets). It is a SECOND SUBJECT in this file and that is deliberate: the only
+    // expensive thing it needs is an engine that has folded something and served a view, which is
+    // exactly the state the ledger comparison above has just spent a whole scan and a subscription
+    // reaching. Its own launch would double this spec's cost to re-reach a state already standing.
+    //
+    // It reads its host's engine, so it runs AFTER the toggle has been put back — the section must
+    // report a real generation, not one mid-switch.
+    await stepEnginePerfPanel(page)
     if (failures.length > 0) await dumpArtifacts(page, 'engine-loot-view')
     await closeWindows(launch.app)
   } finally {

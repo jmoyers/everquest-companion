@@ -59,10 +59,14 @@ import { registerRendererBrokerIpc } from '../dataServer/rendererBroker'
 // synchronously into Electron from inside the fold — stands down. Composed HERE and passed as a
 // predicate, for two reasons written out at `registerConCardIpc`: `conCard.ts` sits downstream of
 // the serve receiver so an import would close a module cycle, and the question can only be answered
-// honestly per `/con` rather than once at registration, because `shimServing()` alone is true on
-// every checkout with no engine binary at all.
-import { engineServeReadiness } from '../dataServer/engineClientHost'
-import { shimServing } from '../dataServer/serveShim'
+// honestly per `/con` rather than once at registration.
+//
+// THE COMPOUND GATE LOST ITS WEAKER HALF (JOS-499 item 9) AND KEPT THE ONE THAT MATTERED.
+// `shimServing()` was two default-on env flags and answered `true` on every checkout with no
+// engine binary at all — the misreading that shipped a silent card once (conCard.ts has the long
+// version). `engineServeReadiness().ok` is a MEASUREMENT: a client exists, its connection is
+// ready, both worlds are on the same log, and the fold has gone live. That is the question, and
+// deleting the flag beside it leaves the gate strictly more honest rather than weaker.
 
 export function registerIpc(): void {
   registerCharacterIpc()
@@ -86,7 +90,7 @@ export function registerIpc(): void {
   registerWindowIpc()
   registerToastIpc()
   registerAlertBannerIpc()
-  registerConCardIpc(() => shimServing() && engineServeReadiness().ok)
+  registerConCardIpc()
   registerTrayIpc()
   registerClipboardIpc()
   registerFeedbackIpc()

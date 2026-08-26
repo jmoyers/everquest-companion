@@ -59,7 +59,6 @@
 
 import { logInfo } from '../errorLog'
 import { engineRequest } from './engineClientHost'
-import { shimServing } from './serveShim'
 
 function note(line: string): void {
   logInfo(`[everquest-companion] ${line}`)
@@ -76,7 +75,8 @@ function describeErr(err: unknown): string {
  * window that pressed, and a press must never be made to wait on a socket.
  */
 export function serveSessionMark(at: number): void {
-  if (!shimServing()) return
+  // NO SERVE GATE (JOS-499 item 9): `engineRequest` rejects when there is no client, and the
+  // rejection arm below already says so in one line.
   void engineRequest('sessionMarks.add', { at }).then(
     (ack) => {
       note(
@@ -108,7 +108,8 @@ export function serveSessionMark(at: number): void {
  * zone — a real divergence, and the sort of thing a developer flips the flag to read about.
  */
 export function serveConfirmSighting(rowId: string): void {
-  if (!shimServing()) return
+  // NO SERVE GATE (JOS-499 item 9): `engineRequest` rejects when there is no client, and the
+  // rejection arm below already says so in one line.
   void engineRequest('respawn.confirmSighting', { rowId }).then(
     (ack) => {
       note(

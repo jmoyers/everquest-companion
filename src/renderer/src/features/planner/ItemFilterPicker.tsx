@@ -89,6 +89,7 @@ export default function ItemFilterPicker({ anchor, onClose, onPick }: ItemFilter
   const query = useDeferredValue(text)
   const open = anchor !== null
   const { hits, loading } = useItemSearch(query, open)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: PlannerItemHit comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   const usable = hits.filter(wearable)
 
   return (

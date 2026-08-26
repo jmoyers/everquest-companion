@@ -90,6 +90,7 @@ export function lanesForAbility(source: SourceView, name: string, category: Dama
   const index = categoryByName(source)
   const key = name.toLowerCase()
   const isAutoAttack = key === AUTO_ATTACK.toLowerCase() && category === 'melee'
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives RoundLaneView. Becomes a view descriptor when the source lands.
   return r.lanes.filter((lane) => {
     const owner = index.get(lane.label.toLowerCase())
     // A named lane matches a skill row: it belongs to that skill in its first-wins category.
@@ -101,6 +102,7 @@ export function lanesForAbility(source: SourceView, name: string, category: Dama
 
 /** `buckets[i]` summed across a set of lanes: rounds that landed exactly i+1 swings. */
 function bucketSum(lanes: RoundLaneView[], i: number): number {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives RoundLaneView. Becomes a view descriptor when the source lands.
   return lanes.reduce((n, l) => n + (l.buckets[i] ?? 0), 0)
 }
 
@@ -120,6 +122,7 @@ function multiText(doubled: number, tripled: number, quad: number): string {
  */
 export function abilityMultiAttack(source: SourceView, name: string, category: DamageCategory): AbilityMulti | null {
   const lanes = lanesForAbility(source, name, category)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives RoundLaneView. Becomes a view descriptor when the source lands.
   const rounds = lanes.reduce((n, l) => n + l.rounds, 0)
   const isAutoAttack = name.toLowerCase() === AUTO_ATTACK.toLowerCase() && category === 'melee'
   const flurry = isAutoAttack && source.roundStats ? flurryText(source.roundStats) : null
@@ -184,7 +187,9 @@ export function abilityRiposte(source: SourceView, name: string, category: Damag
 /** `riposteDamage` over the source's melee + slay totals — the categories a swing lands in. */
 function riposteSharePct(source: SourceView, damage: number): number {
   const base = source.categories
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
     .filter((c) => c.category === 'melee' || c.category === 'slay')
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
     .reduce((n, c) => n + c.total, 0)
   return base > 0 ? (damage / base) * 100 : 0
 }

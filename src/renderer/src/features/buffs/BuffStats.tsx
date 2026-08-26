@@ -166,7 +166,9 @@ function StatsSection({ cls, rows, withBoxes }: { cls: BuffClass; rows: BuffStat
 /** The rows of one class that match the query, sorted by sample count then name. */
 function matching(stats: Record<string, BuffStat>, cls: BuffClass, needle: string): BuffStat[] {
   return Object.values(stats)
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives BuffStat. Becomes a view descriptor when the source lands.
     .filter((s) => s.cls === cls && (needle === '' || s.spell.toLowerCase().includes(needle)))
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives BuffStat. Becomes a view descriptor when the source lands.
     .sort((a, b) => b.n - a.n || a.spell.localeCompare(b.spell))
 }
 

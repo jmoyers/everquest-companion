@@ -74,14 +74,20 @@
 // since JOS-172, and a second copy of that list is precisely how the overlays came to be missing
 // from a fan-out once already.
 
-import { engineFlagOn } from '../../shared/dataServer/engineFlags'
 import { IPC } from '../../shared/ipc'
 import { MODULE_WORLD_CHANGED, type ModuleChanged } from '../../shared/types'
-import { sendToModuleOverlays } from '../pipeline'
+import { sendToModuleOverlays } from '../worldRebuilt'
 import { sendToMain } from '../windows'
+import { noteTailLine } from '../switchNudge'
+import { noteEventKind } from '../telemetry/breadcrumbs'
 
-/** See the header: the second half of a gate whose first half is structural, and ON by default. */
-const SERVE_ASKED = engineFlagOn(process.env.EQC_ENGINE_SERVE)
+/**
+ * THE GATE IS GONE (JOS-499 item 9). It was the second half of "does the engine answer this
+ * app's reads?", and the first half was already structural — nothing here is called unless
+ * `installEngineClient` armed a listener. With one fold left there is no second world for a
+ * cursor to be confused with, so the frame is simply pushed.
+ */
+const SERVE_ASKED = true
 
 /** Every window that folds a module — the main window and `pipeline.ts`'s own overlay list. */
 function push(frame: ModuleChanged): void {
@@ -101,6 +107,64 @@ function push(frame: ModuleChanged): void {
 export function pushModuleChanged(moduleId: string, seq: number): void {
   if (!SERVE_ASKED) return
   push({ moduleId, seq })
+  // THE TWO LIVE SIGNALS THAT USED TO RIDE THE TAIL (JOS-499). Both were fed by
+  // `session.ts startTailer`'s line handler — the app's hottest path — and both are questions
+  // about whether the world is moving rather than about what it says. A cursor is that same
+  // evidence, arriving from the process that folds the lines now.
+  notifyCombatActivity()
+  // …and the quiet-switch clock. It asks whether OUR file is being written to at all, so it
+  // deliberately counted every RAW line rather than only the ones that parsed. A cursor is a
+  // coarser instrument — the engine coalesces to ~10 Hz and says nothing for a module that did
+  // not move — but it is strictly conservative in the direction that matters: it can only make
+  // the app slower to believe the log went quiet, never quicker.
+  noteTailLine()
+  // …and the ERROR-REPORT BREADCRUMB RING (JOS-499), which lost its only producer with the parser.
+  //
+  // `noteEventKind` was called from `LogBus.emit` — the choke point every parsed event passed
+  // through — and it answers one question for a crash report: what was happening just before this.
+  // There are no parsed events here. A cursor is the nearest true thing this process still sees, so
+  // the ring records MODULE MOVEMENT instead of event kinds: "loot moved, kills moved, buffs moved"
+  // in the seconds before the throw.
+  //
+  // IT IS A COARSER INSTRUMENT AND THE SHAPE SAYS SO — a module id is not a log-event kind, and the
+  // ring is prefixed so no reader mistakes one for the other. It is still a closed vocabulary (the
+  // engine's own module list) and still carries no content from the log, which is what the
+  // telemetry bright line requires of it.
+  //
+  // THE TIMESTAMP IS THE HOST'S, and that is the one honest difference: an event carried its own
+  // `LogEvent.ts` and a cursor carries none. A breadcrumb answers "just before, or a while before"
+  // (breadcrumbs.ts), which the wall clock answers as well here as a log clock did.
+  noteEventKind(`module:${moduleId}`, Date.now())
+}
+
+/**
+ * THROTTLE-EMIT A COMBAT-ACTIVITY PING, at most once per ~250 ms. `useCombat` fetches a fresh
+ * snapshot on this event, so the meter updates sub-second during a fight while idle polling stays
+ * cheap. A trailing timer guarantees a final ping after a burst so the last hit is not missed.
+ *
+ * IT KEEPS ITS OWN THROTTLE EVEN THOUGH THE ENGINE ALREADY COALESCES. The engine bounds how often
+ * a CURSOR arrives, per module; this bounds how often the RENDERER is told to go and fetch a whole
+ * combat snapshot, and twenty modules moving in one beat is twenty cursors and should still be
+ * one fetch.
+ */
+const COMBAT_ACTIVITY_THROTTLE_MS = 250
+let combatActivityLast = 0
+let combatActivityTimer: ReturnType<typeof setTimeout> | null = null
+function notifyCombatActivity(): void {
+  const now = Date.now()
+  const since = now - combatActivityLast
+  if (since >= COMBAT_ACTIVITY_THROTTLE_MS) {
+    combatActivityLast = now
+    sendToMain(IPC.onCombatActivity)
+    return
+  }
+  if (combatActivityTimer) return
+  combatActivityTimer = setTimeout(() => {
+    combatActivityTimer = null
+    combatActivityLast = Date.now()
+    sendToMain(IPC.onCombatActivity)
+  }, COMBAT_ACTIVITY_THROTTLE_MS - since)
+  combatActivityTimer.unref?.()
 }
 
 /**

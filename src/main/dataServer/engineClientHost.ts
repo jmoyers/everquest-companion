@@ -55,7 +55,7 @@
 
 import { app } from 'electron'
 import { logInfo } from '../errorLog'
-import { registry, setWorldRebuiltObserver } from '../pipeline'
+import { setWorldRebuiltObserver } from '../worldRebuilt'
 import { getActiveCharacter } from '../session'
 import { createEngineClient, EngineError, type EngineClient } from '../../shared/dataServer/client'
 import { createNdjsonTransport, type ByteChannel } from '../../shared/dataServer/ndjson'
@@ -63,7 +63,9 @@ import type {
   ClientMessage,
   EngineMessage,
   FireMessage,
-  PerfSnapshotResult
+  PerfBudgetsResult,
+  PerfSnapshotResult,
+  PerfTimelineResult
 } from '../../shared/dataServer/protocol.generated'
 // THE AUDIO CUTOVER (JOS-491). It owns its own flag and its own gate; this file simply offers it
 // every fire and prints what it decided. A launch that turned it off (`EQC_ENGINE_ALERTS=0`, or
@@ -73,17 +75,12 @@ import { playEngineFire } from './alertsAudio'
 // rather than a fourth of its own; this file simply offers every card and prints what was decided.
 import { conCardServeLine, noteConCardServe, openEngineConCard } from './conCardServe'
 import { readDefine } from './appKnowledge'
-import { DEFINE_OPS, setAppKnowledgePusher, type DefineOp } from './definePush'
+import { DEFINE_OPS, setAppKnowledgePusher, setLogDirPusher, type DefineOp } from './definePush'
+// WHERE THE CHARACTER LOGS LIVE (JOS-498, decision sheet 1a). THE APP NAMES THE DIRECTORY, so this
+// file reads the app's own resolver and states it to the engine — the store stays persistence truth
+// and the engine never reads a settings file (boundary verdict 3).
+import { eqLogsDir } from '../log/config'
 import { connectToEngine } from './socketChannel'
-import {
-  PARITY_PROBE_MODULES,
-  judgeParity,
-  parityLine,
-  tallyParity,
-  type EngineMark,
-  type ParityAsk,
-  type ParityVerdict
-} from './parityProbe'
 // THE DELTA ARM (JOS-493). It owns the serve flag's second half and the fan-out; this file supplies
 // the only thing it cannot get for itself — the engine's own `moduleChanged` frames, and the two
 // edges where the world that answers a read changes hands.
@@ -93,8 +90,18 @@ import { pushModuleChanged, pushWorldChanged } from './serveDeltas'
 // delta arm does — a cursor, and the world changing hands — and it holds no import of this file, so
 // the requester is handed over rather than reached for.
 import { installMirrors, noteMirrorChanged, primeMirrors, resetMirrors } from './serveMirrors'
+// THE WIKI-MISS FETCH (JOS-499 item 1, boundary verdict 5). The engine has no network stack, so it
+// announces a name it could not answer and this app looks it up on the queue it has always owned.
+// The leaf is electron-free and takes its capabilities here — see its header.
+import {
+  asKnowledgeRecord,
+  installKnowledgeMissFetch,
+  onKnowledgeMiss
+} from './knowledgeMissFetch'
+import { lookupItem } from '../itemLookup'
+import { noteEngineEdge } from '../telemetry/breadcrumbs'
+import { lookupMob } from '../mobLookup'
 import { attachStateDir, takeArtifactsBack } from './artifactOwner'
-import { shimServing } from './serveShim'
 import { SERVABLE, type Readiness } from './readShim'
 import type { ReadyEngine } from './supervisor'
 import type { ParamsFor, RequestOp, ResultFor } from '../../shared/dataServer/ops'
@@ -238,7 +245,6 @@ export function onEngineReady(info: ReadyEngine | null): void {
   // THE LAST VERDICT DIES WITH THE ENGINE THAT EARNED IT. A respawn is a launch and a fresh world
   // has proven nothing yet; leaving the counts standing would let the panel report "5 agree" about
   // a process that no longer exists.
-  lastParity = null
   // THE PERSISTED ARTIFACTS COME BACK (JOS-497 item 2, boundary verdict 4), and on BOTH arms rather
   // than only on the gone one. A dead process is not an owner, and the resist ledger's whole value
   // is that it accretes — an engine that died at minute two of a six-hour session must not leave
@@ -342,7 +348,32 @@ async function openConnection(mine: number, info: ReadyEngine, client: EngineCli
     // cache with a timer, which is the thing ruling 5 forbids.
     noteMirrorChanged(changed.module, changed.seq)
   })
+  // THE WIKI MISSES (JOS-499 item 1, boundary verdict 5) — the engine saying it could not answer a
+  // name, answered by the app's own lookup and pushed back as `knowledge.define`.
+  //
+  // THE GUARD IS THE CONNECTION ONE, NOT THE TURN ONE, and it is the `onConCard`/`onModuleChanged`
+  // reasoning verbatim: a subscription is CONNECTION-scoped while `gen` advances on every world
+  // rebuild, so asking `gen !== mine` here would silence the fetcher one second into every launch —
+  // the exact bug that cost the cursor listener a whole e2e round. It is written out again rather
+  // than cross-referenced because getting it wrong is silent: the corpus would simply stop learning
+  // and nothing would ever say so.
+  //
+  // AND THERE IS NO READINESS GATE HERE, unlike the cursor listener above. `engineServeReadiness()`
+  // asks whether the engine's answers may be THIS APP'S answers — a question about which world a
+  // read is served from. A miss is not a read: it names a page the wiki has and the corpus lacks,
+  // which is true of every world at once and stays true across a character switch. Gating it would
+  // drop exactly the misses raised during a fold, which is when a log full of unfamiliar mobs
+  // raises nearly all of them.
+  client.onKnowledgeMiss((miss) => {
+    if (live?.client !== client) return
+    onKnowledgeMiss(miss)
+  })
   debug(`data-server client: connected to the engine on port ${String(info.port)}`)
+  // WHERE THE LOGS LIVE GOES FIRST, and above all BEFORE `attachAndProbe` — which returns early on
+  // a launch with no character, which is the launch a served character list is most needed on. See
+  // `pushLogDirNow`.
+  await pushLogDirNow(mine)
+  if (gen !== mine) return
   await attachAndProbe(mine)
 }
 
@@ -388,6 +419,38 @@ async function pushAllDefines(mine: number): Promise<void> {
   for (const op of DEFINE_OPS) {
     await pushDefine(mine, op)
     if (gen !== mine) return
+  }
+}
+
+// ── where the logs live, pushed (JOS-498, owner ruling 21 / decision sheet 1a) ──────────────────
+
+/**
+ * TELL THE ENGINE WHERE THE CHARACTER LOGS ARE.
+ *
+ * ON CONNECT, AND NOT WITH THE DEFINES. `pushAllDefines` is called from `attachAndProbe`, which
+ * RETURNS EARLY when this app has no character attached — "the engine is left idle" — and that early
+ * return is exactly the launch this push matters most on: a fresh install has no character to attach
+ * to and a picker that has to draw one anyway. So it is sent from `openConnection`, before anything
+ * can decide there is nothing to do.
+ *
+ * `eqLogsDir()` RATHER THAN A VALUE PASSED IN, for `appKnowledge.ts`'s reason exactly: what the
+ * engine is handed must be what this app has RESOLVED, not what some caller believed at the moment
+ * it noticed a change. The resolver is memoized (`config.ts`) and a settings change invalidates it
+ * before this is ever called, so re-reading here is a field read on the common path.
+ *
+ * IT IS VOIDED AND IT NEVER THROWS, exactly as a define is: a directory the engine refused is a
+ * dev-log line, and the app's own read answers every question in the meantime.
+ */
+async function pushLogDirNow(mine: number): Promise<void> {
+  const l = live
+  if (l === null || gen !== mine) return
+  const dir = eqLogsDir()
+  try {
+    await l.client.request('logs.setDir', { dir })
+    if (gen !== mine) return
+    debug(`data-server logs: the engine was told to enumerate ${dir}`)
+  } catch (err) {
+    debug(`data-server client: logs.setDir was refused (${describeErr(err)})`)
   }
 }
 
@@ -452,11 +515,10 @@ async function attachAndProbe(mine: number): Promise<void> {
   // the path and does attach, which is the case the re-attach exists for.
   if (l.attachedTo !== target && (await sendAttach(mine, l, target)) === null) return
   if (gen !== mine) return
-  if (tsWorldPath !== target) {
-    debug('data-server client: the app has not finished folding this log yet — the parity probe waits')
-    return
-  }
-  await runParityProbe(mine, l, target)
+  // THE FOLD IS WAITED FOR, AND NOTHING IS COMPARED (JOS-499). `waitForFold` is what records
+  // `engineLiveOn`, which is what `engineServeReadiness()` reads on every served IPC — so this
+  // call is the arming of the read path, not the preamble to a probe.
+  await waitForFold(mine, l)
 }
 
 /**
@@ -476,7 +538,10 @@ async function attachAndProbe(mine: number): Promise<void> {
  */
 async function sendAttach(mine: number, l: LiveEngine, logPath: string): Promise<number | null> {
   const stateDir = attachStateDir({
-    serving: shimServing(),
+    // ALWAYS (JOS-499 item 9). The `serving` argument used to carry `shimServing()`, so a
+    // flag-off launch kept persisting its own artifacts. There is no such launch: an attach is
+    // sent only by a connected client, and this process folds nothing to persist.
+    serving: true,
     userData: () => app.getPath('userData'),
     note: debug
   })
@@ -529,49 +594,18 @@ function onWorldRebuilt(character: CharacterRef | null): void {
   void attachAndProbe(mine)
 }
 
-// ── the probe ──────────────────────────────────────────────────────────────────────────────────
-
-/**
- * Ask the engine for five modules, ask this process for the same five, and say whether they agree.
- *
- * IT WAITS FOR THE ENGINE'S FOLD FIRST, because a mid-scan answer is a real prefix state (the
- * engine's `SnapshotAsk` design guarantees that) but a prefix of a different length than ours — so
- * probing early would produce five honest DRIFT lines and no information. The wait is bounded and
- * its expiry is not an error: the line reports whatever status the engine was in.
- */
-async function runParityProbe(mine: number, l: LiveEngine, logPath: string): Promise<void> {
-  const health = await waitForFold(mine, l)
-  if (health === null || gen !== mine) return
-  const asks: ParityAsk[] = []
-  for (const module of PARITY_PROBE_MODULES) {
-    const ask = await askOne(l, module)
-    if (gen !== mine) return
-    asks.push(ask)
-  }
-  const verdicts: ParityVerdict[] = judgeParity(asks)
-  // THE COUNTS ARE KEPT, not only printed (JOS-483). The line is still the dev log's own record and
-  // it is unchanged; this is the same verdict tallied once, at the one moment it is authoritative,
-  // so the performance panel can state "5 agree, 0 diverge" without parsing prose out of a log
-  // nobody guaranteed the shape of. It is the LAST run's, deliberately: a probe runs on a rebuild
-  // and a character switch, not on a timer, and the panel wants what was last established rather
-  // than a running total across worlds that have been replaced.
-  lastParity = { at: Date.now(), logPath, ...tallyParity(verdicts) }
-  debug(
-    parityLine({
-      logPath,
-      mark: health.mark ?? null,
-      // THE ENGINE'S ANSWER, NOT THIS PROCESS'S (owner ruling 21). This file could stat the log in
-      // one line — the app does exactly that in `main/log/config.ts` — and printing that number
-      // would prove nothing at all about who owns the fact. Quoting the served one is what makes
-      // the line evidence.
-      logMtimeMs: health.logMtimeMs ?? null,
-      epoch: health.epoch,
-      engineStatus: health.status,
-      engineEvents: health.events ?? null,
-      verdicts
-    })
-  )
-}
+// ── THE PROBE IS GONE (JOS-499) ────────────────────────────────────────────────────────────────
+//
+// `runParityProbe` and `askOne` asked five modules of BOTH worlds and wrote one line saying
+// whether they agreed. There is one world. A parity verdict is not a thing that can be computed,
+// let alone reported, and keeping a probe that compares the engine against itself would be an
+// instrument that can only ever say yes.
+//
+// WHAT IT PROVED IS NOT LOST, it is just finished: the six-slice golden oracle
+// (`npm run oracle:rust-fold`) is what established the equivalence this probe watched for drift
+// against, and owner ruling 26 keeps it running against the RECORDED goldens for one more
+// release. `waitForFold` below survives it, because polling `session.health` until the engine
+// goes live is what arms the serve path — see `engineLiveOn`.
 
 /** What `session.health` last said. Only the fields the line quotes. */
 interface EngineHealthSay {
@@ -579,10 +613,27 @@ interface EngineHealthSay {
   readonly epoch: number
   readonly events?: number
   /** The engine's own (log identity, byte offset). Absent until it has folded something. */
-  readonly mark?: EngineMark
+  readonly mark?: { readonly logPath?: string; readonly offset?: number }
   /** THE LOG FILE'S mtime, as the ENGINE stats it (owner ruling 21). Absent before an attach, and
    *  absent when the stat failed — never zero, which would claim 1970. */
   readonly logMtimeMs?: number
+}
+
+/**
+ * THE GO-LIVE SENTENCE, built out of line so `waitForFold` keeps its own shape.
+ *
+ * The optional clauses are appended rather than interpolated because both are genuinely absent on a
+ * fresh attach — an engine that has folded nothing has no event count and no byte mark — and an
+ * empty interpolation would print a dangling comma rather than saying nothing.
+ */
+function servingLine(logPath: string | null, health: EngineHealthSay): string {
+  const parts = [`epoch ${String(health.epoch)}`]
+  if (health.events !== undefined) parts.push(`${String(health.events)} events`)
+  if (health.mark?.offset !== undefined) parts.push(`at byte ${String(health.mark.offset)}`)
+  return (
+    `data-server serving: ${logPath ?? '(none)'} — the engine's fold is live and is now ` +
+    `answering this app's reads (${parts.join(', ')})`
+  )
 }
 
 /** Poll `session.health` until the engine's ingest is `live`, or the budget runs out. Null only
@@ -621,31 +672,30 @@ async function waitForFold(mine: number, l: LiveEngine): Promise<EngineHealthSay
         // folding and gone quiet will not move again for minutes. A mirror waiting for a cursor that
         // is not coming would fall back on every draw of a card the engine could answer perfectly.
         primeMirrors()
+        // THE GO-LIVE SENTENCE (JOS-499), and it replaces a line rather than adding one.
+        //
+        // The PARITY line used to be printed at exactly this moment — it was the app's own
+        // statement that both folds had landed on the same log and the engine's ingest was live —
+        // and two e2e specs used it as their READINESS PRECONDITION rather than for its verdict.
+        // The verdict is gone with the second world; the readiness it also carried is a real fact
+        // about this launch and is still the one moment worth naming, because it is precisely when
+        // `engineServeReadiness()` starts answering yes and every read in the product changes hands.
+        //
+        // IT REPORTS WHAT IT CAN VOUCH FOR: the log both sides agree on, the engine's own event
+        // count and byte mark. Those come off the health round trip this loop was making anyway, so
+        // the line costs nothing and is evidence rather than an announcement.
+        debug(servingLine(l.attachedTo, health))
+        // …AND A BREADCRUMB FOR THE SAME EDGE (JOS-501). It is the last of the four the ring gets
+        // from the engine's lifecycle, and the most diagnostic of them: it is the moment every
+        // read in the product changes hands, so a crash report whose ring stops at `engine:ready`
+        // says the fold never landed, which is a completely different investigation from one whose
+        // ring shows `engine:live` followed by module cursors.
+        noteEngineEdge('engine:live')
       }
     }
     if (health.status === 'live' || Date.now() >= deadline) return health
     await delay(FOLD_POLL_MS)
     if (gen !== mine) return null
-  }
-}
-
-/**
- * One module, from both worlds.
- *
- * THE TWO READS ARE AS CLOSE TOGETHER AS THIS PROCESS PERMITS, and that is the whole reason the
- * app's snapshot is taken HERE rather than collected in a batch before or after the five round
- * trips. `registry.snapshot` runs in the microtask continuation of the reply that just arrived, so
- * the only thing that can advance the app's fold between the two reads is another microtask — never
- * a tailer line, never a heartbeat tick, both of which are macrotasks. Matched marks are what make
- * the comparison sound (parityProbe.ts's header); this is what makes matched marks likely.
- */
-async function askOne(l: LiveEngine, module: string): Promise<ParityAsk> {
-  try {
-    const result = await l.client.request('module.snapshot', { module })
-    const app = registry.snapshot(module)
-    return { module, engine: { seq: result.seq, state: result.state }, app }
-  } catch (err) {
-    return { module, engine: null, app: registry.snapshot(module), refusal: describeErr(err) }
   }
 }
 
@@ -656,25 +706,10 @@ async function askOne(l: LiveEngine, module: string): Promise<ParityAsk> {
 // every other number in that panel arrives: main measures, main pushes, over the perf channels that
 // already exist.
 
-/** The last parity probe's counts, kept for the panel. `null` until one has run in this launch. */
-export interface ParitySummary {
-  /** When the probe finished, by the host's clock. The panel draws its AGE, because a parity
-   *  verdict from four minutes ago is a different thing to read than one from four seconds ago. */
-  readonly at: number
-  /** The log both worlds were folding. */
-  readonly logPath: string
-  readonly agree: number
-  readonly diverge: number
-  readonly skipped: number
-}
-
-let lastParity: ParitySummary | null = null
-
-/** What the last parity probe found, or `null` when none has run in this launch — which is NOT
- *  "everything agreed": a probe that never ran has established nothing. */
-export function lastParitySummary(): ParitySummary | null {
-  return lastParity
-}
+// `ParitySummary` / `lastParitySummary()` LIVED HERE AND ARE GONE (JOS-499), with the probe that
+// produced them. The performance panel drew "5 agree, 0 diverge"; with one world there is nothing
+// to agree with. `enginePerfWatch.ts` sends `parity: null` and the panel already draws that as
+// "no verdict", which is now permanent rather than "no probe has run yet".
 
 /**
  * Ask the engine what it costs. `null` when there is no connected engine to ask.
@@ -691,6 +726,38 @@ export async function enginePerfSnapshot(): Promise<PerfSnapshotResult | null> {
     return await l.client.request('perf.snapshot', {})
   } catch (err) {
     debug(`data-server client: perf.snapshot was refused (${describeErr(err)})`)
+    return null
+  }
+}
+
+/**
+ * Ask the engine how it is doing against its own budgets (JOS-502). `null` on the same terms.
+ *
+ * THE SWALLOW-TO-NULL POSTURE IS COPIED DELIBERATELY, not inherited by accident. `engineRequest`
+ * below rejects rather than answering `null`, and the line between them is stated there: a READ
+ * whose answer a user sees owes its caller a reason, while a DIAGNOSTIC that cannot be taken has
+ * nothing to say. These two are diagnostics — the panel draws an absent section rather than an
+ * error, and a bug report omits a block rather than failing to send.
+ */
+export async function enginePerfBudgets(): Promise<PerfBudgetsResult | null> {
+  const l = live
+  if (l === null) return null
+  try {
+    return await l.client.request('perf.budgets', {})
+  } catch (err) {
+    debug(`data-server client: perf.budgets was refused (${describeErr(err)})`)
+    return null
+  }
+}
+
+/** Ask the engine for its bounded recent history (JOS-502). `null` on the same terms. */
+export async function enginePerfTimeline(): Promise<PerfTimelineResult | null> {
+  const l = live
+  if (l === null) return null
+  try {
+    return await l.client.request('perf.timeline', {})
+  } catch (err) {
+    debug(`data-server client: perf.timeline was refused (${describeErr(err)})`)
     return null
   }
 }
@@ -731,6 +798,31 @@ export function engineServeReadiness(): Readiness {
 }
 
 /**
+ * IS THERE AN ENGINE ON THE OTHER END OF THIS SOCKET AT ALL?
+ *
+ * THE WEAKER OF THIS FILE'S TWO READINESS QUESTIONS, and the weakness is the whole point rather than
+ * a shortcut. `engineServeReadiness` above asks four things because it guards reads of a FOLD: two
+ * of its four — are the worlds on the same file, has that file's fold gone live — are questions
+ * about a log, and a caller that skipped them would draw one character's rows under another's name.
+ *
+ * `logs.list` NAMES NO LOG. It enumerates the directory the app pushed, which is a question about a
+ * FOLDER and is answerable by a world that has attached to nothing whatsoever — and the launch it
+ * matters most on is precisely the one where nothing is attached, because a fresh install has
+ * characters to choose between before there is anything to fold. Asking the four-part question there
+ * would refuse every answer this op exists to give, on grounds that have nothing to do with it.
+ *
+ * SO THE SET OF REASONS IS THE SAME AND ONLY THE FIRST TWO ARE ASKED (`readShim.ts FallbackReason`):
+ * is there a client, and is its connection up. No third arm was invented — a fallback reason nobody
+ * can act on differently is a reason not worth a member.
+ */
+export function engineConnectedReadiness(): Readiness {
+  const l = live
+  if (l === null) return { ok: false, why: 'noClient' }
+  if (l.client.state !== 'ready') return { ok: false, why: 'notConnected' }
+  return SERVABLE
+}
+
+/**
  * ONE TYPED REQUEST TO THE ENGINE, for a main-side caller.
  *
  * IT REJECTS RATHER THAN ANSWERING `null`, which is the difference from `enginePerfSnapshot` and is
@@ -766,6 +858,13 @@ export function installEngineClient(): void {
     const mine = gen
     void pushDefine(mine, op)
   })
+  // THE EQ-DIRECTORY EDGE (JOS-498), by the same one-slot rule and for the same reason: `session.ts`
+  // must be able to say "the directory moved" without importing this file, which imports `session.ts`
+  // — that is a cycle, and the slot is what inverts it.
+  setLogDirPusher(() => {
+    const mine = gen
+    void pushLogDirNow(mine)
+  })
   // THE MIRROR'S REQUESTER (JOS-496), by the same one-slot rule and for the same reason: the mirror
   // is a leaf that main's synchronous readers import, and a leaf that imported this file back would
   // be a cycle between two modules that boot each other. It gets exactly one op and no client
@@ -774,6 +873,19 @@ export function installEngineClient(): void {
     request: async (module) => {
       const r = await engineRequest('module.snapshot', { module })
       return { module: r.module, seq: r.seq, state: r.state }
+    },
+    note: debug
+  })
+  // THE WIKI-MISS FETCHER'S CAPABILITIES (JOS-499 item 1), by the same one-slot rule. The two
+  // lookups are handed over rather than imported by the leaf because both of them load `electron`
+  // at module scope and the decision the leaf holds is worth pinning under plain node; the record
+  // widening happens HERE, where the concrete `ItemKnowledge`/`MobKnowledge` types are in scope and
+  // the protocol's open-map declaration is being honoured deliberately.
+  installKnowledgeMissFetch({
+    lookupItem: async (name) => asKnowledgeRecord(await lookupItem(name)),
+    lookupMob: async (name) => asKnowledgeRecord(await lookupMob(name)),
+    define: async (params) => {
+      await engineRequest('knowledge.define', params)
     },
     note: debug
   })
@@ -788,9 +900,14 @@ export function stopEngineClient(): void {
   if (wasServing) pushWorldChanged()
   setWorldRebuiltObserver(null)
   setAppKnowledgePusher(null)
+  setLogDirPusher(null)
   // …and the mirrors, which clear themselves on the null (see `installMirrors`): a synchronous
   // reader must never be left holding a served fact after the connection that served it is gone.
   installMirrors(null)
+  // …and the wiki-miss fetcher, for the mirrors' reason exactly: a fetch that lands after the
+  // connection it was answering is gone has nowhere to push its record, and a leaf still holding a
+  // requester for a dead client would be pushing into a closed socket.
+  installKnowledgeMissFetch(null)
   // THE PERSISTED ARTIFACTS ARE DELIBERATELY NOT HANDED BACK HERE (JOS-497 item 2), and the
   // asymmetry with `onEngineReady` is the point. This is the TEARDOWN path and its only caller is
   // `stopEngineSupervisor`, which both quit events reach: what follows it is `main:saveOverlay`,
@@ -802,5 +919,4 @@ export function stopEngineClient(): void {
   // log anyway.
   live?.client.close()
   live = null
-  lastParity = null
 }

@@ -1,11 +1,21 @@
 # The Rust Data Server ("the engine")
 
-Status: **design ratified by the owner 2026-08-24; ready to build.** This document is the
-handoff for the Fable agent running the build program. The Linear ticket is **JOS-459**; its
-comments carry the ruling history, and the rendered design one-pager (diagram, worked diff
-examples) lives at https://claude.ai/code/artifact/dbb6689f-6d0b-4d5b-ac4f-27ccb6a8dc0c
-(readable via WebFetch). Project memory carries the standing laws; this file is the
-self-contained technical spec.
+Status: **BUILT.** Phases 0–3 are complete and shipped; the TypeScript fold was deleted in the
+JOS-499 release and the engine is unconditional. Phase 4 has begun: both boundary laws landed in
+JOS-501 (the engine's own CI budgets, and the renderer no-munging lint), and what remains of the
+program is the surface-by-surface view cutover — cutover-ledger item 3 below, which is now the
+program's whole backlog.
+
+The design was ratified by the owner 2026-08-24. The Linear ticket is **JOS-459**; its comments
+carry the ruling history, and the rendered design one-pager (diagram, worked diff examples) lives
+at https://claude.ai/code/artifact/dbb6689f-6d0b-4d5b-ac4f-27ccb6a8dc0c (readable via WebFetch).
+Project memory carries the standing laws; this file is the self-contained technical spec.
+
+**HOW TO READ THIS DOCUMENT NOW THAT IT IS BUILT.** The rulings, the shape, the eight surfaces, the
+diff protocol and the cache laws are all CURRENT — they describe the engine that exists. The
+phasing section and the cutover ledger are HISTORY plus a short live backlog, and each is marked.
+Where a sentence was falsified by the deletion release it has been rewritten rather than deleted,
+because the argument usually outlived the fact.
 
 ## Why (one paragraph)
 
@@ -114,6 +124,14 @@ parses, aggregates, compresses, and serves; the UI becomes a query/subscribe cli
     (`oracle:rust-fold`, no TS arm) gates the deletion release and phase-4 stabilization, then
     retires when CI budgets land. No Rust-side recorder is built unless the net is later made
     permanent.
+27. *(2026-08-25, decision sheet 5a/6a — the deletion release's two gaps)* **Fire frames reach
+    word parity, and it is RELEASE-GATING.** The `fire` frame is extended so everything the
+    retired TS evaluator could speak rides the frame — captures, the `{target}`, the resolved
+    spell name, `dueAt` — and the app speaks the full words again. Owner verbatim: "we're not
+    releasing without full parity." Dispatched immediately as its own ticket rather than waiting
+    for the deletion to merge. And **mob cards' "seen it drop" is wired in the deletion release
+    itself** (6a): the app-side mob read takes `knowledge.mob`'s `dropsSeen` — the op already
+    served it; only the read was missing.
 
 ## The shape
 
@@ -315,6 +333,104 @@ From the JOS-497 wave (worker friction, all verified):
 - **Worktrees containing junctions must never be `rm -rf`'d** — unlink with `rmdir` first and
   verify the targets survived.
 
+From the JOS-500/501 wave (all verified in the doing):
+
+- **A FIELD DESCRIPTION IN THE PROTOCOL SCHEMA IS ONE PARAGRAPH.** A multi-paragraph description
+  breaks the RUST build, because typify renders it into a doc comment and rustdoc then runs the
+  fenced content in it as a DOCTEST. Prose that happens to contain an indented line becomes a
+  compilation unit. Say it in one paragraph, or say the rest in the file that reads the field.
+- **`rustc` REJECTS BiDi CODEPOINTS IN LITERALS** (the `text_direction_codepoint_in_literal` lint,
+  deny-by-default since the Trojan Source disclosure). A sanitizer test whose fixture contains a
+  real U+202E cannot be written as a literal at all: build the data with `format!` and explicit
+  `\u{202e}` escapes. This is the Rust twin of AGENTS.md's no-raw-control-bytes rule, and it is
+  enforced by the compiler rather than by a reviewer.
+- **`cargo` IS NOT ON THE Bash TOOL'S PATH.** It lives in `~/.cargo/bin`, which the Bash tool's
+  environment does not carry; PowerShell needs an explicit prepend
+  (`$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`). `scripts/build-engine.mts cargoBinary()`
+  is the one resolution the repo shares between the shipping build and the e2e harness — reach for
+  it rather than assuming a PATH.
+- **A GOLDEN RECORDS THE RECORDING CHECKOUT'S ABSOLUTE `logPath`**, so a worktree run must pass
+  `--slices=`/`--goldens=` at the REAL directories or `character.logPath` diverges for a reason that
+  has nothing to do with the fold. Keep that flag discipline documented wherever the oracle is
+  invoked; the absolute path inside a golden is a recorded wart rather than a fact about the world.
+- **`cargo test --workspace` BUILDS DEBUG, and a performance budget must know which profile it is
+  in.** JOS-501's budget went red on its first CI run at 0.45 MB/s against a 1 MB/s floor — the
+  floor working exactly as designed, in the wrong job. Anything asserting a rate belongs behind
+  `cfg!(debug_assertions)`, measuring in both profiles and judging only in release. The ~17× gap it
+  prints is also the most useful single number about this engine.
+- **A FAIL-SAFE FILTER NEEDS A TEST ABOVE IT.** `errorReports.ts wireCrumbs` drops any breadcrumb
+  kind the wire contract does not admit — correct, because dropping a crumb beats failing a crash
+  report — and that is exactly why nobody noticed when JOS-499 changed the producer and every report
+  for a whole release shipped `breadcrumbs: []`. When a component's failure mode is silence by
+  design, the thing that keeps it honest is a test comparing producers against contracts, not a
+  reader.
+
+From the JOS-502 wave (surface 8's completion — all verified in the doing):
+
+- **`engined` IS A BINARY CRATE, so an integration test cannot import a constant from it.** There is
+  no lib target, and adding a library facade to the shipped process for a test's convenience is the
+  wrong trade. When a fact must live both in `src/` and in `tests/`, write it twice and make the
+  duplication SELF-CHECKING — `tests/budget.rs` now asks the running engine to render its own
+  ceilings and fails if either has drifted from the constant it asserts. That is the repo's existing
+  pattern for a two-homed fact (a generated file pinned by a staleness test), reached from a
+  different direction.
+- **A CUMULATIVE MAXIMUM IS NOT INVERTIBLE, and that decides where a windowed extreme is
+  accumulated.** A ring sampling a counter can derive any SUM by subtracting its own last reading, so
+  frames and bytes cost the hot path nothing. A worst-case cannot be recovered that way — a
+  cumulative worst of 56 ms says nothing about which window set it — so exactly one field has to be
+  accumulated beside the counters and drained by the sampler. Worth stating because the instinct is
+  to drain all of them, which would make every reader's numbers depend on who asked last.
+- **A HISTORY IS A LEAK UNLESS THE BOUND IS THE FIRST DECISION.** `views::Timeline` is fixed-capacity
+  with the oldest moment DROPPED rather than folded into a summary, because a summary of aged-out
+  history is a second, subtler accumulator that also grows. And a quiet window is RECORDED as quiet:
+  a ring that skipped its empty samples would compress a two-minute lull into no space at all and
+  make the busy moments either side of it look adjacent.
+- **A PERFORMANCE ANSWER READS A CLOCK IT IS GIVEN, NEVER ONE IT TAKES.** The ring is stamped with
+  process uptime passed in from the caller. Three things fall out at once: no wall clock anywhere
+  near a performance path, nothing on the wire that says when a person was playing, and every ring
+  test is integer arithmetic with nothing sleeping in it.
+- **A RENDER-READY DIAGNOSTIC IS RULING 4 APPLIED ONE SURFACE OVER, AND IT PAYS.** `perf.budgets`
+  serves `limit` and `measured` as strings the ENGINE formatted and `verdict` already decided,
+  because the comparison is arithmetic, the two budgets are in different units, and the caveat that
+  stops each number being misread is prose. The test of whether that was right: a third budget ships
+  without one line changing in the renderer.
+- **A CAVEAT BELONGS ON THE ROW, NOT IN THE PLAN DOCUMENT.** Both known softnesses in these numbers
+  (the serve latency including the coalescing beat; the fold-rate floor sitting an eighth under the
+  measurement while G3 is unmet) now ride as the budget's own `note` and draw as the panel's tooltip.
+  A design doc is not open at the moment somebody reads a number.
+- **A GUARD-MATRIX COLLISION IS CHEAPEST TO AVOID IN THE SCHEMA, NOT IN THE GUARD.** `perf.snapshot`
+  restating `HealthResult`'s facts is what forced health's guard down to `'uptimeMs' in r && !('serve'
+  in r)`. Two more results restating `uptimeMs` in the same spirit would have made that negation grow
+  a clause about shapes it has nothing to do with — so the two new results carry the epoch and
+  deliberately not the uptime, and the schema says so where the decision was taken.
+- **DEAD TEST CODE ROTS, AND IT ROTS SILENTLY IN THE DIRECTION OF PASSING.** `enginePerfSteps.mts`
+  was written for a spec JOS-499 deleted; nothing took its place, two documents named two DIFFERENT
+  live hosts for it, and neither was true. Unrun, it had also gone stale in content — still demanding
+  a parity verdict that stopped being possible the day there stopped being two folds to compare. This
+  is JOS-501's `wireCrumbs` lesson in a second place: when a component's failure mode is silence,
+  what keeps it honest is somebody RUNNING it. A steps module with no importer should be as loud as
+  an unused export.
+- **AN ADDITIVE FIELD ON A SIZE-CAPPED BLOCK MUST RE-PRICE THE CAP, AND BY MORE THAN IT NEEDS.**
+  JOS-458 left `MAX_PERF_BYTES` with 105 bytes of adversarial headroom and wrote the instruction into
+  the comment; JOS-502 was the next field and followed it (8 KB → 9 KB, ceiling 8,430). The part
+  worth generalizing is the margin: a cap with a hundred bytes of slack is one the next honest
+  addition trips for no reason anybody can act on, which teaches the next author to raise it by feel.
+- **A CEILING IS A CLAIM ABOUT WHAT A FIELD MEASURES, so a group of same-typed fields must not
+  inherit one by default.** Every duration on the bug report's engine block took the block's
+  existing one-hour bound, and for the COSTS (a scan, a catalog build) an hour is absurdly generous
+  on purpose. `behindMs` is not a cost — it is the distance from now to the last line the log has —
+  so a user who last played on Tuesday has a real reading of several days, and this repo's OWN e2e
+  fixture reports 23.4 days. Under the inherited bound every one of those readings was silently
+  dropped (the helper omits rather than clamps, which is right), and "the engine is three days
+  behind the log" is one of the strongest sentences a stalled-app report can carry. **Found by
+  reading the e2e's verbatim output rather than by a test**, which is the transferable part: the
+  panel printed the number the block was throwing away, on the same screen, in the same run.
+- **A VALIDATOR THAT RECONSTRUCTS IS ALSO A VALIDATOR THAT SILENTLY DROPS.** Everything on this
+  feedback wire is rebuilt field by field rather than copied, so an unknown key cannot ride into a
+  stored report — which also means a NEW field is discarded without complaint until somebody adds its
+  validator. The additive property and the silent-drop failure are the same mechanism, and the second
+  one is only caught by a round-trip test.
+
 ## Boundary verdicts (each resolves a census finding)
 
 1. `combat.snapshot(now, opts)` — the only wall-clock-parameterized read: the now-evaluation
@@ -370,27 +486,39 @@ re-derivable: byte-exact line-boundary cuts at first-line-of-day offsets). The b
   language-neutral).
 - Once green across the board: **full cutover; the TS fold is deleted in the same release.**
 
-## Phasing (each independently shippable; TS pipeline stays the oracle until phase 3 completes)
+## Phasing — MARKED BY ACTUAL STATE (2026-08-26)
 
-- **Phase 0 — the seam**: protocol schema as a checked artifact both sides generate from; Rust
-  process skeleton (health + echo); main-process supervisor (spawn/respawn/token); TS client lib
-  with subscribe hook + loading states; e2e harness boots both. No game logic. **The first build
-  ticket is the protocol schema.**
-- **Phase 1 — the parser, proven** (tail + scan + parse; oracle above). Highest fidelity risk,
-  smallest surface, proven standalone.
-- **Phase 2 — the fold, proven in clusters**: (2a) simple appenders — loot, kills, leveling,
-  turnIns, classUnlocks, outputFiles, spellSets, itemTiers, observedSpellRanks; (2b) character,
-  roster, combo, respawn, progression; (2c) the hard five — buffs, buffTimers, consider, resist,
-  alerts + eventFeed; (2d) the combat engine.
-- **Phase 3 — serve layer and cutover**: views/subscriptions/epochs; renderers move to RPC hooks
-  surface-by-surface behind one dev flag; alerts fire from the engine; both laws land (engine
-  budgets + renderer no-munging lint); ends with the TS fold deleted.
-- **Phase 4 — post-cutover**: budgets in CI against the pinned fixture (fold < 20 s at full
-  speed on the 200 MB fixture with main p95 < 50 ms concurrently); JOS-461's burst class
-  dissolves; the GC-wave items (JOS-226 lossless combat compression, JOS-462 item-corpus heap)
-  become engine-internal where they are cheap.
+- **Phase 0 — the seam**: **DONE.** Protocol schema as a checked artifact both sides generate from;
+  Rust process skeleton (health + echo); main-process supervisor (spawn/respawn/token); TS client
+  lib with subscribe hook + loading states; e2e harness boots both.
+- **Phase 1 — the parser, proven**: **DONE** (tail + scan + parse), byte-identical over all six
+  slices.
+- **Phase 2 — the fold, proven in clusters**: **DONE** — all twenty modules plus the combat engine,
+  deep-equal against the TS snapshots on all six slices.
+- **Phase 3 — serve layer and cutover**: **DONE, and it ended as promised**: views, subscriptions
+  and epochs; renderers brokered onto the engine; alerts firing engine-side with word parity
+  (JOS-500); **the TS fold deleted** (JOS-499). The one thing this phase's description promised and
+  did NOT deliver on time was the pair of boundary laws — they landed one release later, in JOS-501.
+- **Phase 4 — post-cutover**: **BEGUN.**
+  - ~~budgets in CI against a pinned fixture~~ **DONE** (JOS-501): `engine/crates/engined/tests/
+    budget.rs`, two tiers — a committed deterministic GENERATOR gating every push, and the G3 check
+    (`npm run budget:g3`) against the owner's 209 MB fixture at the release cut. **The G3 GOAL IS
+    NOT MET**: measured 199.6 MB in 52.5 s (3.8 MB/s) where the goal is under 20 s. The instrument
+    exists precisely so that this is a number somebody can act on rather than an assumption. The
+    "main p95 < 50 ms concurrently" half of the original goal is NOT measured by it — see the open
+    items below.
+  - ~~the renderer no-munging lint~~ **DONE** (JOS-501): `eslint.domainMunging.mjs`.
+  - JOS-461's burst class dissolves; the GC-wave items (JOS-226 lossless combat compression,
+    JOS-462 item-corpus heap) become engine-internal where they are cheap. **Still open.**
 
-## The cutover ledger (2026-08-25 — what remains to build, and what dies in the cutover release)
+## The cutover ledger — CLOSED (JOS-499 shipped the deletion release)
+
+**THE FOLD IS DELETED.** 97 source files and 180 test suites left in JOS-499; the engine is
+unconditional and there are no flags. What follows is the ledger as it stood before that
+release, kept because it records what was built and in what order; the items it lists as
+remaining are the ones that survived into the post-cutover backlog, and they are re-stated
+honestly at the bottom of this section.
+
 
 State at writing: phases 0–2 COMPLETE (ingest, all 20 modules + combat proven, serve layer first
 light, app connected with the parity probe, packaging signed). Remaining to build, in rough order:
@@ -442,24 +570,107 @@ light, app connected with the parity probe, packaging signed). Remaining to buil
    deliberately left to the surface-cutover ticket, because that is where the app stops asking its
    own lookups anything and the queue has one caller instead of two.
 7. **Ruling 19 surface**: the in-app performance panel section is DONE (JOS-483: engine
-   CPU/memory row, `perf.snapshot`, serve table, parity summary); `perf.budgets`/`perf.timeline`
-   ops, CI budgets, and bug-report attachment still open.
-8. **The no-munging lint** (ruling 4) failing builds on renderer sort/filter over domain data.
+   CPU/memory row, `perf.snapshot`, serve table, parity summary). ~~CI budgets~~ **DONE**
+   (JOS-501, item 2 — see phase 4 above). `perf.budgets`/`perf.timeline` ops and the bug-report
+   attachment are **STILL OPEN — the one item JOS-501 did not close**; successor named at the
+   bottom of this section.
+8. ~~**The no-munging lint** (ruling 4) failing builds on renderer sort/filter over domain data.~~
+   **DONE** (JOS-501, item 1): `eslint.domainMunging.mjs`, scoped to `src/renderer/**`, deciding by
+   the element TYPE's declaration site. It landed with **89 sites across 45 files** exempted inline,
+   every one naming its cutover ticket — which makes this ledger's item 3 measurable for the first
+   time: the exemption count is the size of the remaining cutover, and
+   `tests/domainMunging.test.mts` holds it to only ever shrinking.
 9. ~~Open owner item: the render-cell LOCALE (dates/numbers) as pushed app knowledge vs fixed
    en-US~~ **SETTLED** (ruling 25): fixed en-US.
 
-**DELETED IN THE CUTOVER RELEASE** (ruling 12: once proven, move fully — one release):
-`src/main/modules/**` (registry, wiring, all twenty), `src/main/combat/**`, the TS parse path
-(`parser.ts`, `parse*.ts`, `scanHistory.ts`, `Tailer.ts`, `replaySlicer.ts`, `bus.ts`,
+### THE LEDGER AS IT STANDS AFTER JOS-501 — what is actually left
+
+Everything above is either done or folded into one of these three. This is the program's whole
+remaining backlog:
+
+- **THE VIEW CUTOVER (item 3), and it is now measured.** Encounters/drilldown and the INCOMING
+  meter as dedicated views; the renderer-bundled corpora (mobs/posky/bosses, ~3.7 MB) behind
+  knowledge queries; `knowledge.spell`'s named gap (no effect classes, rank lineage or metrics);
+  the classification ring, so `recent` stops being `[]` in a live answer. **The size of this item is
+  the no-munging lint's exemption count**: 89 sites that re-derive in the renderer because no served
+  source answers them yet. Each one deleted is one exemption removed.
+- ~~**RULING 19'S LAST TWO OPS**~~ — **DONE (JOS-502), and surface 8 is complete.** `perf.budgets`
+  serves the definitions AND the live verdict off `engined/src/budgets.rs` (the same two ceilings
+  `tests/budget.rs` asserts in CI, judged against the running generation); `perf.timeline` serves a
+  fixed-capacity ring of INTERVALS, never running totals, sampled off the serve beat. The panel draws
+  the budget rows and the bug report carries verdicts, rates and latencies —
+  `src/shared/feedbackPerfEngine.ts`, whose whole shape is integers and closed enums so the engine's
+  absolute log path and the log's own clock are kept off a report BY SHAPE rather than by a scrub.
+  **The unmet G3 goal is stated in the fold-rate row itself**, which is where the honesty belongs: a
+  pass sits on a floor an eighth below the measured rate, and a row that let that read as the goal
+  reached would be lying by omission.
+- **THE NAMED GAPS THE DELETION OPENED** (JOS-499), each needing an engine-side command rather than
+  an app-side fix: `alerts:appFired` and `eventFeed:report` (renderer-detected bossDefeat /
+  questComplete / Sky completes lose their history and feed rows — the SOUND is unaffected), and a
+  mid-session inventory dump no longer re-arming clicky classification until the next re-fold.
+
+Two smaller things JOS-501 found and named rather than fixed, so they are not lost:
+
+- **There is no COMPUTE-ONLY serve measurement.** `views/meter.rs` takes one instant, so
+  `foldToFrameUs` is fold-to-outbox and includes the ~10 Hz coalescing beat — measured at 52 ms for
+  a one-row diff, which is a beat and not work. Ruling 19's own discipline is that queue time is
+  named as queue time, and a single number the performance panel labels "latency" is in tension
+  with it. The fix is a second instant taken at frame-build start. **JOS-502 did not fix it and did
+  the next best thing: the caveat now TRAVELS WITH THE NUMBER.** `perf.budgets`'s `serveLatency` row
+  carries a `note` saying in words that the figure includes the beat and that the ceiling is a wedge
+  detector rather than a performance budget, and the panel draws it as that row's tooltip. A caveat
+  in a plan document is one nobody has open at the moment they read the number.
+- **The G3 goal is not met** (52.5 s against a 20 s goal), and now that there is an instrument the
+  question of whether 20 s was ever the right number is an owner call rather than a guess. **JOS-502
+  put the admission where a reader meets it**: the `foldRate` budget's own `note` says the G3 goal is
+  NOT met and quotes the 52.5 s, so a passing row can never be misread as the goal reached. The owner
+  call is still open; what is closed is the possibility of the surface hiding it.
+
+### What actually happened (JOS-499)
+
+Everything on the list below was deleted, plus three things the list did not name and the
+import graph did:
+
+- **The audio cutover routed THROUGH the deleted module.** `playEngineFire` called
+  `alertsModule.engineFired()`, so the renderer heard an engine fire as a `module:delta`.
+  Deleting the module would have silenced every alert in the product. A dedicated
+  `alerts:fired` channel replaces it — one sender, one receiver, the same `FiredAlert`.
+- **The meter nudge and the quiet-switch clock were fed by the tailer's line handler.** Both
+  moved to `serveDeltas.ts`, where the engine's cursors land.
+- **`ringDisposition` had to outlive the replay gate** — it moved to `presenceProtocol.ts`
+  minus its `replayRunning` term, since the engine folds in another process.
+
+NAMED GAPS the deletion opened, each needing an engine-side command rather than a fix here:
+`alerts:appFired` and `eventFeed:report` (renderer-detected bossDefeat / questComplete / Sky
+completes lose their history and feed rows; the SOUND is unaffected), and a mid-session
+inventory dump no longer re-arms clicky classification until the next re-fold. The renderer
+still bundles `mobs.json` / `posky.json` / `bosses.json`: those three consumers are whole
+in-memory catalogs (mob search, item drop sources, the entire Sky tab) and there is no
+reachable query surface to replace them, so the ~3.7 MB bundle reduction waits for the
+knowledge-ops surface cutover with the rest of item 3.
+
+THE ORACLE SURVIVED THE DELETION AND WAS GREEN AFTER IT (ruling 26 working as designed):
+`oracle:rust-fold` — 1,283,963 events over 6 slices, 22 modules each — run against goldens
+recorded at the pre-deletion commit, off a `goldenPaths.mts` leaf that imports no fold.
+
+**WHAT WAS DELETED** (ruling 12: once proven, move fully — one release). All of it went, in
+JOS-499: `src/main/modules/**` (registry, wiring, all twenty), `src/main/combat/**`, the TS parse
+path (`parser.ts`, `parse*.ts`, `scanHistory.ts`, `Tailer.ts`, `replaySlicer.ts`, `bus.ts`,
 `rulesets.ts`, epoch/session detectors), main's spellDb load, `pipeline.ts` fold construction,
 `session.ts` replay orchestration + heartbeat (attach forwarding remains), the replay gate, the
 `module:*`/`combat:*` IPC and per-window snapshot fan-out, the fold-derived IPC families, renderer
-`useModule` + client-side munging paths, renderer-bundled corpora. THE ORACLES RETIRE WITH THE TS
-FOLD — goldenOracle/rustParity exist to compare two implementations and the cutover leaves one;
-their successor is the engine's own budgets in CI against the pinned fixture (phase 4: G3 < 20 s
-for 128 MB, main p95 < 50 ms concurrently), plus the tail/scan invariance suites which are
-self-contained. App-side keeps: store/prefs, speech/sounds playback, overlay/window management,
-presence, tray, updater, planner, maps, feedback/telemetry, triage.
+`useModule`. **The renderer-bundled corpora are the one line of that list that did NOT go** — mob
+search, item drop sources and the entire Sky tab are whole in-memory catalogs with no reachable
+query surface to replace them, so the ~3.7 MB waits for the knowledge-ops cutover with the rest of
+item 3. App-side kept: store/prefs, speech/sounds playback, overlay/window management, presence,
+tray, updater, planner, maps, feedback/telemetry, triage.
+
+**THE ORACLES HAVE RETIRED, AND THEIR SUCCESSOR EXISTS.** goldenOracle/rustParity existed to
+compare two implementations and the cutover left one. Ruling 26 kept `oracle:rust-fold` alive for
+exactly one release as a safety net, gating the deletion release and phase-4 stabilisation; its
+successor — the engine's own budgets in CI — landed in JOS-501 and is described in phase 4 above.
+The tail/scan invariance suites are self-contained and stay. The goldens may now be retired at the
+integrator's discretion; nothing gates on them.
 
 ## Related tickets & instruments
 

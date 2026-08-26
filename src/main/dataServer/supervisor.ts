@@ -57,6 +57,7 @@ import {
   boundedDetail,
   engineExitStep,
   engineRestartDelayMs,
+  engineShutdownExitLog,
   parseAnnounce,
   redactToken,
   type EngineAnnounce,
@@ -179,6 +180,9 @@ interface Launch {
   lastStderr: string | null
   /** Has this launch already been folded? The idempotence latch — see `endLaunch`. */
   finished: boolean
+  /** Did WE kill it (the grace escalation)? A forced exit's code is our own action echoing back,
+   *  never the child's diagnosis — the shutdown-exit report reads this to stay quiet about it. */
+  killed: boolean
   cancelAnnounce: (() => void) | null
   cancelHealth: (() => void) | null
   cancelGrace: (() => void) | null
@@ -333,6 +337,7 @@ export class EngineSupervisor {
       announce: null,
       lastStderr: null,
       finished: false,
+      killed: false,
       cancelAnnounce: null,
       cancelHealth: null,
       cancelGrace: null
@@ -416,8 +421,8 @@ export class EngineSupervisor {
 
   private onExit(l: Launch, code: number | null, signal: string | null): void {
     if (this.stopping) {
-      // A DELIBERATE STOP IS NOT A FAILURE (`presence.ts stopWatcher`'s rule): no report, no trail,
-      // no respawn — whatever the exit code says. We asked for this.
+      // A DELIBERATE STOP IS NOT A FAILURE (`presence.ts stopWatcher`'s rule): no trail, no
+      // respawn — whatever the exit code says. We asked for this.
       l.finished = true
       clearLaunchTimers(l)
       this.deps.onPid?.(null)
@@ -425,6 +430,20 @@ export class EngineSupervisor {
       if (this.launch === l) this.launch = null
       this.status = 'stopped'
       this.deps.debug(`data-server engine: exited ${String(code ?? -1)} after the shutdown signal`)
+      // …BUT A BAD ENDING IS STILL ON THE RECORD (JOS-501 integration). This fires while the app
+      // is QUITTING, so the debug line above is stdout on a process about to die — the one channel
+      // that cannot be read after the fact. An exit 0 needs no more than that; a child that exited
+      // nonzero on the polite path is a real defect nobody would ever see, so it gets the durable
+      // entry. Deliberately NOT `endLaunch`: that funnel folds restart decisions, and a shutdown
+      // exit must never count toward a crash streak — the launch is over because we ended it.
+      // AND NOT WHEN WE KILLED IT: a forced exit's code is our own escalation echoing back ("we
+      // asked for this; a kill exit code is not a diagnosis" — the suite's words), and the
+      // escalation is already narrated where it happens.
+      if (code !== 0 && !l.killed) {
+        this.deps.report(
+          engineShutdownExitLog(code, signal, Math.max(0, this.deps.now() - l.startedAt))
+        )
+      }
       return
     }
     this.endLaunch(l, 'exited', { exitCode: code, signal, alive: false })
@@ -558,6 +577,7 @@ export class EngineSupervisor {
     l.cancelGrace = this.deps.timer(() => {
       l.cancelGrace = null
       this.deps.debug('data-server engine: no exit on stdin EOF; escalating to kill')
+      l.killed = true
       try {
         l.child.kill()
       } catch (err) {

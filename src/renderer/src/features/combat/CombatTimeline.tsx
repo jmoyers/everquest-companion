@@ -157,6 +157,7 @@ function CombatTimelineInner({ tl }: { tl: TimelineView }): React.JSX.Element {
   // margin so ticks at the edge still draw). At the 5k ring cap + downsample budget this
   // keeps the DOM node count low even at full zoom-out.
   const visibleEvents = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives TimelineEvent. Becomes a view descriptor when the source lands.
     () => tl.events.filter((e) => e.t >= view.start - 1 && e.t <= view.end + 1),
     [tl.events, view.start, view.end]
   )

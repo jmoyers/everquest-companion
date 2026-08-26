@@ -33,7 +33,10 @@
  * report prints ONE diverging pair and never an export; the ledger keeps it per BUCKET rather than
  * per run, and the reporter caps both the number of classes named and the length of each example.
  */
-import type { Diff } from './goldenOracle.mjs'
+// THE DIFF TYPE, FROM ITS OWN HOME (JOS-499 item 5). It used to come through goldenOracle.mjs,
+// which imports the TS fold; this file is part of the engine-vs-goldens safety net ruling 26 keeps
+// alive for one release, and it must not inherit the recorder's graph.
+import type { Diff } from '../../src/shared/deepDiff'
 
 /** One bucket: a CLASS of disagreement and how often it occurred. */
 export interface LedgerClass {

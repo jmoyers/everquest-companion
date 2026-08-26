@@ -43,12 +43,6 @@ import { EngineClientProvider } from './useView'
 /** How long before a window that could not connect asks again. See the header for why it is flat. */
 const RETRY_MS = 4_000
 
-/** Is there an engine to talk to on this launch at all? A static readout from the preload
- *  (`src/preload/engine.ts`), false in every build a user runs. */
-function engineEnabled(): boolean {
-  return window.eq?.engineEnabled ?? false
-}
-
 /**
  * Give every view below this a client — when there is one.
  *
@@ -64,7 +58,10 @@ export function EngineProvider({ children }: { children: ReactNode }): JSX.Eleme
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (!engineEnabled()) return
+    // NO PRE-CHECK (JOS-499 item 9). There used to be a static preload readout saying whether
+    // this launch wanted an engine at all, so a deliberately engine-less launch could skip the
+    // call. Every launch wants one now, and `engineConnect` answering null is the same
+    // information without a flag — the retry below is what turns that into "not yet".
     let live = true
     let created: EngineClient | null = null
     let timer: ReturnType<typeof setTimeout> | undefined

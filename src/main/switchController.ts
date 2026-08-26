@@ -39,7 +39,8 @@
 // the first pick to the last winner's `endReplay()` — never a gap in the middle where the losers'
 // half-built worlds could reach a renderer.
 //
-// WHY THE COUNTER LIVES ALONE IN A FILE. Same argument as `replayGate.ts`'s: the answer is needed
+// WHY THE COUNTER LIVES ALONE IN A FILE. The same argument `replayGate.ts` made before JOS-499
+// deleted it with the fold: the answer is needed
 // by `session.ts` (which owns the switch) and by anything session hands a turn to, and a module
 // variable living inside either of them is a module variable the other imports through a cycle.
 // This file imports NOTHING, which is also what lets `tests/switchPreemption.test.mts` drive the

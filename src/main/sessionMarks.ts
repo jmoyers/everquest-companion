@@ -27,7 +27,6 @@
 import { IPC } from '../shared/ipc'
 import { addSessionMark } from '../shared/sessionSegments'
 import { OVERLAY_KINDS } from '../shared/types'
-import { combat } from './pipeline'
 // THE THIRD HOLDER OF THE BOUNDARY (JOS-493). It owns the serve flag and the fire-and-forget rule;
 // this file simply hands it the instant it already stamped. A launch that is not serving from an
 // engine pays one boolean read per press.
@@ -67,7 +66,10 @@ export function pressNewSession(): readonly number[] {
   // and in that state the loot half must not record one either — "one concept, one word, one
   // button" is a promise about the BOUNDARY, and a mark the meter never took is a boundary only
   // half the app has. The surfaces are showing their own loading states meanwhile.
-  if (!combat.sessionMark(at)) return marks
+  // NO APP-SIDE GATE (JOS-499). `combat.sessionMark(at)` used to refuse a mark this process's
+  // own engine could not place, and the press was dropped. The engine answers the same refusal
+  // over `sessionMarks.add` (`serveCommands.ts` narrates it), so the press is forwarded and the
+  // mark is recorded app-side, which is where marks have always been persisted.
   const next = addSessionMark(marks, at)
   // The shared dedupe declined it (two presses inside one millisecond): the instant it would have
   // opened is not the newest one. Nothing moved, so nothing is broadcast — a control re-asserting

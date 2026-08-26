@@ -608,6 +608,13 @@ pub struct ArmedFire {
     pub rule: String,
     pub sound: String,
     pub message: String,
+    /// THE WORDS THE ARMING MATCH TOOK (JOS-500), carried across the wait rather than re-resolved at
+    /// delivery. A warning can be armed for a minute and the event it armed on is long gone by the
+    /// time the heartbeat speaks; asking the world again would be a second answer to a question the
+    /// match already answered, and on a break-family arm there is no event left to ask at all.
+    pub captures: Option<crate::modules::alerts_captures::CaptureMap>,
+    /// The spell this warning is about, frozen at the arm for the same reason.
+    pub spell: Option<String>,
 }
 
 /// One armed warning as the caller files it.
@@ -630,6 +637,14 @@ pub struct EarlyWarnArm {
 pub struct EarlyWarnDue {
     pub cooldown_key: String,
     pub fired: ArmedFire,
+    /// WHEN THE THING THIS WARNING IS EARLY FOR IS DUE (JOS-378) — the watched row's stated end.
+    ///
+    /// COMPUTED AS `fire instant + sec * 1000` rather than re-read off the row, and the two are the
+    /// same number by construction ([`early_warn_fire_at`] is `started + duration - sec * 1000`).
+    /// Adding the offset back is the honest expression of what this field MEANS — the deadline the
+    /// lead time was measured backwards from — and it is what the retired evaluator wrote in the
+    /// same place, so the app receives the identical number under either.
+    pub due_at: i64,
 }
 
 /// An arm that has found its row. `row_id` is the whole identity — its absence is the cancellation.
@@ -825,6 +840,7 @@ impl EarlyWarnings {
             due.push(EarlyWarnDue {
                 cooldown_key: a.arm.cooldown_key.clone(),
                 fired: a.arm.fired.clone(),
+                due_at: at + a.arm.sec * 1000,
             });
         }
         for key in retire {
@@ -942,6 +958,7 @@ impl EarlyWarnings {
             due.push(EarlyWarnDue {
                 cooldown_key: w.cooldown_key.clone(),
                 fired: w.fired.clone(),
+                due_at: at + w.sec * 1000,
             });
         }
         due
@@ -1014,6 +1031,11 @@ mod tests {
             rule: "Mez landed".to_owned(),
             sound: "classic/ding".to_owned(),
             message: "a turmoil toad has been mesmerized.".to_owned(),
+            // This suite is about the SCHEDULE — when a warning arms, cancels and comes due — and a
+            // warning's words ride the arm without the scheduler ever reading them. The speech half
+            // is proven where it is decided, in `alerts_rules`.
+            captures: None,
+            spell: None,
         }
     }
 
@@ -1347,6 +1369,10 @@ mod tests {
                     rule: "Slow wore off a mob".to_owned(),
                     sound: "classic/ding".to_owned(),
                     message: break_probe_text(row, &row.name),
+                    captures: None,
+                    // The FAKE watcher's probe, which stands in for a def's own matcher here — the
+                    // real one puts the probe's spell on the arm (`RuleSet::probe_break`).
+                    spell: None,
                 },
                 alert_id.to_owned(),
             ))

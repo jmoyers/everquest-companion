@@ -43,7 +43,9 @@ export function filterLootEvents({
   q: string
 }): KeyedLoot[] {
   let list: KeyedLoot[] = keyed
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives KeyedLoot. Becomes a view descriptor when the source lands.
   if (questOnly) list = list.filter((e) => questItemNames.has(e.countKey))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives KeyedLoot. Becomes a view descriptor when the source lands.
   if (q) list = list.filter((e) => e.itemKey.includes(q))
   return [...list].reverse() // most recent first
 }

@@ -75,7 +75,7 @@ import type { Page } from 'playwright-core'
 import { buildEngineIfStale, buildIfStale, check, failures, note, reportRun } from './appHarness.mjs'
 import { closeWindows, mainWindow } from './appWindow.mjs'
 import { launchOnFixture } from './logFixture.mjs'
-import { settleParity, tapOutput, type AppOutput } from './engineSteps.mjs'
+import { settleServing, tapOutput, type AppOutput } from './engineSteps.mjs'
 import { settle, sleep } from './settle.mjs'
 
 /** The same staged fixture the other two engine specs fold — a committed log, privately copied,
@@ -254,20 +254,22 @@ async function main(): Promise<void> {
   buildIfStale()
   buildEngineIfStale()
 
-  const launch = await launchOnFixture(FIXTURE, {
-    env: { EQC_ENGINE: '1', EQC_ENGINE_SERVE: '1', EQC_ENGINE_ALERTS: '1' }
-  })
+  const launch = await launchOnFixture(FIXTURE)
   const out = tapOutput(launch.app)
   try {
     const page = await mainWindow(launch.app)
 
     // ── the precondition: both worlds on the same log, the engine's ingest live ────────────────
-    const parity = await settleParity(out)
+    // THE READINESS SIGNAL IS THE GO-LIVE SENTENCE NOW (JOS-499). It used to be the parity line,
+    // which this spec read for its PRECONDITION rather than for its verdict — and the verdict went
+    // with the second world. What it needed is what the new line states: the engine is live on this
+    // log and is answering the app’s reads, which is exactly when a fire can happen.
+    const serving = await settleServing(out)
     if (
       !check(
-        'both worlds landed on the same log and the engine went live — the fire path’s readiness',
-        parity !== null,
-        parity?.line ?? 'the app never reported a parity run'
+        'the engine went live on this log — the fire path’s readiness',
+        serving !== null,
+        serving?.line ?? 'the app never reported the engine serving'
       )
     ) {
       return

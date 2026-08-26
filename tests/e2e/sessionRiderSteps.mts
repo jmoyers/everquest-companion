@@ -62,27 +62,40 @@ export function stepStartupReading(userData: string): void {
   try {
     events = (JSON.parse(readFileSync(path, 'utf8')) as { events?: { ev: Record<string, unknown> }[] }).events ?? []
   } catch (err) {
-    check('the startup replay reading reached the ring on disk', false, String(err))
+    check('the session ring reached disk', false, String(err))
     return
   }
-  const carriers = events.filter((r) => r.ev.startup !== undefined)
-  if (!check(
-    'the startup replay reading reached the ring on disk, on a session report',
-    carriers.length === 1,
-    `${String(carriers.length)} carrier(s) among ${String(events.length)}: ${[...new Set(events.map((r) => String(r.ev.t)))].join(', ')}`
-  )) return
-  const s = carriers[0].ev.startup as Record<string, unknown>
+  // ── THE STARTUP REPLAY READING RETIRES (JOS-499) — AND THE CHAIN IT PROVED DOES NOT ─────────
+  //
+  // WHAT IT CLAIMED. Six numbers — `replayMs`, `eventsReplayed`, `dutyPct`, `maxBlockMs`,
+  // `blocksOver50`, `logSizeBucket` — describing what THIS PROCESS'S historical fold cost, carried
+  // out on a session report. Every one of them came from `TailResult` and the two startup probes,
+  // all of which are deleted: `reportStartupReplay` is gated on `replayStats` and there are none,
+  // so nothing is emitted and there is nothing to assert.
+  //
+  // THE FAILURE THIS STEP EXISTS FOR IS NOT THE READING, IT IS THE CHAIN — JOS-39's, verbatim: a
+  // schema and a panel that are both fine while nothing ever emits, which reads as "the fleet has
+  // no slow launches". That failure is still possible and is still worth catching, so what is
+  // asserted instead is the chain's SURVIVING half: a session report really did reach the ring on
+  // disk, written by an app that has since exited. A ring with no session report at all is the same
+  // silence JOS-39 was about, one carrier further down.
+  const kinds = [...new Set(events.map((r) => String(r.ev.t)))]
+  if (
+    !check(
+      'a session report reached the ring on disk — the carrier the startup reading used to ride',
+      events.length > 0 && kinds.includes('sessionEnd'),
+      `${String(events.length)} event(s): ${kinds.join(', ')}`
+    )
+  ) {
+    return
+  }
+  // …AND NOTHING INVENTS ONE. An app that folds nothing must not report a fold: a `startup` block
+  // appearing here would mean somebody wired zeroes into the fleet reading, which is worse than the
+  // silence above because it looks like data.
   check(
-    '…carrying all six numbers, and a log SIZE that is a bucket index rather than a byte count',
-    ['replayMs', 'eventsReplayed', 'dutyPct', 'maxBlockMs', 'blocksOver50', 'logSizeBucket'].every(
-      (k) => typeof s[k] === 'number'
-    ) && (s.logSizeBucket as number) <= 5,
-    JSON.stringify(s)
-  )
-  // ONE LAUNCH IS ONE READING: the app replayed once at startup and nothing else may report.
-  check(
-    '…exactly once for the launch — a second reading would be a second replay counted as a launch',
-    events.filter((r) => r.ev.startup !== undefined).length === 1
+    'no launch claims a replay it never ran — the reading is absent, not zeroed',
+    events.every((r) => r.ev.startup === undefined),
+    JSON.stringify(events.find((r) => r.ev.startup !== undefined)?.ev.startup ?? 'absent')
   )
 }
 

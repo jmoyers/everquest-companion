@@ -24,9 +24,13 @@
 
 mod harness;
 
-use harness::{attach, perf_snapshot, subscribe, unsubscribe, Client, Engine, PATIENCE};
+use harness::{
+    attach, perf_budgets, perf_snapshot, perf_timeline, subscribe, unsubscribe, Client, Engine,
+    PATIENCE,
+};
 use protocol::generated::{
-    EngineMessage, PerfServeSource, PerfSnapshotResult, PerfSnapshotResultStatus, ReplyResult,
+    EngineMessage, PerfBudgetId, PerfBudgetVerdict, PerfBudgetsResult, PerfServeSource,
+    PerfSnapshotResult, PerfSnapshotResultStatus, PerfTimelineResult, ReplyResult,
 };
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -123,6 +127,53 @@ fn ask_perf(client: &mut Client, id: i64) -> PerfSnapshotResult {
             _ => {}
         }
     }
+}
+
+/// Ask `perf.budgets` and take the result (JOS-502). Same skipping posture as [`ask_perf`].
+fn ask_budgets(client: &mut Client, id: i64) -> PerfBudgetsResult {
+    client.send(&perf_budgets(id));
+    loop {
+        match client.recv() {
+            EngineMessage::Reply(reply) if *reply.id == id => {
+                let ReplyResult::PerfBudgetsResult(result) = reply.result else {
+                    panic!("a perf budgets result, got {:?}", reply.result);
+                };
+                return result;
+            }
+            EngineMessage::ErrorReply(refusal) if *refusal.id == id => {
+                panic!("perf.budgets was refused: {:?}", refusal.error);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Ask `perf.timeline` and take the result (JOS-502). Same skipping posture as [`ask_perf`].
+fn ask_timeline(client: &mut Client, id: i64) -> PerfTimelineResult {
+    client.send(&perf_timeline(id));
+    loop {
+        match client.recv() {
+            EngineMessage::Reply(reply) if *reply.id == id => {
+                let ReplyResult::PerfTimelineResult(result) = reply.result else {
+                    panic!("a perf timeline result, got {:?}", reply.result);
+                };
+                return result;
+            }
+            EngineMessage::ErrorReply(refusal) if *refusal.id == id => {
+                panic!("perf.timeline was refused: {:?}", refusal.error);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// One budget out of an answer, by id. Every budget is always present — see the schema.
+fn budget(answer: &PerfBudgetsResult, id: PerfBudgetId) -> &protocol::generated::PerfBudget {
+    answer
+        .budgets
+        .iter()
+        .find(|b| b.id == id)
+        .expect("a budget is never omitted from the list")
 }
 
 /// One source's row out of a snapshot, by name.
@@ -285,4 +336,186 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
         row_closed.frames >= row_now.frames,
         "the bill stands after the window closes"
     );
+}
+
+// ---- surface 8's other two ops (JOS-502) --------------------------------------------------------
+
+#[test]
+fn an_idle_engine_states_its_budgets_and_refuses_to_pretend_it_measured_them() {
+    // THE CASE THE WHOLE `unmeasured` VERDICT EXISTS FOR. A just-launched engine has folded nothing
+    // and served nothing, and it is exactly the window in which somebody opening the performance
+    // panel is most likely to be looking. A budget that read green here would be green for the one
+    // period in which it knows least.
+    let engine = Engine::start();
+    let mut client = engine.connected();
+    let answer = ask_budgets(&mut client, 1);
+
+    assert_eq!(*answer.epoch, 1, "a launch is generation 1");
+    assert_eq!(answer.budgets.len(), 2, "a budget is never omitted");
+    for budget in &answer.budgets {
+        assert_eq!(budget.verdict, PerfBudgetVerdict::Unmeasured, "{budget:?}");
+        assert_eq!(budget.measured, None, "absent, never zero");
+        // …and the DEFINITION is served regardless, which is ruling 3's whole point: the ceiling
+        // and its caveat are what let a reader judge instead of trusting a colour.
+        assert!(!budget.label.is_empty(), "{budget:?}");
+        assert!(!budget.limit.is_empty(), "{budget:?}");
+        assert!(!budget.note.is_empty(), "{budget:?}");
+    }
+    // THE ROWS ARRIVE IN THE PANEL'S ORDER (ruling 4). A renderer that sorted these would be
+    // munging a served view.
+    let ids: Vec<PerfBudgetId> = answer.budgets.iter().map(|b| b.id).collect();
+    assert_eq!(ids, [PerfBudgetId::FoldRate, PerfBudgetId::ServeLatency]);
+}
+
+#[test]
+fn the_fold_rate_budget_says_the_g3_goal_is_not_met_rather_than_hiding_behind_a_pass() {
+    // The floor is an eighth of the measured rate, so a pass is a much smaller claim than the
+    // program's goal — and the release cut folds 209 MB in 52.5 s against a 20 s goal. The note is
+    // where that is said out loud, and it rides every panel row and every bug report, so it is
+    // asserted on the WIRE rather than only in the module's own unit tests.
+    let engine = Engine::start();
+    let mut client = engine.connected();
+    let answer = ask_budgets(&mut client, 1);
+    let fold = budget(&answer, PerfBudgetId::FoldRate);
+    assert!(fold.note.contains("NOT met"), "{}", fold.note);
+    assert!(fold.note.contains("52.5 s"), "{}", fold.note);
+    // …and the serve row carries its own caveat, because a two-second ceiling on a number that
+    // includes the coalescing beat is a wedge detector and must never read as a compute budget.
+    let serve = budget(&answer, PerfBudgetId::ServeLatency);
+    assert!(serve.note.contains("wedge detector"), "{}", serve.note);
+    assert!(serve.limit.contains("at most"), "{}", serve.limit);
+}
+
+#[test]
+fn a_finished_scan_gives_the_fold_rate_budget_something_to_judge() {
+    let staged = Staged::new("budgets");
+    let engine = Engine::start();
+    let mut client = engine.connected();
+    client.send(&attach(1, &staged.log().to_string_lossy()));
+
+    let mut id = 100;
+    until(&mut client, &mut id, "the scan to finish", |p| {
+        p.ingest.scan_ms.is_some() && p.ingest.scan_bytes.is_some()
+    });
+    id += 1;
+    let answer = ask_budgets(&mut client, id);
+    let fold = budget(&answer, PerfBudgetId::FoldRate);
+
+    // THE VERDICT IS NOT ASSERTED, AND THAT IS THE JOS-501 LESSON APPLIED. `cargo test` builds
+    // DEBUG, and a debug fold runs about an order of magnitude slower than the release build the
+    // floor was measured against — 0.45 MB/s is what a debug run of the CI budget measured. So this
+    // suite asserts that the budget MEASURED something and rendered it, and leaves judging the
+    // number to `tests/budget.rs`, which knows which profile it is in.
+    assert_ne!(
+        fold.verdict,
+        PerfBudgetVerdict::Unmeasured,
+        "a finished scan is something to judge"
+    );
+    let measured = fold
+        .measured
+        .as_deref()
+        .expect("a finished scan has a rate");
+    assert!(
+        measured.ends_with("/s"),
+        "a rate renders as a rate: {measured}"
+    );
+}
+
+#[test]
+fn an_idle_engine_states_the_timelines_horizon_over_an_empty_ring() {
+    // AN EMPTY TIMELINE IS THE COMMONEST HONEST ANSWER. The ring is filled by the ingest thread's
+    // beat, so an engine with nothing attached has sampled nothing — and the horizon is on the
+    // answer anyway, because a client inferring it from the LENGTH would infer it wrongly for the
+    // whole first period of every generation.
+    let engine = Engine::start();
+    let mut client = engine.connected();
+    let answer = ask_timeline(&mut client, 1);
+
+    assert_eq!(*answer.epoch, 1);
+    assert!(answer.timeline.is_empty(), "{:?}", answer.timeline);
+    assert!(
+        answer.capacity > 0,
+        "the ring is bounded and says by how much"
+    );
+    assert!(answer.cadence_ms > 0, "…and how far apart its samples are");
+}
+
+#[test]
+fn a_live_engine_fills_the_ring_and_the_ring_stays_bounded() {
+    // THE END-TO-END WIRING CLAIM, and the only test in this repo that proves it: the serve beat
+    // reaches `views::Timeline` with the world's uptime, a window closes, and a moment crosses the
+    // socket. The unit tests in `views::meter` own the ring's arithmetic; nothing but this can say
+    // the ingest loop is actually turning the handle.
+    //
+    // IT COSTS ONE CADENCE OF WALL CLOCK, deliberately. The alternative is a test-only seam that
+    // shortens the cadence in production code, and a horizon that can be changed by an environment
+    // variable is a horizon a shipped build could be talked out of.
+    let staged = Staged::new("timeline");
+    let engine = Engine::start();
+    let mut client = engine.connected();
+    client.send(&attach(1, &staged.log().to_string_lossy()));
+
+    let mut id = 200;
+    until(&mut client, &mut id, "the scan to finish", |p| {
+        p.ingest.scan_ms.is_some()
+    });
+
+    let deadline = Instant::now() + PATIENCE;
+    let answer = loop {
+        id += 1;
+        let answer = ask_timeline(&mut client, id);
+        if !answer.timeline.is_empty() {
+            break answer;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "waited {PATIENCE:?} for the ring to take its first sample"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    };
+
+    assert!(
+        i64::try_from(answer.timeline.len()).unwrap_or(i64::MAX) <= answer.capacity,
+        "the ring never grows past its horizon: {} > {}",
+        answer.timeline.len(),
+        answer.capacity
+    );
+    let moment = &answer.timeline[0];
+    assert!(moment.at_ms > 0, "stamped with process uptime");
+    assert!(
+        moment.span_ms >= answer.cadence_ms,
+        "a window covers at least the cadence it waited for: {moment:?}"
+    );
+    // OLDEST FIRST, an ordering the server owes rather than one a caller sorts for.
+    assert!(
+        answer.timeline.windows(2).all(|w| w[0].at_ms < w[1].at_ms),
+        "{:?}",
+        answer.timeline
+    );
+}
+
+#[test]
+fn the_three_perf_ops_answer_on_one_connection_and_none_disturbs_the_others() {
+    // THREE OPS, ONE ASK, ONE DOOR. The registry's guard matrix proves the SHAPES cannot be
+    // confused; this proves the engine does not confuse them either — each reply carries its own
+    // result arm, and asking all three in a row leaves the snapshot's cumulative counters intact.
+    let engine = Engine::start();
+    let mut client = engine.connected();
+
+    let first = ask_perf(&mut client, 1);
+    let budgets = ask_budgets(&mut client, 2);
+    let timeline = ask_timeline(&mut client, 3);
+    let second = ask_perf(&mut client, 4);
+
+    assert_eq!(
+        *first.epoch, *budgets.epoch,
+        "one generation, three answers"
+    );
+    assert_eq!(*first.epoch, *timeline.epoch);
+    assert_eq!(second.status, first.status);
+    assert!(
+        second.uptime_ms >= first.uptime_ms,
+        "reading the budgets did not reset the process clock"
+    );
+    assert_eq!(second.serve.len(), first.serve.len());
 }

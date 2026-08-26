@@ -63,6 +63,7 @@ function onRoster(roster: RosterSnap, key: string): boolean {
 export function scopeSources(rows: SourceView[], scope: MeterScope, roster: RosterSnap): SourceView[] {
   const eff = effectiveScope(scope, roster)
   if (eff === 'everyone') return rows
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
   const kept = rows.filter((r) => {
     // An ally's charm pet filters like the person who charmed it (shared/roster.ts scopeAllows
     // carries the argument); the key it filters on is the CHARMER's, off the row id.
@@ -89,6 +90,7 @@ export function scopeTotals(
   dps: number
 ): { total: number; dps: number } {
   if (scoped === rows) return { total, dps }
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
   const kept = scoped.reduce((n, r) => n + r.total, 0)
   return { total: kept, dps: total > 0 ? (dps * kept) / total : 0 }
 }
@@ -105,6 +107,7 @@ export function scopeTotals(
 export function scopeHealers(rows: HealSourceView[], scope: MeterScope, roster: RosterSnap): HealSourceView[] {
   const eff = effectiveScope(scope, roster)
   if (eff === 'everyone') return rows
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives HealSourceView. Becomes a view descriptor when the source lands.
   const kept = rows.filter((h) => {
     if (h.kind !== 'other') return true
     if (eff === 'you') return false

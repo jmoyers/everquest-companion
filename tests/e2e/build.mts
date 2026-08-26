@@ -9,10 +9,24 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmdirSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// ONE NAME FOR THE BINARY, shared with the resolver that has to find it. The old hardcoded
+// `'engined.exe'` here was a latent divergence from `engineProtocol.ts`'s platform-aware constant:
+// on any non-Windows host the probe could never see the file, always built, and then threw
+// "cargo reported success but … is missing".
+import { ENGINE_BIN_NAME } from '../../src/main/dataServer/engineProtocol'
 // WHERE CARGO IS, ASKED ONCE FOR THE WHOLE REPO. `scripts/build-engine.mts` owns that resolution
 // because the SHIPPING build needs it too (JOS-473) — and a second copy here would not be untidy
 // so much as a machine where one of the two finds a toolchain and the other does not. The
@@ -75,9 +89,9 @@ function isFresh(): boolean {
   return outMs > srcMs
 }
 
-// ── the ENGINE build (JOS-470) ─────────────────────────────────────────────────────────
+// ── the ENGINE build (JOS-470; RELEASE and content-addressed since JOS-501) ────────────
 //
-// TWO OUTPUTS, TWO GATES. `out-e2e/` is electron-vite's; `engine/target/debug/engined.exe` is
+// TWO OUTPUTS, TWO GATES. `out-e2e/` is electron-vite's; `engine/target/release/engined.exe` is
 // cargo's. They share no input file and neither can invalidate the other, so one boolean cannot
 // honestly answer for both: a `.rs` edit leaves the bundle perfectly fresh, and a `.ts` edit leaves
 // the binary perfectly fresh. Asking the two questions separately is what lets each answer be true.
@@ -94,53 +108,160 @@ function isFresh(): boolean {
 // each other instead of writing over one another's output. Re-implementing that here would be a
 // second, worse copy of a guarantee the tool already gives.
 
-/** The engine binary this checkout's Rust produces. Debug, because `cargo build -p engined` with
- *  no `--release` is what the resolver in `src/main/dataServer/engineProtocol.ts` probes first. */
-export const ENGINE_BIN = join(ROOT, 'engine', 'target', 'debug', 'engined.exe')
+// ── WHY RELEASE, AND WHY THE HARNESS NAMES THE BINARY (JOS-501) ────────────────────────
+//
+// This built DEBUG until JOS-501, on the argument that debug is what the resolver in
+// `src/main/dataServer/engineProtocol.ts` probes first. That argument was about which binary the app
+// would FIND; it said nothing about whether the suite could afford the one it found. It could not.
+// A debug engine's spell-db parse alone measures 4.3 s, and `bosses-week` — which folds the owner's
+// whole log twice — did not reach its go-live sentence in 900 s under one. Both `run-all.mts`
+// docblocks asked for this change by name and told the integrator to delete their workarounds the
+// day it landed.
+//
+// AND THE SWITCH IS ONLY HALF THE FIX, because the resolver prefers DEBUG over release (deliberately
+// — a debug build is what a developer just produced and a stale release must not silently win). On
+// any machine that has ever run a plain `cargo build`, a harness that built release would still have
+// launched the app against the debug binary sitting beside it: the suite would pay for the release
+// build and then prove things about the other one. So the harness HANDS THE PATH OVER
+// (`EQ_ENGINE_BIN`, honoured only under `EQ_E2E=1`), exactly as it already hands over the staged EQ
+// install with `EQ_INSTALL_DIR`. The harness owns the binary it built; the product is told which one
+// to run rather than left to guess.
 
-/** Newest mtime across everything cargo would rebuild from: the crates, the workspace manifests and
- *  the pinned toolchain. `engine/target/` is NOT under `crates/`, so the walk cannot see its own
- *  output and call itself stale. */
-function newestEngineSourceMtime(): number {
-  let newest = newestMtime(join(ROOT, 'engine', 'crates'))
-  for (const name of ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml']) {
-    try {
-      newest = Math.max(newest, statSync(join(ROOT, 'engine', name)).mtimeMs)
-    } catch {
-      // `Cargo.lock` may not exist in a checkout that has never built; that is staleness, not an
-      // error, and the missing file simply contributes no mtime.
-    }
-  }
-  return newest
+/** The engine binary this checkout's Rust produces, and the one every spec runs against. */
+export const ENGINE_BIN = join(ROOT, 'engine', 'target', 'release', ENGINE_BIN_NAME)
+
+/** Cargo's own answer to "what did this binary come from" — written beside it on every build. */
+const ENGINE_DEP_INFO = join(ROOT, 'engine', 'target', 'release', 'engined.d')
+
+/** Where the digest of the inputs the CURRENT binary was built from is recorded. */
+const ENGINE_STAMP = join(ROOT, 'engine', 'target', 'release', '.e2e-engine-stamp')
+
+/**
+ * Parse a cargo/GNU-make dep-info file into its input paths.
+ *
+ * Spaces inside a path are escaped `\ ` by the writer, so the split is on spaces NOT preceded by a
+ * backslash — which matters on Windows only for a checkout under a directory like `Program Files`,
+ * and is exactly the sort of machine-shaped difference a harness should not have opinions about.
+ */
+function depInfoInputs(text: string): string[] {
+  const line = text.split(/\r?\n/).find((l) => l.includes(': '))
+  if (line === undefined) return []
+  return line
+    .slice(line.indexOf(': ') + 2)
+    .split(/(?<!\\) /)
+    .map((p) => p.replace(/\\ /g, ' ').trim())
+    .filter((p) => p !== '')
 }
 
 /**
- * Build `engined.exe` if the Rust that produces it has moved since the binary was written.
+ * THE INPUTS CARGO WOULD REBUILD FROM, AS CONTENT — the real staleness check (JOS-501).
  *
- * INCREMENTALITY IS CARGO'S STORY, NOT OURS. This gate is not trying to be a build system — it
- * answers one question ("is the binary older than the sources?") and hands the real decision to
- * cargo, which then does nothing at all when its own fingerprints agree. What the mtime check buys
- * is skipping the ~200 ms of cargo startup on the overwhelmingly common no-op run.
+ * The old gate compared the binary's mtime against the newest mtime under `engine/crates` plus the
+ * three workspace manifests, and it DISAGREED WITH CARGO in three ways. Two of them were merely
+ * wasteful; the third let specs prove things about the wrong binary, which is why this is a
+ * correctness fix rather than a tidy-up:
+ *
+ *  1. **Cargo does not touch the binary's mtime on a no-op build.** So anything that bumps a `.rs`
+ *     mtime without changing its content — a `git checkout`, a branch switch, a worktree add —
+ *     left the gate permanently answering "stale", cargo doing nothing, and the mtime staying put.
+ *     Every one of ~130 specs then paid a cargo invocation, forever.
+ *  2. **`include_str!` inputs were invisible to it.** The engine embeds `spells.json`, `items.json`,
+ *     `mobs.json`, `bosses.json`, `posky.json`, `quests.json`, `respawns.json`, `classes.json` and
+ *     `messageOverlay.baseline.json` — NONE of which live under `engine/crates`. Editing any one of
+ *     them changes the binary and left the gate saying "fresh". THIS is the mode that hands a spec
+ *     an engine built from data the repo no longer contains.
+ *  3. **mtime is not cargo's fingerprint.** Toolchain, profile and feature set are all inputs and
+ *     none of them appeared in a timestamp comparison.
+ *
+ * All three dissolve by asking the two authorities instead of guessing. CARGO ITSELF names the input
+ * set, in the dep-info file it writes beside the binary — 153 paths today, `include_str!`'d JSON
+ * included — so the list cannot drift when someone adds an embed: the `.rs` file that adds it is
+ * itself an input, so its content change forces the rebuild that rewrites the list. And the inputs
+ * are compared BY CONTENT, so a touched-but-unchanged file is correctly no change at all.
+ *
+ * `rustc -V` is deliberately NOT spawned: `rust-toolchain.toml` pins an exact channel (`1.98.0`, and
+ * the pin is load-bearing for the generated-protocol staleness test), so hashing that file's bytes
+ * already answers "which compiler" without paying a process launch in every one of ~130 specs.
+ *
+ * Returns `null` when there is no dep-info to read — a checkout that has never built the engine,
+ * where the only honest answer is to build.
+ */
+function engineInputDigest(): string | null {
+  let inputs: string[]
+  try {
+    inputs = depInfoInputs(readFileSync(ENGINE_DEP_INFO, 'utf8'))
+  } catch {
+    return null
+  }
+  if (inputs.length === 0) return null
+  // The manifests and the toolchain pin are cargo's fingerprint rather than rustc's, so they are
+  // never in dep-info and are added here by name.
+  for (const name of ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml']) {
+    inputs.push(join(ROOT, 'engine', name))
+  }
+  for (const crate of readdirSync(join(ROOT, 'engine', 'crates'), { withFileTypes: true })) {
+    if (crate.isDirectory()) inputs.push(join(ROOT, 'engine', 'crates', crate.name, 'Cargo.toml'))
+  }
+  const h = createHash('sha256')
+  for (const path of [...new Set(inputs)].sort()) {
+    h.update(path.replace(/\\/g, '/'))
+    h.update(' ')
+    try {
+      h.update(readFileSync(path))
+    } catch {
+      // A named input that is gone IS a change, and hashing its absence records that.
+      h.update(' absent')
+    }
+    h.update(' ')
+  }
+  return h.digest('hex')
+}
+
+/**
+ * Build `engined.exe` if the inputs cargo would rebuild from have changed since it was written.
+ *
+ * INCREMENTALITY IS STILL CARGO'S STORY, NOT OURS. This gate answers one question — "were the
+ * current inputs the ones this binary came from?" — and hands the real decision to cargo, which then
+ * does nothing at all when its own fingerprints agree. What the digest buys is skipping cargo's
+ * startup on the overwhelmingly common no-op run, and (unlike the mtime gate it replaces) actually
+ * being right about it.
  *
  * Returns the binary's path. Throws when the build fails or when the build claimed success and the
  * binary still is not there — a spec that silently ran against no engine would assert the ABSENCE
  * path and pass, which is the one failure this whole file exists to prevent.
  */
 export function buildEngineIfStale(): string {
-  const binMs = existsSync(ENGINE_BIN) ? statSync(ENGINE_BIN).mtimeMs : 0
-  if (binMs > newestEngineSourceMtime()) {
+  const want = engineInputDigest()
+  if (want !== null && existsSync(ENGINE_BIN) && readStamp() === want) {
     console.log(`build: ${ENGINE_BIN} is fresh — reusing it`)
     return ENGINE_BIN
   }
-  console.log('build: cargo build -p engined (the engine binary is stale)…')
-  const res = spawnSync(cargoBinary(), ['build', '-p', 'engined'], {
+  console.log('build: cargo build --release -p engined (the engine binary is stale)…')
+  const res = spawnSync(cargoBinary(), ['build', '--release', '-p', 'engined'], {
     cwd: join(ROOT, 'engine'),
     stdio: 'inherit'
   })
   if (res.error) throw new Error(`e2e: could not run cargo — ${res.error.message}`)
-  if (res.status !== 0) throw new Error(`cargo build -p engined failed (exit ${String(res.status)})`)
-  if (!existsSync(ENGINE_BIN)) throw new Error(`e2e: cargo reported success but ${ENGINE_BIN} is missing`)
+  if (res.status !== 0) {
+    throw new Error(`cargo build --release -p engined failed (exit ${String(res.status)})`)
+  }
+  if (!existsSync(ENGINE_BIN)) {
+    throw new Error(`e2e: cargo reported success but ${ENGINE_BIN} is missing`)
+  }
+  // Re-read the digest AFTER the build: the dep-info this binary was actually produced from is the
+  // one to record, and it is the file cargo has just rewritten.
+  const built = engineInputDigest()
+  if (built !== null) writeFileSync(ENGINE_STAMP, built)
   return ENGINE_BIN
+}
+
+/** The digest recorded when the binary beside it was built, or null when there is none. */
+function readStamp(): string | null {
+  try {
+    return readFileSync(ENGINE_STAMP, 'utf8').trim()
+  } catch {
+    return null
+  }
 }
 
 /** electron-vite's CLI entry, via its package manifest — `bin` is the field that names it, and

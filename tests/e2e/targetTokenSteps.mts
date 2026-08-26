@@ -134,6 +134,20 @@ export async function stepTargetToken(
   page: Page,
   log: { appendAt: (at: Date, ...m: readonly string[]) => number }
 ): Promise<void> {
+  // ── RESTORED BY JOS-500 (owner ruling 27) — THE FRAME CARRIES THE ENTITY FIELDS ─────────────
+  //
+  // WHAT THIS CLAIMS: the parser-extracted `{target}` — the mob a spell is affecting — reaches the
+  // SPEECH seam substituted, with no regex in the def. JOS-353's acceptance, in the owner's words,
+  // and the assertion below is unchanged from the one JOS-499 gated off.
+  //
+  // IT IS THE HARDEST OF THE THREE PARITY CLAIMS and that is why it is a separate step. `{target}`
+  // is the one token filled in WITHOUT a declared capture group, which means nothing in the def
+  // itself says where the value comes from: it is resolved engine-side from a closed table of
+  // parser-extracted entity fields on the very event that matched, merged into the capture map
+  // under the same bound and the same collision rule as a declared group, and gated on the def's
+  // own phrase having written `{target}` at all. Every one of those is an evaluator decision the
+  // app deliberately does not re-make (`alertsAudioRules.ts`), so the ONLY honest proof that the
+  // whole chain agrees is a real def, a real live-tailed line, and the sentence that comes out.
   const saved = await saveDef(page)
   if (!check('a no-regex target alert saves through the app’s own IPC', saved > 0, `${String(saved)} defs stored`)) {
     return

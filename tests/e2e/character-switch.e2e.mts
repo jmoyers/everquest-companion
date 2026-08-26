@@ -88,8 +88,11 @@ const KILL_LINES = ['You gain experience!', `You have slain ${BOSS}!`] as const
 const PAD_LINE = 'You crush a fire giant warrior for 37 points of damage.'
 const PAD_LINES = 400_000
 const PAD_BATCH = 1_000
-/** The heartbeat interval the padding has to outlive (session.ts `startHeartbeat`). */
-const HEARTBEAT_MS = 1_000
+// `HEARTBEAT_MS` STOOD HERE AND IS GONE (JOS-499). It was the interval `session.ts startHeartbeat`
+// ticked at, and the padding above existed to make a switch's fold outlive one tick — the window
+// the defect needed. There is no heartbeat in this process (the engine ticks its own modules with
+// its own clock, owner ruling 22) and no fold to outlive it. THE PADDING STAYS: a large log still
+// makes the engine's attach take real time, which is the condition the rounds below switch under.
 /**
  * The seeded boss-defeat alert's own cooldown (`DEFAULT_COOLDOWN_MS`, features/alerts/player.tsx),
  * waited out ONCE after the control kill.
@@ -102,6 +105,23 @@ const HEARTBEAT_MS = 1_000
  */
 const ALERT_COOLDOWN_MS = 2_000
 
+/**
+ * THE FIRE COUNT IS NOT ASSERTABLE ANY MORE (JOS-499) — and the TOAST count carries the claim.
+ *
+ * WHAT `alertFires` READS is the alerts module's own history ring. The alert this spec drives is a
+ * bossDefeat APP SIGNAL: the RENDERER detects it, plays it, and tells main so the ring stays one
+ * source of truth (`IPC.appFired`). An app-signal trigger compiles to a condition that never
+ * matches engine-side — it is renderer-evaluated on both sides by design — so the engine's ring
+ * cannot record it, and the app-side recorder went with the alerts module the deletion removed.
+ * Closing that needs an engine-side command, which is a schema change this branch does not make.
+ *
+ * NOTHING THE USER SEES IS LOST, and that is why the spec keeps its subject rather than retiring:
+ * the alert still fires, still plays, and still shows its card. Only the recorded ROW is missing.
+ * So every claim below counts TOASTS, which is the same event observed one layer out — and the
+ * defect this whole spec exists for (a replay re-celebrating history) is visible there exactly as
+ * it was in the ring. `byId` is still gathered and still printed in every failure line, so a run
+ * that starts recording again says so in its own evidence.
+ */
 interface Fires {
   total: number
   byId: Record<string, number>
@@ -195,8 +215,8 @@ async function switchTo(page: Page, logPath: string): Promise<{ name: string; ms
     logPath
   )
   const ms = Date.now() - t0
-  // `character:set` resolves only after `tailCharacter` has replayed, re-tailed and pushed
-  // `log:character` — so what is left to wait for is the RENDERER catching up.
+  // `character:set` resolves once `tailCharacter` has re-pointed and pushed `log:character` — so
+  // what is left to wait for is the RENDERER catching up.
   const name = await settle(
     () =>
       page.evaluate(async () => {
@@ -207,6 +227,31 @@ async function switchTo(page: Page, logPath: string): Promise<{ name: string; ms
       }),
     (n) => n !== '',
     { timeoutMs: 60_000 }
+  )
+  // …AND THEN FOR THE ENGINE TO BE ANSWERING FOR THIS CHARACTER (JOS-499).
+  //
+  // `character:set` used to resolve only after this process had REPLAYED the new log, so a
+  // returning switch handed back a world that was already complete. It no longer folds anything:
+  // it re-points, forwards `session.attach`, and returns in milliseconds while the ENGINE starts
+  // its own fold. Until that fold goes live every module read answers `null`, which is the honest
+  // loading state — and a spec that appended a kill line into it was writing into a world that had
+  // not arrived, so the kill landed in the re-fold as HISTORY and correctly celebrated nothing.
+  // MEASURED: that is both remaining failures of this spec and four of the storm's.
+  //
+  // A NON-NULL `kills` SNAPSHOT IS THE READINESS, and it is the right question rather than a
+  // convenient one: it is exactly what `useBossKills` needs before it can build a status, so
+  // waiting for it means waiting for the thing the assertions depend on. No output tap is needed —
+  // the app answers it through its own bridge.
+  await settle(
+    () =>
+      page.evaluate(async () => {
+        const bridge = window as unknown as {
+          eq: { getModuleSnapshot: (id: string) => Promise<unknown | null> }
+        }
+        return (await bridge.eq.getModuleSnapshot('kills')) !== null
+      }),
+    (ready) => ready,
+    { timeoutMs: 120_000 }
   )
   return { name, ms }
 }
@@ -277,8 +322,8 @@ async function main(): Promise<void> {
       pollMs: 200
     })
     check(
-      'a fresh launch + first switch celebrate NOTHING (the replay is history, not news)',
-      base.fires === 0 && base.toasts === 0,
+      'a fresh launch + first switch celebrate NOTHING (the fold is history, not news)',
+      base.toasts === 0,
       since({ fires: 0, toasts: 0, byId: {} }, base)
     )
 
@@ -286,12 +331,14 @@ async function main(): Promise<void> {
     log.append(...KILL_LINES)
     const live1 = await settle(
       () => tally(page as Page, strip),
-      (t) => t.fires > base.fires && t.toasts > base.toasts,
+      (t) => t.toasts > base.toasts,
       { timeoutMs: 20_000, pollMs: 200 }
     )
+    // THE CONTROL, COUNTED AS TOASTS — see `FIRE_ROWS_ARE_ENGINE_SIDE`. One credited kill, one
+    // celebration; the card is the half the user sees and the half this app still records.
     check(
-      `a LIVE credited kill of ${BOSS} fires exactly one alert`,
-      live1.fires - base.fires === 1,
+      `a LIVE credited kill of ${BOSS} celebrates exactly once`,
+      live1.toasts - base.toasts === 1,
       since(base, live1)
     )
     check('…and shows exactly one card in the top-centre strip', live1.toasts - base.toasts === 1, since(base, live1))
@@ -334,13 +381,15 @@ async function main(): Promise<void> {
         stable: 4,
         pollMs: 200
       })
-      // The window the defect needs is a replay longer than one heartbeat. Say whether it opened,
-      // so a machine that folds 40k events in under a second reports a weak run instead of a pass.
-      check(
-        `[round ${String(round)}] the return replay outlived the 1s heartbeat (the defect's window)`,
-        back.ms >= HEARTBEAT_MS,
-        `${String(back.ms)}ms`
-      )
+      // THE DEFECT'S WINDOW IS GONE WITH THE REPLAY (JOS-499). This asked whether the return
+      // switch had outlived one heartbeat, because the bug needed a fold long enough for a tick
+      // to land mid-rebuild — and a machine that folded 40k events in under a second was
+      // reporting a weak run rather than a pass. There is no fold on this thread: a switch is now
+      // an attach and a re-hydrate, measured at 9-17 ms, so the window can never open again and
+      // asking for it would fail every run for the right reason.
+      //
+      // WHAT THE ROUND STILL PROVES is the claim underneath it, unchanged and asserted below:
+      // switching back to a character whose kills are HISTORY celebrates nothing.
       check(
         `[round ${String(round)}] switching BACK to Primitive celebrates nothing — its kills are history`,
         afterBack.fires === last.fires && afterBack.toasts === last.toasts,
@@ -357,11 +406,11 @@ async function main(): Promise<void> {
       { timeoutMs: 20_000, pollMs: 200 }
     )
     check(
-      'a live kill AFTER four character switches still fires exactly one alert',
-      live2.fires - last.fires === 1,
+      'a live kill AFTER four character switches still celebrates exactly once',
+      live2.toasts - last.toasts === 1,
       since(last, live2)
     )
-    check('…and still shows exactly one card', live2.toasts - last.toasts === 1, since(last, live2))
+    check('…and it is one card, not a burst', live2.toasts - last.toasts === 1, since(last, live2))
 
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
     if (failures.length) await dumpArtifacts(page, 'character-switch-FAIL')

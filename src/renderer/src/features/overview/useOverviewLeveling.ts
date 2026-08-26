@@ -13,14 +13,11 @@
 // one, so the two `rangeStats` sweeps run once per delta rather than once per render.
 
 import { useMemo } from 'react'
-import type { CharacterDelta, CharacterSnap, ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { CharacterSnap, ProgressionSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 import { overviewLeveling, type OverviewLevelingState } from './overviewLevelingData'
 
-function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): CharacterSnap {
-  return { ...state, ...delta }
-}
 
 /**
  * The leveling card's whole state. Pre-hydration the module hook returns null and
@@ -34,7 +31,7 @@ function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): Chara
  * character, the zone or the level actually moves.
  */
 export function useOverviewLeveling(): OverviewLevelingState {
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
-  const level = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)?.level
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
+  const level = useModule<CharacterSnap>('character')?.level
   return useMemo(() => overviewLeveling(prog, level), [prog, level])
 }

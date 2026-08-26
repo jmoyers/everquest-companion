@@ -28,7 +28,7 @@
 // denominator we could ever see. Filing the resist half alone is exactly the defect this round
 // fixes; refusing the whole spell is the honest half.
 
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 import type { SpellDb } from '../data/spellDb'
 import type { ResistCasterKind } from '../../shared/resistTypes'
 import { SONG_CONTACT_MS, SongPulses, type SongPulse } from './songs'
