@@ -43,6 +43,7 @@ import {
 } from '../src/shared/planner/ownership'
 import type { GearRow } from '../src/shared/planner/gear'
 import {
+  equippedHaste,
   factText,
   gearOwnershipMap,
   gearOwnershipOf,
@@ -53,6 +54,8 @@ import {
   placeLabel,
   uncountedNote
 } from '../src/renderer/src/features/gear/gearOwnership'
+import { scaleGearStat } from '../src/shared/planner/gearScale'
+import { upgradeStateForTier } from '../src/shared/itemUpgrade'
 import {
   DEFAULT_GEAR_FILTERS,
   filterGearRows,
@@ -412,4 +415,41 @@ test('W47 real bytes: the auto-sold +4 drops never reach the Owned column', () =
   assert.equal(owned(kept, 'lustrous russet vambraces'), true, 'a combine leaves you holding one')
   assert.equal(owned(kept, 'ethereal mist greaves'), true)
   assert.equal(owned(kept, 'valorium vambraces'), true)
+})
+
+// =================================================================================
+// THE HASTE YOU WEAR (fork ruling, kaltinril 2026-08-25: haste should only be EQUIPPED items)
+// =================================================================================
+
+test('equippedHaste is the best haste on an EQUIPPED row, scaled to its +N - bank and bag haste count for nothing', () => {
+  const SWORD = 'swiftblade'
+  const GLOVE = 'quick gloves'
+  const byKey = new Map<string, GearRow>([
+    [SWORD, { ...gear(SWORD), stats: { HASTE: 36 } }],
+    [GLOVE, { ...gear(GLOVE), stats: { HASTE: 21 } }],
+    [CLOAK, { ...gear(CLOAK), stats: { AC: 10 } }]
+  ])
+  const entries = (rows: OwnershipRow[]): OwnershipEntry[] => {
+    const out = new Map<string, OwnershipRow[]>()
+    for (const r of rows) out.set(r.key, [...(out.get(r.key) ?? []), r])
+    return [...out]
+  }
+  // Nothing worn - a 36% sword in the BANK is worn by nobody.
+  assert.equal(equippedHaste([], byKey), 0)
+  assert.equal(equippedHaste(entries([row({ key: SWORD, place: 'bank' })]), byKey), 0, 'bank haste is not worn')
+  assert.equal(equippedHaste(entries([row({ key: SWORD, place: 'inventory' })]), byKey), 0, 'bag haste is not worn')
+  // Worn: the stated number, and the BEST of several.
+  assert.equal(equippedHaste(entries([row({ key: GLOVE, place: 'equipped' })]), byKey), 21)
+  assert.equal(
+    equippedHaste(entries([row({ key: GLOVE, place: 'equipped' }), row({ key: SWORD, place: 'equipped' })]), byKey),
+    36,
+    'two worn haste items: the best one is the one that applies (worn haste does not stack)'
+  )
+  // A worn ` +N` reads at its tier (the flat rule, the compare card's own floor), never at base.
+  const plussed = equippedHaste(entries([row({ key: SWORD, place: 'equipped', tier: 3 })]), byKey)
+  assert.equal(plussed, scaleGearStat('HASTE', 36, upgradeStateForTier(3)))
+  assert.ok(plussed > 36)
+  // A worn item stating no haste, or one the corpus does not know, contributes nothing (law 1).
+  assert.equal(equippedHaste(entries([row({ key: CLOAK, place: 'equipped' })]), byKey), 0)
+  assert.equal(equippedHaste(entries([row({ key: 'unknown thing', place: 'equipped' })]), byKey), 0)
 })

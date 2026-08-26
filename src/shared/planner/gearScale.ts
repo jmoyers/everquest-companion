@@ -31,6 +31,11 @@ import {
 import type { ClassAbbr } from '../classCombo'
 import { damageRatio } from '../itemStats'
 import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
+// A CYCLE, ON PURPOSE AND SAFE: roleWeights.ts reads `gearRatio`/`gearEffectiveHp` from this file
+// and this file reads `roleValue` from it. Neither touches the other's bindings while a module is
+// evaluating — every cross-call is inside a function, and `focusInputs` below is lazy for exactly
+// that reason — so whichever side the graph loads first, both are initialised before either runs.
+import { roleStatKeys, roleValue, type GearRole, type RoleContext } from './roleWeights'
 
 /**
  * One base value at `state`, by the rule its key takes.
@@ -126,110 +131,89 @@ export function gearEffectiveHp(stats: GearStats): number | undefined {
   return (HP ?? 0) + (STA ?? 0)
 }
 
-/** A weighted term: the stated value times its weight, or absent when the item stated none. */
-function term(value: number | undefined, weight: number): number | undefined {
-  return value === undefined ? undefined : value * weight
-}
-
-/** Sum the stated terms, to one decimal — or ABSENT when the item stated none of them (law 1). */
-function weightedSum(components: readonly (number | undefined)[]): number | undefined {
-  const stated = components.filter((v): v is number => v !== undefined)
-  if (stated.length === 0) return undefined
-  return Math.round(stated.reduce((a, b) => a + b, 0) * 10) / 10
-}
-
 /**
- * The knobs a derived score takes (user asks, 2026-08-15): `ignoreHaste` drops the HASTE term from
- * the damage score — worn haste does not STACK in this game, so a player who already wears a haste
- * item gains nothing from a second one, and a score that kept crediting it would rank every haste
- * weapon over genuinely stronger swaps (measured on the live table: a 41% haste sword led EFF DMG
- * at 39.0, ~33 of it the haste term). An OPTION rather than a removal, because the FIRST haste
- * item is a real upgrade and the score should be able to say so.
+ * The knobs a derived score takes, and since 2026-08-25 they are the ROLE MODEL'S (fork decision,
+ * kaltinril — one scale for the whole fork, so the Gear tab and the progression plan can never rank
+ * one item two ways). `roleWeights.ts` owns the coefficients, the class gate and the haste rule;
+ * the two functions below are thin shims that name the focus each column reads.
+ *
+ * `ownedHaste` is the haste percentage this character ALREADY WEARS — worn haste does not STACK in
+ * this game, so an item's haste is credited only ABOVE it (`roleValue`'s rule). The view reads it
+ * off the ownership join's EQUIPPED rows and nothing else (fork decision, kaltinril: *haste should
+ * only be EQUIPPED items* — a haste sword in the bank is worn by nobody). 0 or absent is "none
+ * worn", so the first haste item is a real upgrade and the score says so.
+ *
+ * `ignoreHaste` is the chip's EXPLICIT override (fork decision, kaltinril 2026-08-15): drop the
+ * haste credit entirely, whatever is worn or not — a player with no dump on this machine who
+ * knows they wear a haste item has no other way to say so. It is implemented as an INFINITE owned
+ * haste rather than a second flag through the role model, because that is exactly what it means
+ * (nothing can be credited above it) and because `roleWeights.ts` stays byte-identical to the plan
+ * branch's copy. One consequence worth naming: a stated haste PENALTY still scores under the chip,
+ * where the 2026-08-15 shim dropped the whole term — a stated negative is a stated number (law 1).
  *
  * `classes` is the table's class trio, and it is what keeps BEST honest about WHO is asking (the
- * user's own example: *1000 INT means nothing to me as a warrior monk shaman*): a casting stat
- * counts only when a class that USES it is in the picks. Absent means no picks — class-blind, the
- * only honest reading when nobody has said who they are.
+ * fork example: *1000 INT means nothing to me as a warrior monk shaman*): a casting stat counts
+ * only when a class that USES it is in the picks. Absent means no picks — class-blind, the only
+ * honest reading when nobody has said who they are.
  */
 export interface GearDerivedOpts {
   ignoreHaste?: boolean
+  ownedHaste?: number
   classes?: readonly ClassAbbr[]
 }
 
-// WHO USES WHAT, stated once. The vocabulary is `classCombo.ts`'s sixteen; the split is the game's
-// own: INT casters, WIS casters (hybrids included on both sides), everyone who has a mana pool at
-// all, and the two classes whose CHA is a mechanic (charm and lull) rather than a shop discount.
-const INT_USERS: readonly ClassAbbr[] = ['ENC', 'MAG', 'NEC', 'WIZ', 'SHD']
-const WIS_USERS: readonly ClassAbbr[] = ['CLR', 'DRU', 'SHM', 'PAL', 'RNG', 'BST']
-const MANA_USERS: readonly ClassAbbr[] = [...INT_USERS, ...WIS_USERS, 'BRD']
-const CHA_USERS: readonly ClassAbbr[] = ['ENC', 'BRD']
-
-/** Does anyone in the picks use this stat? No picks = everyone might — the class-blind default. */
-function anyUses(picks: readonly ClassAbbr[] | undefined, users: readonly ClassAbbr[]): boolean {
-  if (picks === undefined || picks.length === 0) return true
-  return picks.some((c) => users.includes(c))
+/** The role model's context for these knobs — the chip is an infinite owned haste, see above. */
+function roleContext(opts: GearDerivedOpts): RoleContext {
+  return {
+    ownedHaste: opts.ignoreHaste === true ? Number.POSITIVE_INFINITY : opts.ownedHaste,
+    classes: opts.classes
+  }
 }
 
 /**
- * EFFECTIVE DAMAGE — a compact offense score over the fields the corpus states (user ask,
- * 2026-08-15: *the combined total effective increase to damage an item would give*).
- *
- * DELIBERATELY HEURISTIC, and it says so rather than pretending otherwise: the game exposes no
- * canonical offense value across melee/ranged/caster, so this is one opinionated weighting of the
- * stated numbers, useful for RANKING and meaningless as an absolute. The weapon's own output enters
- * ONCE, as the ratio (DMG/DELAY, the per-tick number) — never as raw DMG beside it, which would
- * count the same swing twice. Undefined means the item states none of the contributing fields —
- * absent is not zero, exactly as every vector key reads.
+ * A score, or ABSENT when the item states none of the inputs the focus reads (law 1, both
+ * directions — the same rule `gearEffectiveHp` and `gearRatio` follow). `roleValue` answers `0`
+ * for "nothing stated" AND for stats that net to zero (a +5 and a -5), so absence is decided
+ * here, off the vector: does the item state ANY key the focus weighs, or a weapon block, or a
+ * pool the effective-HP term reads?
+ */
+function roleScore(stats: GearStats, role: GearRole, opts: GearDerivedOpts): number | undefined {
+  if (!focusInputs(role).some((k) => stats[k] !== undefined)) return undefined
+  return roleValue(stats, role, roleContext(opts))
+}
+
+/**
+ * What a focus reads off the vector, for the absent-vs-zero decision above: its own stat row, the
+ * mana stats the class layer may land on, the weapon block behind the ratio term, the two pools
+ * behind effective HP and the saves. LAZY, and memoized on first ask, because of the import cycle
+ * stated at the top: `roleStatKeys` must not be called while this module is still evaluating.
+ */
+const INPUTS = new Map<GearRole, readonly GearStatKey[]>()
+function focusInputs(role: GearRole): readonly GearStatKey[] {
+  let keys = INPUTS.get(role)
+  if (keys === undefined) {
+    keys = ['DMG', 'DELAY', 'HP', 'STA', 'INT', 'WIS', ...roleStatKeys(role), ...GEAR_STAT_KEYS.filter((k) => k.startsWith('SV_'))]
+    INPUTS.set(role, keys)
+  }
+  return keys
+}
+
+/**
+ * EFFECTIVE DAMAGE — the role model's `dps` focus (fork decision, kaltinril 2026-08-15: *the
+ * combined total effective increase to damage an item would give*). Heuristic, and it says so in
+ * `roleWeights.ts`: the weapon's own output enters ONCE, as the ratio, never as raw DMG beside it.
  */
 export function gearEffectiveDamage(stats: GearStats, opts: GearDerivedOpts = {}): number | undefined {
-  return weightedSum([
-    term(gearRatio(stats), 10),
-    term(stats.DMG_BONUS, 0.6),
-    term(stats.STR, 0.35),
-    term(stats.DEX, 0.3),
-    term(stats.ATTACK, 0.45),
-    opts.ignoreHaste === true ? undefined : term(stats.HASTE, 0.8),
-    term(stats.BACKSTAB, 0.5)
-  ])
+  return roleScore(stats, 'dps', opts)
 }
 
 /**
- * BEST-IN-SLOT VALUE — one unified worth-score, so items can be compared ACROSS stats (user ask,
+ * BEST-IN-SLOT VALUE — the role model's `balanced` focus, the one that reads everything smally so
+ * an item strong on several axes outscores one tall on a single stat (fork decision, kaltinril
  * 2026-08-15: *2 AC 10 STR against 30 AC 2 STA 5 STA 10 MANA — figure out some way to calculate
- * best in slot*).
- *
- * The intended gesture is: filter to a slot, sort BIS descending, and the top rows are the
- * candidates worth weighing by eye. The weights mix survivability (AC leads, then effective HP),
- * offense (the EFF-damage score above), the pools, the regens (scarce, so heavy per point) and the
- * saves — an item strong on several axes outscores one tall on a single stat, which is the whole
- * point. Same honesty clause as the damage score: a heuristic for ranking, not a stat the game
- * states, and absent when the item states none of the inputs.
+ * best in slot*). The gesture is unchanged: filter to a slot, sort BEST descending, weigh the top
+ * rows by eye.
  */
 export function gearBisValue(stats: GearStats, opts: GearDerivedOpts = {}): number | undefined {
-  const saves =
-    (stats.SV_FIRE ?? 0) +
-    (stats.SV_COLD ?? 0) +
-    (stats.SV_MAGIC ?? 0) +
-    (stats.SV_DISEASE ?? 0) +
-    (stats.SV_POISON ?? 0) +
-    (stats.SV_VOID ?? 0)
-  // THE CLASS GATE (user ask, 2026-08-15): a stat nobody in the picks can use contributes NOTHING
-  // — not a discounted something. 1000 INT on a warrior/monk/shaman trio is bank filler, and a
-  // score that gave it even a sliver would still float pure-caster gear up their list.
-  const gated = (users: readonly ClassAbbr[], value: number | undefined, weight: number): number | undefined =>
-    anyUses(opts.classes, users) ? term(value, weight) : undefined
-  return weightedSum([
-    term(stats.AC, 1.4),
-    term(gearEffectiveHp(stats), 0.55),
-    term(gearEffectiveDamage(stats, opts), 1.2),
-    gated(MANA_USERS, stats.MP, 0.18),
-    term(stats.END, 0.12),
-    term(stats.AGI, 0.2),
-    gated(WIS_USERS, stats.WIS, 0.2),
-    gated(INT_USERS, stats.INT, 0.2),
-    gated(CHA_USERS, stats.CHA, 0.05),
-    saves !== 0 ? saves * 0.08 : undefined,
-    term(stats.HP_REGEN, 0.9),
-    gated(MANA_USERS, stats.MANA_REGEN, 0.8)
-  ])
+  return roleScore(stats, 'balanced', opts)
 }

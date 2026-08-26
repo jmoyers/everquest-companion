@@ -156,7 +156,9 @@ import {
   useOwnedOrLooted,
   useUpgradeState
 } from './gearData'
-import { uncountedNote, type GearOwnershipMap } from './gearOwnership'
+import { equippedHaste, uncountedNote, type GearOwnershipMap } from './gearOwnership'
+import type { OwnershipEntry } from '@shared/planner/ownership'
+import type { GearRow } from '@shared/planner/gear'
 import {
   DEFAULT_GEAR_FILTERS,
   derivedOpts,
@@ -225,8 +227,13 @@ function useTableRows(
   const filtered = useMemo(() => filterGearRows(scaled, filters, deps), [scaled, filters, deps])
   const columns = useMemo(() => columnsFor(chosen, sort), [chosen, sort])
   const inForce = useMemo(() => sortWithin(sort, columns, showDrops), [sort, columns, showDrops])
-  // `derivedOpts` returns one of two constants, so this memo moves only when the flag actually flips.
-  const sorted = useMemo(() => sortGearRows(filtered, inForce, derivedOpts(filters)), [filtered, inForce, filters])
+  // `derivedOpts` returns one cached object per (haste knob, worn haste, class picks), so this memo
+  // moves only when one of the three actually changes. The worn haste rides in `deps` beside the
+  // two injected verdicts - the same seam, for the same reason: it comes off the dump.
+  const sorted = useMemo(
+    () => sortGearRows(filtered, inForce, derivedOpts(filters, deps.ownedHaste)),
+    [filtered, inForce, filters, deps]
+  )
   // WHY THE LIST IS EMPTY, when it is (the JOS-67 law: a filter that can hide everything must be
   // able to admit it). THREE filters can do it without the user having chosen them in the moment:
   // the era one, which is on by DEFAULT rather than by choice; the Owned one, which is one click
@@ -320,13 +327,13 @@ function ShapePickers({ prefs, columns }: { prefs: GearPrefs; columns: readonly 
         toggle={toggleControl}
         onChange={prefs.setControls}
       />
-      {/* The Zone / Level / Mob trio's switch (user ask, 2026-08-15) — beside the other two shape
+      {/* The Zone / Level / Mob trio's switch (fork decision, kaltinril 2026-08-15) — beside the other two shape
           chips because it is a shape choice too: it narrows nothing, it only draws or does not. */}
       <Chip
         size="small"
         label="Drop columns"
         data-testid="gear-drops-toggle"
-        title="Show where each item drops - the Zone, Level and Mob columns. The item's own page (click its name) always has the full story."
+        title="Show the Zone, Level and Mob columns"
         color={prefs.dropCols ? 'primary' : 'default'}
         variant={prefs.dropCols ? 'filled' : 'outlined'}
         onClick={() => prefs.setDropCols(!prefs.dropCols)}
@@ -437,6 +444,17 @@ function readsDerivedScores(columns: readonly GearColumn[], text: string): boole
   return columns.some((c) => readsDerivedOpts(c.key)) || queryOf(text).thresholds.some((t) => readsDerivedOpts(t.key))
 }
 
+/**
+ * THE HASTE THIS CHARACTER WEARS (fork ruling, kaltinril 2026-08-25: *haste should only be
+ * EQUIPPED items*), read off the ownership join's equipped rows and the corpus by key — the number
+ * EFF DMG and BEST credit an item's haste only above (`gearScale.GearDerivedOpts.ownedHaste`).
+ * Memoized on the two inputs, both of which move only when the dump or the corpus does; the Ignore
+ * haste chip stays as the explicit override for a machine with no dump to read this from.
+ */
+function useOwnedHaste(entries: readonly OwnershipEntry[], byKey: ReadonlyMap<string, GearRow>): number {
+  return useMemo(() => equippedHaste(entries, byKey), [entries, byKey])
+}
+
 export interface GearViewProps {
   /**
    * Deep-link an item name into the Loot tab's drill-down (App's `openLoot`) — where the ItemWindow
@@ -517,18 +535,21 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
     () => inertFilters({ ...own, text: deferredText, classes: classes.classes }, visible),
     [own, deferredText, classes.classes, visible]
   )
-  // The two injected verdicts the pure filter cannot answer for itself, merged into one stable
-  // object so `filterGearRows`' memo re-runs when either MOVES and never merely because it rendered.
-  const era = useEraHidden()
-  const owned = useOwnedOrLooted(ownership.map)
-  const deps = useMemo(() => ({ ...era, ...owned }), [era, owned])
-  const table = useTableRows(rows, state, filters, { sort, deps, chosen: prefs.columns, showDrops: prefs.dropCols })
-  // JOS-338. The hover card's data, and it is deliberately OUTSIDE the three-memo pipeline above:
+  // JOS-338. The hover card's data, and it is deliberately OUTSIDE the three-memo pipeline below:
   // what you are wearing is not a filter, not a sort and not a scale, so no keystroke and no slider
   // tick can reach it. It takes the UNSCALED corpus (the card joins an equipped item by key and
   // scales it at ITS OWN `+N`) and the state IN FORCE, which is what lets the card admit that its
   // item half is a simulation while the equipped half is a fact off the player's dump.
   const compare = useGearCompare(rows, state)
+  // The two injected verdicts the pure filter cannot answer for itself, plus the haste this
+  // character WEARS (the scores credit an item's haste only above it - `useOwnedHaste`), merged
+  // into one stable object so `filterGearRows`' memo re-runs when any MOVES and never merely
+  // because it rendered.
+  const era = useEraHidden()
+  const owned = useOwnedOrLooted(ownership.map)
+  const ownedHaste = useOwnedHaste(ownership.payload.entries, compare.byKey)
+  const deps = useMemo(() => ({ ...era, ...owned, ownedHaste }), [era, owned, ownedHaste])
+  const table = useTableRows(rows, state, filters, { sort, deps, chosen: prefs.columns, showDrops: prefs.dropCols })
   const win = useWindowedRows({ count: table.rows.length, rowHeight: ROW_HEIGHT, scrollRef })
   const hint = useMemo(
     () => ownedHint(ownership.map, uncountedNote(ownership.payload.uncounted)),
@@ -588,7 +609,7 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
           ownedHint={hint}
           onSort={onSort}
           onOpenLoot={onOpenLoot}
-          // The drop trio's doors (user ask, 2026-08-17): a Mob cell opens the mob's page, a Zone
+          // The drop trio's doors (fork decision, kaltinril 2026-08-17): a Mob cell opens the mob's page, a Zone
           // cell opens that zone's map. Threaded from App's router like `onOpenLoot` above.
           onOpenMob={onOpenMob}
           onOpenMapZone={onOpenMapZone}
@@ -601,9 +622,9 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
           widths={prefs.widths}
           onWidths={prefs.setWidths}
           // The derived-score knobs (2026-08-15): the drawn EFF DMG / BEST cells read the same
-          // options the sort just ranked by — the haste opt-out AND the class picks, so a casting
-          // stat nobody picked can use scores nothing (the 1000-INT-warrior case).
-          derived={derivedOpts(filters)}
+          // options the sort just ranked by — the haste opt-out, the worn haste AND the class
+          // picks, so a casting stat nobody picked can use scores nothing (the 1000-INT-warrior case).
+          derived={derivedOpts(filters, deps.ownedHaste)}
           showDrops={prefs.dropCols}
           // JOS-338 — hovering a row opens the comparison card. Passed always: the card is useful
           // with no dump at all (the item half plus the command that fills the other half), and

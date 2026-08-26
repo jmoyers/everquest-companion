@@ -46,6 +46,8 @@
 //    a surface starts disagreeing with itself.
 
 import type { GearRow } from '../../../../shared/planner/gear'
+import { scaleGearStat } from '../../../../shared/planner/gearScale'
+import { upgradeStateForTier } from '../../../../shared/itemUpgrade'
 import {
   ownershipForLootName,
   ownershipIndexFrom,
@@ -190,6 +192,34 @@ export function gearOwnershipMap(
  */
 export function ownershipFor(map: GearOwnershipMap, row: Pick<GearRow, 'key'>): GearOwnership {
   return map.get(row.key) ?? NOTHING
+}
+
+// ---- the haste this character wears (fork decision, kaltinril 2026-08-25) ------------------
+
+/**
+ * THE BEST HASTE PERCENTAGE ON AN EQUIPPED ROW, or 0 when nothing worn states one — the number
+ * the derived scores credit an item's haste only above (`gearScale.GearDerivedOpts.ownedHaste`;
+ * worn haste does not stack).
+ *
+ * EQUIPPED ROWS ONLY. A haste sword in the bank or a bag is worn by nobody, so it counts for
+ * nothing here (fork ruling, kaltinril: *haste should only be EQUIPPED items*) — the `place`
+ * classification the fold already makes is the whole gate, and the six other places are simply
+ * not read. The row is joined to the corpus BY KEY (phase 3's seam) to read its stated HASTE, and
+ * that number is scaled to the ` +N` the dump printed (`scaleGearStat`, the flat rule — the same
+ * floor `gearCompare.equippedState` takes: the tier its name states, no banked fraction). A worn
+ * item the corpus does not know, or one stating no haste line, contributes nothing (law 1).
+ */
+export function equippedHaste(entries: readonly OwnershipEntry[], byKey: ReadonlyMap<string, GearRow>): number {
+  let best = 0
+  for (const [key, rows] of entries) {
+    const haste = byKey.get(key)?.stats.HASTE
+    if (haste === undefined) continue
+    for (const row of rows) {
+      if (row.place !== 'equipped') continue
+      best = Math.max(best, scaleGearStat('HASTE', haste, upgradeStateForTier(row.tier)))
+    }
+  }
+  return best
 }
 
 // ---- the words ------------------------------------------------------------------------------

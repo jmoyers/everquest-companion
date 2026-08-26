@@ -3,7 +3,7 @@
 // gearEffectiveHp.test.mts precedent, fixtures duplicated the same way and for the same reason.
 //
 // WHAT CAME BACK AND HOW. JOS-302 (owner ruling 2026-08-13) deleted the toolbar's numeric filters;
-// the 2026-08-15 user ask — *filter by any of the columns* — brought numeric filtering back as
+// the 2026-08-15 fork ask (kaltinril) — *filter by any of the columns* — brought numeric filtering back as
 // SEARCH-BOX TOKENS, which honours what that ruling was actually about: toolbar real estate.
 // gearFilter.ts's header carries the full argument. The claims pinned here:
 //
@@ -27,6 +27,7 @@ import {
   filterGearRows,
   isShieldLike,
   parseGearQuery,
+  readsDerivedOpts,
   scaleAll,
   type GearFilters
 } from '../src/renderer/src/features/gear/gearFilter'
@@ -159,12 +160,33 @@ test('SHIELD is a pick in the Weapon type control (2026-08-15 ruling), and it un
   assert.equal(filterGearRows(pool, filters()).length, pool.length)
 })
 
-test('IGNORE HASTE drops the haste term from EFF DMG and BIS, and only that term', () => {
-  // The Club states HASTE 10 — counted, its damage score clears the no-haste reading; ignored,
-  // the two readings are exactly one weighted haste term apart, computed through the same door.
-  const counted = filterGearRows(ALL, filters({ text: 'effdmg>3' }))
+test('IGNORE HASTE drops the haste credit from EFF DMG and BIS, and the WORN haste reaches a threshold too', () => {
+  // The Club states HASTE 10 - under the dps focus (roleWeights.ts) that is 40 of its ~49; without
+  // it the club reads ~9 (a 0.17 ratio at 20, two regen at 3). Thelvorn reads ~20 with no haste
+  // at all. `effdmg>10` is the line between the two readings of the Club, and Thelvorn clears it
+  // either way - so the threshold is what proves the flag reached the filter, not just the cells.
+  const counted = filterGearRows(ALL, filters({ text: 'effdmg>10' }))
   assert.ok(names(counted).includes('Wooden Club'), 'haste counts by default')
-  const ignored = filterGearRows(ALL, filters({ text: 'effdmg>3', ignoreHaste: true }))
+  const ignored = filterGearRows(ALL, filters({ text: 'effdmg>10', ignoreHaste: true }))
   assert.ok(!names(ignored).includes('Wooden Club'), 'the ignore flag reaches the threshold too')
   assert.ok(names(ignored).includes('Thelvorn, Blade of Light'), 'a no-haste weapon is untouched')
+  // AND SO DOES THE HASTE THE CHARACTER WEARS (2026-08-25): a player already in a 10% item gets no
+  // credit for the Club's 10% - the same rule, arriving through `GearFilterDeps` off the dump.
+  const worn = filterGearRows(ALL, filters({ text: 'effdmg>10' }), { ownedHaste: 10 })
+  assert.ok(!names(worn).includes('Wooden Club'), 'worn haste reaches the threshold')
+  const lesser = filterGearRows(ALL, filters({ text: 'effdmg>10' }), { ownedHaste: 5 })
+  assert.ok(names(lesser).includes('Wooden Club'), 'and five points above the worn 5% still count')
+})
+
+test('readsDerivedOpts names exactly the keys the knobs move - the Ignore-haste chip`s honest-hide gate', () => {
+  // The view hides the chip while nothing on screen reads the scores; the set of keys that DO is
+  // stated beside the dispatch in gearFilter.ts, and this pins it there rather than in the view.
+  assert.equal(readsDerivedOpts('EFF_DMG'), true)
+  assert.equal(readsDerivedOpts('BIS'), true)
+  for (const key of ['name', 'RATIO', 'EFF_HP', 'AC', 'HASTE', 'zone', 'mob'] as const) {
+    assert.equal(readsDerivedOpts(key), false, `${key} reads no knob`)
+  }
+  // The query half of the gate: a threshold on a score is "something on screen reads the scores".
+  assert.ok(parseGearQuery('best>40').thresholds.some((t) => readsDerivedOpts(t.key)))
+  assert.ok(!parseGearQuery('ac>=20').thresholds.some((t) => readsDerivedOpts(t.key)))
 })
