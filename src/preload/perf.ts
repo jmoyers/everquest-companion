@@ -11,6 +11,7 @@
 
 import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
+import type { EnginePerfSample } from '../shared/enginePerf'
 import type { PerfHudPrefs, PerfSample, StartupProfile } from '../shared/perf'
 import type { ProcessPriorityPrefs } from '../shared/processPriority'
 
@@ -25,6 +26,29 @@ export const perfBridge = {
     ipcRenderer.on(IPC.onPerfSample, listener)
     return () => ipcRenderer.removeListener(IPC.onPerfSample, listener)
   },
+  /**
+   * Subscribe to the ENGINE section's push (JOS-483). `null` means there is nothing to draw —
+   * the engine flag is off, this build carries no engine binary, or the watch has just stopped —
+   * and the section hides on it rather than freezing on the last numbers it saw, exactly as the
+   * chip does on a `null` sample.
+   *
+   * SUBSCRIBING COSTS NOTHING. Main polls only while `watchEnginePerf(true)` is in force, so a
+   * component may subscribe on mount and decide separately when to ask for numbers.
+   */
+  onEnginePerf: (cb: (sample: EnginePerfSample | null) => void): (() => void) => {
+    const listener = (_e: unknown, sample: EnginePerfSample | null): void => cb(sample)
+    ipcRenderer.on(IPC.onEnginePerf, listener)
+    return () => ipcRenderer.removeListener(IPC.onEnginePerf, listener)
+  },
+  /**
+   * "The performance panel is open" / "it is closed" — the ENGINE poll's only arming signal.
+   *
+   * IT IS THE RENDERER'S JOB TO SAY BOTH, and to say `false` on unmount, because the engine's
+   * numbers cost a loopback round trip and a native per-pid read. A perf surface that polled for
+   * the hours the app is up would be the bug it exists to find; a popover is open for seconds.
+   */
+  watchEnginePerf: (open: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.perfEngineWatch, open) as Promise<void>,
   /** The persisted HUD switch. Off by default. */
   getPerfPrefs: (): Promise<PerfHudPrefs> => ipcRenderer.invoke(IPC.perfPrefsGet),
   /** Flip the HUD switch; the sampler starts/stops in the same call, so the first sample lands

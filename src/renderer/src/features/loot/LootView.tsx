@@ -29,9 +29,10 @@
 // means. What the hover used to say is not lost — clicking a row (or a pickup chip) opens the
 // drill-down, which is where the item window and its quest/recipe knowledge live anyway.
 
-import { type JSX, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type JSX, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Snackbar, Stack } from '@mui/material'
-import type { LootEvent } from '@shared/types'
+import type { ItemKnowledge, LootEvent } from '@shared/types'
+import type { EngineClient } from '@shared/dataServer/client'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
 import { useWindowedRows } from '../../lib/useWindowedRows'
@@ -46,7 +47,14 @@ import { LootTable, type LootTableContext } from './LootTables'
 // The chrome around the table — the toolbar, the caption and the notices — plus the two pieces of
 // view state that belong to them. JOS-160 moved it out when this file crossed its measured line
 // ceiling; nothing changed in the move.
-import { LootNotices, LootSummary, LootToolbar, useLootSort } from './LootChrome'
+import { LootNotices, LootSourceToggle, LootSummary, LootToolbar, useLootSort, type LootSource } from './LootChrome'
+// THE DATA-SERVER SURFACE (JOS-484). The context is READ DIRECTLY rather than through
+// `useEngineClient`, and that is the whole gate: it holds null on every launch without a live engine
+// — which is every launch a user makes — so the toggle below never renders and the engine ledger is
+// never mounted. `useEngineClient` throws on null by design (it is for a view that has already been
+// gated); a view that decides whether to exist has to be able to ask.
+import { EngineClientContext } from '../../lib/useView'
+import { EngineLootLedger } from './EngineLootLedger'
 import { NotablePickupsStrip, useNotableStrip } from './NotablePickupsStrip'
 import { useLootRows } from './useLootRows'
 // HOW FAST THE SLICE IS PAYING (JOS-261) — the aggregate loot-per-hour the caption states, joined
@@ -262,6 +270,38 @@ function LootLedgerBody({
   )
 }
 
+/**
+ * THE ENGINE-FED LEDGER, OR NOTHING (JOS-484).
+ *
+ * Its own function so the branch reads as one line where it happens and `LootView` stays inside the
+ * measured lines-per-function ceiling — the same reason `LootLedgerBody` and `LootDetailTakeover`
+ * live beside it rather than inline.
+ *
+ * `client === null` is the ORDINARY answer and short-circuits everything: it is the state on every
+ * launch without a live engine, which is every launch a user makes. The drill-down is deliberately
+ * NOT swapped with the ledger — a row click still opens the app's pane, with its rates, its per-mob
+ * table and its inventory join — so `onSelect` means the same thing in both modes and this ticket
+ * moves exactly one surface.
+ */
+function engineLedger(p: {
+  client: EngineClient | null
+  source: LootSource
+  setSource: (v: LootSource) => void
+  knowledgeByKey: Map<string, ItemKnowledge>
+  onSelect: (item: string) => void
+}): JSX.Element | null {
+  if (p.source !== 'engine' || p.client === null) return null
+  return (
+    <EngineLootLedger
+      client={p.client}
+      knowledgeByKey={p.knowledgeByKey}
+      onSelect={p.onSelect}
+      source={p.source}
+      setSource={p.setSource}
+    />
+  )
+}
+
 export default function LootView(props: LootViewProps = {}): JSX.Element {
   // ONE subscription to the loot module: useProgress already owns it (and needs it for the
   // reconcile), so the merged view reads its history from there rather than holding a
@@ -280,6 +320,10 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
   const [sort, setSort] = useLootSort()
   const [showInventoryOnly, setShowInventoryOnly] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  // WHICH WORLD THIS LEDGER READS (JOS-484) — component state, because it is a comparison somebody
+  // is making right now and not a preference anybody keeps (LootChrome's LootSourceToggle).
+  const [source, setSource] = useState<LootSource>('app')
+  const engineClient = useContext(EngineClientContext)
   // `prog` comes back with the slice on purpose (TimesliceState.prog): the rate line below needs a
   // `rangeStats` over this very slice, and a second subscription to the same module is how a
   // numerator and a denominator end up describing two different snapshots.
@@ -317,6 +361,10 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
     return <LootDetailTakeover {...p} />
   }
 
+  const served = { client: engineClient, source, setSource, knowledgeByKey, onSelect: detail.open }
+  const engine = engineLedger(served)
+  if (engine !== null) return engine
+
   return (
     // `minHeight: 0`: this column's last child is the scrolling ledger, and a flex column whose
     // items keep their automatic minimum size cannot shrink one — the list would size itself to
@@ -326,6 +374,9 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
           filters, and it must never be crowded into the same line as the search box (the
           compact-bar contract — controls never shrink). */}
       <LootSliceBar {...timeslice} />
+
+      {/* Dev only, and gated on a LIVE CONNECTION rather than on a flag — see LootChrome. */}
+      {engineClient !== null && <LootSourceToggle source={source} setSource={setSource} />}
 
       <LootToolbar
         query={query}

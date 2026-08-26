@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://everquest-companion.local/protocol/views",
+  "title": "Data-server protocol — view descriptors",
+  "description": "A VIEW DESCRIPTOR IS THE WHOLE QUERY. Filtering, sorting and windowing are stated here and performed engine-side, because the renderer never munges domain data (owner ruling): rows arrive filtered, sorted, windowed and render-ready. Every list in the product eventually becomes one of these.",
+  "$defs": {
+    "ViewDescriptor": {
+      "title": "ViewDescriptor",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Which collection the view reads, e.g. `loot.ledger` or `combat.live`. The engine owns the registry of sources; an unknown one is a `notFound` error, never an empty result.",
+          "type": "string"
+        },
+        "filter": { "$ref": "#/$defs/ViewFilter" },
+        "sort": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SortTerm" }
+        },
+        "window": { "$ref": "#/$defs/ViewWindow" }
+      },
+      "required": ["source"],
+      "additionalProperties": false
+    },
+
+    "ViewFilter": {
+      "title": "ViewFilter",
+      "description": "Field-name to value, ANDed. Open by design for the same reason Cells is: which fields a source filters on is the SOURCE's contract, not the protocol's.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Cell" }
+    },
+
+    "SortTerm": {
+      "title": "SortTerm",
+      "description": "One sort key as the pair the plan doc writes: [\"at\",\"desc\"]. THE DOUBLE SPELLING IS DELIBERATE. A draft 2020-12 VALIDATOR reads `prefixItems` and therefore enforces that the second element is asc or desc - that is the real contract. Both CODE GENERATORS predate or ignore that keyword and read `items` + minItems/maxItems instead, landing on a fixed-length array of strings in each language. The two can never disagree about a legal value: with minItems = maxItems = 2 there is no element left for `items` to reach under 2020-12 semantics, so the fallback is vacuous for a compliant validator and merely weaker for a generator. Anything the generated types accept and the validator rejects is caught by the fixture suite, which validates every message against the schema itself.",
+      "type": "array",
+      "prefixItems": [
+        { "type": "string" },
+        { "type": "string", "enum": ["asc", "desc"] }
+      ],
+      "items": { "type": "string" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+
+    "ViewWindow": {
+      "title": "ViewWindow",
+      "description": "The slice of the sorted, filtered view the client wants. Absent means the engine's default window for that source — never `everything`, because an unbounded window is how a payload budget gets blown.",
+      "type": "object",
+      "properties": {
+        "offset": { "type": "integer" },
+        "limit": { "type": "integer" }
+      },
+      "required": ["offset", "limit"],
+      "additionalProperties": false
+    }
+  }
+}

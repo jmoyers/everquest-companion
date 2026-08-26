@@ -1,6 +1,9 @@
 import { type JSX, memo } from 'react'
 import { Box, Chip, Stack, TableCell, TableRow, Typography } from '@mui/material'
 import type { ItemKnowledge, LootDisposition, LootEvent } from '@shared/types'
+// The SERVED row's cells (JOS-484). A `Cell` is `string | number | boolean | null` and that is all
+// this file is allowed to know about one — see `EngineFlatRow` below.
+import type { Cells } from '@shared/dataServer/protocol.generated'
 import { formatDateTime } from '../../lib/formatDate'
 import type { InventoryRow } from '../inventory/reconcile'
 import { isQuestItem } from './lootItemData'
@@ -154,6 +157,124 @@ export const GroupedRow = memo(function GroupedRow({
         {g.zoneCount || '-'}
       </TableCell>
       <TableCell sx={{ color: 'text.secondary' }}>{g.invOnly ? '-' : fmtTime(g.last)}</TableCell>
+    </TableRow>
+  )
+})
+
+// ============================================================================
+// THE SAME ROW, SERVED (JOS-484) — `loot.ledger`'s cells, drawn VERBATIM.
+// ============================================================================
+//
+// `FlatRow` above draws a `LootEvent`: it formats the instant (`fmtTime`), reads `source`, reads
+// `zone`. `EngineFlatRow` draws a `{key, cells}` row the engine already made render-ready, and the
+// difference between the two is the whole point of owner ruling 4 — every derivation `FlatRow` does
+// happened engine-side before this row was sent, and this component may not redo any of it.
+//
+// WHAT IT MAY STILL DO, and the line is worth stating precisely because it looks like a loophole.
+//
+//   * FORMAT `count` AND `item` INTO ONE STRING. `engine/crates/engined/src/views/loot.rs`'s header
+//     argues this deliberately: the stack size is served as its own NUMBER rather than composed
+//     into `"2 × Bone Chips"`, because the composed string is LOSSY for every other reader of the
+//     row and a client that had to split it back apart would be doing exactly the munging the
+//     ruling forbids. Joining them with `×` is a format, in the same class as rounding a percentage
+//     for the bar it is drawn in. The engine chose the honest decomposition; this is the join.
+//   * DRAW A DASH FOR NULL. Same header: an absent value is served as `null`, never as `"-"`,
+//     because a cell of `"-"` cannot be told from an item genuinely called `-` and it would take
+//     the diff protocol's explicit-null clear away from the source. The dash is a DISPLAY decision
+//     about absence, which is what it always was.
+//   * JOIN THE APP'S OWN KNOWLEDGE. The PoSky chip and the `KnowledgeBadge` are not cells and never
+//     were: they are the renderer-bundled corpora, which are the LAST thing on this row that is not
+//     served (the plan's cutover ledger item 3 moves them behind Knowledge queries). Drawing them
+//     here is what makes the two rows comparable at all — the e2e's oracle is the DOM, and a row
+//     that dropped its badges would differ from the app's for a reason that has nothing to do with
+//     the fold.
+//
+// WHAT IT MAY NOT DO, and does not: parse `at` back into an instant, sort, filter, re-key, or total
+// anything. The order these rows arrive in is the order they are drawn in.
+//
+// IT TAKES `cells` AND NOT A ROW because the key is the caller's business (it is the React key and
+// the diff's identity, not a thing the reader sees), and because that keeps this component's whole
+// contract visible in its signature.
+
+/** Read one cell as the text a table draws. Absent, null and non-text all mean "nothing here", and
+ *  the caller decides what nothing looks like — see the dash rule above. */
+function text(cells: Cells, name: string): string | null {
+  const value = cells[name]
+  return typeof value === 'string' ? value : null
+}
+
+/** Read one cell as a number, for the one cell that is one. */
+function num(cells: Cells, name: string): number | null {
+  const value = cells[name]
+  return typeof value === 'number' ? value : null
+}
+
+/**
+ * The dispositions this build can draw a chip for — NARROWED, not cast.
+ *
+ * A cell is `string | number | boolean | null` by protocol, so the served disposition arrives as a
+ * plain string and asserting it into the union would be a lie the type system agreed to. Anything
+ * outside the set draws NO CHIP, which is the honest degradation and also a tripwire: the row-parity
+ * e2e compares this row's text against the app-fed one, so a disposition the engine grew and this
+ * build has not heard of makes that spec red instead of quietly disappearing from a ledger.
+ */
+const DISPOSITIONS: readonly LootDisposition[] = [
+  'currency',
+  'sold',
+  'hoard',
+  'depot',
+  'combined',
+  'destroyed'
+]
+
+function asDisposition(value: string | null): LootDisposition | undefined {
+  return DISPOSITIONS.find((d) => d === value)
+}
+
+export const EngineFlatRow = memo(function EngineFlatRow({
+  cells,
+  knowledge,
+  onSelect
+}: {
+  cells: Cells
+  knowledge?: ItemKnowledge
+  onSelect: (item: string) => void
+}): JSX.Element {
+  const item = text(cells, 'item') ?? ''
+  const count = num(cells, 'count')
+  const disposition = text(cells, 'disposition')
+  const created = text(cells, 'created')
+  const posky = isQuestItem(item)
+  return (
+    <TableRow
+      hover
+      // The SAME handle as the app-fed row, deliberately: these are two sources for one list, not
+      // two lists, and the e2e that compares them reads one selector.
+      data-testid="loot-row"
+      sx={{ ...FIXED_ROW, cursor: 'pointer' }}
+      onClick={() => onSelect(item)}
+    >
+      {/* ALREADY A STRING when it arrives — `at` is served as the prose the ledger draws, and the
+          instant it was drawn from is a query FIELD with no cell. This is the cell ruling 4 is
+          easiest to see in: there is no `fmtTime` here and there cannot be one. */}
+      <TableCell sx={{ color: 'text.secondary' }}>{text(cells, 'at') ?? ''}</TableCell>
+      <TableCell>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Box component="span" data-testid="loot-item-name">
+            {count !== null && count > 1 ? `${String(count)} × ${item}` : item}
+          </Box>
+          {posky && <Chip size="small" color="primary" variant="outlined" label="PoSky" />}
+          <KnowledgeBadge knowledge={knowledge} isPosky={posky} />
+          <DispositionChip disposition={asDisposition(disposition)} />
+          {disposition === 'combined' && created !== null && (
+            <Typography variant="caption" color="text.secondary">
+              → {created}
+            </Typography>
+          )}
+        </Stack>
+      </TableCell>
+      <TableCell sx={{ color: 'text.secondary' }}>{text(cells, 'from') ?? '-'}</TableCell>
+      <TableCell sx={{ color: 'text.secondary' }}>{text(cells, 'zone') ?? '-'}</TableCell>
     </TableRow>
   )
 })

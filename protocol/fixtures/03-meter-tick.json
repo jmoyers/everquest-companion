@@ -1,0 +1,36 @@
+{
+  "moment": "meter tick (10 Hz, changed cells only)",
+  "source": "docs/plans/data-server.md, the subscription diff protocol",
+  "note": "Rule (2): newest-wins coalescing per batch, and an update carries ONLY the cells that changed - `name` is absent from the update because it did not move, not because it was cleared. No `total`: the row count did not change, and a field that did not move is not sent.",
+  "messages": [
+    {
+      "dir": "engine",
+      "message": {
+        "id": 12,
+        "kind": "diff",
+        "epoch": 3,
+        "ops": [
+          {
+            "op": "update",
+            "key": "ally:Primitive",
+            "cells": { "damage": 184220, "dps": 412.6, "share": 0.38 }
+          },
+          {
+            "op": "insert",
+            "after": "ally:Rowel",
+            "row": {
+              "key": "pet:Vibartik",
+              "cells": {
+                "name": "Vibartik",
+                "owner": "Rowel",
+                "damage": 9140,
+                "dps": 21.7,
+                "share": 0.02
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

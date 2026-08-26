@@ -1,0 +1,86 @@
+{
+  "moment": "the search box — a ranked answer over the whole fight history, and the two ways of finding nothing",
+  "source": "JOS-485 (Task #61's fight search, moved server-side; not a plan-doc moment — the four numbered moments are 01-04)",
+  "note": "THREE QUERIES AND THEY FAIL AND SUCCEED IN THREE DIFFERENT WAYS. The FIRST is the typo the app's own decision record is built around — `gohul knigt` — and it comes back ranked, best first, over a corpus of 1,428: the fold's uncapped encounter history plus the open fight, which is why `corpus` is on the answer at all. A UI that printed `2 of 1,428` is reading both numbers here, and the ratio is the whole reason the count is not left to the client to guess. The SECOND is an EMPTY query, and it is the fixture's sharpest claim: `hits` is empty and `corpus` is still 1,428, because an empty box means show the browse list, NOT search nothing — returning the whole corpus would make the empty box the most expensive keystroke of all, and answering `corpus: 0` would tell a UI there was nothing to search. The THIRD is a query that matched nothing at all, which produces the identical empty `hits` beside the identical `corpus` — the two are indistinguishable on the wire ON PURPOSE, because both mean `draw no results`, and the difference between them is the QUERY, which the client already holds. Note the `limit: 5000` on it: the engine clamps to its own 500 and says nothing, exactly as `src/main/ipc/world.ts` clamps rather than refuses — a search box that stopped answering because a number was silly would be the worse failure, and there are no hits here for the clamp to have cut.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 1,
+        "op": "combat.searchFights",
+        "params": { "query": "gohul knigt", "limit": 2 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": {
+          "corpus": 1428,
+          "hits": [
+            {
+              "score": 0.9,
+              "summary": {
+                "id": "e412",
+                "kind": "fight",
+                "name": "a zol ghoul knight",
+                "zone": "Neriak Third Gate",
+                "startTs": 1787104512000,
+                "durationSec": 22.0,
+                "active": false,
+                "total": 8412,
+                "dps": 382.4
+              }
+            },
+            {
+              "score": 0.9,
+              "summary": {
+                "id": "e118",
+                "kind": "fight",
+                "name": "a zol ghoul knight+2",
+                "zone": "Neriak Third Gate",
+                "startTs": 1787098120000,
+                "durationSec": 51.0,
+                "active": false,
+                "total": 19044,
+                "dps": 373.4
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 2, "op": "combat.searchFights", "params": { "query": "" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": { "corpus": 1428, "hits": [] }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 3,
+        "op": "combat.searchFights",
+        "params": { "query": "dragon slayer", "limit": 5000 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": { "corpus": 1428, "hits": [] }
+      }
+    }
+  ]
+}

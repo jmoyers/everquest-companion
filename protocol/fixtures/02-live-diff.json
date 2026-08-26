@@ -1,0 +1,34 @@
+{
+  "moment": "live diff (a kill drops loot into a newest-first 50-row window)",
+  "source": "docs/plans/data-server.md, the subscription diff protocol",
+  "note": "The insert names the row it goes BEFORE, and the drop is the oldest row falling out of the fifty. `total` moved from 1834 to 1835, so it is present; the dropped row still exists in the view.",
+  "messages": [
+    {
+      "dir": "engine",
+      "message": {
+        "id": 7,
+        "kind": "diff",
+        "epoch": 3,
+        "total": 1835,
+        "ops": [
+          {
+            "op": "insert",
+            "before": "loot:9412",
+            "row": {
+              "key": "loot:9413",
+              "cells": {
+                "at": "21:16:44",
+                "item": "Golden Efreeti Boots",
+                "from": "Efreeti Lord Djarn",
+                "zone": "Nagafen's Lair",
+                "qty": 1,
+                "mine": true
+              }
+            }
+          },
+          { "op": "drop", "key": "loot:8790" }
+        ]
+      }
+    }
+  ]
+}

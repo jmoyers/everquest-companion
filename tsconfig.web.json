@@ -61,6 +61,8 @@
     // …and `overlaySnap.ts` (the overlay-snapping switch, JOS-217), likewise.
     "src/preload/overlaySnap.ts",
     // …and `logStream.ts` (line / character rebuild / quiet-switch offer, JOS-432), likewise.
-    "src/preload/logStream.ts"
+    "src/preload/logStream.ts",
+    // …and `engine.ts` (the data server's brokered byte channel, JOS-484), likewise.
+    "src/preload/engine.ts"
   ]
 }

@@ -146,6 +146,10 @@ if (specs.length === 0) {
 // Build ONCE here rather than letting four specs discover staleness at the same instant (each
 // still calls buildIfStale and finds the output fresh), and sweep userData dirs from runs that
 // were killed before they could clean up after themselves.
+//
+// BOTH BINARIES SINCE JOS-490: `buildIfStale()` now asks cargo's gate as well as electron-vite's,
+// because the harness launches every app with `EQC_ENGINE=1` and a spec handed a stale or missing
+// `engined.exe` would take the engine's ABSENCE path and go quietly green.
 buildIfStale()
 const reaped = reapOrphanUserData()
 if (reaped > 0) console.log(`[e2e] reaped ${String(reaped)} orphaned userData dir(s) older than 24h`)

@@ -46,8 +46,10 @@ import { installSpeechCacheProtocol } from './speech/cache'
 import { registerIpc } from './ipc'
 import { DATA_READY_MS, bus, buffsModule, epoch, sendWorldRebuilt, sessionDetector } from './pipeline'
 import { markStartupPhase, startPerfSampler, stopPerf } from './perf'
+import { stopEnginePerfWatch } from './enginePerfWatch'
 import { noteHeapAfterData } from './dataWeight'
 import { initProcessPriority } from './processPriority'
+import { startEngineSupervisor, stopEngineSupervisor } from './dataServer/engineHost'
 import { getProcessPriorityPrefs } from './storeProcessPriority'
 import { initPresenceEffects, stopPresenceEffects } from './presenceEffects'
 import { provisionDefaultPacks } from './provisionPacks'
@@ -358,6 +360,22 @@ if (!gotSingleInstanceLock) {
         void runSmokeFeedback()
       })
     markStartupPhase('tailAttached')
+    // THE DATA-SERVER ENGINE (JOS-459, docs/plans/data-server.md), and since JOS-495 THIS IS THE
+    // ORDINARY PATH: `EQC_ENGINE=0` is what makes it return before touching anything, and nothing
+    // else does. A dev checkout that has never run `cargo build` still gets the old app, because
+    // the supervisor finds no binary — absence is decided by the disk now, not by the flag.
+    // `EQ_E2E` is NOT a second gate here, and that is deliberate rather than an omission —
+    // engineHost.ts's header carries the argument, and tests/e2e/engine-boots.e2e.mts is the spec
+    // that names the flag at both ends: on for its own launches, `EQC_ENGINE=0` for the absence
+    // contract at step 5, which after the flip is the only way to reach that path at all.
+    //
+    // HERE, right after the tail attaches, because the engine is the eventual successor to that
+    // fold and this is where its lifecycle belongs in the boot order — and because the supervisor
+    // is asynchronous end to end (spawn, announce, health probe) and must not sit in front of a
+    // window that is already up. Main owns spawn/watch/respawn/kill and NOTHING else about game
+    // data (the plan's boundary); phase 0 has no renderer surface, so what this buys today is an
+    // engine that exists and narrates itself into the dev log.
+    startEngineSupervisor()
     // Drain the offline feedback queue (feedback/queue.ts). A report filed while the user's
     // network was unhappy is spooled to <userData>/feedback.json + feedback-pending/*.gz and
     // sent later over the same wire, carrying the same idempotency key; without this call it
@@ -451,6 +469,13 @@ if (!gotSingleInstanceLock) {
  */
 app.on('before-quit', () => {
   teardownStep('main:stopPresence', stopPresenceEffects)
+  // …and the data-server engine, on BOTH quit events and for a stronger version of the reason the
+  // presence watcher is: the engine is a CHILD PROCESS, and Windows does not kill children with
+  // their parent. The one hazard JOS-182 retired by moving the presence watcher off a child is
+  // exactly the hazard this feature reintroduces on purpose, so the teardown has to be on every
+  // path that can end this process. Closing stdin is the whole shutdown (the dies-with-app law);
+  // it does not block, and the escalation to `kill` rides an unref'd timer.
+  teardownStep('main:stopEngine', stopEngineSupervisor)
   flushStoreForQuit()
   // …and the analytics ring, for the same reason and on the same event (JOS-371). `sessionEnd` is
   // recorded as the last window closes and its durable write is asynchronous now, so without this
@@ -538,6 +563,10 @@ app.on('window-all-closed', () => {
   // Stop the presence watcher thread + the cursor stream. Both already unref, but an unref'd
   // worker is still a running thread: nothing else would end it.
   teardownStep('main:stopPresence', stopPresenceEffects)
+  // Stop the engine child (JOS-467). Idempotent with the `before-quit` step above — one `end()` on
+  // an already-closed pipe — and here for the same belt-and-braces reason every other teardown is
+  // on both events.
+  teardownStep('main:stopEngine', stopEngineSupervisor)
   // Stop the feedback drain's timers. They are unref'd, so they cannot be the reason the
   // process lives on; this is about not starting an attempt into a process that is quitting.
   teardownStep('main:stopQueueFlush', stopQueueFlush)
@@ -551,6 +580,12 @@ app.on('window-all-closed', () => {
   // that never reached `rendererHydrated` still writing what it DID reach, which is exactly the
   // launch whose profile is worth having.
   teardownStep('main:stopPerf', stopPerf)
+  // …and the ENGINE half of that panel (JOS-483), which is a SEPARATE step for the reason this
+  // whole list is separate steps: it polls a child process over a socket, which is the kind of
+  // thing that can throw on the way out, and it must not be able to take the startup profile's
+  // flush with it. It is armed only while the panel is open, so this is usually a no-op — and
+  // usually is not always: a window closed with the popover open never sent its own close.
+  teardownStep('main:stopEnginePerf', stopEnginePerfWatch)
   // Flush the learned message overlay one last time so the final session's observations
   // aren't lost between debounced saves (Task #36).
   teardownStep('main:saveOverlay', () => saveUserOverlaySync(buffsModule.overlayRegister()))

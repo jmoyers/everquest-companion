@@ -14,6 +14,10 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { isClassAbbr, MAX_COMBO_SLOTS, type ClassAbbr, type ComboCorrection } from '../../shared/classCombo'
 import { LAUNCH_MS } from '../log/epochDetector'
+// The engine's copy (JOS-482, boundary verdict 3). Over here corrections are PULLED through a
+// provider, so a character switch needs no notification; the engine has no store to ask, so the
+// push replaces the pull and every write says so. Additive: a launch with no engine finds a null.
+import { pushAppKnowledge } from '../dataServer/definePush'
 import { comboModule, registry } from '../pipeline'
 import { activeCharId } from '../session'
 import { clearComboCorrections, getComboCorrections, setComboCorrection } from '../store'
@@ -54,6 +58,10 @@ function classes(raw: unknown): ClassAbbr[] | null {
 function republish(): void {
   comboModule.invalidate()
   registry.flushNow()
+  // …and the engine's module gets the same two, engine-side: `Defines::define` replaces the set and
+  // bumps the revision that IS its published seq, for exactly the JOS-87 reason this function
+  // exists.
+  pushAppKnowledge('combo.define')
 }
 
 export function registerComboIpc(): void {

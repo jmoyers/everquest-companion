@@ -40,6 +40,7 @@ import {
 } from './messageOverlay'
 // Inlined committed baseline (bundled into the main build, like spells.json).
 import baselineJson from './messageOverlay.baseline.json'
+import { appOwnsArtifacts } from '../dataServer/artifactOwner'
 
 /** Register schema version — bump to invalidate a stale on-disk register. */
 export const OVERLAY_REGISTER_VERSION = 2
@@ -109,7 +110,20 @@ function overlayFile(register: OverlayRegister): string {
   return JSON.stringify(file)
 }
 
+/**
+ * The debounced periodic save.
+ *
+ * THE FIRST GUARD IS OWNERSHIP (JOS-497 item 2, boundary verdict 4) and it comes before the
+ * in-flight latch because it is a different kind of question: `writing` asks whether THIS process is
+ * mid-write, and `appOwnsArtifacts()` asks whether this process writes this file at all on this
+ * launch. Under serve the engine has been handed `stateDir` and owns `message-overlay.json`,
+ * reading and writing it in this app's byte-verbatim format on its own cadence; a second writer
+ * here would be the two-processes-one-file hazard JOS-496 named and declined to ship. See
+ * `dataServer/artifactOwner.ts` for the latch, the boot ordering, and why the predicate is a live
+ * connection rather than a flag.
+ */
 export function saveUserOverlay(register: OverlayRegister): void {
+  if (!appOwnsArtifacts()) return
   if (writing) return
   writing = true
   const data = overlayFile(register)
@@ -136,6 +150,12 @@ export function saveUserOverlay(register: OverlayRegister): void {
  * final's own bytes are the ones that survive.
  */
 export function saveUserOverlaySync(register: OverlayRegister): void {
+  // THE QUIT FINAL IS STILL A WRITE, so it asks the same ownership question the periodic saver does
+  // (JOS-497 item 2). A launch that handed this file to the engine must not, on its way out,
+  // publish its own register over the one the owner has been maintaining — which would be the app
+  // getting the LAST word about a file it does not own, at the one moment nothing is left to
+  // correct it.
+  if (!appOwnsArtifacts()) return
   const path = userOverlayPath()
   try {
     writeFileDurableFinal(app.getPath('userData'), path, overlayFile(register))

@@ -74,7 +74,23 @@ async function stepDropsPanel(page: Page, log: FixtureLog): Promise<string | nul
 
   // ORDER IS THE OBSERVATION: three of one item beat one of another, so the mote is the top row.
   // Its COUNT is asserted exactly, because the harness wrote it.
-  const top = (await textOf(page, DROP_ROW)).replace(/\s+/g, ' ')
+  //
+  // AND THE WAIT IS FOR THE COUNT, NOT FOR THE ROW (JOS-490). `settleCount` above settles on a row
+  // EXISTING, which is a different condition from the one asserted below — so the read could land
+  // between the first drop reaching the panel and the third. That was never observable while the
+  // snapshot was a synchronous main-process call; with the engine serving `module:getSnapshot` the
+  // hydrate is a loopback round trip, which widens the window enough to catch it, and the suite did:
+  // MEASURED on this ticket, the panel read `Mote of Major Potential 1× 0.00 drops/hr` here and
+  // `3× 0.01 drops/hr` eight seconds later, off a fold that deep-equals the app's at a matched seq.
+  // Nothing about the assertion changes — this waits for the state it is about, which is the repo's
+  // own law (AGENTS.md: wait for the CONDITION, never for the clock).
+  const top = (
+    await settle(
+      () => textOf(page, DROP_ROW),
+      (t) => t.replace(/\s+/g, ' ').includes(`${String(DROP_COUNT)}×`),
+      { timeoutMs: 20_000 }
+    )
+  ).replace(/\s+/g, ' ')
   check('…ordered by observed drops — the item that dropped three times is the top row', top.includes(DROP_ITEM), top)
   check(`…stating its in-window count exactly (${String(DROP_COUNT)} of them were written)`, top.includes(`${String(DROP_COUNT)}×`), top)
   // A RATE NEVER APPEARS WITHOUT ITS SPAN, AND THE SPAN NAMES ITS HOUR: the panel's single caption
@@ -128,7 +144,18 @@ async function stepDropRoundTrip(page: Page): Promise<void> {
   if (check('the drill-down draws the per-zone drop table', table === 1)) {
     const zoneRows = await settleCount(page, ITEM_ZONE_ROW, 1, { timeoutMs: 15_000 })
     check('…with a row for the zone it was just looted in', zoneRows > 0, `${String(zoneRows)} zone rows`)
-    const text = (await textOf(page, ITEM_ZONE_TABLE)).replace(/\s+/g, ' ')
+    // THE SAME CORRECTION AS THE PANEL ABOVE (JOS-490), and for the same reason: `settleCount`
+    // settles on the ROW existing, and what is asserted is what the row SAYS. This table's rate is
+    // divided by ACTIVE time, which lands a beat after the row itself does, so the existing wait
+    // could read a row whose Rate and Active cells were still placeholders — observed on this
+    // ticket as `Nagafen's Lair 3 - -`. The predicate is now the assertion.
+    const text = (
+      await settle(
+        () => textOf(page, ITEM_ZONE_TABLE),
+        (t) => /drops\/hr|—/.test(t),
+        { timeoutMs: 20_000 }
+      )
+    ).replace(/\s+/g, ' ')
     check('…and each row states a rate or an honest em-dash', /drops\/hr|—/.test(text), text.slice(0, 140))
   }
 

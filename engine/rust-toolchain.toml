@@ -1,0 +1,12 @@
+# PINNED, and the pin is load-bearing rather than tidiness.
+#
+# `engine/crates/protocol/src/generated.rs` is a COMMITTED artifact whose staleness test
+# regenerates it and diffs. The last step of generation is rustfmt, so two rustfmt versions that
+# disagree about a line break would make that test fail on a schema nobody touched — a red build
+# with no defect behind it. Pinning the toolchain makes the dev box and the CI runner produce the
+# same bytes. Bump it deliberately, run `npm run gen:protocol`, and commit the regenerated file
+# in the same change.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -23,6 +23,15 @@
 // Alert defs are owned by the store; the module holds a live copy that main keeps
 // in sync (setDefs) whenever the user saves/deletes an alert.
 //
+// SINCE JOS-491 THIS EVALUATOR CAN BE SILENCED, and the fires can come from somewhere else. Behind
+// `EQC_ENGINE_ALERTS=1` (with ENGINE+SERVE) the Rust engine evaluates the same defs against the
+// same live events and streams a fire frame back; `dataServer/alertsAudio.ts` translates one into a
+// `FiredAlert` and hands it to `engineFired` below, which puts it on the SAME delta — so the
+// renderer's player, the recent-fires ring and the event feed all keep the one path they have
+// always had. In that world `setEngineOwnsAudio(true)` makes `publish` a no-op, which is the whole
+// of the single-audio guarantee: this file still matches, still spends its cooldown clocks, and
+// says nothing. With the flag unset none of it exists and the cost is one false boolean.
+//
 // A LITERAL `where.spell` MATCHER IS RANK-BLIND (JOS-259). A spell alert fires for ALL RANKS of
 // that spell — the owner's ruling, and the domain law behind it is that an upgraded spell never
 // downgrades. Both sides of the compare fold through `spellLineKey`, so `Elemental Maelstrom`,
@@ -541,10 +550,74 @@ export class AlertsModule implements EqModule<AlertsSnap, AlertsDelta> {
    * tick rather than at the match, is in alertsEarlyWarning.ts.
    */
   private early = new EarlyWarnings()
+  /**
+   * THE ENGINE OWNS THE SOUND ON THIS LAUNCH (JOS-491, `EQC_ENGINE_ALERTS=1`).
+   *
+   * When it is true this evaluator still RUNS — every match, every candidate widening, every
+   * cooldown clock — and simply publishes nothing: no `fired` on the delta, no ring-buffer record.
+   * That is the single-audio guarantee spelled structurally rather than by coordination, because
+   * the delta is the ONE path a main-side fire has to a speaker (renderer player.tsx) and to the
+   * event feed (pipeline.ts `feedAlertDelta`). An evaluator that published and asked the player
+   * not to play would be a second audio path with a flag on it.
+   *
+   * WHY EVALUATION IS LEFT RUNNING rather than gated above the loop: the two worlds are being
+   * compared, and an evaluator that stopped evaluating would have nothing to compare. Its cost is
+   * the cost it has always had, and its clocks stay warm so a disarm mid-launch (there is none
+   * today) could never produce a burst.
+   *
+   * IT DOES NOT REACH `appFired`. An 'app' signal is renderer-evaluated on BOTH sides — the engine
+   * compiles those triggers to a condition that never matches — so its echo is not a second
+   * firing of anything the engine said, and silencing it would delete the boss-defeat sound.
+   */
+  private engineOwnsAudio = false
 
   /** Replace the live alert set (called by main after load + every save/delete). */
   setDefs(defs: AlertDef[]): void {
     this.compiled = defs.map(compileAlert)
+  }
+
+  /**
+   * Hand the sound to the engine, or take it back (JOS-491). Called once at arm time by
+   * `dataServer/alertsAudio.ts`, which owns the flag and the early-warning gate.
+   */
+  setEngineOwnsAudio(on: boolean): void {
+    this.engineOwnsAudio = on
+  }
+
+  /**
+   * PUBLISH ONE FIRING — the single choke point every main-side sound passes through, and
+   * therefore the only place the silence has to be written.
+   *
+   * Both of its side effects belong to the same event: the delta is what a speaker hears and the
+   * ring is what the recent-fires panel and the event feed read. A silenced evaluator does neither,
+   * so a matched line under the flag leaves this process exactly as it found it.
+   */
+  private publish(fired: FiredAlert, matchedText: string): void {
+    if (this.engineOwnsAudio) return
+    this.pending.push(fired)
+    this.record(fired.alertId, fired.ts, matchedText)
+  }
+
+  /**
+   * A FIRE THE ENGINE MADE (JOS-491, owner ruling 22's second half — receive-fire-make-sound).
+   *
+   * It joins the delta the app's own fires have always ridden, so the renderer's always-mounted
+   * player plays it through the SAME `playAlertNow` entry and the event feed folds it into a row
+   * through the same `feedAlertDelta`. There is deliberately no second audio path and no renderer
+   * change: the frame is translated into a `FiredAlert` by `dataServer/alertsAudio.ts` and handed
+   * here, and from this line down the app cannot tell which world evaluated it.
+   *
+   * `seq` IS BUMPED BY HAND for `appFired`'s reason exactly (JOS-87): a fire arriving off a socket
+   * advances no log seq, and `useModule` would drop the delta as a duplicate. The player itself
+   * reads no seq — it plays every firing on the delta — so this is about the history panel.
+   *
+   * IT IS NOT GATED ON `engineOwnsAudio`. Nothing calls it unless the flag armed, and a second
+   * gate here would be a second place for the two to disagree about who is making the sound.
+   */
+  engineFired(fired: FiredAlert): void {
+    this.seq += 1
+    this.pending.push(fired)
+    this.record(fired.alertId, fired.ts, fired.matchedText)
   }
 
   /**
@@ -654,9 +727,11 @@ export class AlertsModule implements EqModule<AlertsSnap, AlertsDelta> {
       if (captures) fired.captures = captures
       if (this.earlyWarnTakesIt(c, ev, key, fired)) continue
       if (this.onCooldown(key, c.def, ev.ts)) continue
+      // THE CLOCK IS SPENT EVEN WHEN THE SOUND IS THE ENGINE'S (JOS-491). A cooldown is part of
+      // EVALUATING, not of publishing, and an evaluator whose clocks never engaged would report a
+      // different fire count than the engine's for a reason that has nothing to do with matching.
       this.noteFire(key, ev.ts)
-      this.pending.push(fired)
-      this.record(c.def.id, ev.ts, match.text)
+      this.publish(fired, match.text)
     }
   }
 
@@ -770,8 +845,13 @@ export class AlertsModule implements EqModule<AlertsSnap, AlertsDelta> {
     // `dueAt` rides the firing so a consumer can COUNT DOWN to the deadline this warning is early
     // of (JOS-378). It is carried only here, on the early-warning path, because it is only here
     // that a deadline exists — see FiredAlert.dueAt.
-    this.pending.push({ ...due.fired, ts: nowMs, dueAt: due.dueAt })
-    this.record(def.id, nowMs, due.fired.matchedText)
+    //
+    // IT GOES THROUGH `publish` LIKE EVERY OTHER FIRING, which under engine-owned audio (the
+    // default since JOS-495) means it makes no sound — the engine's own evaluator honours
+    // `earlyWarnSec` end to end since JOS-492 and its fire is the one that plays. Routing this
+    // process's copy through `publish` anyway is defence in depth: the silence cannot be defeated
+    // by a future path that arms one.
+    this.publish({ ...due.fired, ts: nowMs, dueAt: due.dueAt }, due.fired.matchedText)
   }
 
   /**

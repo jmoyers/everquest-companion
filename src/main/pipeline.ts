@@ -139,6 +139,35 @@ export function sendWorldRebuilt(character: CharacterRef | null): void {
     sendToMain(IPC.onCharacter, character)
     sendToModuleOverlays(IPC.onCharacter, character)
   })
+  // …AND ANYTHING IN-PROCESS THAT NEEDS THE SAME NEWS (JOS-479). Null on any launch that did not
+  // ask for an engine — `EQC_ENGINE=0` since JOS-495 — where this is one null check and the
+  // behaviour above is untouched. See `setWorldRebuiltObserver`.
+  worldRebuiltObserver?.(character)
+}
+
+/**
+ * ONE IN-PROCESS LISTENER FOR "the world for this character was rebuilt" (JOS-479).
+ *
+ * `sendWorldRebuilt` is already the ONE answer to "who is told the world was rebuilt" for every
+ * WINDOW; the data-server client needs the identical news for a different reason — it is the moment
+ * the TypeScript fold has landed and its module snapshots are worth comparing against the engine's,
+ * and it is also the character-switch funnel, so it is where a re-attach belongs. Hooking it here
+ * rather than adding a second call site in session.ts is the whole point: the reason the overlays
+ * were once missing from this fan-out is that there used to be several call sites (JOS-172).
+ *
+ * A REGISTRATION RATHER THAN AN IMPORT, and that is a dependency decision rather than a style one:
+ * the client host reads `registry` out of THIS module, so an import in the other direction would be
+ * a cycle at module-evaluation time. The composition of the engine feature (engineHost.ts, unless
+ * `EQC_ENGINE=0`) installs this; nothing else ever does.
+ *
+ * IT RUNS OUTSIDE THE `timeSeam` BRACKET on purpose. That bracket measures OUR half of the
+ * rebuild fan-out — the `webContents.send`s — and folding a dev-only probe into the same
+ * measurement would put an instrument's cost inside the number the instrument reports.
+ */
+let worldRebuiltObserver: ((character: CharacterRef | null) => void) | null = null
+
+export function setWorldRebuiltObserver(fn: ((character: CharacterRef | null) => void) | null): void {
+  worldRebuiltObserver = fn
 }
 
 // The extension framework. Modules own their slice of log-derived state and push
@@ -286,6 +315,47 @@ logInfo(`[everquest-companion] Spell DB: ${spellDb.spells.length} spells (${spel
 logInfo(
   `[everquest-companion] Mob catalog: ${MOB_CATALOG_SIZE} mobs (scraped drop tables; the live wiki lookup is the fallback).`
 )
+
+/**
+ * ONE LINE AFTER A HISTORICAL REPLAY, SAYING WHAT THIS PROCESS'S FOLD HOLDS.
+ *
+ * IT LIVES HERE, beside the boot summaries above, because it is the same kind of statement: a
+ * sentence about the app's own fold, printed once, from the modules this file constructs. It moved
+ * out of `session.ts` with JOS-496 and that was not only a line-ceiling matter — the four snapshots
+ * it takes ARE the reason it had to grow a gate, and a gated read of this fold belongs where the
+ * fold is assembled rather than where the replay is orchestrated.
+ *
+ * ── IT NAMES ITS SUBJECT RATHER THAN GOING SILENT UNDER SERVE (JOS-496) ────────────────────────
+ *
+ * The first cut of this wave GATED the line off when the engine was serving, on the argument that
+ * its four snapshots describe a world nothing in the product reads. The argument was sound and the
+ * gate was not, and the reason is worth keeping: `shimServing()` IS NOT "AN ENGINE EXISTS". It is
+ * two default-on environment flags, so it answers true on every dev checkout that has never run
+ * `cargo build` — where these four snapshots are the only fold there is, and the silence would have
+ * deleted a boot line from the one tree that still needs it. (The same misreading is a live hazard
+ * elsewhere in this feature; `conCard.ts registerConCardIpc` has the long version.)
+ *
+ * SO IT NAMES WHOSE NUMBERS THEY ARE INSTEAD, which is honest in both worlds and costs a clause.
+ * A reader under serve now has the one fact the gate was trying to give them — that this is not
+ * what the engine folded — plus the pointer to where that is: the parity line
+ * `dataServer/engineClientHost.ts` writes the moment both folds land on the same log, carrying the
+ * engine's status, event count, byte mark and a module-by-module verdict.
+ *
+ * AND THE FOUR SNAPSHOTS ARE NOT A CUTOVER BLOCKER, which is the other half of the correction. The
+ * census is about reads the PRODUCT makes; this is a diagnostic over a fold that is on the deletion
+ * list itself (`docs/plans/data-server.md`: `pipeline.ts` fold construction), so it dies with the
+ * thing it reads rather than having to be moved off it first.
+ */
+export function logReplaySummary(): void {
+  const lootState = modules.loot.snapshot().state
+  const killState = modules.kills.snapshot().state
+  const lvlState = modules.leveling.snapshot().state
+  logInfo(
+    `[everquest-companion] This process’s own fold loaded ${lootState.length} loot, ${modules.turnIns.snapshot().state.length} turn-ins, ${
+      Object.keys(killState.mobs).length
+    } mobs, ${lvlState.levels.length} level-ups, ${lvlState.aaGains.length} AA gains, ${lvlState.aaSpends.length} AA buys. (The engine’s own fold is reported on the parity line.)`
+  )
+}
 
 /** Fold an `alerts` module delta into the event feed (alert id → its display name). */
 function feedAlertDelta(delta: ModuleDelta): void {

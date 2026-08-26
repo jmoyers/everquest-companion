@@ -1518,6 +1518,16 @@ the full per-lane evidence lives in docs/agents-archive.md.
   `oneClick:true, perMachine:false` installs to `%LOCALAPPDATA%\Programs`
   with NO UAC ever — which is what lets electron-updater silently
   self-install and relaunch (the Discord model). Never flip perMachine.
+- **THE ENGINE SHIPS SIGNED, AND THE MATCHER SHAPE IS WHAT SIGNS IT (JOS-473).**
+  `npm run build:engine` (`scripts/build-engine.mts`, the repo's one cargo-path
+  resolution) builds `engined.exe` RELEASE; `extraResources` copies it to
+  `resources/engine/engined.exe` — outside the asar, where a native exe can
+  actually be launched, and the first packaged path `engineBinaryCandidates`
+  probes. **A `from:` naming the FILE would ship it unsigned**: app-builder-lib
+  hands the sign transformer to `copyFiles`' DIRECTORY branch only, so the entry
+  is a directory plus a one-name filter. A missing binary is a WARNING there, not
+  an error, which is why `build:engine` asserts the file exists and why both
+  packaging jobs run it. `tests/enginePackaging.test.mts` pins all of it.
 - **Windows 10+ gate** (`customInit` in `build/installer.nsh`, JOS-32):
   `${IfNot} ${AtLeastWin10}` → one-sentence MessageBox + `Quit` (Electron
   dropped Win7/8 at v23). `customInit`, NOT `preInit` — preInit would also

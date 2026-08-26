@@ -1,0 +1,24 @@
+[package]
+name = "protocol-codegen"
+description = "Generates engine/crates/protocol/src/generated.rs from protocol/schema — and fails a test when the committed file is stale"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+prettyplease = "0.2"
+# typify's public API takes a schemars 0.8 RootSchema, so the version here is not a free choice:
+# it must be the one typify links, or `add_root_schema` will not accept what we parse.
+schemars = "0.8.22"
+serde_json = { workspace = true }
+sha2 = "0.10"
+syn = { version = "2", features = ["full", "parsing"] }
+typify = { version = "0.7", default-features = false }
+
+[dev-dependencies]
+# DEV ONLY, and the direction matters: the generator does not depend on the crate it writes into.
+# The staleness suite needs it to assert that the COMPILED constant agrees with the schema, which
+# is a different claim from "the file on disk contains the right line".
+protocol = { path = "../protocol" }

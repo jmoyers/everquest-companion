@@ -18,7 +18,7 @@ import { countIn, hoverAt, nextFrames, settle, settleCount, settleGone, sleep } 
 
 // The out-e2e/ build gate and the binaries it needs live in build.mts — re-exported here so
 // every spec keeps its single `./appHarness.mjs` import.
-export { MAIN_ENTRY, ROOT, buildIfStale, electronBinary } from './build.mjs'
+export { ENGINE_BIN, MAIN_ENTRY, ROOT, buildEngineIfStale, buildIfStale, electronBinary } from './build.mjs'
 // …and so do the condition waits (wave E3) and the pointer helper that measures a VISIBLE box.
 export {
   countIn,

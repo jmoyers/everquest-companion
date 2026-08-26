@@ -111,10 +111,18 @@ export function priorityIsSupported(env: { platform: string; e2e: boolean }): bo
  * A renderer that reports the main process's own pid is folded away by the dedupe rather than
  * being set twice.
  */
-export function selectPriorityPids(input: { mainPid: number; rendererPids: readonly number[] }): number[] {
+export function selectPriorityPids(input: {
+  mainPid: number
+  rendererPids: readonly number[]
+  /** Processes this app SPAWNED that are ours to schedule — today exactly one, the data-server
+   *  engine (JOS-459 phase 0). Last in the list because main and the renderers are what the user
+   *  is looking at; the order only decides which pid is set first, and none of them can fail
+   *  because another did. */
+  childPids?: readonly number[]
+}): number[] {
   const out: number[] = []
   const seen = new Set<number>()
-  for (const pid of [input.mainPid, ...input.rendererPids]) {
+  for (const pid of [input.mainPid, ...input.rendererPids, ...(input.childPids ?? [])]) {
     if (!Number.isInteger(pid) || pid <= 0 || seen.has(pid)) continue
     seen.add(pid)
     out.push(pid)
@@ -198,8 +206,60 @@ interface PriorityState {
 
 let state: PriorityState | null = null
 
-/** The pids to act on RIGHT NOW: main plus every live renderer. Read at each apply rather than
- *  cached, because a renderer's pid does not exist until its process is spawned. */
+/**
+ * THE DATA-SERVER ENGINE'S PID, when there is one (JOS-459 phase 0).
+ *
+ * WHY IT BELONGS IN THIS MODULE'S SET rather than getting a priority call of its own at the spawn
+ * site: the engine is one of THIS APP'S processes, and the whole argument at the top of this file
+ * is about the app's processes as a group. The plan says it plainly — "one Rust process,
+ * below-normal priority" (docs/plans/data-server.md, "The shape") — and it is the process that will
+ * eventually do the fold, i.e. the one whose bursts main is currently paying for. Nothing about the
+ * reasoning changes because the work moved out of process.
+ *
+ * IT FOLLOWS THE SAME SWITCH, and that is a judgement worth stating rather than defaulting into: a
+ * user who turns "yield to the game" OFF has said the companion should not de-prioritise itself,
+ * and the engine IS the companion. A hard-coded below-normal here would make the switch quietly
+ * partial — the one process it did not cover being the busiest one — which is the sort of
+ * half-honoured setting this repo has a law about.
+ *
+ * OUTSIDE `PriorityState` on purpose: the engine can be spawned before `initProcessPriority` runs
+ * or on a machine where priority is unsupported, and in both cases the pid is still the truth. It
+ * is module-level like `state` and cleared by the same test-seam reset.
+ */
+let enginePid: number | null = null
+
+/**
+ * Tell the module which process is the engine, or that there is no longer one.
+ *
+ * Called by the supervisor's `onPid` on both edges (`dataServer/engineHost.ts`). A RESPAWN IS A
+ * LAUNCH, so this is called with a fresh pid every time — there is no long-lived engine identity to
+ * cache. Applying immediately rather than waiting for the next window event is the same discipline
+ * `setYieldToGame` keeps: this session's processes must never disagree with what the setting says.
+ */
+export function setEnginePid(pid: number | null): void {
+  enginePid = pid !== null && Number.isInteger(pid) && pid > 0 ? pid : null
+  if (state) applyNow(state, enginePid === null ? 'engine gone' : 'engine spawned')
+}
+
+/**
+ * Which process is the engine right now, or `null` when none is running.
+ *
+ * A SECOND READER OF A FACT THIS MODULE ALREADY TRACKS (JOS-483). The performance panel wants the
+ * engine's CPU and working set beside main's and the renderers', and `app.getAppMetrics()` cannot
+ * give it: that is Chromium's own process list and the engine is not in it. The pid it needs is
+ * exactly the one this module is already told about on both edges, so exporting the read is
+ * cheaper — and one fact fewer to keep true — than a second subscription to the supervisor.
+ *
+ * IT IS A READ AND NOTHING ELSE. Nothing about priority happens here; a caller that wanted to
+ * change the class would still go through `setEnginePid`/`setYieldToGame`.
+ */
+export function getEnginePid(): number | null {
+  return enginePid
+}
+
+/** The pids to act on RIGHT NOW: main, every live renderer, and the engine if it is running. Read
+ *  at each apply rather than cached, because a renderer's pid does not exist until its process is
+ *  spawned — and the engine's changes on every respawn. */
 function currentPids(s: PriorityState): number[] {
   const rendererPids: number[] = []
   for (const wc of s.contents) {
@@ -210,7 +270,11 @@ function currentPids(s: PriorityState): number[] {
       // A webContents torn down between the two calls. Not an error, and not a pid.
     }
   }
-  return selectPriorityPids({ mainPid: s.wiring.mainPid, rendererPids })
+  return selectPriorityPids({
+    mainPid: s.wiring.mainPid,
+    rendererPids,
+    childPids: enginePid === null ? [] : [enginePid]
+  })
 }
 
 /** One pass: set every pid to the class the switch currently asks for, read back, report. */
@@ -283,7 +347,10 @@ export function setYieldToGame(enabled: boolean): void {
   applyNow(state, enabled ? 'switched on' : 'switched off')
 }
 
-/** TEST SEAM ONLY — forget the wiring, so a test can init more than once. */
+/** TEST SEAM ONLY — forget the wiring, so a test can init more than once. The engine pid goes with
+ *  it: it is module state of exactly the same kind, and a leftover pid would leak one test's fake
+ *  engine into the next test's expectations. */
 export function resetProcessPriorityForTests(): void {
   state = null
+  enginePid = null
 }

@@ -28,6 +28,10 @@ import { IPC } from '../shared/ipc'
 import { addSessionMark } from '../shared/sessionSegments'
 import { OVERLAY_KINDS } from '../shared/types'
 import { combat } from './pipeline'
+// THE THIRD HOLDER OF THE BOUNDARY (JOS-493). It owns the serve flag and the fire-and-forget rule;
+// this file simply hands it the instant it already stamped. A launch that is not serving from an
+// engine pays one boolean read per press.
+import { serveSessionMark } from './dataServer/serveCommands'
 import { getMainWindow, getOverlayWindow } from './windows'
 
 /** The whole state, ascending. Resets to empty at process start — see the header. */
@@ -71,6 +75,13 @@ export function pressNewSession(): readonly number[] {
   // the test: at the cap an accepted mark also leaves the list the same length.
   if (next.length === 0 || next[next.length - 1] !== at) return marks
   marks = next
+  // AND THE ENGINE'S WORLD, WHICH IS A THIRD HOLDER OF THIS ONE INSTANT (JOS-493). It is told LAST,
+  // after both of this process's halves have accepted, for the reason the ordering above exists: a
+  // mark this app itself declined — the engine refusing mid-fold, or the dedupe dropping a double
+  // press — must not be announced to a third world as though it had happened. It is fire and
+  // forget (`dataServer/serveCommands.ts`), so nothing below waits on it and the window that
+  // pressed still gets its list in the same turn.
+  serveSessionMark(at)
   broadcastSessionMarks()
   return marks
 }

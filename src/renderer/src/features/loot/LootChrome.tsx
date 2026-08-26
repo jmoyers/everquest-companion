@@ -25,6 +25,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography
 } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -101,6 +103,57 @@ function LootSortSelect({
   )
 }
 
+/** Which world this ledger is reading (JOS-484). `app` is the TypeScript fold every user sees. */
+export type LootSource = 'app' | 'engine'
+
+/**
+ * THE DATA-SOURCE SWITCH — the first product surface that can read the Rust engine (JOS-484).
+ *
+ * IT IS NOT A PREFERENCE AND IT IS NOT A FEATURE. It exists so a developer can put the two worlds
+ * side by side in the running product and so an e2e can assert they draw the same ledger; when the
+ * cutover lands (docs/plans/data-server.md, "DELETED IN THE CUTOVER RELEASE") there is one world
+ * left and this control goes with the other one.
+ *
+ * WHICH IS WHY IT IS GATED ON A CONNECTION RATHER THAN ON A FLAG. `LootView` renders it only when
+ * the `EngineClientContext` holds a live client, which can only be true under `EQC_ENGINE=1` with a
+ * built binary and a healthy launch. A control offering a source that is not there would be the
+ * worst of both: invisible in every build that matters and a lie in the one that does not.
+ *
+ * `exclusive` with a null-guarded handler, the MUI idiom: clicking the pressed button yields null,
+ * and a ledger with no source at all is not a state this view has.
+ */
+export function LootSourceToggle({
+  source,
+  setSource
+}: {
+  source: LootSource
+  setSource: (v: LootSource) => void
+}): JSX.Element {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center">
+      <Typography variant="caption" color="text.secondary">
+        Data source (dev)
+      </Typography>
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={source}
+        onChange={(_e, v: LootSource | null) => {
+          if (v !== null) setSource(v)
+        }}
+        data-testid="loot-source"
+      >
+        <ToggleButton value="app" data-testid="loot-source-app">
+          App
+        </ToggleButton>
+        <ToggleButton value="engine" data-testid="loot-source-engine">
+          Engine
+        </ToggleButton>
+      </ToggleButtonGroup>
+    </Stack>
+  )
+}
+
 export interface LootToolbarProps {
   query: string
   setQuery: (v: string) => void
@@ -149,7 +202,16 @@ export function LootToolbar({
         sx={{ minWidth: 260 }}
       />
       <FormControlLabel
-        control={<Switch checked={groupByItem} onChange={(e) => setGroupByItem(e.target.checked)} />}
+        control={
+          // The testid is on the SWITCH rather than the label because a spec clicks the control
+          // (JOS-484's row-parity e2e turns grouping off to reach the flat ledger — the shape
+          // `loot.ledger` serves). MUI puts the input inside; clicking this element toggles it.
+          <Switch
+            checked={groupByItem}
+            onChange={(e) => setGroupByItem(e.target.checked)}
+            data-testid="loot-group"
+          />
+        }
         label="Group by item"
       />
       <FormControlLabel

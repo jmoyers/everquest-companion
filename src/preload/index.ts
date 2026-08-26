@@ -21,6 +21,7 @@ import type {
   LogSwitchNudge,
   LootEvent,
   MobKnowledge,
+  ModuleChanged,
   ModuleDelta,
   ModuleSnapshot,
   PackInstallProgress,
@@ -106,6 +107,10 @@ import { uiScaleBridge } from './uiScale'
 import { overlaySnapBridge } from './overlaySnap'
 // The dev-only restart button's one method (JOS-61), split out for the same file-mass reason.
 import { devBridge } from './dev'
+// The data server's door (JOS-484): the `EQC_ENGINE` readout and the brokered byte channel this
+// window's `EngineClient` runs over. Split out for the same file-mass reason; ./engine.ts carries
+// the argument for why the PORT never crosses this bridge and the token does.
+import { engineBridge } from './engine'
 // What's new (JOS-73): the one store key behind the release-notes panel and its teaser strip.
 // The NOTES are committed source the renderer imports directly — see ./releaseNotes.ts.
 import { releaseNotesBridge } from './releaseNotes'
@@ -183,7 +188,7 @@ export interface SubmitOpts {
 }
 
 export type { CharacterRef, EqConfig, EqConfigResult, LogLine, LogSwitchNudge, LootEvent, ProgressState }
-export type { ModuleDelta, ModuleSnapshot }
+export type { ModuleChanged, ModuleDelta, ModuleSnapshot }
 export type { AlertDef, AlertPrefs, SoundData, SoundPack, SpellCatalog, ItemKnowledge, MobKnowledge }
 export type { UserSound, UserSoundImportResult, UserSoundRemoveResult }
 export type {
@@ -197,6 +202,9 @@ export type {
 }
 export type { PackInstallProgress, PackMutationResult, PackPreviewList, RegistryListResult }
 export type { AppFocus, UpdateStatus }
+// The brokered byte channel (JOS-484), re-exported for the same reason every payload shape here is:
+// so a renderer surface can name it without reaching across the tsconfig boundary into src/shared.
+export type { EngineConnection } from './engine'
 export type { CursorRingPrefs, OverlayAutoHidePrefs }
 export type { ShareApplyResult, SharePreview }
 export type {
@@ -304,6 +312,9 @@ const api = {
   ...overlaySnapBridge,
   // …and `restartApp` (./dev.ts), whose handler refuses in a packaged build.
   ...devBridge,
+  // …and the data server's two members (./engine.ts): the `EQC_ENGINE` readout and `engineConnect`,
+  // which answers null on every launch that has no engine — which is nearly all of them.
+  ...engineBridge,
   // …and the two what's-new methods (./releaseNotes.ts), for the same file-size reason.
   ...releaseNotesBridge,
 
@@ -513,6 +524,17 @@ const api = {
     const listener = (_e: unknown, d: ModuleDelta<Delta>): void => cb(d)
     ipcRenderer.on(IPC.onModuleDelta, listener)
     return () => ipcRenderer.removeListener(IPC.onModuleDelta, listener)
+  },
+  /**
+   * Subscribe to every `module:changed` — the SERVED world's dirty bit (JOS-493); the hook filters
+   * by moduleId. The SAME member under the SAME name is on the overlay bridge, for the reason
+   * `onCharacter` is duplicated there: one transport, one spelling, or the two windows end up
+   * disagreeing about which world they are folding.
+   */
+  onModuleChanged: (cb: (c: ModuleChanged) => void): (() => void) => {
+    const listener = (_e: unknown, c: ModuleChanged): void => cb(c)
+    ipcRenderer.on(IPC.onModuleChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.onModuleChanged, listener)
   },
 
   // ---- class-combo corrections (docs/plans/class-combo-inference.md § 5.3) ----

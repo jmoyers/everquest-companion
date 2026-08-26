@@ -127,6 +127,22 @@ jobs:
       - name: Test
         run: npm test
 
+      # THE ENGINE THE INSTALLER CARRIES (JOS-473). The `engine` job below builds
+      # DEBUG and tests it; a packaged app ships RELEASE, so the packaging jobs
+      # build their own. It runs HERE as well as in `release` for one reason: the
+      # artifact this job uploads is the installer people actually test, and an
+      # artifact that is structurally different from a release build (no
+      # resources/engine/engined.exe) verifies the wrong thing. A missing binary
+      # is only a WARNING to electron-builder's extraResources, so the failure
+      # would be silent — `npm run build:engine` asserts the binary exists.
+      #
+      # The toolchain is NOT chosen here: engine/rust-toolchain.toml pins it and
+      # rustup honours the file (see the `engine` job for why that pin matters).
+      - name: Build the engine (release)
+        run: |
+          rustup show active-toolchain
+          npm run build:engine
+
       # UNSIGNED on purpose, and NO AZURE_* env: this job verifies + produces a CI
       # artifact, it publishes nothing, so it has no business holding the signing
       # secrets (least privilege — same reasoning as its read-only token). The
@@ -179,6 +195,80 @@ jobs:
           path: out/**/*.map
           retention-days: 90
           if-no-files-found: warn
+
+  # =========================================================================
+  # THE ENGINE (engine/, JOS-459 phase 0). Its own job, on every ref.
+  #
+  # WHY A SEPARATE JOB rather than steps bolted onto `build`: this is a
+  # different toolchain with a different cache, it has nothing to say about
+  # the installer, and running it in parallel means the Rust checks cost no
+  # wall clock. It is also the only job here with no `if:` guard — the two
+  # jobs above are mutually exclusive by ref, but the wire contract has to
+  # verify on a tag exactly as much as on a push, because a tag is what ships.
+  #
+  # WHAT IT PROVES, and it is not just "it compiles":
+  #   * `cargo test` runs the STALENESS suite, which regenerates
+  #     crates/protocol/src/generated.rs from protocol/schema and diffs every
+  #     byte. A schema edit that landed without `npm run gen:protocol` is red
+  #     here. (`npm test` in the build job catches the same drift by digest,
+  #     without needing a toolchain — see tests/protocolSchema.test.mts.)
+  #   * …and the fixture suite, which round-trips the four worked moments from
+  #     docs/plans/data-server.md through the generated Rust types. The same
+  #     bytes are round-tripped through the TypeScript types in `npm test`, so
+  #     a shape only one language can express fails on the side that cannot.
+  #
+  # The toolchain version is NOT chosen here: engine/rust-toolchain.toml pins
+  # it, and rustup honours that file automatically. That pin is load-bearing —
+  # generation ends in rustfmt, so two rustfmt versions disagreeing about a
+  # line break would fail the staleness test on a schema nobody touched.
+  # =========================================================================
+  engine:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (v4.4.0)
+        with:
+          persist-credentials: false
+
+      # rustup ships on the GitHub Windows image; this installs whatever
+      # engine/rust-toolchain.toml names, with the components it lists.
+      - name: Install the pinned toolchain
+        working-directory: engine
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+
+      # The registry index, the downloaded crate sources, and the build
+      # directory. Keyed on the lockfile: a dependency bump invalidates it,
+      # nothing else does.
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 (v4.3.0)
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            engine/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('engine/Cargo.lock', 'engine/rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Format
+        working-directory: engine
+        run: cargo fmt --all --check
+
+      # `-D warnings` on purpose: the generated file allows clippy wholesale
+      # inside itself (generated code is not reviewable debt), so everything
+      # this gate sees is code a person wrote.
+      - name: Clippy
+        working-directory: engine
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        working-directory: engine
+        run: cargo test --workspace
 
   # =========================================================================
   # TAG REFS ONLY: the publish path. The ONLY job that holds a write token.
@@ -242,9 +332,25 @@ jobs:
           npm version --no-git-tag-version --allow-same-version $ver
           Write-Host "Stamped version from tag: $ver"
 
+      # THE ENGINE THE INSTALLER CARRIES (JOS-473) — the release binary, built
+      # before packaging because electron-builder copies it out of
+      # engine/target/release as an extraResource. See the identical step in the
+      # `build` job for the whole argument; it is duplicated for the same reason
+      # the rest of the prelude is (the two jobs are a security boundary), and it
+      # needs no secret of its own: the SIGNING happens inside the packaging step
+      # below, which already holds the AZURE_* env.
+      - name: Build the engine (release)
+        run: |
+          rustup show active-toolchain
+          npm run build:engine
+
       # --- Build + publish as a DRAFT ----------------------------------------
       # Azure Trusted Signing (inert until the AZURE_* secrets exist) — see the
-      # build job for the secret list.
+      # build job for the secret list. The engine binary is signed by the SAME
+      # hook, on the same run: app-builder-lib routes every `.exe` copied by a
+      # DIRECTORY extraResources matcher through win.signtoolOptions.sign (the
+      # mechanism, and why the matcher must be a directory, is annotated in
+      # electron-builder.yml and pinned by tests/enginePackaging.test.mts).
       - name: Build installer
         shell: pwsh
         env:

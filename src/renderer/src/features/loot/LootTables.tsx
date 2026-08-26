@@ -1,10 +1,12 @@
 import type { JSX } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material'
 import type { ItemKnowledge } from '@shared/types'
+// The engine's served rows (JOS-484) — `{key, cells}`, identity outside the data.
+import type { Row } from '@shared/dataServer/protocol.generated'
 import type { WindowedRows } from '../../lib/useWindowedRows'
 import type { InventoryRow } from '../inventory/reconcile'
 import type { GroupRow, KeyedLoot } from './lootGrouping'
-import { FlatRow, GroupedRow } from './lootRows'
+import { EngineFlatRow, FlatRow, GroupedRow } from './lootRows'
 
 /**
  * `tableLayout: fixed` — the other half of the fixed-height contract (JOS-260, lootRows.tsx).
@@ -119,6 +121,69 @@ export function GroupedLootTable({
           />
         ))}
         <PadRow height={win.bottomPad} colSpan={6} />
+      </TableBody>
+    </Table>
+  )
+}
+
+/**
+ * THE FLAT LEDGER, SERVED (JOS-484). `FlatLootTable`'s twin, cell for cell.
+ *
+ * IT IS A SEPARATE COMPONENT RATHER THAN A BRANCH INSIDE THAT ONE, and the reason is the thing this
+ * ticket is proving: the two tables must be able to be compared. A shared component taking either
+ * shape would have to normalize one into the other somewhere, and wherever that happened would be
+ * the renderer deriving a domain row — the exact thing owner ruling 4 forbids and the exact thing an
+ * oracle that compares their DOM would then be unable to see. Two components, one header row, one
+ * geometry, one `data-testid` — and the only difference between them is where a cell came from.
+ *
+ * THE HEADER IS DUPLICATED FOR THE SAME REASON and is checked by the same e2e: it is four `<th>`s,
+ * and a shared constant would make "the two tables draw the same columns" a fact about this file
+ * instead of a fact the spec measured.
+ *
+ * The windowing is `FlatLootTable`'s exactly — same `ROW_HEIGHT`, same `PadRow` spacers, same fixed
+ * layout — so the two modes mount the same rows for the same viewport and a comparison of what is
+ * on screen is a comparison of the ledgers rather than of two scroll positions.
+ */
+export function EngineLootTable({
+  rows,
+  win,
+  knowledgeByKey,
+  keyOf,
+  onSelect
+}: {
+  rows: readonly Row[]
+  win: WindowedRows
+  knowledgeByKey: Map<string, ItemKnowledge>
+  /** The map key for a served row's knowledge join — the view supplies it, because normalizing an
+   *  item NAME is app knowledge (`itemCountKey`) and this file joins rather than derives. */
+  keyOf: (row: Row) => string
+  onSelect: (item: string) => void
+}): JSX.Element {
+  return (
+    <Table size="small" stickyHeader sx={FIXED_TABLE}>
+      <TableHead>
+        <TableRow>
+          <TableCell sx={{ width: '15%' }}>Time</TableCell>
+          <TableCell>Item</TableCell>
+          <TableCell sx={{ width: '24%' }}>From</TableCell>
+          <TableCell sx={{ width: '20%' }}>Zone</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        <PadRow height={win.topPad} colSpan={4} />
+        {/* `slice` over the VIEWPORT window, which is the one slice this file has always done and is
+            not a domain operation: it selects which of the rows the engine already ordered are
+            mounted. Nothing is re-ordered, re-keyed or dropped. The React key is the engine's own
+            row key — identity outside the data, exactly as the diff protocol sends it. */}
+        {rows.slice(win.start, win.end).map((r) => (
+          <EngineFlatRow
+            key={r.key}
+            cells={r.cells}
+            knowledge={knowledgeByKey.get(keyOf(r))}
+            onSelect={onSelect}
+          />
+        ))}
+        <PadRow height={win.bottomPad} colSpan={4} />
       </TableBody>
     </Table>
   )
