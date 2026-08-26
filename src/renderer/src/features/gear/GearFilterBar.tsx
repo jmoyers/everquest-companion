@@ -110,7 +110,7 @@ export interface GearFilterBarProps {
   /** which controls to draw (JOS-297) — `gearPrefs.controlsVisible`, the whole set by default */
   visible: ReadonlySet<GearControl>
   /**
-   * Is anything on screen READING the derived scores (user ask, 2026-08-15)? The Ignore haste chip
+   * Is anything on screen READING the derived scores (fork decision, kaltinril 2026-08-15)? The Ignore haste chip
    * only draws while it is — a knob on EFF DMG and BEST is noise beside a table showing neither.
    * The view computes it over the DRAWN columns AND the search thresholds, because a `best>40`
    * token reads the flag with no column drawn, and a hidden control must never be quietly applying
@@ -142,7 +142,7 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
       {/* JOS-302's third ask. The options are the CATEGORIES first and then the nine types
           (`WEAPON_PICKS`), because "the two-handers" is the common question and a category is only
           ever a union of its members — shared/planner/weaponType.ts states the whole vocabulary and
-          the corpus census it was measured from. `Shield` closes the list (user ruling, 2026-08-15:
+          the corpus census it was measured from. `Shield` closes the list (fork decision, kaltinril 2026-08-15:
           a shield is a kind of held item, so it lives in this dropdown, not as its own toggle) —
           answered by `isShieldLike` rather than the skill fold, and unioned like every other pick. */}
       {visible.has('weapon') && (
@@ -189,10 +189,12 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible, has
         value={text}
         data-testid="gear-search"
         onChange={(e) => setText(e.target.value)}
-        // The one hint the numeric syntax gets (2026-08-15, gearFilter.ts header): a native title,
-        // never a popper (JOS-143), and the placeholder shows the shape without costing any width.
+        // The ONLY hint the numeric syntax gets is the placeholder (gearFilter.ts header states the
+        // shape): it shows an example without costing width, and a tooltip on an input the user
+        // types into is what the tooltip diet forbids outright (AGENTS.md) - the three-sentence
+        // title that sat here until 2026-08-25 explained the haystack and every operator to
+        // someone mid-keystroke.
         placeholder="name, zone, mob, ac>=20"
-        title="Words match the item's name, effects, slots, classes, zones and mobs. Add stat rules with no spaces - ac>=20 str>5 ratio>=1 best>40 - and they filter on the scaled numbers, EFF HP, EFF DMG and BEST included."
         sx={{ minWidth: 150, flexShrink: 1 }}
       />
 
@@ -239,7 +241,7 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible, has
         />
       )}
 
-      {/* ON THIS ROW, NOT THE NUMBERS ROW (user ruling, 2026-08-15, second placement): the second
+      {/* ON THIS ROW, NOT THE NUMBERS ROW (fork decision, kaltinril 2026-08-15, second placement): the second
           row is the upgrade simulation, and this chip is about the SCORES — it reads better beside
           the other verdict chips. Drawn only while something on screen reads the derived scores. */}
       {visible.has('haste') && hasteRelevant && (
@@ -248,7 +250,7 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible, has
           testId="gear-haste-toggle"
           on={filters.ignoreHaste}
           onToggle={() => setFilters({ ...filters, ignoreHaste: !filters.ignoreHaste })}
-          hint="Leave worn haste out of EFF DMG and BEST. Haste items do not stack, so if you already wear one, a second adds nothing - the HASTE column still shows the stated number."
+          hint="Leave haste out of EFF DMG and BEST"
         />
       )}
 

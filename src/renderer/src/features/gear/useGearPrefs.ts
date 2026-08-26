@@ -65,10 +65,10 @@ export interface GearPrefs {
   /** the visible filter controls, or `null` for the whole toolbar */
   controls: GearControl[] | null
   setControls: (next: GearControl[] | null) => void
-  /** the dragged column widths (user ask, 2026-08-15), or `null` for the automatic layout */
+  /** the dragged column widths (fork decision, kaltinril 2026-08-15), or `null` for the automatic layout */
   widths: GearColumnWidths | null
   setWidths: (next: GearColumnWidths | null) => void
-  /** the Zone / Level / Mob columns (user ask, 2026-08-15) — on unless switched off */
+  /** the Zone / Level / Mob columns (fork decision, kaltinril 2026-08-15) — on unless switched off */
   dropCols: boolean
   setDropCols: (next: boolean) => void
 }

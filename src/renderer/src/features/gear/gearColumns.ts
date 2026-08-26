@@ -34,7 +34,7 @@
 // rather than a preference. The table is `tableLayout: fixed` (a windowed table whose columns
 // re-measure per slice moves its row heights under a hook whose every index assumes they cannot —
 // LootTables.tsx states the full argument). Under percentages the numeric columns SHARE a fixed
-// budget: N columns each take `NUMERIC_BUDGET / N`, the identity columns take a constant, and the
+// budget: N columns each take `numericBudget / N`, the identity columns take a constant, and the
 // NAME column states no width at all so it absorbs the slack. Each share is CLAMPED both ways —
 // a CEILING (`MAX_NUMERIC_WIDTH`) because a stat cell holds at most `-12345` and handing four
 // columns 13% apiece starves the one column that actually ellipsises, the item name; and a FLOOR
@@ -74,19 +74,30 @@ export const CORE_COLUMNS: readonly GearSortKey[] = ['AC', 'HP', 'MP', 'RATIO']
 export const MAX_DERIVED_COLUMNS = 1
 
 /**
- * Percent of the table the numeric columns share between them.
+ * Percent of the table the numeric columns share between them — A FUNCTION OF WHETHER THE DROP
+ * TRIO IS DRAWN, since 2026-08-25.
  *
  * RE-BUDGETED 2026-08-15, when the three drop columns joined the identity set, and the arithmetic
  * is the whole story: every stated width below plus this budget must leave the ITEM column — the
  * one column that states NO width and absorbs the slack — a legible share. It was 52 when the
  * identity columns cost 24% + 15% owned (leaving the name ≥ 9%); with zone/level/mob the identity
- * set costs 44% + 13%, so 28 is what keeps the worst percent-mode case at 85% and the name at 15%.
+ * set costs 47% + 11%, so 26 is what keeps the worst percent-mode case at 84% and the name at 16%.
  * OVERFLOWING THIS SUM DOES NOT SCROLL — `tableLayout: fixed` squeezes the unstated column to
  * ZERO, which deletes the item name, its click-through and the wish control from the screen (found
  * the hard way, 2026-08-15). The percentage-fit test in gearColumnPrefs.test.mts now sums every
  * stated column so it cannot happen quietly again.
+ *
+ * AND WHEN THE TRIO IS OFF, THE 21% IT COST GOES BACK TO THE NUMBERS (fork review, 2026-08-25).
+ * The budget was one constant, sized for the trio, so switching the Drop columns chip off left
+ * the numeric set at the same 26% with 21% of the table lying empty beside it — and worse, the
+ * percent floor still admitted only five columns where main (no trio, 52%) served ten, so a
+ * six-column pick fell into pixel mode and scrolled a table that had room to spare. 47 is the
+ * trio's 21 handed back plus the same 26: the identity set without it costs 26% + 11%, so the
+ * worst case is again 84% and the name keeps 16% - and `MAX_PERCENT_COLUMNS` reads nine.
  */
-const NUMERIC_BUDGET = 26
+function numericBudget(hasDrops: boolean): number {
+  return hasDrops ? 26 : 47
+}
 /** …and the floor one column may shrink to, which is what caps the derived count above. */
 const MIN_NUMERIC_WIDTH = 5
 /**
@@ -101,16 +112,21 @@ const MIN_NUMERIC_WIDTH = 5
 const MAX_NUMERIC_WIDTH = 8
 
 /**
- * The widest numeric set percentages can still serve at that floor — FIVE since 2026-08-15, when
- * the drop columns shrank the numeric budget (see it, above).
+ * The widest numeric set percentages can still serve at that floor — FIVE with the drop trio
+ * drawn (2026-08-15, when the trio shrank the numeric budget) and NINE without it (2026-08-25,
+ * when the budget learned to hand the trio's share back — see `numericBudget`).
  *
- * It is exactly the core plus `MAX_DERIVED_COLUMNS` again, the way it was before JOS-302 — so
- * nothing the tab can DERIVE ever crosses into pixel mode, and the untouched default keeps its
- * percentage layout. A PICKED set of six or more crosses the line and the table scrolls sideways
- * inside its own pane, which is the design absorbing a wide choice rather than starving the item
- * column to pay for it.
+ * Five is exactly the core plus `MAX_DERIVED_COLUMNS`, the way it was before JOS-302 — so nothing
+ * the tab can DERIVE ever crosses into pixel mode whichever way the chip is set, and the untouched
+ * default keeps its percentage layout. A PICKED set past the line crosses it and the table scrolls
+ * sideways inside its own pane, which is the design absorbing a wide choice rather than starving
+ * the item column to pay for it.
  */
-export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH)
+export function maxPercentColumns(hasDrops: boolean): number {
+  return Math.floor(numericBudget(hasDrops) / MIN_NUMERIC_WIDTH)
+}
+/** The trio-drawn line, for readers stating the shipped default's shape. */
+export const MAX_PERCENT_COLUMNS = maxPercentColumns(true)
 
 /**
  * The pixel widths the table states once percentages cannot serve the set. Each is a legible
@@ -199,7 +215,7 @@ const PERCENT_KEYS: ReadonlySet<string> = new Set<string>(GEAR_PERCENT_STAT_KEYS
  */
 export function columnLabel(key: GearSortKey): string {
   if (key === 'RATIO') return 'Ratio'
-  // `BEST`, not the key's own spelling (user ruling, 2026-08-15: *people won't know what BIS
+  // `BEST`, not the key's own spelling (fork decision, kaltinril 2026-08-15: *people won't know what BIS
   // means*). The KEY stays `BIS` so stored column choices and search tokens survive the rename.
   if (key === 'BIS') return 'BEST'
   // `EFF_DMG` deliberately has no arm, the same argument as `EFF_HP` above: the underscore rule
@@ -286,8 +302,13 @@ export function columnsFor(chosen: readonly GearSortKey[] | null, sort: GearSort
  *
  * IDENTITY-PRESERVING when the sort is already on a drawn column, so the memo chain downstream
  * re-runs when the sort MOVES and never merely because it rendered.
+ *
+ * `showDrops` DEFAULTS TO FALSE, and the default is the safe direction: a caller that does not
+ * say whether the trio is drawn gets a drop sort confined exactly as a removed numeric column is,
+ * never a lit header on a column that may not exist. (It grew as a required third parameter on
+ * 2026-08-18 and the unit test kept calling it with two, which is `undefined` - falsy by luck.)
  */
-export function sortWithin(sort: GearSort, columns: readonly GearColumn[], showDrops: boolean): GearSort {
+export function sortWithin(sort: GearSort, columns: readonly GearColumn[], showDrops = false): GearSort {
   if (sort.key === 'name' || columns.some((c) => c.key === sort.key)) return sort
   // A drop-trio sort's column is the trio itself — valid exactly while the trio is drawn, and it
   // falls with the trio for the same reason a removed numeric column takes its sort down.
@@ -297,8 +318,8 @@ export function sortWithin(sort: GearSort, columns: readonly GearColumn[], showD
 }
 
 /**
- * The pixel a column measures when the user resizes with nothing stored for it (user ask,
- * 2026-08-15) — the same `PX` table pixel mode states, so the first drag starts from a familiar
+ * The pixel a column measures when the user resizes with nothing stored for it (fork decision,
+ * kaltinril 2026-08-15) — the same `PX` table pixel mode states, so the first drag starts from a familiar
  * shape. Numeric columns share one default; identity columns each state their own.
  */
 export function defaultColumnPx(id: string): number {
@@ -309,8 +330,9 @@ export function defaultColumnPx(id: string): number {
 }
 
 /** One numeric column's width, as the percentage string the header cell states. */
-export function numericWidth(count: number): string {
-  const each = count > 0 ? NUMERIC_BUDGET / count : NUMERIC_BUDGET
+export function numericWidth(count: number, hasDrops = true): string {
+  const budget = numericBudget(hasDrops)
+  const each = count > 0 ? budget / count : budget
   const clamped = Math.min(MAX_NUMERIC_WIDTH, Math.max(MIN_NUMERIC_WIDTH, each))
   return `${String(Math.round(clamped * 10) / 10)}%`
 }
@@ -341,7 +363,11 @@ export interface GearTableLayout {
 }
 
 export function gearTableLayout(count: number, hasOwned: boolean, hasDrops = true): GearTableLayout {
-  if (count <= MAX_PERCENT_COLUMNS) {
+  // BOTH HALVES READ `hasDrops` (2026-08-25): the line past which percentages stop serving, and
+  // the share each numeric column takes under it. The pixel branch read it from the day the trio
+  // shipped; the percent branch did not, which is how a table with the trio off kept the trio's
+  // narrow budget and fell into pixel mode at six columns.
+  if (count <= maxPercentColumns(hasDrops)) {
     return {
       mode: 'percent',
       minWidth: 0,
@@ -352,7 +378,7 @@ export function gearTableLayout(count: number, hasOwned: boolean, hasDrops = tru
       zone: ZONE_COLUMN_WIDTH,
       zoneLevel: ZONE_LEVEL_COLUMN_WIDTH,
       mob: MOB_COLUMN_WIDTH,
-      numeric: numericWidth(count),
+      numeric: numericWidth(count, hasDrops),
       owned: OWNED_COLUMN_WIDTH
     }
   }

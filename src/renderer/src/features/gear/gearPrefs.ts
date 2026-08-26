@@ -67,7 +67,7 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
   return PICKABLE_COLUMNS.filter((k) => on.has(k))
 }
 
-// ---- the column widths (user ask, 2026-08-15: *resize and have the sizes stick*) -----------
+// ---- the column widths (fork decision, kaltinril 2026-08-15: *resize and have the sizes stick*) -----------
 
 /** The drag clamp: narrower than 48 has no legible content, wider than 1200 is a typo. */
 export const GEAR_WIDTH_MIN = 48
@@ -77,6 +77,28 @@ export const GEAR_WIDTH_MAX = 1200
  *  answer through it, so the three paths cannot round or bound differently. */
 export function clampGearWidth(value: number): number {
   return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, value)))
+}
+
+/** One cell as the double-click fit reads it: what its content needs, and the padding IT states. */
+export interface CellMeasure {
+  /** the content's own width - text at full length, never the clipped box (GearTableHead.contentWidth) */
+  content: number
+  /** the cell's resolved horizontal padding, both edges */
+  padding: number
+}
+
+/**
+ * THE WIDTH THAT FITS A COLUMN: the widest `content + padding` over the header and every mounted
+ * body cell, clamped like any other width. The arithmetic is here, pure, because it is the part
+ * that went wrong twice (GearTableHead.tsx carries the two post-mortems) and the part a node test
+ * can hold: the padding is EACH CELL'S OWN, never a constant - a numeric header pads 8+16 and an
+ * identity cell 16+16, and one number fits neither - and the same measures give the same answer,
+ * which is what makes a second double-click land where the first did instead of eight pixels off.
+ */
+export function fitColumnWidth(cells: readonly CellMeasure[]): number {
+  let want = 0
+  for (const cell of cells) want = Math.max(want, cell.content + cell.padding)
+  return clampGearWidth(want)
 }
 
 /**
@@ -111,7 +133,7 @@ export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
 // ---- the drop columns choice ---------------------------------------------------------------
 
 /**
- * Are the Zone / Level / Mob columns drawn (user ask, 2026-08-15: *make zone/level/mob an optional
+ * Are the Zone / Level / Mob columns drawn (fork decision, kaltinril 2026-08-15: *make zone/level/mob an optional
  * toggle*)? ON unless a stored `false` says otherwise — the columns shipped on, and an unreadable
  * store must come back ON (`sanitizeFlag`'s fallback, the same degradation `eraOnly` states). One
  * flag for the trio: they are one answer ("where does it drop"), and three toggles would invite a
@@ -132,7 +154,7 @@ export function sanitizeDropCols(raw: unknown): boolean {
  * into it, and a Gear tab you cannot type into is not a configuration anyone meant to reach.
  */
 // `shield` was a control for two hours on 2026-08-15 and is NOT legacy vocabulary: it shipped in a
-// test build only, and the user ruled it into the Weapon type dropdown (`GearWeaponPick`) before a
+// test build only, and kaltinril (the fork) ruled it into the Weapon type dropdown (`GearWeaponPick`) before a
 // release carried the toggle. `haste` (same day) draws on the identity row, after the Owned chip.
 export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'haste', 'upgrade'] as const
 

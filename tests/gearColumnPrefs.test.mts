@@ -29,7 +29,9 @@ import {
   MAX_PERCENT_COLUMNS,
   PICKABLE_COLUMNS,
   columnsFor,
+  gearColumnIds,
   gearTableLayout,
+  maxPercentColumns,
   sortWithin,
   visibleColumns
 } from '../src/renderer/src/features/gear/gearColumns'
@@ -49,6 +51,7 @@ import {
   inertFilters,
   sanitizeColumns,
   sanitizeControls,
+  sanitizeDropCols,
   toggleColumn,
   toggleControl
 } from '../src/renderer/src/features/gear/gearPrefs'
@@ -211,13 +214,22 @@ test('every exposed key ranks BOTH ways, and an absent value sorts LAST either w
 })
 
 test('the sort is confined to what is DRAWN - removing the sorted column moves the lit header', () => {
-  const shown = columnsFor(['STR', 'CHA'], filters(), DEFAULT_GEAR_SORT)
+  const shown = columnsFor(['STR', 'CHA'], DEFAULT_GEAR_SORT)
   const kept: GearSort = { key: 'STR', dir: 'asc' }
   assert.equal(sortWithin(kept, shown), kept, 'a sort on a drawn column is returned UNCHANGED - same object')
   assert.deepEqual(sortWithin({ key: 'AC', dir: 'desc' }, shown), { key: 'STR', dir: 'desc' }, 'it falls to the first drawn column')
   assert.deepEqual(sortWithin({ key: 'AC', dir: 'desc' }, []), { key: 'name', dir: 'asc' }, 'no numeric columns leaves the item name')
   const byName: GearSort = { key: 'name', dir: 'asc' }
   assert.equal(sortWithin(byName, []), byName, 'the item column is always drawn, so a name sort always holds')
+  // THE DROP TRIO'S OWN AXES (2026-08-18): a zone/level/mob sort is valid exactly while the trio is
+  // drawn, and falls with it the way a removed numeric column takes its sort down. The third
+  // parameter DEFAULTS to "not drawn" - this test called the two-argument form for a day while the
+  // signature had already grown, and passed only because `undefined` is falsy.
+  const byZone: GearSort = { key: 'zone', dir: 'asc' }
+  assert.equal(sortWithin(byZone, shown, true), byZone, 'a drop sort stands while the trio is drawn - same object')
+  assert.deepEqual(sortWithin(byZone, shown, false), { key: 'STR', dir: 'desc' }, 'and falls to the first numeric column without it')
+  assert.deepEqual(sortWithin(byZone, shown), sortWithin(byZone, shown, false), 'the default is the trio NOT drawn')
+  assert.deepEqual(sortWithin({ key: 'mob', dir: 'desc' }, [], false), { key: 'name', dir: 'asc' })
 })
 
 // =================================================================================
@@ -282,6 +294,76 @@ test('past the floor the layout switches to PIXELS and states a table minimum - 
   const everything = gearTableLayout(PICKABLE_COLUMNS.length, true)
   assert.equal(everything.mode, 'pixel')
   assert.ok(everything.minWidth > 2500, `all ${String(PICKABLE_COLUMNS.length)} columns state ${String(everything.minWidth)}px`)
+})
+
+test('the pixel floor is the SUM of what is drawn - the trio and the Owned column each pay their own way', () => {
+  // Pinned as arithmetic between four layouts rather than as four literals: the trio's three
+  // columns are the only difference between the first pair, Owned the only difference between
+  // the second, and one more numeric column the only difference between the third.
+  const n = PICKABLE_COLUMNS.length
+  const trio = gearTableLayout(n, false, true).minWidth - gearTableLayout(n, false, false).minWidth
+  const owned = gearTableLayout(n, true, false).minWidth - gearTableLayout(n, false, false).minWidth
+  const numeric = gearTableLayout(n + 1, false, false).minWidth - gearTableLayout(n, false, false).minWidth
+  assert.ok(trio > 0 && owned > 0 && numeric > 0)
+  const px = (s: string): number => Number(s.replace('px', ''))
+  const wide = gearTableLayout(n, true, true)
+  assert.equal(trio, px(wide.zone) + px(wide.zoneLevel) + px(wide.mob), 'the trio costs exactly its three stated widths')
+  assert.equal(owned, px(wide.owned))
+  assert.equal(numeric, px(wide.numeric))
+  assert.equal(
+    wide.minWidth,
+    px(wide.name!) + px(wide.wish) + px(wide.slot) + px(wide.classes) + trio + n * numeric + owned,
+    'and the floor is every stated column, summed - nothing is priced twice or left out'
+  )
+})
+
+test('with the drop trio OFF the numeric columns get its share back - and nine fit in percent mode (2026-08-25)', () => {
+  // THE BUG: the percent budget was one constant sized for the trio, so the Drop columns chip
+  // switched three columns off and handed their 21% to nobody - and a six-column pick still fell
+  // into pixel mode where main, with no trio, served ten. The line now reads the chip.
+  assert.equal(maxPercentColumns(true), MAX_PERCENT_COLUMNS, 'the trio-drawn line is the shipped constant')
+  assert.ok(maxPercentColumns(false) > maxPercentColumns(true), 'without the trio, more columns fit')
+  assert.ok(maxPercentColumns(false) >= 9, `${String(maxPercentColumns(false))} numeric columns fit without the trio`)
+  const six = gearTableLayout(6, true, false)
+  assert.equal(six.mode, 'percent', 'six columns without the trio are a percentage layout, not a scroll')
+  assert.equal(gearTableLayout(6, true, true).mode, 'pixel', 'and the same six WITH the trio still cross the line')
+  // Each column is wider without the trio than with it, and the fit law still holds without it:
+  // every stated column, the trio EXCLUDED because it is not drawn, leaves the name its share.
+  const four = gearTableLayout(4, true, false)
+  assert.ok(Number(four.numeric.replace('%', '')) >= Number(gearTableLayout(4, true, true).numeric.replace('%', '')))
+  for (const count of [1, 4, maxPercentColumns(false)]) {
+    const layout = gearTableLayout(count, true, false)
+    const pct = (s: string): number => Number(s.replace('%', ''))
+    const stated = count * pct(layout.numeric) + pct(layout.wish) + pct(layout.slot) + pct(layout.classes) + pct(layout.owned)
+    assert.ok(stated <= 85, `${String(count)} columns without the trio state ${String(stated)}% - the name keeps the rest`)
+  }
+  // Past the wider line it is pixels again, and the trio is not in that sum either.
+  assert.equal(gearTableLayout(maxPercentColumns(false) + 1, true, false).mode, 'pixel')
+})
+
+// =================================================================================
+// 3b. THE ROSTER AND THE TRIO'S FLAG
+// =================================================================================
+
+test('gearColumnIds is the roster in draw order, and the trio and Owned come and go as one each', () => {
+  const two = columnsFor(['STR', 'CHA'], DEFAULT_GEAR_SORT)
+  assert.deepEqual(gearColumnIds(two, true, true), ['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob', 'STR', 'CHA', 'owned'])
+  assert.deepEqual(gearColumnIds(two, false, false), ['name', 'wish', 'slot', 'classes', 'STR', 'CHA'])
+  assert.deepEqual(gearColumnIds([], true, false), ['name', 'wish', 'slot', 'classes', 'zone', 'zoneLevel', 'mob'])
+  // Every id is unique, so a width map and a `data-col` handle name exactly one column.
+  const all = gearColumnIds(columnsFor(null, DEFAULT_GEAR_SORT), true, true)
+  assert.equal(new Set(all).size, all.length)
+})
+
+test('the Drop columns flag ships ON, and only a stored false turns it off', () => {
+  assert.equal(sanitizeDropCols(null), true, 'nothing stored is the shipped default')
+  assert.equal(sanitizeDropCols(undefined), true)
+  assert.equal(sanitizeDropCols(false), false, 'the one value that switches the trio off')
+  assert.equal(sanitizeDropCols(true), true)
+  // An unreadable store degrades to ON, never to a silently missing trio (the eraOnly precedent).
+  assert.equal(sanitizeDropCols('false'), true)
+  assert.equal(sanitizeDropCols(0), true)
+  assert.equal(sanitizeDropCols({ on: false }), true)
 })
 
 // =================================================================================
