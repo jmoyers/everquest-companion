@@ -1,4 +1,18 @@
-// ONE WORLD, ONE NUMBERING SPACE — the delta arm, the mark command and the served fact (JOS-493).
+// THE CURSOR ARM, THE MARK COMMAND AND THE SERVED FACT (JOS-493, pruned by JOS-499).
+//
+// THIS FILE USED TO BE ABOUT ARBITRATION BETWEEN TWO WORLDS. With `EQC_ENGINE_SERVE=1` a
+// renderer hydrated its snapshot from the RUST ENGINE and then rode `module:delta` out of the
+// TypeScript fold, so `knownSeq` and `delta.seq` were unrelated numbers and every increment was
+// dropped as a dupe. Twelve of its claims were about telling those two worlds apart — which hook
+// rides which channel, what the `served` flag decides, what a flag-off launch pushes, which half
+// gates a command. THE SECOND WORLD IS DELETED, so those claims are not weakened, they are
+// unstatable: there is nothing left to arbitrate.
+//
+// WHAT SURVIVES IS EVERYTHING THAT WAS NEVER ABOUT THE ARBITRATION — the two channels being
+// distinct names on both bridges, the world-change id colliding with no module, the racing-cursor
+// guard, the unsubscribe discipline, the fan-out reaching the same windows the rebuild does, the
+// mark carrying the instant main already stamped, and the served-mtime graft being quoted rather
+// than re-derived (owner ruling 21).
 //
 // THE DEFECT THESE PINS EXIST FOR, in one sentence: with `EQC_ENGINE_SERVE=1` a renderer hydrated
 // its module snapshot from the RUST ENGINE and then rode `module:delta` out of the TypeScript fold,
@@ -55,8 +69,9 @@ const HOOKS = [
 // ── 1. the two channels ────────────────────────────────────────────────────────────────
 
 test('the increment channel and the cursor channel are DISTINCT names', () => {
-  assert.notEqual(IPC.onModuleDelta, IPC.onModuleChanged)
-  assert.equal(IPC.onModuleDelta, 'module:delta')
+  // THE INCREMENT CHANNEL IS GONE (JOS-499), so the claim inverts: there is no second channel for
+  // a cursor to be confused with, and `IPC` must not carry a name nothing produces.
+  assert.equal((IPC as Record<string, unknown>).onModuleDelta, undefined)
   assert.equal(IPC.onModuleChanged, 'module:changed')
 })
 
@@ -85,46 +100,20 @@ test('the world-change id is one nothing registers, so it can never collide with
 
 // ── 2. each folder rides exactly one channel, and the SNAPSHOT decides which ────────────
 
-test('BOTH hooks read `served` off the snapshot rather than reading a flag', () => {
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    assert.match(
-      mod,
-      /served = snap\.served === true/,
-      `${hook} does not take the world from the snapshot it just hydrated`
-    )
-    // The shim decides PER CALL, so an opinion formed anywhere but a hydrate would go stale.
-    assert.doesNotMatch(
-      mod,
-      /EQC_ENGINE|process\.env/,
-      `${hook} reached for a launch flag; the answer is a property of the ANSWER`
-    )
-  }
-})
 
-test('a TS-fold increment is NOT folded into an engine-served snapshot', () => {
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    const apply = /const applyOne = \(([\s\S]*?)\n {4}\}/.exec(mod)
-    assert.ok(apply, `${hook}: applyOne is gone`)
-    assert.match(
-      apply[0],
-      /if \(served\) return/,
-      `${hook}: applyOne folds main's own increments whatever world it is in`
-    )
-  }
-})
 
-test('and an engine cursor is NOT acted on while holding main’s own snapshot', () => {
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    assert.match(
-      mod,
-      /if \(!served\) return/,
-      `${hook}: the cursor handler acts on a world it is not folding`
-    )
-    // The dirty bit carries no state by design; the answer to it is the snapshot op.
-    assert.match(mod, /if \(c\.seq <= knownSeq\) return/, `${hook}: a cursor we already hold refetches`)
+
+test('a cursor that raced the hydrate is remembered, not dropped', () => {
+  // UNCHANGED IN SUBSTANCE BY JOS-499, and worth keeping for exactly that reason: this was the
+  // subtlest of the JOS-493 pins and it is the one claim of the delta wave that survives the
+  // deletion intact. A `module:changed` arriving while a snapshot fetch is in flight cannot be
+  // dropped — the reply it raced may have been taken from the engine BEFORE that cursor moved,
+  // and no later frame restates a cursor already reported. It terminates because a re-fetch
+  // answers at or past the cursor that provoked it.
+  for (const rel of ['../src/renderer/src/lib/useModule.ts', '../src/renderer/src/overlay/useOverlayModule.ts']) {
+    const hook = code(rel)
+    assert.match(hook, /pendingSeq/)
+    assert.match(hook, /if \(pendingSeq > knownSeq\) hydrate\(\)/)
   }
 })
 
@@ -139,19 +128,6 @@ test('a world change re-hydrates unconditionally — it is the one frame with no
   }
 })
 
-test('a cursor that raced the hydrate is remembered, not dropped', () => {
-  // No later frame restates a cursor already reported (the protocol sends nothing for a module whose
-  // seq did not move), so dropping one would freeze that module until something else moved it.
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    assert.match(mod, /if \(c\.seq > pendingSeq\) pendingSeq = c\.seq/, `${hook}: the race is dropped`)
-    assert.match(
-      mod,
-      /if \(served && pendingSeq > knownSeq\) hydrate\(\)/,
-      `${hook}: the remembered cursor is never settled`
-    )
-  }
-})
 
 test('every subscription is unsubscribed — a hook that leaked one would fold a dead module', () => {
   for (const hook of HOOKS) {
@@ -172,20 +148,6 @@ test('the cursor fan-out reaches the SAME windows the increments do', () => {
   assert.doesNotMatch(mod, /OVERLAY_KINDS/, 'the overlay list was copied instead of reused')
 })
 
-test('nothing is pushed when this launch turned the serve flag OFF', () => {
-  const mod = code('../src/main/dataServer/serveDeltas.ts')
-  // DEFAULT-ON SINCE JOS-495, through the one predicate all five readers of these variables share.
-  // The inversion had to land HERE as well as in `serveShim.ts` or the two halves of the read path
-  // would disagree on every ordinary launch — served snapshots, suppressed cursors, frozen surfaces.
-  // The whole matrix, and the audit that catches a sixth reader, live in tests/engineFlagDefault.
-  assert.match(mod, /const SERVE_ASKED = engineFlagOn\(process\.env\.EQC_ENGINE_SERVE\)/)
-  // Both exported pushes are gated, and gated FIRST — a fan-out that allocated a frame before
-  // checking would still be paying for a feature the launch did not ask for.
-  for (const fn of ['pushModuleChanged', 'pushWorldChanged']) {
-    const decl = new RegExp(`export function ${fn}\\([^)]*\\): void \\{\\s*if \\(!SERVE_ASKED\\) return`)
-    assert.match(mod, decl, `${fn} is not gated on the serve flag`)
-  }
-})
 
 test('a cursor from a replaced connection, or from an engine that is not serving reads, is not forwarded', () => {
   const host = code('../src/main/dataServer/engineClientHost.ts')
@@ -216,7 +178,15 @@ test('both edges where the serving world changes hands are announced', () => {
   // that has finished folding and gone quiet will not move again for minutes — so a mirror waiting
   // for a cursor would fall back on every draw of a card the engine could answer perfectly. The two
   // sit in one block because they are one statement about one moment: the world changed hands.
-  assert.match(host, /if \(first\) \{\s*pushWorldChanged\(\)[\s\S]*?primeMirrors\(\)\s*\}/)
+  // The `\s*\}` that used to close this pattern is gone (JOS-499): the same block now also writes
+  // the GO-LIVE SENTENCE, which replaced the parity line as the app's statement that the engine has
+  // started answering its reads — and two e2e specs use it as their readiness precondition. The
+  // claim is unchanged and is the one that matters: both announcements sit inside the `first` test,
+  // in one block, because they are one statement about one moment. What may follow them there is
+  // not this assertion's business.
+  assert.match(host, /if \(first\) \{\s*pushWorldChanged\(\)[\s\S]*?primeMirrors\(\)/)
+  // …and the sentence itself is in that block rather than somewhere a re-poll could repeat it.
+  assert.match(host, /if \(first\) \{[\s\S]*?debug\(servingLine\(/)
   // Going away: a window holding a served snapshot is IGNORING module:delta because it was served,
   // so without this frame it would sit frozen until the next character rebuild.
   const edges = host.match(/const wasServing = engineLiveOn !== null/g) ?? []
@@ -236,15 +206,6 @@ test('THE ENGINE’S COMMAND CARRIES THE INSTANT MAIN ALREADY STAMPED', () => {
   assert.match(command, /engineRequest\('sessionMarks\.add', \{ at \}\)/)
 })
 
-test('…and only after BOTH of this process’s halves accepted it', () => {
-  const mod = code('../src/main/sessionMarks.ts')
-  const refusal = mod.indexOf('if (!combat.sessionMark(at)) return marks')
-  const dedupe = mod.indexOf('next[next.length - 1] !== at')
-  const told = mod.indexOf('serveSessionMark(at)')
-  assert.ok(refusal >= 0 && dedupe >= 0 && told >= 0)
-  assert.ok(refusal < told, 'a mark the combat engine refused is announced to the engine anyway')
-  assert.ok(dedupe < told, 'a deduped double press is announced as a second split')
-})
 
 test('the press never waits on the socket, and a refusal is not an error', () => {
   const command = code('../src/main/dataServer/serveCommands.ts')
@@ -256,45 +217,10 @@ test('the press never waits on the socket, and a refusal is not an error', () =>
   assert.doesNotMatch(command, /\bthrow\b/)
 })
 
-test('the command is gated by the SAME answer the read path uses', () => {
-  const command = code('../src/main/dataServer/serveCommands.ts')
-  assert.match(command, /if \(!shimServing\(\)\) return/, 'the command invented its own gate')
-})
 
 // ── 3b. the second command (JOS-494) ───────────────────────────────────────────────────
 
-test('THE CONFIRM CARRIES A ROW AND NEVER AN INSTANT', () => {
-  // The mark's whole subject is a moment main stamped; this one's is a ROW, and the instant it
-  // re-bases onto is the row's own `seenTs` — a LOG timestamp the fold already holds. A clock read
-  // anywhere on this path would be the app moving an engine clock to a moment the engine's log
-  // never stated, which is the pin above from the other direction. `Date.now()` in this file is
-  // already forbidden by the mark's test; this is the params shape.
-  const command = code('../src/main/dataServer/serveCommands.ts')
-  assert.match(command, /engineRequest\('respawn\.confirmSighting', \{ rowId \}\)/)
-  assert.match(command, /export function serveConfirmSighting\(rowId: string\): void/)
-  // Both commands ask the same gate — a second one would be a second opinion about whether this
-  // launch's answers are the engine's.
-  assert.equal(
-    (command.match(/if \(!shimServing\(\)\) return/g) ?? []).length,
-    2,
-    'a command in this file stopped asking the serve gate'
-  )
-})
 
-test('…and it is pushed only AFTER this process applied it, and only when it took', () => {
-  // `serveCommands.ts`'s own law, the mark's "both halves or neither" applied to one half: a press
-  // this app itself read as a no-op — a stale click, a row that died between the render and the
-  // button — must not be announced to a second world as though it happened.
-  const ipc = code('../src/main/ipc/respawn.ts')
-  const applied = ipc.indexOf('const applied = respawnModule.confirmSighting(id)')
-  const told = ipc.indexOf('serveConfirmSighting(id)')
-  assert.ok(applied >= 0 && told >= 0, 'the confirm handler no longer has both halves')
-  assert.ok(applied < told, 'the engine is told before this process has an answer of its own')
-  // INSIDE the `if`, not beside it — the flush and the push share the gate that the apply took.
-  const guarded = /if \(applied\) \{([\s\S]*?)\n {4}\}/.exec(ipc)
-  assert.ok(guarded, 'the confirm handler stopped guarding its follow-up duties')
-  assert.match(guarded[1], /serveConfirmSighting\(id\)/, 'a refused press is announced anyway')
-})
 
 test('a confirm is a COMMAND, not app knowledge — it does not ride the define push', () => {
   // The line between the two files is what a push MEANS. A define is a preference the engine's
@@ -345,12 +271,6 @@ test('ONLY the character module is grafted, and only that one field', () => {
   assert.equal((graft[1].match(/lastPlayed/g) ?? []).length, 1)
 })
 
-test('the harness seam projects what the SHIM would serve, not a second spelling of it', () => {
-  // A spec comparing the two arms has to be comparing the answer the product would have been given,
-  // graft included; two projections would let the e2e pin a code path nothing ships.
-  const shim = code('../src/main/dataServer/serveShim.ts')
-  assert.equal((shim.match(/projectModule\(moduleId, r\)/g) ?? []).length, 2)
-})
 
 test('the served snapshot SAYS it was served, and the app’s own arm never does', () => {
   const shim = code('../src/main/dataServer/serveShim.ts')
@@ -369,24 +289,7 @@ test('the served snapshot SAYS it was served, and the app’s own arm never does
 // goes permanently silent in exactly the tree `engineHost.ts`'s header promises "exactly the app it
 // got before this ticket", and in any packaged build whose engine failed to spawn.
 
-test('the con-card hook is ALWAYS installed — the handoff is per-`/con`, not per-launch', () => {
-  const card = code('../src/main/conCard.ts')
-  // No condition around the registration. A hook skipped at boot on a flag that does not mean what
-  // it looks like is a card that silently never appears again.
-  assert.match(
-    card,
-    /considerModule\.setConCardHook\(\(ev, zone\) => \{\s*if \(engineDrawsCards\(\)\) return/
-  )
-  assert.doesNotMatch(card, /if \(!serving\)/, 'the launch-time skip came back — see the section note')
-})
 
-test('the handoff asks the SAME authority the read path does, and both halves of it', () => {
-  const ipc = code('../src/main/ipc/index.ts')
-  // `shimServing()` alone would be the bug above; `engineServeReadiness()` alone would draw no card
-  // on a launch that deliberately turned serving off while an engine ran beside it. Both, and
-  // nothing newly invented — one gate, one authority.
-  assert.match(ipc, /registerConCardIpc\(\(\) => shimServing\(\) && engineServeReadiness\(\)\.ok\)/)
-})
 
 test('the engine card takes the engine’s HEADER, and the chips are still joined here', () => {
   const card = code('../src/main/conCard.ts')

@@ -187,6 +187,7 @@ export function zoneStatRows(
   sort: ZoneSort = 'levels',
   basis: RateBasis = RATE_BASIS_DEFAULT
 ): ZoneStatRow[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ZoneRangeRow. Becomes a view descriptor when the source lands.
   return [...zones].sort(sort === 'time' ? byTime : byLevels).map((z) => shapeZone(z, basis))
 }
 

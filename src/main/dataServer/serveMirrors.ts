@@ -196,15 +196,20 @@ async function refresh(moduleId: string, m: Mirror): Promise<void> {
     m.seq = reply.seq
   } catch (err) {
     // A REFUSAL IS NOT AN ERROR HERE, it is the fallback path. The mirror keeps whatever it had —
-    // which for a fresh one is `null`, i.e. "ask your own fold" — and says so once, at debug, on the
-    // same coalescing principle `readShim.ts` argues at length: these are pushed at a cadence, and a
-    // line per failure would bury the dev log.
+    // which for a fresh one is `null`, i.e. nothing to report yet — and says so once, at debug, on
+    // the same coalescing principle `readShim.ts` argues at length: these are pushed at a cadence,
+    // and a line per failure would bury the dev log.
+    //
+    // THE SENTENCE NAMES THE STALENESS, NOT A SECOND WORLD (JOS-501). It used to say "the app's own
+    // fold answers until the engine does", which was true until JOS-499 deleted that fold; what a
+    // reader of this mirror actually gets meanwhile is the LAST SERVED VALUE, or nothing at all if
+    // none has arrived on this launch.
     if (!noted) {
       noted = true
       d.note(
         `data-server mirror: ${moduleId} could not be refreshed ` +
-          `(${err instanceof Error ? err.message : String(err)}); the app's own fold answers ` +
-          'until the engine does. Further mirror refusals on this launch are silent.'
+          `(${err instanceof Error ? err.message : String(err)}); readers keep the last served ` +
+          'value until the engine answers again. Further mirror refusals on this launch are silent.'
       )
     }
   } finally {

@@ -228,6 +228,52 @@ test('`cwd` covers the launch where getAppPath() is NOT the checkout', () => {
   ])
 })
 
+test('AN OUTRIGHT NAME WINS, and is still only a candidate (JOS-501)', () => {
+  // The e2e harness builds the engine in RELEASE and the probe order prefers DEBUG, so on a machine
+  // holding both the suite would have paid for one binary and asserted against the other. The
+  // harness therefore states the path. It goes FIRST because nothing derived can be a better answer
+  // than the launcher naming the file.
+  assert.deepEqual(
+    engineBinaryCandidates({
+      appPath: 'C:/r',
+      resourcesPath: '',
+      cwd: 'C:/r',
+      binName: 'e',
+      override: 'C:/r/engine/target/release/e'
+    }),
+    [
+      'C:/r/engine/target/release/e',
+      'C:/r/engine/target/debug/e'
+      // …and the release path is NOT repeated: the dedupe that keeps a doubled root from being
+      // probed twice covers the override for free.
+    ]
+  )
+
+  // A BACKSLASH PATH IS THE ORDINARY CASE on Windows — `join()` produces one and every other
+  // candidate here is built with `/` — so it is normalised rather than left to defeat the dedupe.
+  assert.deepEqual(
+    engineBinaryCandidates({
+      appPath: 'C:/r',
+      resourcesPath: '',
+      binName: 'e',
+      override: 'C:\\r\\engine\\target\\release\\e'
+    }),
+    ['C:/r/engine/target/release/e', 'C:/r/engine/target/debug/e']
+  )
+
+  // IT SELECTS, IT NEVER DISABLES. An absent or empty override leaves the list exactly as it was —
+  // which is what lets `engine-absent.e2e.mts` keep arranging absence with `cwd` alone.
+  const plain = engineBinaryCandidates({ appPath: 'C:/r', resourcesPath: '', binName: 'e' })
+  assert.deepEqual(engineBinaryCandidates({ appPath: 'C:/r', resourcesPath: '', binName: 'e', override: '' }), plain)
+
+  // AND IT IS NOT TRUSTED TO EXIST. The caller `existsSync`es every candidate in order, so a stale
+  // value degrades to the ordinary search rather than resolving to a file that is not there.
+  assert.deepEqual(
+    engineBinaryCandidates({ appPath: 'C:/r', resourcesPath: '', binName: 'e', override: 'C:/gone/e' }),
+    ['C:/gone/e', 'C:/r/engine/target/debug/e', 'C:/r/engine/target/release/e']
+  )
+})
+
 test('an unknown root contributes no candidates rather than a path rooted at nothing', () => {
   assert.deepEqual(engineBinaryCandidates({ appPath: '', resourcesPath: '', binName: 'e' }), [])
   assert.deepEqual(engineBinaryCandidates({ appPath: 'C:/r', resourcesPath: '', binName: 'e' }), [

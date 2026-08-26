@@ -24,7 +24,8 @@ import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
-import { MAIN_ENTRY, ROOT, electronBinary, sleep } from './appHarness.mjs'
+import { ENGINE_BIN, MAIN_ENTRY, ROOT, electronBinary, sleep } from './appHarness.mjs'
+import { settleRealLogFold } from './engineSteps.mjs'
 
 /** The MAIN application window. Never `app.firstWindow()` — see the header. */
 export async function mainWindow(app: ElectronApplication, timeoutMs = 60_000): Promise<Page> {
@@ -251,34 +252,26 @@ async function muteEveryWindow(app: ElectronApplication): Promise<void> {
  * answers EVERYWHERE, and a claim of that shape is only worth what its least-remembered surface is
  * worth. A spec added tomorrow gets the engine without its author having to know this file exists.
  *
- * AND THE ABSENCE CONTRACT SURVIVES, INVERTED. `engine-boots.e2e.mts` asserts what a launch with no
- * engine looks like, and it now says so by NAMING `ENGINE_OFF` below — which is a better test than
- * the silence it replaced, because a harness that quietly stopped setting the flags could never fail
- * an absence assertion that was merely the default.
+ * AND THE ABSENCE CONTRACT SURVIVES, INVERTED. `engine-absent.e2e.mts` asserts what a launch with
+ * no engine looks like, and it says so with `cwd` below rather than with a flag — which is a better
+ * instrument than the flag it replaced, because it asks the PRODUCT'S own question.
  *
- * THE PRODUCT IS UNCHANGED BY ANY OF THIS. `engineHost.ts` states that `EQ_E2E` is deliberately not
- * a gate on the engine: the flags are what a developer sets in a shell, and the harness is now
- * simply a developer who always sets them.
- *
- * AND SINCE JOS-495 BOTH LINES ARE REDUNDANT — the product defaults to them — SO THEY STAY: naming
- * what the suite runs is belt and braces across a default flip, and a harness whose engine-on claim
- * rested on somebody else's default would go quietly TS-only the day that default moved again.
+ * THE PRODUCT IS UNCHANGED BY ANY OF THIS. `EQ_E2E` is deliberately not a gate on the engine; the
+ * harness only says WHICH binary to run (`EQ_ENGINE_BIN`, JOS-501), never whether one runs.
  */
-const ENGINE_ON: Readonly<Record<string, string>> = {
-  EQC_ENGINE: '1',
-  EQC_ENGINE_SERVE: '1'
-}
-
-/**
- * THE OPT-OUT, NAMED SO IT CAN BE GREPPED. Pass it as `env` to launch the app with no engine at all.
- *
- * ONE FLAG IS ENOUGH and the second is deliberately left set: `serveShim.ts` computes
- * `SERVING = engineEnabled() && EQC_ENGINE_SERVE === '1'`, so the serve flag is MEANINGLESS ALONE by
- * the product's own one-gate rule. Spelling `EQC_ENGINE_SERVE: '0'` here would be a second thing to
- * keep in step with a rule this repo already keeps in one place — and a launch that carries the
- * serve flag with no engine is itself a small proof that the gate holds.
- */
-export const ENGINE_OFF: Readonly<Record<string, string>> = { EQC_ENGINE: '0' }
+// `ENGINE_ON` STOOD HERE AND IS GONE (JOS-499). It set `EQC_ENGINE=1` and `EQC_ENGINE_SERVE=1`
+// on every launch so the whole suite ran against the engine. Both flags are deleted from the
+// product — there is no other world to select — so setting them would be the harness naming
+// variables nothing reads, which is worse than naming nothing at all.
+//
+// `ENGINE_OFF` STOOD BESIDE IT AND WENT WITH IT, and its contract did NOT — it moved to `cwd`
+// below. `EQC_ENGINE=0` tested a gate; there is no gate. What a user can actually have is a build
+// with no engine BINARY (a checkout that never ran `cargo build`, a package that shipped without
+// it, a file quarantined by AV), and that is what `tests/e2e/engine-absent.e2e.mts` arranges.
+//
+// JOS-501 removed the last two paragraphs that stood here, which still told a reader that
+// `ENGINE_OFF` was NAMED below and that both flag lines STAY. Neither had been true since JOS-499,
+// and a tombstone that contradicts the tombstone above it is worse than no tombstone at all.
 
 /** A launched app, its userData dir, and the teardown that matches how the dir was obtained. */
 export interface LaunchedApp {
@@ -304,12 +297,26 @@ export interface LaunchedApp {
  *
  * Pass `env` only when the assertion is ABOUT a launch-time environment the app reads before it
  * can be driven — `EQ_DISABLE_GPU`, whose whole point is that it is decided before Electron is
- * ready and therefore cannot be flipped through any bridge (JOS-40), or `ENGINE_OFF` above, which
- * is how the one spec whose subject is the engine's ABSENCE says so. It is merged LAST, so a
+ * ready and therefore cannot be flipped through any bridge (JOS-40). It is merged LAST, so a
  * spec can override the harness's own variables deliberately rather than by accident.
  */
 export async function launchApp(
-  opts: { userData?: string; installDir?: string; env?: Record<string, string> } = {}
+  opts: {
+    userData?: string
+    installDir?: string
+    env?: Record<string, string>
+    /**
+     * THE WORKING DIRECTORY, AND THEREFORE WHETHER AN ENGINE BINARY CAN BE FOUND (JOS-499).
+     *
+     * `engineBinaryCandidates` builds its list from `app.getAppPath()` and `process.cwd()`, so a
+     * launch whose cwd is a directory with no `engine/target/**` under it — and whose appPath is
+     * the built `out/main`, which has none either — resolves NO binary. That is the app's own
+     * resolution path answering honestly, rather than a flag telling it to pretend.
+     *
+     * Defaults to ROOT, which is every other spec in the suite.
+     */
+    cwd?: string
+  } = {}
 ): Promise<LaunchedApp> {
   const owned = opts.userData === undefined
   const userData = opts.userData ?? makeUserData()
@@ -318,13 +325,21 @@ export async function launchApp(
     EQ_E2E: '1',
     EQ_E2E_USER_DATA: userData,
     NODE_ENV: 'production',
-    // THE SUITE'S DEFAULT (JOS-490) — see `ENGINE_ON` above. Stated after the ambient environment so
-    // a shell that exports its own answer cannot decide what the suite proves, and before
-    // `opts.env`, which is the one thing that may.
-    ...ENGINE_ON
   }
   if (opts.installDir !== undefined) env.EQ_INSTALL_DIR = opts.installDir
   else delete env.EQ_INSTALL_DIR
+  // THE ENGINE THE HARNESS BUILT, NAMED OUTRIGHT (JOS-501). `buildEngineIfStale` builds RELEASE and
+  // the app's resolver prefers DEBUG, so on any machine holding both — every machine a developer has
+  // ever run a plain `cargo build` on — the suite would otherwise pay for one binary and assert
+  // against the other. Same standing as EQ_INSTALL_DIR above: the harness owns the artifact and
+  // hands it over, and `engineHost.ts` reads it only under EQ_E2E=1.
+  //
+  // NOT WHEN THE SPEC MOVED `cwd`, and that exemption is the whole of `engine-absent.e2e.mts`: a
+  // launch that relocates its working directory is deliberately asking the RESOLVER'S OWN question
+  // ("is there a binary anywhere I look?"), and naming one outright would answer it for them with a
+  // path that exists. A spec arranging absence must keep getting absence.
+  if (opts.cwd === undefined) env.EQ_ENGINE_BIN = ENGINE_BIN
+  else delete env.EQ_ENGINE_BIN
   // The other override `config.ts` honours: a bare log PATH. A staged install must not be
   // second-guessed by one left in the ambient environment.
   delete env.EQ_LOG_PATH
@@ -338,7 +353,7 @@ export async function launchApp(
   const app = await electron.launch({
     executablePath: electronBinary(),
     args: [MAIN_ENTRY, ...MUTE_ARGS],
-    cwd: ROOT,
+    cwd: opts.cwd ?? ROOT,
     env,
     timeout: 60_000
   })
@@ -351,4 +366,27 @@ export async function launchApp(
       if (owned) await removeUserData(userData)
     }
   }
+}
+
+/**
+ * LAUNCH ON THE MACHINE'S REAL EQ INSTALL, and do not come back until the fold has landed.
+ *
+ * The counterpart of `logFixture.launchOnFixture`, which has waited for the engine since JOS-499
+ * and states the reason there: every served surface shows a loading state until the fold is live,
+ * so a harness that asserted through it would be testing a frame the product never means anybody to
+ * act on. A REAL-INSTALL launch needs that wait MORE, not less — the fixture folds a few megabytes
+ * and this folds the owner's entire log, measured at 52.5 s under the release engine (JOS-501).
+ *
+ * `bosses-week` was the one spec launching this way, and it did the wait by hand — which is to say
+ * not at all: it settled on a card count through a 30 s per-step cap that knew nothing about a
+ * whole-log fold, and read an empty roster. The asymmetry was never intentional; `launchOnFixture`
+ * is simply where the staging lives, and a real-install launch had no such home. This is that home.
+ */
+export async function launchOnRealInstall(
+  opts: Parameters<typeof launchApp>[0],
+  label: string
+): Promise<LaunchedApp> {
+  const launched = await launchApp(opts)
+  await settleRealLogFold(launched.app, label)
+  return launched
 }

@@ -1,6 +1,6 @@
 import { type JSX, useEffect, useState } from 'react'
 import { Box, CssBaseline } from '@mui/material'
-import type { AppFocus, CharacterDelta, CharacterRef, CharacterSnap } from '@shared/types'
+import type { AppFocus, CharacterRef, CharacterSnap } from '@shared/types'
 import TitleBar from './components/TitleBar'
 import NavDrawer from './components/NavDrawer'
 // The gear area's in-area tab bar (JOS-324) — four views behind one nav row. It sits ABOVE the
@@ -321,7 +321,7 @@ function useAppCelebrations(
   // WHERE YOU ARE, from the module that owns that question (the ZoneStrip precedent). Read as a
   // plain value, not a ref: `useBossKills` refreshes its callback from every render before its
   // effect runs, so the closure below always holds the zone of the render the kill arrived in.
-  const zone = useModule<CharacterSnap, CharacterDelta>('character', (s, d) => ({ ...s, ...d }))?.zone
+  const zone = useModule<CharacterSnap>('character')?.zone
 
   useBossKills(bossData.targets, {
     // THE TIER OF THIS KILL, AND THE INSTANCE IT HAPPENED IN (JOS-165). This block used to print
@@ -582,8 +582,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     void window.eq.getCharacter().then(setCharacter)
     void window.eq.listCharacters().then(setCharacters)
-    // Any live module delta means the tail is producing events — light the dot.
-    const offDelta = window.eq.onModuleDelta(() => setLive(true))
+    // Any served cursor means the engine is folding live events — light the dot. It was a module
+    // DELTA until JOS-499; main folds nothing now, and a cursor is the same evidence: something
+    // moved in a module because the log did.
+    const offDelta = window.eq.onModuleChanged(() => setLive(true))
     // FIX 3: main pushes onCharacter once state is fully rebuilt (startup + switch).
     // Sync the character and bump a rebuild counter so views reliably remount and
     // re-fetch their snapshots against the freshly-rebuilt state.

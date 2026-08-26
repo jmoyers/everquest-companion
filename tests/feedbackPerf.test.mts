@@ -38,6 +38,7 @@ import {
 } from '../src/shared/feedbackPerf'
 import { LIVE_TIMELINE_MS } from '../src/shared/perfLive'
 import { PERF_SEAMS } from '../src/shared/perfSeams'
+import { ENGINE_BUDGETS } from '../src/shared/feedbackPerfEngine'
 import { validateEnv, validateSubmit } from '../src/shared/feedback'
 
 const NOW = 1_800_000_000_000
@@ -254,6 +255,28 @@ function ceilingBlock(): FeedbackPerf {
       t: 590,
       // Every member of GC_KINDS is five characters, so any of them is the widest this can be.
       worstKind: 'major' as const
+    },
+    // …and JOS-502's engine block at ITS ceiling: every optional field present and every number at
+    // its bound, both budgets named (the validator's own cap on that list), and the state member
+    // that spells longest. Same argument as the two groups above — without this the size guard
+    // would be measuring a block the wire can no longer produce.
+    engine: {
+      state: 'attaching' as const,
+      upMs: 31_536_000_000,
+      events: 999_999,
+      // `behindMs` takes the UPTIME ceiling, not the one-hour duration ceiling — a freshness lag
+      // is a distance from now, not a cost, and a log untouched for a fortnight has a real one.
+      behindMs: 31_536_000_000,
+      spellDbMs: 3_599_999,
+      scanMs: 3_599_999,
+      scanKb: 999_999_999,
+      frames: 999_999,
+      servedKb: 999_999_999,
+      worstServeUs: 3_599_999_999,
+      windows: 999_999,
+      busiestFrames: 999_999,
+      quietWindows: 999_999,
+      budgets: ENGINE_BUDGETS.map((id) => ({ id, verdict: 'unmeasured' as const }))
     }
   }
 }
@@ -397,19 +420,22 @@ test('a quiet window draws a blank sparkline rather than a false floor', () => {
   assert.equal(perfSparkline(perf).trim(), '')
 })
 
-test('the summary line states the numbers and the block prints four lines', () => {
+test('the summary line states the numbers and the block prints five lines', () => {
   const perf = oneTick()
   const summary = formatPerfSummary(perf)
   assert.match(summary, /late p95 900ms/)
   assert.match(summary, /max 900ms/)
   assert.match(summary, /1 freeze \(>=500ms\)/)
   const block = formatPerfBlock(perf)
-  // FOUR since JOS-458: the fourth is the CONCLUSION — which seam or which collection owned the
-  // spike the three above it establish. It is printed even for a block that carries no
-  // attribution, because "nothing reached the threshold" and "this build never looked" are
-  // different reports and the reader must be able to tell them apart.
-  assert.equal(block.split('\n').length, 4)
+  // FOUR since JOS-458 and FIVE since JOS-502. The fourth is the CONCLUSION — which seam or which
+  // collection owned the spike the three above it establish — and the fifth is the ENGINE, the one
+  // process in this app that `app.getAppMetrics()` structurally cannot see. Both are printed even
+  // when they have nothing to report, because "nothing reached the threshold" / "no engine
+  // answered" and "this build never looked" are different reports and the reader must be able to
+  // tell them apart.
+  assert.equal(block.split('\n').length, 5)
   assert.match(block, /last 10 min, 10s rows/)
   assert.match(block, /nvidia\/hardware/)
   assert.match(block, /owner: no instrumented seam and no gc pause reached/)
+  assert.match(block, /engine: no engine answered/)
 })

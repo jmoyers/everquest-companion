@@ -1,95 +1,106 @@
-// IPC: read-only pulls off the log-derived world — the generic module transport and the
-// combat engine's snapshot/search surface.
+// IPC: read-only pulls off the log-derived world — the generic module transport and the combat
+// engine's snapshot/search surface.
 //
-// SINCE JOS-489 EACH OF THE THREE HAS TWO ARMS. The app's own fold is one of them and is written
-// out below exactly as it always was; the other asks the ENGINE the same question over the data
-// server, behind `EQC_ENGINE_SERVE=1` (`src/main/dataServer/serveShim.ts`, which owns the flag, the
-// fallback and the coalesced narration). The flag decides PER CALL, and with it off the expression
-// each handler returns is the one it has returned since the channel existed — one boolean read in
-// front of it and nothing else, no promise where there was a value, no allocation, no engine in the
-// module graph's way.
+// ── ONE ARM (JOS-499, the deletion release) ────────────────────────────────────────────────────
 //
-// THE TS ARM IS A NAMED THUNK RATHER THAN AN INLINE ELSE-BRANCH, and that is the point of the
-// shape: it is handed to the shim as the fallback, handed to the harness seam as the second arm of
-// the parity comparison, and read here as the flag-off answer — three readers, one definition, so
-// the two worlds can never be given different questions to answer. It is also what the cutover
-// deletes: when the engine is the only fold, these three thunks and their imports go and the
-// handlers keep their served arm.
+// Each of these three used to have TWO. The app's own fold answered one of them and the ENGINE
+// answered the other, and `EQC_ENGINE_SERVE` decided per call. The TS fold is deleted (owner ruling
+// 12: once proven, move fully), so the branch is gone, the flag is gone, and what is left is the
+// served arm each handler always had.
+//
+// WHAT WENT WITH THE SECOND ARM. `TsArms` — the named thunks that were the fallback, the parity
+// probe's second arm and the flag-off answer all at once — has no third reader left and dies with
+// the fold it read. `installShimProbe` dies with it, and so does the parity e2e that consumed it:
+// a probe that compares two worlds has one world to compare.
+//
+// ── WHAT A HANDLER ANSWERS WHEN THE ENGINE CANNOT ─────────────────────────────────────────────
+//
+// This is the honest half of the release and it is worth reading before changing anything here.
+// There is no fallback: an engine that is absent, still folding, or on another log means the app
+// has NO ANSWER to give, and it says so rather than inventing one.
+//
+//   * `module:getSnapshot` answers `null`, which is what the renderer's `useModule` already reads
+//     as "no state yet" and now also reads as "nothing can answer this". Views draw their
+//     loading/unavailable state.
+//   * `combat:snapshot` answers an EMPTY snapshot rather than null, because its renderer contract
+//     is non-nullable and always has been — an empty meter is the same shape as a meter before the
+//     first fight, which is exactly what an unattached engine means.
+//   * `combat:searchFights` answers no hits over an empty corpus, which is the truthful answer to
+//     "search a history that is not loaded".
+//
+// None of these is a silent lie: each is the shape the surface draws when there is nothing to show,
+// and `readShim.ts` still counts and narrates every one of them into the dev log with the REASON,
+// so a developer sees "the engine is still folding x12" rather than an empty tab and no idea why.
 
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import type { CombatSnapshot, FightSearchResult, SnapshotOpts } from '../../shared/combat'
-import { timeSeam } from '../perfAttribution'
-import { combat, registry } from '../pipeline'
 import {
-  installShimProbe,
   serveCombatSnapshot,
   serveModuleSnapshot,
   serveSearchFights,
-  shimServing,
-  type ModuleSnap,
-  type TsArms
+  type ModuleSnap
 } from '../dataServer/serveShim'
 
 /**
  * `limit`, as this channel has always clamped it: a renderer bug can't ask for an unbounded payload
- * over IPC. It is applied BEFORE the arm is chosen rather than inside either one, so both worlds
- * are asked for the same number of hits — the schema mirrors the same rule engine-side
- * (`CombatSearchFightsParams.limit`), and two clamps applied to two different inputs would be a
- * divergence this shim manufactured itself.
+ * over IPC. The schema mirrors the same rule engine-side (`CombatSearchFightsParams.limit`); the
+ * clamp stays here so what goes on the wire is already bounded rather than being bounded twice
+ * against two different inputs.
  */
 function clampLimit(limit: unknown): number | undefined {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) return undefined
   return Math.min(Math.max(1, Math.floor(limit)), 500)
 }
 
-export function registerWorldIpc(): void {
-  // THE APP'S OWN FOLD, all three questions. See the header for why they are named.
-  //
-  // BOTH SNAPSHOT ARMS ARE TIMED SEAMS (JOS-458). They are synchronous work on main whose cost
-  // scales with how long the session has run — a module's whole state, and the engine's — and they
-  // are asked for in bursts exactly when the field reports say main stalls: a window hydrating
-  // after a fold. `timeSeam` is a pass-through, so the handler's value and its throws are
-  // unchanged; the search arm below is deliberately NOT timed, because it is user-initiated and a
-  // person who typed into a box is not the "app froze on its own" report this hunts.
-  //
-  // THE SEAM STAYS ON THE TS ARM ONLY, and deliberately: it measures how long THIS PROCESS blocks,
-  // and a served answer does not block it at all. Timing the engine arm through it would put a
-  // network round trip into a histogram whose whole subject is main-thread stalls.
-  const arms: TsArms = {
-    module: (moduleId) => timeSeam('moduleSnapshot', () => registry.snapshot(moduleId)),
-    combat: (opts) => timeSeam('combatSnapshot', () => combat.snapshot(Date.now(), opts)),
-    // Fight-history search (Task #61). Read-only over the engine.
-    search: (text, limit) => combat.searchFights(text, limit)
+/**
+ * THE EMPTY METER — what `combat:snapshot` answers when nothing can.
+ *
+ * WHY A SHAPE AND NOT A NULL: `CombatSnapshot` is non-nullable in the renderer's contract and every
+ * meter surface dereferences it on first paint. `hydrating: true` is the honest flag — the app has
+ * no answer YET — and it is precisely the state the UI already draws a quiet loading meter for
+ * (`shared/combat.ts CombatSnapshot.hydrating`), so nothing here invents a fight that did not happen.
+ *
+ * IT IS DELIBERATELY NOT CAST, and that is the whole reason this function exists rather than an
+ * object literal at the call site. The first version of it WAS a cast — `{…} as unknown as
+ * CombatSnapshot` with a hand-guessed field set — and it compiled, shipped, and took the renderer
+ * down with `Cannot read properties of undefined (reading 'some')` the moment a meter component
+ * touched a field the guess had omitted. Every e2e spec in the suite failed on a blank window.
+ * Typing it properly makes the compiler the thing that knows this shape, which is what it is for:
+ * the day `CombatSnapshot` grows a required field, this is a build error rather than a black app.
+ */
+function emptyCombat(): CombatSnapshot {
+  return {
+    selectedId: '',
+    selected: null,
+    segments: [],
+    inCombat: false,
+    recent: [],
+    stance: {},
+    poison: { coat: { combat: [] }, slow: { pulls: 0, landed: 0, noLand: 0, window: 0 } },
+    zoneSessions: [],
+    // THE ONE FIELD THAT CARRIES THE MEANING. Not "there was no combat" — "nobody can say yet".
+    hydrating: true,
+    roster: { members: [], seen: false, lastSignalTs: 0 }
   }
+}
 
+export function registerWorldIpc(): void {
   // Generic module transport: one handler serves every registered module.
   ipcMain.handle(
     IPC.getModuleSnapshot,
-    (_e, moduleId: string): Promise<ModuleSnap | null> | ModuleSnap | null => {
-      const own = (): ModuleSnap | null => arms.module(moduleId)
-      return shimServing() ? serveModuleSnapshot(moduleId, own) : own()
-    }
+    (_e, moduleId: string): Promise<ModuleSnap | null> => serveModuleSnapshot(moduleId)
   )
   ipcMain.handle(
     IPC.getCombatSnapshot,
-    (_e, opts: SnapshotOpts | undefined): Promise<CombatSnapshot> | CombatSnapshot => {
-      const own = (): CombatSnapshot => arms.combat(opts ?? {})
-      return shimServing() ? serveCombatSnapshot(opts ?? {}, own) : own()
-    }
+    (_e, opts: SnapshotOpts | undefined): Promise<CombatSnapshot> =>
+      serveCombatSnapshot(opts ?? {}, emptyCombat)
   )
   ipcMain.handle(
     IPC.searchFights,
-    (_e, text: unknown, limit: unknown): Promise<FightSearchResult> | FightSearchResult => {
+    (_e, text: unknown, limit: unknown): Promise<FightSearchResult> => {
       const query = typeof text === 'string' ? text : ''
-      const capped = clampLimit(limit)
-      const own = (): FightSearchResult => arms.search(query, capped)
-      return shimServing() ? serveSearchFights(query, capped, own) : own()
+      return serveSearchFights(query, clampLimit(limit), () => ({ hits: [], corpus: 0 }))
     }
   )
-
-  // THE PARITY SEAM (`EQ_E2E=1` and the serve flag; a no-op otherwise). It is installed with the
-  // very thunks above, so what the harness compares the engine against is the same TS arm the
-  // product would have fallen back to — not a second read of the fold spelled somewhere else.
-  installShimProbe(arms)
 }

@@ -1,0 +1,128 @@
+{
+  "moment": "the engine states its own budgets and its own recent history — ruling 19's surface 8, completed",
+  "source": "JOS-502 (owner ruling 19: \"the performance chip should incl perf of the server in end state\"; the two ops surface 8 names, after 07-perf-snapshot.json shipped the third)",
+  "note": "FOUR ANSWERS, AND THE FIRST TWO ARE THE ONES THE WHOLE SHAPE EXISTS FOR. (1) A LAUNCHED ENGINE'S BUDGETS: both rows present, both `unmeasured`, `measured` ABSENT on both — never a zero and never an optimistic pass, because a just-launched engine is exactly the window in which somebody opening the performance panel is most likely to be looking, and a budget that reads green there is green for the period in which it knows least. The definitions are served anyway, which is ruling 3 in one object: the ceiling and its caveat are what let a reader judge instead of trusting a colour, and the `foldRate` note is where the UNMET G3 GOAL is said out loud (52.5 s against a 20 s goal) so that a passing row can never be misread as a goal reached. (2) THE SAME BUILD LIVE, WITH ONE ROW FAILING: the fold rate cleared its floor and the serve path did not, which is what a wedged ingest looks like from the panel — and note that the serve row's own `note` still says it is a wedge detector rather than a compute budget, because the number includes the ~10 Hz coalescing beat. `limit` and `measured` are RENDERED STRINGS in one en-US vocabulary (ruling 25), not numbers with a unit the caller has to know: the two budgets are measured in different units, the comparison that produces the verdict is arithmetic, and ruling 4 puts arithmetic and rendering on this side of the wire. (3) AN EMPTY TIMELINE, which is the commonest honest answer — the ring is filled by the ingest thread's own beat, so an engine with nothing attached has sampled nothing, and `capacity` and `cadenceMs` are on the answer regardless because a client inferring the horizon from the LENGTH would infer it wrongly for the whole first period of every generation. (4) A FILLED RING, oldest first, and every figure in a moment is an INTERVAL rather than a running total: `perf.snapshot` already answers the cumulative question, and a history exists to say that this ten seconds cost four times what the last ten did. The third moment here is QUIET — zero frames, zero weight, no latency at all — and it is recorded rather than skipped, because a ring that dropped its silent samples would compress a lull into no space and make the busy moments either side of it look adjacent. `foldToFrameUsMax` absent in that moment means no frame in the window had a fold behind it, never zero microseconds.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": { "id": 1, "op": "perf.budgets", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": {
+          "epoch": 1,
+          "budgets": [
+            {
+              "id": "foldRate",
+              "label": "fold rate",
+              "limit": "at least 1.0 MB/s",
+              "verdict": "unmeasured",
+              "note": "The floor is an eighth of the 7.8 MB/s this engine measured on the author's machine, so that a debug build or a wedged scan is what trips it rather than a busy afternoon. It is not the program's goal: folding the owner's 209 MB log in 20 s is the G3 goal and it is NOT met at this release (52.5 s, 3.8 MB/s measured). A pass here says this build is not broken, never that the goal is reached."
+            },
+            {
+              "id": "serveLatency",
+              "label": "serve latency",
+              "limit": "at most 2.0 s",
+              "verdict": "unmeasured",
+              "note": "Measured fold-to-outbox, so the engine's ~10 Hz coalescing beat and the tail's poll interval are inside it: 56 ms for a one-row diff is a beat, not work. The ceiling sits two orders of magnitude above anything observed and is a wedge detector rather than a performance budget. There is no compute-only serve measurement in this build."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 2, "op": "perf.budgets", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": {
+          "epoch": 2,
+          "budgets": [
+            {
+              "id": "foldRate",
+              "label": "fold rate",
+              "limit": "at least 1.0 MB/s",
+              "measured": "3.8 MB/s",
+              "verdict": "pass",
+              "note": "The floor is an eighth of the 7.8 MB/s this engine measured on the author's machine, so that a debug build or a wedged scan is what trips it rather than a busy afternoon. It is not the program's goal: folding the owner's 209 MB log in 20 s is the G3 goal and it is NOT met at this release (52.5 s, 3.8 MB/s measured). A pass here says this build is not broken, never that the goal is reached."
+            },
+            {
+              "id": "serveLatency",
+              "label": "serve latency",
+              "limit": "at most 2.0 s",
+              "measured": "4.1 s",
+              "verdict": "fail",
+              "note": "Measured fold-to-outbox, so the engine's ~10 Hz coalescing beat and the tail's poll interval are inside it: 56 ms for a one-row diff is a beat, not work. The ceiling sits two orders of magnitude above anything observed and is a wedge detector rather than a performance budget. There is no compute-only serve measurement in this build."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 3, "op": "perf.timeline", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": {
+          "epoch": 1,
+          "capacity": 30,
+          "cadenceMs": 10000,
+          "timeline": []
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 4, "op": "perf.timeline", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 4,
+        "ok": true,
+        "result": {
+          "epoch": 2,
+          "capacity": 30,
+          "cadenceMs": 10000,
+          "timeline": [
+            {
+              "atMs": 41204,
+              "spanMs": 10000,
+              "frames": 46,
+              "payloadWeight": 21714,
+              "foldToFrameUsMax": 29
+            },
+            {
+              "atMs": 51207,
+              "spanMs": 10003,
+              "frames": 112,
+              "payloadWeight": 58390,
+              "foldToFrameUsMax": 56012
+            },
+            {
+              "atMs": 61205,
+              "spanMs": 9998,
+              "frames": 0,
+              "payloadWeight": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

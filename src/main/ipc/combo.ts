@@ -13,14 +13,28 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { isClassAbbr, MAX_COMBO_SLOTS, type ClassAbbr, type ComboCorrection } from '../../shared/classCombo'
-import { LAUNCH_MS } from '../log/epochDetector'
+/**
+ * THE LAUNCH EPOCH, INLINED (JOS-499 item 2). It lived in `log/epochDetector.ts`, which is deleted
+ * with the fold; this file survives and still has to refuse a correction that describes the wiped
+ * beta character.
+ *
+ * INLINED RATHER THAN SHARED, following the precedent `storeMigrations.ts` already set for exactly
+ * this constant and for exactly this reason: it is ONE DATE, and a shared module would have to be
+ * imported by two files that otherwise have no dependency on each other or on the parse tree.
+ * `storeMigrations.ts` carries its own copy (and says why in its header), so this is the second of
+ * two rather than the first of many.
+ *
+ * LOCAL TIME, DELIBERATELY, and do not "tidy" it to UTC — `epochDetector.ts`'s header made the same
+ * point. The epoch is the instant EQ Legends officially launched as the owner experienced it.
+ * 2026-07-28 00:00 local. (Month 6 is July: the Date constructor's month is 0-based.)
+ */
+const LAUNCH_MS = new Date(2026, 6, 28, 0, 0, 0, 0).getTime()
 // The engine's copy (JOS-482, boundary verdict 3). Over here corrections are PULLED through a
 // provider, so a character switch needs no notification; the engine has no store to ask, so the
 // push replaces the pull and every write says so. Additive: a launch with no engine finds a null.
 import { pushAppKnowledge } from '../dataServer/definePush'
-import { comboModule, registry } from '../pipeline'
 import { activeCharId } from '../session'
-import { clearComboCorrections, getComboCorrections, setComboCorrection } from '../store'
+import { clearComboCorrections, setComboCorrection } from '../store'
 
 /** A validated `[startTs, endTs]` span, or null. `endTs` null means "from startTs onward". */
 function span(raw: unknown): { startTs: number; endTs: number | null } | null {
@@ -56,8 +70,6 @@ function classes(raw: unknown): ClassAbbr[] | null {
  * the second one is what `tests/e2e/loadout-override.e2e.mts` caught in the running app.
  */
 function republish(): void {
-  comboModule.invalidate()
-  registry.flushNow()
   // …and the engine's module gets the same two, engine-side: `Defines::define` replaces the set and
   // bumps the revision that IS its published seq, for exactly the JOS-87 reason this function
   // exists.
@@ -67,7 +79,6 @@ function republish(): void {
 export function registerComboIpc(): void {
   // Character-scoped, PULLED rather than pushed: `reset()` on a character switch marks the
   // module stale and the next recompute asks this provider again. See ComboModule.
-  comboModule.setCorrectionsProvider(() => getComboCorrections(activeCharId()))
 
   ipcMain.handle(IPC.comboSetCorrection, (_e, payload: unknown) => {
     const range = span(payload)

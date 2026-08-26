@@ -237,6 +237,18 @@ async function speaksTheMob(
   log: { appendAt: (at: Date, ...m: readonly string[]) => number },
   expected: string
 ): Promise<void> {
+  // ── RESTORED BY JOS-500 (owner ruling 27) — THE FRAME CARRIES THE WORDS ─────────────────────
+  //
+  // WHAT THIS CLAIMS: a `{target}` token typed BY HAND into an alert's own phrase reaches the
+  // speech seam substituted. Same mechanism as `targetTokenSteps.mts`, from the other direction —
+  // that one proves the app OFFERS the token, this one proves a user can write it themselves and be
+  // understood. Both matter, because the compile-time gate that decides whether a firing carries a
+  // target at all reads the PHRASE (`autoTokensWanted`, ported engine-side as `wants_target_token`)
+  // — so a phrase the user typed by hand is the input that gate actually runs on in the wild.
+  //
+  // JOS-499 gated this off behind `RETIRED_5a` rather than deleting it, because the frame had four
+  // fields and nowhere to put a capture map. It has the fields now, and the assertion below is
+  // unchanged.
   const before = (await spoken(page)).length
   log.appendAt(new Date(), FADE_LINE)
   const all = await settle(

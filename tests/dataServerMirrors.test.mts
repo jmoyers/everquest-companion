@@ -212,13 +212,16 @@ test('A REFUSAL IS THE FALLBACK PATH, not an error, and it is narrated exactly o
   e.refuseNext('the engine is on another log')
   noteMirrorChanged('character', 1)
   await e.answer()
-  // The mirror keeps what it had — nothing — which every caller reads as "ask your own fold".
+  // The mirror keeps what it had — nothing — and every caller reads that as "no answer yet".
   assert.equal(mirroredModuleState('character'), null)
   assert.equal(e.notes.length, 1)
   assert.match(e.notes[0] ?? '', /character could not be refreshed/)
-  assert.match(e.notes[0] ?? '', /the app’s own fold answers|the app's own fold answers/)
+  // The note names the STALENESS, not a second world (JOS-501): "the app's own fold answers" was
+  // true until JOS-499 deleted that fold, after which it sent readers hunting for a disagreeing
+  // fold that does not exist.
+  assert.match(e.notes[0] ?? '', /readers keep the last served value/)
   // COALESCED for `readShim.ts`'s reason: these are pushed at a cadence, and a line per failure
-  // would bury the very narration a developer flipped the flag to read.
+  // would bury the very narration a developer opened the dev log to read.
   e.refuseNext('still refusing')
   noteMirrorChanged('character', 2)
   await e.answer()

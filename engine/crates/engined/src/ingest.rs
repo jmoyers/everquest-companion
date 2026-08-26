@@ -456,6 +456,13 @@ pub struct Fire {
     pub sound: String,
     /// The text that matched.
     pub message: String,
+    /// WHAT THIS FIRING MAY SAY (JOS-500) — the rule's own named captures plus the `{target}` auto
+    /// token, already sanitized and capped by the fold. Absent for nearly every alert.
+    pub captures: Option<std::collections::BTreeMap<String, String>>,
+    /// The spell this firing is about, rank suffix intact. Absent when the family names none.
+    pub spell: Option<String>,
+    /// The deadline an early warning was early for. Absent on every ordinary fire.
+    pub due_at: Option<i64>,
 }
 
 /// ONE PUSH OF APP KNOWLEDGE, and the way back.
@@ -675,6 +682,14 @@ pub struct EnginePerf {
     pub ingest: IngestCost,
     /// One row per source that has served a frame, ordered by name.
     pub serve: Vec<views::SourceMeter>,
+    /// THE BOUNDED RECENT HISTORY, oldest first (JOS-502) — what `perf.timeline` serves.
+    ///
+    /// IT RIDES THE ANSWER `perf.snapshot` ALREADY ASKED FOR, rather than earning a second `Ask`
+    /// arm. Three ops now read one door: the meter is `&mut` on this thread by construction and
+    /// each new door would be another `try_recv` on the hot boundary, while the whole cost of
+    /// carrying the ring along is copying at most `views::TIMELINE_CAPACITY` five-integer structs.
+    /// One ask, one answer, three views of it.
+    pub timeline: Vec<views::Moment>,
 }
 
 /// WHAT STARTING ONE GENERATION COST, measured rather than modelled.
@@ -1314,6 +1329,13 @@ struct Serving {
     folded_at: Option<Instant>,
     /// What building this generation cost — filled in as each half of it is measured (JOS-483).
     cost: IngestCost,
+    /// THE BOUNDED HISTORY BEHIND `perf.timeline` (JOS-502), sampled off the serve beat.
+    ///
+    /// It lives here rather than in the world for the two reasons the meter does: it is a property
+    /// of THIS GENERATION, and it is written on the thread that already owns the counters it reads,
+    /// so a history costs no lock on the path every `report_*` contends for. It is fixed-capacity
+    /// by construction — see `views::TIMELINE_CAPACITY` for why a bound is the whole design.
+    timeline: views::Timeline,
     /// THE MODULE CURSOR LAST ANNOUNCED, per module (JOS-487).
     ///
     /// IT LIVES HERE AND NOT IN THE WORLD, which is the same placement the meter has and for the
@@ -1335,6 +1357,7 @@ impl Serving {
             meter: Meter::new(),
             folded_at: None,
             cost: IngestCost::default(),
+            timeline: views::Timeline::new(),
             announced_seqs: std::collections::BTreeMap::new(),
         }
     }
@@ -1363,6 +1386,7 @@ impl Serving {
         EnginePerf {
             ingest: self.cost,
             serve: self.meter.peek(),
+            timeline: self.timeline.peek(),
         }
     }
 
@@ -1383,6 +1407,12 @@ impl Serving {
             &mut self.meter,
         );
         self.say(false);
+        // THE RING RIDES THE SERVE BEAT and enforces its own cadence — offered a tick a hundred
+        // times more often than it samples, which is two integer operations per beat and keeps the
+        // horizon a property of `views::Timeline` rather than of this loop. It is offered AFTER the
+        // serve so a window closes on frames that have actually been counted, and the uptime comes
+        // from the world because a performance question is never answered off a wall clock.
+        self.timeline.tick(world.uptime_ms(), &mut self.meter);
         if !served {
             return false;
         }

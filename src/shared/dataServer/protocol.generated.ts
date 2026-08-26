@@ -8,7 +8,7 @@
 // schema edit that lands without regenerating turns tests/protocolSchema.test.mts red on the
 // TypeScript side and the protocol-codegen staleness test red on the Rust side.
 //
-// schema-digest: sha256:6ed6b256345eb1dac02993bf62c6abb498d1b2201d09a6dcf0c146906a21f19d
+// schema-digest: sha256:e4581985ea600134c9e0f5fa81f7cefacc93cbd9b688ec877f038102d5ec801d
 
 /**
  * Anything that can travel the wire, in either direction. The transport adapters are generic over exactly this: a transport moves ProtocolMessages and knows nothing else about the protocol.
@@ -25,6 +25,8 @@ export type ClientMessage =
   | SessionProgressRequest
   | ModuleSnapshotRequest
   | PerfSnapshotRequest
+  | PerfBudgetsRequest
+  | PerfTimelineRequest
   | ViewSubscribeRequest
   | ViewUnsubscribeRequest
   | AlertsDefineRequest
@@ -43,6 +45,8 @@ export type ClientMessage =
   | RespawnConfirmSightingRequest
   | ResistLevelsRequest
   | ResistSpellRequest
+  | LogsSetDirRequest
+  | LogsListRequest
 /**
  * The per-launch shared secret. Minted by Electron main at spawn, handed to the engine out of band, presented once at hello. It is never persisted and never reused across launches. Compare it in CONSTANT TIME (src/main/dataServer/token.ts, engine/crates/protocol/src/token.rs) - a byte-at-a-time compare over a loopback socket is a timing oracle. The shape rules are environment-neutral and live in src/shared/dataServer/token.ts.
  */
@@ -94,6 +98,8 @@ export type ReplyResult =
   | SubscribeAck
   | ModuleSnapshotResult
   | PerfSnapshotResult
+  | PerfBudgetsResult
+  | PerfTimelineResult
   | DefineAck
   | CombatSnapshotResult
   | CombatSearchFightsResult
@@ -103,6 +109,7 @@ export type ReplyResult =
   | RespawnConfirmAck
   | ResistLevelsResult
   | ResistSpellResult
+  | LogsListResult
 /**
  * The world's generation. Monotonic within one engine process. A client that sees an epoch it did not expect DROPS ALL STATE and waits for the reset — it never reconciles across a bump.
  */
@@ -127,6 +134,10 @@ export type ResistAxis = 'magic' | 'fire' | 'cold' | 'poison' | 'disease'
  * A debuff SLOT's axis, which is the five plus `all` - the tash and malo family, effect 111. A SPELL's own axis is never `all`, which is why this is a separate set from `ResistAxis` rather than that set with a member added.
  */
 export type ClientSpellDebuffAxis = 'magic' | 'fire' | 'cold' | 'poison' | 'disease' | 'all'
+/**
+ * HOW READING THE DIRECTORY WENT - `ResolvedEqDir.readable` in `main/log/config.ts`, member for member, so the served answer and the app's own read describe the same three situations in the same words. A FAILED READ IS NOT `no logs` (JOS-82): `missing` is a path with nothing at it, which is the ordinary state of a machine where EverQuest is installed somewhere else, and `unreadable` is a directory that exists and refused - a permission, a disconnected network share, a share violation - which is a different sentence to a person and a different decision to the caller.
+ */
+export type LogsDirReadable = 'ok' | 'missing' | 'unreadable'
 /**
  * A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of.
  */
@@ -231,6 +242,22 @@ export interface ModuleSnapshotParams {
 export interface PerfSnapshotRequest {
   id: RequestId
   op: 'perf.snapshot'
+  params: NoParams
+}
+/**
+ * THE ENGINE'S OWN BUDGETS, DEFINITIONS AND VERDICT TOGETHER (owner ruling 19 surface, JOS-502). `engine/crates/engined/tests/budget.rs` asserts these same ceilings in CI against a synthetic corpus; this op answers them LIVE, off the generation that is actually running, so the panel and the bug report state what THIS machine did rather than what a runner did. Ruling 3 is the whole reason the op carries the definitions and not just the numbers - performance goals are self-measured and never promised, so a reader must be able to see the ceiling beside the measurement and judge for himself instead of trusting a colour. Same door and same cost as `perf.snapshot` (one ask on the fold's boundary), same standing warning: THE APP MUST NOT POLL THIS IDLY, because a budget surface that costs a round trip a second while nobody is looking is precisely the bug it exists to find.
+ */
+export interface PerfBudgetsRequest {
+  id: RequestId
+  op: 'perf.budgets'
+  params: NoParams
+}
+/**
+ * THE RECENT HISTORY BEHIND `perf.snapshot`'s TOTALS (owner ruling 19 surface, JOS-502). A snapshot is cumulative for the generation, so two of them a minute apart cannot say WHEN the serve path was slow - this is the same instrument sampled on a beat and kept in a BOUNDED RING, which is the whole difference between a history and a leak. The ring is fixed-capacity and overwrites its oldest entry, so an engine up for a week costs exactly what one up for a minute costs; `capacity` is on the answer so a reader can see the horizon rather than infer it. Same door and same cost as `perf.snapshot`, and THE APP MUST NOT POLL THIS IDLY for the same reason.
+ */
+export interface PerfTimelineRequest {
+  id: RequestId
+  op: 'perf.timeline'
   params: NoParams
 }
 /**
@@ -587,6 +614,28 @@ export interface ResistSpellRequest {
   params: KnowledgeNameParams
 }
 /**
+ * WHERE THE CHARACTER LOGS LIVE, PUSHED (owner ruling 21, decision sheet 1a). Log DISCOVERY migrates server-side and launch-time character choice becomes a served answer - but THE APP NAMES THE DIRECTORY, which is boundary verdict 3 applied to a path instead of to a preference: the store is persistence truth, the engine never reads a settings file, and the directory is the product of an override plus an auto-discovery sweep plus a registry read that this engine has no business doing. So the app resolves it (`main/log/config.ts eqLogsDir`) and states it here, on connect and whenever the setting moves. IT IS AN IDEMPOTENT FULL-SET REPLACE like the five `*.define` commands, which for a single value means the last push is the whole of what the app has said; the ack is therefore `DefineAck` with no `count`, exactly as `buffTrust.define` and `respawn.define` answer for a payload that is one object rather than a list. IT IS NOT A `*.define` BY NAME, deliberately: those five are FOLD inputs and part of ruling 18's cache key - a rule set that changes what folding a log produces - and this changes nothing about any fold. It names a directory nobody folds, answers one query, and a world that never hears it folds byte-identically to one that does. THE DIRECTORY IS NOT THE ATTACH. `session.attach` names one FILE to fold and this names the folder to enumerate; a fresh install has the second and not the first, which is the whole reason this command exists rather than the list being derived from the attached log's parent.
+ */
+export interface LogsSetDirRequest {
+  id: RequestId
+  op: 'logs.setDir'
+  params: LogsSetDirParams
+}
+export interface LogsSetDirParams {
+  /**
+   * The folder holding `eqlog_<Character>_<server>.txt`, absolute, as the app resolved it. A directory that does not exist is a perfectly good push and is not refused: the app resolves a path on a machine with no EverQuest on it too, and what that produces is a `logs.list` saying `missing` rather than a command that failed.
+   */
+  dir: string
+}
+/**
+ * WHICH CHARACTERS THIS INSTALL HAS, as the engine sees the folder the app named. The served half of ruling 21: the app has always read this directory itself (`listCharacters` in `main/log/config.ts` - a readdir, a filename parse and a `statSync` per file) and the ruling moves the reading to the process that owns log files. IT TAKES NO PARAMS BECAUSE THE DIRECTORY IS PUSHED, and that is the point of the split rather than an economy: a request carrying the folder would make the answer a function of whatever the caller happened to send, and two callers could then disagree about which install this app is looking at. It IS ANSWERABLE BY A WORLD WITH NO FOLD, like `knowledge.*` and `perf.snapshot` and unlike `module.snapshot`: a fresh install has characters to choose between before there is anything to attach to, which is precisely the moment this op exists for. THE ONE REFUSAL IS NEVER HAVING BEEN TOLD - an engine that has heard no `logs.setDir` has no directory to enumerate, which is `unavailable` rather than an empty list, because a caller cannot tell an install with no characters from a question nobody armed.
+ */
+export interface LogsListRequest {
+  id: RequestId
+  op: 'logs.list'
+  params: NoParams
+}
+/**
  * The handshake answer. `ok: false` is a courtesy sent immediately before the engine closes the connection — a client must treat a closed connection with no reply as the same outcome.
  */
 export interface HelloReply {
@@ -749,6 +798,88 @@ export interface PerfServeSource {
    * Open subscriptions over this source RIGHT NOW, across every connection — a live count, not a cumulative one, and the world's answer rather than the meter's. It is what makes a row with no recent frames readable: nobody is watching, as against nothing is moving.
    */
   subscribers: number
+}
+/**
+ * Every budget this build enforces, judged against the generation named by `epoch`. IT DELIBERATELY RESTATES NEITHER `status` NOR `uptimeMs`, which `PerfSnapshotResult` does restate from `HealthResult`: `session.health`'s guard in `src/shared/dataServer/ops.ts` is `uptimeMs` present and `serve` absent, so a budgets answer carrying an uptime would be a third arm that guard could not refuse - the registry's matrix would go red, and correctly, because a shape two ops both pass is a shape no caller can identify. The epoch is here because a budget verdict is a fact about ONE generation and a reader comparing two answers across an attach must be able to see that they are not comparable.
+ */
+export interface PerfBudgetsResult {
+  epoch: Epoch
+  /**
+   * One row per budget, in the order the panel draws them - a fixed order this engine owns, never an order a caller re-derives (ruling 4). The list is never empty: a build with a budget it cannot measure yet says `unmeasured` in the row rather than omitting it, because a budget that vanishes when it is inconvenient is not a budget.
+   */
+  budgets: PerfBudget[]
+}
+/**
+ * ONE BUDGET: what it is called, what it allows, what it measured, and the verdict - render-ready, which is ruling 4 applied to a diagnostic rather than to a list. `limit` and `measured` are STRINGS the engine formatted, not numbers with a unit the caller has to know, and that is deliberate on three counts: the two budgets in this build are measured in different units (bytes per second, microseconds) so a shared numeric field would need a unit discriminant nobody reads; the comparison that produces `verdict` is arithmetic and ruling 4 puts arithmetic on this side of the wire; and a third budget can ship without one line changing in the renderer. Locale is fixed en-US per ruling 25. A budget carries no name, no path and no log content by construction - it is a rate, a latency and a verdict, which is exactly the set the telemetry bright line admits.
+ */
+export interface PerfBudget {
+  /**
+   * The budget's stable key, for a test or a bug report to name it by. Never drawn - `label` is what a person reads - and never re-ordered against, because the server already sent the rows in their drawing order.
+   */
+  id: 'foldRate' | 'serveLatency'
+  /**
+   * What the budget is called, in the words the panel prints.
+   */
+  label: string
+  /**
+   * The ceiling or the floor, rendered with its unit and its direction - `at least 1.0 MB/s`, `at most 2.0 s` - so the row reads as a sentence and a reader never has to guess which way the comparison runs.
+   */
+  limit: string
+  /**
+   * What this generation actually did, rendered in the same unit as `limit`. ABSENT MEANS NOT YET MEASURED and never zero, the same rule `PerfIngest` keeps: a scan still running has no rate, and a source whose every frame was an owed reset has no latency, and reporting either as `0` would be the one lie an instrument must not tell.
+   */
+  measured?: string
+  /**
+   * `pass` when the measurement satisfies the limit, `fail` when it does not, `unmeasured` when there is nothing yet to judge - which is a third state rather than an optimistic `pass`, because a budget that reads green before it has measured anything is worse than one that says nothing.
+   */
+  verdict: 'pass' | 'fail' | 'unmeasured'
+  /**
+   * The one sentence a reader needs so the number is not misread - the caveat travelling with the measurement instead of living in a doc nobody has open. It is where `serveLatency` says that it includes the coalescing beat and is a wedge detector rather than a compute budget, and where `foldRate` says the floor is an eighth of the measured rate on purpose so a debug build is what trips it.
+   */
+  note: string
+}
+/**
+ * The ring as it stands, oldest moment first, for the generation named by `epoch`. It restates neither `status` nor `uptimeMs` for the reason `PerfBudgetsResult` gives at length. AN EMPTY TIMELINE IS AN HONEST ANSWER and the commonest one: the ring is filled by the ingest thread's own beat, so an engine with nothing attached has taken no samples, and a panel opened three seconds after launch sees a horizon it will fill rather than a defect.
+ */
+export interface PerfTimelineResult {
+  epoch: Epoch
+  /**
+   * How many moments the ring holds before it starts overwriting. The bound, stated rather than implied - a client that wanted to know how far back the history reaches would otherwise have to guess from the length, which is wrong for the whole first period of every generation.
+   */
+  capacity: number
+  /**
+   * The NOMINAL interval between samples. Each moment also carries the span it actually covered, because a thread that was busy takes its sample late and a timeline that reported only the nominal figure would quietly turn a stall into a shorter-looking window.
+   */
+  cadenceMs: number
+  /**
+   * The moments, OLDEST FIRST, at most `capacity` of them. Order is the server's and a caller re-sorting it would be munging a served view (ruling 4); a panel wanting newest-first draws it backwards rather than sorting it.
+   */
+  timeline: PerfMoment[]
+}
+/**
+ * ONE SAMPLED WINDOW OF THE SERVE PATH, and every figure in it is an INTERVAL rather than a running total - which is the one design decision in this shape. `perf.snapshot` already answers the cumulative question and answers it better; what a history is for is saying that the minute at 04:12 cost four times what the minute before it did, and a list of ever-growing totals makes a reader do that subtraction himself over numbers whose baseline he cannot see. A quiet window is RECORDED as a quiet window rather than skipped, because a ring that dropped its empty samples would compress a two-minute silence into no space at all and make the busy moments look adjacent. Nothing here can carry game data: it is a count of frames, a weight of bytes and a latency.
+ */
+export interface PerfMoment {
+  /**
+   * When the window CLOSED, as milliseconds since this process started - the same clock `PerfSnapshotResult.uptimeMs` is on, so a panel holding both can place the moments against the uptime without a second time base. Process-relative on purpose: the engine reads no wall clock to answer a performance question, and a process-relative stamp carries nothing about when or where a person plays.
+   */
+  atMs: number
+  /**
+   * How long this window ACTUALLY covered, measured rather than assumed equal to `cadenceMs`. It is what makes the counts below dividable into rates honestly, and a span noticeably longer than the cadence is itself the finding - the sampling thread was busy.
+   */
+  spanMs: number
+  /**
+   * Frames sent across every source during this window, resets and diffs together. Per-source detail is `perf.snapshot`'s serve table and is deliberately not duplicated here: a ring that held one row per source per sample would grow with the source registry, which is exactly the unbounded growth this shape refuses.
+   */
+  frames: number
+  /**
+   * What those frames weighed, summed over every source, in the same accounting `PerfServeSource.payloadWeight` uses - and the unit is in this sentence rather than in the name for the same reason it is there, because a property name in this schema may not carry a wire unit.
+   */
+  payloadWeight: number
+  /**
+   * The worst fold-to-frame latency in MICROSECONDS among the frames timed in this window, or ABSENT when no frame in it had a fold behind it. The worst rather than the mean, on `widestPayloadWeight`'s argument: a mean over a ten-second window hides the one frame that stalled somebody's screen, which is the only frame the window was sampled to find.
+   */
+  foldToFrameUsMax?: number
 }
 /**
  * The answer to every `*.define` command, and it is deliberately the SAME shape for all five. A define is an idempotent FULL-SET REPLACE (the cutover ledger's command law: replayable, order-collapsing, hash-friendly for ruling 18's cache key), so there is nothing per-family to report back — the engine either took the set or refused the frame. `count` is how many entries it took, which is the one number a caller can check its own push against; it is absent for a family whose payload is not a list (`buffTrust`, `respawn` push one object each).
@@ -932,6 +1063,41 @@ export interface ClientSpellDebuff {
   max: number
 }
 /**
+ * THE CHARACTERS, AND WHERE THEY WERE LOOKED FOR. `dir` and `readable` ride every answer and the rows are whatever was found, which is `ResistSpellResult`'s shape and its argument: an empty list means three different things to a person - no such folder, a folder that could not be read, a folder with no character logs in it - and a reply that carried only the rows would flatten them into one silence. `dir` IS ALSO THE ECHO TEST. The app compares it against the directory it currently resolves, and a mismatch means this engine is answering about a folder the app has since been pointed away from - a `logs.setDir` still in flight - so the app reads the folder itself rather than drawing a picker for the wrong install. It is the same test `module.snapshot`'s echoed `module` gets, for the same reason: a bookkeeping failure between two processes must not reach a surface wearing the right answer's clothes.
+ */
+export interface LogsListResult {
+  /**
+   * The directory this answer is about, echoed back exactly as it was pushed - never normalized, never re-cased, so a caller can compare it against what it sent.
+   */
+  dir: string
+  readable: LogsDirReadable
+  /**
+   * One row per `eqlog_<Character>_<server>.txt`, most recently written first. Empty whenever `readable` is not `ok`, and legitimately empty when it is.
+   */
+  characters: LogCharacter[]
+}
+/**
+ * One character log, as `src/shared/types.ts CharacterRef` describes it - field for field, because this reply IS what the app's picker has always been handed and a served shape that differed by a name would make the engine-absent arm a second contract. THE NAME AND SERVER ARE READ OFF THE FILENAME and nothing else: `eqlog_<Character>_<server>.txt`, split at the FIRST underscore after the prefix, which is the app's own `parseLogName` regex stated as a rule - a character whose name contains an underscore is not a thing EverQuest allows, and a SERVER containing one is, so the split must be leftmost and the remainder must be the server.
+ */
+export interface LogCharacter {
+  /**
+   * The character, as the filename spells it - the game's own capitalisation, never folded.
+   */
+  name: string
+  /**
+   * The server, as the filename spells it.
+   */
+  server: string
+  /**
+   * The absolute path of the log file, which is what `session.attach` takes and therefore what a picked row is worth.
+   */
+  logPath: string
+  /**
+   * The file's last-modified time in epoch milliseconds, TRUNCATED to an integer, which is the sort key the picker orders by. ABSENT MEANS THE ENGINE COULD NOT STATE IT - a file that vanished between the readdir and the stat, or a filesystem with no modification time - and never zero, which would draw a real date in 1970 beside a real character name. It is the same fact and the same rule `HealthResult.logMtimeMs` carries for the attached log, and it stays a served PROCESS fact rather than fold state (ruling 18): no module holds it, and no replay can produce it.
+   */
+  lastPlayed?: number
+}
+/**
  * A refused request. An error is always a reply to a request id — a failure with no request behind it closes the connection instead.
  */
 export interface ErrorReply {
@@ -1027,7 +1193,11 @@ export interface FoldProgress {
   events: number
 }
 /**
- * AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in these four fields, so no client ever has to hold the definition the fire came from.
+ * AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in this frame, so no client ever has to hold the definition the fire came from.
+ *
+ * THE FRAME GREW THREE OPTIONAL FIELDS AND THE REASON IS A REGRESSION THE OWNER MADE RELEASE-GATING (JOS-500, ruling 27: "we're not releasing without full parity"). Until them the frame had exactly four, and `alertsAudioRules.ts` said what that cost in the same breath as claiming it was survivable — "costs a firing some of its WORDS and never its existence". It was survivable only while the app still had an evaluator to fall back to. The deletion release (JOS-499) removed that fallback, which turned a degradation into the product: a `custom` phrase's `{token}`s resolved to nothing, the `spellName` speech modes fell back to the alert's own name, and an early warning's banner had no deadline to count down to. `captures`, `spell` and `dueAt` are those three losses, restored — and they are what a fire SAYS rather than whether it happened, which is why every one of them is optional and why nearly every real firing still sends none of them.
+ *
+ * THE ABSENCES ARE THE COMMON CASE, DELIBERATELY. An alert that declares no capture group, whose phrase writes no `{target}`, whose event family names no spell and which carries no early-warning offset sends the identical four fields it always sent. Nothing is null-filled and nothing is synthesized: an absent key is the honest encoding of "this firing has nothing true to say here", and inventing a value would be worse than saying less (world-model law 1).
  */
 export interface FireMessage {
   kind: 'fire'
@@ -1047,6 +1217,21 @@ export interface FireMessage {
    * THE TEXT THAT MATCHED — the log line the trigger fired on, which is what `FiredAlert.matchedText` has always carried and what the event log prints beside the alert's name.
    */
   message: string
+  captures?: FireCaptures
+  /**
+   * THE SPELL THIS FIRING IS ABOUT, display form with the rank suffix INTACT ("Mesmerization III") — exactly as the log spelled it, and exactly what `FiredAlert.spell` has always carried. Rank-stripping is the SPEAKER's job (`speechTextFor` folds it out through the same rank machinery the matcher uses), not the producer's: a consumer that wants the rank must still be able to see it. IT IS THE NAME THAT ACTUALLY SATISFIED THE ALERT (JOS-84), not the event's best-effort pick — EQ's landing sentences are shared across a whole spell family (`<mob> slows down.` is five different spells), so the parser puts a guess in the event's `spell` and the truth in its `candidates`, and once a Shiftless Deeds alert is allowed to fire on a line whose `spell` field says "Forlorn Deeds", speaking "Forlorn Deeds" would be a second wrong answer wearing the first one's clothes. The name reported is the candidate the def's OWN matcher accepted, asked with the same rank fold the match used, so the two cannot split apart. ABSENT whenever the matched event names no spell: most event families, every `raw` trigger that matched a spell-less line, and every `app` signal. Never synthesized and never guessed — a spell mode with no spell falls back to the alert's own name, which is a true statement about what fired.
+   */
+  spell?: string
+  /**
+   * WHEN THE THING THIS FIRING WARNS ABOUT IS DUE (ms epoch) — the countdown half of JOS-378, and present ONLY on an EARLY-WARNING firing (`AlertDef.earlyWarnSec`, JOS-216/235). IT IS THE ROW'S STATED END, not the instant the warning spoke: `at` is when the sound was made and this is what it was early FOR, so the difference between them IS the lead time the user configured. A banner counts down to it (`BannerLine.tsx` re-renders against the wall clock, so the number on screen is a render rather than a timer) and holds until the deadline instead of for the configured dwell. IT IS A HOST CLOCK WHERE `at` IS ORDINARILY THE LOG'S, and so is the `at` beside it on this one frame: an early warning has no matching event — its whole subject is a deadline that arrives WHILE THE LOG IS IDLE, which is exactly when a player is watching a mez run down — so it is delivered by the engine's heartbeat and both stamps come from that beat. The retired evaluator made the same choice in the same place, so the app receives the identical number under either. ABSENT ON EVERY ORDINARY FIRE, which is nearly all of them: a fire that IS the thing happening warns about nothing, and a deadline field on it would have no reader.
+   */
+  dueAt?: number
+}
+/**
+ * THE WORDS THIS FIRING MAY SPEAK, or absent when it has none — see `FireCaptures` for what may be in it and what has already been done to it. Absent for the overwhelming majority of alerts, which declare no named group and ask for no `{target}`.
+ */
+export interface FireCaptures {
+  [k: string]: string
 }
 /**
  * THE ENGINE COULD NOT ANSWER A NAME, AND THE APP OWNS THE NETWORK (boundary verdict 5: "The wiki FETCH stays app-side in v1 — app fetches on an engine miss-event and pushes the result in — so the engine ships without a network stack. Scrape throttles preserved."). This is that miss-event, and the answer comes back as a `knowledge.define` command.

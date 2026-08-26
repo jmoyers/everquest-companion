@@ -68,15 +68,20 @@ import { existsSync, readFileSync } from 'node:fs'
 import { constants, setPriority } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from '../e2e/build.mjs'
+// THE ARTIFACT VOCABULARY, off a leaf that knows nothing about a fold (JOS-499 item 5). This file
+// used to reach it through `goldenOracle.mjs` and so inherited that file's whole doomed import
+// graph — the parser, the replay slicer, the combat engine, the module registry — not one of which
+// this harness has ever called. Owner ruling 26 keeps THIS side alive for one release as the
+// engine-vs-recorded-goldens safety net; the RECORDER dies with the TS fold it runs.
 import {
   GOLDENS_DIR,
   SLICES_DIR,
   eventsPath,
-  firstDiff,
   normalizeJson,
-  snapshotsPath,
-  type Diff
-} from './goldenOracle.mjs'
+  snapshotsPath
+} from './goldenPaths.mjs'
+// …and the differ from its own home rather than re-exported through the oracle.
+import { firstDiff, type Diff } from '../../src/shared/deepDiff'
 import { buildLedger, type Ledger } from './parityLedger.mjs'
 import { SIDECAR, renderSidecar } from '../../scripts/gen-engine-spell-overlay.mjs'
 

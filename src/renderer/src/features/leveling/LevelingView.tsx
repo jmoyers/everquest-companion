@@ -3,9 +3,7 @@ import { Box, Paper, Stack, Typography } from '@mui/material'
 import type {
   AAEvent,
   AASpendEvent,
-  LevelingDelta,
   LevelingSnap,
-  ProgressionDelta,
   ProgressionSnap
 } from '@shared/types'
 import { computeAAAccounting } from '@shared/aa'
@@ -46,13 +44,13 @@ import { TAIL_MS, sliceDurationMs, type SliceId, type SliceRange, type Timeslice
 // narrowed by a drag when there is one. Nothing here re-derives a rate.
 import { scopedStats, type ScopedStats } from './windowScope'
 import { useChartSelection } from './useChartSelection'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from './progressionDelta'
+import { EMPTY_PROGRESSION } from './progressionDelta'
 import { RangeStatsPanel } from './RangeStatsPanel'
 import { comboSource } from './comboAdapter'
 import { useComboIntervals } from '../profiles/ClassComboData'
 // The module fold moved beside the view (levelingModule.ts) the day a SECOND reader appeared:
 // the always-mounted ding detector behind the level-up toast watches the same append-only series.
-import { EMPTY_LEVELING, applyLevelingDelta } from './levelingModule'
+import { EMPTY_LEVELING } from './levelingModule'
 // The four hero cards — split into their own file the day this one reached the measured ceiling.
 import { LevelingHeroes } from './LevelingHeroes'
 import { NewAtLevelPanel } from './NewAtLevelPanel'
@@ -538,18 +536,19 @@ export default function LevelingView({
   onFocusConsumed,
   onOpenLoot
 }: LevelingViewProps): JSX.Element {
-  const state = useModule<LevelingSnap, LevelingDelta>('leveling', applyLevelingDelta) ?? EMPTY_LEVELING
+  const state = useModule<LevelingSnap>('leveling') ?? EMPTY_LEVELING
   const { levels, aaGains: aas, aaSpends: spends } = state
   // The SECOND module this view reads: the capped, range-queryable analytics series behind
   // the zone bands and the range panel. Deliberately separate from `leveling`, whose
   // contract is "everything, forever" (see src/main/modules/progression.ts).
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
   // The THIRD module, through its own hook: `character`, for the stated level fact (JOS-192). It
   // is the only one carrying your own `/who` row's number, which is what corrects the level after
   // a loadout swap the log never announced.
   const stated = useStatedLevel(prog)
 
   const sortedLevels = useMemo(() => sortLevels(levels), [levels])
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives AAEvent. Becomes a view descriptor when the source lands.
   const sortedAAs = useMemo(() => [...aas].sort((a, b) => a.ts - b.ts), [aas])
 
   // CURRENT level is the level the log last STATED — the later of your last ding and your own

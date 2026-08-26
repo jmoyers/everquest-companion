@@ -20,10 +20,9 @@
 import { useEffect, useRef } from 'react'
 import type { ComboInterval } from '@shared/classCombo'
 import { comboClassesAt, levelUpSubtitle, unlocksAtLevel } from '@shared/levelUnlocks'
-import type { LevelEvent, LevelingDelta, LevelingSnap } from '@shared/types'
+import type { LevelEvent, LevelingSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 import { useComboIntervals } from '../profiles/ClassComboData'
-import { applyLevelingDelta } from './levelingModule'
 import { levelUnlocks } from './useLevelUnlocks'
 
 /** The newest ding in a snapshot, or null when the character has never levelled in this log. */
@@ -56,7 +55,7 @@ async function fireLevelUpToast(ding: LevelEvent, intervals: readonly ComboInter
 
 /** Watch the leveling module and toast every LIVE ding. Mount once, app-wide. */
 export function useLevelUpToast(): void {
-  const state = useModule<LevelingSnap, LevelingDelta>('leveling', applyLevelingDelta)
+  const state = useModule<LevelingSnap>('leveling')
   // Read at FIRE time, not at render time: the intervals a ding is joined against are whatever
   // the combo module knows the instant it lands.
   const intervals = useComboIntervals()
@@ -79,6 +78,7 @@ export function useLevelUpToast(): void {
     const baseline = baselineRef.current
     baselineRef.current = newest
     if (baseline === null) return
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LevelEvent. Becomes a view descriptor when the source lands.
     for (const ding of state.levels.filter((l) => l.ts > baseline).sort((a, b) => a.ts - b.ts)) {
       void fireLevelUpToast(ding, intervalsRef.current)
     }

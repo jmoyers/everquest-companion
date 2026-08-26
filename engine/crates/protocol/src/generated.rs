@@ -8,7 +8,7 @@
 //! and a schema edit that lands without regenerating turns the protocol-codegen staleness
 //! test red on this side and tests/protocolSchema.test.mts red on the other.
 //!
-//! schema-digest: sha256:6ed6b256345eb1dac02993bf62c6abb498d1b2201d09a6dcf0c146906a21f19d
+//! schema-digest: sha256:e4581985ea600134c9e0f5fa81f7cefacc93cbd9b688ec877f038102d5ec801d
 #![allow(missing_docs, clippy::all, clippy::pedantic)]
 
 /// Error types.
@@ -469,6 +469,12 @@ impl ::std::convert::From<::std::collections::BTreeMap<::std::string::String, cr
 ///      "$ref": "#/$defs/PerfSnapshotRequest"
 ///    },
 ///    {
+///      "$ref": "#/$defs/PerfBudgetsRequest"
+///    },
+///    {
+///      "$ref": "#/$defs/PerfTimelineRequest"
+///    },
+///    {
 ///      "$ref": "#/$defs/ViewSubscribeRequest"
 ///    },
 ///    {
@@ -521,6 +527,12 @@ impl ::std::convert::From<::std::collections::BTreeMap<::std::string::String, cr
 ///    },
 ///    {
 ///      "$ref": "#/$defs/ResistSpellRequest"
+///    },
+///    {
+///      "$ref": "#/$defs/LogsSetDirRequest"
+///    },
+///    {
+///      "$ref": "#/$defs/LogsListRequest"
 ///    }
 ///  ]
 ///}
@@ -536,6 +548,8 @@ pub enum ClientMessage {
     SessionProgressRequest(SessionProgressRequest),
     ModuleSnapshotRequest(ModuleSnapshotRequest),
     PerfSnapshotRequest(PerfSnapshotRequest),
+    PerfBudgetsRequest(PerfBudgetsRequest),
+    PerfTimelineRequest(PerfTimelineRequest),
     ViewSubscribeRequest(ViewSubscribeRequest),
     ViewUnsubscribeRequest(ViewUnsubscribeRequest),
     AlertsDefineRequest(AlertsDefineRequest),
@@ -554,6 +568,8 @@ pub enum ClientMessage {
     RespawnConfirmSightingRequest(RespawnConfirmSightingRequest),
     ResistLevelsRequest(ResistLevelsRequest),
     ResistSpellRequest(ResistSpellRequest),
+    LogsSetDirRequest(LogsSetDirRequest),
+    LogsListRequest(LogsListRequest),
 }
 impl ::std::convert::From<Hello> for ClientMessage {
     fn from(value: Hello) -> Self {
@@ -588,6 +604,16 @@ impl ::std::convert::From<ModuleSnapshotRequest> for ClientMessage {
 impl ::std::convert::From<PerfSnapshotRequest> for ClientMessage {
     fn from(value: PerfSnapshotRequest) -> Self {
         Self::PerfSnapshotRequest(value)
+    }
+}
+impl ::std::convert::From<PerfBudgetsRequest> for ClientMessage {
+    fn from(value: PerfBudgetsRequest) -> Self {
+        Self::PerfBudgetsRequest(value)
+    }
+}
+impl ::std::convert::From<PerfTimelineRequest> for ClientMessage {
+    fn from(value: PerfTimelineRequest) -> Self {
+        Self::PerfTimelineRequest(value)
     }
 }
 impl ::std::convert::From<ViewSubscribeRequest> for ClientMessage {
@@ -678,6 +704,16 @@ impl ::std::convert::From<ResistLevelsRequest> for ClientMessage {
 impl ::std::convert::From<ResistSpellRequest> for ClientMessage {
     fn from(value: ResistSpellRequest) -> Self {
         Self::ResistSpellRequest(value)
+    }
+}
+impl ::std::convert::From<LogsSetDirRequest> for ClientMessage {
+    fn from(value: LogsSetDirRequest) -> Self {
+        Self::LogsSetDirRequest(value)
+    }
+}
+impl ::std::convert::From<LogsListRequest> for ClientMessage {
+    fn from(value: LogsListRequest) -> Self {
+        Self::LogsListRequest(value)
     }
 }
 ///One row of `spells_us.txt` as the app's own `SpellResistInfo` describes it, field for field. THE OPTIONALS ARE ABSENT-MEANS-NOTHING and each absence was measured rather than chosen: a zero recast is the file saying there is no re-use timer, a zero `aeMaxTargets` is what 71,864 of ~74k rows read, and a zero mana is what every bard song says. Storing those zeros would cost a field on most of the table to state what the absence already states.
@@ -2912,14 +2948,67 @@ impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json:
         Self(value)
     }
 }
-///AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in these four fields, so no client ever has to hold the definition the fire came from.
+/**WHAT THE FIRING MAY SAY OUT LOUD — the named regex captures the rule's own matcher took (JOS-103), PLUS the one auto token (JOS-353). Open by design for `Cells`' reason at full strength: the key set is the DEF'S OWN PATTERN's contract (`(?<player>…)` makes `{player}` sayable), never the protocol's, so a user writing a new group is not a protocol change.
+
+EVERY VALUE IS ALREADY DEFANGED, AND THAT IS THIS TYPE'S WHOLE POINT. The keys come from a pattern the user may have imported from a stranger; the VALUES come out of a log line, which carries other players' chosen names and — for the chat families — text a stranger typed. So each value has crossed `sanitizeCapture`'s two controls ENGINE-SIDE before it reaches this frame: ANSI/VT sequences removed whole, every C0/C1/DEL control and the invisible + BiDi-override class deleted, CR/LF/TAB folded to one space, and the result capped at 48 characters — a NAME's worth of text, not a LINE's. At most 8 entries survive, in the pattern's own declaration order. The full threat model is `src/shared/alertCaptures.ts`; `fold::modules::alerts_captures` is its engine-side half, and the two are pinned equal by test. A CONSUMER STILL MUST NOT TREAT THESE AS TRUSTED TEXT — defanged is not the same as authored by the user.
+
+THE `target` KEY IS THE ONE THE PATTERN DID NOT DECLARE (JOS-353, and it is a closed list of one). It holds the entity the matched event says the spell is affecting, resolved from a CLOSED TABLE of parser-extracted fields on the very event this def matched, with the parser's sentinels rendered as English ('self' → "you", 'pet' → "your pet"). It is present ONLY when the def's own speech phrase writes `{target}`, and a group the pattern declared under that name always wins — so a def that never asks carries no `captures` key at all and its frame is byte-identical to the one it sent before this field existed.
+
+WHY IT IS MERGED HERE RATHER THAN SENT AS A SEPARATE `target` FIELD. The app must not re-derive the merge: which token the phrase wanted, who wins a name collision, and where the 8-entry bound falls are all EVALUATOR decisions, and an app that made them again would be the second evaluator this boundary exists to delete (`alertsAudioRules.ts`'s own refusal). One resolved map is what `FiredAlert.captures` has always been and what `applyCaptures` reads, so the app copies it across and substitutes.*/
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "FireCaptures",
+///  "description": "WHAT THE FIRING MAY SAY OUT LOUD — the named regex captures the rule's own matcher took (JOS-103), PLUS the one auto token (JOS-353). Open by design for `Cells`' reason at full strength: the key set is the DEF'S OWN PATTERN's contract (`(?<player>…)` makes `{player}` sayable), never the protocol's, so a user writing a new group is not a protocol change.\n\nEVERY VALUE IS ALREADY DEFANGED, AND THAT IS THIS TYPE'S WHOLE POINT. The keys come from a pattern the user may have imported from a stranger; the VALUES come out of a log line, which carries other players' chosen names and — for the chat families — text a stranger typed. So each value has crossed `sanitizeCapture`'s two controls ENGINE-SIDE before it reaches this frame: ANSI/VT sequences removed whole, every C0/C1/DEL control and the invisible + BiDi-override class deleted, CR/LF/TAB folded to one space, and the result capped at 48 characters — a NAME's worth of text, not a LINE's. At most 8 entries survive, in the pattern's own declaration order. The full threat model is `src/shared/alertCaptures.ts`; `fold::modules::alerts_captures` is its engine-side half, and the two are pinned equal by test. A CONSUMER STILL MUST NOT TREAT THESE AS TRUSTED TEXT — defanged is not the same as authored by the user.\n\nTHE `target` KEY IS THE ONE THE PATTERN DID NOT DECLARE (JOS-353, and it is a closed list of one). It holds the entity the matched event says the spell is affecting, resolved from a CLOSED TABLE of parser-extracted fields on the very event this def matched, with the parser's sentinels rendered as English ('self' → \"you\", 'pet' → \"your pet\"). It is present ONLY when the def's own speech phrase writes `{target}`, and a group the pattern declared under that name always wins — so a def that never asks carries no `captures` key at all and its frame is byte-identical to the one it sent before this field existed.\n\nWHY IT IS MERGED HERE RATHER THAN SENT AS A SEPARATE `target` FIELD. The app must not re-derive the merge: which token the phrase wanted, who wins a name collision, and where the 8-entry bound falls are all EVALUATOR decisions, and an app that made them again would be the second evaluator this boundary exists to delete (`alertsAudioRules.ts`'s own refusal). One resolved map is what `FiredAlert.captures` has always been and what `applyCaptures` reads, so the app copies it across and substitutes.",
+///  "type": "object",
+///  "additionalProperties": {
+///    "type": "string"
+///  }
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(transparent)]
+pub struct FireCaptures(
+    pub ::std::collections::BTreeMap<::std::string::String, ::std::string::String>,
+);
+impl ::std::ops::Deref for FireCaptures {
+    type Target = ::std::collections::BTreeMap<::std::string::String, ::std::string::String>;
+    fn deref(&self) -> &::std::collections::BTreeMap<::std::string::String, ::std::string::String> {
+        &self.0
+    }
+}
+impl ::std::convert::From<FireCaptures>
+    for ::std::collections::BTreeMap<::std::string::String, ::std::string::String>
+{
+    fn from(value: FireCaptures) -> Self {
+        value.0
+    }
+}
+impl
+    ::std::convert::From<::std::collections::BTreeMap<::std::string::String, ::std::string::String>>
+    for FireCaptures
+{
+    fn from(
+        value: ::std::collections::BTreeMap<::std::string::String, ::std::string::String>,
+    ) -> Self {
+        Self(value)
+    }
+}
+/**AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in this frame, so no client ever has to hold the definition the fire came from.
+
+THE FRAME GREW THREE OPTIONAL FIELDS AND THE REASON IS A REGRESSION THE OWNER MADE RELEASE-GATING (JOS-500, ruling 27: "we're not releasing without full parity"). Until them the frame had exactly four, and `alertsAudioRules.ts` said what that cost in the same breath as claiming it was survivable — "costs a firing some of its WORDS and never its existence". It was survivable only while the app still had an evaluator to fall back to. The deletion release (JOS-499) removed that fallback, which turned a degradation into the product: a `custom` phrase's `{token}`s resolved to nothing, the `spellName` speech modes fell back to the alert's own name, and an early warning's banner had no deadline to count down to. `captures`, `spell` and `dueAt` are those three losses, restored — and they are what a fire SAYS rather than whether it happened, which is why every one of them is optional and why nearly every real firing still sends none of them.
+
+THE ABSENCES ARE THE COMMON CASE, DELIBERATELY. An alert that declares no capture group, whose phrase writes no `{target}`, whose event family names no spell and which carries no early-warning offset sends the identical four fields it always sent. Nothing is null-filled and nothing is synthesized: an absent key is the honest encoding of "this firing has nothing true to say here", and inventing a value would be worse than saying less (world-model law 1).*/
 ///
 /// <details><summary>JSON schema</summary>
 ///
 /// ```json
 ///{
 ///  "title": "FireMessage",
-///  "description": "AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in these four fields, so no client ever has to hold the definition the fire came from.",
+///  "description": "AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in this frame, so no client ever has to hold the definition the fire came from.\n\nTHE FRAME GREW THREE OPTIONAL FIELDS AND THE REASON IS A REGRESSION THE OWNER MADE RELEASE-GATING (JOS-500, ruling 27: \"we're not releasing without full parity\"). Until them the frame had exactly four, and `alertsAudioRules.ts` said what that cost in the same breath as claiming it was survivable — \"costs a firing some of its WORDS and never its existence\". It was survivable only while the app still had an evaluator to fall back to. The deletion release (JOS-499) removed that fallback, which turned a degradation into the product: a `custom` phrase's `{token}`s resolved to nothing, the `spellName` speech modes fell back to the alert's own name, and an early warning's banner had no deadline to count down to. `captures`, `spell` and `dueAt` are those three losses, restored — and they are what a fire SAYS rather than whether it happened, which is why every one of them is optional and why nearly every real firing still sends none of them.\n\nTHE ABSENCES ARE THE COMMON CASE, DELIBERATELY. An alert that declares no capture group, whose phrase writes no `{target}`, whose event family names no spell and which carries no early-warning offset sends the identical four fields it always sent. Nothing is null-filled and nothing is synthesized: an absent key is the honest encoding of \"this firing has nothing true to say here\", and inventing a value would be worse than saying less (world-model law 1).",
 ///  "type": "object",
 ///  "required": [
 ///    "at",
@@ -2931,6 +3020,14 @@ impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json:
 ///  "properties": {
 ///    "at": {
 ///      "description": "When it fired, on THE LOG'S OWN CLOCK — the `ts` of the event that matched, never the host's wall clock. A fire is a statement about the log (ruling 18 law 1).",
+///      "type": "integer"
+///    },
+///    "captures": {
+///      "description": "THE WORDS THIS FIRING MAY SPEAK, or absent when it has none — see `FireCaptures` for what may be in it and what has already been done to it. Absent for the overwhelming majority of alerts, which declare no named group and ask for no `{target}`.",
+///      "$ref": "#/$defs/FireCaptures"
+///    },
+///    "dueAt": {
+///      "description": "WHEN THE THING THIS FIRING WARNS ABOUT IS DUE (ms epoch) — the countdown half of JOS-378, and present ONLY on an EARLY-WARNING firing (`AlertDef.earlyWarnSec`, JOS-216/235). IT IS THE ROW'S STATED END, not the instant the warning spoke: `at` is when the sound was made and this is what it was early FOR, so the difference between them IS the lead time the user configured. A banner counts down to it (`BannerLine.tsx` re-renders against the wall clock, so the number on screen is a render rather than a timer) and holds until the deadline instead of for the configured dwell. IT IS A HOST CLOCK WHERE `at` IS ORDINARILY THE LOG'S, and so is the `at` beside it on this one frame: an early warning has no matching event — its whole subject is a deadline that arrives WHILE THE LOG IS IDLE, which is exactly when a player is watching a mez run down — so it is delivered by the engine's heartbeat and both stamps come from that beat. The retired evaluator made the same choice in the same place, so the app receives the identical number under either. ABSENT ON EVERY ORDINARY FIRE, which is nearly all of them: a fire that IS the thing happening warns about nothing, and a deadline field on it would have no reader.",
 ///      "type": "integer"
 ///    },
 ///    "kind": {
@@ -2950,6 +3047,10 @@ impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json:
 ///    "sound": {
 ///      "description": "THE KEY THE APP WOULD PLAY: `<packId>/<soundId>`, joined from the definition's `sound` reference, which is exactly how the renderer's sound cache is keyed. Resolved here rather than sent as a reference for the conCard reason — an app that had to look the definition back up to know what to play would be holding a second copy of the rule set, which is the coupling this boundary exists to delete.",
 ///      "type": "string"
+///    },
+///    "spell": {
+///      "description": "THE SPELL THIS FIRING IS ABOUT, display form with the rank suffix INTACT (\"Mesmerization III\") — exactly as the log spelled it, and exactly what `FiredAlert.spell` has always carried. Rank-stripping is the SPEAKER's job (`speechTextFor` folds it out through the same rank machinery the matcher uses), not the producer's: a consumer that wants the rank must still be able to see it. IT IS THE NAME THAT ACTUALLY SATISFIED THE ALERT (JOS-84), not the event's best-effort pick — EQ's landing sentences are shared across a whole spell family (`<mob> slows down.` is five different spells), so the parser puts a guess in the event's `spell` and the truth in its `candidates`, and once a Shiftless Deeds alert is allowed to fire on a line whose `spell` field says \"Forlorn Deeds\", speaking \"Forlorn Deeds\" would be a second wrong answer wearing the first one's clothes. The name reported is the candidate the def's OWN matcher accepted, asked with the same rank fold the match used, so the two cannot split apart. ABSENT whenever the matched event names no spell: most event families, every `raw` trigger that matched a spell-less line, and every `app` signal. Never synthesized and never guessed — a spell mode with no spell falls back to the alert's own name, which is a true statement about what fired.",
+///      "type": "string"
 ///    }
 ///  },
 ///  "additionalProperties": false
@@ -2961,6 +3062,16 @@ impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json:
 pub struct FireMessage {
     ///When it fired, on THE LOG'S OWN CLOCK — the `ts` of the event that matched, never the host's wall clock. A fire is a statement about the log (ruling 18 law 1).
     pub at: i64,
+    ///THE WORDS THIS FIRING MAY SPEAK, or absent when it has none — see `FireCaptures` for what may be in it and what has already been done to it. Absent for the overwhelming majority of alerts, which declare no named group and ask for no `{target}`.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub captures: ::std::option::Option<FireCaptures>,
+    ///WHEN THE THING THIS FIRING WARNS ABOUT IS DUE (ms epoch) — the countdown half of JOS-378, and present ONLY on an EARLY-WARNING firing (`AlertDef.earlyWarnSec`, JOS-216/235). IT IS THE ROW'S STATED END, not the instant the warning spoke: `at` is when the sound was made and this is what it was early FOR, so the difference between them IS the lead time the user configured. A banner counts down to it (`BannerLine.tsx` re-renders against the wall clock, so the number on screen is a render rather than a timer) and holds until the deadline instead of for the configured dwell. IT IS A HOST CLOCK WHERE `at` IS ORDINARILY THE LOG'S, and so is the `at` beside it on this one frame: an early warning has no matching event — its whole subject is a deadline that arrives WHILE THE LOG IS IDLE, which is exactly when a player is watching a mez run down — so it is delivered by the engine's heartbeat and both stamps come from that beat. The retired evaluator made the same choice in the same place, so the app receives the identical number under either. ABSENT ON EVERY ORDINARY FIRE, which is nearly all of them: a fire that IS the thing happening warns about nothing, and a deadline field on it would have no reader.
+    #[serde(
+        rename = "dueAt",
+        default,
+        skip_serializing_if = "::std::option::Option::is_none"
+    )]
+    pub due_at: ::std::option::Option<i64>,
     pub kind: FireMessageKind,
     ///THE TEXT THAT MATCHED — the log line the trigger fired on, which is what `FiredAlert.matchedText` has always carried and what the event log prints beside the alert's name.
     pub message: ::std::string::String,
@@ -2968,6 +3079,9 @@ pub struct FireMessage {
     pub rule: ::std::string::String,
     ///THE KEY THE APP WOULD PLAY: `<packId>/<soundId>`, joined from the definition's `sound` reference, which is exactly how the renderer's sound cache is keyed. Resolved here rather than sent as a reference for the conCard reason — an app that had to look the definition back up to know what to play would be holding a second copy of the rule set, which is the coupling this boundary exists to delete.
     pub sound: ::std::string::String,
+    ///THE SPELL THIS FIRING IS ABOUT, display form with the rank suffix INTACT ("Mesmerization III") — exactly as the log spelled it, and exactly what `FiredAlert.spell` has always carried. Rank-stripping is the SPEAKER's job (`speechTextFor` folds it out through the same rank machinery the matcher uses), not the producer's: a consumer that wants the rank must still be able to see it. IT IS THE NAME THAT ACTUALLY SATISFIED THE ALERT (JOS-84), not the event's best-effort pick — EQ's landing sentences are shared across a whole spell family (`<mob> slows down.` is five different spells), so the parser puts a guess in the event's `spell` and the truth in its `candidates`, and once a Shiftless Deeds alert is allowed to fire on a line whose `spell` field says "Forlorn Deeds", speaking "Forlorn Deeds" would be a second wrong answer wearing the first one's clothes. The name reported is the candidate the def's OWN matcher accepted, asked with the same rank fold the match used, so the two cannot split apart. ABSENT whenever the matched event names no spell: most event families, every `raw` trigger that matched a spell-less line, and every `app` signal. Never synthesized and never guessed — a spell mode with no spell falls back to the alert's own name, which is a true statement about what fired.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub spell: ::std::option::Option<::std::string::String>,
 }
 ///`FireMessageKind`
 ///
@@ -4636,6 +4750,60 @@ impl ::std::convert::TryFrom<::std::string::String> for KnowledgeSpellRequestOp 
         value.parse()
     }
 }
+///One character log, as `src/shared/types.ts CharacterRef` describes it - field for field, because this reply IS what the app's picker has always been handed and a served shape that differed by a name would make the engine-absent arm a second contract. THE NAME AND SERVER ARE READ OFF THE FILENAME and nothing else: `eqlog_<Character>_<server>.txt`, split at the FIRST underscore after the prefix, which is the app's own `parseLogName` regex stated as a rule - a character whose name contains an underscore is not a thing EverQuest allows, and a SERVER containing one is, so the split must be leftmost and the remainder must be the server.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogCharacter",
+///  "description": "One character log, as `src/shared/types.ts CharacterRef` describes it - field for field, because this reply IS what the app's picker has always been handed and a served shape that differed by a name would make the engine-absent arm a second contract. THE NAME AND SERVER ARE READ OFF THE FILENAME and nothing else: `eqlog_<Character>_<server>.txt`, split at the FIRST underscore after the prefix, which is the app's own `parseLogName` regex stated as a rule - a character whose name contains an underscore is not a thing EverQuest allows, and a SERVER containing one is, so the split must be leftmost and the remainder must be the server.",
+///  "type": "object",
+///  "required": [
+///    "logPath",
+///    "name",
+///    "server"
+///  ],
+///  "properties": {
+///    "lastPlayed": {
+///      "description": "The file's last-modified time in epoch milliseconds, TRUNCATED to an integer, which is the sort key the picker orders by. ABSENT MEANS THE ENGINE COULD NOT STATE IT - a file that vanished between the readdir and the stat, or a filesystem with no modification time - and never zero, which would draw a real date in 1970 beside a real character name. It is the same fact and the same rule `HealthResult.logMtimeMs` carries for the attached log, and it stays a served PROCESS fact rather than fold state (ruling 18): no module holds it, and no replay can produce it.",
+///      "type": "integer"
+///    },
+///    "logPath": {
+///      "description": "The absolute path of the log file, which is what `session.attach` takes and therefore what a picked row is worth.",
+///      "type": "string"
+///    },
+///    "name": {
+///      "description": "The character, as the filename spells it - the game's own capitalisation, never folded.",
+///      "type": "string"
+///    },
+///    "server": {
+///      "description": "The server, as the filename spells it.",
+///      "type": "string"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogCharacter {
+    ///The file's last-modified time in epoch milliseconds, TRUNCATED to an integer, which is the sort key the picker orders by. ABSENT MEANS THE ENGINE COULD NOT STATE IT - a file that vanished between the readdir and the stat, or a filesystem with no modification time - and never zero, which would draw a real date in 1970 beside a real character name. It is the same fact and the same rule `HealthResult.logMtimeMs` carries for the attached log, and it stays a served PROCESS fact rather than fold state (ruling 18): no module holds it, and no replay can produce it.
+    #[serde(
+        rename = "lastPlayed",
+        default,
+        skip_serializing_if = "::std::option::Option::is_none"
+    )]
+    pub last_played: ::std::option::Option<i64>,
+    ///The absolute path of the log file, which is what `session.attach` takes and therefore what a picked row is worth.
+    #[serde(rename = "logPath")]
+    pub log_path: ::std::string::String,
+    ///The character, as the filename spells it - the game's own capitalisation, never folded.
+    pub name: ::std::string::String,
+    ///The server, as the filename spells it.
+    pub server: ::std::string::String,
+}
 ///THE ADDRESSABLE COORDINATE (owner ruling 18 law 3): state is addressed by (log identity, byte offset) and by nothing else — never by wall time, never by `current`. `offset` is the end of the last COMPLETE line folded, which is the same definition as the scan's end offset; a half-written line is not an event and the mark waits with it. THIS IS NOT A FRAMING CONCERN: it is a coordinate INSIDE the file the engine reads, and it would mean the same thing over any transport.
 ///
 /// <details><summary>JSON schema</summary>
@@ -4670,6 +4838,367 @@ pub struct LogMark {
     pub log: ::std::string::String,
     ///The end of the last complete line folded, counted from the start of the file.
     pub offset: i64,
+}
+///HOW READING THE DIRECTORY WENT - `ResolvedEqDir.readable` in `main/log/config.ts`, member for member, so the served answer and the app's own read describe the same three situations in the same words. A FAILED READ IS NOT `no logs` (JOS-82): `missing` is a path with nothing at it, which is the ordinary state of a machine where EverQuest is installed somewhere else, and `unreadable` is a directory that exists and refused - a permission, a disconnected network share, a share violation - which is a different sentence to a person and a different decision to the caller.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogsDirReadable",
+///  "description": "HOW READING THE DIRECTORY WENT - `ResolvedEqDir.readable` in `main/log/config.ts`, member for member, so the served answer and the app's own read describe the same three situations in the same words. A FAILED READ IS NOT `no logs` (JOS-82): `missing` is a path with nothing at it, which is the ordinary state of a machine where EverQuest is installed somewhere else, and `unreadable` is a directory that exists and refused - a permission, a disconnected network share, a share violation - which is a different sentence to a person and a different decision to the caller.",
+///  "type": "string",
+///  "enum": [
+///    "ok",
+///    "missing",
+///    "unreadable"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum LogsDirReadable {
+    #[serde(rename = "ok")]
+    Ok,
+    #[serde(rename = "missing")]
+    Missing,
+    #[serde(rename = "unreadable")]
+    Unreadable,
+}
+impl ::std::fmt::Display for LogsDirReadable {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Ok => f.write_str("ok"),
+            Self::Missing => f.write_str("missing"),
+            Self::Unreadable => f.write_str("unreadable"),
+        }
+    }
+}
+impl ::std::str::FromStr for LogsDirReadable {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "ok" => Ok(Self::Ok),
+            "missing" => Ok(Self::Missing),
+            "unreadable" => Ok(Self::Unreadable),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for LogsDirReadable {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for LogsDirReadable {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for LogsDirReadable {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///WHICH CHARACTERS THIS INSTALL HAS, as the engine sees the folder the app named. The served half of ruling 21: the app has always read this directory itself (`listCharacters` in `main/log/config.ts` - a readdir, a filename parse and a `statSync` per file) and the ruling moves the reading to the process that owns log files. IT TAKES NO PARAMS BECAUSE THE DIRECTORY IS PUSHED, and that is the point of the split rather than an economy: a request carrying the folder would make the answer a function of whatever the caller happened to send, and two callers could then disagree about which install this app is looking at. It IS ANSWERABLE BY A WORLD WITH NO FOLD, like `knowledge.*` and `perf.snapshot` and unlike `module.snapshot`: a fresh install has characters to choose between before there is anything to attach to, which is precisely the moment this op exists for. THE ONE REFUSAL IS NEVER HAVING BEEN TOLD - an engine that has heard no `logs.setDir` has no directory to enumerate, which is `unavailable` rather than an empty list, because a caller cannot tell an install with no characters from a question nobody armed.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogsListRequest",
+///  "description": "WHICH CHARACTERS THIS INSTALL HAS, as the engine sees the folder the app named. The served half of ruling 21: the app has always read this directory itself (`listCharacters` in `main/log/config.ts` - a readdir, a filename parse and a `statSync` per file) and the ruling moves the reading to the process that owns log files. IT TAKES NO PARAMS BECAUSE THE DIRECTORY IS PUSHED, and that is the point of the split rather than an economy: a request carrying the folder would make the answer a function of whatever the caller happened to send, and two callers could then disagree about which install this app is looking at. It IS ANSWERABLE BY A WORLD WITH NO FOLD, like `knowledge.*` and `perf.snapshot` and unlike `module.snapshot`: a fresh install has characters to choose between before there is anything to attach to, which is precisely the moment this op exists for. THE ONE REFUSAL IS NEVER HAVING BEEN TOLD - an engine that has heard no `logs.setDir` has no directory to enumerate, which is `unavailable` rather than an empty list, because a caller cannot tell an install with no characters from a question nobody armed.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "op",
+///    "params"
+///  ],
+///  "properties": {
+///    "id": {
+///      "$ref": "#/$defs/RequestId"
+///    },
+///    "op": {
+///      "type": "string",
+///      "enum": [
+///        "logs.list"
+///      ]
+///    },
+///    "params": {
+///      "$ref": "#/$defs/NoParams"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogsListRequest {
+    pub id: RequestId,
+    pub op: LogsListRequestOp,
+    pub params: NoParams,
+}
+///`LogsListRequestOp`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "type": "string",
+///  "enum": [
+///    "logs.list"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum LogsListRequestOp {
+    #[serde(rename = "logs.list")]
+    LogsList,
+}
+impl ::std::fmt::Display for LogsListRequestOp {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::LogsList => f.write_str("logs.list"),
+        }
+    }
+}
+impl ::std::str::FromStr for LogsListRequestOp {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "logs.list" => Ok(Self::LogsList),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for LogsListRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for LogsListRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for LogsListRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///THE CHARACTERS, AND WHERE THEY WERE LOOKED FOR. `dir` and `readable` ride every answer and the rows are whatever was found, which is `ResistSpellResult`'s shape and its argument: an empty list means three different things to a person - no such folder, a folder that could not be read, a folder with no character logs in it - and a reply that carried only the rows would flatten them into one silence. `dir` IS ALSO THE ECHO TEST. The app compares it against the directory it currently resolves, and a mismatch means this engine is answering about a folder the app has since been pointed away from - a `logs.setDir` still in flight - so the app reads the folder itself rather than drawing a picker for the wrong install. It is the same test `module.snapshot`'s echoed `module` gets, for the same reason: a bookkeeping failure between two processes must not reach a surface wearing the right answer's clothes.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogsListResult",
+///  "description": "THE CHARACTERS, AND WHERE THEY WERE LOOKED FOR. `dir` and `readable` ride every answer and the rows are whatever was found, which is `ResistSpellResult`'s shape and its argument: an empty list means three different things to a person - no such folder, a folder that could not be read, a folder with no character logs in it - and a reply that carried only the rows would flatten them into one silence. `dir` IS ALSO THE ECHO TEST. The app compares it against the directory it currently resolves, and a mismatch means this engine is answering about a folder the app has since been pointed away from - a `logs.setDir` still in flight - so the app reads the folder itself rather than drawing a picker for the wrong install. It is the same test `module.snapshot`'s echoed `module` gets, for the same reason: a bookkeeping failure between two processes must not reach a surface wearing the right answer's clothes.",
+///  "type": "object",
+///  "required": [
+///    "characters",
+///    "dir",
+///    "readable"
+///  ],
+///  "properties": {
+///    "characters": {
+///      "description": "One row per `eqlog_<Character>_<server>.txt`, most recently written first. Empty whenever `readable` is not `ok`, and legitimately empty when it is.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/LogCharacter"
+///      }
+///    },
+///    "dir": {
+///      "description": "The directory this answer is about, echoed back exactly as it was pushed - never normalized, never re-cased, so a caller can compare it against what it sent.",
+///      "type": "string"
+///    },
+///    "readable": {
+///      "$ref": "#/$defs/LogsDirReadable"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogsListResult {
+    ///One row per `eqlog_<Character>_<server>.txt`, most recently written first. Empty whenever `readable` is not `ok`, and legitimately empty when it is.
+    pub characters: ::std::vec::Vec<LogCharacter>,
+    ///The directory this answer is about, echoed back exactly as it was pushed - never normalized, never re-cased, so a caller can compare it against what it sent.
+    pub dir: ::std::string::String,
+    pub readable: LogsDirReadable,
+}
+///`LogsSetDirParams`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogsSetDirParams",
+///  "type": "object",
+///  "required": [
+///    "dir"
+///  ],
+///  "properties": {
+///    "dir": {
+///      "description": "The folder holding `eqlog_<Character>_<server>.txt`, absolute, as the app resolved it. A directory that does not exist is a perfectly good push and is not refused: the app resolves a path on a machine with no EverQuest on it too, and what that produces is a `logs.list` saying `missing` rather than a command that failed.",
+///      "type": "string"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogsSetDirParams {
+    ///The folder holding `eqlog_<Character>_<server>.txt`, absolute, as the app resolved it. A directory that does not exist is a perfectly good push and is not refused: the app resolves a path on a machine with no EverQuest on it too, and what that produces is a `logs.list` saying `missing` rather than a command that failed.
+    pub dir: ::std::string::String,
+}
+///WHERE THE CHARACTER LOGS LIVE, PUSHED (owner ruling 21, decision sheet 1a). Log DISCOVERY migrates server-side and launch-time character choice becomes a served answer - but THE APP NAMES THE DIRECTORY, which is boundary verdict 3 applied to a path instead of to a preference: the store is persistence truth, the engine never reads a settings file, and the directory is the product of an override plus an auto-discovery sweep plus a registry read that this engine has no business doing. So the app resolves it (`main/log/config.ts eqLogsDir`) and states it here, on connect and whenever the setting moves. IT IS AN IDEMPOTENT FULL-SET REPLACE like the five `*.define` commands, which for a single value means the last push is the whole of what the app has said; the ack is therefore `DefineAck` with no `count`, exactly as `buffTrust.define` and `respawn.define` answer for a payload that is one object rather than a list. IT IS NOT A `*.define` BY NAME, deliberately: those five are FOLD inputs and part of ruling 18's cache key - a rule set that changes what folding a log produces - and this changes nothing about any fold. It names a directory nobody folds, answers one query, and a world that never hears it folds byte-identically to one that does. THE DIRECTORY IS NOT THE ATTACH. `session.attach` names one FILE to fold and this names the folder to enumerate; a fresh install has the second and not the first, which is the whole reason this command exists rather than the list being derived from the attached log's parent.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "LogsSetDirRequest",
+///  "description": "WHERE THE CHARACTER LOGS LIVE, PUSHED (owner ruling 21, decision sheet 1a). Log DISCOVERY migrates server-side and launch-time character choice becomes a served answer - but THE APP NAMES THE DIRECTORY, which is boundary verdict 3 applied to a path instead of to a preference: the store is persistence truth, the engine never reads a settings file, and the directory is the product of an override plus an auto-discovery sweep plus a registry read that this engine has no business doing. So the app resolves it (`main/log/config.ts eqLogsDir`) and states it here, on connect and whenever the setting moves. IT IS AN IDEMPOTENT FULL-SET REPLACE like the five `*.define` commands, which for a single value means the last push is the whole of what the app has said; the ack is therefore `DefineAck` with no `count`, exactly as `buffTrust.define` and `respawn.define` answer for a payload that is one object rather than a list. IT IS NOT A `*.define` BY NAME, deliberately: those five are FOLD inputs and part of ruling 18's cache key - a rule set that changes what folding a log produces - and this changes nothing about any fold. It names a directory nobody folds, answers one query, and a world that never hears it folds byte-identically to one that does. THE DIRECTORY IS NOT THE ATTACH. `session.attach` names one FILE to fold and this names the folder to enumerate; a fresh install has the second and not the first, which is the whole reason this command exists rather than the list being derived from the attached log's parent.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "op",
+///    "params"
+///  ],
+///  "properties": {
+///    "id": {
+///      "$ref": "#/$defs/RequestId"
+///    },
+///    "op": {
+///      "type": "string",
+///      "enum": [
+///        "logs.setDir"
+///      ]
+///    },
+///    "params": {
+///      "$ref": "#/$defs/LogsSetDirParams"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogsSetDirRequest {
+    pub id: RequestId,
+    pub op: LogsSetDirRequestOp,
+    pub params: LogsSetDirParams,
+}
+///`LogsSetDirRequestOp`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "type": "string",
+///  "enum": [
+///    "logs.setDir"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum LogsSetDirRequestOp {
+    #[serde(rename = "logs.setDir")]
+    LogsSetDir,
+}
+impl ::std::fmt::Display for LogsSetDirRequestOp {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::LogsSetDir => f.write_str("logs.setDir"),
+        }
+    }
+}
+impl ::std::str::FromStr for LogsSetDirRequestOp {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "logs.setDir" => Ok(Self::LogsSetDir),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for LogsSetDirRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for LogsSetDirRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for LogsSetDirRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
 }
 ///A MODULE'S PUBLISHED STATE MOVED — the dirty bit, and nothing more. CONNECTION-WIDE and carrying no `id`, on the `FireMessage` precedent: a module belongs to the world rather than to any subscription. IT CARRIES NO STATE, DELIBERATELY. The whole payload is a name and a cursor, so a client that is not showing that module pays one small frame and ignores it, and a client that is re-fetches through `module.snapshot` — which is the op that already exists and the only place a module's shape is stated. A frame that carried the state would be `module.snapshot` pushed at a cadence nobody asked for, which is the per-window snapshot fan-out this whole boundary exists to delete. IT IS COALESCED TO ONE PER MODULE PER SERVE BEAT (~10 Hz, `views::SERVE_EVERY`), not one per event: a busy tail moves a module's seq many times between two beats and the newest cursor is the whole answer — the same newest-wins rule rule 2 states for diffs. Nothing is sent for a module whose seq did not move, so an idle session pays nothing. IT IS NOT AN EPOCH AND DOES NOT REPLACE ONE: a bump still means drop-everything-and-take-the-reset, and a `moduleChanged` inside one generation means only `there is something newer to fetch`.
 ///
@@ -4974,6 +5503,371 @@ impl ::std::default::Default for NoParams {
         Self {}
     }
 }
+///ONE BUDGET: what it is called, what it allows, what it measured, and the verdict - render-ready, which is ruling 4 applied to a diagnostic rather than to a list. `limit` and `measured` are STRINGS the engine formatted, not numbers with a unit the caller has to know, and that is deliberate on three counts: the two budgets in this build are measured in different units (bytes per second, microseconds) so a shared numeric field would need a unit discriminant nobody reads; the comparison that produces `verdict` is arithmetic and ruling 4 puts arithmetic on this side of the wire; and a third budget can ship without one line changing in the renderer. Locale is fixed en-US per ruling 25. A budget carries no name, no path and no log content by construction - it is a rate, a latency and a verdict, which is exactly the set the telemetry bright line admits.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfBudget",
+///  "description": "ONE BUDGET: what it is called, what it allows, what it measured, and the verdict - render-ready, which is ruling 4 applied to a diagnostic rather than to a list. `limit` and `measured` are STRINGS the engine formatted, not numbers with a unit the caller has to know, and that is deliberate on three counts: the two budgets in this build are measured in different units (bytes per second, microseconds) so a shared numeric field would need a unit discriminant nobody reads; the comparison that produces `verdict` is arithmetic and ruling 4 puts arithmetic on this side of the wire; and a third budget can ship without one line changing in the renderer. Locale is fixed en-US per ruling 25. A budget carries no name, no path and no log content by construction - it is a rate, a latency and a verdict, which is exactly the set the telemetry bright line admits.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "label",
+///    "limit",
+///    "note",
+///    "verdict"
+///  ],
+///  "properties": {
+///    "id": {
+///      "description": "The budget's stable key, for a test or a bug report to name it by. Never drawn - `label` is what a person reads - and never re-ordered against, because the server already sent the rows in their drawing order.",
+///      "type": "string",
+///      "enum": [
+///        "foldRate",
+///        "serveLatency"
+///      ]
+///    },
+///    "label": {
+///      "description": "What the budget is called, in the words the panel prints.",
+///      "type": "string"
+///    },
+///    "limit": {
+///      "description": "The ceiling or the floor, rendered with its unit and its direction - `at least 1.0 MB/s`, `at most 2.0 s` - so the row reads as a sentence and a reader never has to guess which way the comparison runs.",
+///      "type": "string"
+///    },
+///    "measured": {
+///      "description": "What this generation actually did, rendered in the same unit as `limit`. ABSENT MEANS NOT YET MEASURED and never zero, the same rule `PerfIngest` keeps: a scan still running has no rate, and a source whose every frame was an owed reset has no latency, and reporting either as `0` would be the one lie an instrument must not tell.",
+///      "type": "string"
+///    },
+///    "note": {
+///      "description": "The one sentence a reader needs so the number is not misread - the caveat travelling with the measurement instead of living in a doc nobody has open. It is where `serveLatency` says that it includes the coalescing beat and is a wedge detector rather than a compute budget, and where `foldRate` says the floor is an eighth of the measured rate on purpose so a debug build is what trips it.",
+///      "type": "string"
+///    },
+///    "verdict": {
+///      "description": "`pass` when the measurement satisfies the limit, `fail` when it does not, `unmeasured` when there is nothing yet to judge - which is a third state rather than an optimistic `pass`, because a budget that reads green before it has measured anything is worse than one that says nothing.",
+///      "type": "string",
+///      "enum": [
+///        "pass",
+///        "fail",
+///        "unmeasured"
+///      ]
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfBudget {
+    ///The budget's stable key, for a test or a bug report to name it by. Never drawn - `label` is what a person reads - and never re-ordered against, because the server already sent the rows in their drawing order.
+    pub id: PerfBudgetId,
+    ///What the budget is called, in the words the panel prints.
+    pub label: ::std::string::String,
+    ///The ceiling or the floor, rendered with its unit and its direction - `at least 1.0 MB/s`, `at most 2.0 s` - so the row reads as a sentence and a reader never has to guess which way the comparison runs.
+    pub limit: ::std::string::String,
+    ///What this generation actually did, rendered in the same unit as `limit`. ABSENT MEANS NOT YET MEASURED and never zero, the same rule `PerfIngest` keeps: a scan still running has no rate, and a source whose every frame was an owed reset has no latency, and reporting either as `0` would be the one lie an instrument must not tell.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub measured: ::std::option::Option<::std::string::String>,
+    ///The one sentence a reader needs so the number is not misread - the caveat travelling with the measurement instead of living in a doc nobody has open. It is where `serveLatency` says that it includes the coalescing beat and is a wedge detector rather than a compute budget, and where `foldRate` says the floor is an eighth of the measured rate on purpose so a debug build is what trips it.
+    pub note: ::std::string::String,
+    ///`pass` when the measurement satisfies the limit, `fail` when it does not, `unmeasured` when there is nothing yet to judge - which is a third state rather than an optimistic `pass`, because a budget that reads green before it has measured anything is worse than one that says nothing.
+    pub verdict: PerfBudgetVerdict,
+}
+///The budget's stable key, for a test or a bug report to name it by. Never drawn - `label` is what a person reads - and never re-ordered against, because the server already sent the rows in their drawing order.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "description": "The budget's stable key, for a test or a bug report to name it by. Never drawn - `label` is what a person reads - and never re-ordered against, because the server already sent the rows in their drawing order.",
+///  "type": "string",
+///  "enum": [
+///    "foldRate",
+///    "serveLatency"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum PerfBudgetId {
+    #[serde(rename = "foldRate")]
+    FoldRate,
+    #[serde(rename = "serveLatency")]
+    ServeLatency,
+}
+impl ::std::fmt::Display for PerfBudgetId {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::FoldRate => f.write_str("foldRate"),
+            Self::ServeLatency => f.write_str("serveLatency"),
+        }
+    }
+}
+impl ::std::str::FromStr for PerfBudgetId {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "foldRate" => Ok(Self::FoldRate),
+            "serveLatency" => Ok(Self::ServeLatency),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for PerfBudgetId {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for PerfBudgetId {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for PerfBudgetId {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///`pass` when the measurement satisfies the limit, `fail` when it does not, `unmeasured` when there is nothing yet to judge - which is a third state rather than an optimistic `pass`, because a budget that reads green before it has measured anything is worse than one that says nothing.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "description": "`pass` when the measurement satisfies the limit, `fail` when it does not, `unmeasured` when there is nothing yet to judge - which is a third state rather than an optimistic `pass`, because a budget that reads green before it has measured anything is worse than one that says nothing.",
+///  "type": "string",
+///  "enum": [
+///    "pass",
+///    "fail",
+///    "unmeasured"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum PerfBudgetVerdict {
+    #[serde(rename = "pass")]
+    Pass,
+    #[serde(rename = "fail")]
+    Fail,
+    #[serde(rename = "unmeasured")]
+    Unmeasured,
+}
+impl ::std::fmt::Display for PerfBudgetVerdict {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Pass => f.write_str("pass"),
+            Self::Fail => f.write_str("fail"),
+            Self::Unmeasured => f.write_str("unmeasured"),
+        }
+    }
+}
+impl ::std::str::FromStr for PerfBudgetVerdict {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "pass" => Ok(Self::Pass),
+            "fail" => Ok(Self::Fail),
+            "unmeasured" => Ok(Self::Unmeasured),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for PerfBudgetVerdict {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for PerfBudgetVerdict {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for PerfBudgetVerdict {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///THE ENGINE'S OWN BUDGETS, DEFINITIONS AND VERDICT TOGETHER (owner ruling 19 surface, JOS-502). `engine/crates/engined/tests/budget.rs` asserts these same ceilings in CI against a synthetic corpus; this op answers them LIVE, off the generation that is actually running, so the panel and the bug report state what THIS machine did rather than what a runner did. Ruling 3 is the whole reason the op carries the definitions and not just the numbers - performance goals are self-measured and never promised, so a reader must be able to see the ceiling beside the measurement and judge for himself instead of trusting a colour. Same door and same cost as `perf.snapshot` (one ask on the fold's boundary), same standing warning: THE APP MUST NOT POLL THIS IDLY, because a budget surface that costs a round trip a second while nobody is looking is precisely the bug it exists to find.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfBudgetsRequest",
+///  "description": "THE ENGINE'S OWN BUDGETS, DEFINITIONS AND VERDICT TOGETHER (owner ruling 19 surface, JOS-502). `engine/crates/engined/tests/budget.rs` asserts these same ceilings in CI against a synthetic corpus; this op answers them LIVE, off the generation that is actually running, so the panel and the bug report state what THIS machine did rather than what a runner did. Ruling 3 is the whole reason the op carries the definitions and not just the numbers - performance goals are self-measured and never promised, so a reader must be able to see the ceiling beside the measurement and judge for himself instead of trusting a colour. Same door and same cost as `perf.snapshot` (one ask on the fold's boundary), same standing warning: THE APP MUST NOT POLL THIS IDLY, because a budget surface that costs a round trip a second while nobody is looking is precisely the bug it exists to find.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "op",
+///    "params"
+///  ],
+///  "properties": {
+///    "id": {
+///      "$ref": "#/$defs/RequestId"
+///    },
+///    "op": {
+///      "type": "string",
+///      "enum": [
+///        "perf.budgets"
+///      ]
+///    },
+///    "params": {
+///      "$ref": "#/$defs/NoParams"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfBudgetsRequest {
+    pub id: RequestId,
+    pub op: PerfBudgetsRequestOp,
+    pub params: NoParams,
+}
+///`PerfBudgetsRequestOp`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "type": "string",
+///  "enum": [
+///    "perf.budgets"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum PerfBudgetsRequestOp {
+    #[serde(rename = "perf.budgets")]
+    PerfBudgets,
+}
+impl ::std::fmt::Display for PerfBudgetsRequestOp {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::PerfBudgets => f.write_str("perf.budgets"),
+        }
+    }
+}
+impl ::std::str::FromStr for PerfBudgetsRequestOp {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "perf.budgets" => Ok(Self::PerfBudgets),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for PerfBudgetsRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for PerfBudgetsRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for PerfBudgetsRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///Every budget this build enforces, judged against the generation named by `epoch`. IT DELIBERATELY RESTATES NEITHER `status` NOR `uptimeMs`, which `PerfSnapshotResult` does restate from `HealthResult`: `session.health`'s guard in `src/shared/dataServer/ops.ts` is `uptimeMs` present and `serve` absent, so a budgets answer carrying an uptime would be a third arm that guard could not refuse - the registry's matrix would go red, and correctly, because a shape two ops both pass is a shape no caller can identify. The epoch is here because a budget verdict is a fact about ONE generation and a reader comparing two answers across an attach must be able to see that they are not comparable.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfBudgetsResult",
+///  "description": "Every budget this build enforces, judged against the generation named by `epoch`. IT DELIBERATELY RESTATES NEITHER `status` NOR `uptimeMs`, which `PerfSnapshotResult` does restate from `HealthResult`: `session.health`'s guard in `src/shared/dataServer/ops.ts` is `uptimeMs` present and `serve` absent, so a budgets answer carrying an uptime would be a third arm that guard could not refuse - the registry's matrix would go red, and correctly, because a shape two ops both pass is a shape no caller can identify. The epoch is here because a budget verdict is a fact about ONE generation and a reader comparing two answers across an attach must be able to see that they are not comparable.",
+///  "type": "object",
+///  "required": [
+///    "budgets",
+///    "epoch"
+///  ],
+///  "properties": {
+///    "budgets": {
+///      "description": "One row per budget, in the order the panel draws them - a fixed order this engine owns, never an order a caller re-derives (ruling 4). The list is never empty: a build with a budget it cannot measure yet says `unmeasured` in the row rather than omitting it, because a budget that vanishes when it is inconvenient is not a budget.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/PerfBudget"
+///      }
+///    },
+///    "epoch": {
+///      "$ref": "#/$defs/Epoch"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfBudgetsResult {
+    ///One row per budget, in the order the panel draws them - a fixed order this engine owns, never an order a caller re-derives (ruling 4). The list is never empty: a build with a budget it cannot measure yet says `unmeasured` in the row rather than omitting it, because a budget that vanishes when it is inconvenient is not a budget.
+    pub budgets: ::std::vec::Vec<PerfBudget>,
+    pub epoch: Epoch,
+}
 ///WHAT STARTING THIS GENERATION COST. Every field is optional and absent means NOT YET MEASURED rather than zero: `scanMs` is unknown until the scan finishes, and a zero there would say a whole log folded instantly. The engine prints the same two numbers to stderr; this is the same measurement on the wire, so a panel does not have to scrape a log.
 ///
 /// <details><summary>JSON schema</summary>
@@ -5034,6 +5928,69 @@ impl ::std::default::Default for PerfIngest {
             spell_db_ms: Default::default(),
         }
     }
+}
+///ONE SAMPLED WINDOW OF THE SERVE PATH, and every figure in it is an INTERVAL rather than a running total - which is the one design decision in this shape. `perf.snapshot` already answers the cumulative question and answers it better; what a history is for is saying that the minute at 04:12 cost four times what the minute before it did, and a list of ever-growing totals makes a reader do that subtraction himself over numbers whose baseline he cannot see. A quiet window is RECORDED as a quiet window rather than skipped, because a ring that dropped its empty samples would compress a two-minute silence into no space at all and make the busy moments look adjacent. Nothing here can carry game data: it is a count of frames, a weight of bytes and a latency.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfMoment",
+///  "description": "ONE SAMPLED WINDOW OF THE SERVE PATH, and every figure in it is an INTERVAL rather than a running total - which is the one design decision in this shape. `perf.snapshot` already answers the cumulative question and answers it better; what a history is for is saying that the minute at 04:12 cost four times what the minute before it did, and a list of ever-growing totals makes a reader do that subtraction himself over numbers whose baseline he cannot see. A quiet window is RECORDED as a quiet window rather than skipped, because a ring that dropped its empty samples would compress a two-minute silence into no space at all and make the busy moments look adjacent. Nothing here can carry game data: it is a count of frames, a weight of bytes and a latency.",
+///  "type": "object",
+///  "required": [
+///    "atMs",
+///    "frames",
+///    "payloadWeight",
+///    "spanMs"
+///  ],
+///  "properties": {
+///    "atMs": {
+///      "description": "When the window CLOSED, as milliseconds since this process started - the same clock `PerfSnapshotResult.uptimeMs` is on, so a panel holding both can place the moments against the uptime without a second time base. Process-relative on purpose: the engine reads no wall clock to answer a performance question, and a process-relative stamp carries nothing about when or where a person plays.",
+///      "type": "integer"
+///    },
+///    "foldToFrameUsMax": {
+///      "description": "The worst fold-to-frame latency in MICROSECONDS among the frames timed in this window, or ABSENT when no frame in it had a fold behind it. The worst rather than the mean, on `widestPayloadWeight`'s argument: a mean over a ten-second window hides the one frame that stalled somebody's screen, which is the only frame the window was sampled to find.",
+///      "type": "integer"
+///    },
+///    "frames": {
+///      "description": "Frames sent across every source during this window, resets and diffs together. Per-source detail is `perf.snapshot`'s serve table and is deliberately not duplicated here: a ring that held one row per source per sample would grow with the source registry, which is exactly the unbounded growth this shape refuses.",
+///      "type": "integer"
+///    },
+///    "payloadWeight": {
+///      "description": "What those frames weighed, summed over every source, in the same accounting `PerfServeSource.payloadWeight` uses - and the unit is in this sentence rather than in the name for the same reason it is there, because a property name in this schema may not carry a wire unit.",
+///      "type": "integer"
+///    },
+///    "spanMs": {
+///      "description": "How long this window ACTUALLY covered, measured rather than assumed equal to `cadenceMs`. It is what makes the counts below dividable into rates honestly, and a span noticeably longer than the cadence is itself the finding - the sampling thread was busy.",
+///      "type": "integer"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfMoment {
+    ///When the window CLOSED, as milliseconds since this process started - the same clock `PerfSnapshotResult.uptimeMs` is on, so a panel holding both can place the moments against the uptime without a second time base. Process-relative on purpose: the engine reads no wall clock to answer a performance question, and a process-relative stamp carries nothing about when or where a person plays.
+    #[serde(rename = "atMs")]
+    pub at_ms: i64,
+    ///The worst fold-to-frame latency in MICROSECONDS among the frames timed in this window, or ABSENT when no frame in it had a fold behind it. The worst rather than the mean, on `widestPayloadWeight`'s argument: a mean over a ten-second window hides the one frame that stalled somebody's screen, which is the only frame the window was sampled to find.
+    #[serde(
+        rename = "foldToFrameUsMax",
+        default,
+        skip_serializing_if = "::std::option::Option::is_none"
+    )]
+    pub fold_to_frame_us_max: ::std::option::Option<i64>,
+    ///Frames sent across every source during this window, resets and diffs together. Per-source detail is `perf.snapshot`'s serve table and is deliberately not duplicated here: a ring that held one row per source per sample would grow with the source registry, which is exactly the unbounded growth this shape refuses.
+    pub frames: i64,
+    ///What those frames weighed, summed over every source, in the same accounting `PerfServeSource.payloadWeight` uses - and the unit is in this sentence rather than in the name for the same reason it is there, because a property name in this schema may not carry a wire unit.
+    #[serde(rename = "payloadWeight")]
+    pub payload_weight: i64,
+    ///How long this window ACTUALLY covered, measured rather than assumed equal to `cadenceMs`. It is what makes the counts below dividable into rates honestly, and a span noticeably longer than the cadence is itself the finding - the sampling thread was busy.
+    #[serde(rename = "spanMs")]
+    pub span_ms: i64,
 }
 ///ONE SOURCE'S SERVE PATH, cumulative for this generation — the counters `views::meter` keeps, exactly as ruling 19 names them. QUEUE TIME IS NEVER COUNTED AS COMPUTE: `foldToFrameUs*` is measured from the instant the fold produced what the frame reports to the instant the frame reached the connection's outbox, and a frame with no fold behind it (the fresh reset a just-opened subscription is owed) is COUNTED but not TIMED — which is why the two latency fields are optional and their absence means `no frame here had a fold behind it`, never `zero microseconds`.
 ///
@@ -5409,6 +6366,163 @@ impl ::std::convert::TryFrom<::std::string::String> for PerfSnapshotResultStatus
         value.parse()
     }
 }
+///THE RECENT HISTORY BEHIND `perf.snapshot`'s TOTALS (owner ruling 19 surface, JOS-502). A snapshot is cumulative for the generation, so two of them a minute apart cannot say WHEN the serve path was slow - this is the same instrument sampled on a beat and kept in a BOUNDED RING, which is the whole difference between a history and a leak. The ring is fixed-capacity and overwrites its oldest entry, so an engine up for a week costs exactly what one up for a minute costs; `capacity` is on the answer so a reader can see the horizon rather than infer it. Same door and same cost as `perf.snapshot`, and THE APP MUST NOT POLL THIS IDLY for the same reason.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfTimelineRequest",
+///  "description": "THE RECENT HISTORY BEHIND `perf.snapshot`'s TOTALS (owner ruling 19 surface, JOS-502). A snapshot is cumulative for the generation, so two of them a minute apart cannot say WHEN the serve path was slow - this is the same instrument sampled on a beat and kept in a BOUNDED RING, which is the whole difference between a history and a leak. The ring is fixed-capacity and overwrites its oldest entry, so an engine up for a week costs exactly what one up for a minute costs; `capacity` is on the answer so a reader can see the horizon rather than infer it. Same door and same cost as `perf.snapshot`, and THE APP MUST NOT POLL THIS IDLY for the same reason.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "op",
+///    "params"
+///  ],
+///  "properties": {
+///    "id": {
+///      "$ref": "#/$defs/RequestId"
+///    },
+///    "op": {
+///      "type": "string",
+///      "enum": [
+///        "perf.timeline"
+///      ]
+///    },
+///    "params": {
+///      "$ref": "#/$defs/NoParams"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfTimelineRequest {
+    pub id: RequestId,
+    pub op: PerfTimelineRequestOp,
+    pub params: NoParams,
+}
+///`PerfTimelineRequestOp`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "type": "string",
+///  "enum": [
+///    "perf.timeline"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum PerfTimelineRequestOp {
+    #[serde(rename = "perf.timeline")]
+    PerfTimeline,
+}
+impl ::std::fmt::Display for PerfTimelineRequestOp {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::PerfTimeline => f.write_str("perf.timeline"),
+        }
+    }
+}
+impl ::std::str::FromStr for PerfTimelineRequestOp {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "perf.timeline" => Ok(Self::PerfTimeline),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for PerfTimelineRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for PerfTimelineRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for PerfTimelineRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///The ring as it stands, oldest moment first, for the generation named by `epoch`. It restates neither `status` nor `uptimeMs` for the reason `PerfBudgetsResult` gives at length. AN EMPTY TIMELINE IS AN HONEST ANSWER and the commonest one: the ring is filled by the ingest thread's own beat, so an engine with nothing attached has taken no samples, and a panel opened three seconds after launch sees a horizon it will fill rather than a defect.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "PerfTimelineResult",
+///  "description": "The ring as it stands, oldest moment first, for the generation named by `epoch`. It restates neither `status` nor `uptimeMs` for the reason `PerfBudgetsResult` gives at length. AN EMPTY TIMELINE IS AN HONEST ANSWER and the commonest one: the ring is filled by the ingest thread's own beat, so an engine with nothing attached has taken no samples, and a panel opened three seconds after launch sees a horizon it will fill rather than a defect.",
+///  "type": "object",
+///  "required": [
+///    "cadenceMs",
+///    "capacity",
+///    "epoch",
+///    "timeline"
+///  ],
+///  "properties": {
+///    "cadenceMs": {
+///      "description": "The NOMINAL interval between samples. Each moment also carries the span it actually covered, because a thread that was busy takes its sample late and a timeline that reported only the nominal figure would quietly turn a stall into a shorter-looking window.",
+///      "type": "integer"
+///    },
+///    "capacity": {
+///      "description": "How many moments the ring holds before it starts overwriting. The bound, stated rather than implied - a client that wanted to know how far back the history reaches would otherwise have to guess from the length, which is wrong for the whole first period of every generation.",
+///      "type": "integer"
+///    },
+///    "epoch": {
+///      "$ref": "#/$defs/Epoch"
+///    },
+///    "timeline": {
+///      "description": "The moments, OLDEST FIRST, at most `capacity` of them. Order is the server's and a caller re-sorting it would be munging a served view (ruling 4); a panel wanting newest-first draws it backwards rather than sorting it.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/PerfMoment"
+///      }
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PerfTimelineResult {
+    ///The NOMINAL interval between samples. Each moment also carries the span it actually covered, because a thread that was busy takes its sample late and a timeline that reported only the nominal figure would quietly turn a stall into a shorter-looking window.
+    #[serde(rename = "cadenceMs")]
+    pub cadence_ms: i64,
+    ///How many moments the ring holds before it starts overwriting. The bound, stated rather than implied - a client that wanted to know how far back the history reaches would otherwise have to guess from the length, which is wrong for the whole first period of every generation.
+    pub capacity: i64,
+    pub epoch: Epoch,
+    ///The moments, OLDEST FIRST, at most `capacity` of them. Order is the server's and a caller re-sorting it would be munging a served view (ruling 4); a panel wanting newest-first draws it backwards rather than sorting it.
+    pub timeline: ::std::vec::Vec<PerfMoment>,
+}
 ///`ProtocolError`
 ///
 /// <details><summary>JSON schema</summary>
@@ -5619,6 +6733,12 @@ impl ::std::convert::TryFrom<::std::string::String> for ReplyKind {
 ///      "$ref": "#/$defs/PerfSnapshotResult"
 ///    },
 ///    {
+///      "$ref": "#/$defs/PerfBudgetsResult"
+///    },
+///    {
+///      "$ref": "#/$defs/PerfTimelineResult"
+///    },
+///    {
 ///      "$ref": "#/$defs/DefineAck"
 ///    },
 ///    {
@@ -5644,6 +6764,9 @@ impl ::std::convert::TryFrom<::std::string::String> for ReplyKind {
 ///    },
 ///    {
 ///      "$ref": "#/$defs/ResistSpellResult"
+///    },
+///    {
+///      "$ref": "#/$defs/LogsListResult"
 ///    }
 ///  ]
 ///}
@@ -5658,6 +6781,8 @@ pub enum ReplyResult {
     SubscribeAck(SubscribeAck),
     ModuleSnapshotResult(ModuleSnapshotResult),
     PerfSnapshotResult(PerfSnapshotResult),
+    PerfBudgetsResult(PerfBudgetsResult),
+    PerfTimelineResult(PerfTimelineResult),
     DefineAck(DefineAck),
     CombatSnapshotResult(CombatSnapshotResult),
     CombatSearchFightsResult(CombatSearchFightsResult),
@@ -5667,6 +6792,7 @@ pub enum ReplyResult {
     RespawnConfirmAck(RespawnConfirmAck),
     ResistLevelsResult(ResistLevelsResult),
     ResistSpellResult(ResistSpellResult),
+    LogsListResult(LogsListResult),
 }
 impl ::std::convert::From<EchoResult> for ReplyResult {
     fn from(value: EchoResult) -> Self {
@@ -5696,6 +6822,16 @@ impl ::std::convert::From<ModuleSnapshotResult> for ReplyResult {
 impl ::std::convert::From<PerfSnapshotResult> for ReplyResult {
     fn from(value: PerfSnapshotResult) -> Self {
         Self::PerfSnapshotResult(value)
+    }
+}
+impl ::std::convert::From<PerfBudgetsResult> for ReplyResult {
+    fn from(value: PerfBudgetsResult) -> Self {
+        Self::PerfBudgetsResult(value)
+    }
+}
+impl ::std::convert::From<PerfTimelineResult> for ReplyResult {
+    fn from(value: PerfTimelineResult) -> Self {
+        Self::PerfTimelineResult(value)
     }
 }
 impl ::std::convert::From<DefineAck> for ReplyResult {
@@ -5741,6 +6877,11 @@ impl ::std::convert::From<ResistLevelsResult> for ReplyResult {
 impl ::std::convert::From<ResistSpellResult> for ReplyResult {
     fn from(value: ResistSpellResult) -> Self {
         Self::ResistSpellResult(value)
+    }
+}
+impl ::std::convert::From<LogsListResult> for ReplyResult {
+    fn from(value: LogsListResult) -> Self {
+        Self::LogsListResult(value)
     }
 }
 ///Client-chosen correlation id. A reply carries the id of its request; every stream message carries the id of the subscribe request that opened it.

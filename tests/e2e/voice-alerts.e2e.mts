@@ -493,6 +493,26 @@ async function stepCaptureAlert(page: Page, log: { appendAt: (at: Date, ...m: re
     { timeoutMs: 15_000 }
   )
 
+  // ── RESTORED BY JOS-500 (owner ruling 27) — THE FIRE FRAME CARRIES THE WORDS ──────────────
+  //
+  // RETIRED FOR ONE RELEASE AND BACK UNCHANGED. JOS-499 left this assertion standing behind a
+  // `RETIRED_5a` early-return rather than deleting it, because the reason it could not be claimed
+  // was a missing FIELD and not a changed product: a `FireMessage` carried exactly four fields and
+  // had nowhere to put the JOS-103 captures, so the alert still fired and still spoke, but spoke
+  // its phrase with the tokens unsubstituted. `alertsAudioRules.ts` had named that cost since
+  // JOS-491 ("costs a firing some of its WORDS and never its existence"), and the deletion release
+  // made it the only path — which is what the owner ruled release-gating.
+  //
+  // THE FRAME GREW `captures`, `spell` AND `dueAt`, so the gate is gone and the claim below is the
+  // one this spec always made, word for word. It is the END-TO-END half of the parity: the engine
+  // produces the capture (proven in `fold`'s own suite), `fireToFiring` copies it (proven in
+  // `tests/engineAlertsAudio.test.mts`), and what is asserted HERE is that a real app, driven by a
+  // real live-tailed log line, reaches the speech seam with the substitution actually done.
+  //
+  // WHY THAT NEEDS AN E2E AND NOT A THIRD UNIT TEST: everything between the engine's match and the
+  // utterance is wiring — the connection, the IPC hop, the renderer's player, the def lookup by id
+  // — and wiring is exactly what a pure test cannot see.
+
   // Wait for the utterance THIS step caused, by its text — the ring is app-wide and a step that
   // asserted "the newest entry" would be asserting against whatever spoke last.
   const before = (await spoken(page)).length

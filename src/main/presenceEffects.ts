@@ -31,7 +31,9 @@
 //      re-centering every frame. `cursorStreamStats()` exists so that can be MEASURED rather
 //      than asserted. A HISTORICAL REPLAY is one more reason to be off (JOS-62): the ring is not
 //      on screen while the log is being folded, so main does not carry a 125 Hz timer through the
-//      fold either. That gate is `ringDisposition` in replayGate.ts.
+//      fold either. That gate is `ringDisposition` in presenceProtocol.ts. (It lost its
+//      replay term in JOS-499: this process no longer folds anything, so the sampler has
+//      nothing here to yield to.)
 //   3. AN UNMOVED CURSOR SENDS NOTHING. The sample is compared against the last one sent and
 //      dropped if identical, so a hand resting on the mouse costs one `getCursorScreenPoint()`
 //      per tick and zero IPC. Reading a quest text with the ring on is free.
@@ -53,8 +55,12 @@ import { screen, type BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc'
 import { logError } from './errorLog'
 import { presenceSnapshot, setCursorWatch, stopPresence, subscribePresence } from './presence'
-import { CURSOR_POLL_MS, cursorRingActive, overlaysShouldHide } from './presenceProtocol'
-import { historicalReplayRunning, ringDisposition } from './replayGate'
+import {
+  CURSOR_POLL_MS,
+  cursorRingActive,
+  overlaysShouldHide,
+  ringDisposition
+} from './presenceProtocol'
 import { getCursorRing, getOverlayAutoHide } from './store'
 import {
   createCursorRingWindow,
@@ -208,7 +214,7 @@ export function suspendCursorStream(): void {
 function applyRing(state: PresenceState): void {
   const ring = getCursorRing()
   const bounds = state.eqBounds
-  // THE 8 ms POLL'S GATE, in one pure decision (replayGate.ts ringDisposition): the feature
+  // THE 8 ms POLL'S GATE, in one pure decision (presenceProtocol.ts ringDisposition): the feature
   // switch, whether we know where to put the ring, whether it is active right now, and whether a
   // historical replay is folding. The last of those is JOS-62's half — main must not be carrying
   // a 125 Hz timer while it is slicing the log, and the ring is not on screen to need one.
@@ -219,7 +225,6 @@ function applyRing(state: PresenceState): void {
     // Asked SEPARATELY from `active`, not derived from it: it is the difference between "the
     // pointer is gone" (park in place) and "the game is gone" (take the window off screen).
     focused: state.eqFocused,
-    replayRunning: historicalReplayRunning()
   })
   if (disposition === 'off') {
     stopStream()
@@ -254,7 +259,7 @@ function applyRing(state: PresenceState): void {
     // 'parked' — EverQuest still owns the screen, there is just no pointer to ring (mouselook, or
     // any mouse button held in the world view). The window is left VISIBLE and merely emptied:
     // this is the transition that happens on every click, and hiding for it is what put a stale
-    // halo back on screen a frame later (JOS-120, replayGate.ts).
+    // halo back on screen a frame later (JOS-120, presenceProtocol.ts ringDisposition).
     parkRingInPlace()
     return
   }

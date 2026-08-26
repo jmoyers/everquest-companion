@@ -44,7 +44,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type JSX } from 'react'
 import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
 import MapIcon from '@mui/icons-material/Map'
-import type { CharacterDelta, CharacterSnap } from '@shared/types'
+import type { CharacterSnap } from '@shared/types'
 import type { MapBounds, MapData, MapPackPrefs, ZoneShort } from '@shared/maps'
 import { zoneShortName } from '@shared/zones'
 import { useModule } from '../../lib/useModule'
@@ -75,10 +75,6 @@ const EMPTY_BOUNDS: MapBounds = { minX: -1, maxX: 1, minY: -1, maxY: 1, minZ: 0,
 /** Layer → what that file conventionally holds (§2.3). Used for the per-layer source chips. */
 const LAYER_NAME: Record<number, string> = { 0: 'Geometry', 1: 'Labels', 2: 'Legend', 3: 'Extra' }
 
-/** The character module's delta is a partial merge (see main/modules/character.ts). */
-function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): CharacterSnap {
-  return { ...state, ...delta }
-}
 
 /**
  * What to call the map on screen.
@@ -362,7 +358,7 @@ function useMapOpenTracking(data: MapData | null): void {
 export default function MapsView(): JSX.Element {
   // WHERE YOU ARE. The character module owns the raw display zone off the `zone` log event; it
   // is undefined until the log prints one, and that absence is a state this view renders.
-  const raw = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)?.zone
+  const raw = useModule<CharacterSnap>('character')?.zone
   const { zone, auto, mode, pick, followCurrent } = useZoneSelection(raw)
   const [prefs, setPrefs] = useState<MapPackPrefs>(loadPackPrefs)
   const [layers, setLayers] = useState<LayerMask>(DEFAULT_LAYERS)

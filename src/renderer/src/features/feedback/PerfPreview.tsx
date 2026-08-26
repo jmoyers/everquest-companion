@@ -20,6 +20,7 @@ import { Box, Stack, Typography } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { formatPerfState, formatPerfSummary, perfSparkline, type FeedbackPerf } from '@shared/feedbackPerf'
+import { formatPerfEngine } from '@shared/feedbackPerfEngine'
 import { PreviewLines } from './LogPreview'
 import type { FeedbackContext } from './useFeedback'
 
@@ -106,6 +107,22 @@ export default function PerfPreview({ ctx }: { ctx: FeedbackContext | null }): J
             sx={{ fontFamily: 'ui-monospace, monospace', wordBreak: 'break-word' }}
           >
             {formatPerfState(perf)}
+          </Typography>
+          {/* THE ENGINE'S OWN NUMBERS (ruling 19, JOS-502), and it is drawn HERE rather than
+              arriving free with `formatPerfBlock` because this file deliberately composes the
+              formatters itself instead of printing the CLI's composite. That is the whole reason
+              this line exists: the feature's promise is "you see exactly what is sent", and a
+              block that grew a section the dialog did not draw would break it silently. It is
+              inside the expanded half beside the machine facts, which is where the reader who
+              wants the detail already is. `formatPerfEngine` says "no engine answered" in words
+              when there is nothing — a finding, not a blank. */}
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="feedback-perf-engine"
+            sx={{ fontFamily: 'ui-monospace, monospace', wordBreak: 'break-word' }}
+          >
+            {`engine: ${formatPerfEngine(perf.engine)}`}
           </Typography>
           <PreviewLines lines={rowLines(perf)} testId="feedback-perf-rows" />
         </>

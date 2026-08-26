@@ -66,6 +66,9 @@
 
 use crate::event::Event;
 use crate::jsmap::JsMap;
+use crate::modules::alerts_captures::{
+    harvest_captures, merge_captures, wants_target_token, with_auto_captures, CaptureMap,
+};
 use crate::modules::alerts_early::{
     break_event_identity, break_probes, break_trigger_kinds, early_warn_subject,
     normalize_early_warn_sec, ArmedFire, BreakKind, BreakWatchers, EarlyWarnArm, EarlyWarnDue,
@@ -91,6 +94,12 @@ const HISTORY_CAP: usize = 20;
 
 /// ONE ALERT FIRED. The payload of a `FireMessage`, built where the alert system's own vocabulary
 /// is rather than in `engined`, so the protocol crate never learns what an alert is.
+///
+/// THE LAST THREE FIELDS ARE WHAT IT SAYS; THE FIRST FOUR ARE THAT IT HAPPENED (JOS-500, ruling 27).
+/// Every one of the three is optional and nearly every real firing carries none of them, which is
+/// the shape the schema argues at length: an alert declaring no capture group, writing no
+/// `{target}`, matched on a family that names no spell and carrying no early-warning offset sends
+/// the identical four fields it always sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fire {
     /// The `ts` of the event that matched — the LOG's clock.
@@ -101,6 +110,38 @@ pub struct Fire {
     pub sound: String,
     /// The text that matched: the raw log line.
     pub message: String,
+    /// The named groups this rule's OWN matcher took, plus the `{target}` auto token when the def's
+    /// phrase asked for one. Already sanitized and capped — see `alerts_captures`.
+    pub captures: Option<CaptureMap>,
+    /// The spell this firing is about, display form with the rank INTACT, refined to the candidate
+    /// that actually satisfied the alert (JOS-84). `None` when the family names none.
+    pub spell: Option<String>,
+    /// The deadline an EARLY WARNING was early for — the watched row's stated end. `None` on every
+    /// ordinary fire, which warns about nothing.
+    pub due_at: Option<i64>,
+}
+
+/// EVERYTHING ONE MATCH PRODUCED, before any clock has had its say.
+///
+/// It exists because the three answers are ONE answer: recomputing the captures after the fact would
+/// mean running the pattern a second time and hoping the second run agreed with the first, which is
+/// the argument `ConditionHit` makes app-side. It also keeps the arming path and the firing path
+/// reading from the same value — an early warning speaks the words its ARMING match took, and a
+/// signature that passed them separately would eventually pass one and forget the other.
+struct Firing {
+    /// The matched text: the raw log line, or a projection sentence for a break probe.
+    text: String,
+    captures: Option<CaptureMap>,
+    spell: Option<String>,
+}
+
+/// A condition that matched, and what its named groups captured — `ConditionHit`.
+///
+/// A struct rather than a bare `Option<CaptureMap>` because "did not match" and "matched, naming
+/// nothing" are different answers and the outer `Option` is the one that means the first. Nearly
+/// every condition in the wild is the second.
+struct Hit {
+    captures: Option<CaptureMap>,
 }
 
 /// One fire, as the module's published `history` ring records it — `AlertFireRecord`.
@@ -163,6 +204,14 @@ pub struct Rule {
     /// `normalizeEarlyWarnSec(def.earlyWarnSec)` — the offset in seconds, or `None` for the
     /// overwhelming majority of defs, which fire when their trigger matches (JOS-216/JOS-492).
     early_warn_sec: Option<i64>,
+    /// DOES THIS DEF'S SPOKEN PHRASE WRITE `{target}` (JOS-353) — the compile-time gate that keeps a
+    /// resolved target off every firing that never asked for one.
+    ///
+    /// COMPILED FROM THE PHRASE, NOT FROM THE TRIGGER, exactly as `autoTokensWanted` is: whether a
+    /// value is worth carrying is a question about what the def will SAY, and a def with no custom
+    /// phrase wants nothing. That is what keeps a frame byte-identical for the alerts that never
+    /// asked — which is nearly all of them.
+    wants_target: bool,
     /// THE BREAK KINDS THIS DEF WATCHES FOR, empty unless its trigger IS an ending (JOS-235).
     ///
     /// Computed at COMPILE time even though the TS recomputes it per tick, because it is a pure
@@ -296,20 +345,55 @@ fn accepts(field: &Field, text: &str, folds: bool) -> bool {
             .is_some_and(|k| spell_canon_key(text) == *k)
 }
 
-/// Whether ONE compiled `where` field accepts `ev`.
+/// Whether ONE compiled `where` field accepts `ev`, AND WHAT IT CAPTURED.
 ///
 /// An ABSENT field is an immediate no-match, exactly as before — that is what keeps a
 /// `where:{spell:…}` written against a family with no `spell` field from being admitted. The
 /// candidate widening applies to the `spell` key and to nothing else.
-fn field_matches(ev: &Event, field: &Field) -> bool {
-    let Some(raw) = ev.get(&field.key) else {
-        return false;
-    };
+///
+/// CAPTURES COME FROM THE TEXT THIS MATCHER ACTUALLY TESTED, AND FROM NOWHERE ELSE — control 3 of
+/// the threat model, and the reason it is structural rather than a rule somebody has to remember:
+/// the only text reachable from here is the stringified value of the ONE field this `where` entry
+/// names, on the ONE event kind the trigger subscribed to. There is no path to another event, to
+/// another alert's firing, or to engine state.
+///
+/// The JOS-84 widening captures from the CANDIDATE NAME that satisfied the matcher, for the same
+/// reason `matched_spell_name` reports that name rather than the event's best-effort pick: the text
+/// the pattern matched is the text it named.
+fn field_matches(ev: &Event, field: &Field) -> Option<Hit> {
+    let raw = ev.get(&field.key)?;
     let folds = fold_reaches(field, ev);
-    if accepts(field, &field_text(raw), folds) {
-        return true;
+    let text = field_text(raw);
+    if accepts(field, &text, folds) {
+        return Some(captures_from(field, &text));
     }
-    field.key == "spell" && candidate_names(ev).iter().any(|n| accepts(field, n, folds))
+    // Only the `spell` key widens, and only when the event carries candidates (JOS-84).
+    if field.key != "spell" {
+        return None;
+    }
+    let hit = candidate_names(ev)
+        .into_iter()
+        .find(|n| accepts(field, n, folds))?;
+    Some(captures_from(field, &hit))
+}
+
+/// Run a matcher's OWN pattern over the text it just accepted, and bound what it named —
+/// `capturesFrom`.
+///
+/// A LITERAL MATCHER CAPTURES NOTHING, and that is the app's rule rather than a shortcut: a literal
+/// has no pattern, so it declares no names, so there is nothing for a token to resolve to. The rank
+/// fold rides inside `accepts` and reaches only literals, so a value accepted THROUGH the fold takes
+/// this same branch and names nothing either.
+fn captures_from(field: &Field, text: &str) -> Hit {
+    let Matcher::Pattern(re) = &field.matcher else {
+        return Hit { captures: None };
+    };
+    let Some(caps) = re.captures(text) else {
+        return Hit { captures: None };
+    };
+    Hit {
+        captures: harvest_captures(re, &caps),
+    }
 }
 
 /// Compile one PRIMITIVE trigger object into a matcher condition.
@@ -394,6 +478,14 @@ impl Rule {
             composite,
             conditions,
             early_warn_sec: normalize_early_warn_sec(def.get("earlyWarnSec")),
+            // `def.speech.phrase` — the app's own `AlertSpeech`. Read through the same `Option`
+            // chain every other field of a stored def is read through, because a def is the STORE's
+            // contract and this engine states nothing about its shape.
+            wants_target: wants_target_token(
+                def.get("speech")
+                    .and_then(|s| s.get("phrase"))
+                    .and_then(Value::as_str),
+            ),
             // `matcherAccepts` is `compileFieldMatch`'s question asked of a SPEC and a value, and it
             // is handed in rather than duplicated inside `alerts_early` — that file is the schedule
             // and this one is the matcher, and there is exactly one matcher.
@@ -401,22 +493,47 @@ impl Rule {
         })
     }
 
-    /// The matched TEXT if this alert's trigger matches `ev`, else `None`.
+    /// The matched TEXT and what it named, if this alert's trigger matches `ev`, else `None`.
     ///
     /// 'all' → every condition must match this ONE event (no cross-event windows, by design); an
     /// empty condition list cannot be satisfied meaningfully and is treated as no-match rather than
-    /// as a firehose. 'any' / 'single' → the first matching condition.
-    fn matches(&self, ev: &Event) -> Option<String> {
-        let hit = match self.composite {
+    /// as a firehose. Every condition matched, so every one of them is "the condition that matched"
+    /// and all their captures are in scope, first writer wins.
+    ///
+    /// 'any' / 'single' → the first matching condition, AND ITS CAPTURES ALONE. A later condition
+    /// that would also have matched is never evaluated, so it can never contribute a value the
+    /// firing did not actually match on — which is control 3 again, this time as a consequence of
+    /// short-circuiting rather than of a bound.
+    fn matches(&self, ev: &Event) -> Option<Hit> {
+        match self.composite {
             Composite::All => {
-                !self.conditions.is_empty()
-                    && self.conditions.iter().all(|c| condition_matches(c, ev))
+                if self.conditions.is_empty() {
+                    return None;
+                }
+                let mut captures = None;
+                for c in &self.conditions {
+                    let hit = condition_matches(c, ev)?;
+                    captures = merge_captures(captures, hit.captures);
+                }
+                Some(Hit { captures })
             }
-            Composite::Any | Composite::Single => {
-                self.conditions.iter().any(|c| condition_matches(c, ev))
-            }
-        };
-        hit.then(|| ev.raw().to_owned())
+            Composite::Any | Composite::Single => self
+                .conditions
+                .iter()
+                .find_map(|c| condition_matches(c, ev)),
+        }
+    }
+
+    /// EVERYTHING THIS RULE'S MATCH PRODUCED, resolved. `base` is the event's own best-effort spell,
+    /// computed ONCE per firing by the caller (fires are rare, but a resolve per compiled alert
+    /// would not be) and refined here PER ALERT, because for the shared-message families which name
+    /// is right depends on which alert matched (JOS-84).
+    fn firing(&self, ev: &Event, hit: Hit, base: Option<&str>, text: String) -> Firing {
+        Firing {
+            text,
+            captures: with_auto_captures(hit.captures, self.wants_target, ev),
+            spell: base.map(|b| matched_spell_name(self, ev, b)),
+        }
     }
 
     /// The cooldown clock this firing belongs to.
@@ -460,14 +577,31 @@ fn matcher_accepts(spec: &str, value: &str) -> bool {
     accepts(&compile_field("refresh", spec, ""), value, false)
 }
 
-fn condition_matches(cond: &Condition, ev: &Event) -> bool {
+fn condition_matches(cond: &Condition, ev: &Event) -> Option<Hit> {
     match cond {
         Condition::Event { kind, fields } => {
-            ev.kind() == kind && fields.iter().all(|f| field_matches(ev, f))
+            if ev.kind() != kind {
+                return None;
+            }
+            // EVERY field must match, and every one of them is "the field that matched", so all
+            // their names are in scope. First writer wins on a collision, which is source order.
+            let mut captures = None;
+            for f in fields {
+                let hit = field_matches(ev, f)?;
+                captures = merge_captures(captures, hit.captures);
+            }
+            Some(Hit { captures })
         }
-        // A raw condition tests `ev.raw` — the exact line, and the only text it ever sees.
-        Condition::Raw(re) => re.is_match(ev.raw()),
-        Condition::Never => false,
+        // A raw condition tests `ev.raw` — the exact line, and the only text it ever sees. The
+        // pattern carries no `g` flag, so running it a second time for its groups is stateless and
+        // cannot disagree with the test above; it is one call here precisely so it cannot.
+        Condition::Raw(re) => {
+            let caps = re.captures(ev.raw())?;
+            Some(Hit {
+                captures: harvest_captures(re, &caps),
+            })
+        }
+        Condition::Never => None,
     }
 }
 
@@ -533,15 +667,20 @@ impl RuleSet {
     pub fn fire(&mut self, ev: &Event, early: &mut EarlyWarnings) -> Vec<Fire> {
         let mut out = Vec::new();
         // Collected before the clocks are written because a rule borrow cannot outlive one.
-        let mut hits: Vec<(usize, String, String)> = Vec::new();
+        let mut hits: Vec<(usize, String, Hit)> = Vec::new();
         for (i, rule) in self.rules.iter().enumerate() {
-            if let Some(text) = rule.matches(ev) {
-                hits.push((i, rule.cooldown_key(ev), text));
+            if let Some(hit) = rule.matches(ev) {
+                hits.push((i, rule.cooldown_key(ev), hit));
             }
         }
-        for (i, key, text) in hits {
+        // THE EVENT'S OWN SPELL IS RESOLVED ONCE PER FIRING and refined per alert below — and it is
+        // resolved LAZILY, after the loop above found something, so an event that matched no rule
+        // (which is nearly every event) pays nothing for a field only a match can use.
+        let base = (!hits.is_empty()).then(|| firing_spell(ev)).flatten();
+        for (i, key, hit) in hits {
             let rule = &self.rules[i];
-            if early_warn_takes_it(rule, ev, &key, &text, early) {
+            let firing = rule.firing(ev, hit, base.as_deref(), ev.raw().to_owned());
+            if early_warn_takes_it(rule, ev, &key, &firing, early) {
                 continue;
             }
             if self.on_cooldown(&key, rule.cooldown_ms, ev.ts()) {
@@ -551,11 +690,16 @@ impl RuleSet {
                 at: ev.ts(),
                 rule: rule.name.clone(),
                 sound: rule.sound.clone(),
-                message: text.clone(),
+                message: firing.text.clone(),
+                captures: firing.captures,
+                spell: firing.spell,
+                // AN ORDINARY FIRE WARNS ABOUT NOTHING. It IS the thing happening, so there is no
+                // deadline to count down to and a field carrying one would have no reader.
+                due_at: None,
             };
             let id = rule.id.clone();
             self.note_fire(&key, ev.ts());
-            self.record(&id, ev.ts(), text);
+            self.record(&id, ev.ts(), firing.text);
             out.push(fire);
         }
         out
@@ -592,6 +736,14 @@ impl RuleSet {
             rule: due.fired.rule.clone(),
             sound: due.fired.sound.clone(),
             message: due.fired.message.clone(),
+            // THE WORDS THE ARMING MATCH TOOK, carried across the wait. A warning armed a minute ago
+            // speaks the mob it armed ON, not whatever the world looks like now — re-resolving at
+            // delivery would be a second answer to a question the match already answered.
+            captures: due.fired.captures.clone(),
+            spell: due.fired.spell.clone(),
+            // THE DEADLINE THIS WAS EARLY FOR. `at` is when the sound was made; this is the row's
+            // stated end, so the gap between them IS the lead time the user configured.
+            due_at: Some(due.due_at),
         })
     }
 
@@ -725,7 +877,7 @@ fn early_warn_takes_it(
     rule: &Rule,
     ev: &Event,
     cooldown_key: &str,
-    text: &str,
+    firing: &Firing,
     early: &mut EarlyWarnings,
 ) -> bool {
     let Some(sec) = rule.early_warn_sec else {
@@ -738,7 +890,7 @@ fn early_warn_takes_it(
             cooldown_key: cooldown_key.to_owned(),
             subject: early_warn_subject(ev, &names),
             ts: ev.ts(),
-            fired: rule.armed_fire(text.to_owned()),
+            fired: rule.armed_fire(firing),
         });
         return true;
     }
@@ -746,15 +898,23 @@ fn early_warn_takes_it(
 }
 
 impl Rule {
-    /// The firing this rule would make, carrying the text that matched. The alert's id rides along
-    /// because a warning re-reads its own def when it comes due; the other three fields are the fire
-    /// frame's, resolved here exactly as [`RuleSet::fire`] resolves them.
-    fn armed_fire(&self, message: String) -> ArmedFire {
+    /// The firing this rule would make, carrying everything the match produced. The alert's id rides
+    /// along because a warning re-reads its own def when it comes due; the rest are the fire frame's
+    /// own fields, resolved here exactly as [`RuleSet::fire`] resolves them.
+    ///
+    /// THE WORDS ARE FROZEN AT THE ARM, which is the whole reason they travel on this struct rather
+    /// than being recomputed at delivery: the warning speaks about the landing it armed on, and that
+    /// event is gone by the time the heartbeat fires. Cloned rather than moved because the caller
+    /// still owns the firing — a break-family def arms nothing here and its `Firing` goes on to be
+    /// the fire itself.
+    fn armed_fire(&self, firing: &Firing) -> ArmedFire {
         ArmedFire {
             alert_id: self.id.clone(),
             rule: self.name.clone(),
             sound: self.sound.clone(),
-            message,
+            message: firing.text.clone(),
+            captures: firing.captures.clone(),
+            spell: firing.spell.clone(),
         }
     }
 }
@@ -785,10 +945,19 @@ impl BreakWatchers for RuleSet {
     /// radius are documented on `alerts_early::break_probes`.
     ///
     /// The firing it hands back is built exactly like an ordinary one: the same matched text the
-    /// matcher reports (here a projection sentence, because no line has been printed) and the same
-    /// cooldown clock the REAL break event would have chosen — so `cooldownScope: 'target'` still
-    /// means one clock per mob, and the families whose break line names a `mob` rather than a
-    /// `target` degrade to the alert-level clock here in exactly the way they already do there.
+    /// matcher reports (here a projection sentence, because no line has been printed), THE SAME
+    /// CAPTURES its own named groups took from the fields it tested, and the same cooldown clock the
+    /// REAL break event would have chosen — so `cooldownScope: 'target'` still means one clock per
+    /// mob, and the families whose break line names a `mob` rather than a `target` degrade to the
+    /// alert-level clock here in exactly the way they already do there.
+    ///
+    /// THE PROBE'S HYPOTHETICAL EVENT CARRIES THE ROW'S SUBJECT, so an early warning speaks the same
+    /// mob name the real break would have — `{target}` resolves off the probe exactly as it would
+    /// have off the line that never got printed.
+    ///
+    /// AND THE SPOKEN SPELL IS THE PROBE'S — the rank-less name the wear-off line prints — for the
+    /// same reason `matched_spell_name` reports the candidate that satisfied the def rather than the
+    /// event's best-effort pick: the name the alert matched on is the name it should say.
     fn probe_break(
         &self,
         alert_id: &str,
@@ -798,10 +967,16 @@ impl BreakWatchers for RuleSet {
         let rule = self.rules.iter().find(|r| r.id == alert_id)?;
         for kind in &rule.break_kinds {
             for p in break_probes(*kind, row, now_ms) {
-                let Some(text) = rule.matches(&p.ev) else {
+                let Some(hit) = rule.matches(&p.ev) else {
                     continue;
                 };
-                return Some((rule.armed_fire(text), rule.cooldown_key(&p.ev)));
+                let text = p.ev.raw().to_owned();
+                let firing = Firing {
+                    text,
+                    captures: with_auto_captures(hit.captures, rule.wants_target, &p.ev),
+                    spell: Some(p.spell.clone()),
+                };
+                return Some((rule.armed_fire(&firing), rule.cooldown_key(&p.ev)));
             }
         }
         None
@@ -866,6 +1041,14 @@ mod tests {
                 rule: "Charm break".to_owned(),
                 sound: "classic/ding".to_owned(),
                 message: "Your charm spell has worn off.".to_owned(),
+                // THE THREE SPEECH FIELDS ARE ABSENT, AND THAT IS THE CLAIM (JOS-500). This def
+                // declares no capture group, writes no `{target}` phrase and matched an `uncharm`,
+                // which is a family that names no spell; it carries no offset either. So the frame
+                // it produces is byte-identical to the one it produced before the fields existed,
+                // which is what "nearly every real firing still sends none of them" has to mean.
+                captures: None,
+                spell: None,
+                due_at: None,
             }]
         );
     }
@@ -1137,5 +1320,179 @@ mod tests {
         assert!(raw
             .fire_no_offset(&ev(r#"{"kind":"unknown","seq":1,"ts":1,"raw":"a rat"}"#))
             .is_empty());
+    }
+
+    // ── WHAT THE FIRING SAYS (JOS-500, ruling 27) ──────────────────────────────────────────────
+    //
+    // Everything above asks whether a line makes a sound. These ask what that sound may SAY, which
+    // is the half the cutover dropped and the owner made release-gating. The claims are the
+    // retired evaluator's own, restated against this one.
+
+    /// A def with a phrase, so `{target}` is WANTED. Everything else is `def`'s.
+    fn speaking_def(trigger: Value, phrase: &str) -> Value {
+        let mut d = def(trigger);
+        d["speech"] = json!({ "mode": "custom", "phrase": phrase });
+        d
+    }
+
+    /// A `raw` condition captures from `ev.raw` — the exact line it just tested, and the only text
+    /// it ever sees. "Puma on Fail" is the feature's own worked example.
+    #[test]
+    fn a_declared_group_rides_out_on_the_firing() {
+        let mut rules = set(vec![def(json!({
+            "type": "raw",
+            "regex": r"^\[[^\]]*\] (?<player>[A-Za-z' `]{1,48}) growls with the spirit of the puma\."
+        }))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"spellEmote","seq":1,"ts":1000,"raw":"[Sat Aug 01 18:38:10 2026] Fail growls with the spirit of the puma."}"#,
+        ));
+        assert_eq!(fires.len(), 1);
+        let captures = fires[0].captures.as_ref().expect("the group it declared");
+        assert_eq!(captures.get("player").map(String::as_str), Some("Fail"));
+    }
+
+    /// An `event` condition's `/regex/` matcher captures from the value of the ONE field it tested,
+    /// on the ONE kind the trigger names — control 3, structurally.
+    #[test]
+    fn a_where_matcher_captures_from_the_field_it_tested() {
+        let mut rules = set(vec![def(json!({
+            "type": "event",
+            "kind": "cc",
+            "where": { "mob": "/^(?<mob>a \\w+ puma)$/" }
+        }))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"cc","seq":1,"ts":1000,"raw":"a young puma is mesmerized.","mob":"a young puma","spell":"Mesmerization III"}"#,
+        ));
+        let captures = fires[0].captures.as_ref().expect("the field's own group");
+        assert_eq!(
+            captures.get("mob").map(String::as_str),
+            Some("a young puma")
+        );
+        // …and a LITERAL matcher declares no names, so it captures nothing.
+        let mut literal = set(vec![def(
+            json!({"type":"event","kind":"cc","where":{"mob":"a young puma"}}),
+        )]);
+        assert_eq!(
+            literal
+                .fire_no_offset(&ev(
+                    r#"{"kind":"cc","seq":2,"ts":2000,"raw":"a young puma is mesmerized.","mob":"a young puma"}"#
+                ))[0]
+                .captures,
+            None
+        );
+    }
+
+    /// THE ONE TOKEN THE APP FILLS IN WITHOUT A GROUP (JOS-353), and the gate that keeps it off every
+    /// firing that never asked: the same def with and without `{target}` in its phrase.
+    #[test]
+    fn the_target_token_rides_only_when_the_phrase_writes_it() {
+        const LINE: &str = r#"{"kind":"cc","seq":1,"ts":1000,"raw":"a young puma is mesmerized.","mob":"a young puma"}"#;
+        let mut asked = set(vec![speaking_def(
+            json!({"type":"event","kind":"cc"}),
+            "Mez broke on {target}",
+        )]);
+        let captures = asked.fire_no_offset(&ev(LINE))[0]
+            .captures
+            .clone()
+            .expect("the auto token");
+        assert_eq!(
+            captures.get("target").map(String::as_str),
+            Some("a young puma")
+        );
+
+        // THE SAME DEF WITH NO PHRASE CARRIES NOTHING — a frame byte-identical to the one it sent
+        // before this field existed, which is what keeps the common case common.
+        let mut silent = set(vec![def(json!({"type":"event","kind":"cc"}))]);
+        assert_eq!(silent.fire_no_offset(&ev(LINE))[0].captures, None);
+    }
+
+    /// The sentinels are the parser's vocabulary, not names. "Clarity wore off self" is nobody's
+    /// sentence.
+    #[test]
+    fn a_self_form_speaks_english() {
+        let mut rules = set(vec![speaking_def(
+            json!({"type":"event","kind":"buffFade"}),
+            "{target} lost it",
+        )]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"buffFade","seq":1,"ts":1000,"raw":"Your Clarity spell has worn off.","spell":"Clarity"}"#,
+        ));
+        let captures = fires[0].captures.as_ref().expect("the self form");
+        assert_eq!(captures.get("target").map(String::as_str), Some("you"));
+    }
+
+    /// THE SPELL, RANK INTACT. Stripping is the speaker's job, and a consumer that wants the rank
+    /// must still be able to see it.
+    #[test]
+    fn the_firing_names_its_spell_with_the_rank_left_on() {
+        let mut rules = set(vec![def(json!({"type":"event","kind":"castBegin"}))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"castBegin","seq":1,"ts":1000,"raw":"You begin casting Mesmerization III.","spell":"Mesmerization III"}"#,
+        ));
+        assert_eq!(fires[0].spell.as_deref(), Some("Mesmerization III"));
+    }
+
+    /// JOS-84: once a Shiftless Deeds alert is allowed to fire on a line whose `spell` field says
+    /// "Forlorn Deeds", speaking "Forlorn Deeds" would be a second wrong answer wearing the first
+    /// one's clothes. The name reported is the candidate that satisfied the def's OWN matcher.
+    #[test]
+    fn the_spell_reported_is_the_one_the_alert_matched_on() {
+        let mut rules = set(vec![def(json!({
+            "type": "event",
+            "kind": "buffApply",
+            "where": { "spell": "Shiftless Deeds" }
+        }))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"buffApply","seq":1,"ts":1000,"raw":"King Tranix slows down.","spell":"Forlorn Deeds","candidates":["Forlorn Deeds","Shiftless Deeds"],"target":"King Tranix"}"#,
+        ));
+        assert_eq!(fires[0].spell.as_deref(), Some("Shiftless Deeds"));
+    }
+
+    /// A family that names no spell says so, rather than inventing one. The speaker falls back to
+    /// the alert's own name, which is a true statement about what fired (world-model law 1).
+    #[test]
+    fn a_family_with_no_spell_names_none() {
+        let mut rules = set(vec![def(json!({"type":"event","kind":"uncharm"}))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"uncharm","seq":1,"ts":1000,"raw":"Your charm spell has worn off.","mob":"a rat"}"#,
+        ));
+        assert_eq!(fires[0].spell, None);
+    }
+
+    /// The values are DEFANGED BEFORE THEY REACH THE FRAME — control 1 at the boundary it protects,
+    /// asked of the whole evaluator rather than of the sanitizer alone. The line carries an OSC 52
+    /// (which writes the operator's clipboard) and a BiDi override (which makes one string render as
+    /// another); neither survives, and the name does.
+    #[test]
+    fn an_attacker_influenced_capture_arrives_defanged() {
+        let mut rules = set(vec![def(json!({
+            "type": "raw",
+            "regex": "^(?<who>.+) tells you"
+        }))]);
+        // Built with ESCAPES rather than typed: `rustc` itself refuses a BiDi override inside a
+        // string literal (`text_direction_codepoint_in_literal`), which is this very defence one
+        // layer down.
+        let hostile = format!(
+            "{esc}]52;c;cGF5bG9hZA=={bel}Ro{bidi}wel tells you hello",
+            esc = '\u{1B}',
+            bel = '\u{7}',
+            bidi = '\u{202E}'
+        );
+        let fires = rules.fire_no_offset(&Event::from_value(json!({
+            "kind": "tell", "seq": 1, "ts": 1000, "raw": hostile
+        })));
+        let captures = fires[0].captures.as_ref().expect("a capture");
+        assert_eq!(captures.get("who").map(String::as_str), Some("Rowel"));
+    }
+
+    /// AN ORDINARY FIRE WARNS ABOUT NOTHING, so it carries no deadline. The early-warning half is
+    /// proven against the module's own heartbeat in `alerts.rs`, where there is a clock to measure.
+    #[test]
+    fn an_ordinary_fire_carries_no_deadline() {
+        let mut rules = set(vec![def(json!({"type":"event","kind":"uncharm"}))]);
+        let fires = rules.fire_no_offset(&ev(
+            r#"{"kind":"uncharm","seq":1,"ts":1000,"raw":"Your charm spell has worn off.","mob":"a rat"}"#,
+        ));
+        assert_eq!(fires[0].due_at, None);
     }
 }

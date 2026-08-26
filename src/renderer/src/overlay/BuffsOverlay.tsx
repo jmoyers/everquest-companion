@@ -37,7 +37,7 @@
 // holds; it asks main for nothing.
 
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BuffsSnap, ModuleDelta } from '@shared/types'
+import { MODULE_WORLD_CHANGED, type BuffsSnap, type ModuleChanged } from '@shared/types'
 import {
   type BuffTimerRow,
   type BuffTimersSnap,
@@ -154,26 +154,48 @@ function useWholeSnapshot<S>(moduleId: string, empty: S): { state: S; hydrations
 
   useEffect(() => {
     let alive = true
-    const hydrate = (): void => {
+    /**
+     * `rebuilt` SAYS WHICH KIND OF READ THIS IS, and getting it wrong costs the drop flash (JOS-499).
+     *
+     * EVERY CHANGE IS A RE-READ NOW. Before the fold was deleted this hook rode `module:delta` for
+     * increments and re-hydrated only when the WORLD changed, so "we asked again" and "the model
+     * moved" were two different code paths and `hydrations` could simply count the former. With one
+     * channel they are the same call, and a counter that bumped on all of them told `useDropFlash`
+     * that every change was a rebuild — so `timerDrops` said nothing, every time, and a buff
+     * dropping never flashed. MEASURED: `buffs-overlay.e2e.mts` caught it on the first run.
+     *
+     * So the DISTINCTION MOVES INTO THE CALL rather than being inferred from the fact of a read:
+     * a cursor is the engine saying THE MODEL MOVED (the increment, in its new shape) and must not
+     * count; `MODULE_WORLD_CHANGED` and `onCharacter` are the two real rebuilds and must.
+     */
+    const hydrate = (rebuilt: boolean): void => {
       void window.eqOverlay.getModuleSnapshot<S>(moduleId).then((snap) => {
         if (!alive || !snap) return
         seqRef.current = snap.seq
         setState(snap.state)
-        setHydrations((n) => n + 1)
+        if (rebuilt) setHydrations((n) => n + 1)
       })
     }
-    hydrate()
-    const off = window.eqOverlay.onModuleDelta<S>((d: ModuleDelta<S>) => {
-      if (d.moduleId !== moduleId) return
-      if (d.seq <= seqRef.current) {
-        if (d.seq < seqRef.current) hydrate()
+    // The FIRST read is a rebuild by definition: nothing was held before it.
+    hydrate(true)
+    // THE INCREMENT IS A CURSOR NOW (JOS-499 item 7), not a delta. Main's own fold is deleted, so
+    // there is no `module:delta` to ride: `module:changed` carries a name and a revision and no
+    // state at all, and the answer to it is the read above. This module is a WHOLE-SNAPSHOT one, so
+    // the change is smaller than it looks — a delta here was already a replace.
+    const off = window.eqOverlay.onModuleChanged((c: ModuleChanged) => {
+      // The world that answers reads changed hands: nothing held is trustworthy, ask again.
+      if (c.moduleId === MODULE_WORLD_CHANGED) {
+        hydrate(true)
         return
       }
-      seqRef.current = d.seq
-      setState(d.delta)
+      if (c.moduleId !== moduleId) return
+      if (c.seq <= seqRef.current) return
+      // A CURSOR IS THE MODEL MOVING, not a rebuild — see `hydrate`. This is the read whose result
+      // the drop flash is entitled to compare against what it was holding.
+      hydrate(false)
     })
     const offChar = window.eqOverlay.onCharacter(() => {
-      hydrate()
+      hydrate(true)
     })
     return () => {
       alive = false

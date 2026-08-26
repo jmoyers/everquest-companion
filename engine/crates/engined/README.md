@@ -439,9 +439,33 @@ assertion every case makes is that it refuses nothing.
 **The engine measures its own serve path** (owner ruling 19, foundations). `src/views/meter.rs` counts
 fold-to-frame latency per source — from the instant the ingest folded the event to the instant the
 frame reached the outbox — and diff sizes per subscription, in ops and in the frame's own serialized
-bytes. A stderr line at a 10 s cadence, forced once when the fold lands. The `perf.budgets` surface is
-a later ticket; what exists now is the measurement, so that surface has numbers to serve rather than a
-place to put numbers nobody took.
+bytes. A stderr line at a 10 s cadence, forced once when the fold lands.
+
+**And since JOS-502 it serves them, judged** — surface 8 complete. `src/budgets.rs` holds the two
+ceilings `tests/budget.rs` asserts in CI and renders a verdict against the generation that is actually
+running, so the in-app panel and a bug report state what THIS machine did rather than what a runner
+did. The rows are render-ready (ruling 4 applied to a diagnostic): the comparison is arithmetic, the
+two budgets are in different units, and the caveat that keeps each number from being misread is prose —
+all three on this side of the wire, which also means a third budget ships without a renderer change.
+**The unmet G3 goal is stated in the fold-rate row itself**, because a pass sits on a floor an eighth
+below the measured rate and a row that let that read as the goal reached would be lying by omission.
+
+**`views::Timeline` is the history behind the totals.** A fixed-capacity ring — `TIMELINE_CAPACITY`
+moments at `TIMELINE_CADENCE`, five minutes — sampled off the serve beat, where every figure is an
+INTERVAL rather than a running total: `perf.snapshot` already answers the cumulative question, and a
+list of ever-growing totals makes a reader subtract against a baseline he cannot see. Three properties
+are load-bearing and each has its own unit test: **the bound** (an engine up for a week costs what one
+up for a minute costs, and the oldest moment is DROPPED rather than summarised into a subtler
+accumulator); **a quiet window is recorded as quiet** (a ring that dropped its silent samples would
+compress a lull into no space and make the busy moments either side look adjacent); and **it reads a
+clock it is given** (process uptime, passed in — no wall clock near a performance answer, no timestamp
+that says when a person played, and every ring test is arithmetic with nothing sleeping in it).
+
+Frames and bytes are cumulative counters the ring subtracts against its own last reading, so the serve
+path pays nothing for them. A MAXIMUM is not invertible — a cumulative worst of 56 ms says nothing
+about which window set it — so the windowed extreme is the one field accumulated beside the counters
+and drained by `Meter::take_window`. The three drains in `views/meter.rs` are independent by design: a
+timeline sample can never steal the interval a stderr line was about to print.
 
 ## Which clock a combat answer is taken by
 

@@ -35,10 +35,17 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// THE BUDGETS THIS BUILD ENFORCES (owner ruling 19, JOS-502) — the definitions `tests/budget.rs`
+/// asserts in CI, served live off the generation that is running so the panel and a bug report
+/// state what THIS machine did.
+mod budgets;
 mod concard;
 mod conn;
 mod foldsink;
 mod ingest;
+/// WHICH CHARACTERS THIS INSTALL HAS (owner ruling 21). The app pushes the directory; this is the
+/// scan of it, and the one piece of this process that reads a log file's NAME rather than its bytes.
+mod logs;
 mod ops;
 mod search;
 mod spawn;

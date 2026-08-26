@@ -20,9 +20,9 @@
 // kills would be a lie in the other direction.
 
 import { useMemo } from 'react'
-import type { ProgressionDelta, ProgressionKill, ProgressionSnap } from '@shared/types'
+import type { ProgressionKill, ProgressionSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 
 /**
  * How many rows the feed renders. A GLANCE surface; the Leveling tab is the analysis. The main
@@ -32,6 +32,6 @@ export const KILL_FEED_CAP = 25
 
 /** The feed's rows, NEWEST FIRST. The ring serves oldest→newest, so the tail is reversed. */
 export function useRecentKills(): ProgressionKill[] {
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
   return useMemo(() => prog.recentKills.slice(-KILL_FEED_CAP).reverse(), [prog])
 }

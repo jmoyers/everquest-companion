@@ -2,27 +2,32 @@
 // readShim.ts — WHICH WORLD ANSWERS A READ, AND WHAT HAPPENS WHEN THE ENGINE CANNOT (JOS-489).
 // ============================================================================
 //
-// THE COMPAT SHIM, PHASE 1. Three fold-derived read IPCs — `module:getSnapshot`, `combat:snapshot`,
-// `combat:searchFights` — grow a second arm that asks the ENGINE instead of this process's fold.
-// The flag `EQC_ENGINE_SERVE=1` (meaningful only beside `EQC_ENGINE=1`) decides, PER CALL, which
-// arm answers. This file is the decision and the fallback; `serveShim.ts` is the wiring that gives
-// it a real connection, and `src/main/ipc/world.ts` is where the two arms sit side by side.
+// THE COMPAT SHIM. Three fold-derived read IPCs — `module:getSnapshot`, `combat:snapshot`,
+// `combat:searchFights` — are answered by asking the ENGINE. This file is the decision and what
+// happens when the engine cannot answer; `serveShim.ts` is the wiring that gives it a real
+// connection, and `src/main/ipc/world.ts` is where the handlers sit.
 //
-// ── THE ONE LAW: THE SHIM MUST NEVER MAKE THE APP WORSE THAN THE FLAG-OFF WORLD ────────────────
+// ── THERE IS NO SECOND ARM ANY MORE (JOS-499, and JOS-501 made this page say so) ────────────────
 //
-// Everything below follows from it. Every way the engine can fail to answer — no engine on this
-// launch, a connection that is not ready, an engine attached to some other log, an engine still
-// folding, a refusal, a silence, an answer whose shape is not the answer — resolves to THE SAME
-// CALL THE OLD PATH WOULD HAVE MADE. A caller of these three channels can therefore never see an
-// error the TypeScript arm would not have thrown, because the engine arm's failures are not
-// propagated at all: they are counted and noted, and the TS arm answers.
+// This file was written when the flag `EQC_ENGINE_SERVE` chose PER CALL between the engine and this
+// process's own TypeScript fold, and its whole design was "the shim must never make the app worse
+// than the flag-off world". THE FLAGS AND THE FOLD ARE BOTH GONE. `own()` is still a thunk and still
+// the thing that answers when the engine cannot — but what it now carries is the EMPTY SHAPE each
+// channel owes its caller (`serveShim.ts`: `null` for a module snapshot, a `hydrating` meter, no
+// search hits, no `dropsSeen`), never a second opinion about the world.
+//
+// So the law is the plainer one the deletion release rests on: **A READ THAT CANNOT BE SERVED SAYS
+// SO, AND NEVER INVENTS.** Everything below still follows. Every way the engine can fail to answer —
+// no engine on this launch, a connection that is not ready, an engine attached to some other log, an
+// engine still folding, a refusal, a silence, an answer whose shape is not the answer — resolves to
+// the empty shape rather than to an error, so a caller of these three channels sees a blank surface
+// instead of a crash, and the reason is counted and named in the dev log.
 //
 // THAT INCLUDES SILENCE, which is the failure a promise-shaped arm adds that a synchronous handler
-// never had. The old handlers returned in microseconds; an engine that accepted a request and never
-// replied would hang the renderer's `invoke` forever, which is emphatically worse than the flag-off
-// world. So the engine arm carries a DEADLINE (`timeoutMs`) and the TS arm answers when it passes.
-// The bound is on the pathological case, not a budget: a healthy loopback round trip to a process
-// that has already folded the log is sub-millisecond.
+// never had. An engine that accepted a request and never replied would hang the renderer's `invoke`
+// forever. So the engine arm carries a DEADLINE (`timeoutMs`) and the empty shape answers when it
+// passes. The bound is on the pathological case, not a budget: a healthy loopback round trip to a
+// process that has already folded the log is sub-millisecond.
 //
 // ── "A SERVED ANSWER THAT WOULD BE A GUESS FALLS BACK LIKEWISE" ────────────────────────────────
 //
@@ -38,19 +43,24 @@
 //
 // These three channels are polled: a hydrating window asks for a dozen module snapshots at once and
 // the meter re-asks on a cadence. So a disconnected engine does not produce one dev-log line, it
-// produces hundreds a second, and a line per call would bury the very narration a developer flipped
-// the flag to read. Instead the reasons are TALLIED and one sentence is printed at most once per
+// produces hundreds a second, and a line per call would bury the very narration a developer opened
+// the log to read. Instead the reasons are TALLIED and one sentence is printed at most once per
 // window, naming every reason and how many calls each took. Nothing is dropped from the count — a
 // coalesced note that lied about how often it happened would be worse than no note.
+//
+// AND THE SENTENCE ITSELF HAS TO BE TRUE. It used to read "N reads answered by the app's own fold
+// instead of the engine", which was accurate until JOS-499 deleted that fold and then quietly
+// described the empty shape as a second world's answer — the most misleading thing a diagnostic can
+// do, because a developer reading it would go looking for the fold that disagreed. It now names what
+// actually happened: the read went UNSERVED and the caller got the empty shape.
 //
 // ── PURE, AND WITH NO APP IMPORTS ON PURPOSE ───────────────────────────────────────────────────
 //
 // It takes its connection, its clock, its log sink and its bounds as dependencies, so the whole
-// arm-selection and fallback matrix is a `node:test` unit driven by fake clients — connected,
+// decision-and-fallback matrix is a `node:test` unit driven by fake clients — connected,
 // disconnected, idle, answering, erroring — with no Electron, no socket and no Rust binary
-// (`tests/dataServerShim.test.mts`). That is the same split `parityProbe.ts` keeps from
-// `engineClientHost.ts`, for the same reason: the awkward cases are the point, and they are
-// impossible to stage against a real engine.
+// (`tests/dataServerShim.test.mts`). The awkward cases are the point, and they are impossible to
+// stage against a real engine.
 
 import type { ParamsFor, RequestOp, ResultFor } from '../../shared/dataServer/ops'
 
@@ -62,7 +72,7 @@ import type { ParamsFor, RequestOp, ResultFor } from '../../shared/dataServer/op
  * three are what a request that WAS sent can come back as.
  */
 export type FallbackReason =
-  /** This launch has no engine client at all: `EQC_ENGINE` off, no binary, or the engine died. */
+  /** This launch has no engine client at all: no binary on this checkout, or the engine died. */
   | 'noClient'
   /** There is a client, but its connection is not `ready` — connecting, failed or closed. */
   | 'notConnected'
@@ -110,7 +120,7 @@ export interface ShimDeps {
   /** Where the coalesced sentence goes. */
   note: (line: string) => void
   now: () => number
-  /** How long the engine arm may take before the TS arm answers instead. */
+  /** How long the engine may take before the empty shape answers instead. */
   timeoutMs: number
   /** How often the coalesced note may be printed, at most. */
   noteEveryMs: number
@@ -125,11 +135,13 @@ export interface ShimDeps {
 /** What `world.ts` calls. One method per shape of question, plus the two the probe seam needs. */
 export interface ReadShim {
   /**
-   * ASK THE ENGINE, AND FALL BACK TO THE APP'S OWN FOLD FOR ANY REASON AT ALL.
+   * ASK THE ENGINE, AND FALL BACK TO THE EMPTY SHAPE FOR ANY REASON AT ALL.
    *
    * `project` turns the served result into the answer this channel owes its caller, or returns
-   * `null` to say the reply was not an answer (see the header). `own` is the TS arm — a thunk, so
-   * it is not run at all when the engine served, and so its cost is not paid twice.
+   * `null` to say the reply was not an answer (see the header). `own` carries THE EMPTY SHAPE this
+   * channel owes a caller it cannot answer — it is a thunk so it is not built at all when the
+   * engine served. It was the TypeScript arm until JOS-499 deleted that fold; nothing behind it
+   * folds anything now, and the note this file prints says so.
    *
    * `null` IS RESERVED FOR "NOT AN ANSWER", even where `T` is itself nullable — which the module
    * channel's is, since `registry.snapshot` answers `null` for an id this build does not carry.
@@ -189,8 +201,8 @@ function describe(err: unknown): string {
  * THE TALLY. Reasons and their counts since the last printed sentence, plus when that was.
  *
  * `lastAt` starts BEFORE ANY CLOCK, so the FIRST fallback of a launch is printed immediately: a
- * developer who flipped the flag and got nothing served wants to know within the second, not after
- * a window they did not know was running. Negative infinity rather than zero because the property
+ * developer looking at a blank surface wants to know why within the second, not after a window
+ * they did not know was running. Negative infinity rather than zero because the property
  * wanted is "no window has ever elapsed", and zero only says that to a clock whose epoch is far
  * away — which `Date.now()` is and a test's fake clock is not.
  */
@@ -204,8 +216,8 @@ function flush(deps: ShimDeps, tally: NoteTally): void {
   const parts = Array.from(tally.counts, ([why, n]) => `${REASON_PHRASE[why]} ×${String(n)}`)
   const total = Array.from(tally.counts.values()).reduce((a, b) => a + b, 0)
   deps.note(
-    `data-server shim: ${String(total)} read${total === 1 ? '' : 's'} answered by the app's own ` +
-      `fold instead of the engine — ${parts.join(', ')}`
+    `data-server shim: ${String(total)} unserved read${total === 1 ? '' : 's'} ` +
+      `answered with the empty shape — ${parts.join(', ')}`
   )
   tally.counts.clear()
   tally.lastAt = deps.now()

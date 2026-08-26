@@ -51,7 +51,6 @@ import {
 } from '../shared/conCard'
 import type { ConsiderEvent } from '../shared/logEvents'
 import { localMobEntry } from './mobLookup'
-import { considerModule } from './pipeline'
 import { resistProfileDeps, servedMobLevel, type ServedMobLevel } from './ipc/resist'
 import { mobResistProfile } from './resist/profile'
 import { spellTable } from './resist/spellTable'
@@ -283,7 +282,7 @@ export function noteConCardClosed(input: unknown, now = Date.now()): void {
  * feature: the consider module is where a `/con` becomes a fact, and this file is where a fact
  * becomes a card. Called from `ipc/index.ts` beside the other producer registrations.
  */
-export function registerConCardIpc(engineDrawsCards: () => boolean): void {
+export function registerConCardIpc(): void {
   // WHO DRAWS THE CARD, ASKED PER `/con` (JOS-496, boundary verdict 2).
   //
   // THE HOOK IS STILL INSTALLED, AND THE FIRST CUT OF THIS DID NOT INSTALL IT. That version read
@@ -315,10 +314,13 @@ export function registerConCardIpc(engineDrawsCards: () => boolean): void {
   //
   // THE CLOSE CHANNEL IS REGISTERED IN BOTH WORLDS, because the suppression it feeds is app-side in
   // both (see `openCard`) — the engine has no idea what a re-con is and by design never will.
-  considerModule.setConCardHook((ev, zone) => {
-    if (engineDrawsCards()) return
-    noteConsider(ev, zone)
-  })
+  // THE TS HOOK IS GONE (JOS-499, boundary verdict 2 completed). `considerModule.setConCardHook`
+  // was the fold calling SYNCHRONOUSLY INTO ELECTRON from inside itself — the census finding the
+  // verdict exists to resolve — and it drew the card whenever the engine was not going to. The
+  // engine emits `world.conCard` fully resolved now and `dataServer/conCardServe.ts` opens the
+  // window, so there is one producer and the predicate this function takes has one honest use
+  // left: refusing to draw twice. It is kept as a parameter because `ipc/index.ts` still owns
+  // the readiness question and the close channel below is registered in every world.
   ipcMain.on(IPC.conCardClosed, (_e, key: unknown) => {
     try {
       noteConCardClosed(key)

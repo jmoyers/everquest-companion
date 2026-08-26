@@ -19,6 +19,11 @@
 //! the two SHARE their cast anchors and their learner, which is the whole of JOS-140.
 
 pub mod alerts;
+/// The alerts module's SPEECH half (JOS-500, ruling 27) — `shared/alertCaptures.ts` plus
+/// `shared/alertTargets.ts`, together because both answer "what may this firing SAY" and both are
+/// enforcement points of one threat model. It is what turns the three fields the fire frame lost at
+/// the cutover back into words the app can speak.
+pub mod alerts_captures;
 /// The alerts module's SCHEDULE half (JOS-492) — `shared/earlyWarning.ts` plus
 /// `main/modules/alertsEarlyWarning.ts`, together because over there the split is an Electron
 /// boundary (the alert EDITOR asks the same questions and cannot import `main/`) and here there is

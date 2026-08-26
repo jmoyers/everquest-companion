@@ -49,6 +49,51 @@
  * WHY IT NEVER TAKES THE SCREEN: `EQ_E2E=1` (src/main/e2e.ts) shows no window, skips the
  * single-instance lock, and points `userData` at a throwaway temp dir per launch.
  *
+ * ── KNOWN FAILURE SINCE JOS-499, AND IT IS INFRASTRUCTURE RATHER THAN THIS SPEC ────────────────
+ *
+ * THE ROSTER IS SERVED NOW. `useBossKills` builds a status per target from the `kills` module
+ * snapshot; a null snapshot yields no statuses and therefore NO CARDS, which is what every
+ * assertion below reads as an empty roster. The snapshot is null until the ENGINE has folded the
+ * log and gone live.
+ *
+ * AND THIS SPEC LAUNCHES ON THE REAL INSTALL — no staged fixture, deliberately, because the
+ * portrait assertions need the game's own UI files. So what the engine must fold before the first
+ * card can be drawn is the OWNER'S WHOLE LOG, twice (two launches against one userData, the second
+ * proving the preference survived a restart).
+ *
+ * ── THE MEASUREMENT, AND WHAT IT ACTUALLY DIAGNOSED (JOS-501) ──────────────────────────────────
+ *
+ * This spec used to be quarantined in `run-all.mts` with a 900 s cap and a slot to itself, because
+ * the harness built the engine in DEBUG:
+ *
+ *   debug    the go-live sentence had NOT arrived at 900 s. A timeout, not a duration.
+ *   release  52.5 s per fold; green end to end in 145.5 s.
+ *
+ * JOS-501 made `buildEngineIfStale` build `--release` and had the harness hand the app that binary
+ * outright, so both the cap and the quarantine are gone.
+ *
+ * BUT THE RELEASE ENGINE ONLY MADE THIS SPEC FINISHABLE — it did not make it pass. On the first
+ * release run two roster assertions still read ZERO, and the reason is the trap this file's own
+ * header describes: a step that settles on a card count is really settling on a WHOLE-LOG FOLD, and
+ * it was doing so through a 30 s per-step cap that knew nothing about one. `launchOnRealInstall`
+ * (engineSteps.mts) is the fix, and it belongs in a wait rather than in a cap — the suite's law is
+ * to wait for the CONDITION, and the condition is the app saying it is serving from the engine. It
+ * is the counterpart `launchOnFixture` has had since JOS-499; a real-install launch simply never
+ * had a home to put the same wait in.
+ *
+ * IT WAS ALWAYS A DEV-HARNESS ARTIFACT, NOT A PRODUCT GAP: a user's app ships the release binary
+ * and waits nothing like the debug numbers above. The deletion release did not make the product
+ * slower — it moved the fold into a process the suite happened to build unoptimised.
+ *
+ * ── THE 400-LINE CEILING EXCEPTION (granted by the integrator, JOS-499) ────────────────────────
+ *
+ * This file is over `max-lines`, and the grant is recorded here rather than in the ratchet so the
+ * next reader finds the reason beside the code. What earns it is the pair of constraints above: the
+ * spec must launch on the REAL INSTALL (its portrait assertions read the game's own UI files, which
+ * no staged fixture carries) and it must launch TWICE (the restart claim IS a userData dir
+ * outliving a process). Neither can be shortened without deleting a claim, and the file is long
+ * because those claims are many rather than because it is doing anything twice.
+ *
  * Run: `npm run test:e2e -- bosses-week` (or node --import tsx this file).
  */
 import type { Page } from 'playwright-core'
@@ -65,7 +110,7 @@ import {
   settleStable,
   waitHydrated
 } from './appHarness.mjs'
-import { launchApp, mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
+import { launchOnRealInstall, mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { stepLoadoutSectionsAreHonest } from './loadoutSectionSteps.mjs'
 
 const NAV_BOSSES = '[data-testid="nav-bosses"]'
@@ -614,11 +659,11 @@ async function main(): Promise<void> {
   buildIfStale()
 
   // OWNED BY THIS SPEC, not by either launch: the restart assertion IS the dir outliving a
-  // process, so `launchApp` must not delete what it did not create.
+  // process, so the launch helper must not delete what it did not create.
   const userData = makeUserData()
   try {
     console.log('launch 1: a fresh install - the default, the ladder, and both round trips…')
-    const first = await launchApp({ userData })
+    const first = await launchOnRealInstall({ userData }, 'launch 1')
     let page: Page | null = null
     try {
       page = await mainWindow(first.app)
@@ -637,7 +682,7 @@ async function main(): Promise<void> {
     }
 
     console.log('launch 2: the SAME userData dir, a new process - This week must still be there…')
-    const second = await launchApp({ userData })
+    const second = await launchOnRealInstall({ userData }, 'launch 2')
     let restarted: Page | null = null
     try {
       restarted = await mainWindow(second.app)

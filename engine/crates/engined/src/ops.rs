@@ -20,17 +20,19 @@ use protocol::generated::{
     HelloOp, KnowledgeDefineRequestOp, KnowledgeDomain, KnowledgeItemRequestOp,
     KnowledgeMobRequestOp, KnowledgeRecord, KnowledgeResult, KnowledgeSearchRequestOp,
     KnowledgeSearchResult, KnowledgeSpellRequestOp, ModuleSnapshotRequestOp, ModuleSnapshotResult,
-    PerfSnapshotRequestOp, ProtocolError, Reply, ReplyKind, ReplyResult, RequestId, ResetMessage,
-    ResetMessageKind, ResistLevelSource, ResistLevelsRequestOp, ResistLevelsResult, ResistMobLevel,
-    RespawnConfirmAck, RespawnConfirmSightingRequestOp, RespawnDefineRequestOp,
-    RosterDefineRequestOp, SessionAttachRequestOp, SessionHealthRequestOp, SessionMarkAck,
-    SessionMarkAckStatus, SessionMarkAddRequestOp, SessionProgressRequestOp, SubscribeAck,
-    ViewSubscribeRequestOp, ViewUnsubscribeRequestOp,
+    PerfBudgetsRequestOp, PerfSnapshotRequestOp, PerfTimelineRequestOp, ProtocolError, Reply,
+    ReplyKind, ReplyResult, RequestId, ResetMessage, ResetMessageKind, ResistLevelSource,
+    ResistLevelsRequestOp, ResistLevelsResult, ResistMobLevel, RespawnConfirmAck,
+    RespawnConfirmSightingRequestOp, RespawnDefineRequestOp, RosterDefineRequestOp,
+    SessionAttachRequestOp, SessionHealthRequestOp, SessionMarkAck, SessionMarkAckStatus,
+    SessionMarkAddRequestOp, SessionProgressRequestOp, SubscribeAck, ViewSubscribeRequestOp,
+    ViewUnsubscribeRequestOp,
 };
 use protocol::generated::{
     ClientSpell, ClientSpellDebuff, ClientSpellDebuffAxis, ClientSpellSlot, ResistAxis,
     ResistSpellRequestOp, ResistSpellResult, SpellTableState,
 };
+use protocol::generated::{LogsListRequestOp, LogsListResult, LogsSetDirRequestOp};
 
 use crate::ingest::CombatOpts;
 use crate::world::{CombatAnswer, ListenerId, PerfAnswer, SnapshotAnswer, World};
@@ -243,6 +245,33 @@ impl Session {
             // panel that is far more useful than drawing it a row of zeros.
             ClientMessage::PerfSnapshotRequest(request) => match world.perf_snapshot() {
                 PerfAnswer::Perf(perf) => reply(request.id, ReplyResult::PerfSnapshotResult(*perf)),
+                PerfAnswer::Unavailable(why) => error(request.id, ErrorCode::Unavailable, why),
+            },
+
+            // PERF.BUDGETS AND PERF.TIMELINE — RULING 19's SURFACE 8, COMPLETED (JOS-502).
+            //
+            // THREE OPS, ONE ASK, ONE SET OF OUTCOMES. Everything the arm above argues holds here
+            // unchanged — no `notFound` is reachable because neither request names anything that
+            // could be absent, an engine with nothing attached is idle rather than unavailable (no
+            // budget has been measured and no moment has been sampled, and both say so), and the
+            // single refusal is a fold with a door that did not answer through it.
+            //
+            // WHY TWO OPS AND NOT ONE. They answer different questions with different lifetimes: a
+            // budget verdict is a judgement about the WHOLE generation and changes rarely, while
+            // the timeline is a window that moves on every beat. A panel wants the first once and
+            // the second on every redraw, and a client that had to refetch the ring to re-read a
+            // verdict would pay the larger payload for the smaller answer.
+            ClientMessage::PerfBudgetsRequest(request) => match world.perf_budgets() {
+                PerfAnswer::Perf(result) => {
+                    reply(request.id, ReplyResult::PerfBudgetsResult(*result))
+                }
+                PerfAnswer::Unavailable(why) => error(request.id, ErrorCode::Unavailable, why),
+            },
+
+            ClientMessage::PerfTimelineRequest(request) => match world.perf_timeline() {
+                PerfAnswer::Perf(result) => {
+                    reply(request.id, ReplyResult::PerfTimelineResult(*result))
+                }
                 PerfAnswer::Unavailable(why) => error(request.id, ErrorCode::Unavailable, why),
             },
 
@@ -689,6 +718,57 @@ impl Session {
                     }),
                 )
             }
+
+            // ── LOG DISCOVERY (owner ruling 21, decision sheet 1a — JOS-498) ────────────────────
+            //
+            // LOGS.SETDIR — THE APP NAMES THE DIRECTORY. It is a command in the `*.define` mould
+            // and answers the same ack, and it is deliberately NOT one of that family: those five
+            // are FOLD inputs that a world re-applies at every attach's construction and that form
+            // part of ruling 18's cache key, and this changes nothing about any fold. So it goes to
+            // `set_log_dir` rather than to `define`, and no fold is told anything.
+            //
+            // NO REFUSAL PATH, for `AlertsDefineRequest`'s reason exactly: a payload that reached
+            // here deserialized against the schema. A directory that does not EXIST is not a
+            // refusal either — a machine with no EverQuest on it still resolves a path app-side,
+            // and what that produces is a `logs.list` answering `missing` rather than a command
+            // that failed. The two questions are asked separately on purpose.
+            ClientMessage::LogsSetDirRequest(request) => {
+                world.set_log_dir(&request.params.dir);
+                reply(
+                    request.id,
+                    ReplyResult::DefineAck(DefineAck {
+                        applied: true,
+                        // NOT A LIST: one directory, so the ack carries no `count` — the same
+                        // sentence `buffTrust.define` and `respawn.define` already make.
+                        count: None,
+                    }),
+                )
+            }
+
+            // LOGS.LIST — `listCharacters` in `main/log/config.ts`, moved to the process that owns
+            // log files. The scan itself is `crate::logs`; this arm is the envelope and the one
+            // refusal.
+            //
+            // THE ONE REFUSAL IS NEVER HAVING BEEN TOLD, and it is an `unavailable` rather than an
+            // empty answer because those are two different facts: an install with no character logs
+            // in it is a real state a player is told how to fix (`/log on`), and a question nobody
+            // armed is a bug in this app's own connect sequence. A caller handed `[]` for both could
+            // not tell them apart, and would draw the empty picker for the second.
+            //
+            // EVERY OTHER OUTCOME IS AN ANSWER. A missing folder, an unreadable one and an empty
+            // one all carry `readable` and the directory they are about — see `LogsListResult`,
+            // which argues at length why the verdict rides every reply.
+            ClientMessage::LogsListRequest(request) => match world.list_logs() {
+                Err(why) => error(request.id, ErrorCode::Unavailable, why),
+                Ok((dir, found)) => reply(
+                    request.id,
+                    ReplyResult::LogsListResult(LogsListResult {
+                        dir,
+                        readable: found.readable,
+                        characters: found.characters,
+                    }),
+                ),
+            },
         }
     }
 }
@@ -974,6 +1054,8 @@ fn is_known_op(op: &str) -> bool {
         SessionProgressRequestOp::SessionProgress.to_string(),
         ModuleSnapshotRequestOp::ModuleSnapshot.to_string(),
         PerfSnapshotRequestOp::PerfSnapshot.to_string(),
+        PerfBudgetsRequestOp::PerfBudgets.to_string(),
+        PerfTimelineRequestOp::PerfTimeline.to_string(),
         ViewSubscribeRequestOp::ViewSubscribe.to_string(),
         ViewUnsubscribeRequestOp::ViewUnsubscribe.to_string(),
         AlertsDefineRequestOp::AlertsDefine.to_string(),
@@ -992,6 +1074,8 @@ fn is_known_op(op: &str) -> bool {
         KnowledgeDefineRequestOp::KnowledgeDefine.to_string(),
         ResistLevelsRequestOp::ResistLevels.to_string(),
         ResistSpellRequestOp::ResistSpell.to_string(),
+        LogsSetDirRequestOp::LogsSetDir.to_string(),
+        LogsListRequestOp::LogsList.to_string(),
     ]
     .iter()
     .any(|known| known == op)
@@ -1345,6 +1429,124 @@ mod tests {
         assert!(matches!(refusal.error.code, ErrorCode::Unavailable));
     }
 
+    // ── logs.setDir / logs.list (owner ruling 21, decision sheet 1a — JOS-498) ─────────────────
+
+    /// One `logs.setDir`, naming a directory. Nothing opens it.
+    fn set_dir(id: i64, dir: &str) -> ClientMessage {
+        ClientMessage::LogsSetDirRequest(protocol::generated::LogsSetDirRequest {
+            id: RequestId(id),
+            op: protocol::generated::LogsSetDirRequestOp::LogsSetDir,
+            params: protocol::generated::LogsSetDirParams {
+                dir: dir.to_owned(),
+            },
+        })
+    }
+
+    /// One `logs.list`, which names nothing at all — the directory is pushed, never sent.
+    fn list_logs(id: i64) -> ClientMessage {
+        ClientMessage::LogsListRequest(protocol::generated::LogsListRequest {
+            id: RequestId(id),
+            op: protocol::generated::LogsListRequestOp::LogsList,
+            params: protocol::generated::NoParams {},
+        })
+    }
+
+    #[test]
+    fn the_log_ops_are_ops_this_build_knows() {
+        // The pin every op in this table carries, and for the same failure: an op missing from the
+        // known-op list answers `unknownOp` to a request with a typo'd param, which sends a client
+        // hunting for a feature that is right there.
+        for raw in [
+            serde_json::json!({"id": 61, "op": "logs.setDir", "params": {"folder": "C:/EQ/Logs"}}),
+            serde_json::json!({"id": 62, "op": "logs.list", "params": {"dir": "C:/EQ/Logs"}}),
+        ] {
+            let Some(EngineMessage::ErrorReply(refusal)) = refuse(&classify(&raw)) else {
+                panic!("a refusal");
+            };
+            assert!(matches!(refusal.error.code, ErrorCode::BadParams));
+        }
+    }
+
+    #[test]
+    fn a_logs_list_before_anybody_named_a_directory_is_unavailable() {
+        // AN EMPTY LIST WOULD BE THE WRONG ANSWER, and that is the whole reason this refusal
+        // exists: an install with no character logs in it is a real state a player is told how to
+        // fix, and a question nobody armed is a bug in the app's connect sequence. A caller handed
+        // `[]` for both would draw the empty picker for the second.
+        let (world, mut session) = table();
+        let messages = sent(session.dispatch(&world, list_logs(63)));
+        let [EngineMessage::ErrorReply(refusal)] = messages.as_slice() else {
+            panic!("a refusal");
+        };
+        assert_eq!(*refusal.id, 63);
+        assert!(matches!(refusal.error.code, ErrorCode::Unavailable));
+    }
+
+    #[test]
+    fn the_pushed_directory_is_acknowledged_and_then_enumerated() {
+        let dir = std::env::temp_dir().join(format!("engined-ops-logs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch logs dir");
+        std::fs::write(dir.join("eqlog_Primitive_freeport.txt"), "").expect("a staged log");
+        let named = dir.to_string_lossy().into_owned();
+
+        let (world, mut session) = table();
+        // THE ACK IS `DefineAck` WITH NO `count`. One directory is not a list, which is the same
+        // sentence `buffTrust.define` and `respawn.define` already make about a payload that is one
+        // object — and it is why this op joins the ack family in the app-side guard matrix.
+        let acked = sent(session.dispatch(&world, set_dir(64, &named)));
+        let [EngineMessage::Reply(reply)] = acked.as_slice() else {
+            panic!("one reply");
+        };
+        let ReplyResult::DefineAck(ack) = &reply.result else {
+            panic!("a define ack");
+        };
+        assert!(ack.applied);
+        assert_eq!(ack.count, None);
+
+        // NO ATTACH ANYWHERE ABOVE, deliberately: a fresh install has characters to choose between
+        // before there is anything to fold, and that is the launch this op exists for.
+        let listed = sent(session.dispatch(&world, list_logs(65)));
+        let [EngineMessage::Reply(reply)] = listed.as_slice() else {
+            panic!("one reply");
+        };
+        let ReplyResult::LogsListResult(result) = &reply.result else {
+            panic!("a logs list result");
+        };
+        // THE ECHO IS THE CLIENT'S STALENESS TEST, so it has to come back exactly as pushed.
+        assert_eq!(result.dir, named);
+        assert!(matches!(
+            result.readable,
+            protocol::generated::LogsDirReadable::Ok
+        ));
+        assert_eq!(result.characters.len(), 1);
+        assert_eq!(result.characters[0].name, "Primitive");
+        assert_eq!(result.characters[0].server, "freeport");
+    }
+
+    #[test]
+    fn a_second_push_replaces_the_first_and_a_missing_folder_is_an_answer() {
+        // THE COMMAND LAW, at one value: the latest push is the whole of what the app has said, so
+        // a settings change is a push rather than a reconciliation. And the folder it names does
+        // not have to exist — a machine with EverQuest installed somewhere else resolves a path
+        // app-side every launch, and what that produces is `missing` rather than a refusal.
+        let (world, mut session) = table();
+        sent(session.dispatch(&world, set_dir(66, "C:/first/Logs")));
+        sent(session.dispatch(&world, set_dir(67, "C:/nowhere/at/all/Logs")));
+        let listed = sent(session.dispatch(&world, list_logs(68)));
+        let [EngineMessage::Reply(reply)] = listed.as_slice() else {
+            panic!("one reply");
+        };
+        let ReplyResult::LogsListResult(result) = &reply.result else {
+            panic!("a logs list result");
+        };
+        assert_eq!(result.dir, "C:/nowhere/at/all/Logs");
+        assert!(matches!(
+            result.readable,
+            protocol::generated::LogsDirReadable::Missing
+        ));
+        assert!(result.characters.is_empty());
+    }
+
     #[test]
     fn perf_snapshot_is_an_op_this_build_knows() {
         // Same pin as `module_snapshot_is_an_op_this_build_knows`, and for the same failure: an op
@@ -1355,6 +1557,25 @@ mod tests {
             panic!("a refusal");
         };
         assert!(matches!(refusal.error.code, ErrorCode::BadParams));
+    }
+
+    #[test]
+    fn surface_eights_other_two_ops_are_ops_this_build_knows() {
+        // The same pin, twice more (JOS-502). It matters more here than for most ops: all three
+        // perf requests take `NoParams`, so a typo'd param is the ONLY way a client can spell one
+        // of them wrong, and the known-op list is the only thing standing between that typo and an
+        // `unknownOp` that says the feature does not exist.
+        for op in ["perf.budgets", "perf.timeline"] {
+            let raw = serde_json::json!({"id": 46, "op": op, "params": {"who": "me"}});
+            let Some(EngineMessage::ErrorReply(refusal)) = refuse(&classify(&raw)) else {
+                panic!("a refusal for {op}");
+            };
+            assert!(
+                matches!(refusal.error.code, ErrorCode::BadParams),
+                "{op} answered {:?}",
+                refusal.error.code
+            );
+        }
     }
 
     #[test]

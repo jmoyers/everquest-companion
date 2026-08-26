@@ -74,8 +74,9 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:f
 import { join } from 'node:path'
 import { app } from 'electron'
 import { logError, logInfo } from '../errorLog'
-import { engineFlagOn } from '../../shared/dataServer/engineFlags'
+import { E2E } from '../e2e'
 import { setEnginePid } from '../processPriority'
+import { noteEngineEdge } from '../telemetry/breadcrumbs'
 import { mintToken } from './token'
 import { engineBinaryCandidates, isCargoTargetBinary, stagedEngineNames } from './engineProtocol'
 import { connectToEngine } from './socketChannel'
@@ -111,8 +112,21 @@ let supervisor: EngineSupervisor | null = null
  * distinguishes the two absences, and the header says why a checkout with no binary is the ordinary
  * state rather than a broken one.
  */
-export function engineEnabled(): boolean {
-  return engineFlagOn(process.env.EQC_ENGINE)
+/**
+ * THE FLAG IS GONE (JOS-499 item 9), and what replaces it is nothing rather than `true`.
+ *
+ * `EQC_ENGINE=0` meant "run the app on its own fold". The fold is deleted, so the configuration
+ * it selected does not exist: a launch without an engine is not a different MODE of the product,
+ * it is the product unable to answer, which this release makes honest everywhere a read lands.
+ * Keeping the variable would ship a switch whose only remaining effect is a blank app.
+ *
+ * WHAT STILL DISTINGUISHES THE ABSENCES is `engineSupervisorStatus()` below, and it is now the
+ * only thing that has to: `'absent'` is a build carrying no binary — the ordinary state of a
+ * checkout that has not run `cargo build` — and every other status is a real engine somewhere in
+ * its life. There is no third case left to report.
+ */
+export function engineWanted(): boolean {
+  return true
 }
 
 /**
@@ -128,7 +142,6 @@ export function engineEnabled(): boolean {
  * Every other status is a real engine at some point in its life, and the panel draws it.
  */
 export function engineSupervisorStatus(): EngineStatus | null {
-  if (!engineEnabled()) return null
   return supervisor?.currentStatus() ?? 'stopped'
 }
 
@@ -149,7 +162,13 @@ function resolveEngineBinary(): string | null {
   const candidates = engineBinaryCandidates({
     appPath: app.getAppPath(),
     resourcesPath: process.resourcesPath ?? '',
-    cwd: process.cwd()
+    cwd: process.cwd(),
+    // THE HARNESS NAMES ITS OWN BINARY (JOS-501), and only the harness: read under `EQ_E2E=1`
+    // alone, the same standing the staged EQ install has. The e2e suite builds the engine in
+    // RELEASE and the candidate order below prefers debug, so without this a machine holding both
+    // would run the suite against the binary the suite did not build. Not a gate — an absent or
+    // wrong value simply falls through to the ordinary search.
+    override: E2E ? (process.env.EQ_ENGINE_BIN ?? '') : ''
   })
   const found = candidates.find((path) => existsSync(path))
   if (found === undefined) {
@@ -301,7 +320,6 @@ function dirOf(path: string): string {
  * running is the supervisor's own no-op.
  */
 export function startEngineSupervisor(): void {
-  if (!engineEnabled()) return
   // THE AUDIO CUTOVER'S SWITCH IS NOT THROWN HERE ANY MORE (JOS-496 fixing JOS-491's placement) —
   // it is thrown on the supervisor's READY edge below. The bug, measured by reading:
   //
@@ -350,7 +368,15 @@ export function startEngineSupervisor(): void {
     report: (log) => logError('main:dataServerEngine', log),
     // The priority arm. Below-normal, following the same switch as the rest of the app — the
     // argument is on `setEnginePid` in processPriority.ts.
-    onPid: setEnginePid,
+    onPid: (pid) => {
+      setEnginePid(pid)
+      // A BREADCRUMB FOR THE BOOT WINDOW (JOS-501). This is the earliest thing this process can
+      // say about an engine, and until now nothing said anything until the first module cursor
+      // moved — which on the owner's real log is the better part of a minute in. Every crash
+      // before that produced a report with an empty ring. The pid itself is NOT recorded: the
+      // edge is the fact, and `noteEngineEdge` has no parameter one could travel in.
+      noteEngineEdge(pid === null ? 'engine:gone' : 'engine:spawned')
+    },
     // …and the CLIENT arm (JOS-479): the port and the launch's token, at the one moment a round
     // trip has proven there is something to talk to. `onPid` is about a process and this is about a
     // connection — see the dep's own comment for why they are two callbacks rather than one.
@@ -387,6 +413,10 @@ export function startEngineSupervisor(): void {
       // as an owner call rather than decided here.
       if (info === null) disarmEngineAlerts()
       else armEngineAlerts()
+      // READY means a round trip ANSWERED, which is the one edge in this flow worth a crumb of its
+      // own: a report whose ring shows `engine:spawned` and no `engine:ready` says the child
+      // started and never proved itself, and that is a different bug from one that never spawned.
+      if (info !== null) noteEngineEdge('engine:ready')
       onEngineReady(info)
     }
   })

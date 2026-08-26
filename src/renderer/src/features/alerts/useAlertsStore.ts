@@ -17,45 +17,16 @@ import type {
   AlertDef,
   AlertFireRecord,
   AlertPrefs,
-  AlertsDelta,
   AlertsSnap,
   PoisonSlowRecency,
-  SoundPack,
-  SpellCastRecency
+  SoundPack
 } from '@shared/types'
 import type { SoundPackPrefs } from '@shared/soundPacks'
 import { useModule } from '../../lib/useModule'
 import { onAlertStoreChange, refreshAlertStore } from './player'
 import { invalidateSoundCaches } from './soundCache'
 
-function applyAlertsDelta(state: AlertsSnap, delta: AlertsDelta): AlertsSnap {
-  let next = delta.cast?.length ? applyCastRecency(state, delta.cast) : state
-  // The slow-proc record is ABSOLUTE on the delta (the module owns the running total), so it
-  // is assigned, never accumulated — a dropped delta cannot make the count drift.
-  if (delta.poisonSlow) next = { ...next, poisonSlowSeen: delta.poisonSlow }
-  if (!delta.fired.length) return next
-  const history = { ...next.history }
-  for (const f of delta.fired) {
-    const arr = (history[f.alertId] ?? []).concat({ ts: f.ts, matchedText: f.matchedText })
-    // Mirror the module's HISTORY_CAP of 20 so the renderer copy stays bounded.
-    history[f.alertId] = arr.length > 20 ? arr.slice(arr.length - 20) : arr
-  }
-  return { ...next, history }
-}
 
-/**
- * Merge rank-preserving cast recency ("Mesmerization III" → ts). This is what makes the
- * upgrade offers recompute on a CAST rather than on a timer — the module flushes a delta the
- * moment a new rank is seen, so nothing here polls.
- */
-function applyCastRecency(state: AlertsSnap, cast: SpellCastRecency[]): AlertsSnap {
-  const spellLastCast = { ...state.spellLastCast }
-  for (const c of cast) {
-    const prev = spellLastCast[c.spell]
-    if (prev === undefined || c.ts > prev) spellLastCast[c.spell] = c.ts
-  }
-  return { ...state, spellLastCast }
-}
 
 export interface AlertsStore {
   alerts: AlertDef[]
@@ -102,7 +73,7 @@ export function useAlertsStore(): AlertsStore {
   const [packPrefs, setPackPrefs] = useState<SoundPackPrefs>({})
 
   // Live recent-fires history from the alerts module (single source of truth).
-  const snap = useModule<AlertsSnap, AlertsDelta>('alerts', applyAlertsDelta)
+  const snap = useModule<AlertsSnap>('alerts')
   const history = snap?.history ?? {}
   const spellLastCast = snap?.spellLastCast ?? {}
   const poisonSlowSeen = snap?.poisonSlowSeen ?? null

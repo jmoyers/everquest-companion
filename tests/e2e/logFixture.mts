@@ -56,6 +56,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { discoverEqRoot, fixedDrives, rootHasLogs } from '../../src/main/log/discovery'
+import { settleEngineServing } from './engineSteps.mjs'
 import { launchApp, removeUserData, type LaunchedApp } from './appWindow.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -305,6 +306,31 @@ export async function launchOnFixture(
     achievements?: string
     userData?: string
     env?: Record<string, string>
+    /** Forwarded to launchApp: the working directory, and therefore whether an engine BINARY can
+     *  be resolved at all. See that option for why absence is arranged this way (JOS-499). */
+    cwd?: string
+    /**
+     * WAIT FOR THE ENGINE TO BE ANSWERING BEFORE HANDING THE LAUNCH BACK (JOS-499). Default true.
+     *
+     * WHY THIS EXISTS, MEASURED. Every module-backed surface in the product is served by the engine
+     * now, and the engine is a separate process that has to start, read its spell DB and fold the
+     * log before it can answer anything — 4.3 s for the spell DB alone on a DEBUG cargo build, which
+     * is what this suite runs (the engine's own README measures release at roughly a tenth of it).
+     * The app's own fold used to be loaded at module scope and answered the first read instantly, so
+     * a spec could assert on a snapshot the moment its window existed. It cannot any more, and three
+     * specs failed on exactly that: an XP pace of "-", a boss roster of 0, a respawn card with no
+     * gaps — all of them correct readings of a world that had not arrived yet.
+     *
+     * SO THE HARNESS WAITS WHERE A USER WOULD WAIT. This is not a workaround: the app genuinely
+     * shows a loading state until the engine is live, and a harness that asserted through it would
+     * be testing a frame the product never means anybody to act on. Waiting HERE rather than in
+     * sixty specs is what keeps that fact in one place.
+     *
+     * IT IS BOUNDED AND NON-FATAL. A launch with no engine (`cwd` above) never prints the sentence,
+     * and that is a legitimate state rather than a failure — so the wait expires quietly and the
+     * spec proceeds to make whatever claim it came to make.
+     */
+    waitForEngine?: boolean
     others?: Readonly<Record<string, string>>
   } = {}
 ): Promise<FixtureLaunch> {
@@ -321,8 +347,12 @@ export async function launchOnFixture(
   const launched = await launchApp({
     installDir: log.installDir,
     ...(opts.userData === undefined ? {} : { userData: opts.userData }),
-    ...(opts.env === undefined ? {} : { env: opts.env })
+    ...(opts.env === undefined ? {} : { env: opts.env }),
+    ...(opts.cwd === undefined ? {} : { cwd: opts.cwd })
   })
+  // See `waitForEngine`: bounded, quiet on expiry, and the reason sixty specs did not each grow a
+  // wait of their own.
+  if (opts.waitForEngine !== false) await settleEngineServing(launched.app)
   return {
     ...launched,
     log,

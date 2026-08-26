@@ -82,9 +82,11 @@ const SLAY_LABEL = 'Slay Undead'
  * row whose only child repeats it.
  */
 export function groupSlay(rows: SkillRow[]): SkillRow[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   const slay = rows.filter((r) => r.category === 'slay')
   if (slay.length < 2) return rows
   const group = mergeGroup(slay, SLAY_LABEL, 'slay', 'skill')
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   return rankRows([...rows.filter((r) => r.category !== 'slay'), group])
 }
 
@@ -139,7 +141,9 @@ export function meterDrill(drill: Drill | null): { entityId: string; name?: stri
  * drill, overlay drill, breakdown preview, copy-to-clipboard) groups identically.
  */
 export function flattenSkills(e: SourceView): SkillRow[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
   const rows: FlatSkill[] = e.categories.flatMap((c) => c.skills.map((s) => ({ ...s, category: c.category })))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives FlatSkill. Becomes a view descriptor when the source lands.
   rows.sort((a, b) => b.total - a.total || b.hits - a.hits || a.name.localeCompare(b.name))
   const max = Math.max(1, ...rows.map((r) => r.total))
   // Each row carries its OWN multi-attack reading (JOS-113): the double/triple that used to live
@@ -563,6 +567,7 @@ export function skillsForTarget(tl: TimelineView, target: string): TargetDetail 
   }
   const rows = [...byLane.values()]
   scaleSkillRows(rows, scale)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives FlatSkill. Becomes a view descriptor when the source lands.
   rows.sort((a, b) => b.total - a.total || b.hits - a.hits || a.name.localeCompare(b.name))
   const max = Math.max(1, ...rows.map((r) => r.total))
   for (const r of rows) r.pct = (r.total / max) * 100
@@ -659,6 +664,7 @@ export interface ScopeOptions {
 /** Fight scope: the current-or-last fight, then the finalized-fight history. NO zone sessions. */
 export function fightScopeOptions(segments: SegmentSummary[]): ScopeOptions {
   const open = segments.find((s) => s.kind === 'current') ?? null
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SegmentSummary. Becomes a view descriptor when the source lands.
   const finalized = segments.filter((s) => s.kind === 'fight')
   const headSeg = open ?? finalized[0] ?? null
   if (!headSeg) return { head: null, rest: [] }
@@ -714,6 +720,7 @@ export function overallScopeOptions(zoneSessions: ZoneSessionSummary[]): ScopeOp
     live: z.live
   })
   const liveZone = zoneSessions.find((z) => z.live) ?? null
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ZoneSessionSummary. Becomes a view descriptor when the source lands.
   const rest = zoneSessions.filter((z) => z !== liveZone).map(toRow)
   return { head: liveZone ? toRow(liveZone) : (rest.shift() ?? null), rest }
 }
@@ -766,9 +773,11 @@ export function defaultSelection(scope: CombatScope): string {
 /** 100%-stacked category composition for one source. Uses the engine's authoritative
  *  category rollups, so it stays exact for ring-less zone sessions too. */
 export function composition(e: SourceView): CompositionSlice[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
   const total = e.categories.reduce((n, c) => n + c.total, 0)
   if (total <= 0) return []
   return e.categories
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
     .filter((c) => c.total > 0)
     .map((c) => ({ category: c.category, total: c.total, pct: (c.total / total) * 100 }))
 }

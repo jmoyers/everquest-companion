@@ -207,6 +207,7 @@ export default function WishlistView({ onOpenLoot, onOpenMob, onOpenMapZone }: W
   const list = wishlist.list
   const entries = list.entries
   const importedKeys = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: WishEntry comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
     () => new Set(entries.filter((e) => e.source === 'planImport').map((e) => e.itemKey)),
     [entries]
   )

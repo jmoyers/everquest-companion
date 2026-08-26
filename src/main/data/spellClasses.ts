@@ -22,7 +22,7 @@
 // say" boundary: BER, MNK and WAR have LITERALLY ZERO spells and ROG has nine. Three of
 // sixteen classes are invisible to cast evidence entirely; skill-ups, stances and poison
 // coats are the only way to see them.
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 // ES-imported so electron-vite INLINES it into the main bundle — a path-relative readFile
 // would miss under out/main/ (AGENTS.md, Toolchain gotchas). Same rule as spellDb.ts.
 import spellsJson from './spells.json'

@@ -2,7 +2,7 @@ import { type JSX, useMemo } from 'react'
 import { Box, Chip, IconButton, LinearProgress, Stack, Typography } from '@mui/material'
 import StarIcon from '@mui/icons-material/Star'
 import StarBorderIcon from '@mui/icons-material/StarBorder'
-import type { ClassUnlockDelta, ClassUnlockSnap } from '@shared/types'
+import type { ClassUnlockSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 import { useClassFavorites } from '../favorites/useQuestFlags'
 import { classUnlockRows, orderClassUnlockRows, type ClassUnlockRow } from './classUnlocks'
@@ -17,7 +17,6 @@ import type { QuestProgress } from './useProgress'
 // turn-in count, which is always a true sentence, and then says where the unlock reading came
 // from, so nothing here can quietly present a wiki claim as an observation.
 
-const applyDelta = (s: ClassUnlockSnap, d: ClassUnlockDelta): ClassUnlockSnap => [...s, ...d.appended]
 const EMPTY: ClassUnlockSnap = []
 
 /**
@@ -187,7 +186,7 @@ export default function ClassUnlockList({
   /** a class name → the Quests tab filtered to it (JOS-157). PoskyView hands this to the list. */
   onOpenClass: (className: string) => void
 }): JSX.Element {
-  const observed = useModule<ClassUnlockSnap, ClassUnlockDelta>('classUnlocks', applyDelta) ?? EMPTY
+  const observed = useModule<ClassUnlockSnap>('classUnlocks') ?? EMPTY
   const stars = useClassFavorites()
 
   const rows = useMemo(

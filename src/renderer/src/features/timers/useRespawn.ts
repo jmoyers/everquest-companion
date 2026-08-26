@@ -12,15 +12,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useModule } from '../../lib/useModule'
 import {
   EMPTY_RESPAWN_SNAP,
-  mergeRespawnDelta,
-  respawnBaselineStale,
-  type RespawnDelta,
   type RespawnPrefs,
   type RespawnSnap
 } from '@shared/respawn'
 
 export function useRespawnSnap(): RespawnSnap {
-  const snap = useModule<RespawnSnap, RespawnDelta>('respawn', mergeRespawnDelta, respawnBaselineStale)
+  const snap = useModule<RespawnSnap>('respawn')
   return snap ?? EMPTY_RESPAWN_SNAP
 }
 

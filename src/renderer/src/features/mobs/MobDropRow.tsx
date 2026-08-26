@@ -17,7 +17,7 @@
 import { type JSX, useState } from 'react'
 import { Box, Collapse, Stack, Typography } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import type { LootDelta, LootSnap } from '@shared/types'
+import type { LootSnap } from '@shared/types'
 import { formatDate } from '../../lib/formatDate'
 // The app's Tooltip, never MUI's — the anchor has to wear the hand (lib/Tooltip.tsx).
 import { Tooltip } from '../../lib/Tooltip'
@@ -37,6 +37,7 @@ import { perceivedDropRate, type SeenVariantGroup } from './seenVariants'
 // The Plane of Sky dataset, reused exactly as LootView reads it, so an item drilled into from a
 // mob page gets the same "Plane of Sky" badge and offline stat blob it gets from the loot table.
 const posky = getPoskyData()
+// eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: PoskyQuest comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
 const questItemNames = new Set<string>(posky.quests.flatMap((q) => q.items.map((i) => itemCountKey(i.name))))
 const itemStats: Record<string, string> = {}
 for (const q of posky.quests) {
@@ -243,7 +244,7 @@ export function ItemDrillDown({
   /** the dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17) — see ItemDetailDialog */
   onOpenLoot?: (item: string) => void
 }): JSX.Element {
-  const history = useModule<LootSnap, LootDelta>('loot', (s, d) => [...s, ...d.appended])
+  const history = useModule<LootSnap>('loot')
   const key = itemCountKey(item)
   const matches = family
     ? (e: { item: string }): boolean => itemCountKey(e.item) === key
@@ -253,6 +254,7 @@ export function ItemDrillDown({
       open
       onClose={onClose}
       item={item}
+      // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LootEvent. Becomes a view descriptor when the source lands.
       events={(history ?? []).filter(matches)}
       stats={itemStats[key]}
       isQuestItem={questItemNames.has(key)}

@@ -36,6 +36,7 @@ export function PinSpans({
         return (
           <g key={group}>
             {tl.stanceSpans
+              // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives StanceSpan. Becomes a view descriptor when the source lands.
               .filter((s) => s.group === group)
               .map((s, i) => {
                 const x1 = xOf(s.start)

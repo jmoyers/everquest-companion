@@ -1,0 +1,19 @@
+# ============================================================================
+# THE SHIPPED BINARY IS SELF-CONTAINED (owner ruling 2026-08-26, release-risk item 9).
+# ============================================================================
+#
+# `+crt-static` links the MSVC C runtime INTO the executable instead of loading
+# vcruntime140.dll at start. Without it, `engined.exe` silently depends on a
+# Visual C++ redistributable being installed on the user's machine — near-universal
+# on real Windows, absent often enough on clean boxes and unusual Wine/CrossOver
+# prefixes to matter, and the failure mode is the worst one this app has: the exe
+# fails to LOAD, the supervisor reports spawn-failed, and post-cutover there is no
+# TypeScript fold to degrade to - the app opens empty.
+#
+# It applies to every profile (dev, release, test) on purpose: the binary the
+# suites prove and the binary a user runs must not differ in how they link the
+# runtime. Cost: a few hundred KB of exe size, and one full rebuild the day this
+# landed. The engine has no other dynamic dependencies beyond OS DLLs
+# (kernel32/ws2_32 and friends), which every Windows and every Wine prefix has.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

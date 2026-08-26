@@ -39,7 +39,6 @@
 // asks nothing. `shared/dataServer/engineFlags.ts` is why the two cannot drift.
 
 import { ipcRenderer } from 'electron'
-import { engineFlagOn } from '../shared/dataServer/engineFlags'
 import { IPC } from '../shared/ipc'
 import { messagePortChannel } from '../shared/dataServer/messagePortChannel'
 import type { ByteChannel } from '../shared/dataServer/ndjson'
@@ -84,14 +83,10 @@ ipcRenderer.on(IPC.onEnginePort, (event, payload: PortPush) => {
 })
 
 export const engineBridge = {
-  /**
-   * Does this launch want an engine — i.e. was it started WITHOUT `EQC_ENGINE=0`? A readout, not a
-   * grant, and true by default since JOS-495 — see the header.
-   *
-   * The renderer uses it to decide whether to try at all, which keeps a launch that deliberately
-   * turned the engine off from making one IPC call it already knows the answer to.
-   */
-  engineEnabled: engineFlagOn(process.env.EQC_ENGINE),
+  // `engineEnabled` LIVED HERE AND IS GONE (JOS-499 item 9). It let the renderer skip one IPC
+  // call on a launch that had deliberately turned the engine off. There is no such launch, and a
+  // readout with one possible value is a member every reader has to prove is dead. The
+  // renderer now simply asks, and `engineConnect` answering null is the honest "not yet".
 
   /**
    * Open this window's ONE connection to the engine, or answer null.

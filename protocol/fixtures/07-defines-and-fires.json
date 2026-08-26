@@ -1,7 +1,7 @@
 {
   "moment": "app knowledge in, alert fires out — the five `*.define` commands and the stream they make possible",
   "source": "JOS-482 (cutover ledger item 2 + the fires stream; boundary verdict 3 and owner ruling 22)",
-  "note": "WHAT THE APP SAYS THE MOMENT IT CONNECTS, in the order it says it, and what comes back when a rule matches. The five commands are the whole of boundary verdict 3: the settings store stays persistence truth app-side and the engine never reads a settings file, so every preference the fold used to read out of it is PUSHED. Each is an idempotent FULL-SET REPLACE — the payload is the whole of what that family knows, so pushing twice is pushing once, a crash-respawn is a replay of the latest push, and the input stays hash-friendly for ruling 18's eventual cache key. THEY GO BEFORE THE ATTACH, which is the shape a real launch has and the only timing that keeps a fold reproducible: all five change what a fold PRODUCES, so a world that took them after the historical scan would have folded the log under one set of rules and served it under another. The ack is the same `DefineAck` for all five; `count` is the entries taken for a LIST payload and absent for the two families that push one object, which is why `buffTrust.define` and `respawn.define` answer without it. NOTE THE ALERT DEFINITION'S EXTRA FIELDS — `volume` and `speech` here — and that the protocol says nothing about them: the field set is the STORE's contract, and a definition round-trips through the fold as the alerts module's published `defs`, so a typed wire shape that dropped an unlisted field would rewrite the user's alerts in transit. THE FIRE AT THE END is what ruling 22 buys: the engine evaluated the pushed rule against a LIVE event and says so. It carries NO `id`, because a fire belongs to the world rather than to any subscription (the epoch-message precedent), and NO `epoch` either — every other stream frame describes window state a client has to reconcile across a generation, while a fire is a thing that happened once, with nothing to drop and nothing to re-request. It is FULLY RESOLVED server-side (the conCard principle): `sound` is `<packId>/<soundId>`, the key the renderer's sound cache is already keyed by, so the app needs no copy of the rule set to make the noise.",
+  "note": "WHAT THE APP SAYS THE MOMENT IT CONNECTS, in the order it says it, and what comes back when a rule matches. The five commands are the whole of boundary verdict 3: the settings store stays persistence truth app-side and the engine never reads a settings file, so every preference the fold used to read out of it is PUSHED. Each is an idempotent FULL-SET REPLACE — the payload is the whole of what that family knows, so pushing twice is pushing once, a crash-respawn is a replay of the latest push, and the input stays hash-friendly for ruling 18's eventual cache key. THEY GO BEFORE THE ATTACH, which is the shape a real launch has and the only timing that keeps a fold reproducible: all five change what a fold PRODUCES, so a world that took them after the historical scan would have folded the log under one set of rules and served it under another. The ack is the same `DefineAck` for all five; `count` is the entries taken for a LIST payload and absent for the two families that push one object, which is why `buffTrust.define` and `respawn.define` answer without it. NOTE THE ALERT DEFINITION'S EXTRA FIELDS — `volume` and `speech` here — and that the protocol says nothing about them: the field set is the STORE's contract, and a definition round-trips through the fold as the alerts module's published `defs`, so a typed wire shape that dropped an unlisted field would rewrite the user's alerts in transit. THE FIRES AT THE END are what ruling 22 buys: the engine evaluated the pushed rules against LIVE events and says so. They carry NO `id`, because a fire belongs to the world rather than to any subscription (the epoch-message precedent), and NO `epoch` either — every other stream frame describes window state a client has to reconcile across a generation, while a fire is a thing that happened once, with nothing to drop and nothing to re-request. They are FULLY RESOLVED server-side (the conCard principle): `sound` is `<packId>/<soundId>`, the key the renderer's sound cache is already keyed by, so the app needs no copy of the rule set to make the noise. THERE ARE THREE OF THEM AND THE SPREAD IS THE POINT (JOS-500, ruling 27). The FIRST is the common case and the shape every fire had before this ticket: `Charm break` declares no capture group, writes no `{target}` phrase and matched a family that names no spell, so it sends exactly four fields and is byte-identical to the frame it sent before the schema grew. The SECOND is `Mez broke` firing on its own trigger — its `/regex/` matcher declared `(?<spell>…)` and its phrase writes `{target}`, so `captures` carries the group the pattern named AND the one auto token the phrase asked for, merged engine-side because which token was wanted and who wins a collision are evaluator decisions the app must not re-make. Its `spell` keeps the RANK the log printed (`Mesmerization III`) while the capture holds what the pattern matched — the two differ on purpose, because rank-stripping is the speaker's job. The THIRD is the SAME def delivering an EARLY WARNING: `dueAt` is the watched row's stated end and `at` is the heartbeat instant it spoke at, so the five seconds between them are the def's own `earlyWarnSec` — and note that `at` here is a HOST clock rather than the log's, which is the one frame where that is true and is stated on the field itself. Its `message` is a projection sentence rather than a log line, because nothing has been printed yet: that is the whole of what warning early means.",
   "messages": [
     {
       "dir": "client",
@@ -20,6 +20,20 @@
               "cooldownScope": "target",
               "volume": 0.8,
               "speech": { "mode": "alertName" }
+            },
+            {
+              "id": "a2",
+              "name": "Mez broke",
+              "enabled": true,
+              "sound": { "packId": "alan-rickman", "soundId": "oh-dear" },
+              "trigger": {
+                "type": "event",
+                "kind": "cc",
+                "where": { "refresh": "true", "spell": "/^(?<spell>Mesmeriz\\w+)/" }
+              },
+              "cooldownMs": 5000,
+              "earlyWarnSec": 5,
+              "speech": { "mode": "custom", "phrase": "{spell} broke on {target}" }
             }
           ]
         }
@@ -31,7 +45,7 @@
         "kind": "reply",
         "id": 1,
         "ok": true,
-        "result": { "applied": true, "count": 1 }
+        "result": { "applied": true, "count": 2 }
       }
     },
     {
@@ -143,6 +157,31 @@
         "rule": "Charm break",
         "sound": "classic/bell",
         "message": "Your charm spell has worn off."
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "fire",
+        "at": 1787181712000,
+        "rule": "Mez broke",
+        "sound": "alan-rickman/oh-dear",
+        "message": "a young puma has been mesmerized.",
+        "captures": { "spell": "Mesmerization", "target": "a young puma" },
+        "spell": "Mesmerization III"
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "fire",
+        "at": 1787181795000,
+        "rule": "Mez broke",
+        "sound": "alan-rickman/oh-dear",
+        "message": "Mesmerization on a young puma is about to end",
+        "captures": { "spell": "Mesmerization", "target": "a young puma" },
+        "spell": "Mesmerization",
+        "dueAt": 1787181800000
       }
     }
   ]

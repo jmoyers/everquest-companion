@@ -23,7 +23,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { CombatSnapshot, CurrentTarget } from '@shared/combat'
-import type { ConsiderDelta, ConsiderSnap, MobKnowledge } from '@shared/types'
+import type { ConsiderSnap, MobKnowledge } from '@shared/types'
 import { mobKey } from '@shared/mobKey'
 import { useModule } from '../../lib/useModule'
 
@@ -38,20 +38,6 @@ export function mobLookupKey(name: string): string {
   return mobKey(name)
 }
 
-/**
- * Merge a consider delta by row id.
- *
- * Spelled here rather than imported from `features/mobs/RecentlyConsidered.tsx` on purpose: that
- * is a TSX view module, and this hook needs nothing from it but the transport rule. Order is
- * irrelevant to us — the ring is only ever read as a key→knowledge lookup — so this deliberately
- * does NOT re-sort, and cannot drift from the strip's own ordering because it makes no claim
- * about it.
- */
-function applyConsiderDelta(state: ConsiderSnap, delta: ConsiderDelta): ConsiderSnap {
-  const byId = new Map(state.map((r) => [r.id, r]))
-  for (const row of delta.upserted) byId.set(row.id, row)
-  return [...byId.values()]
-}
 
 export interface CurrentMobState {
   /** the mob, or undefined when no fight is open / nothing has been hit yet. */
@@ -127,7 +113,7 @@ export function useCurrentMob(snap: CombatSnapshot | null): CurrentMobState {
 
   // The consider ring paints instantly for a mob you sized up. Only ever read BY KEY, so a stale
   // row can never stand in for a DIFFERENT mob.
-  const considered = useModule<ConsiderSnap, ConsiderDelta>('consider', applyConsiderDelta)
+  const considered = useModule<ConsiderSnap>('consider')
   const seed = key ? considered?.find((r) => mobLookupKey(r.mob) === key)?.knowledge : undefined
 
   return {
