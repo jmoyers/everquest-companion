@@ -57,7 +57,7 @@ export const WISH_REMOVE_TITLE = 'Remove from the wish list. It comes off the ro
 const LABEL = { add: 'Add to wish list', remove: 'Remove from wish list' } as const
 
 /**
- * THE COMPACT PAIR RETURNS (user ruling, 2026-08-15), overruling JOS-346's same-words-everywhere
+ * THE COMPACT PAIR RETURNS (fork decision, kaltinril 2026-08-15), overruling JOS-346's same-words-everywhere
  * for ONE surface: the gear table's control moved out of the Item cell into its own `WL` column,
  * where the header carries the words and a 168px button would be wider than the column it sits in.
  * The donor row keeps the full pair; both use this one component, so the drift JOS-346 feared is

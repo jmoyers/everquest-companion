@@ -175,7 +175,7 @@ const names = (rows: readonly GearRow[]): string[] => rows.map((r) => r.name)
 // =================================================================================
 
 test('the STRUCTURED filters are set memberships; the numbers ride the search box (2026-08-15)', () => {
-  // JOS-302 deleted the toolbar's numeric filters; the 2026-08-15 user ask brought numeric
+  // JOS-302 deleted the toolbar's numeric filters; the 2026-08-15 fork ask (kaltinril) brought numeric
   // filtering back as SEARCH-BOX TOKENS (`parseGearQuery`), which honours what that ruling was
   // about — toolbar real estate. So the shape pinned here is: every structured field is still a
   // set membership or a flag (`ignoreHaste` is the 2026-08-15 addition — a knob on the DERIVED

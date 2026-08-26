@@ -131,6 +131,8 @@ import { stepGearCompare } from './gearCompareSteps.mjs'
 // JOS-329's away-and-back steps, shared with the planner and character specs — one module because
 // the claim is identical on every tab of the area and only the fingerprint differs.
 import { stepGearMemory, stepGearMemoryRelaunched } from './areaMemorySteps.mjs'
+// The 2026-08-25 review round: a numeric token, the Drop columns chip, and the fit that must not drift.
+import { stepGearColumnFit, stepGearDropsToggle, stepGearThreshold } from './gearReviewSteps.mjs'
 // Phase 0's scaler and phase 2's ratio, so the EXPECTED numbers are computed rather than typed.
 import { gearRatio, scaleGearRow } from '../../src/shared/planner/gearScale'
 import type { GearRow } from '../../src/shared/planner/gear'
@@ -617,10 +619,18 @@ async function steps(app: ElectronApplication, page: Page, log: FixtureLog): Pro
   // its narrowing against the whole corpus, and stating that precondition costs one settled read.
   await typeAndSettle(page, SEARCH, '')
   if (await stepSearch(page)) {
+    // The FIT runs HERE, on the box `stepSearch` just narrowed to Thelvorn, with the columns still
+    // derived and no width stored; it hands the widths back to automatic, which every picker step
+    // below reads `data-layout` against.
+    await stepGearColumnFit(page)
     // JOS-302's weapon-type step runs BEFORE the slot/threshold step, on a table nothing is
     // narrowing: its whole subject is what one picker does to the whole corpus, and it hands the
     // tab back with both of its pickers empty.
     await stepGearWeaponTypes(page)
+    // The token and the chip run on the corpus the weapon step left unnarrowed, columns derived
+    // (AC is a core column); both hand the tab back exactly as they found it.
+    await stepGearThreshold(page)
+    await stepGearDropsToggle(page)
     // JOS-336's EFFECTIVE HP step runs HERE, in the one seam that gives it what it needs: the
     // weapon-type step clears both of its pickers and empties the search box, and nothing has
     // touched the global selector yet — so the derived column is measured against the WHOLE corpus

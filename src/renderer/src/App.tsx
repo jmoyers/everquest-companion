@@ -150,7 +150,7 @@ function PlainView({
       {/* GEAR (JOS-284) keys on the character contract for the same reason: the table reads the
           committed corpus, which is character-independent, so the remount `key` is the whole
           character contract and every item name links OUT to that item's Loot drill-down — which
-          is where the per-item tier block is drawn. The drop trio's doors (user ask, 2026-08-17):
+          is where the per-item tier block is drawn. The drop trio's doors (fork decision, kaltinril 2026-08-17):
           the Mob cell opens the mob's page, the Zone cell opens that zone's map — GearTable
           states both contracts. One line on purpose: this file sits at its
           400-code-line ceiling and every mount pays from it. */}
@@ -232,7 +232,7 @@ function ViewContent({
           target={routing.mobTarget}
           targetNonce={routing.mobNonce}
           onTargetConsumed={routing.clearMob}
-          // A drop dialog's route onward to the Loot tab (user ask, 2026-08-17) — the same
+          // A drop dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17) — the same
           // openLoot contract every other item name in the app already deep-links through —
           // and the page's own zone line out to the Maps tab, the drop trio's other door.
           // One line with nav on purpose: App.tsx sits at its 400-code-line ceiling.

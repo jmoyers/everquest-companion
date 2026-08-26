@@ -129,7 +129,7 @@ function measureWishCell(page: Page, key: string): Promise<CellWidths | null> {
 }
 
 /**
- * THE CONTROL HAS ITS OWN COLUMN NOW (user ruling, 2026-08-15, revising JOS-346's shared cell):
+ * THE CONTROL HAS ITS OWN COLUMN NOW (fork decision, kaltinril 2026-08-15, revising JOS-346's shared cell):
  * the `WL` column carries the compact Add/Remove pair and the Item cell holds the name alone. So
  * the placement check is that BOTH boxes exist in their own homes — a run where the control fell
  * back into the Item cell, or the name lost its element, is a run where the ruling broke. The

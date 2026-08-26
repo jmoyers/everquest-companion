@@ -220,7 +220,8 @@ test('a well-formed gear form round-trips, and unknown members drop out rather t
     weaponTypes: [WEAPON_PICKS[0], 'imaginary'],
     effect: 'proc',
     eraOnly: false,
-    ownedOnly: true
+    ownedOnly: true,
+    ignoreHaste: true
   }
   const got = sanitizeGearForm(stored)
   assert.deepEqual(got.slots, ['PRIMARY', 'SECONDARY'], 'unknown slot dropped, duplicate dropped, order kept')
@@ -228,6 +229,13 @@ test('a well-formed gear form round-trips, and unknown members drop out rather t
   assert.equal(got.effect, 'proc')
   assert.equal(got.eraOnly, false)
   assert.equal(got.ownedOnly, true)
+  // The Ignore-haste chip (2026-08-15) is the sixth stored field: a real `true` comes back, an
+  // absent or unreadable one is the shipped OFF - never a chip that switched itself on.
+  assert.equal(got.ignoreHaste, true)
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: undefined }).ignoreHaste, false, 'absent is the default')
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: 'true' }).ignoreHaste, false, 'a string is not a boolean')
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: false }).ignoreHaste, false)
+  assert.equal(DEFAULT_GEAR_FORM.ignoreHaste, false, 'and the default is OFF - the first haste item is a real upgrade')
 })
 
 test('a partial gear form keeps its siblings — one bad field is not a bad form', () => {
