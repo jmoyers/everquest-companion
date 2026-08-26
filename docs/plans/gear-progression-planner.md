@@ -143,21 +143,33 @@ zone ranges; this does not invent them either, it folds stated ones).
 ### 2.3 Role weights — a third knob on the derived scores
 
 ```ts
-export type GearRole = 'balanced' | 'tank' | 'dps' | 'healer'
-export interface GearDerivedOpts { ignoreHaste?: boolean; classes?: readonly ClassAbbr[]; role?: GearRole }
+// as shipped (shared/planner/roleWeights.ts) — the four of the first design, the six the owner asked
+// for on 2026-08-15 and 2026-08-22
+export type GearRole =
+  | 'balanced' | 'tank' | 'healer' | 'dps'
+  | 'dps1h' | 'dps2h' | 'dualwield' | 'range'
+  | 'dd' | 'dot'
+export interface RoleContext { ownedHaste?: number; classes?: readonly ClassAbbr[] }
+export function roleValue(stats: GearStats, role: GearRole, ctx?: RoleContext): number
 ```
 
-`gearBisValue` gains per-role weight profiles (tank: AC/EHP up, EFF-DMG down; dps: inverse;
-healer: mana/WIS/regen up), same one-place weights table, same heuristic honesty clause.
-**Depends on PR #31's `gearScale.ts`** — see §5.
+The first design put `role` on `gearBisValue`'s `GearDerivedOpts` (tank: AC/EHP up, EFF-DMG down;
+dps: inverse; healer: mana/WIS/regen up) and depended on PR #31's `gearScale.ts` — see §5 for why
+the standalone `roleValue` is what shipped. Same one-place weights table, same heuristic honesty
+clause.
 
-**Haste is an afterthought (owner ruling, 2026-08-22).** Worn haste does not stack, so the plan's
-`roleValue(stats, role, ownedHaste)` credits an item's haste only ABOVE the best haste the player
-already owns (`PlanCorpora.ownedHaste`, folded from the owned set in `planData.ts`). With nothing
-owned the full percentage counts — the first haste item is a real upgrade; beside a 36% sword a 9%
-glove scores its haste at 0. The slot bars keep full credit so the haste source is never displaced
-by a hasteless "higher" score. Rule 12 in `progressionPlan.ts`; pinned in
-`tests/progressionPlanRuns.test.mts` §2b.
+**Haste is an afterthought (owner ruling, 2026-08-22).** Worn haste does not stack, so
+`roleValue` credits an item's haste only ABOVE `ctx.ownedHaste`. With nothing owned the full
+percentage counts — the first haste item is a real upgrade; beside a 36% sword a 9% glove scores its
+haste at 0. A stated haste PENALTY scores as one — only the positive margin is clamped.
+**And the number is per slot, on both sides of the gap test (corrected 2026-08-25).**
+`PlanCorpora.ownedHaste` is the list of owned haste SOURCES with the slots each fits
+(`OwnedHaste[]`, folded from the DUMP-PRESENT set in `planOwned.ts`), and the fold reads it through
+`ownedHasteOutside(sources, slot)` — the best haste you would still own with that slot swapped out.
+The haste weapon's own bar therefore keeps full credit for its haste and so does anything offered
+for that slot, which is what lets a strictly better haste weapon clear the bar while a hasteless one
+with a slightly better ratio does not. Rule 12 in `progressionPlan.ts`; pinned in
+`tests/progressionPlanRuns.test.mts` §2b-2c and `tests/planOwned.test.mts`.
 
 **The score is focus × class (owner rulings, 2026-08-22 — "stats need to be weighted based on the
 type of focus" and "build a grid").** `roleWeights.ts` is two layers. LAYER 1, the focus
@@ -178,24 +190,40 @@ RANGED category) and leaves both hands open. Pinned in `tests/planRolePolicy.tes
 ### 2.4 `src/shared/planner/progressionPlan.ts` — the fold (NEW, pure)
 
 ```ts
+// as shipped
 export interface PlanInputs {
   level: number
   classes: readonly ClassAbbr[]
   role: GearRole
-  reach: 'solo' | 'group'           // the con gate: solo = safe/even, group = +risky
+  reach: 'solo' | 'group'           // the con CEILING: solo = up to even, group = up to risky
   eraOnly: boolean
+  bracketSize?: number              // default 6
 }
-export interface GearTarget { key: string; name: string; zone: string; mob: string; mobLevel: number | null; band: ConBand | null; score: number }
-export interface PlanBracket { from: number; to: number; expZones: ZonePick[]; targets: GearTarget[] }
+export interface GearTarget {
+  key: string; name: string; iconId?: number
+  zone: string; plus: number | null          // the BASE zone and the tier the witness named
+  mob: string; mobPage?: string              // the base mob spelling, and the page as linked
+  mobLevel: number | null; band: ConBand | null
+  score: number; wished: boolean
+}
+export interface GearRun { zone: string; plus: number | null; band: ConBand | null; targets: GearTarget[] }
+export interface PlanBracket { from: number; to: number; expZones: ZonePick[]; runs: GearRun[]; targets: GearTarget[] }
 export function buildProgressionPlan(inputs: PlanInputs, corpora: PlanCorpora): PlanBracket[]
+// …and the two halves it composes, so the renderer can memoize the scoring apart from the wish list:
+export function candidatePool(scope: PlanScope, corpora: PlanCorpora): PlanCandidate[]
+export function routeFromPool(inputs: PlanInputs, corpora: PlanCorpora, pool: readonly PlanCandidate[], wished: ReadonlySet<string>): PlanBracket[]
 ```
 
-Brackets of 6 levels from the current level to the era's cap. Per bracket: exp zones = era-legal
-zones whose profile median reads `even`±1 at the bracket midpoint, ranked by how much of the
-bracket they cover; targets = top role-scored era-legal items the trio can wear whose drop mob's
-stated level cons within the reach gate anywhere in the bracket, deduped against ownership and
-the wish list. `PlanCorpora` is handed in (gear rows, source index, catalog profile, era
-verdicts) so the fold stays node-testable with synthetic corpora.
+Brackets of 6 levels from the current level until the corpus runs out (a data-driven horizon, with
+a seven-bracket backstop — rule 4). Per bracket: exp zones = zones whose profile median reads
+`safe` or `even` at the bracket midpoint (`trivial` pays no exp; a positive `out-of-era` is
+dropped), ranked by how close the median sits to the midpoint; targets = role-scored era-legal
+items the trio can wear that beat the owned bar somewhere they fit, whose drop mob's stated level
+cons at or under the reach ceiling anywhere in the bracket — excluded when owned, FLAGGED when
+wished (rule 9) — grouped zone-first into `runs` (rule 7) with the flat `targets` kept as the pool
+assertion. `PlanCorpora` is handed in (gear rows, catalog profiles, a mob-level lookup, the con
+function, the owned set and bars, the owned haste sources) so the fold stays node-testable with
+synthetic corpora.
 
 ---
 
@@ -212,20 +240,27 @@ offset rule becomes a measured fact with a fixture. §0.3 is the awaiting-sample
 
 ---
 
-## 4. Renderer — a `Plan` tab in the gear area
+## 4. Renderer — the `Recommended` tab in the gear area
 
 Fifth tab beside Gear / Exaltations / Character / Wish list (the ask is gear planning; the
-Leveling tab is observed history and should stay that). One view:
+Leveling tab is observed history and should stay that). Designed as "Plan"; LABELLED
+**Recommended** by the owner on 2026-08-22 — the view id `plan`, the `eq.plan.*` keys and every
+`plan-*` testid are unchanged (`appViews.ts VIEW_LABELS`). One view:
 
 - header controls: role picker (persisted, `eq.plan.role`), reach toggle (solo/group,
   `eq.plan.reach`), era chip (the shared `useEraOnly`), and the detected class trio with the
-  same pin gesture the Gear tab uses;
+  same pin gesture the Gear tab uses; under them one paragraph saying what the pick looks for
+  (`planBlurb.ts`, owner ask 2026-08-22);
 - the level comes from `useStatedLevel` with its cue/title (stale level shows its age, never a
   silent guess);
-- bracket cards down the page, each with exp zones, targets (item icon, name → loot drill-down,
-  mob + level + band chip), and one `Add targets to wish list` button per bracket →
-  `useWishlist.add(wishFromGear(...))` per target, deduped by the document itself;
-- windowed if a bracket list ever grows past a screenful; the page never scrolls sideways.
+- bracket cards down the page, each with exp zones and its RUNS as a responsive grid of tiles
+  (`PlanRunTile.tsx`; zone-first, rule 7), each target with icon, name → loot drill-down and the
+  Gear tab's hover comparison, mob + level + band chip, and the Gear row's own `WishToggle`; plus
+  one `Add N to wish list` button per bracket → `useWishlist.add(wishFromGear(...))` per target,
+  deduped by the document itself;
+- NOT windowed, measured rather than assumed: the fold caps a bracket at 4 exp chips and 6 runs of
+  3, and the route at seven brackets, so the page is bounded by construction and lives in its own
+  scroller. The page never scrolls sideways.
 
 ---
 
@@ -250,13 +285,18 @@ con function INJECTED via `PlanCorpora` (`con: (my, mob) => ConBand`) rather tha
   (phrase, mobLvl, myLvl) pairs; `tests/conBands.test.mts` pins the derived diff table and the
   phrase fold, and goes red the day a new phrase spelling appears (awaiting-sample law).
 - `tests/progressionPlan.test.mts`: synthetic corpora — bracket cutting, the con gate both ways
-  (solo excludes `risky`, group admits it), era exclusion, +N `band: null`, ownership/wish
-  dedupe, role re-ranking (a tank plan and a dps plan order two synthetic items oppositely).
+  (solo excludes `risky`, group admits it), era exclusion, +N `band: null`, ownership exclusion,
+  role re-ranking (a tank plan and a dps plan order two synthetic items oppositely), the horizon.
+  `tests/progressionPlanRuns.test.mts`: the gap test, the wish flag, the haste rule, runs.
+  `tests/planRolePolicy.test.mts` and `tests/roleWeightsClassGate.test.mts`: the weapon policy and
+  the class gate. `tests/planOwned.test.mts`: the owned side (two sets, one haste rule).
 - `tests/zoneLevelProfile.test.mts`: the level-string fold over real catalog rows, `sampled`
   counts, the null-level row.
-- e2e: one new spec module (`planSteps.mts` from the gear e2e host or its own spec): tab
-  mounts, a bracket renders for the staged fixture's level, the add-to-wishlist button lands a
-  route row on the Wish list tab.
+- e2e: its own spec, `tests/e2e/plan.e2e.mts` (no `planSteps.mts` — the gear e2e host was not
+  extended): tab mounts, the unstated-level empty state, a ding written into the tailed log opens
+  the first bracket at that level, runs render zone-first, the bracket button lands rows on the
+  Wish list tab and they stay flagged, a row's own wish control toggles, the hover comparison
+  pair opens, the loot deep link and its Back.
 
 ## 7. Wave plan
 
