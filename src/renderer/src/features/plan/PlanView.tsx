@@ -54,7 +54,7 @@ import { CLASS_ABBRS } from '@shared/classCombo'
 import { ITEM_UPGRADE_BASE } from '@shared/itemUpgrade'
 import type { ZoneShort } from '@shared/maps'
 import type { GearRole } from '@shared/planner/progressionPlan'
-import type { ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { ProgressionSnap } from '@shared/types'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { useModule } from '../../lib/useModule'
 import {
@@ -72,7 +72,7 @@ import {
   type GearClasses
 } from '../gear/gearData'
 import { useRemembered } from '../gear/useAreaMemory'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 import { useStatedLevel, type StatedLevel } from '../leveling/useStatedLevel'
 import { CURRENT_ERA_LABEL, useEraOnly } from '../planner/plannerData'
 import type { MobTarget } from '../mobs/mobTarget'
@@ -289,8 +289,8 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   // The progression snapshot supplies the LOG clock the level statement's age is measured against
   // (never the wall clock, which would call a freshly-loaded log three weeks stale) — the read
   // `LevelingView` and `CharacterIdentity` both make, spelled the same way.
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta)
-  const stated = useStatedLevel(prog ?? EMPTY_PROGRESSION)
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
+  const stated = useStatedLevel(prog)
 
   // THE HOVER PAIR'S SEAM, at BASE (see the header): one `plannerInventory` read per mount and per
   // `inventory:autoReloaded`, two memos over data that moves only when the corpus arrives or the

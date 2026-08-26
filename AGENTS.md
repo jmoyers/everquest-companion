@@ -175,20 +175,6 @@ docs/agents-archive.md.
     (5 sightings, full-sweep only) · **RESOLVED 0523dd90 (JOS-279)** — now
     `probeWindowMs`, plus a three-valued verdict so the naive fix's mirror
     flake cannot appear. Full history: docs/agents-archive.md.
-  - `gear.e2e` + `plan.e2e` · EVERY live-append claim red at once: the staged
-    app never attaches its tail (`getCharacter()` null at 45 s, no error in
-    the staged errors.log, dump-join claims still green) · 1 sighting
-    (2026-08-15 evening, machine-wide across both specs on code green ~90 min
-    earlier; reverting the day's shared/renderer-only commits does not clear
-    it; the user's PACKAGED app tailed the real log fine throughout) ·
-    environment, not a spec race — the cause was offered by the USER himself
-    (his packaged app was running) and the probe CONFIRMED it same evening:
-    plan.e2e all-green in 25.5 s the moment his app closed, no code change
-    between red and green. Unexplained residue, stated honestly: the earlier
-    ~19:40 runs were green WITH a (different, older) build running — so the
-    mechanism is not "any running app", and a red seen while the user's app
-    is up is a report line, never a product verdict. Diagnose only from a
-    closed-window run.
 - **Fixtures are COMMITTED and SCRUBBED.** `tests/fixtures/*.log` is tracked
   (a `!tests/fixtures/*.log` negation under the blanket `*.log`), so CI's
   `npm test` runs the FULL suite. The repo is PUBLIC, so every extractor

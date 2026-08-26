@@ -7,7 +7,7 @@
 // reader's own level. A seed table like that rots in exactly one way: someone widens a band to
 // make a screenshot look right, and the "measurement" in the header quietly stops describing the
 // evidence. So nothing here trusts the header. Every test below folds
-// tests/fixtures/w69-consider-pairs.log through the REAL parser, re-pairs each consider against
+// tests/fixtures/w69-consider-pairs.log through the three line shapes it keeps, re-pairs each consider against
 // the own-level series the fixture's own dings state, and re-computes the table from scratch.
 // The module is then checked AGAINST that recomputation.
 //
@@ -27,11 +27,18 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEvent } from '../src/main/log/parser'
-import { considerDifficultyShort } from '../src/shared/logEvents'
+import { CONSIDER_FACTION_RUNGS, considerDifficultyShort } from '../src/shared/considerFaction'
 import { SEED_BANDS, bandOfPhrase, conBand } from '../src/shared/conBands'
 import type { ConBand } from '../src/shared/conBands'
-import { readFixture } from './harness.mts'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+/** The fixture's non-empty lines (the fold-era harness that read them retired with the fold). */
+function readFixture(name: string): string[] {
+  return readFileSync(join(import.meta.dirname, 'fixtures', name), 'utf8')
+    .split(/\r?\n/)
+    .filter((l) => l.length > 0)
+}
 
 const FIXTURE = 'w69-consider-pairs.log'
 
@@ -72,13 +79,34 @@ interface Replay {
 
 /** Fold the fixture the way the app folds the live tail: dings set own level, zone lines set
  *  place, considers pair against whatever the log last stated. */
+// The three line shapes the fixture keeps, read directly: the TypeScript parser that used to
+// replay them retired with the fold (JOS-499), and the engine's parser is not reachable from a
+// node test. The consider alternation is built from the same rung table the app reads.
+const LEVEL_RE = /^\[[^\]]+\] You have gained a level! Welcome to level (\d+)!/
+const ZONE_RE = /^\[[^\]]+\] You have entered (.+)\.$/
+const CONSIDER_RE = new RegExp(
+  `^\\[[^\\]]+\\] (.+?) (?:${CONSIDER_FACTION_RUNGS.map((r) => r.phrase.replace(/[.,]/g, '\\$&')).join('|')}) -- (.+?) \\(Lvl: (\\d+)\\)$`
+)
+type Ev =
+  | { kind: 'level'; level: number }
+  | { kind: 'zone'; zone: string }
+  | { kind: 'consider'; mob: string; difficulty: string; level: number }
+function parseEvent(raw: string): Ev | null {
+  const lvl = LEVEL_RE.exec(raw)
+  if (lvl) return { kind: 'level', level: Number(lvl[1]) }
+  const zn = ZONE_RE.exec(raw)
+  if (zn) return { kind: 'zone', zone: zn[1] }
+  const con = CONSIDER_RE.exec(raw)
+  // Trimmed as the parser trimmed it: one fixture line carries two trailing spaces before `(Lvl:`.
+  if (con) return { kind: 'consider', mob: con[1], difficulty: con[2].trim(), level: Number(con[3]) }
+  return null
+}
 function replay(lines: string[]): Replay {
   const out: Replay = { pairs: [], dings: [], zones: 0, considers: 0, unpaired: 0 }
   let myLevel: number | null = null
   let zone: string | null = null
-  let seq = 0
   for (const raw of lines) {
-    const ev = parseEvent(raw, seq++)
+    const ev = parseEvent(raw)
     assert.ok(ev, `every fixture line parses: ${raw}`)
     if (ev.kind === 'level') {
       myLevel = ev.level
