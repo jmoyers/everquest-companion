@@ -51,7 +51,7 @@ import {
   type EngineProcessSay,
   type EngineSupervisorSay
 } from '../shared/enginePerf'
-import { enginePerfSnapshot, lastParitySummary } from './dataServer/engineClientHost'
+import { enginePerfBudgets, enginePerfSnapshot } from './dataServer/engineClientHost'
 import { engineSupervisorStatus } from './dataServer/engineHost'
 import { getEnginePid } from './processPriority'
 import { createProcessSampler, systemProcessReader } from './processSample'
@@ -114,7 +114,16 @@ async function emit(): Promise<void> {
       supervisor,
       process: processSay(),
       engine: await enginePerfSnapshot(),
-      parity: lastParitySummary()
+      // THE BUDGETS RIDE THE SAME TICK (ruling 19, JOS-502). Sequential rather than raced with the
+      // snapshot on purpose: the engine answers both through ONE door on the ingest thread's own
+      // boundary, so two concurrent asks would queue behind each other anyway and the only thing
+      // `Promise.all` would buy is two in-flight requests to abandon when the panel closes.
+      budgets: await enginePerfBudgets(),
+      // ALWAYS NULL SINCE JOS-499. A parity verdict compared this process's fold against the
+      // engine's; there is one fold. The field stays on the wire because the panel already draws
+      // a null as "no verdict" and removing it would be a shared-shape change for a row that is
+      // permanently empty.
+      parity: null
     }
     // The watch may have been stopped while the round trip was in flight; a push after the stop
     // would leave the section holding numbers after it had been told to hide.

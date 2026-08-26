@@ -36,12 +36,30 @@
 //! open at once would each see half a session — and it would silently rob the stderr line of the
 //! interval it was about to print.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
 /// The floor between two summary lines. Long enough that a live session's stderr stays readable,
 /// short enough that a run worth watching says something while you are watching it.
 pub const REPORT_EVERY: Duration = Duration::from_secs(10);
+
+/// The nominal interval between two [`Timeline`] samples.
+///
+/// It is [`REPORT_EVERY`] today and that is deliberate rather than shared: the same beat means a
+/// stderr line and a timeline moment describe the same window, which is what makes a dev log and a
+/// bug report readable side by side. They are two constants because they answer to two different
+/// readers — a person watching a terminal, and a ring with a fixed horizon — and either could
+/// change without the other.
+pub const TIMELINE_CADENCE: Duration = Duration::from_secs(10);
+
+/// How many moments the ring holds before it starts overwriting — the HORIZON, and the reason this
+/// is a ring at all.
+///
+/// Thirty samples at [`TIMELINE_CADENCE`] is five minutes, which is the window a person can
+/// actually remember doing something in ("it went slow when I zoned"). The bound is the whole
+/// design constraint: an engine up for a week must cost exactly what one up for a minute costs, so
+/// history that ages out is DROPPED rather than summarised into a second, subtler accumulator.
+pub const TIMELINE_CAPACITY: usize = 30;
 
 /// Which kind of frame was served.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +83,17 @@ struct SourceStats {
     timed: u64,
     latency_total: Duration,
     latency_worst: Duration,
+    /// The worst timed frame SINCE THE LAST TIMELINE SAMPLE, drained by [`Meter::take_window`].
+    ///
+    /// IT IS THE ONE FIELD THE RING CANNOT DERIVE, and that is the whole reason it exists. Frames
+    /// and bytes are cumulative counters, so a window's figure is one subtraction the ring can do
+    /// against its own previous reading, costing the serve path nothing. A MAXIMUM IS NOT
+    /// INVERTIBLE — a cumulative worst of 56 ms says nothing about whether this window's worst was
+    /// 56 ms or 200 µs — so the windowed extreme has to be accumulated where the frames are
+    /// counted. `Option` rather than a zero on the same terms as `latency_worst`: a window whose
+    /// every frame was an owed reset has no latency to report, and a `0` there would claim the
+    /// serve path was instantaneous.
+    win_worst: Option<Duration>,
 }
 
 /// ONE SOURCE'S COUNTERS, READ RATHER THAN DRAINED — what [`Meter::peek`] answers with, and what
@@ -156,8 +185,35 @@ impl Meter {
             stats.timed += 1;
             stats.latency_total += took;
             stats.latency_worst = stats.latency_worst.max(took);
+            stats.win_worst = Some(stats.win_worst.map_or(took, |worst| worst.max(took)));
         }
         self.fresh = true;
+    }
+
+    /// THE RING'S READING: cumulative totals, and the windowed extreme DRAINED (JOS-502).
+    ///
+    /// The mixed posture is deliberate and is the cheapest honest thing. `frames` and `bytes` are
+    /// handed over cumulative because [`Timeline`] can subtract its own previous reading and the
+    /// serve path therefore pays nothing for them; `worst_us` is drained because a maximum cannot
+    /// be recovered by subtraction (see [`SourceStats::win_worst`]). `&mut self` is the type saying
+    /// which half is destructive, and the method is called by exactly one caller on the thread that
+    /// owns the meter — a second reader would silently take the first one's window.
+    ///
+    /// IT DOES NOT TOUCH THE CADENCE FLAG. [`Meter::take_report`]'s stderr line and this are
+    /// independent drains of independent state, so a timeline sample can never steal the interval
+    /// a summary line was about to print — the property [`Meter::peek`] holds by being `&self` and
+    /// this one holds by touching nothing but `win_worst`.
+    pub fn take_window(&mut self) -> MeterWindow {
+        let mut window = MeterWindow::default();
+        for stats in self.sources.values_mut() {
+            window.frames += stats.resets + stats.diffs;
+            window.bytes += stats.bytes;
+            if let Some(worst) = stats.win_worst.take() {
+                let worst = micros(worst);
+                window.worst_us = Some(window.worst_us.map_or(worst, |seen| seen.max(worst)));
+            }
+        }
+        window
     }
 
     /// The summary lines owed right now, or nothing.
@@ -209,6 +265,144 @@ impl Meter {
             })
             .collect()
     }
+}
+
+/// WHAT [`Meter::take_window`] HANDS THE RING — two cumulative counters and one drained extreme.
+///
+/// Read the field docs before using it: the mixed posture is the point, not an oversight.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MeterWindow {
+    /// Frames sent across every source since this generation began — CUMULATIVE.
+    pub frames: u64,
+    /// Payload bytes sent across every source since this generation began — CUMULATIVE.
+    pub bytes: u64,
+    /// The worst fold-to-frame latency, in microseconds, SINCE THE LAST CALL — drained, and `None`
+    /// when no frame in that span had a fold behind it.
+    pub worst_us: Option<u64>,
+}
+
+/// ONE SAMPLED WINDOW OF THE SERVE PATH — the ring's element, and the `PerfMoment` on the wire.
+///
+/// EVERY FIGURE IS AN INTERVAL. `perf.snapshot` already answers the cumulative question and answers
+/// it better; a history exists to say that this ten seconds cost four times what the last ten did,
+/// and a list of ever-growing totals makes a reader do that subtraction himself against a baseline
+/// he cannot see.
+///
+/// IT IS NOT THE GENERATED TYPE, for the reason [`SourceMeter`] is not: `views/` knows nothing
+/// about the protocol and must not. The mapping is five field assignments in `world.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Moment {
+    /// Process uptime in milliseconds when this window CLOSED.
+    pub at_ms: u64,
+    /// How long the window actually covered — measured, never assumed to be the cadence.
+    pub span_ms: u64,
+    /// Frames sent during the window, across every source.
+    pub frames: u64,
+    /// What those frames weighed, across every source.
+    pub bytes: u64,
+    /// The worst timed frame in the window, or `None` when none of them had a fold behind it.
+    pub worst_us: Option<u64>,
+}
+
+/// THE BOUNDED HISTORY BEHIND `perf.timeline` (JOS-502) — a fixed-capacity ring, oldest first.
+///
+/// ## THE BOUND IS THE FEATURE
+///
+/// [`TIMELINE_CAPACITY`] moments, and the oldest is DROPPED rather than folded into a summary. An
+/// engine up for a week costs what one up for a minute costs, which is the property that lets this
+/// exist at all in a process the app never restarts — ruling 19 asked for a history, and an
+/// unbounded one would be a leak wearing a diagnostic's clothes.
+///
+/// ## IT READS A CLOCK IT IS GIVEN, NEVER ONE IT TAKES
+///
+/// Every method takes the process uptime in milliseconds from its caller. There is no `Instant`
+/// here and no wall clock anywhere near it: the engine does not read a wall clock to answer a
+/// performance question (`PerfSnapshotResult.lastEventTs` makes the same point from the other
+/// side), a process-relative stamp carries nothing about when or where a person plays, and every
+/// test below is arithmetic with no sleeping in it.
+///
+/// ## A QUIET WINDOW IS RECORDED AS A QUIET WINDOW
+///
+/// Nothing here skips an empty sample. A ring that dropped its silent moments would compress a
+/// two-minute lull into no space at all and make the busy ones look adjacent, which is the one
+/// reading error a timeline exists to prevent.
+#[derive(Debug, Default)]
+pub struct Timeline {
+    moments: VecDeque<Moment>,
+    /// Uptime at the close of the last sample, or `None` until the first tick opens the first
+    /// window. The first tick establishes a baseline and pushes nothing — a first moment measured
+    /// from process start would report the boot as a serve window.
+    since_ms: Option<u64>,
+    /// The cumulative counters as of the last sample, so a window is one subtraction.
+    frames: u64,
+    bytes: u64,
+}
+
+impl Timeline {
+    /// An empty ring.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Offer the ring a tick. It samples only when a whole [`TIMELINE_CADENCE`] has passed.
+    ///
+    /// CALLED ON THE SERVE BEAT (~10 Hz), which is a hundred times more often than it samples — the
+    /// cadence check is two integer operations and lives here rather than at the call site so the
+    /// ring's horizon cannot be changed by accident from the ingest loop.
+    ///
+    /// `at_ms` MUST BE MONOTONIC (it is process uptime). A tick that went backwards would produce a
+    /// negative span; it is treated as a zero-length window rather than trusted, because an
+    /// instrument that can print a negative duration is one nobody believes afterwards.
+    pub fn tick(&mut self, at_ms: u64, meter: &mut Meter) {
+        let Some(since) = self.since_ms else {
+            // The first tick opens the window and takes the baseline. `take_window` is called for
+            // its DRAIN — anything timed before the ring existed belongs to no window.
+            let opening = meter.take_window();
+            self.since_ms = Some(at_ms);
+            self.frames = opening.frames;
+            self.bytes = opening.bytes;
+            return;
+        };
+        let span_ms = at_ms.saturating_sub(since);
+        if span_ms < millis(TIMELINE_CADENCE) {
+            return;
+        }
+        let window = meter.take_window();
+        self.push(Moment {
+            at_ms,
+            span_ms,
+            frames: window.frames.saturating_sub(self.frames),
+            bytes: window.bytes.saturating_sub(self.bytes),
+            worst_us: window.worst_us,
+        });
+        self.since_ms = Some(at_ms);
+        self.frames = window.frames;
+        self.bytes = window.bytes;
+    }
+
+    /// Add one moment, dropping the oldest when the ring is full.
+    fn push(&mut self, moment: Moment) {
+        if self.moments.len() == TIMELINE_CAPACITY {
+            self.moments.pop_front();
+        }
+        self.moments.push_back(moment);
+    }
+
+    /// THE RING AS IT STANDS, OLDEST FIRST, AND NOTHING IS RESET — `perf.timeline`'s reader.
+    ///
+    /// `&self`, which is the type stating the property, exactly as [`Meter::peek`] does: two panels
+    /// open at once must see the same history, and a read that consumed the ring would make what
+    /// the second one saw depend on how recently the first one asked.
+    #[must_use]
+    pub fn peek(&self) -> Vec<Moment> {
+        self.moments.iter().copied().collect()
+    }
+}
+
+/// A duration as whole milliseconds, saturating rather than wrapping.
+fn millis(d: Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
 }
 
 /// The mean of the timed frames, in microseconds, or `None` when none were timed.
@@ -270,8 +464,180 @@ fn took(d: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{FrameKind, Meter, REPORT_EVERY};
+    use super::{FrameKind, Meter, Timeline, REPORT_EVERY, TIMELINE_CAPACITY};
     use std::time::Instant;
+
+    /// Ten seconds — [`super::TIMELINE_CADENCE`] in the unit the ring's clock is in.
+    const CADENCE_MS: u64 = 10_000;
+
+    /// Serve one frame of `bytes`, timed or not. The ring's tests care about counts, not sources.
+    fn served(meter: &mut Meter, bytes: usize, timed: bool) {
+        meter.frame(
+            "loot.ledger",
+            FrameKind::Diff,
+            0,
+            1,
+            bytes,
+            timed.then(Instant::now),
+        );
+    }
+
+    #[test]
+    fn the_first_tick_opens_a_window_rather_than_reporting_the_boot_as_one() {
+        // A first moment measured from process start would report however long the app took to
+        // launch as a serve window — the one figure in a timeline nobody could act on.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        served(&mut meter, 400, true);
+        ring.tick(30_000, &mut meter);
+        assert!(ring.peek().is_empty(), "the baseline is not a moment");
+        ring.tick(30_000 + CADENCE_MS, &mut meter);
+        let [moment] = ring.peek().try_into().expect("one moment");
+        assert_eq!(moment.at_ms, 40_000);
+        assert_eq!(moment.span_ms, CADENCE_MS);
+        assert_eq!(moment.frames, 0, "the frame belonged to the baseline");
+        assert_eq!(moment.worst_us, None, "and so did its timing");
+    }
+
+    #[test]
+    fn a_moment_reports_the_interval_and_not_a_running_total() {
+        // THE ONE DESIGN DECISION IN THIS SHAPE. Two busy windows in a row must read as two equal
+        // windows, not as one and then two.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        served(&mut meter, 100, false);
+        served(&mut meter, 100, false);
+        ring.tick(CADENCE_MS, &mut meter);
+        served(&mut meter, 100, false);
+        served(&mut meter, 100, false);
+        ring.tick(CADENCE_MS * 2, &mut meter);
+        let moments = ring.peek();
+        assert_eq!(moments.len(), 2);
+        assert_eq!((moments[0].frames, moments[0].bytes), (2, 200));
+        assert_eq!(
+            (moments[1].frames, moments[1].bytes),
+            (2, 200),
+            "the second window is 2 frames, not the cumulative 4"
+        );
+        // …and the cumulative view is untouched: the ring reads the meter, it does not spend it.
+        assert_eq!(meter.peek()[0].frames, 4);
+    }
+
+    #[test]
+    fn a_quiet_window_is_recorded_as_a_quiet_window() {
+        // Skipping empty samples would compress a lull into no space at all and make the busy
+        // moments either side of it look adjacent.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        ring.tick(CADENCE_MS, &mut meter);
+        ring.tick(CADENCE_MS * 2, &mut meter);
+        let moments = ring.peek();
+        assert_eq!(moments.len(), 2, "silence is two moments, not none");
+        assert!(moments.iter().all(|m| m.frames == 0 && m.bytes == 0));
+    }
+
+    #[test]
+    fn the_windowed_worst_is_this_windows_worst_and_not_the_generations() {
+        // The field the ring cannot derive: a cumulative maximum says nothing about which window
+        // set it. A busy window followed by an untimed one must not inherit the first one's peak.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        served(&mut meter, 100, true);
+        ring.tick(CADENCE_MS, &mut meter);
+        served(&mut meter, 100, false);
+        ring.tick(CADENCE_MS * 2, &mut meter);
+        let moments = ring.peek();
+        assert!(moments[0].worst_us.is_some(), "a timed frame was served");
+        assert_eq!(
+            moments[1].worst_us, None,
+            "an untimed window reports absent, never the last window's peak and never zero"
+        );
+        // …while the generation's cumulative worst is still there for `perf.snapshot` to serve.
+        assert!(meter.peek()[0].latency_max_us.is_some());
+    }
+
+    #[test]
+    fn the_cadence_holds_a_tick_back_and_the_span_is_measured_rather_than_assumed() {
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        ring.tick(CADENCE_MS - 1, &mut meter);
+        assert!(ring.peek().is_empty(), "one millisecond short is not due");
+        // A busy thread takes its sample late, and the moment says so instead of claiming the
+        // nominal cadence — which would quietly turn a stall into a shorter-looking window.
+        ring.tick(CADENCE_MS * 3, &mut meter);
+        let [moment] = ring.peek().try_into().expect("one moment");
+        assert_eq!(moment.span_ms, CADENCE_MS * 3);
+    }
+
+    #[test]
+    fn the_ring_is_bounded_and_drops_the_oldest() {
+        // THE PROPERTY THE WHOLE SHAPE EXISTS FOR. An engine up for a week costs what one up for a
+        // minute costs.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        for beat in 1..=(TIMELINE_CAPACITY as u64 + 20) {
+            served(&mut meter, 10, false);
+            ring.tick(beat * CADENCE_MS, &mut meter);
+        }
+        let moments = ring.peek();
+        assert_eq!(moments.len(), TIMELINE_CAPACITY, "the horizon is fixed");
+        assert_eq!(
+            moments[0].at_ms,
+            21 * CADENCE_MS,
+            "oldest first, and the first twenty aged out"
+        );
+        assert!(
+            moments.windows(2).all(|w| w[0].at_ms < w[1].at_ms),
+            "oldest first is an ordering the server owes, not one a caller sorts for"
+        );
+    }
+
+    #[test]
+    fn peeking_the_ring_resets_nothing() {
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(0, &mut meter);
+        served(&mut meter, 100, true);
+        ring.tick(CADENCE_MS, &mut meter);
+        assert_eq!(ring.peek(), ring.peek(), "two panels see the same history");
+    }
+
+    #[test]
+    fn a_clock_that_went_backwards_is_a_zero_window_rather_than_a_negative_one() {
+        // Uptime is monotonic, so this cannot happen — and an instrument that could print a
+        // negative duration is one nobody believes afterwards, so it is pinned rather than assumed.
+        let mut meter = Meter::new();
+        let mut ring = Timeline::new();
+        ring.tick(CADENCE_MS * 5, &mut meter);
+        ring.tick(0, &mut meter);
+        assert!(ring.peek().is_empty(), "a backwards tick samples nothing");
+    }
+
+    #[test]
+    fn draining_the_window_leaves_the_stderr_line_and_the_cumulative_counters_alone() {
+        // The three drains in this file are independent: the cadence flag, the windowed extreme,
+        // and nothing else. A timeline sample must not steal the interval a summary was owed.
+        let mut meter = Meter::new();
+        served(&mut meter, 100, true);
+        let window = meter.take_window();
+        assert_eq!(window.frames, 1);
+        assert!(window.worst_us.is_some());
+        assert!(
+            meter.take_window().worst_us.is_none(),
+            "the extreme is drained"
+        );
+        assert_eq!(meter.take_window().frames, 1, "the counters are not");
+        assert_eq!(
+            meter.take_report(true).len(),
+            1,
+            "and the line is still owed"
+        );
+    }
 
     #[test]
     fn a_meter_that_counted_nothing_says_nothing() {

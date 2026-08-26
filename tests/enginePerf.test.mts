@@ -176,6 +176,10 @@ function sample(over: Partial<EnginePerfSample> = {}): EnginePerfSample {
     supervisor: 'ready',
     process: null,
     engine: snapshot(),
+    // JOS-502: the budgets ride the same tick. `null` is the ordinary case for these fixtures —
+    // they are about the SNAPSHOT's arithmetic, and a panel whose engine refused the budgets still
+    // draws every row above them.
+    budgets: null,
     parity: null,
     ...over
   }

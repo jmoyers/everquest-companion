@@ -65,3 +65,41 @@ export function setAppKnowledgePusher(fn: ((op: DefineOp) => void) | null): void
 export function pushAppKnowledge(op: DefineOp): void {
   pusher?.(op)
 }
+
+// ── the sixth statement, which is not a sixth family (JOS-498) ─────────────────────────────────
+//
+// `logs.setDir` is the same SHAPE of act as the five above — the app states something the engine
+// cannot work out for itself, on connect and whenever it changes, as an idempotent full-set replace
+// — so it gets the same slot mechanism and lives in the same file. It is deliberately NOT a member
+// of `DEFINE_OPS`, and the difference is worth the four extra lines rather than a sixth entry:
+//
+//   * THE FIVE ARE FOLD INPUTS. Each of them changes what folding a log produces, which is why
+//     `pushAllDefines` runs BEFORE every attach and why the engine re-applies them at each fold's
+//     construction. A directory changes no fold at all, so pushing it after an attach would be
+//     harmless and pushing it before one is merely tidy.
+//   * THE FIVE READ THE STORE THROUGH `appKnowledge.ts`. This one reads the RESOLVER — `eqLogsDir()`
+//     is an override, plus a memoized discovery sweep, plus a registry read — so its value is not a
+//     stored preference at all, it is the answer to "where is EverQuest", and `readDefine`'s
+//     switch is the wrong home for it.
+//
+// WHAT IT SHARES IS THE REASON THIS FILE EXISTS: an ipc setter and `session.ts` must be able to say
+// "the EQ directory moved" without importing the engine client, which imports the supervisor, which
+// imports the child-process plumbing. A registration inverts that; an import would be a cycle.
+
+/** Filled by `engineClientHost.installEngineClient`, and by nothing else. */
+let logDirPusher: (() => void) | null = null
+
+/** Arm the push. Null lets go — `stopEngineClient` and a respawn both pass through here. */
+export function setLogDirPusher(fn: (() => void) | null): void {
+  logDirPusher = fn
+}
+
+/**
+ * THE EQ DIRECTORY MOVED — tell the engine, if there is one.
+ *
+ * `pushAppKnowledge`'s contract exactly: called AFTER this process has already adopted the change,
+ * never throws, never waits. A launch with no engine finds a null and pays one comparison.
+ */
+export function pushLogDir(): void {
+  logDirPusher?.()
+}

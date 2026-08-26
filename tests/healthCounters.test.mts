@@ -220,8 +220,12 @@ test('THE FOUR WIRED SOURCES are wired where the report says, and the fifth is n
   const speech = read('src/main/ipc/speech.ts')
   const say = speech.slice(speech.indexOf('ipcMain.handle(IPC.speechSay'))
   assert.ok(say.indexOf("markFunnelStep('voice-install'") < say.indexOf('else noteSpeechFailure()'))
-  // 5. parser stalls — NO caller anywhere in src/main. This assertion is the honest label.
-  for (const file of ['src/main/log/Tailer.ts', 'src/main/session.ts']) {
+  // 5. parser stalls — NO caller anywhere in src/main, and since JOS-499 there is no parser in
+  //    this process to stall. The label is MORE honest than it was rather than less: the field
+  //    reports 0 because nobody looked, and the thing it would have looked at is in another
+  //    process now. `src/main/log/Tailer.ts` was named here and is deleted; session.ts is the
+  //    file that used to own the tail and is the right place to keep watching.
+  for (const file of ['src/main/session.ts', 'src/main/dataServer/serveDeltas.ts']) {
     assert.ok(!read(file).includes('noteParserStall'), `${file} has no stall detector to wire`)
   }
 })

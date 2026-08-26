@@ -435,6 +435,7 @@ function segmentOptions(
   const zones = snap?.zoneSessions ?? []
   return {
     opts: scopeOptions(scope, segs, zones),
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SegmentSummary. Becomes a view descriptor when the source lands.
     capped: scope === 'fight' && segs.filter((s) => s.kind === 'fight').length >= maxSegments
   }
 }

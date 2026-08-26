@@ -50,12 +50,14 @@ use std::time::Instant;
 
 use protocol::generated::{
     AttachResult, ConCardMessage, DiffMessage, DiffMessageKind, EngineMessage, Epoch, EpochMessage,
-    EpochMessageKind, EpochReason, FireMessage, FireMessageKind, FoldProgress, HealthResult,
-    HealthResultStatus, KnowledgeMissMessage, KnowledgeMissMessageKind, KnowledgePushDomain,
-    LogMark, ModuleChangedMessage, ModuleChangedMessageKind, PerfIngest, PerfServeSource,
-    PerfSnapshotResult, PerfSnapshotResultStatus, RequestId, ResetMessage, ResetMessageKind, Row,
+    EpochMessageKind, EpochReason, FireCaptures, FireMessage, FireMessageKind, FoldProgress,
+    HealthResult, HealthResultStatus, KnowledgeMissMessage, KnowledgeMissMessageKind,
+    KnowledgePushDomain, LogMark, ModuleChangedMessage, ModuleChangedMessageKind,
+    PerfBudgetsResult, PerfIngest, PerfMoment, PerfServeSource, PerfSnapshotResult,
+    PerfSnapshotResultStatus, PerfTimelineResult, RequestId, ResetMessage, ResetMessageKind, Row,
 };
 
+use crate::budgets;
 use crate::ingest::{self, Starter};
 use crate::views::{self, FrameKind, Meter, Prepared, SourceDef};
 
@@ -94,7 +96,8 @@ pub enum SnapshotAnswer {
     Unavailable(String),
 }
 
-/// What [`World::perf_snapshot`] found.
+/// What a performance question found — [`World::perf_snapshot`], [`World::perf_budgets`] and
+/// [`World::perf_timeline`] all answer with it.
 ///
 /// TWO OUTCOMES AND NOT THREE, and the missing one is the point: there is no `NotFound`, because a
 /// perf question names nothing that could be absent. An engine with no fold at all is NOT a
@@ -102,10 +105,14 @@ pub enum SnapshotAnswer {
 /// exactly. The only refusal is a fold that HAS a door and did not answer through it, which is a
 /// wedged ingest and the one thing a performance panel most needs to be told about rather than
 /// shown as a row of zeros.
+///
+/// IT IS GENERIC OVER THE RESULT because the three ops share every one of those sentences (JOS-502)
+/// — same door, same deadline, same two outcomes, and the same reason the refusal is singular. Three
+/// enums that differed only in one field's type would be three places for that argument to drift.
 #[derive(Debug)]
-pub enum PerfAnswer {
+pub enum PerfAnswer<T> {
     /// The engine's own numbers.
-    Perf(Box<PerfSnapshotResult>),
+    Perf(Box<T>),
     /// A fold that was there to ask and did not answer in time.
     Unavailable(String),
 }
@@ -210,6 +217,19 @@ struct State {
     /// ingest's own `report_*` calls. The handle is cloned out under the lock and the parse happens
     /// with the lock released — the same discipline [`World::module_snapshot`] states for the wait.
     client_spells: Option<std::sync::Arc<crate::spells::ClientSpells>>,
+    /// WHERE THE CHARACTER LOGS LIVE, as the APP named it (owner ruling 21, decision sheet 1a —
+    /// JOS-498). `None` until a `logs.setDir` arrives, which is what makes `logs.list` refusable
+    /// rather than emptily wrong.
+    ///
+    /// IT IS APP KNOWLEDGE AND IT SURVIVES AN ATTACH, exactly as `defines` does and for the
+    /// identical reason: a character switch is not the app withdrawing where its logs live. It is
+    /// NOT a `*.define` family, though, and the difference is worth the field rather than a sixth
+    /// entry in that map — the five defines are FOLD inputs, held so the next attach can apply them
+    /// at construction (`held_defines`) and part of ruling 18's cache key. This changes no fold: a
+    /// world that has never heard it folds byte-identically to one that has, so putting it in
+    /// `defines` would have made a directory look like a parse input to everything downstream that
+    /// reads that map.
+    log_dir: crate::logs::LogDir,
 }
 
 /// What the world's fold has consumed. A COORDINATE PAIR plus what was counted along the way.
@@ -385,6 +405,7 @@ impl World {
                     defines: std::collections::BTreeMap::new(),
                     write_to: None,
                     client_spells: None,
+                    log_dir: crate::logs::LogDir::default(),
                 }),
             }),
         }
@@ -677,7 +698,7 @@ impl World {
     /// IT READS THE COUNTERS AND RESETS NOTHING (`Meter::peek`). Two panels open at once must see
     /// the same session, and the stderr report must not lose the interval it was about to print.
     #[must_use]
-    pub fn perf_snapshot(&self) -> PerfAnswer {
+    pub fn perf_snapshot(&self) -> PerfAnswer<PerfSnapshotResult> {
         // ONE CRITICAL SECTION FOR THE WORLD'S WHOLE HALF, and it ends before anything can block.
         //
         // IT COPIES THE STATE RATHER THAN CALLING `health()`, and that is not duplication for its
@@ -728,6 +749,94 @@ impl World {
                 scan_bytes: measured.ingest.scan_bytes.map(clamp_i64),
             },
             serve: serve_rows(&measured.serve, &watched),
+        }))
+    }
+
+    /// How long THIS PROCESS has been up, in milliseconds — the one clock a performance answer is
+    /// allowed to read.
+    ///
+    /// PROCESS-RELATIVE AND NOT A WALL CLOCK. It survives an attach, which the epoch does not, and
+    /// it carries nothing about when or where a person plays — which is why `views::Timeline`
+    /// stamps its moments with it rather than taking a clock of its own. It takes NO LOCK: the
+    /// start instant is set once at construction and never written again, and the ingest thread
+    /// calls this on the serve beat.
+    #[must_use]
+    pub fn uptime_ms(&self) -> u64 {
+        u64::try_from(self.inner.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// Answer `perf.budgets` — every budget this build enforces, judged against this generation.
+    ///
+    /// SAME DOOR, SAME DEADLINE, SAME TWO OUTCOMES as [`World::perf_snapshot`], and the SAME ASK:
+    /// the ingest answers one `PerfAsk` carrying the cost, the serve rows and the ring, and the
+    /// three perf ops are three readings of that one answer. A second door would be a second
+    /// `try_recv` on the hottest boundary this thread has, bought for nothing.
+    ///
+    /// THE WORLD'S HALF IS ONE FIELD, so there is no critical section here at all — no subscriber
+    /// counts to pair with a coordinate, no status to copy. A budget verdict is a fact about the
+    /// generation the measurements came from, so the epoch is read (under the lock, where every
+    /// read of it belongs) and carried, and a reader comparing two answers across an attach can see
+    /// that they are not comparable.
+    ///
+    /// THE ARITHMETIC AND THE PROSE ARE `budgets`'s, not this method's. Ruling 4 puts the
+    /// comparison and the rendering on this side of the wire; this method's whole job is to pull
+    /// three readings out of the answer and hand them over.
+    #[must_use]
+    pub fn perf_budgets(&self) -> PerfAnswer<PerfBudgetsResult> {
+        let (epoch, asks) = {
+            let state = self.lock();
+            (state.epoch, state.asks.clone())
+        };
+        let measured = match asks {
+            None => ingest::EnginePerf::default(),
+            Some(asks) => match self.ask_perf(&asks) {
+                Ok(measured) => measured,
+                Err(why) => return PerfAnswer::Unavailable(why),
+            },
+        };
+        PerfAnswer::Perf(Box::new(PerfBudgetsResult {
+            epoch: Epoch(epoch),
+            budgets: budgets::budgets(&budgets::Readings {
+                scan_ms: measured.ingest.scan_ms,
+                scan_bytes: measured.ingest.scan_bytes,
+                // THE WORST ACROSS EVERY SOURCE, and it is the generation's worst rather than any
+                // window's: a wedge detector that forgot the frame that wedged would be a wedge
+                // detector that clears itself. `filter_map` drops the sources whose frames were all
+                // owed resets — absent, never zero, the rule the whole meter keeps.
+                worst_serve_us: measured
+                    .serve
+                    .iter()
+                    .filter_map(|row| row.latency_max_us)
+                    .max(),
+            }),
+        }))
+    }
+
+    /// Answer `perf.timeline` — the bounded recent history behind the snapshot's totals.
+    ///
+    /// SAME DOOR AND SAME ASK as [`World::perf_budgets`], for the reasons stated there. The ring
+    /// arrives already bounded and already ordered oldest-first (`views::Timeline`), so this method
+    /// maps five fields and states the horizon: `capacity` and `cadenceMs` are on the answer
+    /// because a client that had to infer the horizon from the LENGTH would infer it wrongly for
+    /// the whole first five minutes of every generation.
+    #[must_use]
+    pub fn perf_timeline(&self) -> PerfAnswer<PerfTimelineResult> {
+        let (epoch, asks) = {
+            let state = self.lock();
+            (state.epoch, state.asks.clone())
+        };
+        let measured = match asks {
+            None => ingest::EnginePerf::default(),
+            Some(asks) => match self.ask_perf(&asks) {
+                Ok(measured) => measured,
+                Err(why) => return PerfAnswer::Unavailable(why),
+            },
+        };
+        PerfAnswer::Perf(Box::new(PerfTimelineResult {
+            epoch: Epoch(epoch),
+            capacity: i64::try_from(views::TIMELINE_CAPACITY).unwrap_or(i64::MAX),
+            cadence_ms: i64::try_from(views::TIMELINE_CADENCE.as_millis()).unwrap_or(i64::MAX),
+            timeline: measured.timeline.iter().map(moment_row).collect(),
         }))
     }
 
@@ -930,6 +1039,48 @@ impl World {
             .collect()
     }
 
+    /// WHERE THE CHARACTER LOGS LIVE, as the app just said (owner ruling 21, decision sheet 1a).
+    ///
+    /// AN IDEMPOTENT FULL-SET REPLACE OF ONE VALUE, which for a single path means the latest push is
+    /// the whole of what the app has said — the same command law the five defines are under, and the
+    /// reason a crash-respawn needs nothing but a replay of the latest push.
+    ///
+    /// NOTHING IS HANDED TO A FOLD, and that is the whole difference from [`World::define`] one
+    /// method up. A define changes what folding a log produces and therefore has to reach the
+    /// running ingest and be re-applied at the next attach's construction; a directory changes
+    /// nothing about any fold, so the write ends here. It also means this call cannot block on the
+    /// ingest thread, which is why it takes the lock and drops it in one statement.
+    pub fn set_log_dir(&self, dir: &str) {
+        self.lock().log_dir.set(dir);
+    }
+
+    /// THE CHARACTER LOGS IN THE DIRECTORY THE APP NAMED, or `Err` when it has named none.
+    ///
+    /// THE SCAN HAPPENS WITH THE LOCK RELEASED, exactly as [`World::module_snapshot`]'s wait does
+    /// and for the same reason: it is a readdir plus one stat per file, which is fast on a warm
+    /// directory and unbounded on a disconnected network share — and this mutex is taken by the
+    /// ingest thread in every `report_*` it makes. Holding it across a filesystem call would let one
+    /// slow share stall the fold.
+    ///
+    /// THE PATH IS COPIED OUT AND ECHOED BACK by the caller, so the answer names the directory it is
+    /// about. See `LogsListResult` in the schema: that echo is the client's own staleness test.
+    ///
+    /// IT NEEDS NO FOLD AND NO ATTACH. A world that has folded nothing answers this perfectly, which
+    /// is the launch the op exists for — a fresh install has characters to choose between before
+    /// there is anything to attach to.
+    pub fn list_logs(&self) -> Result<(String, crate::logs::LogScan), String> {
+        let dir = self.lock().log_dir.get().map(std::path::Path::to_path_buf);
+        let Some(dir) = dir else {
+            return Err(
+                "no log directory has been pushed, so there is nothing to enumerate; the app names \
+                 it with logs.setDir"
+                    .to_owned(),
+            );
+        };
+        let scan = crate::logs::scan(&dir);
+        Ok((dir.to_string_lossy().into_owned(), scan))
+    }
+
     /// THE INGEST OFFERS TO TAKE WRITES: install this turn's push channel.
     ///
     /// A `report_*` method like every other statement an ingest makes, and ownership is re-asked
@@ -966,6 +1117,13 @@ impl World {
             rule: fire.rule.clone(),
             sound: fire.sound.clone(),
             message: fire.message.clone(),
+            // WHAT IT SAYS (JOS-500, ruling 27), carried verbatim. Nothing is decided here and
+            // nothing is defaulted: an absent field is the fold's own statement that this firing has
+            // nothing true to say there, and null-filling it would turn "no spell in this family"
+            // into a value the app would have to learn to disbelieve.
+            captures: fire.captures.clone().map(FireCaptures),
+            spell: fire.spell.clone(),
+            due_at: fire.due_at,
         });
         broadcast(&mut state, &frame);
         true
@@ -1494,6 +1652,21 @@ fn subscriber_counts(state: &State) -> BTreeMap<&'static str, i64> {
 ///
 /// A source in NEITHER set is absent, and that is the panel's own rule arriving from the data: no
 /// rows of zeros for a source this session has never had anything to do with.
+/// ONE RING ENTRY ON THE WIRE (JOS-502) — five field assignments and no arithmetic.
+///
+/// A FREE FUNCTION THAT TOUCHES NO LOCK, like the four beside it. The ring did the subtraction that
+/// makes each figure an interval, and `views::Timeline` did it where the counters live; this is the
+/// mapping onto the generated type, which is the one thing `views/` may not know about.
+fn moment_row(moment: &views::Moment) -> PerfMoment {
+    PerfMoment {
+        at_ms: clamp_i64(moment.at_ms),
+        span_ms: clamp_i64(moment.span_ms),
+        frames: clamp_i64(moment.frames),
+        payload_weight: clamp_i64(moment.bytes),
+        fold_to_frame_us_max: moment.worst_us.map(clamp_i64),
+    }
+}
+
 fn serve_rows(
     served: &[views::SourceMeter],
     watched: &BTreeMap<&'static str, i64>,

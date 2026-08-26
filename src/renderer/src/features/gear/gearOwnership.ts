@@ -147,6 +147,7 @@ export function gearOwnershipOf(rows: readonly OwnershipRow[], looted: boolean):
   const facts = ownedFacts(rows)
   return {
     facts,
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: OwnershipRow comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
     exaltations: rows.reduce((n, r) => n + (r.exaltation ? 1 : 0), 0),
     owned: facts.length > 0,
     looted,

@@ -31,13 +31,11 @@ import { getBuffTrustPrefs, setBuffTrustPrefs } from '../store'
 // unless this launch asked for an engine. Its `CastAnchors` obeys the same "a name added mid-session
 // anchors the very next cast, and retro-admits nothing" rule this setter's header states.
 import { pushAppKnowledge } from '../dataServer/definePush'
-import { buffsModule } from '../pipeline'
 
 export function registerBuffTrustIpc(): void {
   ipcMain.handle(IPC.buffTrustGet, () => getBuffTrustPrefs())
   ipcMain.handle(IPC.buffTrustSet, (_e, value: unknown) => {
     const next = setBuffTrustPrefs(value)
-    buffsModule.setTrust(next)
     pushAppKnowledge('buffTrust.define')
     return next
   })

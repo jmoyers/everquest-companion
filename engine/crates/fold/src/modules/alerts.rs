@@ -426,6 +426,13 @@ mod tests {
         // subject is a deadline that arrives while the log is idle. The TS stamps `ts: nowMs` in
         // the same place, so the app receives the identical number under either evaluator.
         assert_eq!(fires[0].at, 56_000);
+        // …AND `dueAt` IS WHAT IT WAS EARLY FOR (JOS-500): the row's stated end, 1,000 + 60,000.
+        // The gap between the two IS the five seconds the def asked for, which is the whole of what
+        // a banner counts down and what the retired evaluator put on the same firing.
+        assert_eq!(fires[0].due_at, Some(61_000));
+        // The spoken spell is the PROBE's — the rank-less name the wear-off line prints — because
+        // the name the alert matched on is the name it should say.
+        assert_eq!(fires[0].spell.as_deref(), Some("Shiftless Deeds"));
 
         // It does not speak twice for one landing.
         m.on_tick(57_000, &rows);
@@ -435,6 +442,34 @@ mod tests {
         // landing. One landing, one firing (JOS-235).
         m.on_event(&ev(WORE_OFF), true);
         assert!(m.take_fires().is_empty());
+    }
+
+    /// AN EARLY WARNING SPEAKS THE MOB IT ARMED ON (JOS-500, ruling 27) — the acceptance case for
+    /// the `{target}` half, on the path where it is hardest.
+    ///
+    /// A BREAK-FAMILY DEF HAS NO EVENT TO ASK. It arms from the ROW APPEARING (JOS-235), and by the
+    /// time the heartbeat speaks there is still no line — the wear-off has not happened yet, which
+    /// is the entire point of warning early. So the words come off the PROBE's hypothetical event,
+    /// which carries the row's own subject, and they are frozen on the arm rather than re-resolved
+    /// at delivery. That is what makes "Shiftless Deeds is about to break on King Tranix" a sentence
+    /// this engine can say five seconds before anything has been printed.
+    #[test]
+    fn an_early_warning_speaks_the_mob_it_armed_on() {
+        let mut def = slow_wore_off_a_mob(Some(5));
+        def["speech"] = json!({ "mode": "custom", "phrase": "Slow breaking on {target}" });
+        let mut m = AlertsModule::new();
+        m.define(&json!([def]));
+        let rows = [slow_row(1_000, Some(60_000))];
+
+        m.on_tick(2_000, &rows);
+        m.on_tick(56_000, &rows);
+        let fires = m.take_fires();
+        assert_eq!(fires.len(), 1);
+        let captures = fires[0].captures.as_ref().expect("the probe's subject");
+        assert_eq!(
+            captures.get("target").map(String::as_str),
+            Some("King Tranix")
+        );
     }
 
     /// …AND AN EARLY BREAK IS NEVER SILENT. The hold ends before the deadline, no warning ever

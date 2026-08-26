@@ -52,13 +52,10 @@
 
 import { type JSX, useEffect, useMemo, useState } from 'react'
 import type {
-  CharacterDelta,
   CharacterSnap,
-  LootDelta,
   LootEvent,
   LootSnap,
   OverlayConfig,
-  ProgressionDelta,
   ProgressionSnap
 } from '@shared/types'
 import {
@@ -72,7 +69,7 @@ import {
 import { toggleXpRow, XP_ROW_IDS, xpRowVisible, type XpRowId } from '@shared/xpOverlay'
 import { toggleRateBasis, type RateBasis } from '@shared/rateBasis'
 import { ZONE_SCOPE_LABEL, toggleZoneScope, type ZoneScope } from '@shared/zoneScope'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../features/leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../features/leveling/progressionDelta'
 // THE APP-WIDE SCOPE SELECTION (JOS-332) — the same hook the Leveling tab's toggle row calls, over
 // this window's own bridge. MUI-free by that file's own law, which is what lets this bundle import
 // a module that lives under `features/`.
@@ -93,11 +90,7 @@ import { xpOverlayView, type XpOverlayRow } from './xpRows'
 const ACCENT = '#8fbfe8'
 const ACCENT_BG = 'rgba(143,191,232,0.2)'
 
-/** The `loot` module's whole delta contract: a concat, forever (features/loot/useLootHistory). */
-const applyLootDelta = (s: LootSnap, d: LootDelta): LootSnap => [...s, ...d.appended]
 const NO_LOOT: LootEvent[] = []
-/** The `character` module's delta is a partial merge, exactly as the main window folds it. */
-const applyCharacterDelta = (s: CharacterSnap, d: CharacterDelta): CharacterSnap => ({ ...s, ...d })
 const NO_CHARACTER: CharacterSnap = { character: null }
 /** `dataBounds` takes the series the caller draws on top of the snapshot; this window draws none
  *  (the progression columns already carry the dings and the AA gains). Stable, so the memo holds. */
@@ -456,17 +449,13 @@ function useXpSlice(
 export default function XpOverlay(): JSX.Element {
   // TWO MODULES, and both of them the ones the app itself reads — `progression` for the pace and
   // the projection, `loot` for the mote rates. Neither is re-folded here.
-  const prog = useOverlayModule<ProgressionSnap, ProgressionDelta>(
-    'progression',
-    applyProgressionDelta,
-    EMPTY_PROGRESSION
-  )
-  const loot = useOverlayModule<LootSnap, LootDelta>('loot', applyLootDelta, NO_LOOT)
+  const prog = useOverlayModule<ProgressionSnap>('progression', EMPTY_PROGRESSION)
+  const loot = useOverlayModule<LootSnap>('loot', NO_LOOT)
   // THE THIRD (JOS-192) — `character`, for one field: the level the log last STATED. The ding
   // series is silent across a loadout swap, so a floating window that reads only the dings keeps
   // announcing the level of a class you are no longer running; your own `/who` row is what
   // corrects it, and it arrives here.
-  const who = useOverlayModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta, NO_CHARACTER)
+  const who = useOverlayModule<CharacterSnap>('character', NO_CHARACTER)
   const { locked, bgAlpha, textScale, hovering, config, patch, toggleLock, capture, dragRegion, noDrag } =
     useOverlayChrome()
   useSlowClock()

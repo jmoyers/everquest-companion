@@ -363,6 +363,7 @@ export function ItemDetailContent({
    * The filter is HERE rather than at the two call sites (`LootView`'s pane takeover and the Mobs
    * tab's dialog) precisely because there are two of them and a third would inherit the answer.
    */
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LootEvent. Becomes a view descriptor when the source lands.
   const looted = useMemo(() => events.filter(isAcquisition), [events])
   const agg = useMemo(() => aggregateLoot(looted), [looted])
   const knowledge = useItemKnowledge(item, active)

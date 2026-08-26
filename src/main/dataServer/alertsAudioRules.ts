@@ -65,6 +65,16 @@ export interface ArmVerdict {
  * A LIST WITH ONE ENTRY WOULD HAVE BEEN KEPT. It has none, so keeping the machinery would mean
  * keeping a predicate nobody can ever make true, and a dead gate is worse than no gate: the next
  * reader has to prove it is dead before they can trust anything downstream of it.
+ *
+ * ── AND THE ONE COST IT NAMED IS PAID OFF (JOS-500, ruling 27) ─────────────────────────────────
+ *
+ * The paragraph above used to end by conceding that a fire frame could not carry the JOS-103
+ * captures, the JOS-353 `{target}` token, the JOS-84 resolved spell name or the JOS-378 `dueAt`, and
+ * that this "costs a firing some of its WORDS and never its existence". That was true, and it was
+ * survivable only for as long as this process still had an evaluator behind it. JOS-499 deleted the
+ * evaluator, which turned a documented degradation into the shipped product — and the owner ruled
+ * the loss release-gating ("we're not releasing without full parity"). THE FRAME GREW THE FIELDS.
+ * `fireToFiring` below copies them across, and the concession is deleted rather than softened.
  */
 export function armVerdict(_defs: readonly AlertDef[]): ArmVerdict {
   return {
@@ -95,11 +105,29 @@ export function armVerdict(_defs: readonly AlertDef[]): ArmVerdict {
  * define pushes the store's own object and the fold republishes it), so any folding here would be
  * this file inventing a tolerance the wire does not need.
  *
- * WHAT IT CANNOT CARRY, and does not invent: the JOS-103 named captures, the JOS-353 `{target}`
- * token and the JOS-84 resolved spell name are not fields of a fire frame, so a `custom` phrase's
- * tokens resolve to nothing under this flag and the `spellName` speech modes fall back to the
- * alert's own name — exactly as they already do for a Test or an app signal (shared/speechText.ts).
- * Re-deriving any of them here would be a second evaluator wearing the engine's clothes.
+ * ── WHAT IT CARRIES, AND WHY THIS FUNCTION DERIVES NONE OF IT (JOS-500, ruling 27) ─────────────
+ *
+ * The JOS-103 named captures, the JOS-353 `{target}` token, the JOS-84 resolved spell name and the
+ * JOS-378 `dueAt` used to be listed here as things a fire frame could not carry, so a `custom`
+ * phrase's tokens resolved to nothing and the `spellName` speech modes fell back to the alert's own
+ * name. THE FRAME CARRIES THEM NOW and this is a COPY, deliberately — three assignments and not one
+ * decision.
+ *
+ * THAT IS THE WHOLE POINT OF WHERE THE WORK HAPPENS. Every one of these is an EVALUATOR's answer:
+ * which candidate satisfied the def's own matcher, which text the condition that matched had
+ * actually tested, whether the phrase asked for `{target}` at all, who wins when a declared group
+ * and the auto token share a name, and where the 8-value bound falls. Re-deriving any of it here
+ * would be a second evaluator wearing the engine's clothes — the same refusal this file has always
+ * made, now with something to copy instead of a gap to apologise for. The engine also SANITIZED the
+ * captures before putting them on the wire (`fold::modules::alerts_captures`, the engine-side half
+ * of shared/alertCaptures.ts's threat model), and `applyCaptures` sanitizes each value AGAIN at
+ * substitution time — defense in depth, because the last code between a captured value and a speech
+ * engine must not be trusting anybody upstream to have been careful.
+ *
+ * EACH IS OMITTED RATHER THAN SET TO `undefined`, matching what a main-side firing has always put on
+ * the wire: an absent key is the honest encoding of "this firing has nothing true to say here", and
+ * it keeps the payload byte-identical for the overwhelming majority of alerts, which carry none of
+ * the three.
  */
 export function fireToFiring(fire: FireMessage, defs: readonly AlertDef[]): FiredAlert | null {
   const named = defs.filter((d) => d.name === fire.rule)
@@ -111,6 +139,15 @@ export function fireToFiring(fire: FireMessage, defs: readonly AlertDef[]): Fire
   const def = narrowed[0] ?? named[0]
   // `at` is the LOG's own clock (schema: "never the host's wall clock"), which is exactly what
   // `FiredAlert.ts` has always carried for a main-side fire — so nothing downstream has to know
-  // which world timed it.
-  return { alertId: def.id, ts: fire.at, matchedText: fire.message }
+  // which world timed it. The one exception is an early warning, whose `at` and `dueAt` both come
+  // from the engine's heartbeat because there is no line behind it; the retired evaluator stamped
+  // that firing from its own clock in the same place, so the number is the one the app always got.
+  const firing: FiredAlert = { alertId: def.id, ts: fire.at, matchedText: fire.message }
+  // `{ ...fire.captures }` rather than the object itself: the frame is the client's parsed JSON and
+  // a firing outlives the dispatch that made it. Copying costs nothing at this size and means no
+  // consumer holds a reference into a decoded frame.
+  if (fire.captures !== undefined) firing.captures = { ...fire.captures }
+  if (fire.spell !== undefined) firing.spell = fire.spell
+  if (fire.dueAt !== undefined) firing.dueAt = fire.dueAt
+  return firing
 }

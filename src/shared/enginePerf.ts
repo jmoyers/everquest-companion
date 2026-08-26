@@ -28,7 +28,7 @@
 // not run has established nothing. Each of those is drawn as its own words, never as a zero that
 // reads like a measurement.
 
-import type { PerfSnapshotResult } from './dataServer/protocol.generated'
+import type { PerfBudgetsResult, PerfSnapshotResult } from './dataServer/protocol.generated'
 
 /**
  * Where the supervisor is, as the panel needs to know it.
@@ -68,6 +68,18 @@ export interface EnginePerfSample {
   process: EngineProcessSay | null
   /** `null` when there is no connected client to ask, or the engine refused. */
   engine: PerfSnapshotResult | null
+  /**
+   * THE ENGINE'S OWN BUDGETS AND ITS VERDICT ON THEM (ruling 19, JOS-502) — `null` on the same
+   * terms as `engine`.
+   *
+   * IT RIDES EVERY TICK RATHER THAN BEING FETCHED ONCE, and the reason is the one moment this
+   * surface exists for: the fold-rate verdict goes `unmeasured` → judged the instant the scan
+   * finishes, which is exactly the stretch a person has the panel open watching the engine come up.
+   * A budget read once at mount would show `unmeasured` for the whole of it and then never correct
+   * itself. The extra cost is one small round trip on a connection that is already open and only
+   * while the panel is open at all (`enginePerfWatch.ts`).
+   */
+  budgets: PerfBudgetsResult | null
   /** `null` when no parity probe has run in this launch — which is NOT "everything agreed". */
   parity: EngineParitySay | null
 }

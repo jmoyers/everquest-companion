@@ -313,10 +313,12 @@ function historyTitleText(spans: readonly LevelSpan[], levelsPerHourWall: number
  */
 function zoneCompareText(zones: readonly ZoneRangeRow[]): string | null {
   // `rangeStats` names the pre-first-zone remainder 'unknown'; it is a placeholder, not a camp.
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ZoneRangeRow. Becomes a view descriptor when the source lands.
   const named = zones.filter(
     (z): z is ZoneRangeRow & { levelsPerHourActive: number } => z.zone !== 'unknown' && z.levelsPerHourActive != null
   )
   if (named.length < 2) return null
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ZoneRangeRow & { levelsPerHourActive: number; }. Becomes a view descriptor when the source lands.
   const best = named.reduce((m, z) => (z.levelsPerHourActive > m.levelsPerHourActive ? z : m))
   return `best this hour: ${best.zone} at ${formatLevelRate(best.levelsPerHourActive)}`
 }

@@ -311,15 +311,18 @@ test('presenceEffects.ts parks; windows.ts parkOverlays never hides', () => {
   assert.ok(park.includes('overlaysParkedNow === parked'), 'edge-narrated, idempotent otherwise')
 })
 
-test('THE GATE UN-HIDES WHAT THE GATE HID — real visibility has exactly one owner', () => {
-  // The regression the owner caught live ("overlay is not coming up - lol"): the end-of-replay
-  // re-show was secretly a side effect of presence's old hide pass. With presence parking,
-  // session.ts must restore its own gate, or the overlays stay hidden forever after every boot.
-  const gate = body('../src/main/session.ts', 'function setReplayGate')
-  assert.ok(gate.includes('setOverlaysHidden(true)'), 'the gate hides going in')
-  assert.ok(gate.includes('setOverlaysHidden(false)'), 'and un-hides coming out')
-  assert.ok(
-    gate.indexOf('setOverlaysHidden(false)') < gate.indexOf('refreshPresenceEffects()'),
-    'shown first (at park opacity), then the presence pass parks or not'
-  )
+test('NOTHING HIDES THE OVERLAYS FOR A FOLD ANY MORE — the gate is gone, not merely quiet', () => {
+  // WHAT THIS TEST USED TO PIN. The regression the owner caught live ("overlay is not coming up
+  // - lol") was that the end-of-replay re-show had been a side effect of presence's old hide
+  // pass; with presence parking instead, `session.ts setReplayGate` had to restore its own gate
+  // or the overlays stayed hidden forever after every boot.
+  //
+  // THE GATE IS DELETED (JOS-499) and the failure it guarded cannot recur, because the thing it
+  // was hiding FOR is in another process: there is no historical fold on this main thread to
+  // hide the overlays during. That is the fix the gate was an approximation of, so the claim
+  // becomes an ABSENCE and is asserted as one — nothing in the session may hide a window, and
+  // in particular nothing may hide one without an owner to un-hide it.
+  const session = readFileSync(new URL('../src/main/session.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(session, /setOverlaysHidden\(/)
+  assert.doesNotMatch(session, /suspendCursorStream\(/)
 })

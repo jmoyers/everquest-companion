@@ -9,7 +9,7 @@
 // predicate is the shape-version guard `useModule` documents (shared/kills.ts's precedent): a
 // window still running against a restarted main re-hydrates instead of merging across shapes.
 
-import { EMPTY_SPELL_SETS, SPELL_SETS_SHAPE_VERSION, type SpellSetsDelta, type SpellSetsSnap } from '@shared/spellSets'
+import { EMPTY_SPELL_SETS, type SpellSetsDelta, type SpellSetsSnap } from '@shared/spellSets'
 import { useModule } from '../../lib/useModule'
 
 /** The delta IS the state. Kept as a named function so the hook's contract reads at the seam. */
@@ -20,10 +20,6 @@ export function applySpellSetsDelta(_state: SpellSetsSnap, delta: SpellSetsDelta
 /** Never null — an un-hydrated panel makes no claim about any gem, which is the honest state. */
 export function useSpellSets(): SpellSetsSnap {
   return (
-    useModule<SpellSetsSnap, SpellSetsDelta>(
-      'spellSets',
-      applySpellSetsDelta,
-      (_state, delta) => delta.v !== SPELL_SETS_SHAPE_VERSION
-    ) ?? EMPTY_SPELL_SETS
+    useModule<SpellSetsSnap>('spellSets') ?? EMPTY_SPELL_SETS
   )
 }

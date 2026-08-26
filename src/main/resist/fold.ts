@@ -90,7 +90,7 @@
 // keys that are people's names, in a file this repo publishes. NPC casters would have made it a
 // flood, because mobs cast on the player's group constantly.
 
-import { idKey, spellCanonKey, spellRank } from '../log/parseCommon'
+import { idKey, spellCanonKey, spellRank } from '../../shared/spellKey'
 import { ArmedCasts, CastState } from './castState'
 import type { LogEvent } from '../../shared/logEvents'
 import type { SpellDb } from '../data/spellDb'

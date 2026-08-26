@@ -97,7 +97,9 @@ use protocol::cell::Cell;
 use protocol::generated::{Cells, ErrorCode, Row, RowKey, ViewDescriptor};
 
 pub use diff::diff;
-pub use meter::{FrameKind, Meter, SourceMeter};
+pub use meter::{
+    FrameKind, Meter, Moment, SourceMeter, Timeline, TIMELINE_CADENCE, TIMELINE_CAPACITY,
+};
 
 /// The floor between two services of the same subscription — rule 2's "~10 Hz max while live".
 ///

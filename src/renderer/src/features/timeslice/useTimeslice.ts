@@ -59,7 +59,7 @@
 // getSnapshot returning a fresh object would re-render forever).
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
-import type { ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { ProgressionSnap } from '@shared/types'
 import {
   availableSlices,
   resolveSlice,
@@ -76,7 +76,7 @@ import {
 } from '@shared/sessionSegments'
 import type { ZoneScope } from '@shared/zoneScope'
 import { useModule } from '../../lib/useModule'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 import { dataBounds, type DataBounds } from '../leveling/zoneBands'
 import { resetScopeSelection, useScopeSelection } from './useScopeSelection'
 import { resetSessionMarks, useSessionMarks } from './useSessionMarks'
@@ -201,7 +201,7 @@ const NO_EXTRA: readonly number[] = []
  * It defaults to `all`, so a caller that says nothing gets the behaviour every caller had.
  */
 export function useTimeslice(extraTs: readonly number[] = NO_EXTRA, initialId: SliceId = 'all'): TimesliceState {
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
   useSyncExternalStore(subscribe, getVersion, getVersion)
   // THE MEMBERSHIP IS READ, NEVER KEPT (JOS-332). One value per app, held in main, so the tab and
   // the floating window cannot be on different tiers while both say `this tier`.

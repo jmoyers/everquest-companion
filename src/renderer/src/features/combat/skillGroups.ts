@@ -21,6 +21,7 @@ import type { FlatSkill, SkillRow } from './dashboardData'
 /** Rank a level-2 list and re-base every bar pct on its new global max. Every grouping pass ends
  *  here, so a merged row — usually the biggest one — never leaves the list mis-scaled. */
 export function rankRows(rows: SkillRow[]): SkillRow[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   const out = [...rows].sort((a, b) => b.total - a.total || b.hits - a.hits || a.name.localeCompare(b.name))
   const max = Math.max(1, ...out.map((r) => r.total))
   return out.map((r) => ({ ...r, pct: (r.total / max) * 100 }))
@@ -41,7 +42,9 @@ export function mergeGroup(
   category: DamageCategory,
   childKind: 'skill' | 'component'
 ): SkillRow {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   const children = [...members].sort((a, b) => b.total - a.total || b.hits - a.hits || a.name.localeCompare(b.name))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   const sum = (pick: (s: FlatSkill) => number): number => children.reduce((n, s) => n + pick(s), 0)
   const minima = children.map((s) => s.min ?? 0).filter((m) => m > 0)
   const childMax = Math.max(1, ...children.map((s) => s.total))
@@ -113,17 +116,20 @@ export function groupSpellComponents(rows: SkillRow[]): SkillRow[] {
   if (merging.length === 0) return rows
   const merged = new Set(merging.flat())
   const groups = merging.map((m) => mergeGroup(m, groupSpellName(m), biggest(m).category, 'component'))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   return rankRows([...rows.filter((r) => !merged.has(r)), ...groups])
 }
 
 /** The member a group takes a summarizing property from: the largest, name-tiebroken. */
 function biggest(members: SkillRow[]): SkillRow {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   return [...members].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))[0]
 }
 
 /** The display name for a merged spell row: a rank-bearing spelling if any member has one (the
  *  biggest such member wins), else the biggest member's name. Deterministic either way. */
 function groupSpellName(members: SkillRow[]): string {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SkillRow. Becomes a view descriptor when the source lands.
   const suffixed = members.filter((r) => parseSpellRank(r.name).suffixed)
   return biggest(suffixed.length > 0 ? suffixed : members).name
 }

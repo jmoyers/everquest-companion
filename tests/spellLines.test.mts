@@ -10,7 +10,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spellCanonKey } from '../src/main/log/parseCommon'
+import { spellCanonKey } from '../src/shared/spellKey'
 import { loadSpellDb } from '../src/main/data/spellDb'
 import {
   addRankAlongsideDef,

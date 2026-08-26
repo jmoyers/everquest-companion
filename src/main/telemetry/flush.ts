@@ -92,6 +92,7 @@ import {
   viewsVisited
 } from './collector'
 import { markFunnelStep } from './funnels'
+import { armSetupSnapshotOnOptIn } from './setupSnapshot'
 // The live-session riders (JOS-367) — the probe, the tail and the window layer, gathered behind
 // one call so neither session report can drain a different set than the other.
 import { liveRiderFields } from './liveRiders'
@@ -474,8 +475,15 @@ export function applyTelemetryEnabled(enabled: boolean): TelemetryPrefs {
   const kind = flipNoticeKind(getTelemetryPrefs().enabled, enabled)
   const farewell = kind === 'optOut' ? envelope() : null
   const next = setTelemetryEnabled(enabled)
-  if (next.enabled) resumeTelemetry()
-  else pauseTelemetry()
+  if (next.enabled) {
+    resumeTelemetry()
+    // THE SETUP SNAPSHOT GETS ANOTHER CHANCE (JOS-501). It arms ten seconds after `replayDone` and
+    // is dropped on the floor if collection was off at that instant — and it latched itself either
+    // way, so a session that started opted out could never file one. Somebody enabling telemetry
+    // mid-session is very often doing it to report a problem, which makes theirs one of the
+    // machine-class rows most worth having. A no-op once the snapshot has landed.
+    armSetupSnapshotOnOptIn()
+  } else pauseTelemetry()
   const env = farewell ?? (kind === 'optIn' ? envelope(next) : null)
   if (kind !== null && env !== null) void sendFlipNotice(kind, env, next)
   return next

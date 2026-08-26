@@ -59,7 +59,6 @@ import {
 import { clearHoverZones, setHoverZones, subscribeHoverTransitions } from './presence'
 import { getOverlayConfig } from './store'
 import { getOverlayWindow, overlaysParked, setOverlayIgnoreMouse } from './windows'
-import { windowsMayShow } from './replayGate'
 import { OVERLAY_KINDS, type OverlayKind } from '../shared/types'
 
 /**
@@ -120,7 +119,7 @@ function zonesFor(kind: OverlayKind, w: BrowserWindow | null): ZoneRect[] {
     alive: true,
     // A window the replay gate or a session teardown really hid is not on screen; a PARKED one is
     // on screen at opacity 0, which is a different fact and its own term below.
-    visible: w.isVisible() && windowsMayShow(),
+    visible: w.isVisible() && !E2E,
     // …and the park is ALSO where the presence preferences land (presenceEffects.ts `onPresence`),
     // which is the whole of this predicate's relationship with EverQuest since the 2026-08-24
     // ruling. There is no `eqFocused` argument to pass any more, on purpose.

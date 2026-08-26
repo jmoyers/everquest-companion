@@ -6,6 +6,7 @@ const posky = getPoskyData()
 // Names of every item required by a Plane of Sky quest (for highlighting). Keyed by the
 // normalized counting key (Task #42) so an upgraded `Sphinx Claw +1` row is still flagged
 // as a Sky quest item — the row keeps showing its `+N`; only the RECOGNITION is normalized.
+// eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: PoskyQuest comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
 export const questItemNames = new Set<string>(posky.quests.flatMap((q) => q.items.map((i) => itemCountKey(i.name))))
 
 // EQ stat block per item name (quest items + rewards), for the drill-down.

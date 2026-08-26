@@ -340,6 +340,18 @@ export type TelemetryErrorView = (typeof TELEMETRY_ERROR_VIEWS)[number]
  * A KIND IS NOT CONTENT. `damage` says a damage line was parsed; it does not say who hit what
  * for how much. That distinction is the entire reason breadcrumbs are allowed to exist.
  */
+/**
+ * EVERY FIXED KIND A BREADCRUMB MAY CARRY. Two families, and the FIRST IS NOW HISTORICAL.
+ *
+ * The parser kinds are what this ring recorded until JOS-499 moved the fold into the engine; no
+ * producer in this process emits one any more. They are kept for the reason `mode: 'replay'` is
+ * kept — reports from every build before the deletion are in the error store and on the backend,
+ * and a vocabulary that could not represent them would misread its own history.
+ *
+ * The `engine:*` four are the live ones (JOS-501), and they are what a BOOT-WINDOW crash has
+ * instead of nothing. `breadcrumbs.ts noteEngineEdge` types its parameter as the same four
+ * literals, so the closed-vocabulary property is enforced at both ends rather than only here.
+ */
 export const TELEMETRY_BREADCRUMB_KINDS = [
   'zone', 'loot', 'offer', 'trade', 'level', 'aaGain', 'aaSpend', 'aaPotion', 'aaActivate',
   'death', 'playerDeath', 'damage', 'heal', 'healUnstated', 'mitigation', 'miss', 'resist',
@@ -347,9 +359,45 @@ export const TELEMETRY_BREADCRUMB_KINDS = [
   'buffApply', 'buffFade', 'buffWearOff', 'illusionFade', 'buffExpired', 'spellEmote',
   'stanceChange', 'invocationChange', 'spellMemorize', 'spellForget', 'spellSet',
   'consider', 'poisonProc', 'poisonCoat', 'poisonDry',
-  'epoch', 'unknown'
+  'epoch', 'unknown',
+  'engine:spawned', 'engine:ready', 'engine:live', 'engine:gone'
 ] as const
 export type TelemetryBreadcrumbKind = (typeof TELEMETRY_BREADCRUMB_KINDS)[number]
+
+/**
+ * MODULE MOVEMENT — the one PATTERN-BOUND breadcrumb kind (JOS-501).
+ *
+ * ── THE DEFECT THIS FIXES, WHICH SHIPPED AND WAS INVISIBLE ────────────────────────────────────
+ *
+ * JOS-499 took the parser out of the main process and gave the breadcrumb ring a new producer off
+ * the engine's CURSORS, writing `module:<id>` (`dataServer/serveDeltas.ts`). Its comment reasoned —
+ * correctly — that a module id is a closed vocabulary carrying no log content. What it did not do
+ * was give this file any way to SAY so, and `errorReports.ts wireCrumbs` is a real FILTER: it drops
+ * every kind the contract does not admit. So each crumb that producer wrote was discarded on the
+ * way to the wire, and every error report shipped after the deletion release carried
+ * `breadcrumbs: []`. Not a late ring — a dead one.
+ *
+ * It was invisible precisely because that filter is fail-safe by design (drop a crumb, never fail a
+ * report), which is the right trade and is exactly why this needs a pattern rather than vigilance.
+ *
+ * ── WHY A PATTERN AND NOT A LIST ──────────────────────────────────────────────────────────────
+ *
+ * This file's second law admits either: every string field is "a member of a CLOSED enum declared
+ * in this file or PATTERN-BOUND by a regex declared in this file". A list of twenty module ids
+ * would be a fourth copy of the engine's module registry, maintained by hand, whose failure mode is
+ * SILENCE — a new module's crumbs vanishing with nothing red. The pattern cannot rot that way.
+ *
+ * IT STILL CANNOT CARRY A NAME. Letters only, no separators, no digits, and 24 characters — which
+ * admits `observedSpellRanks` (18) and admits nothing with a space, a path separator, an
+ * apostrophe or a number in it. A character, zone, mob, spell or item has nowhere to go, which is
+ * the property this file exists to guarantee. The bound is deliberately tighter than the ids need.
+ */
+export const MODULE_CRUMB_RE = /^module:[a-zA-Z]{1,24}$/
+
+/** Does this string name a breadcrumb kind the wire admits — fixed member or module movement? */
+export function isBreadcrumbKind(kind: string): boolean {
+  return (TELEMETRY_BREADCRUMB_KINDS as readonly string[]).includes(kind) || MODULE_CRUMB_RE.test(kind)
+}
 
 /** How old the session was when it threw. 1 min / 5 min / 30 min / 2 h ⇒ five buckets. A raw
  *  uptime beside a timestamp is more identifying than the fact "it broke early". */

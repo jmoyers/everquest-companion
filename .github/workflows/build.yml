@@ -270,6 +270,31 @@ jobs:
         working-directory: engine
         run: cargo test --workspace
 
+      # THE PERFORMANCE BUDGET (owner ruling 3, JOS-501) — the equivalence oracle's successor.
+      #
+      # `oracle:rust-fold` compared two implementations of the fold and the cutover left one, so
+      # what gates performance now is the engine measuring ITSELF through the same `perf.snapshot`
+      # machinery the in-app panel reads, against a committed ceiling.
+      #
+      # RELEASE, and that is the whole reason this is a step of its own rather than part of the
+      # workspace test above: a debug fold is roughly an order of magnitude slower, so a budget
+      # measured on one would be measuring the profile instead of the code. It is also the
+      # regression the floor most wants to catch — the e2e harness built debug for two releases and
+      # `bosses-week` could not fold the owner's log in 900 s because of it (JOS-501 fixed that too).
+      #
+      # THE CORPUS IS GENERATED, NOT COMMITTED. The engine's real corpus is the owner's game log,
+      # which never enters git; the deterministic generator in the test produces the same bytes on
+      # every machine, so a red here is a regression rather than a difference of input. The G3 tier
+      # — the owner's real 209 MB fixture — is deliberately NOT here: it is gitignored, absent on
+      # every runner, and its goal is a claim about a machine. That one is `npm run budget:g3`, run
+      # by the integrator at the release cut and recorded in the release notes.
+      #
+      # `--nocapture` so the numbers appear in the job log even when the step is green: a budget
+      # that only speaks when it fails gives nobody a trend to look at.
+      - name: Performance budget (release)
+        working-directory: engine
+        run: cargo test --release -p engined --test budget the_synthetic -- --nocapture
+
   # =========================================================================
   # TAG REFS ONLY: the publish path. The ONLY job that holds a write token.
   # =========================================================================

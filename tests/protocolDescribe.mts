@@ -142,6 +142,26 @@ function describeKnowledge(message: KnowledgeMessage): string {
   return `${message.op}#${String(message.id)} ${what}`
 }
 
+/**
+ * THE FOURTH FAMILY (JOS-502), lifted for exactly the reason the third one was and stated in the
+ * comment above it: a switch that has grown another family is a switch asking to have one lifted
+ * out. Surface 8's third op took `describeCore` to a complexity of 14 against a ceiling of 12; the
+ * three perf ops share a prefix, share an answer shape, and share the property that what a reader
+ * of a transcript wants is WHICH question was asked — so they describe as their own op name, which
+ * is one line for all three and none in the core.
+ */
+type PerfMessage = Extract<ClientMessage, { op: `perf.${string}` }>
+
+function isPerf(message: ClientMessage): message is PerfMessage {
+  return message.op.startsWith('perf.')
+}
+
+function describePerf(message: PerfMessage): string {
+  // Three questions that printed the same sentence would make the one conversation exercising all
+  // three unreadable exactly where it is most worth reading — so the op names itself.
+  return `${message.op}#${String(message.id)}`
+}
+
 /** Same trick on the client half. */
 export function describeClient(message: ClientMessage): string {
   // ORDER IS LOAD-BEARING: `knowledge.define` satisfies both tests at runtime, and it belongs to the
@@ -149,12 +169,15 @@ export function describeClient(message: ClientMessage): string {
   if (isDefine(message)) return describeDefine(message)
   if (isCombat(message)) return describeCombat(message)
   if (isKnowledge(message)) return describeKnowledge(message)
+  if (isPerf(message)) return describePerf(message)
   return describeCore(message)
 }
 
 /** The un-familied core of the client union — split from `describeClient` when the third family
  *  landed and the dispatcher's own branches put one function over the complexity ceiling. */
-function describeCore(message: Exclude<ClientMessage, DefineMessage | CombatMessage | KnowledgeMessage>): string {
+function describeCore(
+  message: Exclude<ClientMessage, DefineMessage | CombatMessage | KnowledgeMessage | PerfMessage>
+): string {
   switch (message.op) {
     case 'hello':
       return `hello v${String(message.protocolVersion)}`
@@ -167,8 +190,6 @@ function describeCore(message: Exclude<ClientMessage, DefineMessage | CombatMess
       return `${message.op}#${String(message.id)}`
     case 'module.snapshot':
       return `snapshot#${String(message.id)} of ${message.params.module}`
-    case 'perf.snapshot':
-      return `perf#${String(message.id)}`
     case 'view.subscribe':
       return `subscribe#${String(message.id)} ${message.params.source}`
     case 'view.unsubscribe':

@@ -141,7 +141,8 @@ docs/agents-archive.md.
     settles on stale geometry · 5 sightings (2026-08-10/11/12 full-sweep; 4th
     in the JOS-229 sweep; 5th 2026-08-12 STANDALONE on the JOS-240 merge
     verification — the full-sweep-only pattern is broken, green on immediate
-    rerun) · fix shape diagnosed (wait for bounds to differ before settling);
+    rerun; 6th 2026-08-26 in JOS-501's 62-spec sweep, all three narrow-window
+    rows together) · fix shape diagnosed (wait for bounds to differ before settling);
     ticket JOS-232 filed — now firing standalone, priority raised.
   - `window-bounds.e2e` · close-time bounds write never lands under sweep
     load ("closing the window writes down where it was left — (none)",
@@ -157,6 +158,14 @@ docs/agents-archive.md.
     been closed" · 1 sighting (2026-08-13 sweep, JOS-279; six green serially
     after, none in the next sweep) · a host/load event, not one spec's race —
     a second sighting is a runner-concurrency ticket.
+  - `engine-boots.e2e` · the clean-shutdown claim — "the engine takes the hint:
+    exit 0, the contract's own ending" — failed once in a full sweep · 1
+    sighting (2026-08-26, JOS-501's 62-spec sweep; green STANDALONE three times
+    the same day, including immediately after) · the engine exits on stdin
+    close, and under four concurrent launches the wait for that exit is the
+    thing most likely to lose a race with the runner's own teardown. Report
+    line until a second sighting; if it recurs, the suspect is the wait, not
+    the contract.
   - `presenceWorker.test` first-tick dedup · watches the REAL machine; fails
     while EverQuest runs with a player at the keyboard · 3 sightings
     (2026-08-10 ×2, 2026-08-12 JOS-239 worker mid-session, green on final
@@ -401,7 +410,7 @@ docs/agents-archive.md.
   next TICK EDGE after the time requested and a work/rest cycle SNAPS TO THE
   GRID — no fixed argument buys an arbitrary duty. Anything pacing itself
   with a timer must MEASURE what it got and bookkeep the difference
-  (`replaySlicer.ts`'s debt ledger is the pattern), never trust the nominal
+  (the deleted `replaySlicer.ts`'s debt ledger was the pattern), never trust the nominal
   argument; `setImmediate` is not a pause at all. Measurements:
   docs/agents-archive.md.
 - **`setFocusable` IS NOT AN ATTRIBUTE WRITE ON WINDOWS — IT MOVES THE
@@ -447,29 +456,36 @@ threshold. The short version:
   throughout. Wave map: docs/agents-archive.md.
 ## Architecture
 
+**THE FOLD IS IN THE RUST ENGINE (JOS-459, deleted from TypeScript by JOS-499).** One child process
+parses, folds and serves; this app is a client. The full design, the owner's 27 rulings and the
+remaining backlog live in `docs/plans/data-server.md`, main's half is mapped in
+`src/main/dataServer/README.md`, and the engine's own side in `engine/crates/engined/README.md`.
+
 ```
-scan (live:false) + Tailer (live:true, byte-offset handoff — LOSSLESS seam)
-   └► parseEvent (ONE pass, seq-numbered) ─► LogBus
-        ├► derived events: bus.emitDerived queues, drains AFTER the primary
-        │  event (no re-entrancy). Producers: buffs (buffExpired), epoch.
-        ├► ModuleRegistry ─► EqModule { id, reset(), onEvent(ev, live),
-        │    onTick?(now), snapshot()→{seq,state}, flushDelta()→delta|null }
-        │  Live deltas push `module:delta` (throttled); replay is silent.
-        │  A 1s wall-clock tick drives time-based logic while the log idles.
-        │  A REPLAY IS A BRACKETED STATE (JOS-60), not just a per-event flag:
-        │  `registry.beginReplay()/endReplay()` around the scan, every push
-        │  path gated by it, and endReplay DISCARDS what the fold accumulated
-        │  (modules append to `pending` whatever `live` says — the push is the
-        │  registry's call). The heartbeat stops for the duration too.
-        │  Modules incl. `progression` (columnar exp/kill/zone analytics,
-        │  capped w/ windowStart honesty, recent-kills ring) and `combo`
-        │  (registered FIRST; evidence → candidate-set slots → fuzzy
-        │  intervals; corrections TIME-keyed in the store, v3 migration).
-        └► CombatEngine (pull-snapshot variant: `combat:snapshot` IPC +
-           throttled `combat:activity` nudge; per-encounter event ring for
-           the timeline; cached finalized summaries; capped payloads;
-           session state timeline + proc detection/PPM/attribution —
-           procDetect/procWindows/procViews, all law-8 additive)
+EverQuest client ──appends──► log file ──► ENGINE (engine/crates/engined, below-normal priority)
+                                             tail + scan + parse → fold (20 modules + combat)
+                                             → views (filtered, sorted, windowed, render-ready)
+                                             → JSON over loopback TCP, one line per message
+   Electron main ──spawns/supervises──┘         │
+     supervisor.ts (spawn, token, respawn, READY on a proven round trip)
+     engineClientHost.ts (attach, the four streams, engineRequest)
+     rendererBroker.ts (byte relay: a renderer gets its OWN connection; main never parses a frame)
+   Renderers ─── useView(descriptor) ─────────┘   loading / error / reconnecting states;
+                                                  NEVER re-sorts or re-filters what arrives
+                                                  (ruling 4, enforced by eslint.domainMunging.mjs)
+```
+
+Two boundary laws hold this up, and both FAIL THE BUILD rather than relying on memory:
+
+- **the engine's own budgets** — `engine/crates/engined/tests/budget.rs`, `npm run budget:ci` in CI
+  on every push, `npm run budget:g3` at the release cut;
+- **the renderer never munges domain data** — `eslint.domainMunging.mjs`, scoped to
+  `src/renderer/**`, exemptions inline and reasoned, count only ever shrinks
+  (`tests/domainMunging.test.mts`).
+
+The world-model laws below are still the law — they describe what the fold MEANS, and every one of
+them was ported to Rust and proven deep-equal on six slices of the real log before the TypeScript
+copy was deleted. Where one names a TypeScript file that is gone, read it for the RULE.
 Maps: src/main/maps (pack discovery/per-layer cross-pack merge/LRU/search,
 Electron-free w/ injected roots) over shared/maps types + shared/zones
 (THE zone-knowledge table); renderer features/maps (canvas geometry, DOM
@@ -478,31 +494,35 @@ labels w/ collision declutter, floor slicing). Pure fns + goldens all over.
   SOUTH — JOS-65). Wiki mob pins and the user's typed-/loc marker (JOS-98,
   `eq.maps.loc`, per zone) both go through it and then through `project`;
   a second copy of those negations is the bug this repo already shipped once.
-Renderer: useModule(id, applyDelta) — hydrate, seq-dedupe deltas, re-hydrate
-on `log:character`. Overlay = second renderer entry (overlay.html) with a
-minimal `eqOverlay` bridge (transparent alwaysOnTop, click-through pin).
+Renderer: `useView(descriptor)` — subscribe, take the reset, ride the diffs, and drop everything on
+an epoch bump (resume is always re-query). `useModule` was its predecessor and went with the fold.
+Overlay = second renderer entry (overlay.html) with a minimal `eqOverlay` bridge (transparent
+alwaysOnTop, click-through pin).
 ```
 
-- **A WINDOW THAT FOLDS A MODULE NEEDS BOTH HALVES OF THE TRANSPORT — THE DELTAS
-  AND THE REBUILD** (JOS-172). `module:delta` is an INCREMENT and a
-  historical fold emits none (`endReplay()` DISCARDS — JOS-60's rule, and it
-  stays), so "hydrate once, then ride deltas" is only complete if something
-  says *ask again*. `sendWorldRebuilt` (pipeline.ts) is the ONE answer to
-  "who is told the world was rebuilt" — the main window and
-  `MODULE_READING_OVERLAYS`; every `IPC.onCharacter` send goes through it.
+- **A WINDOW READING A FOLD NEEDS BOTH HALVES OF THE TRANSPORT — THE INCREMENTS
+  AND THE REBUILD** (JOS-172, and the engine's diff protocol is built on it).
+  An increment is an increment: a historical fold emits none, so "hydrate once,
+  then ride deltas" is only complete if something says *ask again*. In the
+  engine that answer is the EPOCH — a character switch or a respawn bumps it,
+  every client drops its window state and takes the fresh reset, and resume is
+  always re-query. `sendWorldChanged` (serveDeltas.ts) is the app-side beat.
   The fix is the DELIVERY, never the discard. **And re-hydration is a SECOND
   reason a row can vanish**: anything watching a row set for removals is
   told which kind of change it sees (`timerDrops` takes a `rebuilt` flag and
   says nothing across a re-fold). Full story + the e2e slow-fold trick:
   docs/agents-archive.md.
 - **A MODULE WITH A SECOND INPUT MUST REPORT ITS OWN REVISION AS `seq`, NOT
-  THE LAST EVENT'S** (JOS-87). `useModule` dedupes on `seq`, so "last
-  LogEvent seq folded in" only works when state moves ONLY on events; the
+  THE LAST EVENT'S** (JOS-87). Any reader deduping on `seq` — the app's
+  mirrors and the engine's own cursors both do — only works when "last
+  LogEvent seq folded in" is the whole story, i.e. when state moves ONLY on
+  events; the
   combo module's user correction advanced no seq, so an idle-log correction
   was dropped as a duplicate — forever, on an idle log. Fix: a private
-  counter bumped by anything that can change state (`ComboModule.markStale`,
-  reported by BOTH `snapshot()` and `flushDelta()`), plus the PUSH half —
-  out-of-band writes call `registry.flushNow()` (ipc/combo.ts `republish()`).
+  counter bumped by anything that can change state, reported by the module's
+  own snapshot, plus the PUSH half — an out-of-band write has to make the
+  world publish, or the correction sits in a module nobody re-reads. Four
+  modules carry such a counter (combo, character, respawn, buffTimers).
   A unit test cannot see either half; `tests/e2e/loadout-override.e2e.mts` is
   what caught it. Full story: docs/agents-archive.md.
 - **Character epochs**: character-scoped state (leveling/AA, loot, kills,

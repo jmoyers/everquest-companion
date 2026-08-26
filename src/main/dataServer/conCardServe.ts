@@ -45,7 +45,6 @@
 
 import { logInfo } from '../errorLog'
 import { noteEngineConCard, type ServedConCard } from '../conCard'
-import { shimServing } from './serveShim'
 import type { ConCardMessage } from '../../shared/dataServer/protocol.generated'
 
 /** Cards this launch has heard from the engine, and how many of them actually drew. Both are
@@ -67,7 +66,10 @@ let drawn = 0
  * `/con` a player types with the overlay switched off.
  */
 export async function openEngineConCard(card: ConCardMessage): Promise<boolean> {
-  if (!shimServing()) return false
+  // NO SERVE GATE (JOS-499 item 9). It read two default-on env flags and answered a question the
+  // FRAME already answers better: a con card exists only because a real connected engine sent one,
+  // which is the thing `shimServing()` was a poor proxy for (see conCard.ts, where that exact
+  // misreading shipped a silent card once).
   heard += 1
   // THE VOCABULARY TRANSLATION, WRITTEN OUT FIELD BY FIELD RATHER THAN SPREAD. The two shapes agree
   // today and a spread would compile — right up to the day the schema grows a field that means

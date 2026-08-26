@@ -389,6 +389,23 @@ test('CLOSING STDIN IS THE SHUTDOWN, AND KILL IS ONLY THE ESCALATION', async () 
   assert.deepEqual(h.pids, [child.pid, null])
 })
 
+test('A NONZERO EXIT ON THE SHUTDOWN PATH IS ON THE RECORD — and a zero one is not', async () => {
+  // The debug narration is stdout on a process that is QUITTING, which is the one channel that
+  // cannot be read after the fact (JOS-501 integration; the engine-boots spec carries the race).
+  // So the bad ending gets a durable entry with its own name — and deliberately NOT through the
+  // exit trail: a shutdown exit is not a crash and must never count toward a restart streak.
+  const h = harness()
+  const child = await launched(h)
+  h.supervisor.stop()
+  child.exit(3)
+  assert.equal(h.supervisor.state, 'stopped')
+  assert.equal(h.reports.length, 1, 'the bad ending is durable')
+  assert.equal(h.reports[0].name, 'EngineShutdownExit')
+  assert.equal(h.reports[0].code, 3, 'the code rides the machine-readable field')
+  assert.match(h.reports[0].message, /exited 3 after the shutdown signal/)
+  assert.equal(h.children.length, 1, 'and it is still not a failure the supervisor acts on')
+})
+
 test('AN ENGINE THAT IGNORES EOF IS KILLED — a wedged child cannot veto a quit', async () => {
   const h = harness()
   const child = await launched(h)
@@ -418,13 +435,22 @@ test('a pending respawn is cancelled by stop() — a backoff must not resurrect 
   assert.equal(h.children.length, 1, 'the timer was cancelled, not merely ignored')
 })
 
-test('a child that exits AFTER we asked it to is not a failure, whatever its code says', async () => {
+test('a child that exits BADLY after we asked it to is on the record, but never acted on', async () => {
+  // THE CLAIM THIS REPLACES said the whole stopping path was silent ("we asked for this; a kill
+  // exit code is not a diagnosis"). Half survives: the supervisor still never ACTS on it — no
+  // trail, no respawn, state is stopped. What changed (JOS-501 integration): an engine that dies
+  // with an access violation while shutting down is a real defect in the only fold the product
+  // has, and the stdout narration dies with the quitting app — so the bad ending is durable now.
+  // The kill WE issue stays unreported (the escalation test below): that code is our own action.
   const h = harness()
   const child = await launched(h)
   h.supervisor.stop()
   child.exit(3221225477, 'SIGTERM')
-  assert.equal(h.reports.length, 0, 'we asked for this; a kill exit code is not a diagnosis')
+  assert.equal(h.reports.length, 1, 'the bad ending is durable')
+  assert.equal(h.reports[0].name, 'EngineShutdownExit')
+  assert.equal(h.reports[0].code, 3221225477, 'the ten-digit code rides the machine-readable field')
   assert.equal(h.supervisor.state, 'stopped')
+  assert.equal(h.children.length, 1, 'and it is still never acted on: no respawn')
 })
 
 test('start() while a launch is in flight is a no-op, not a second engine', () => {

@@ -42,6 +42,7 @@ const CONSIDER_DROPS_SHOWN = 3
 export function applyConsiderDelta(state: ConsiderSnap, delta: ConsiderDelta): ConsiderSnap {
   const byId = new Map(state.map((r) => [r.id, r]))
   for (const row of delta.upserted) byId.set(row.id, row)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ConsiderRow. Becomes a view descriptor when the source lands.
   return [...byId.values()].sort((a, b) => a.ts - b.ts)
 }
 

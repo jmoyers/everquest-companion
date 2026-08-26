@@ -77,7 +77,7 @@
 // fits a resist from.
 
 import { axisFromResistType, type ResistAxis, type ResistDebuffSlot, type SpellHpSlot, type SpellResistInfo, type SpellResistTable } from '../../shared/resistTypes'
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 
 const F_ID = 0
 const F_NAME = 1

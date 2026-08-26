@@ -40,7 +40,7 @@
 
 import { parseSpellClassLevels } from '../../shared/spellLines'
 import type { SpellDb } from '../data/spellDb'
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 
 /**
  * MEMOISED, per catalog, and the reason is a measurement. Both answers below are constant for the

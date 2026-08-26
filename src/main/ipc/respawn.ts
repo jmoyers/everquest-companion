@@ -35,7 +35,6 @@ import { pushAppKnowledge } from '../dataServer/definePush'
 // the confirm is a COMMAND rather than app knowledge — nothing persists it here or there — so it
 // rides `serveCommands.ts` beside the session mark. That file's header carries the argument.
 import { serveConfirmSighting } from '../dataServer/serveCommands'
-import { registry, respawnModule } from '../pipeline'
 
 /**
  * Longest row id the confirm handler will look at. A row id is `<zone key>::<mob key>` and both
@@ -56,8 +55,6 @@ export function registerRespawnIpc(): void {
   ipcMain.handle(IPC.respawnGet, () => getRespawnPrefs())
   ipcMain.handle(IPC.respawnSet, (_e, value: unknown) => {
     const next = setRespawnPrefs(value)
-    respawnModule.setPrefs(next)
-    registry.flushNow()
     pushAppKnowledge('respawn.define')
     return next
   })
@@ -78,8 +75,7 @@ export function registerRespawnIpc(): void {
     const current = getRespawnPrefs()
     const next = respawnWithoutWatch(current, key)
     if (next.watches.length === current.watches.length) return false
-    respawnModule.setPrefs(setRespawnPrefs(next))
-    registry.flushNow()
+    setRespawnPrefs(next)
     pushAppKnowledge('respawn.define')
     return true
   })
@@ -95,9 +91,17 @@ export function registerRespawnIpc(): void {
    */
   ipcMain.handle(IPC.respawnConfirmSighting, (_e, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0 || id.length > MAX_ROW_ID) return false
-    const applied = respawnModule.confirmSighting(id)
-    if (applied) {
-      registry.flushNow()
+    // THE APP NO LONGER HAS AN OPINION TO GATE ON (JOS-499). This used to run
+    // `respawnModule.confirmSighting(id)` first and announce to the engine only when this
+    // process's own fold took the press — so a stale click could not be reported as a real one.
+    // There is no second fold to disagree, and the engine answers `confirmed: false` for a row
+    // it cannot re-base, which is the same refusal arriving from the only world there is.
+    //
+    // THE HANDLER ANSWERS TRUE, and that is honest rather than optimistic: the press was
+    // ACCEPTED and forwarded. Whether it re-based a clock is the engine's answer, and it comes
+    // back on the served respawn rows a moment later — which is the surface the person is
+    // looking at.
+    {
       // A FIFTH DUTY, AND IT IS THE SETTER'S FOURTH ONE IN A DIFFERENT FILE (JOS-494). The two
       // sibling handlers above push through `pushAppKnowledge` because a watch list is app
       // KNOWLEDGE — a preference the engine's world records and re-applies at the next attach. A
@@ -111,6 +115,6 @@ export function registerRespawnIpc(): void {
       // though it happened.
       serveConfirmSighting(id)
     }
-    return applied
+    return true
   })
 }

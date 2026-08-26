@@ -257,6 +257,7 @@ export function loadoutGroups(
   }
   const out: LoadoutGrouping[] = []
   for (const pending of ordered) {
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ComboInterval. Becomes a view descriptor when the source lands.
     const members = [...pending.members].sort((a, b) => a.startTs - b.startTs)
     // Re-sorted because a section's runs can come from intervals that are not neighbours, and
     // the card order (first appearance of each target) should still read oldest kill first.

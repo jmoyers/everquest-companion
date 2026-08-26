@@ -15,16 +15,12 @@ import type { JSX } from 'react'
 import { ItemWindow, type ItemWindowProps } from './ItemWindow'
 import { useModule } from './useModule'
 import { itemTierKey } from '@shared/itemStats'
-import type { ItemTiersDelta, ItemTiersSnap } from '@shared/types'
+import type { ItemTiersSnap } from '@shared/types'
 
-/** Merge a delta's changed rows over the known map (kills-style transport). */
-function applyItemTiers(state: ItemTiersSnap, delta: ItemTiersDelta): ItemTiersSnap {
-  return { ...state, ...delta.changed }
-}
 
 /** The whole observed-tier map for the current character, or null before hydration. */
 export function useItemTiers(): ItemTiersSnap | null {
-  return useModule<ItemTiersSnap, ItemTiersDelta>('itemTiers', applyItemTiers)
+  return useModule<ItemTiersSnap>('itemTiers')
 }
 
 /**

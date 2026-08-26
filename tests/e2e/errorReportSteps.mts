@@ -11,7 +11,7 @@
 // WHY THESE ASSERTIONS CANNOT BE UNIT TESTS. Every hop of this feature is a seam:
 //
 //     window.onerror  →  error:report IPC  →  logError's funnel in main  →  the redactor
-//         →  the breadcrumb ring (fed from LogBus.emit by the app parsing the staged fixture)
+//         →  the breadcrumb ring (fed by the ENGINE lifecycle edges and its module cursors)
 //         →  the drain onto sessionEnd  →  <userData>/telemetry.json
 //
 // `tests/errorReportProducer.test.mts` drives the leaves directly and proves their arithmetic;
@@ -138,11 +138,27 @@ export function stepErrorReport(userData: string, log: FixtureLog): void {
     valid.ok,
     JSON.stringify(valid)
   )
+  // THE RING, AND THE WINDOW IT COULD NOT COVER UNTIL JOS-501.
+  //
+  // This assertion was RED after JOS-499. The parser left this process, so the ring's only
+  // producer became the engine's module CURSORS — which cannot fire until an engine is connected,
+  // attached and live. This spec throws its error moments after the window comes up, i.e. squarely
+  // inside the boot window, where the ring was therefore always empty. So was every real
+  // boot-window crash report, which is where the interesting crashes are.
+  //
+  // The engine's own lifecycle edges feed the ring now (`telemetry/breadcrumbs.ts noteEngineEdge`),
+  // and they are the only things that HAPPEN in that window. A closed four-member set carrying no
+  // log content, no path, no pid — the bright line is unchanged.
   const crumbs = ev.breadcrumbs as { kind: string }[] | undefined
   check(
-    '…with breadcrumbs from the log this app was really parsing',
+    '…with breadcrumbs — the engine lifecycle edges that are all a boot-window crash can have',
     Array.isArray(crumbs) && crumbs.length > 0,
     JSON.stringify(crumbs)
+  )
+  check(
+    '…and every one of them is a kind, never content',
+    Array.isArray(crumbs) && crumbs.every((c) => /^(engine:[a-z]+|module:[a-zA-Z]+|[a-zA-Z]+)$/.test(c.kind)),
+    JSON.stringify(crumbs?.map((c) => c.kind))
   )
   // FRAMES ARE EMPTY IN THIS SPEC, AND THAT IS CORRECT RATHER THAN A GAP — measured, after a
   // version of this step asserted `length > 0` and went red.

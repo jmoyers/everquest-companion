@@ -7,7 +7,7 @@
 
 import { localMobEntry } from '../mobLookupLocal'
 import { resolveMobIdentity } from '../mobAliases'
-import { idKey, spellCanonKey } from '../log/parseCommon'
+import { idKey, spellCanonKey } from '../../shared/spellKey'
 import { isPlayerShapedName } from '../../shared/playerShape'
 import { mobKey } from '../../shared/mobKey'
 import type { SpellDb } from '../data/spellDb'

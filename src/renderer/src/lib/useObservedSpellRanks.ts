@@ -10,17 +10,12 @@
 // are main-window surfaces already, for the same reason.
 
 import {
-  applyObservedSpellRanks,
   OBSERVED_SPELL_RANKS_MODULE_ID,
-  type ObservedSpellRanksDelta,
   type ObservedSpellRanksSnap
 } from '@shared/spellRanks'
 import { useModule } from './useModule'
 
 /** The whole observed-rank map for the current character, or null before hydration. */
 export function useObservedSpellRanks(): ObservedSpellRanksSnap | null {
-  return useModule<ObservedSpellRanksSnap, ObservedSpellRanksDelta>(
-    OBSERVED_SPELL_RANKS_MODULE_ID,
-    applyObservedSpellRanks
-  )
+  return useModule<ObservedSpellRanksSnap>(OBSERVED_SPELL_RANKS_MODULE_ID)
 }

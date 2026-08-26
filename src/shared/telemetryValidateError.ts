@@ -66,12 +66,14 @@ import {
   MAX_FRAME_POSITION_WIRE,
   REDACTED_MESSAGE_RE,
   SESSION_AGE_MS_EDGES,
+  MODULE_CRUMB_RE,
   TELEMETRY_BREADCRUMB_KINDS,
   TELEMETRY_ERROR_MODES,
   TELEMETRY_ERROR_VIEWS,
   TELEMETRY_FRAME_ORIGINS,
   type EvErrorReport,
   type TelemetryBreadcrumb,
+  type TelemetryBreadcrumbKind,
   type TelemetryFrame
 } from './telemetry'
 import { redactMessage } from './errorReport'
@@ -122,6 +124,17 @@ function vFrames(raw: unknown): Validated<TelemetryFrame[]> {
 function vCrumb(raw: unknown, i: number): Validated<TelemetryBreadcrumb> {
   const at = `breadcrumbs[${String(i)}]`
   if (!isTelemetryObject(raw)) return fail(at, `${at} must be an object.`)
+  // TWO ADMISSIBLE SHAPES (JOS-501): a member of the fixed enum, or a MODULE-MOVEMENT crumb, which
+  // is pattern-bound because the module registry lives in the engine and a hand-kept copy of it here
+  // would fail SILENTLY — see `MODULE_CRUMB_RE`'s argument. The pattern is checked first only
+  // because it is the cheaper test; the two sets are disjoint by construction (nothing in the enum
+  // begins `module:`), so the order carries no meaning.
+  const kindRaw: unknown = raw.kind
+  if (typeof kindRaw === 'string' && MODULE_CRUMB_RE.test(kindRaw)) {
+    const offset = whole(raw.offsetMs, `${at}.offsetMs`, MAX_BREADCRUMB_OFFSET_MS)
+    if (!offset.ok) return offset
+    return { ok: true, value: { kind: kindRaw as TelemetryBreadcrumbKind, offsetMs: offset.value } }
+  }
   const kind = oneOf(raw.kind, `${at}.kind`, TELEMETRY_BREADCRUMB_KINDS)
   if (!kind.ok) return kind
   const offset = whole(raw.offsetMs, `${at}.offsetMs`, MAX_BREADCRUMB_OFFSET_MS)

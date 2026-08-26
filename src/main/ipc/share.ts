@@ -9,7 +9,6 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { IPC } from '../../shared/ipc'
 import { logError } from '../errorLog'
-import { alertsModule } from '../pipeline'
 import {
   applyShare,
   exportAlertsString,
@@ -18,7 +17,7 @@ import {
   shareFileName,
   type ShareSelection
 } from '../share'
-import { getAlerts } from '../store'
+import { pushAppKnowledge } from '../dataServer/definePush'
 import { getMainWindow } from '../windows'
 
 export function registerShareIpc(): void {
@@ -77,8 +76,9 @@ export function registerShareIpc(): void {
     IPC.shareApply,
     (_e, text: string, ui: Record<string, string>, selection?: ShareSelection) => {
       const result = applyShare(text ?? '', ui ?? {}, selection)
-      // Keep the live evaluator in sync with any alerts the import appended.
-      if (result.added > 0) alertsModule.setDefs(getAlerts())
+      // Tell the ENGINE about any alerts the import appended — the evaluator is over there now,
+      // and a full-set replace is exactly what a `*.define` is.
+      if (result.added > 0) pushAppKnowledge('alerts.define')
       return result
     }
   )

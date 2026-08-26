@@ -13,8 +13,9 @@
 //   2. THE VALIDATOR accepts free text in a field (a bare path as a message, a function name
 //      with a space in it, an 11th frame, an unredacted message, a made-up breadcrumb kind).
 //   3. THE TWO COPIES DRIFT — the wire bounds restated in `telemetry.ts` and the producer
-//      bounds in `errorReport.ts`, and the breadcrumb vocabulary duplicated out of
-//      `logEventKinds.ts`.
+//      bounds in `errorReport.ts`. (The breadcrumb VOCABULARY moved to its own suite in JOS-501 —
+//      `tests/breadcrumbVocabulary.test.mts`, the same ceiling and the same kind of cut that
+//      produced the sibling below.)
 //
 // ITS SIBLING IS `tests/errorReportLocation.test.mts`, which holds the same three questions asked
 // of everything JOS-111 added — the external frames, the component path, the message skeleton and
@@ -49,13 +50,11 @@ import {
   MAX_REDACTED_MESSAGE_WIRE,
   REDACTED_MESSAGE_RE,
   SESSION_AGE_MS_EDGES,
-  TELEMETRY_BREADCRUMB_KINDS,
   TELEMETRY_ERROR_VIEWS,
   TELEMETRY_VIEWS,
   type EvErrorReport
 } from '../src/shared/telemetry'
 import { validateTelemetryEvent } from '../src/shared/telemetryValidate'
-import { ALL_LOG_EVENT_KINDS } from '../src/shared/logEventKinds'
 import { rollupBatch } from '../src/shared/telemetryRollup'
 
 const ch = (code: number): string => String.fromCharCode(code)
@@ -461,13 +460,6 @@ test('the wire bounds and the producer bounds are one number each', () => {
   assert.equal(BUNDLE_FILE_PATTERN, FRAME_FILE_RE.source)
 })
 
-test('the breadcrumb vocabulary IS the parser kind list — the duplicate cannot rot', () => {
-  assert.deepEqual(
-    [...TELEMETRY_BREADCRUMB_KINDS].sort(),
-    [...ALL_LOG_EVENT_KINDS].sort(),
-    'shared/telemetry.ts duplicates ALL_LOG_EVENT_KINDS because it may import nothing — keep them equal'
-  )
-})
 
 test('the error-view enum is the dwell views plus exactly one honest escape hatch', () => {
   assert.deepEqual([...TELEMETRY_ERROR_VIEWS], [...TELEMETRY_VIEWS, 'unknown'])

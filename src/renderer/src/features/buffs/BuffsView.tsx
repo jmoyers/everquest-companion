@@ -18,7 +18,7 @@ import {
 } from '@mui/material'
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
-import type { ActiveBuff, BuffsDelta, BuffsSnap, MessageOverlay, OverlayVerdict } from '@shared/types'
+import type { ActiveBuff, BuffsSnap, MessageOverlay, OverlayVerdict } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 import { ActiveRow } from './ActiveBuffRow'
 import { groupKey, groupLabel } from './format'
@@ -31,9 +31,6 @@ import { useBuffAllow } from './useBuffAllow'
 // Stable empty reference so hooks don't churn before hydration.
 const EMPTY_BUFFS: BuffsSnap = { active: [], stats: {} }
 
-// The buffs module ships its whole (small) snapshot each flush, so the delta simply
-// replaces state — no incremental merge needed.
-const applyBuffsDelta = (_state: BuffsSnap, delta: BuffsDelta): BuffsSnap => delta
 
 // Verdict → chip color + label for the overlay audit table (Task #36).
 const VERDICT_COLOR: Record<OverlayVerdict, 'success' | 'info' | 'error' | 'default'> = {
@@ -56,6 +53,7 @@ const VERDICT_LABEL: Record<OverlayVerdict, string> = {
 function OverlayDiagnostics({ overlay }: { overlay: MessageOverlay }): JSX.Element {
   const [open, setOpen] = useState(false)
   const rows = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives OverlayMessage. Becomes a view descriptor when the source lands.
     () => overlay.messages.filter((m) => m.verdict !== 'unknown').slice(0, 200),
     [overlay.messages]
   )
@@ -244,7 +242,7 @@ function AllowModeSwitch({ optIn, onChange }: { optIn: boolean; onChange: (v: bo
 }
 
 export default function BuffsView(): JSX.Element {
-  const snap = useModule<BuffsSnap, BuffsDelta>('buffs', applyBuffsDelta) ?? EMPTY_BUFFS
+  const snap = useModule<BuffsSnap>('buffs') ?? EMPTY_BUFFS
   // Tick once a second so active-buff elapsed/remaining stay live between deltas.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -255,11 +253,14 @@ export default function BuffsView(): JSX.Element {
   // HIDDEN BY DEFAULT (JOS-215) — a display filter over the snapshot, never a request to the
   // model. `snap.active` keeps every row; this page just chooses which to draw.
   const [showPermanent, setShowPermanent] = useState(readShowPermanent)
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ActiveBuff. Becomes a view descriptor when the source lands.
   const permanentCount = useMemo(() => snap.active.filter((b) => b.permanent === true).length, [snap.active])
   const active = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ActiveBuff. Becomes a view descriptor when the source lands.
     () => (showPermanent ? snap.active : snap.active.filter((b) => b.permanent !== true)),
     [snap.active, showPermanent]
   )
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives BuffStat. Becomes a view descriptor when the source lands.
   const minedCount = Object.values(snap.stats).filter((s) => s.n > 0).length
   // THE ALLOW-LIST'S MODE (JOS-168). The verdicts themselves are read by each checkbox from the
   // same one-per-window store, so this page only needs the switch's own half.
@@ -285,6 +286,7 @@ export default function BuffsView(): JSX.Element {
       })
       .map(([key, list]) => ({
         key,
+        // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ActiveBuff. Becomes a view descriptor when the source lands.
         buffs: [...list].sort((x, y) => x.startedTs - y.startedTs)
       }))
   }, [active])

@@ -34,7 +34,19 @@ import {
   type LedgerSource,
   type LedgerWriteOutcome
 } from './ledgerFile'
-import type { ResistLedgerSeam } from './module'
+/**
+ * THE SEAM, DECLARED WHERE IT IS BUILT (JOS-499). It lived in `resist/module.ts` — the fold plug —
+ * so that nothing under `src/main/modules` had to import Electron. There is no fold and no plug;
+ * the only thing that ever produced one of these is `resistLedgerSeam()` below, and the only
+ * thing that consumed it was the deleted module. It is kept rather than inlined because the
+ * ENGINE owns this ledger's IO now (boundary verdict 4) and this seam is what the app-arm
+ * writers are still shaped around; `artifactOwner.ts` gates whether they run at all.
+ */
+export interface ResistLedgerSeam {
+  beginSource: (key: string) => void
+  persist: () => void
+  counts: () => { rows: number; mobs: number }
+}
 import { appOwnsArtifacts } from '../dataServer/artifactOwner'
 // Inlined committed baseline (bundled into the main build, like spells.json).
 import baselineJson from '../data/resistBaseline.json'

@@ -125,6 +125,24 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.11.0',
+    date: '2026-08-26',
+    entries: [
+      {
+        kind: 'changed',
+        text: 'The app rebuilt its log reader from the ground up as a dedicated high-speed engine. The old reader deliberately ran at six-tenths speed on the app’s busiest thread so it wouldn’t stutter your game, and a long-running log still took over a minute to load - the new engine reads flat out in its own process, several times faster, and nothing it does can be felt in the app or in the game.'
+      },
+      {
+        kind: 'changed',
+        text: 'Right after launch or a character switch, panels now say they are loading and then fill in all at once the moment the engine catches up - instead of trickling in slowly while the app worked through your history.'
+      },
+      {
+        kind: 'new',
+        text: 'The performance panel shows the engine’s own numbers - how fast it read your log, how quickly it serves the screen, and whether it is inside its budgets - and a bug report carries the same numbers, so a report about slowness arrives with its diagnosis attached.'
+      }
+    ]
+  },
+  {
     version: '1.10.0',
     date: '2026-08-24',
     entries: [

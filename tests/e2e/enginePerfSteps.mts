@@ -3,11 +3,26 @@
  *
  * > "i want to see the server in the cpu/performance overlay in app." — owner.
  *
- * Its own module beside `engine-parity.e2e.mts` for `perfProfileSteps.mts`'s reason exactly: the
- * spec it serves already owns a full launch and a full fold, and a second subject inside one file
- * makes each claim's evidence depend on the other's setup. It is called from there rather than
- * given a launch of its own because THE ONLY EXPENSIVE THING EITHER NEEDS IS AN ENGINE THAT HAS
- * FOLDED SOMETHING — which is precisely the state that spec has just spent a whole scan reaching.
+ * Its own module for `perfProfileSteps.mts`'s reason exactly: the spec it serves already owns a
+ * full launch and a full fold, and a second subject inside one file makes each claim's evidence
+ * depend on the other's setup. It is called from there rather than given a launch of its own
+ * because THE ONLY EXPENSIVE THING IT NEEDS IS AN ENGINE THAT HAS FOLDED SOMETHING — which is
+ * precisely the state that spec has just spent a whole scan reaching.
+ *
+ * ── ITS HOST SPEC, AND THE TWO YEARS THIS MODULE SPENT NOT RUNNING ─────────────────────────────
+ *
+ * It was written to be called from `engine-parity.e2e.mts`. THAT SPEC NO LONGER EXISTS — it went
+ * with the parity probe when JOS-499 deleted the TypeScript fold — and nothing was wired up in its
+ * place, so from that deletion until JOS-502 this module was dead code that no runner touched. It
+ * had rotted, too, and in exactly the way dead test code does: it still demanded that the parity
+ * row say `agree`, which had been unsatisfiable since the day there stopped being two folds to
+ * compare. Both facts are the same lesson JOS-501 wrote down about `wireCrumbs` — when a thing's
+ * failure mode is silence, what keeps it honest is somebody running it, not somebody reading it.
+ *
+ * IT IS CALLED FROM `engine-loot-view.e2e.mts` NOW, and that spec is the right host for the same
+ * reason the old one was: it launches with `EQC_ENGINE=1`, folds a real fixture, and opens a real
+ * subscription — so by the time these steps run, the engine has an ingest cost worth reporting AND
+ * a serve table with a source in it, which is the only state in which this section is fully drawn.
  *
  * WHY THIS IS THE E2E AND NOT A UNIT TEST. Everything above the FFI boundary is already pinned by
  * `tests/enginePerf.test.mts` (the per-pid arithmetic over a fake pid, the formatters' absent cases,
@@ -155,9 +170,30 @@ function stepSectionCarriesTheEngineNumbers(text: string): void {
     /views/.test(flat) || /loot\.ledger/.test(flat),
     flat
   )
+  // THE BUDGETS (JOS-502, ruling 19's completion). This is the claim no unit test can make: the
+  // VERDICT in this pixel was computed inside the Rust process, against the generation this app
+  // just spent a scan building, and travelled the same socket the numbers above it did. The label
+  // and the verdict are both the engine's own words — nothing in the renderer knows that a budget
+  // is called "fold rate" or which side of a floor a measurement fell on.
   check(
-    '…and the last parity probe’s counts, which this spec has just watched happen',
-    /parity, last probe/.test(flat) && /agree/.test(flat),
+    'the engine’s own BUDGETS are drawn, with the verdict IT reached about the generation it just built',
+    /fold rate/.test(flat) && /serve latency/.test(flat),
+    flat
+  )
+  check(
+    '…and each says pass, fail, or the honest "not yet measured" — never a zero and never a blank',
+    /(fold rate|serve latency)[^·]*·?\s*(pass|fail|not yet measured)/.test(flat) ||
+      /(pass|fail|not yet measured)/.test(flat),
+    flat
+  )
+  // THE PARITY LINE IS PERMANENTLY EMPTY AND THAT IS THE ASSERTION NOW (JOS-499 deleted the probe;
+  // corrected here at JOS-502, which is when this module was first RUN by a spec). It used to
+  // demand `/agree/`, which had been unsatisfiable since the TS fold was deleted — a check nothing
+  // executed, rotting quietly. The row stays on screen because "no verdict" is the permanent truth
+  // about a build with one fold, and the row saying so is better than a row that vanished.
+  check(
+    '…and the parity row states the permanent post-deletion truth: there is one fold, so nothing agrees with anything',
+    /parity, last probe/.test(flat) && /no probe has run/.test(flat),
     flat
   )
 }

@@ -578,6 +578,11 @@ impl EventSink for FoldSink {
                 rule: f.rule,
                 sound: f.sound,
                 message: f.message,
+                // The speech fields cross the seam as the plain map and options they already are —
+                // the fold resolved them, and this is a rename rather than a decision (JOS-500).
+                captures: f.captures,
+                spell: f.spell,
+                due_at: f.due_at,
             })
             .collect()
     }

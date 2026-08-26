@@ -108,9 +108,15 @@ export function engineOwnsArtifacts(): boolean {
 /** Everything `attachStateDir` cannot get for itself — see the header for why nothing is imported. */
 export interface HandoverDeps {
   /**
-   * IS THE ENGINE IN THIS APP'S READ PATH ON THIS LAUNCH — `serveShim.ts shimServing()`, read by
-   * the caller and handed in. `false` leaves the app persisting exactly as it always has, which is
-   * the ticket's "flag-off unchanged" in one branch.
+   * MAY THE ENGINE BE GIVEN THESE FILES ON THIS LAUNCH. It carried `serveShim.ts shimServing()`
+   * until JOS-499 deleted that flag, and `engineClientHost.ts` now passes `true`: an attach is only
+   * ever sent by a connected client, and this process folds nothing left to persist.
+   *
+   * THE PARAMETER STAYS rather than being inlined, and the reason is the one this whole file is
+   * about: the ordering it enforces (stop persisting, THEN produce the directory) is what makes the
+   * handover safe, and a caller that could not say no would be a seam with nothing to test. The
+   * `false` branch is the unit suite's, and it is how the two-processes-on-one-file hazard stays
+   * provably closed.
    */
   readonly serving: boolean
   /** Electron's `app.getPath('userData')` — the directory both artifacts live in. */

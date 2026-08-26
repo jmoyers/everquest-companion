@@ -33,7 +33,6 @@ import { OWNER_TOOLS } from './ownerTools'
 import { app, BrowserWindow, protocol, session } from 'electron'
 import { IPC } from '../shared/ipc'
 import { errorLogPath, flushErrorLogSync, logError, logInfo } from './errorLog'
-import { saveUserOverlaySync } from './data/overlayPersistence'
 import { startQueueFlush, stopQueueFlush } from './feedback'
 import { flushRingSync, startTelemetry, stopTelemetry } from './telemetry'
 import { registerAppSchemes } from './appSchemes'
@@ -44,7 +43,7 @@ import { installImageCacheProtocol } from './imageCache'
 import { bundledImageRoots, findBundledImagesDir } from './bundledImages'
 import { installSpeechCacheProtocol } from './speech/cache'
 import { registerIpc } from './ipc'
-import { DATA_READY_MS, bus, buffsModule, epoch, sendWorldRebuilt, sessionDetector } from './pipeline'
+import { DATA_READY_MS, logSpellDbSummary } from './appSpellDb'
 import { markStartupPhase, startPerfSampler, stopPerf } from './perf'
 import { stopEnginePerfWatch } from './enginePerfWatch'
 import { noteHeapAfterData } from './dataWeight'
@@ -54,7 +53,7 @@ import { getProcessPriorityPrefs } from './storeProcessPriority'
 import { initPresenceEffects, stopPresenceEffects } from './presenceEffects'
 import { provisionDefaultPacks } from './provisionPacks'
 import { removedPackIds } from './storeSoundPacks'
-import { getActiveCharacter, markTailPosition, startTailing, stopSession } from './session'
+import { startTailing, stopSession } from './session'
 import { runSmokeFeedback } from './smokeFeedback'
 import { STORE_READY_MS, getOverlayConfig, getPerfHudPrefs } from './store'
 // The z-order guard's tally, read once at quit (JOS-368; see `logTopmostSavings`).
@@ -120,6 +119,10 @@ const PROCESS_START_MS = Date.now()
 // (see shared/perf.ts STARTUP_PHASES for the full table).
 markStartupPhase('storeLoaded', { atMs: STORE_READY_MS })
 markStartupPhase('dataLoaded', { atMs: DATA_READY_MS })
+// The committed spell data's boot summary. It printed at `pipeline.ts` module scope until
+// JOS-499; the catalog is built lazily now, so the root asks for it rather than a side effect
+// happening during an import.
+logSpellDbSummary()
 // …and the one figure in the data-weight ledger that is measured on THIS machine (JOS-458). Here,
 // and only here: this statement is the first moment after every committed corpus has been parsed
 // and the last moment before the app allocates anything of its own, so the reading describes the
@@ -127,51 +130,22 @@ markStartupPhase('dataLoaded', { atMs: DATA_READY_MS })
 // reason the marks above are.
 noteHeapAfterData()
 
-// Epoch detection subscription (Task #49; launch-anchored in Task #50). Runs LAST — after
-// pipeline.ts's registry + combat subscriptions, which is why it is added here rather than
-// there — so it observes each event after the modules/combat have folded it, then at the
-// first at/after-launch event queues a derived `epoch` event via emitDerived; the bus
-// delivers that to EVERY listener (registry modules + combat) after the primary event
-// finishes — the modules reset their live folded state on it. Ignore the derived epoch event
-// itself here (the detector already ignores it internally too) so no feedback loop is
-// possible, matching the buffs→buffExpired contract.
-bus.subscribe((ev, live) => {
-  if (ev.kind === 'epoch') return
-  const epochEv = epoch.observe(ev)
-  if (epochEv) {
-    logInfo(
-      `[everquest-companion] Character epoch boundary detected at ${new Date(epochEv.ts).toISOString()} (official launch): resetting character-scoped modules. Everything before this belongs to a prior same-name character wiped at launch (see epochDetector.ts).`
-    )
-    bus.emitDerived(epochEv, live)
-    // A LIVE wipe (rare — deleting + recreating your character while the app tails) shrinks
-    // every module's state, but module deltas are append/merge-only (a shrink can't be
-    // expressed as a delta), so the renderer would keep the stale pre-epoch rows. Re-send
-    // onCharacter so every useModule view RE-HYDRATES from the (now post-epoch) snapshots —
-    // the same full-rebuild path a character switch uses. Deferred to a microtask so the
-    // derived epoch event finishes draining to the modules (they reset) BEFORE the renderer
-    // re-fetches their snapshots. During a rescan (live:false) the post-scan onCharacter send
-    // in tailCharacter already covers this, so we only do it live.
-    // …and to the module-reading OVERLAYS as well as the main window (JOS-172): they fold the
-    // same modules and have the same nothing-but-deltas problem, so one signal, one list
-    // (pipeline.ts `sendWorldRebuilt`).
-    if (live) queueMicrotask(() => { sendWorldRebuilt(getActiveCharacter()) })
-  }
-})
+// THE TWO DERIVED-EVENT SUBSCRIPTIONS ARE GONE (JOS-499), with the bus they rode.
+//
+// They were the composition root's own contribution to the fold: the EPOCH detector (a derived
+// `epoch` event at the first at/after-launch line, which every character-scoped module reset on)
+// and the OFFLINE-GAP detector (a derived `offlineGap` from each `sessionStart`, which is how a
+// buff learns it was paused rather than expired). Both were added HERE rather than in the
+// pipeline because they had to observe each event only AFTER the modules and the combat engine
+// had folded it, and this file was the last subscriber.
+//
+// BOTH ARE ENGINE-SIDE NOW AND HAVE BEEN SINCE PHASE 2 — the golden oracle proves the epoch
+// boundary and the offline-gap arithmetic slice by slice, which is a stronger statement than
+// this file could ever make about them. What is genuinely lost is the LIVE-wipe re-hydrate that
+// sat inside the epoch arm: deleting and recreating your character while the app is tailing is
+// the one case the engine bumps its own epoch for, and its `moduleChanged` cursors carry the
+// re-read without needing a special signal from here.
 
-// Offline-gap subscription (login/logout). Same position and same contract as the epoch
-// subscription above and for the same reason: it must observe each event only after the
-// modules and the combat engine have folded it, then hand its synthesized `offlineGap` back
-// through emitDerived so the bus delivers it once the primary `sessionStart` has finished
-// reaching everyone. Unlike the epoch, this fires repeatedly (15 times over the real log's
-// 19 logins), so it does NOT force a renderer re-hydrate — modules fold a gap as an ordinary
-// event and express the result through their normal deltas. The detector filters derived
-// kinds itself; the guard here mirrors the epoch subscription so the no-feedback-loop
-// contract is visible at the call site rather than only inside the class.
-bus.subscribe((ev, live) => {
-  if (ev.kind === 'offlineGap') return
-  const gap = sessionDetector.observe(ev)
-  if (gap) bus.emitDerived(gap, live)
-})
 
 // ---------------------------------------------------------------------------------------
 // DEV-ONLY: the feedback-triage IPC surface (src/main/triage/**).
@@ -328,20 +302,16 @@ if (!gotSingleInstanceLock) {
     // scan then does belongs to the phase that names it. A failed attach still marks the phase
     // (with no count) rather than leaving the profile forever incomplete.
     void startTailing()
-      .then((res) => {
-        markStartupPhase('replayDone', {
-          eventsReplayed: res?.eventsReplayed ?? 0,
-          // …and what the fold's duty cycle actually cost (JOS-50), plus how many bytes it read
-          // (JOS-57, the fleet reading's size bucket). Both absent on a machine with no log to
-          // replay, where there was no fold to have a duty and no bytes to have a size.
-          ...(res ? { replay: res.replay, bytesReplayed: res.logBytes } : {}),
-          // JOS-57's two discriminators, each forwarded ONLY when the session actually measured
-          // it: how much of that read was bytes appended since our last clean exit, and how long
-          // the first megabyte took to arrive. `TailResult` leaves both absent rather than zero
-          // when there was nothing to compare against, and that distinction has to survive here.
-          ...(res?.newBytes === undefined ? {} : { newBytes: res.newBytes }),
-          ...(res?.firstMbMs === undefined ? {} : { firstMbMs: res.firstMbMs })
-        })
+      .then(() => {
+        // THE PHASE SURVIVES, ITS NUMBERS DO NOT (JOS-499). `replayDone` used to carry what THIS
+        // process's fold cost — events replayed, the slicer's duty cycle, bytes read, the
+        // cold-read delta, the first megabyte. There is no fold here to measure, and reporting
+        // zeros would put a false floor under every fleet reading of the startup profile.
+        //
+        // WHAT THE PHASE STILL MARKS is real and is the thing the timeline needs: the instant
+        // this process finished handing the session its work and the app became usable. The
+        // FOLD's cost is the engine's to report, over the perf channel (owner ruling 19).
+        markStartupPhase('replayDone')
       })
       .catch((err: unknown) => {
         markStartupPhase('replayDone')
@@ -533,7 +503,6 @@ function flushStoreForQuit(): void {
   // mark and blind the very next launch — the one right after an update, which is exactly the launch
   // a startup measurement most wants to see. Writing it on both events is one store key written
   // twice, and the later write is the better answer.
-  teardownStep('main:logTailMark', markTailPosition)
   // …and the window's own size and position (JOS-248), for EXACTLY that reason: the debounced save
   // is flushed by the window's `close`, and `app.quit()` — an auto-updater's `quitAndInstall`, an
   // OS logoff — is not a close. Without this the launch right after an update is the one that comes
@@ -586,9 +555,12 @@ app.on('window-all-closed', () => {
   // flush with it. It is armed only while the panel is open, so this is usually a no-op — and
   // usually is not always: a window closed with the popover open never sent its own close.
   teardownStep('main:stopEnginePerf', stopEnginePerfWatch)
-  // Flush the learned message overlay one last time so the final session's observations
-  // aren't lost between debounced saves (Task #36).
-  teardownStep('main:saveOverlay', () => saveUserOverlaySync(buffsModule.overlayRegister()))
+  // THE MESSAGE-OVERLAY FLUSH IS GONE (JOS-499, boundary verdict 4). It read the register off
+  // this process's buffs module and wrote it at quit. The register is the ENGINE's file now —
+  // JOS-497 moved the IO with it and `artifactOwner.ts` holds the ownership latch — so there is
+  // no app-side register to flush, and writing one here would be this process publishing its own
+  // (empty) opinion over the file the engine has been maintaining, at the one moment nothing is
+  // left to correct it. That is the exact asymmetry `stopEngineClient` refuses for the same file.
   // Dev only, and null in every other build: a live DSQL socket is not a timer and would hold
   // the process open long past the last window.
   teardownStep('main:triage', () => {

@@ -20,7 +20,7 @@
 
 import type { ClientHpFacts } from '../../shared/spellMetrics'
 import type { SpellResistTable } from '../../shared/resistTypes'
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 
 /**
  * The client's facts for one catalog spell name, or undefined when there is nothing to add.

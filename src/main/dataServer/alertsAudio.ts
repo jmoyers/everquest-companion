@@ -54,8 +54,8 @@
 // at the engine's own heartbeat), so on relaunch the engine's evaluator carries it.
 
 import { logInfo } from '../errorLog'
-import { engineFlagOn } from '../../shared/dataServer/engineFlags'
-import { alertsModule, registry } from '../pipeline'
+import { IPC } from '../../shared/ipc'
+import { sendToMain } from '../windows'
 import { getAlerts } from '../store'
 import { armVerdict, fireToFiring } from './alertsAudioRules'
 import type { FireMessage } from '../../shared/dataServer/protocol.generated'
@@ -71,8 +71,14 @@ import type { FireMessage } from '../../shared/dataServer/protocol.generated'
  * engine answers the reads" and "the engine plays the alerts" are the two halves a bisecting
  * developer is trying to tell apart.
  */
-const WANTED =
-  engineFlagOn(process.env.EQC_ENGINE_SERVE) && engineFlagOn(process.env.EQC_ENGINE_ALERTS)
+// THE THIRD FLAG IS GONE (JOS-499 item 9), and it is the deletion that removes it rather than a
+// tidy. `EQC_ENGINE_ALERTS=0` was a BISECT: it handed the sound back to this process's own
+// evaluator so a developer could tell "the engine matched the wrong thing" from "the sound path is
+// broken" in one launch. There is no evaluator to hand it back to. Keeping the variable would mean
+// shipping a switch whose only effect is TOTAL SILENCE, which is the one outcome this file exists
+// to prevent — so the read is deleted rather than defaulted, and `armed` below is now decided
+// entirely by whether a real engine has been proven.
+const WANTED = true
 
 /** True once the swap has actually happened. `WANTED` is what the developer asked for; this is what
  *  the gate allowed, and the two differ on any store holding an early-warning def. */
@@ -115,7 +121,11 @@ export function armEngineAlerts(): void {
   note(verdict.line)
   if (!verdict.arm) return
   armed = true
-  alertsModule.setEngineOwnsAudio(true)
+  // NOTHING IS SILENCED HERE ANY MORE (JOS-499). This line used to be half of a SWAP —
+  // `alertsModule.setEngineOwnsAudio(true)` made this process's own evaluator stop publishing at
+  // the same instant the engine's fires started playing, in one statement pair, so there was no
+  // window with two sources or none. The evaluator is deleted, so arming is no longer a swap: it is
+  // the statement that a real engine has been proven and its fires may make a noise.
 }
 
 /**
@@ -131,8 +141,11 @@ export function armEngineAlerts(): void {
 export function disarmEngineAlerts(): void {
   if (!armed) return
   armed = false
-  alertsModule.setEngineOwnsAudio(false)
-  note('data-server alerts: the engine is gone; this process’s evaluator is making sounds again')
+  // AND THE HONEST LINE IS A DIFFERENT ONE NOW. It used to say the evaluator was making sounds
+  // again, which was true and is no longer: there is nothing behind the engine. An app whose engine
+  // died plays no alerts until one is respawned, and saying so is the point — a silence somebody
+  // can read in the dev log is a different thing from a silence nobody can.
+  note('data-server alerts: the engine is gone; no alerts will fire until it is back')
 }
 
 /** Fires this launch actually PLAYED, and frames no def answered to. Both are reported on the line
@@ -164,8 +177,24 @@ export function playEngineFire(fire: FireMessage): boolean {
     return false
   }
   played += 1
-  alertsModule.engineFired(firing)
-  registry.flushNow()
+  // STRAIGHT TO THE WINDOW THAT MAKES THE SOUND (JOS-499 item 7).
+  //
+  // THIS USED TO GO THROUGH THIS PROCESS'S OWN ALERTS MODULE — `alertsModule.engineFired(firing)`
+  // followed by `registry.flushNow()` — and the renderer heard it as a `module:delta` like any
+  // main-side fire. That was the right shape while the TS fold existed: one audio lane, and
+  // everything downstream (the recent-fires ring, the event-feed row) already read that delta.
+  //
+  // THE MODULE IN THE MIDDLE IS DELETED, so the fire needs its own door or every alert in the
+  // product goes silent. `IPC.onAlertFired` carries the same `FiredAlert` the delta's `fired[]`
+  // carried, so `AlertPlayer` reads exactly what it always read — the `origin: 'app'` echo rule
+  // included — and the single-audio guarantee is now structural in the simplest possible way:
+  // there is one sender and one receiver.
+  //
+  // THE RING AND THE FEED ROW ARE THE ENGINE'S NOW rather than lost: the engine evaluates the
+  // alert, its own alerts module records the firing, and its own eventFeed folds the row — both
+  // reach the renderer through the served `module:getSnapshot`. What this call is responsible for
+  // is the one thing the engine cannot do, which is ruling 9's whole point: make a noise.
+  sendToMain(IPC.onAlertFired, firing)
   return true
 }
 

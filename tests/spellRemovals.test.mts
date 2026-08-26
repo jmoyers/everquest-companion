@@ -482,8 +482,10 @@ test('THE CLASS INDEX places nobody by a spell the game does not have', () => {
  * through the seam would buy nothing and would risk blanking a focus the player is really wearing.
  */
 const RAW_IMPORT_EXEMPT: ReadonlyMap<string, string> = new Map([
-  ['src/main/combat/charmModel.ts', 'name->boolean roster; unions raw+corrected and walks them in index lockstep'],
-  ['src/main/combat/petNudge.ts', 'name->boolean roster; unions raw+corrected, so a shorter list changes nothing'],
+  // The two `combat/**` exemptions left with the fold (JOS-499). Both were name->boolean rosters
+  // that unioned the raw and corrected spell lists, so a shorter list changed nothing for them;
+  // the engine's own charm and pet-nudge rosters read the corrected catalog through the sidecar
+  // and need no exemption at all.
   [
     'src/main/planner/effectIndex.ts',
     'item Effect: -> spell-page join; 7 committed items carry an Invigor effect and a removed row would blank their one-liners'

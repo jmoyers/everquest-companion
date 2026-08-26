@@ -25,7 +25,8 @@
 // hurt global mouse performance." Five rules, and they are the design rather than a caveat:
 //
 //   1. NOTHING TOUCHES THE MOUSE'S HOT PATH. No WH_MOUSE_LL, no hook of any kind, no change to
-//      what forwards (replayGate.ts still decides that, unchanged). This watch never sits between
+//      what forwards (nothing does since JOS-370, and the gate that used to decide it left with
+//      the fold in JOS-499). This watch never sits between
 //      the system and a mouse event; it READS a coordinate on a timer, which is the opposite
 //      arrangement.
 //   2. THE TIMER EXISTS ONLY WHILE A LOCKED OVERLAY IS CAPTURED — seconds at a time, per window.

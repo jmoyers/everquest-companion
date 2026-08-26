@@ -126,12 +126,14 @@ export function mobsInZone(zoneRaw: string, catalog: MobEntry[]): MobEntry[] {
   // Empty for the vast majority of zones (the fold already reaches them); a Set so the inner
   // test stays O(1) across 7,866 rows.
   const aliases = new Set(catalogZonesFor(zoneRaw).map(zoneKey).filter((k) => k !== ''))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: MobEntry comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   const rows = catalog.filter((m) =>
     m.zones?.some((z) => {
       const zk = zoneKey(z)
       return zk === key || aliases.has(zk)
     })
   )
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: MobEntry comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   return rows.sort((a, b) => {
     const la = sortLevel(a)
     const lb = sortLevel(b)

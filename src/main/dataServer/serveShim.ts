@@ -2,42 +2,27 @@
 // serveShim.ts — THE COMPAT SHIM, WIRED (JOS-489, phase 1 of the cutover).
 // ============================================================================
 //
-// `readShim.ts` is the decision with no world attached; this is the world. It reads the flag, hands
-// the shim a real connection and a real log sink, states what each of the three channels' served
-// answers must look like to count as answers, and installs the harness seam the parity e2e reads.
-// `src/main/ipc/world.ts` calls four things from here and nothing else.
+// `readShim.ts` is the decision with no world attached; this is the world. It hands the shim a real
+// connection and a real log sink, and states what each channel's served answer must look like to
+// count as an answer. `src/main/ipc/world.ts` takes three of them; `ipc/resist.ts` and
+// `ipc/knowledge.ts` take one each.
 //
-// ── THE SECOND FLAG, AND WHAT IT IS FOR NOW (JOS-495) ──────────────────────────────────────────
+// ── ONE WORLD (JOS-499, the deletion release) ────────────────────────────
 //
-// THE ENGINE ANSWERS THE APP'S READS BY DEFAULT. `EQC_ENGINE_SERVE=0` takes that away and leaves
-// everything else — the engine still folds beside the app, the parity probe still compares the two
-// worlds, the performance panel is still populated — while the product's answers come back out of
-// this process's own fold. Unset, which is every ordinary launch, means SERVED.
+// THIS FILE USED TO OWN A FLAG. `EQC_ENGINE_SERVE` decided, per call, whether the ENGINE or this
+// process's own fold answered a read, and the header that stood here argued at length about why
+// that deserved a switch of its own. There is no second fold and no switch: every read below is
+// served or is honestly unanswerable, and `readShim.ts`'s `own()` thunk — which used to be the
+// TypeScript arm — now carries the EMPTY SHAPE each channel owes its caller.
 //
-// IT WAS A SECOND FLAG FOR A DIFFERENT REASON WHEN IT WAS WRITTEN, and the reason is worth keeping
-// visible because it is what the flag is still SHAPED by. Every engine ticket up to JOS-489 held
-// "no branch in the product reads anything the engine says" as an invariant; ending that invariant
-// deserved a switch of its own rather than a silent change of meaning for a flag developers already
-// had in a shell. The cutover ruling ends the other half — the default — and what the flag becomes
-// is the narrower of two diagnostics: `EQC_ENGINE=0` says "no engine at all", this one says "an
-// engine, but not in the read path". Two launches instead of a build, which is the whole reason the
-// granular forms survive the flip at all.
-//
-// The serve flag is still MEANINGLESS ALONE, in both directions: `engineEnabled()` gates it, so
-// `EQC_ENGINE=0` serves nothing no matter what this variable says, and the app is exactly the app it
-// was before any of this existed. That is the same one-gate rule `engineHost.ts` states for the
-// client and the broker, kept by importing its answer rather than by re-reading its variable.
-//
-// ── WHAT `world.ts` PAYS WHEN THE FLAG IS OFF ──────────────────────────────────────────────────
-//
-// One boolean read per call, and it is a read of a `const` computed at module load. The handler's
-// expression is otherwise the one it has always been: same `timeSeam`, same synchronous return,
-// same value. This file allocates nothing, opens nothing and registers nothing in that world — the
-// shim object below is built lazily, on the first served call, so a launch that never serves never
-// makes one. THAT PATH IS THE EXCEPTION NOW RATHER THAN THE RULE, and it is priced here anyway:
-// what a dev checkout with no `cargo build` runs is exactly this path, because the supervisor finds
-// no binary and no client is ever ready to serve (`readShim.ts`'s `noClient` outcome).
-//
+// WHAT THE ONE LAW BECAME. It used to read: the shim must never make the app worse than the
+// flag-off world. There is no flag-off world to be no worse than, so the law is now the plainer
+// one the deletion release rests on — A READ THAT CANNOT BE SERVED SAYS SO, and never invents.
+// Each channel's unserved answer is the shape its surface already draws before there is anything
+// to draw: `null` for a module snapshot, a `hydrating` meter, no search hits, no `dropsSeen`. And
+// every one of them is still COUNTED AND NAMED in the dev log with its reason, so a blank surface
+// always has an explanation a developer can read.
+
 // ── THE THREE PROJECTIONS, AND THE TWO GUESS TESTS ─────────────────────────────────────────────
 //
 // A reply that passed the protocol's own result guard can still not be an ANSWER (readShim.ts's
@@ -67,14 +52,12 @@
 // compares the two worlds' answers field by field with `firstDiff`, which is the only honest way to
 // hold a cast like this one accountable.
 
-import { E2E } from '../e2e'
 import { logInfo } from '../errorLog'
-import { engineFlagOn } from '../../shared/dataServer/engineFlags'
-import { engineEnabled } from './engineHost'
 import { engineLogMtimeMs, engineRequest, engineServeReadiness } from './engineClientHost'
-import { createReadShim, type ReadShim, type ServeOutcome } from './readShim'
+import { createReadShim, type ReadShim } from './readShim'
 import type { CombatSnapshot, FightSearchResult, SnapshotOpts } from '../../shared/combat'
 import type { MobLevelFact } from '../resist/world'
+import type { MobSeenDrop } from '../../shared/mobTypes'
 import type {
   CombatSnapshotOpts,
   ModuleSnapshotResult
@@ -95,15 +78,10 @@ export interface ModuleSnap {
   readonly served?: true
 }
 
-/**
- * THE APP'S OWN ARMS, handed in by `world.ts` so the TS fold stays visible at the call site the
- * cutover will one day delete. Nothing here imports `pipeline.ts`.
- */
-export interface TsArms {
-  module: (moduleId: string) => ModuleSnap | null
-  combat: (opts: SnapshotOpts) => CombatSnapshot
-  search: (text: string, limit: number | undefined) => FightSearchResult
-}
+// `TsArms` LIVED HERE AND IS GONE (JOS-499). It was the app's own fold, handed in by `world.ts` so
+// the TS arm stayed visible at the call site "the cutover will one day delete". This is that
+// cutover, and the interface had exactly three readers — the fallback, the parity probe's second
+// arm, and the flag-off answer — all of which were the same fold and all of which are deleted.
 
 /**
  * How long the engine arm may take. A BOUND ON THE PATHOLOGICAL CASE, not a budget — a loopback
@@ -128,20 +106,16 @@ const NOTE_EVERY_MS = 5_000
  */
 const NOW_SKEW_MS = 60_000
 
-/**
- * IS THE ENGINE ANSWERING THIS APP'S READS ON THIS LAUNCH? Read once, at module load, for
- * `engineEnabled()`'s reason: an environment variable is a fact about how the process was started,
- * and re-reading it per call would invite the belief that it can change.
- *
- * TRUE BY DEFAULT since JOS-495, and still the AND of both gates — `EQC_ENGINE=0` closes this one
- * too, because there is nothing to serve from.
- */
-const SERVING = engineEnabled() && engineFlagOn(process.env.EQC_ENGINE_SERVE)
-
-/** The gate `world.ts` branches on. */
-export function shimServing(): boolean {
-  return SERVING
-}
+// `SERVING` AND `shimServing()` ARE GONE (JOS-499 item 9). The flag answered "does the ENGINE
+// answer this app's reads, or does its own fold?" — a question with one arm left. Every call site
+// branched between two worlds and there is one, so the branch is deleted rather than defaulted to
+// true: a gate that can only answer one way is a gate a reader has to prove is dead, and this
+// release is where the proof stops being necessary.
+//
+// `engineEnabled()` IS NOT REPLACED BY ANYTHING EITHER, and that is the same argument one level up.
+// `EQC_ENGINE=0` used to mean "run the app on its own fold"; there is no such app. What used to be
+// a supported configuration is now simply an app that cannot answer, which is the engine-absent
+// state this release makes honest rather than a mode anybody selects.
 
 /** A promise that resolves later without ever being the reason this process stays alive —
  *  `engineClientHost.ts`'s timer rule, restated for the deadline. */
@@ -266,17 +240,18 @@ function projectModule(moduleId: string, r: ModuleSnapshotResult): ModuleSnap | 
   return { seq: r.seq, state, served: true }
 }
 
-/** `module:getSnapshot`, served — see the header for the echo test, `projectModule` for the graft. */
-export function serveModuleSnapshot(
-  moduleId: string,
-  own: () => ModuleSnap | null
-): Promise<ModuleSnap | null> {
-  return readShim().serve(
-    'module.snapshot',
-    { module: moduleId },
-    (r) => projectModule(moduleId, r),
-    own
-  )
+/**
+ * `module:getSnapshot`, served — see the header for the echo test, `projectModule` for the graft.
+ *
+ * `null` IS THE HONEST ANSWER when the engine cannot serve (JOS-499). There is no app-side fold to
+ * fall back to, and the renderer's `useModule` already reads null as "no state yet" — so a view
+ * draws its loading/unavailable state rather than being handed invented emptiness. The REASON is
+ * still counted and narrated by `readShim.ts`, so the silence is legible in the dev log.
+ */
+export function serveModuleSnapshot(moduleId: string): Promise<ModuleSnap | null> {
+  return readShim().serve('module.snapshot', { module: moduleId }, (r) =>
+    projectModule(moduleId, r)
+  , () => null)
 }
 
 /** `combat:snapshot`, served — see the header for the clock test and for the cast. */
@@ -370,92 +345,57 @@ export function serveMobLevel(
     .then((boxed) => boxed.fact)
 }
 
+// ── the fifth channel: what YOU have seen this creature drop (JOS-499, owner ruling 6a) ────────
+
+/**
+ * ONE CREATURE'S `dropsSeen`, SERVED — the app's own-loot index, which is the engine's now.
+ *
+ * ── WHY THIS HAD TO LAND IN THE DELETION RELEASE ───────────────────────────────────────────────
+ *
+ * `mobLookup.ownLoot` is a `MobLootIndex` that the FOLD filled: every loot event recorded what came
+ * off which corpse, and `mergeLocalKnowledge` joined it onto the wiki drop table so a mob card could
+ * say "you have pulled three of these off it". Boundary verdict 5 moved that index engine-side with
+ * the corpora, and the fold that fed the app's copy is deleted — so the app-side index is now
+ * permanently empty and every card silently lost its "seen it drop" section. The owner ruled it
+ * wired now rather than deferred to the knowledge-ops cutover.
+ *
+ * ── THE ANSWER IS BOXED, for `serveMobLevel`'s reason exactly ──────────────────────────────────
+ *
+ * `readShim.ts` reserves `null` for "the reply was not an ANSWER", and absent `dropsSeen` is ALSO a
+ * perfectly good served answer — a creature you have never looted has none, and the engine omits
+ * the key rather than sending an empty array. Two different absences on one channel is the
+ * ambiguity the shim's header warns about, so the projection hands back a box: a box is an answer,
+ * and no box means nobody could be asked.
+ *
+ * ── AND THE THREE OUTCOMES ARE THREE, NOT TWO ──────────────────────────────────────────────────
+ *
+ * Served WITH drops replaces the field; served WITHOUT drops DELETES it (the engine saying you have
+ * looted nothing here is a fact, and leaving a stale array would be the card claiming otherwise);
+ * unserved leaves the record exactly as `lookupMob` built it — which today carries no `dropsSeen`
+ * at all, so an engine that cannot answer degrades to the honest silence rather than to a lie.
+ *
+ * THE ECHO TEST IS `projectModule`'s, and the name is compared as ASKED. The engine folds the mob
+ * key itself (`consider::mob_key`) precisely so a pre-folded key never crosses the wire, so what
+ * comes back is echoed in the spelling this app sent.
+ */
+export function serveMobDropsSeen(name: string): Promise<{ seen?: MobSeenDrop[] } | null> {
+  return readShim().serve(
+    'knowledge.mob',
+    { name },
+    (r) => {
+      if (r.name !== name) return null
+      const seen = (r.record as { dropsSeen?: unknown }).dropsSeen
+      if (seen === undefined) return { box: {} }
+      if (!Array.isArray(seen)) return null
+      return { box: { seen: seen as MobSeenDrop[] } }
+    },
+    () => null
+  ).then((boxed) => (boxed === null ? null : boxed.box))
+}
+
 // NO TEARDOWN FLUSH, AND THAT IS A DECISION. The tally prints its FIRST fallback immediately
 // (`readShim.ts NoteTally`), so the state a developer actually needs to see — the engine never
 // served anything — is on screen within the second; what a trailing flush would add is the last
 // few counts of a window that was already being printed every five seconds. Wiring it would mean
 // `engineHost.ts` importing this file, which imports `engineHost.ts` for its gate, and a cycle
 // between the composition root and a leaf is not worth a partial line at quit.
-
-// ── the harness seam (EQ_E2E only) ─────────────────────────────────────────────────────────────
-//
-// WHY A SEAM RATHER THAN TWO LAUNCHES. The shim IS a parity instrument, and a parity claim is only
-// worth making AT A MATCHED MARK (parityProbe.ts's header). Flipping the flag per launch would put
-// the two answers in two processes, minutes apart, each having folded its own staged copy — so
-// every field that moves with the clock would differ for a reason that has nothing to do with the
-// two folds agreeing, and the spec would have to weaken until it proved very little. Asking one
-// running app for BOTH arms, back to back, is what the in-app probe already does and for the same
-// reason: the engine's reply lands, and the app's own read happens in that reply's microtask
-// continuation, where the only thing that can have advanced this process's fold is another
-// microtask — never a tailer line, never a heartbeat tick, both of which are macrotasks.
-//
-// AND IT DOES NOT REPLACE THE PRODUCT PATH IN THE SPEC. The e2e still calls `window.eq` for the
-// real answer and checks it against this seam's ENGINE arm; the seam's job is to supply the second
-// arm, which the product deliberately no longer exposes when the flag is on.
-//
-// Nothing in the product reads this object, it exists only under `EQ_E2E=1` AND the serve flag, and
-// it crosses no IPC — `overlayHover.ts`'s probe on the same terms.
-
-/** One question, asked of both worlds. `engine` is null when the engine did not serve, and `why`
- *  says which of the shim's reasons that was. */
-export interface BothArms<T> {
-  readonly engine: T | null
-  readonly why: string | null
-  readonly ts: T
-}
-
-function both<T>(outcome: ServeOutcome<T>, ts: T): BothArms<T> {
-  if (outcome.served) return { engine: outcome.value, why: null, ts }
-  return { engine: null, why: `${outcome.why}: ${outcome.detail}`, ts }
-}
-
-/** What the harness finds on `globalThis`. Every member takes the same arguments its IPC does. */
-export interface ShimProbe {
-  module: (moduleId: string) => Promise<BothArms<ModuleSnap | null>>
-  combat: (opts: SnapshotOpts) => Promise<BothArms<CombatSnapshot>>
-  search: (text: string, limit?: number) => Promise<BothArms<FightSearchResult>>
-}
-
-function buildProbe(arms: TsArms): ShimProbe {
-  const s = readShim()
-  return {
-    module: async (moduleId) =>
-      both(
-        // THE SHIM'S OWN PROJECTION, not a second spelling of it — see `projectModule`. What the
-        // spec compares against the app's fold has to be the answer the product would have been
-        // given, graft included, or the comparison is about a code path nobody ships.
-        await s.ask('module.snapshot', { module: moduleId }, (r) => projectModule(moduleId, r)),
-        arms.module(moduleId)
-      ),
-    combat: async (opts) =>
-      both(
-        await s.ask(
-          'combat.snapshot',
-          { opts: engineOpts(opts) },
-          (r) => r.snapshot as unknown as CombatSnapshot
-        ),
-        arms.combat(opts)
-      ),
-    search: async (text, limit) =>
-      both(
-        await s.ask(
-          'combat.searchFights',
-          limit === undefined ? { query: text } : { query: text, limit },
-          (r) => ({ hits: r.hits, corpus: r.corpus }) as unknown as FightSearchResult
-        ),
-        arms.search(text, limit)
-      )
-  }
-}
-
-/**
- * Install the seam, or do nothing at all.
- *
- * THE CLOCK TEST IS DELIBERATELY NOT APPLIED HERE. The probe's job is to report what the engine
- * ACTUALLY said so a spec can pin the difference; a projection that answered `null` for a stamp the
- * spec is trying to measure would hide the very asymmetry the ticket asks to be documented.
- */
-export function installShimProbe(arms: TsArms): void {
-  if (!E2E || !SERVING) return
-  ;(globalThis as unknown as Record<string, unknown>).__eqcEngineShim = buildProbe(arms)
-}

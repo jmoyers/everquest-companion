@@ -13,6 +13,12 @@
 //      left standing over nothing. The tests below pin the ARMING, including over the exact defs
 //      that used to block.
 //   2. THE TRANSLATION. A fire frame names its rule by LABEL; the renderer's player needs an ID.
+//   3. THE WORDS (JOS-500, ruling 27). A fire frame carries what the firing may SAY — the JOS-103
+//      captures, the JOS-353 `{target}` token, the JOS-84 resolved spell and the JOS-378 `dueAt` —
+//      and this file copies them onto the firing rather than deriving them. Until that frame grew,
+//      each of those resolved to nothing and a `custom` phrase spoke its tokens literally; the
+//      owner ruled the loss release-gating, which is why the sentences below are asserted as
+//      SENTENCES and not as field copies.
 //
 // WHAT IS NOT HERE. That the arm path actually consults the verdict, that the module actually goes
 // quiet, and that exactly ONE sound comes out of a matching live line are claims about a running
@@ -22,6 +28,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { armVerdict, fireToFiring } from '../src/main/dataServer/alertsAudioRules'
+// THE OTHER HALF OF PARITY. `speechTextFor` is what turns a firing into words, and it is pure — no
+// clock, no store, no I/O — so the frame-to-sentence claim can be made in one process rather than
+// inferred from a running raid. It is the same function the renderer's player calls.
+import { speechTextFor } from '../src/shared/speechText'
 import type { FireMessage } from '../src/shared/dataServer/protocol.generated'
 import type { AlertDef } from '../src/shared/types'
 
@@ -99,9 +109,106 @@ test('A FIRE BECOMES A FIRING the renderer can play: the label resolves back to 
   })
 })
 
-test('…and it carries NOTHING ELSE. No captures, no spell, no dueAt — a frame has four fields', () => {
+test('…and a frame with nothing to say still carries nothing, which is nearly every alert', () => {
+  // THE COMMON CASE IS STILL THE COMMON CASE (JOS-500). This def declares no capture group, writes
+  // no `{target}` phrase, matched a family that names no spell and carries no offset — so the
+  // firing is byte-identical to the one this function produced before the frame grew. An absent key
+  // is the honest encoding of "nothing true to say here"; `undefined`-valued keys would make every
+  // downstream deepEqual a different assertion for no gain.
   const firing = fireToFiring(fire(), [def({ id: 'charm-break', name: 'Charm break' })])
   assert.deepEqual(Object.keys(firing ?? {}).sort(), ['alertId', 'matchedText', 'ts'])
+})
+
+// ---- the words (JOS-500, ruling 27) -------------------------------------------------------------
+//
+// The frame grew three fields and this function COPIES them. What is proven here is the copy and
+// the parity it buys — that the same def, fired by the engine, speaks the sentence the retired
+// evaluator spoke. `speechTextFor` is the thing that turns a firing into words and it is pure, so
+// the two halves can be joined in one process: build the frame the engine sends, translate it, and
+// ask the resolver what comes out. WHAT IS NOT HERE is that the engine PRODUCES such a frame —
+// that is `fold`'s own suite (`alerts_rules.rs`, `alerts.rs`) — and that a running app makes the
+// sound, which is `tests/e2e/voice-alerts.e2e.mts`.
+
+test('A CUSTOM PHRASE SPEAKS THE NAME ITS PATTERN CAPTURED — the JOS-103 claim, end to end', () => {
+  const puma = def({
+    id: 'puma',
+    name: 'Spirit of the puma',
+    audio: 'speech',
+    speech: { mode: 'custom', phrase: 'Puma on {player}' }
+  })
+  const firing = fireToFiring(
+    fire({ rule: 'Spirit of the puma', captures: { player: 'Fail' } }),
+    [puma]
+  )
+  assert.deepEqual(firing?.captures, { player: 'Fail' })
+  // THE SENTENCE ITSELF. Before the frame grew, `{player}` had nothing to resolve to and the same
+  // def spoke the literal "Puma on {player}" — a token rendered verbatim, which is the documented
+  // behaviour for a value that is not there and was exactly the regression ruling 27 names.
+  assert.equal(speechTextFor(puma, firing), 'Puma on Fail')
+  assert.equal(speechTextFor(puma, null), 'Puma on {player}')
+})
+
+test('…and the `{target}` token speaks the mob, from a def with no regex in it (JOS-353)', () => {
+  const mez = def({
+    id: 'mez',
+    name: 'Mez broke',
+    audio: 'speech',
+    speech: { mode: 'custom', phrase: 'Mez broke on {target}' }
+  })
+  const firing = fireToFiring(
+    fire({ rule: 'Mez broke', captures: { target: 'a young puma' } }),
+    [mez]
+  )
+  assert.equal(speechTextFor(mez, firing), 'Mez broke on a young puma')
+})
+
+test('A SPELL MODE SPEAKS THE SPELL, rank folded out by the resolver (JOS-84)', () => {
+  const slow = def({ id: 'slow', name: 'Slow landed', audio: 'speech', speech: { mode: 'spellName' } })
+  const firing = fireToFiring(fire({ rule: 'Slow landed', spell: 'Mesmerization III' }), [slow])
+  // THE RANK ARRIVES INTACT AND IS FOLDED OUT WHERE IT SHOULD BE. The producer carries what the log
+  // spelled; `speechTextFor` strips the numeral, because ranks are noise aloud and a consumer that
+  // wants one must still be able to see it.
+  assert.equal(firing?.spell, 'Mesmerization III')
+  assert.equal(speechTextFor(slow, firing), 'Mesmerization')
+  // `spellFirstWord` is the shortest useful utterance and reads the same field.
+  const short = { ...slow, speech: { mode: 'spellFirstWord' } } as AlertDef
+  assert.equal(speechTextFor(short, firing), 'Mesmerization')
+})
+
+test('…and a spell mode with NO spell still says something true: the alert’s own name', () => {
+  // World-model law 1, and the behaviour that used to swallow EVERY spell-mode alert under the
+  // engine because no frame could carry a spell at all. It is still the right answer for the
+  // families that genuinely name none — an app signal, a raw trigger on a spell-less line.
+  const slow = def({ id: 'slow', name: 'Slow landed', audio: 'speech', speech: { mode: 'spellName' } })
+  assert.equal(speechTextFor(slow, fireToFiring(fire({ rule: 'Slow landed' }), [slow])), 'Slow landed')
+})
+
+test('AN EARLY WARNING CARRIES ITS DEADLINE, so the banner has something to count down to', () => {
+  const slow = def({ id: 'group:slow:mob', name: 'Slow wore off a mob', earlyWarnSec: 5 })
+  const firing = fireToFiring(
+    fire({ rule: 'Slow wore off a mob', at: 1_700_000_056_000, dueAt: 1_700_000_061_000 }),
+    [slow]
+  )
+  assert.equal(firing?.dueAt, 1_700_000_061_000)
+  // THE GAP IS THE LEAD TIME THE USER CONFIGURED. `ts` is when the sound was made and `dueAt` is
+  // what it was early for, so the difference is the def's own five seconds — which is the whole of
+  // what JOS-378 put on screen.
+  assert.equal((firing?.dueAt ?? 0) - (firing?.ts ?? 0), 5_000)
+})
+
+test('THE THREE FIELDS ARE COPIED, NEVER RE-DERIVED — the second-evaluator refusal, as source', () => {
+  // Every one of them is an evaluator's answer (which candidate satisfied the matcher, which text
+  // the matching condition tested, whether the phrase asked for a target). This file's whole
+  // discipline is that it decides none of that, so the copy is asserted to be a copy: a capture map
+  // the app could not possibly have derived — the def carries no pattern at all — arrives intact.
+  const opaque = def({ id: 'opaque', name: 'Opaque', speech: { mode: 'custom', phrase: '{a} {b}' } })
+  const firing = fireToFiring(fire({ rule: 'Opaque', captures: { a: 'one', b: 'two' } }), [opaque])
+  assert.deepEqual(firing?.captures, { a: 'one', b: 'two' })
+  assert.equal(speechTextFor(opaque, firing), 'one two')
+  // …and it is a COPY rather than the frame's own object, so nothing downstream holds a reference
+  // into a decoded frame.
+  const frame = fire({ rule: 'Opaque', captures: { a: 'one' } })
+  assert.notEqual(fireToFiring(frame, [opaque])?.captures, frame.captures)
 })
 
 test('A LABEL NOTHING ANSWERS TO IS DROPPED, never played as somebody else', () => {

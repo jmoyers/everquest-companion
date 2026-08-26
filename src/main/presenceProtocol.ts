@@ -1157,3 +1157,69 @@ export function watcherCadence(
     hoverEveryTicks: 0
   }
 }
+
+// ── THE CURSOR RING'S DISPOSITION (moved here by JOS-499 item 6) ─────────────────────────────
+//
+// It lived in `replayGate.ts`, which is deleted with the fold. It is here rather than anywhere
+// else because this file already owns the ring's other two pure decisions (`cursorRingActive`,
+// `overlaysShouldHide`), and a predicate about what the ring should be doing belongs beside them.
+//
+// IT LOST ITS `replayRunning` TERM AND NOTHING ELSE. That term suspended the 8 ms sampler while a
+// historical fold owned THIS process's message loop. There is no such fold: the engine folds in
+// its own process at below-normal priority, which is the whole point of the boundary — so the one
+// state the term produced ('suspended' because of a replay) can no longer occur, and every other
+// arm is byte-identical. `hasBounds` still produces 'suspended' for its own reason.
+
+/**
+ * What the cursor ring should be doing. PURE — so every arm is a unit test rather than something
+ * to re-measure by hand.
+ *
+ *   'off'       — the feature is switched off: no window, no stream (destroy what exists).
+ *   'suspended' — there is nowhere to put the ring (the EQ window has never been seen):
+ *                 keep whatever window exists, hidden and parked, and read NOTHING.
+ *   'idle'      — the game does not own the screen (alt-tabbed away, game closed). The ring
+ *                 window comes OFF SCREEN: it must not sit over whatever the user switched to.
+ *   'parked'    — the game still owns the screen but there is no pointer to ring (mouselook, or
+ *                 any mouse button held in the world view). Stop sampling and park the halo, but
+ *                 LEAVE THE WINDOW WHERE IT IS. See below — this distinction is JOS-120's fix.
+ *   'run'       — visible and streaming.
+ *
+ * ============================ WHY 'parked' IS NOT 'idle' (JOS-120) ============================
+ * These two used to be one state, and hiding the window was how both were expressed. That is the
+ * reported twitch: the ring visibly jumped on every click and then snapped back.
+ *
+ * A HIDDEN WINDOW PRODUCES NO FRAMES, so the park that is supposed to take the halo off screen is
+ * never composited. MEASURED (Electron 43, a transparent frameless window driven by the shipping
+ * renderer logic): with `hide()` first and the park second, the park's `requestAnimationFrame`
+ * did not run for the entire 600 ms the window was hidden — the pending-frame flag stayed set and
+ * the element kept the transform it had before the hide. It ran 1 ms AFTER `showInactive()`, by
+ * which point Windows had already re-presented the window's last composited surface: the halo,
+ * drawn where the pointer used to be. So every mouselook/click ended in a frame or two of ring at
+ * the stale position, then a snap to the fresh sample.
+ *
+ * The cure is to not hide at all for the case that happens on every click. When EverQuest still
+ * has the foreground, the ring window is exactly where it belongs and is about to be needed
+ * again in a few hundred ms; parking it while it is VISIBLE composites normally, on the next
+ * frame, and the halo simply disappears and reappears in the right place. Hiding stays for the
+ * case it was actually written for — the game no longer owning the screen — where a stale frame
+ * costs an alt-tab, not a click.
+ *
+ * `focused` is therefore load-bearing on its own and not merely `active`'s cause: a pointer
+ * hidden by some OTHER app while EverQuest is in the background must still take the window off
+ * screen, so the two facts are asked separately rather than inferred from one another.
+ */
+export type RingDisposition = 'off' | 'suspended' | 'idle' | 'parked' | 'run'
+
+export function ringDisposition(o: {
+  enabled: boolean
+  hasBounds: boolean
+  active: boolean
+  /** Does the game (or one of our own windows — presence.ts's own-windows rule) hold the
+   *  foreground? Decides HIDE vs PARK once the ring is not active. */
+  focused: boolean
+}): RingDisposition {
+  if (!o.enabled) return 'off'
+  if (!o.hasBounds) return 'suspended'
+  if (o.active) return 'run'
+  return o.focused ? 'parked' : 'idle'
+}

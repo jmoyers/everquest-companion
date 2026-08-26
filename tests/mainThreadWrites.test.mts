@@ -189,10 +189,15 @@ test('THE FINALS ARE WIRED WHERE THE APP ACTUALLY ENDS', () => {
   assert.match(body, /flushErrorLogSync\(\)/)
   // The error log goes LAST, so a line any step above it just wrote is in the batch.
   assert.ok(body.lastIndexOf('flushErrorLogSync()') > body.indexOf('flushRingSync'))
-  // The overlay's final is the teardown step that was already the last save of a run.
-  assert.match(index, /teardownStep\('main:saveOverlay', \(\) => saveUserOverlaySync\(/)
-  // …and the periodic saver on session.ts's tick is the ASYNC one.
-  assert.match(read('src/main/session.ts'), /\n {6}saveUserOverlay\(buffsModule\.overlayRegister\(\)\)/)
+  // THE OVERLAY REGISTER HAS NO APP-SIDE FINAL ANY MORE (JOS-499, boundary verdict 4). Both its
+  // writers lived here — the quit-time `saveUserOverlaySync` teardown step and the 60-tick
+  // `saveUserOverlay` rider on session.ts's heartbeat — and both read the register off this
+  // process's buffs module. The ENGINE owns that file now, so the honest assertion inverts:
+  // nothing here may write it, because writing one at quit would be this process publishing an
+  // empty opinion over the file the engine has been maintaining, at the one moment nothing is
+  // left to correct it.
+  assert.doesNotMatch(index, /saveUserOverlaySync\(/)
+  assert.doesNotMatch(read('src/main/session.ts'), /saveUserOverlay\(/)
 })
 
 test('THE OVERTURN: storeFile.ts is not on a live path, and a settings write never comes through it', () => {

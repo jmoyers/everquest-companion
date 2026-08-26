@@ -10,7 +10,6 @@ import { normalizeEarlyWarnSec } from '../../shared/earlyWarning'
 // sync — the push is a fourth line after those two, and it is a no-op on a launch that asked for no
 // engine. See dataServer/appKnowledge.ts for why the payload is not threaded through here.
 import { pushAppKnowledge } from '../dataServer/definePush'
-import { alertsModule, eventFeedModule, registry } from '../pipeline'
 import {
   deleteAlert,
   getAlertPrefs,
@@ -56,13 +55,11 @@ export function registerAlertsIpc(): void {
   ipcMain.handle(IPC.listAlerts, () => getAlerts())
   ipcMain.handle(IPC.saveAlert, (_e, def: AlertDef) => {
     const list = saveAlert(sanitizeEarlyWarn(sanitizeCooldownScope(def)))
-    alertsModule.setDefs(list) // keep the live evaluator in sync
     pushAppKnowledge('alerts.define') // …and the engine's, when there is one
     return list
   })
   ipcMain.handle(IPC.deleteAlert, (_e, id: string) => {
     const list = deleteAlert(id)
-    alertsModule.setDefs(list)
     pushAppKnowledge('alerts.define')
     return list
   })
@@ -71,30 +68,32 @@ export function registerAlertsIpc(): void {
   // reset all alerts to the seeded built-in set (Task #22).
   ipcMain.handle(IPC.resetAlerts, () => {
     const list = resetAlerts()
-    alertsModule.setDefs(list)
     pushAppKnowledge('alerts.define')
     return list
   })
   // renderer reports an 'app'-triggered fire (bossDefeat) so the module's recent-
   // fires history stays the single source of truth. We record it and flush so the
   // fire rides the same module:delta transport event/raw fires use (Task #22).
+  // A NAMED GAP (JOS-499). An app-signal fire — bossDefeat, questComplete — is a firing only the
+  // RENDERER can detect, and it was recorded by this process's alerts module so the recent-fires
+  // history stayed one source of truth and the event feed grew a row. The engine has no
+  // `alerts.appFired` command, so there is nowhere to record it: the SOUND is unaffected (the
+  // player plays an app signal itself, which is what the `origin: 'app'` echo rule exists for),
+  // and what is lost is the history row and the feed row for those two signals. The channel stays
+  // registered so the renderer's send is received rather than silently unhandled, and closing it
+  // needs an engine-side command — a follow-up ticket, not a deletion.
   ipcMain.on(IPC.appFired, (_e, payload: { alertId: string; context: string }) => {
     if (!payload?.alertId) return
-    alertsModule.appFired(payload.alertId, payload.context ?? '')
-    // The alerts delta this flush emits is folded into the event feed by feedAlertDelta (the
-    // registry host), so an app-signal fire (bossDefeat / questComplete) shows up in the
-    // event log exactly like a main-side event/raw fire. eventFeed is registered after
-    // alerts, so the resulting feed row rides out on this same flush.
-    registry.flushNow()
   })
   // ---- event feed (Task #59): renderer-detected events ----
   // Only the renderer's posky/turn-in machinery can see a Sky quest complete, so it reports
   // completions here. Main owns the ring + ids; flushNow pushes the row straight out to the
   // 'events' overlay instead of waiting on the next log event / 1s tick.
+  // THE SAME NAMED GAP, for the same reason: only the renderer's posky machinery can see a Sky
+  // quest complete, and the engine has no `eventFeed.report` command to take it. The row is lost
+  // until one exists.
   ipcMain.on(IPC.feedReport, (_e, report: FeedReport) => {
     if (!report?.title) return
-    eventFeedModule.report(report)
-    registry.flushNow()
   })
 
   ipcMain.handle(IPC.getAlertPrefs, () => getAlertPrefs())
