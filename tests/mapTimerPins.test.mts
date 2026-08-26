@@ -2,7 +2,8 @@
 // joins the respawn module's watched rows to the wiki catalog's spawn points for the map on
 // screen. What this file pins is the join's three refusals and the clock text's honesty:
 //
-//   1. ZONE: a row whose raw zone folds to another map — or to none — is not returned at all.
+//   1. ZONE: a row whose raw zone folds to another map — or to none — comes back with NO pins
+//      (never filtered out: ruling 4, the served rows are not the renderer's to prune).
 //   2. NAME: the join runs `mobKey` on both sides (quote fold), and it does NOT inherit the
 //      pane's articled-commons filter — a watch on `a froglok knight` is an explicit clock.
 //   3. POSITION: no stated coordinates ⇒ a row with NO pins (returned, so a surface can count
@@ -76,9 +77,12 @@ test('an articled common joins too — the pane filter is the map list’s, not 
   assert.equal(out[0]?.pins.length, 1)
 })
 
-test('a row from another zone is not this map’s business', () => {
+test('a row from another zone is not this map’s business - it comes back PINLESS, never filtered (ruling 4)', () => {
   const elsewhere = row('Fippy Darkpaw', { zone: 'West Commonlands' })
-  assert.deepEqual(timerPinRows([elsewhere], QH), [])
+  const out = timerPinRows([elsewhere], QH)
+  assert.equal(out.length, 1)
+  assert.deepEqual(out[0].pins, [])
+  assert.deepEqual(placeableTimerPins(out), [])
 })
 
 test('no stated position, an unknown name, and a multi-zone page all yield a PINLESS row', () => {

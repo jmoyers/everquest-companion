@@ -140,8 +140,7 @@ export function mobRows(
   catalog: MobEntry[],
   wished: ReadonlySet<string> = NO_WISHES
 ): MobPaneRow[] {
-  return mobsInZone(zoneRaw, catalog)
-    .filter((m) => !isCommonMob(m.name) || wishedDrops(m, wished).length > 0)
+  return mobsInZone(zoneRaw, catalog, (m) => !isCommonMob(m.name) || wishedDrops(m, wished).length > 0)
     .map((m) => {
       const zoneCount = m.zones?.length ?? 0
       const ambiguous = zoneCount > 1

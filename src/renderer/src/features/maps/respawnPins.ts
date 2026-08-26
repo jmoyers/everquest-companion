@@ -83,9 +83,10 @@ export function timerZone(stem: ZoneShort | null, catalog: MobEntry[]): TimerZon
  */
 export function timerPinRows(rows: readonly RespawnRow[], zone: TimerZone | null): TimerPin[] {
   if (zone == null || rows.length === 0) return []
-  const here = rows.filter((r) => zoneShortName(r.zone) === zone.stem)
-  return here.map((r) => {
-    const entry = zone.byKey.get(mobKey(r.display))
+  // Every served row is mapped; one off this map carries no pins and the lane draws pinned rows only,
+  // so the rows themselves are never filtered here (ruling 4).
+  return rows.map((r) => {
+    const entry = zoneShortName(r.zone) === zone.stem ? zone.byKey.get(mobKey(r.display)) : undefined
     // A multi-zone page's numbers cannot be attributed to this map — mobRows' rule, restated
     // here because this lane reads the catalog directly rather than through the pane's rows.
     const pins = entry === undefined || (entry.zones?.length ?? 0) > 1 ? [] : mobPins(entry)
