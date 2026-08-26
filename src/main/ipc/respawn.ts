@@ -27,6 +27,14 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { respawnWithoutWatch } from '../../shared/respawn'
 import { getRespawnPrefs, setRespawnPrefs } from '../storeRespawn'
+// A FOURTH DUTY, ADDITIVE (JOS-482): the engine's own respawn module holds the same watch list and
+// bumps its own revision on the push, which is the engine-side spelling of duties 2 and 3 above.
+// Duty 1 — persistence — stays here and only here; the engine never reads a settings file.
+import { pushAppKnowledge } from '../dataServer/definePush'
+// A FIFTH DUTY, ALSO ADDITIVE (JOS-494), and it goes through a different door than the one above:
+// the confirm is a COMMAND rather than app knowledge — nothing persists it here or there — so it
+// rides `serveCommands.ts` beside the session mark. That file's header carries the argument.
+import { serveConfirmSighting } from '../dataServer/serveCommands'
 import { registry, respawnModule } from '../pipeline'
 
 /**
@@ -50,6 +58,7 @@ export function registerRespawnIpc(): void {
     const next = setRespawnPrefs(value)
     respawnModule.setPrefs(next)
     registry.flushNow()
+    pushAppKnowledge('respawn.define')
     return next
   })
   /**
@@ -71,6 +80,7 @@ export function registerRespawnIpc(): void {
     if (next.watches.length === current.watches.length) return false
     respawnModule.setPrefs(setRespawnPrefs(next))
     registry.flushNow()
+    pushAppKnowledge('respawn.define')
     return true
   })
   /**
@@ -86,7 +96,21 @@ export function registerRespawnIpc(): void {
   ipcMain.handle(IPC.respawnConfirmSighting, (_e, id: unknown) => {
     if (typeof id !== 'string' || id.length === 0 || id.length > MAX_ROW_ID) return false
     const applied = respawnModule.confirmSighting(id)
-    if (applied) registry.flushNow()
+    if (applied) {
+      registry.flushNow()
+      // A FIFTH DUTY, AND IT IS THE SETTER'S FOURTH ONE IN A DIFFERENT FILE (JOS-494). The two
+      // sibling handlers above push through `pushAppKnowledge` because a watch list is app
+      // KNOWLEDGE — a preference the engine's world records and re-applies at the next attach. A
+      // confirmation is a COMMAND: it is stored by nobody, on either side, so it goes through
+      // `serveCommands.ts` beside the session mark, which is the file for exactly that shape of
+      // thing. Same fire-and-forget law either way — the person has already been answered by the
+      // line above, and an engine that said no is a dev-log line rather than a failed press.
+      //
+      // AFTER THE APP-SIDE APPLY, AND ONLY WHEN IT TOOK. Inside the `if` rather than beside it:
+      // a press this process itself read as a no-op must not be announced to a second world as
+      // though it happened.
+      serveConfirmSighting(id)
+    }
     return applied
   })
 }

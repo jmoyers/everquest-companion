@@ -24,6 +24,7 @@ import {
   startupProfile,
   stopPerfSampler
 } from '../perf'
+import { startEnginePerfWatch, stopEnginePerfWatch } from '../enginePerfWatch'
 import { getPerfHudPrefs, setPerfHudPrefs } from '../store'
 import { getProcessPriorityPrefs, setProcessPriorityPrefs } from '../storeProcessPriority'
 import { setYieldToGame } from '../processPriority'
@@ -69,6 +70,18 @@ export function registerPerfIpc(): void {
   )
 
   ipcMain.handle(IPC.perfGetStartup, () => startupProfile())
+
+  // THE ENGINE SECTION'S POLL, armed by the panel being open and by nothing else (JOS-483).
+  //
+  // The same mechanism/policy seam every handler above keeps: `enginePerfWatch.ts` owns the timer
+  // and the join, this owns the decision. A non-boolean is not a guess — it leaves the watch
+  // exactly as it was — and `false` is idempotent, which matters because a renderer that reloads
+  // with the popover open never sends its own close.
+  ipcMain.handle(IPC.perfEngineWatch, (_e, open: unknown) => {
+    if (typeof open !== 'boolean') return
+    if (open) startEnginePerfWatch()
+    else stopEnginePerfWatch()
+  })
 
   // The one phase main cannot observe: the renderer is the only thing that knows it has mounted.
   //

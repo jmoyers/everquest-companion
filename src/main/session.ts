@@ -29,6 +29,11 @@ import { scanLog } from './log/scanHistory'
 import { formatTailIoSummary, takeTailIoSummary } from './log/tailIoStats'
 import { createSlicer } from './log/replaySlicer'
 import { saveUserOverlay } from './data/overlayPersistence'
+// THE SERVED ARM (JOS-496): `mirroredModuleState` answers the `/outputfile` baseline seam from the
+// engine when it is the world answering this app's reads, and `null` — no engine, not yet live, a
+// world just replaced — is every caller's cue to ask this process's own fold instead.
+import { mirroredModuleState } from './dataServer/serveMirrors'
+import { baseName } from '../shared/outputs/baseline'
 import { loadInventory } from './inventory/parseInventory'
 import { loadAchievements, watchOutputKind, type OutputKindWatch } from './outputs'
 import {
@@ -38,16 +43,13 @@ import {
   combat,
   epoch,
   installHeldClickies,
-  killsModule,
-  levelingModule,
-  lootModule,
+  logReplaySummary,
   outputFilesModule,
   registry,
   resistModule,
   rosterModule,
   sendWorldRebuilt,
-  sessionDetector,
-  turnInsModule
+  sessionDetector
 } from './pipeline'
 import {
   getActiveLogPath,
@@ -677,14 +679,10 @@ export async function tailCharacter(ref: CharacterRef): Promise<TailResult | nul
       setReplayGate(false)
     }
   }
-  const lootState = lootModule.snapshot().state
-  const killState = killsModule.snapshot().state
-  const lvlState = levelingModule.snapshot().state
-  logInfo(
-    `[everquest-companion] Loaded ${lootState.length} loot, ${turnInsModule.snapshot().state.length} turn-ins, ${
-      Object.keys(killState.mobs).length
-    } mobs, ${lvlState.levels.length} level-ups, ${lvlState.aaGains.length} AA gains, ${lvlState.aaSpends.length} AA buys.`
-  )
+  // ONE LINE SAYING WHAT THE REPLAY FOLDED. It lives in `pipeline.ts` beside the other boot
+  // summaries of the app's own fold (JOS-496) — see that function for why it names its subject
+  // rather than standing down under serve.
+  logReplaySummary()
 
   startTailer(ref.logPath, scan.endOffset, turn)
   startHeartbeat()
@@ -780,7 +778,27 @@ function startInventoryWatch(ref: CharacterRef): void {
  * one; without this seam it falls back to the file's mtime.
  */
 export function inventoryWrittenAt(file: string): number | null {
+  // THE SERVED ANSWER FIRST (JOS-496). This is a MIRROR read rather than a query for a structural
+  // reason: `loadInventory` takes this function BY REFERENCE and calls it from inside a synchronous
+  // parse (`inventory/parseInventory.ts`), so there is nowhere to put an await without rewriting the
+  // fs/parse layer — which is the layer this seam exists to keep pipeline-free. See
+  // `serveMirrors.ts` for the third shape and what it costs.
+  //
+  // THE KEY IS FOLDED HERE, exactly as the module folds it (`modules/outputFiles.ts fileKey`): EQ
+  // writes dumps into the install root and prints the bare name, so the join is on the last
+  // segment, case-insensitively. The engine's own module folds the identical key
+  // (`fold/src/modules/output_files.rs file_key`), which is what makes a served map answerable with
+  // the same string this process would have used.
+  const mirrored = mirroredModuleState('outputFiles') as Record<string, number> | null
+  if (mirrored !== null) return mirrored[outputFileKey(file)] ?? null
   return outputFilesModule.writtenAt(file)
+}
+
+/** `modules/outputFiles.ts fileKey`, applied to the SERVED map. It is spelled here rather than
+ *  exported from the module because the module's copy is the one the cutover deletes, and a served
+ *  read that imported it would be a live dependency on the thing being retired. */
+function outputFileKey(pathOrName: string): string {
+  return baseName(pathOrName).trim().toLowerCase()
 }
 
 /**

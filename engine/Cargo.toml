@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/engined",
+  "crates/eqlog",
+  "crates/fold",
+  "crates/knowledge",
+  "crates/parity",
+  "crates/protocol",
+  "crates/protocol-codegen",
+]
+
+# THE ENGINE (JOS-459). Today this workspace holds the protocol contract (`protocol`, JOS-464), the
+# PARSER and TAILER (`eqlog`, JOS-469/JOS-472) — proven byte-identical against the TS pipeline's
+# recorded event streams by the `parity` binary beside it — the FOLD (`fold`, JOS-471/475/476: all
+# twenty modules, proven against the TS snapshots on six slices), and the process that answers the
+# protocol over loopback TCP and runs them (`engined`, JOS-466/474/478): a spawn contract, a
+# handshake, the ops, one attach that scans a log and then tails it, and — since JOS-478 — the fold
+# itself, reached through one sink trait (`engined::ingest::EventSink`, joined in
+# `engined::foldsink`) and served to clients as `module.snapshot`.
+#
+# TWO STANDING RULES FOR EVERYTHING UNDER engine/:
+#   * Nothing here may shell out to powershell.exe, ever, at build time or at run time.
+#     PowerShell binaries are the antivirus trigger this app already spent a release eliminating,
+#     and a Rust process spawning one would put it straight back.
+#   * The engine runs at below-normal process priority (owner ruling: the person at this machine
+#     is playing EverQuest). Nothing in the build may pin a core or spawn unbounded parallelism.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "FSL-1.1-MIT"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,165 @@
+{
+  "moment": "the meter is asked — the combat engine's whole snapshot, and the clock it was taken by",
+  "source": "JOS-485 (the engine-side combat surface; not a plan-doc moment — the four numbered moments are 01-04)",
+  "note": "THE APP'S OWN `combat:snapshot` IPC, ON THE WIRE. Three answers are worked here and the middle two are the point. The FIRST is a fresh process: no attach, so there is no fold to ask and the refusal says exactly that — `unavailable`, never `notFound`, because the request names nothing that could be absent. The SECOND is the same engine MID-FOLD, and its `now` is the LOG'S OWN CLOCK: it equals the fold's `lastEventTs` to the millisecond, because a REPLAY IS NOT A MOMENT IN TIME and a mid-scan answer stamped with the host clock would finalize whatever fight was open and hand the rest of it to a fresh encounter. Note also what is NOT in that answer: no `timeline` key at all, because the caller did not ask, and `zone` absent because no zone line has been folded yet. The THIRD is the same session LIVE, and three things move at once — `now` is the process's own wall clock and is LATER than the log's last stamp (5,344 ms later: the log has been quiet for five seconds and the meter still has to age), the caller asked for a timeline and got the key PRESENT AND NULL because the selection it named carries none, and `maxSegments: 1` cut the segment list without touching the selection, which is what makes the cap a payload bound rather than a retention one. `hydrating` is `true` in both answers and that is this build's honest state rather than an oversight: the snapshot-time sweep block is unported (`fold/src/combat/state.rs` fact 1), so a flag saying otherwise would promise a liveness this fold does not have.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": { "id": 1, "op": "combat.snapshot", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "error",
+        "id": 1,
+        "ok": false,
+        "error": {
+          "code": "unavailable",
+          "message": "no log is attached, so there is no fold to ask"
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 2, "op": "combat.snapshot", "params": {} }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": {
+          "now": 1787181707000,
+          "snapshot": {
+            "selectedId": "e12",
+            "selected": {
+              "id": "e12",
+              "kind": "fight",
+              "name": "a fire giant warlord",
+              "durationSec": 41.0,
+              "active": true,
+              "activeSec": 38.0,
+              "outTotal": 53577,
+              "outDps": 1306.8,
+              "entities": [
+                {
+                  "id": "you",
+                  "name": "Primitive",
+                  "kind": "you",
+                  "total": 43504,
+                  "dps": 1144.8,
+                  "pct": 100.0,
+                  "hits": 217,
+                  "crits": 74,
+                  "critPct": 34.1,
+                  "ambiguousHits": 0,
+                  "ambiguousTotal": 0,
+                  "misses": 151,
+                  "hitPct": 58.9,
+                  "resists": 0,
+                  "resistPct": 0.0
+                },
+                {
+                  "id": "pet:3",
+                  "name": "Gybrush",
+                  "kind": "pet",
+                  "total": 10073,
+                  "dps": 265.0,
+                  "pct": 23.1,
+                  "hits": 96,
+                  "crits": 0,
+                  "critPct": 0.0,
+                  "ambiguousHits": 3,
+                  "ambiguousTotal": 412,
+                  "misses": 44,
+                  "hitPct": 68.5,
+                  "resists": 0,
+                  "resistPct": 0.0
+                }
+              ]
+            },
+            "segments": [],
+            "inCombat": true,
+            "recent": [],
+            "stance": { "stance": "offensive", "stanceTs": 1787181401000 },
+            "poison": {
+              "coat": { "combat": null },
+              "slow": { "pulls": 0, "landed": 0, "noLand": 0, "window": 25 }
+            },
+            "zoneSessions": [],
+            "hydrating": true,
+            "roster": { "members": [], "seen": false, "lastSignalTs": 0 }
+          }
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 3,
+        "op": "combat.snapshot",
+        "params": { "opts": { "selectedId": "zone", "maxSegments": 1, "timeline": true } }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": {
+          "now": 1787181712344,
+          "snapshot": {
+            "selectedId": "zone",
+            "selected": {
+              "id": "zone",
+              "kind": "zone",
+              "name": "Nagafen's Lair - overall",
+              "zone": "Nagafen's Lair",
+              "durationSec": 704.0,
+              "active": false,
+              "activeSec": 512.0,
+              "outTotal": 331904,
+              "outDps": 471.5,
+              "entities": []
+            },
+            "segments": [
+              {
+                "id": "e12",
+                "kind": "fight",
+                "name": "a fire giant warlord",
+                "zone": "Nagafen's Lair",
+                "startTs": 1787181666000,
+                "durationSec": 41.0,
+                "active": true,
+                "total": 53577,
+                "dps": 1306.8
+              }
+            ],
+            "inCombat": false,
+            "zone": "Nagafen's Lair",
+            "recent": [],
+            "stance": { "stance": "offensive", "stanceTs": 1787181401000 },
+            "timeline": null,
+            "poison": {
+              "coat": { "combat": null },
+              "slow": { "pulls": 0, "landed": 0, "noLand": 0, "window": 25 }
+            },
+            "zoneSessions": [
+              {
+                "id": "zone",
+                "zone": "Nagafen's Lair",
+                "live": true,
+                "startTs": 1787181008000,
+                "lastTs": 1787181707000
+              }
+            ],
+            "hydrating": true,
+            "roster": { "members": [], "seen": false, "lastSignalTs": 0 }
+          }
+        }
+      }
+    }
+  ]
+}

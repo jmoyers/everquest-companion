@@ -1,0 +1,1000 @@
+{
+  "removals": [
+    "Invigor",
+    "Invisibility Versus Undead"
+  ],
+  "corrections": [
+    {
+      "spells": [
+        "Creeping Crud",
+        "Drifting Death",
+        "Drones of Doom",
+        "Stinging Swarm"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone is engulfed in a swarm.",
+      "to": "Someone is engulfed by a swarm."
+    },
+    {
+      "spells": [
+        "Engulfing Darkness"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone is engulfed in darkness.",
+      "to": "Someone is engulfed by darkness."
+    },
+    {
+      "spells": [
+        "Cascading Darkness",
+        "Dooming Darkness"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone is engulfed in darkness.",
+      "to": "Someone is engulfed by darkness."
+    },
+    {
+      "spells": [
+        "Largo's Melodic Binding"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone is bound in strands of solid music.",
+      "to": "Someone is bound by strands of solid music."
+    },
+    {
+      "spells": [
+        "Resist Magic",
+        "Resistance to Magic"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You feel resistant from magic.",
+      "to": "You feel resistant to magic."
+    },
+    {
+      "spells": [
+        "Fetter",
+        "Instill",
+        "Paralyzing Earth",
+        "Root"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone 's feet adhere to the ground.",
+      "to": "Someone adheres to the ground."
+    },
+    {
+      "spells": [
+        "Immobilize"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone's feet adhere to the ground.",
+      "to": "Someone adheres to the ground."
+    },
+    {
+      "spells": [
+        "Garrison's Mighty Mana Shock"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's skin blisters as it is consumed by pure mana.",
+      "to": "Someone's skin blisters as it is consumed by pure mana."
+    },
+    {
+      "spells": [
+        "Cease",
+        "Desist",
+        "Sacred Word"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is struck by a sudden force.",
+      "to": "Someone is struck by a sudden force."
+    },
+    {
+      "spells": [
+        "Cancelling of Life",
+        "Cessation of Life",
+        "Negation of Life"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is shrouded by anti-life magic.",
+      "to": "Someone is shrouded by anti-life magic."
+    },
+    {
+      "spells": [
+        "Force Snap"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target has been force struck.",
+      "to": "Someone has been force struck."
+    },
+    {
+      "spells": [
+        "Thunder of Karana"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s ears fill with the deafening roar of Karana's Thunder.",
+      "to": "Someone's ears fill with the deafening roar of Karana's Thunder."
+    },
+    {
+      "spells": [
+        "Intellectual Advancement"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone' mind sharpens.",
+      "to": "Someone's mind sharpens."
+    },
+    {
+      "spells": [
+        "Ethereal Cleansing"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s body is covered in ethereal light.",
+      "to": "Someone's body is covered in ethereal light."
+    },
+    {
+      "spells": [
+        "Instrument of Nife"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s weapon becomes an instrument of Rodcet Nife.",
+      "to": "Someone's weapon becomes an instrument of Rodcet Nife."
+    },
+    {
+      "spells": [
+        "Valor of Marr"
+      ],
+      "field": "msgCastOnOther",
+      "from": "feels the blessing of Mithaniel Marr.",
+      "to": "Someone feels the blessing of Mithaniel Marr."
+    },
+    {
+      "spells": [
+        "Divine Vigor"
+      ],
+      "field": "msgCastOnOther",
+      "from": "begins to radiate with divine favor.",
+      "to": "Someone begins to radiate with divine favor."
+    },
+    {
+      "spells": [
+        "Cazic Temple Gate",
+        "Greater Faydark Gate",
+        "Nektulos Gate",
+        "North Karana Gate",
+        "North Ro Gate",
+        "Ring of Misty Thicket",
+        "Ring of South Ro",
+        "Ring of Stonebrunt",
+        "Ring of West Commons",
+        "Stonebrunt Gate",
+        "Toxxulia Gate",
+        "West Commons Gate",
+        "West Karana Gate",
+        "Zephyr: Butcherblock",
+        "Zephyr: Feerrott",
+        "Zephyr: Lavastorm",
+        "Zephyr: Misty Thicket",
+        "Zephyr: North Karana",
+        "Zephyr: South Ro",
+        "Zephyr: Steamfont",
+        "Zephyr: Stonebrunt",
+        "Zephyr: Surefall Glade",
+        "Zephyr: Toxxulia",
+        "Zephyr: West Commons"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player fades away.",
+      "to": "Someone fades away."
+    },
+    {
+      "spells": [
+        "Instill"
+      ],
+      "field": "msgWearsOff",
+      "from": "Your feet come free. Cleric Spell Vendors Enchanter Spell Vendors Necromancer Spell Vendors Paladin Spell Vendors Shaman Spell Vendors Wizard Spell Vendors",
+      "to": "Your feet come free."
+    },
+    {
+      "spells": [
+        "Poison"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You have been poisoned. (?)",
+      "to": "You have been poisoned."
+    },
+    {
+      "spells": [
+        "Poison"
+      ],
+      "field": "msgWearsOff",
+      "from": "The poison has run its course. (?)",
+      "to": "The poison has run its course."
+    },
+    {
+      "spells": [
+        "Beguile"
+      ],
+      "field": "msgWearsOff",
+      "from": "Your beguile spell has worn off",
+      "to": "You are no longer charmed."
+    },
+    {
+      "spells": [
+        "Ikatiar's Revenge"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone has been poison.",
+      "to": "Someone has been poisoned."
+    },
+    {
+      "spells": [
+        "Frost Shards"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You feel your skin freeze",
+      "to": "You feel your skin freeze."
+    },
+    {
+      "spells": [
+        "Shock of Frost"
+      ],
+      "field": "msgCastOnYou",
+      "from": "Your feel your skin freeze.",
+      "to": "You feel your skin freeze."
+    },
+    {
+      "spells": [
+        "Lifedraw",
+        "SpectreLifetap"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You feel your lifeforce drain away.",
+      "to": "You feel your life force drain away."
+    },
+    {
+      "spells": [
+        "Rune II",
+        "Rune III",
+        "Rune IV",
+        "Rune V"
+      ],
+      "field": "msgWearsOff",
+      "from": "The shimmer of runes fade.",
+      "to": "The shimmer of runes fades."
+    },
+    {
+      "spells": [
+        "Rune IV",
+        "Rune V"
+      ],
+      "field": "msgCastOnYou",
+      "from": "A coat of shimmering runes surround you.",
+      "to": "A coat of shimmering runes surrounds you."
+    },
+    {
+      "spells": [
+        "Guardian Rhythms"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You feel an aura of mystic protection surround you.",
+      "to": "You feel an aura of mystic protection surrounding you."
+    },
+    {
+      "spells": [
+        "Reckoning"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You have been struck down by the judgement of the gods.",
+      "to": "You have been struck down by the judgment of the gods."
+    },
+    {
+      "spells": [
+        "Torbas Poison Blast"
+      ],
+      "field": "msgCastOnYou",
+      "from": "A blast of poison eats at your skin.",
+      "to": "A blast of Poison eats at your skin."
+    },
+    {
+      "spells": [
+        "Scarab Storm"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone shrieks as scarabs burrow into their skin.",
+      "to": "Someone shrieks as a scarab burrows into their skin."
+    },
+    {
+      "spells": [
+        "Scarab Storm"
+      ],
+      "field": "msgWearsOff",
+      "from": "The scarabs die.",
+      "to": "The scarab dies."
+    },
+    {
+      "spells": [
+        "Divine Wrath",
+        "Sound of Force",
+        "Stun"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You are stunned.",
+      "to": "You are stunned!"
+    },
+    {
+      "spells": [
+        "Stun"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone is stunned.",
+      "to": "Someone is struck by a sudden force."
+    },
+    {
+      "spells": [
+        "Symbol of Transal"
+      ],
+      "field": "msgCastOnYou",
+      "from": "A mystic symbol flashes before your eyes.",
+      "to": "The symbol of Transal flashes before your eyes."
+    },
+    {
+      "spells": [
+        "Symbol of Pinzarn"
+      ],
+      "field": "msgCastOnYou",
+      "from": "A mystic symbol flashes before your eyes.",
+      "to": "The symbol of Pinzarn flashes before your eyes."
+    },
+    {
+      "spells": [
+        "Allure"
+      ],
+      "field": "msgCastOnOther",
+      "from": null,
+      "to": "Someone has been charmed."
+    },
+    {
+      "spells": [
+        "Sionachie's Dreams"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's eyes glaze over.",
+      "to": "Someone 's eyes glaze over."
+    },
+    {
+      "spells": [
+        "Solon's Bravura"
+      ],
+      "field": "name",
+      "from": "Solon's Bravura",
+      "to": "Solon's Bewitching Bravura"
+    },
+    {
+      "spells": [
+        "Malisement"
+      ],
+      "field": "name",
+      "from": "Malisement",
+      "to": "Malaisement"
+    },
+    {
+      "spells": [
+        "Invisibility vs. Undead"
+      ],
+      "field": "name",
+      "from": "Invisibility vs. Undead",
+      "to": "Invisibility Versus Undead"
+    },
+    {
+      "spells": [
+        "Leach"
+      ],
+      "field": "classes",
+      "from": "* Necromancer - Level 12 Recourse Effect",
+      "to": "* Necromancer - Level 9"
+    },
+    {
+      "spells": [
+        "Celestial Echo",
+        "Echo of Health",
+        "Echoing Light",
+        "Sacred Echo"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is embraced by a spirit of healing.",
+      "to": "Someone is embraced by a spirit of healing."
+    },
+    {
+      "spells": [
+        "Forest's Renewal",
+        "Kragg's Salve",
+        "Spirit Salve"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's wounds heal.",
+      "to": "Someone's wounds heal."
+    },
+    {
+      "spells": [
+        "Healing Light"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s wounds heal.",
+      "to": "Someone's wounds heal."
+    },
+    {
+      "spells": [
+        "Tangling Weeds"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's movements slow as their feet are covered in tangling weeds.",
+      "to": "Someone's movements slow as their feet are covered in tangling weeds."
+    },
+    {
+      "spells": [
+        "Elnerick's Entombment of Ice"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is entombed by elemental ice.",
+      "to": "Someone is entombed by elemental ice."
+    },
+    {
+      "spells": [
+        "Tiny Companion"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target shrinks.",
+      "to": "Someone shrinks."
+    },
+    {
+      "spells": [
+        "Blooming Heal",
+        "Blossoming Heal",
+        "Budding Heal",
+        "Efflorescing Heal",
+        "Flowering Heal",
+        "Sprouting Heal"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is seeded with healing energy.",
+      "to": "Someone is seeded with healing energy."
+    },
+    {
+      "spells": [
+        "Tuyen's Chant of Disease",
+        "Tuyen's Chant of Poison"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target begins to chant.",
+      "to": "Someone begins to chant."
+    },
+    {
+      "spells": [
+        "Odium"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target staggers under a dark curse.",
+      "to": "Someone staggers under a dark curse."
+    },
+    {
+      "spells": [
+        "Riftwind's Protection"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s skin glows with a pale greenish tint.",
+      "to": "Someone's skin glows with a pale greenish tint."
+    },
+    {
+      "spells": [
+        "Leviathan Eyes"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player's eyes fill with the water of the deep.",
+      "to": "Someone's eyes fill with the water of the deep."
+    },
+    {
+      "spells": [
+        "Blessing of Faith"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is quickened by the Blessing of Faith.",
+      "to": "Someone is quickened by the Blessing of Faith."
+    },
+    {
+      "spells": [
+        "Blessing of the Knight"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's hands gain a pale gold glow.",
+      "to": "Someone's hands gain a pale gold glow."
+    },
+    {
+      "spells": [
+        "Guard of Vie"
+      ],
+      "field": "msgCastOnOther",
+      "from": "has been surrounded in a dull white aura.",
+      "to": "Someone has been surrounded in a dull white aura."
+    },
+    {
+      "spells": [
+        "Blessing of Piety"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is quickened by the Blessing of Reverence.",
+      "to": "Someone is quickened by the Blessing of Reverence."
+    },
+    {
+      "spells": [
+        "Insidious Retrogression"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s body is pelted by spores.",
+      "to": "Someone's body is pelted by spores."
+    },
+    {
+      "spells": [
+        "Minor Familiar"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player summons forth a minor familiar.",
+      "to": "Someone summons forth a minor familiar."
+    },
+    {
+      "spells": [
+        "Spiritual Brawn"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target has been filled with spiritual brawn.",
+      "to": "Someone has been filled with spiritual brawn."
+    },
+    {
+      "spells": [
+        "Pack Shrew",
+        "Spirit of the Shrew"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target begins to move more gracefully.",
+      "to": "Someone begins to move more gracefully."
+    },
+    {
+      "spells": [
+        "Spike of Disease"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s wounds fester.",
+      "to": "Someone's wounds fester."
+    },
+    {
+      "spells": [
+        "Laceration"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Soandso begins to bleed.",
+      "to": "Someone begins to bleed."
+    },
+    {
+      "spells": [
+        "Nature's Precision"
+      ],
+      "field": "msgCastOnOther",
+      "from": "becomes one with their weapons.",
+      "to": "Someone becomes one with their weapons."
+    },
+    {
+      "spells": [
+        "Blessing of the Page"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Other_Player's hands have a dull gold glow.",
+      "to": "Someone's hands have a dull gold glow."
+    },
+    {
+      "spells": [
+        "Promised Renewal"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is promised a divine renewal.",
+      "to": "Someone is promised a divine renewal."
+    },
+    {
+      "spells": [
+        "Ward of the Divine"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is cloaked in the blessing of a divine touch.",
+      "to": "Someone is cloaked in the blessing of a divine touch."
+    },
+    {
+      "spells": [
+        "Ward of Vie"
+      ],
+      "field": "msgCastOnOther",
+      "from": "has been surrounded in a faint white aura.",
+      "to": "Someone has been surrounded in a faint white aura."
+    },
+    {
+      "spells": [
+        "Dustdevil"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s body is crushed by flying debris.",
+      "to": "Someone's body is crushed by flying debris."
+    },
+    {
+      "spells": [
+        "Blood of Pain"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is tormented by the blood of pain.",
+      "to": "Someone is tormented by the blood of pain."
+    },
+    {
+      "spells": [
+        "Dark Soul"
+      ],
+      "field": "msgCastOnOther",
+      "from": "has been surrounded in cold darkness.",
+      "to": "Someone has been surrounded in cold darkness."
+    },
+    {
+      "spells": [
+        "Dark Temptation"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s aura grows cold.",
+      "to": "Someone's aura grows cold."
+    },
+    {
+      "spells": [
+        "Hawk Eye"
+      ],
+      "field": "msgCastOnOther",
+      "from": "'s eyes sharpen with an aura of avian presence.",
+      "to": "Someone's eyes sharpen with an aura of avian presence."
+    },
+    {
+      "spells": [
+        "Mana Detonation"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is pierced by extraplanar energy.",
+      "to": "Someone is pierced by extraplanar energy."
+    },
+    {
+      "spells": [
+        "Mana Ignition"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is pierced by cosmic energy.",
+      "to": "Someone is pierced by cosmic energy."
+    },
+    {
+      "spells": [
+        "Sha's Lethargy"
+      ],
+      "field": "msgCastOnOther",
+      "from": "feels lethargic.",
+      "to": "Someone feels lethargic."
+    },
+    {
+      "spells": [
+        "Spirit of the Puma"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target growls with the spirit of the puma.",
+      "to": "Someone growls with the spirit of the puma."
+    },
+    {
+      "spells": [
+        "Voice of Darkness"
+      ],
+      "field": "msgCastOnOther",
+      "from": "speaks with the voice of darkness.",
+      "to": "Someone speaks with the voice of darkness."
+    },
+    {
+      "spells": [
+        "Tortoises Healing"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is healed by the spirit of the tortoise.",
+      "to": "Someone is healed by the spirit of the tortoise."
+    },
+    {
+      "spells": [
+        "Vengeance of the Wild"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target has been consumed in the flames of the wild.",
+      "to": "Someone has been consumed in the flames of the wild."
+    },
+    {
+      "spells": [
+        "Curse"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target has been cursed.",
+      "to": "Someone has been cursed."
+    },
+    {
+      "spells": [
+        "SpectreLifetap"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Soandso staggers.",
+      "to": "Someone staggers."
+    },
+    {
+      "spells": [
+        "Spirit of Bih`Li"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target is surrounded by a brief lupine aura.",
+      "to": "Someone is surrounded by a brief lupine aura."
+    },
+    {
+      "spells": [
+        "Beholder Dispel"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Soandso feels very dispelled.",
+      "to": "Someone feels very dispelled."
+    },
+    {
+      "spells": [
+        "Shock of Venom"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target screams in pain.",
+      "to": "Someone screams in pain."
+    },
+    {
+      "spells": [
+        "Harnessing of Spirit"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target looks tougher.",
+      "to": "Someone looks tougher."
+    },
+    {
+      "spells": [
+        "Talisman of the Beast"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target looks stronger.",
+      "to": "Someone looks stronger."
+    },
+    {
+      "spells": [
+        "Armor of the Faithful"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target looks protected.",
+      "to": "Someone looks protected."
+    },
+    {
+      "spells": [
+        "Protection of Nature"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target's skin shimmers with divine power.",
+      "to": "Someone's skin shimmers with divine power."
+    },
+    {
+      "spells": [
+        "Frenzy"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target goes berserk.",
+      "to": "Someone goes berserk."
+    },
+    {
+      "spells": [
+        "Bounce"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player's image shimmers.",
+      "to": "Someone's image shimmers."
+    },
+    {
+      "spells": [
+        "O`Keil's Embers",
+        "O`Keil's Flickering Flame"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target begins to radiate.",
+      "to": "Someone begins to radiate."
+    },
+    {
+      "spells": [
+        "Circle of Misty Thicket",
+        "Circle of South Ro",
+        "Circle of Stonebrunt",
+        "Circle of West Commons",
+        "Lesser Evacuate",
+        "Lesser Succor",
+        "Succor: Butcherblock",
+        "Succor: East Karana",
+        "Succor: North Karana",
+        "Succor: South Ro"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player creates a mystic portal.",
+      "to": "Someone creates a mystic portal."
+    },
+    {
+      "spells": [
+        "Protection of Diamond"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player's skin turns hard as diamond.",
+      "to": "Someone's skin turns hard as diamond."
+    },
+    {
+      "spells": [
+        "Share Form of the Great Wolf"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player turns into a wolf.",
+      "to": "Someone turns into a wolf."
+    },
+    {
+      "spells": [
+        "Cazic Temple Portal",
+        "Evacuate: Greater Faydark",
+        "Evacuate: Greater Nektulos",
+        "Evacuate: North Karana",
+        "Evacuate: South Ro",
+        "Evacuate: West Karana",
+        "Greater Faydark Portal",
+        "Nektulos Portal",
+        "North Karana Portal",
+        "North Ro Portal",
+        "Stonebrunt Portal",
+        "Toxxulia Portal",
+        "West Commons Portal",
+        "West Karana Portal"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Player creates a shimmering portal.",
+      "to": "Someone creates a shimmering portal."
+    },
+    {
+      "spells": [
+        "Form of the Bear"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Target turns into a bear.",
+      "to": "Someone turns into a bear."
+    },
+    {
+      "spells": [
+        "Wave of Fire"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Soandso's skin sears.",
+      "to": "Someone's skin sears."
+    },
+    {
+      "spells": [
+        "Swarm of Pain"
+      ],
+      "field": "msgCastOnOther",
+      "from": "is covered in a swarm of nifiliks.",
+      "to": "Someone is covered in a swarm of nifiliks."
+    },
+    {
+      "spells": [
+        "Slugs Healing"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You .",
+      "to": "You being to feel healed by the slug."
+    },
+    {
+      "spells": [
+        "Slugs Healing"
+      ],
+      "field": "msgWearsOff",
+      "from": null,
+      "to": "You feel the slug spirit depart."
+    },
+    {
+      "spells": [
+        "Slugs Healing"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone .",
+      "to": "Someone is healed by the spirit of the slug."
+    },
+    {
+      "spells": [
+        "Snails Healing"
+      ],
+      "field": "msgCastOnYou",
+      "from": "You .",
+      "to": "You being to feel healed by the snail."
+    },
+    {
+      "spells": [
+        "Snails Healing"
+      ],
+      "field": "msgWearsOff",
+      "from": null,
+      "to": "You feel the snail spirit depart."
+    },
+    {
+      "spells": [
+        "Snails Healing"
+      ],
+      "field": "msgCastOnOther",
+      "from": "Someone .",
+      "to": "Someone is healed by the spirit of the snail."
+    },
+    {
+      "spells": [
+        "Lull",
+        "Soothe",
+        "Calm",
+        "Pacify",
+        "Wake of Tranquility"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Lull Animal",
+        "Calm Animal",
+        "Harmony",
+        "Harmony of Nature"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Numb the Dead",
+        "Rest the Dead"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Kelin's Lugubrious Lament"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Reoccurring Amnesia"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Memory Blur",
+        "Mind Wipe",
+        "Blanket of Forgetfulness",
+        "Memory Flux"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    },
+    {
+      "spells": [
+        "Atone"
+      ],
+      "field": "spellType",
+      "from": "Beneficial",
+      "to": "Detrimental"
+    }
+  ]
+}

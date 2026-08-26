@@ -1,0 +1,149 @@
+{
+  "moment": "app knowledge in, alert fires out — the five `*.define` commands and the stream they make possible",
+  "source": "JOS-482 (cutover ledger item 2 + the fires stream; boundary verdict 3 and owner ruling 22)",
+  "note": "WHAT THE APP SAYS THE MOMENT IT CONNECTS, in the order it says it, and what comes back when a rule matches. The five commands are the whole of boundary verdict 3: the settings store stays persistence truth app-side and the engine never reads a settings file, so every preference the fold used to read out of it is PUSHED. Each is an idempotent FULL-SET REPLACE — the payload is the whole of what that family knows, so pushing twice is pushing once, a crash-respawn is a replay of the latest push, and the input stays hash-friendly for ruling 18's eventual cache key. THEY GO BEFORE THE ATTACH, which is the shape a real launch has and the only timing that keeps a fold reproducible: all five change what a fold PRODUCES, so a world that took them after the historical scan would have folded the log under one set of rules and served it under another. The ack is the same `DefineAck` for all five; `count` is the entries taken for a LIST payload and absent for the two families that push one object, which is why `buffTrust.define` and `respawn.define` answer without it. NOTE THE ALERT DEFINITION'S EXTRA FIELDS — `volume` and `speech` here — and that the protocol says nothing about them: the field set is the STORE's contract, and a definition round-trips through the fold as the alerts module's published `defs`, so a typed wire shape that dropped an unlisted field would rewrite the user's alerts in transit. THE FIRE AT THE END is what ruling 22 buys: the engine evaluated the pushed rule against a LIVE event and says so. It carries NO `id`, because a fire belongs to the world rather than to any subscription (the epoch-message precedent), and NO `epoch` either — every other stream frame describes window state a client has to reconcile across a generation, while a fire is a thing that happened once, with nothing to drop and nothing to re-request. It is FULLY RESOLVED server-side (the conCard principle): `sound` is `<packId>/<soundId>`, the key the renderer's sound cache is already keyed by, so the app needs no copy of the rule set to make the noise.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 1,
+        "op": "alerts.define",
+        "params": {
+          "defs": [
+            {
+              "id": "a1",
+              "name": "Charm break",
+              "enabled": true,
+              "sound": { "packId": "classic", "soundId": "bell" },
+              "trigger": { "type": "event", "kind": "uncharm" },
+              "cooldownMs": 4000,
+              "cooldownScope": "target",
+              "volume": 0.8,
+              "speech": { "mode": "alertName" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": { "applied": true, "count": 1 }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 2,
+        "op": "buffTrust.define",
+        "params": { "trust": { "externals": ["Dranix"] } }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 2, "ok": true, "result": { "applied": true } }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 3,
+        "op": "respawn.define",
+        "params": {
+          "prefs": {
+            "watches": [
+              { "key": "king tranix", "display": "King Tranix", "customSec": 1080 },
+              { "key": "a fire giant warlord", "display": "a fire giant warlord" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 3, "ok": true, "result": { "applied": true } }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 4,
+        "op": "combo.define",
+        "params": {
+          "corrections": [
+            {
+              "startTs": 1787180400000,
+              "endTs": null,
+              "classes": ["ENC", "ROG"],
+              "setAt": 1787181000000
+            }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 4,
+        "ok": true,
+        "result": { "applied": true, "count": 1 }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 5,
+        "op": "roster.define",
+        "params": {
+          "edits": [
+            { "key": "rowel", "name": "Rowel", "action": "add", "setAt": 1787181000000 }
+          ]
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 5,
+        "ok": true,
+        "result": { "applied": true, "count": 1 }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 6,
+        "op": "session.attach",
+        "params": {
+          "logPath": "C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs\\eqlog_Primitive_freeport.txt"
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "epoch", "epoch": 2, "reason": "attach" }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 6,
+        "ok": true,
+        "result": { "epoch": 2, "accepted": true }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "fire",
+        "at": 1787181707000,
+        "rule": "Charm break",
+        "sound": "classic/bell",
+        "message": "Your charm spell has worn off."
+      }
+    }
+  ]
+}

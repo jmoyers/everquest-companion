@@ -10,6 +10,11 @@ import { buildSpellDetail } from '../data/spellDetail'
 import { lookupItem } from '../itemLookup'
 import { lookupMob } from '../mobLookup'
 import { registry, spellDb } from '../pipeline'
+// THE SERVED ARM (JOS-496). These three reads are the census's `spell catalog stats`,
+// `spellLastCast` and `observed ranks`, and all three are GENUINE QUERIES rather than mirrors —
+// their callers are `ipcMain.handle` bodies that already return promises, so there is somewhere to
+// put an await and nothing has to be cached. See `moduleState` below.
+import { serveModuleSnapshot, shimServing, type ModuleSnap } from '../dataServer/serveShim'
 import { currentWornFocus } from '../planner/wornFocusCurrent'
 // THE CLIENT'S SPELL TABLE, AWAITED AT THE HANDLER (JOS-396, inverted 2026-08-23). This imported
 // `spellTableNow()` — the already-resolved table or null, so nothing waited on the parse — and the
@@ -26,6 +31,31 @@ import {
   type ObservedSpellRanksSnap
 } from '../../shared/spellRanks'
 import type { BuffsSnap } from '../../shared/types'
+
+/**
+ * ONE MODULE'S PUBLISHED STATE, FROM WHICHEVER WORLD ANSWERS THIS APP'S READS (JOS-496).
+ *
+ * THE SAME TWO-ARM SHAPE `ipc/world.ts` USES, and deliberately spelled the same way: the app's own
+ * fold is a NAMED THUNK, the served arm is `serveModuleSnapshot`, and the flag decides per call. So
+ * everything the shim already guarantees applies here unchanged — the echo test, the deadline, the
+ * coalesced fallback narration, and above all the law that the engine arm can never make a caller
+ * worse off than the flag-off world, because every one of its failures resolves to `own()`.
+ *
+ * WHY THIS CHANNEL RATHER THAN `module:getSnapshot`. These are main-side reads, not renderer ones:
+ * the catalog and the detail card are JOINS this process performs (the committed spell DB, the
+ * client's own table, the worn focus) against one fold fact each. Sending the renderer to the module
+ * transport for the fold half and doing the join here would be two round trips and a shape the
+ * renderer would then have to munge, which is ruling 4's whole subject.
+ *
+ * IT ANSWERS `undefined` FOR AN ABSENT MODULE, which is what all three call sites already handled:
+ * `registry.get(id)?.snapshot()?.state` has always been able to be undefined for a build that does
+ * not carry the module, and an engine that refuses an unknown module falls back to exactly that.
+ */
+async function moduleState(moduleId: string): Promise<unknown> {
+  const own = (): ModuleSnap | null => registry.snapshot(moduleId)
+  const snap = shimServing() ? await serveModuleSnapshot(moduleId, own) : own()
+  return snap?.state
+}
 
 export function registerKnowledgeIpc(): void {
   // ---- suggested-alerts wizard (Task #38) ----
@@ -54,7 +84,7 @@ export function registerKnowledgeIpc(): void {
     if (isUnlocksRequest(req)) return buildLevelUnlocks(await spellTable())
     const usage = new Map<string, number>()
     const lastSeen = new Map<string, number>()
-    const snap = registry.get('buffs')?.snapshot()?.state as BuffsSnap | undefined
+    const snap = (await moduleState('buffs')) as BuffsSnap | undefined
     if (snap)
       for (const [key, stat] of Object.entries(snap.stats)) {
         usage.set(key, stat.n)
@@ -83,10 +113,10 @@ export function registerKnowledgeIpc(): void {
   // the number the `yours: VIII` pill already states, and therefore the number the at-rank figures
   // beside it have to be read at, or the card would contradict itself.
   ipcMain.handle(IPC.spellsDetail, async (_e, name: unknown) => {
-    const snap = registry.get('alerts')?.snapshot()?.state as AlertsSnap | undefined
+    const snap = (await moduleState('alerts')) as AlertsSnap | undefined
     const observed = Object.keys(snap?.spellLastCast ?? {})
     const wanted = typeof name === 'string' ? name : ''
-    const rankSnap = registry.get(OBSERVED_SPELL_RANKS_MODULE_ID)?.snapshot()?.state as
+    const rankSnap = (await moduleState(OBSERVED_SPELL_RANKS_MODULE_ID)) as
       | ObservedSpellRanksSnap
       | undefined
     return buildSpellDetail(spellDb, wanted, observed, {

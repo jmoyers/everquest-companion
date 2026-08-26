@@ -1,0 +1,197 @@
+{
+  "moment": "the knowledge surface — a hit, a miss that asks the app for help, and the answer coming back",
+  "source": "JOS-486 (design surface 5 + boundary verdict 5; not a plan-doc moment — the four numbered moments are 01-04)",
+  "note": "THE COMMITTED CORPORA MOVE ENGINE-SIDE, and with them the one thing the engine cannot do: fetch. `knowledge.item` and `knowledge.mob` answer off `items.json` and `mobs.json` — 12 MB that leaves main's heap — joined with the local quest catalogs, your own loot history (read off the fold's own index, which is why a `dropsSeen` count can appear beside a wiki drop table without a second process knowing anything) and the era evidence each drop's ITEM page carries. WHAT A MISS LOOKS LIKE is the middle of this conversation and it is the whole of boundary verdict 5: the engine ships without a network stack, so a name no corpus holds still ANSWERS — `found: false` beside a record carrying every local association it could gather, because a missing wiki page does not unmake a posky quest use — and it announces the name once, connection-wide, with no id and no epoch. The app fetches (its queue, its 150 ms spacing, its Retry-After cooldown) and pushes the answer back with `knowledge.define`, which is NOT a full-set replace and says so in the schema: the set is the wiki. The same lookup afterwards is a hit, served out of the overlay, and no second miss is ever announced for that name. `knowledge.search` closes the loop a lookup cannot: a lookup needs the exact name and a person types four letters, so the ENGINE ranks (exact, then prefix, then contains) because the renderer never munges domain data.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": { "id": 1, "op": "knowledge.item", "params": { "name": "Rune of Al'Kabor" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": {
+          "domain": "item",
+          "name": "Rune of Al'Kabor",
+          "found": true,
+          "record": {
+            "name": "Rune of Al'Kabor",
+            "page": "Rune of Al'Kabor",
+            "lore": true,
+            "quest": true,
+            "cached": true,
+            "questUses": [
+              {
+                "quest": "Wizard · Wizard Test of Power",
+                "page": "Plane of Sky",
+                "source": "posky",
+                "giver": "Gorgalosk"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 2, "op": "knowledge.mob", "params": { "name": "Cazic-Thule" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": {
+          "domain": "mob",
+          "name": "Cazic-Thule",
+          "found": true,
+          "record": {
+            "name": "Cazic-Thule",
+            "page": "Cazic Thule (God)",
+            "cached": true,
+            "levelText": "70",
+            "zone": "Plane of Fear",
+            "dropsWiki": [
+              {
+                "item": "Brain of Cazic Thule",
+                "eraTag": "FearHateRevamp",
+                "eraZones": ["Plane of Fear"]
+              }
+            ],
+            "dropsSeen": [{ "item": "Glowing Black Stone", "count": 2, "lastTs": 1787181707000 }]
+          }
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 3, "op": "knowledge.item", "params": { "name": "Shard of Nothing" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": {
+          "domain": "item",
+          "name": "Shard of Nothing",
+          "found": false,
+          "record": {
+            "name": "Shard of Nothing",
+            "lore": false,
+            "quest": false,
+            "questUses": [],
+            "offline": true
+          }
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "knowledgeMiss", "domain": "item", "name": "Shard of Nothing" }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 4,
+        "op": "knowledge.define",
+        "params": {
+          "domain": "item",
+          "name": "Shard of Nothing",
+          "entry": {
+            "page": "Shard of Nothing",
+            "lore": true,
+            "summary": "A shard of something the wiki knows about and the last scrape did not."
+          }
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": { "kind": "reply", "id": 4, "ok": true, "result": { "applied": true } }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 5, "op": "knowledge.item", "params": { "name": "Shard of Nothing" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 5,
+        "ok": true,
+        "result": {
+          "domain": "item",
+          "name": "Shard of Nothing",
+          "found": true,
+          "record": {
+            "name": "Shard of Nothing",
+            "page": "Shard of Nothing",
+            "lore": true,
+            "quest": false,
+            "questUses": [],
+            "cached": true,
+            "summary": "A shard of something the wiki knows about and the last scrape did not."
+          }
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 6, "op": "knowledge.spell", "params": { "name": "Complete Heal" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 6,
+        "ok": true,
+        "result": {
+          "domain": "spell",
+          "name": "Complete Heal",
+          "found": true,
+          "record": {
+            "queried": "Complete Heal",
+            "name": "Complete Heal",
+            "found": true,
+            "illusion": false,
+            "targetType": "Single",
+            "spellType": "Beneficial",
+            "classes": "CLR/39",
+            "msgCastOnOther": "is surrounded by a holy light."
+          }
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 7,
+        "op": "knowledge.search",
+        "params": { "query": "rune", "domain": "item", "limit": 3 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 7,
+        "ok": true,
+        "result": {
+          "query": "rune",
+          "total": 41,
+          "hits": [
+            { "domain": "item", "name": "Rune", "page": "Rune" },
+            { "domain": "item", "name": "Rune Etched Icewurm Scale", "page": "Rune Etched Icewurm Scale" },
+            { "domain": "item", "name": "Rune of Al'Kabor", "page": "Rune of Al'Kabor" }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -33,10 +33,19 @@
 // with two e2e specs of its own to re-run, and the repo's rule is that a refactor rides its own
 // wave. This is the home it lands in when it does.
 //
+// AND SINCE JOS-493 THERE IS A FOURTH HALF, for the same reason and by the same rule as the main
+// window's: this window hydrates through the very same `module:getSnapshot` handler, so with
+// `EQC_ENGINE_SERVE=1` its snapshot came out of the RUST ENGINE while `module:delta` kept arriving
+// from this process's own fold — two unrelated numbering spaces, and step 2's dupe rule silently
+// eating every increment. `lib/useModule.ts` carries the measurement and the argument; the rule is
+// that the SNAPSHOT says which world it came from (`served`), and the hook rides exactly one of
+// `module:delta` (main's fold) or `module:changed` (the engine's cursor) accordingly. An overlay
+// was never optional here: `respawn-timers.e2e.mts` found it first, in the window over the game.
+//
 // MUI-FREE like everything in this bundle.
 
 import { useEffect, useRef, useState } from 'react'
-import type { ModuleDelta } from '@shared/types'
+import { MODULE_WORLD_CHANGED, type ModuleChanged, type ModuleDelta } from '@shared/types'
 
 /**
  * Hydrate a module and ride its deltas. `apply` is the module's own delta contract — a replace for
@@ -64,8 +73,15 @@ export function useOverlayModule<Snap, Delta>(
     let knownSeq = -1
     let hydrated = false
     const buffered: ModuleDelta<Delta>[] = []
+    /** Did the ENGINE answer the snapshot we are holding? Re-answered by every hydrate. */
+    let served = false
+    /** The newest engine cursor heard while a hydrate was in flight; -1 when there is none. */
+    let pendingSeq = -1
 
     const applyOne = (d: ModuleDelta<Delta>): void => {
+      // NOT OUR WORLD (JOS-493) — this increment is main's own fold and `knownSeq` is the engine's
+      // cursor. See the header.
+      if (served) return
       if (d.seq <= knownSeq) return
       knownSeq = d.seq
       setState((prev) => applyRef.current(prev, d.delta))
@@ -74,15 +90,21 @@ export function useOverlayModule<Snap, Delta>(
     const hydrate = (): void => {
       hydrated = false
       buffered.length = 0
+      pendingSeq = -1
       void window.eqOverlay.getModuleSnapshot<Snap>(moduleId).then((snap) => {
         if (cancelled || !snap) return
         knownSeq = snap.seq
+        // Which world answered, asked fresh every time — the shim decides per call.
+        served = snap.served === true
         setState(snap.state)
         hydrated = true
         // Replay what landed during the await, in seq order; the seq check above drops anything
         // the snapshot already covered.
         for (const d of [...buffered].sort((a, b) => a.seq - b.seq)) applyOne(d)
         buffered.length = 0
+        // …and the cursor that landed during it — `lib/useModule.ts` states why it cannot be
+        // dropped and why the re-fetch terminates.
+        if (served && pendingSeq > knownSeq) hydrate()
       })
     }
 
@@ -100,6 +122,22 @@ export function useOverlayModule<Snap, Delta>(
       }
       applyOne(d)
     })
+    // THE SERVED WORLD'S DIRTY BIT (JOS-493) — the same member, under the same name, as the main
+    // window's bridge. See the header.
+    const offChanged = window.eqOverlay.onModuleChanged((c: ModuleChanged) => {
+      if (c.moduleId === MODULE_WORLD_CHANGED) {
+        hydrate()
+        return
+      }
+      if (c.moduleId !== moduleId) return
+      if (!hydrated) {
+        if (c.seq > pendingSeq) pendingSeq = c.seq
+        return
+      }
+      if (!served) return
+      if (c.seq <= knownSeq) return
+      hydrate()
+    })
     const offChar = window.eqOverlay.onCharacter(() => {
       hydrate()
     })
@@ -108,6 +146,7 @@ export function useOverlayModule<Snap, Delta>(
     return () => {
       cancelled = true
       off()
+      offChanged()
       offChar()
     }
   }, [moduleId])

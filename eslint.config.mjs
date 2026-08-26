@@ -199,6 +199,17 @@ const IGNORES = [
   // Generated/scraped datasets and the ratchet itself.
   '**/*.json',
   'eslint.ratchet.mjs',
+  // THE WIRE CONTRACT'S TYPESCRIPT HALF (JOS-464), written by `npm run gen:protocol` from
+  // protocol/schema and pinned byte-for-byte by tests/protocolSchema.test.mts. Same standing as
+  // infra/dist above: a file nobody edits cannot carry lint debt, and the alternative — ratchet
+  // entries for json-schema-to-typescript's house style (empty interfaces for parameterless ops,
+  // index signatures for the open maps the schema deliberately declares) — would be a debt
+  // register for a file that is rewritten wholesale on every schema change. tsc still checks it:
+  // it is imported by hand-written code, so `npm run typecheck` covers it whatever this list says.
+  // The RUST twin is covered by clippy inside the engine job, with the same argument.
+  'src/shared/dataServer/protocol.generated.ts',
+  // Cargo's build directory. Gitignored too; both lists need it.
+  'engine/target/**',
 ]
 
 /** The factoring layer. Numbers argued in the header. */

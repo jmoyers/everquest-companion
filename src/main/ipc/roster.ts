@@ -17,6 +17,9 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { idKey } from '../log/parser'
+// The engine's copy (JOS-482, boundary verdict 3) — the same pull-becomes-push story combo tells,
+// and additive in the same way: a launch with no engine finds a null.
+import { pushAppKnowledge } from '../dataServer/definePush'
 import { rosterModule } from '../pipeline'
 import { activeCharId } from '../session'
 import { clearRosterEdit, getRosterEdits, setRosterEdit } from '../store'
@@ -51,6 +54,7 @@ export function registerRosterIpc(): void {
     }
     setRosterEdit(activeCharId(), { key: idKey(display), name: display, action, setAt: Date.now() })
     rosterModule.invalidate()
+    pushAppKnowledge('roster.define')
     return { ok: true as const }
   })
 
@@ -59,6 +63,7 @@ export function registerRosterIpc(): void {
     if (!display) return { ok: false as const, error: 'That is not a usable character name.' }
     clearRosterEdit(activeCharId(), idKey(display))
     rosterModule.invalidate()
+    pushAppKnowledge('roster.define')
     return { ok: true as const }
   })
 }

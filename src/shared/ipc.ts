@@ -6,6 +6,20 @@ export const IPC = {
   getModuleSnapshot: 'module:getSnapshot',
   // main -> renderer
   onModuleDelta: 'module:delta',
+  // main -> renderer: THE OTHER WORLD'S CURSOR MOVED (JOS-493).
+  //
+  // Not an increment and never a payload — `{ moduleId, seq }`, the dirty bit the data-server
+  // protocol already defines (`ModuleChangedMessage`), forwarded to every window that folds a
+  // module. It exists because `module:delta` above is numbered in the TYPESCRIPT fold's space and,
+  // with `EQC_ENGINE_SERVE=1`, the snapshot a window is holding came out of the ENGINE's. Mixing
+  // the two is the JOS-490 defect verbatim: the hook hydrates `knownSeq` from the engine's
+  // revision counter and then drops the app's deltas as dupes.
+  //
+  // So each folder rides exactly ONE of the two channels, and which one is stated by the snapshot
+  // it is holding (`ModuleSnapshot.served`): an engine-served snapshot re-fetches on this channel
+  // and ignores `module:delta`; an app-served snapshot does the opposite. One world, one numbering
+  // space — src/renderer/src/lib/useModule.ts.
+  onModuleChanged: 'module:changed',
 
   // ---- progress / inventory (per-character persisted state) ----
   getProgress: 'progress:get',
@@ -734,6 +748,26 @@ export const IPC = {
   // startup phase, which only the renderer can observe. Sent once per window lifetime; a
   // repeat is refused by the phase accounting itself (shared/perf.ts `addMark`).
   perfRendererHydrated: 'perf:rendererHydrated',
+  // ---- the ENGINE's row in that panel (JOS-483, owner ruling 19) ------------------------
+  //
+  // > "i want to see the server in the cpu/performance overlay in app."
+  //
+  // TWO CHANNELS, AND THE WATCH ONE IS THE INTERESTING HALF. The engine's numbers cost a
+  // loopback round trip (`perf.snapshot`) plus a native per-pid read, and the ENGINE section
+  // is a few hundred pixels inside a popover that is open for seconds at a time. So main
+  // polls ONLY while the renderer says the panel is open: a perf surface that cost a round
+  // trip a second while nobody was looking at it would be the bug it exists to find.
+  //
+  // renderer -> main: "the performance panel is open" / "it is closed". Starts and stops the
+  // engine poll in the SAME call, so the panel and this session's timers can never disagree —
+  // the `perf:setEnabled` discipline. A non-boolean is ignored. Arg: boolean. Returns void.
+  perfEngineWatch: 'perf:engineWatch',
+  // main -> renderer, PUSH: one `EnginePerfSample` every 2 s while the panel is being watched
+  // AND an engine exists — or `null`, which is the honest "there is nothing to draw here":
+  // the flag is off, this build has no engine binary, or the watch just stopped. The section
+  // hides on it rather than freezing on the last numbers it saw.
+  onEnginePerf: 'perf:engine',
+
   // renderer -> main: the persisted "yield CPU to the game" pref ({yieldToGame}). ON by default.
   // Returns ProcessPriorityPrefs.
   processPriorityGet: 'processPriority:get',
@@ -948,6 +982,25 @@ export const IPC = {
   // Reads usage_daily + usage_funnel_daily + analytics_install; `available:false` means the
   // tables are missing (a cluster that predates the A2 migration), NOT that they are empty.
   triageAnalytics: 'triage:analytics',
+
+  // ---- the data server's renderer brokerage (JOS-484, docs/plans/data-server.md ruling 7) ----
+  //
+  // TWO CHANNELS FOR ONE HANDSHAKE, because a MessagePort is TRANSFERRED and never returned: an
+  // `invoke` reply is structured-cloned and a port cannot survive that, so the port travels on the
+  // push below and the invoke only says whether one was sent.
+  //
+  // renderer -> main: open this window's ONE connection to the engine. Arg: a numeric nonce the
+  // renderer minted, echoed on the push so a window that asked twice can tell the answers apart.
+  // Answers `{ok:false, reason}` when no engine is running on this launch — since JOS-495 that is
+  // `EQC_ENGINE=0` or a checkout carrying no binary, not the default it used to be. Main's whole
+  // gate for the feature is one function (src/main/dataServer/engineHost.ts).
+  engineConnect: 'engine:connect',
+  // main -> renderer: the port, with the launch's token beside it. `event.ports[0]` is one end of a
+  // `MessageChannelMain` whose other end main is pumping RAW SOCKET BYTES through — main never
+  // parses a frame (src/main/dataServer/rendererBroker.ts states why that is the whole design).
+  // The token stays in the preload's closure and in the client it serves; it is never persisted,
+  // never put in the DOM, and dies with the renderer.
+  onEnginePort: 'engine:port',
 
   // ---- misc pushes ----
   onLine: 'log:line',

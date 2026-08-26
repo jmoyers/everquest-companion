@@ -148,6 +148,48 @@ interface MessageRecord {
   bySpell: Map<string, { display: string; count: number }>
 }
 
+/**
+ * ORDER IN HERE DECIDES WHAT THE PARSER SEES, SO IT MUST NOT DEPEND ON THE HOST (JOS-465).
+ *
+ * `deriveLandingCorrections()` walks `build()`'s message list and registers each verified landing
+ * line as a spell's `msg_cast_on_you`. When two rows tie on every earlier key, the tie-break
+ * decides WHICH correction is emitted — and therefore which `buffApply` the parser goes on to
+ * emit for that line. That is parser output, not presentation.
+ *
+ * `String.prototype.localeCompare` answers from ICU: its order is a function of the host's
+ * default locale and of the ICU data the Node build shipped with. Two machines can disagree, one
+ * machine can disagree with itself across a Node upgrade, and a `small-icu` build disagrees with
+ * a full one. A golden event stream recorded under one of those is not a fact about the log.
+ *
+ * So: CODEPOINT order, and codepoint rather than the code-UNIT order `<` gives, because the
+ * engine this ordering will one day be checked against compares Rust `str`s — UTF-8 bytewise,
+ * which is exactly codepoint order. The two differ only for a supplementary character sorted
+ * against U+E000..U+FFFF, which no EQ spell name contains; getting it right anyway costs one
+ * regex probe on a list of a few hundred rows built once per snapshot.
+ *
+ * Proven a NO-OP on the owner's six log slices before it was accepted: goldens recorded under
+ * `localeCompare`, the swap made, goldens re-recorded, byte-identical on all six.
+ */
+const SURROGATE_RE = /[\uD800-\uDFFF]/
+function byCodepoint(a: string, b: string): number {
+  if (a === b) return 0
+  // No surrogate anywhere means code-UNIT order already IS codepoint order, and `<` is the
+  // fastest way to say so. Every EQ spell name and every log line takes this branch.
+  if (!SURROGATE_RE.test(a) && !SURROGATE_RE.test(b)) return a < b ? -1 : 1
+  // Otherwise walk both by code POINT, stepping two units past a surrogate pair. An index walk
+  // rather than a spread: `[...s]` allocates an array per comparison, and this is a comparator.
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    const pa = a.codePointAt(i) ?? 0
+    const pb = b.codePointAt(j) ?? 0
+    if (pa !== pb) return pa - pb
+    i += pa > 0xffff ? 2 : 1
+    j += pb > 0xffff ? 2 : 1
+  }
+  return a.length - i - (b.length - j)
+}
+
 /** Canonical spell key: lowercase, trimmed, trailing Roman rank stripped (mirrors parser). */
 const RANK_TAIL_RE = / (?:i|ii|iii|iv|v|vi|vii|viii|ix|x)$/i
 function canonKey(name: string): string {
@@ -187,9 +229,9 @@ function bucketCounts(bucket: Map<string, MessageRecord>): OverlaySourceCounts['
       role: rec.role,
       spells: [...rec.bySpell.values()]
         .map((s) => ({ spell: s.display, count: s.count }))
-        .sort((a, b) => a.spell.localeCompare(b.spell))
+        .sort((a, b) => byCodepoint(a.spell, b.spell))
     }))
-    .sort((a, b) => a.text.localeCompare(b.text))
+    .sort((a, b) => byCodepoint(a.text, b.text))
 }
 
 /** A derived verdict for one message, plus the wiki disagreement when there is one. */
@@ -403,7 +445,7 @@ export class MessageOverlayMiner {
     for (const rec of this.aggregate().values()) {
       const spells = [...rec.bySpell.values()]
         .map((s) => ({ spell: s.display, count: s.count }))
-        .sort((a, b) => b.count - a.count || a.spell.localeCompare(b.spell))
+        .sort((a, b) => b.count - a.count || byCodepoint(a.spell, b.spell))
       const total = spells.reduce((a, s) => a + s.count, 0)
       const { verdict, wikiConflict } = this.verdictFor(rec)
       messages.push({ text: rec.text, role: rec.role, verdict, spells, total, wikiConflict })
@@ -420,7 +462,7 @@ export class MessageOverlayMiner {
       shared: 2,
       unknown: 3
     }
-    messages.sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.total - a.total || a.text.localeCompare(b.text))
+    messages.sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.total - a.total || byCodepoint(a.text, b.text))
     return {
       version: OVERLAY_VERSION,
       // THE LOG'S CLOCK, NOT THE MACHINE'S — see `lastObservedTs` for the divergence that moved it.
