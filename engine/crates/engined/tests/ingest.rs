@@ -83,7 +83,12 @@ impl Drop for Scratch {
 fn scan_oracle(path: &Path) -> i64 {
     let bytes = std::fs::read(path).expect("the log is readable");
     let parser = eqlog::parser_for("Primitive", eqlog::host_timezone());
-    i64::try_from(eqlog::scan::scan_bytes(&parser, &bytes, |_line| {})).expect("a count")
+    i64::try_from(eqlog::scan::scan_bytes(
+        &parser,
+        &bytes,
+        |_line, _payload| {},
+    ))
+    .expect("a count")
 }
 
 /// Append one line the way EverQuest appends one.

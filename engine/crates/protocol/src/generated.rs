@@ -8,7 +8,7 @@
 //! and a schema edit that lands without regenerating turns the protocol-codegen staleness
 //! test red on this side and tests/protocolSchema.test.mts red on the other.
 //!
-//! schema-digest: sha256:e4581985ea600134c9e0f5fa81f7cefacc93cbd9b688ec877f038102d5ec801d
+//! schema-digest: sha256:b6f362f405c373d629ffc2b193a21b016358eb8c7b1a53857f89be2c02068103
 #![allow(missing_docs, clippy::all, clippy::pedantic)]
 
 /// Error types.
@@ -438,6 +438,150 @@ impl ::std::convert::From<::std::collections::BTreeMap<::std::string::String, cr
         Self(value)
     }
 }
+///One of the sixteen EverQuest classes, spelled the way `src/shared/classCombo.ts CLASS_ABBRS` spells it. Note SHD, not SHK. The order here is alphabetical like the app's list; the CLIENT FILE's column order is a different order entirely and belongs to the parser that reads it, never to the wire.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "ClassAbbr",
+///  "description": "One of the sixteen EverQuest classes, spelled the way `src/shared/classCombo.ts CLASS_ABBRS` spells it. Note SHD, not SHK. The order here is alphabetical like the app's list; the CLIENT FILE's column order is a different order entirely and belongs to the parser that reads it, never to the wire.",
+///  "type": "string",
+///  "enum": [
+///    "BER",
+///    "BRD",
+///    "BST",
+///    "CLR",
+///    "DRU",
+///    "ENC",
+///    "MAG",
+///    "MNK",
+///    "NEC",
+///    "PAL",
+///    "RNG",
+///    "ROG",
+///    "SHD",
+///    "SHM",
+///    "WAR",
+///    "WIZ"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum ClassAbbr {
+    #[serde(rename = "BER")]
+    Ber,
+    #[serde(rename = "BRD")]
+    Brd,
+    #[serde(rename = "BST")]
+    Bst,
+    #[serde(rename = "CLR")]
+    Clr,
+    #[serde(rename = "DRU")]
+    Dru,
+    #[serde(rename = "ENC")]
+    Enc,
+    #[serde(rename = "MAG")]
+    Mag,
+    #[serde(rename = "MNK")]
+    Mnk,
+    #[serde(rename = "NEC")]
+    Nec,
+    #[serde(rename = "PAL")]
+    Pal,
+    #[serde(rename = "RNG")]
+    Rng,
+    #[serde(rename = "ROG")]
+    Rog,
+    #[serde(rename = "SHD")]
+    Shd,
+    #[serde(rename = "SHM")]
+    Shm,
+    #[serde(rename = "WAR")]
+    War,
+    #[serde(rename = "WIZ")]
+    Wiz,
+}
+impl ::std::fmt::Display for ClassAbbr {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Ber => f.write_str("BER"),
+            Self::Brd => f.write_str("BRD"),
+            Self::Bst => f.write_str("BST"),
+            Self::Clr => f.write_str("CLR"),
+            Self::Dru => f.write_str("DRU"),
+            Self::Enc => f.write_str("ENC"),
+            Self::Mag => f.write_str("MAG"),
+            Self::Mnk => f.write_str("MNK"),
+            Self::Nec => f.write_str("NEC"),
+            Self::Pal => f.write_str("PAL"),
+            Self::Rng => f.write_str("RNG"),
+            Self::Rog => f.write_str("ROG"),
+            Self::Shd => f.write_str("SHD"),
+            Self::Shm => f.write_str("SHM"),
+            Self::War => f.write_str("WAR"),
+            Self::Wiz => f.write_str("WIZ"),
+        }
+    }
+}
+impl ::std::str::FromStr for ClassAbbr {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "BER" => Ok(Self::Ber),
+            "BRD" => Ok(Self::Brd),
+            "BST" => Ok(Self::Bst),
+            "CLR" => Ok(Self::Clr),
+            "DRU" => Ok(Self::Dru),
+            "ENC" => Ok(Self::Enc),
+            "MAG" => Ok(Self::Mag),
+            "MNK" => Ok(Self::Mnk),
+            "NEC" => Ok(Self::Nec),
+            "PAL" => Ok(Self::Pal),
+            "RNG" => Ok(Self::Rng),
+            "ROG" => Ok(Self::Rog),
+            "SHD" => Ok(Self::Shd),
+            "SHM" => Ok(Self::Shm),
+            "WAR" => Ok(Self::War),
+            "WIZ" => Ok(Self::Wiz),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for ClassAbbr {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for ClassAbbr {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for ClassAbbr {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 ///Every message the app sends the engine. Internally tagged on `op`, so a new surface is a new branch and the envelope never changes.
 ///
 /// <details><summary>JSON schema</summary>
@@ -529,6 +673,9 @@ impl ::std::convert::From<::std::collections::BTreeMap<::std::string::String, cr
 ///      "$ref": "#/$defs/ResistSpellRequest"
 ///    },
 ///    {
+///      "$ref": "#/$defs/SpellsSearchRequest"
+///    },
+///    {
 ///      "$ref": "#/$defs/LogsSetDirRequest"
 ///    },
 ///    {
@@ -568,6 +715,7 @@ pub enum ClientMessage {
     RespawnConfirmSightingRequest(RespawnConfirmSightingRequest),
     ResistLevelsRequest(ResistLevelsRequest),
     ResistSpellRequest(ResistSpellRequest),
+    SpellsSearchRequest(SpellsSearchRequest),
     LogsSetDirRequest(LogsSetDirRequest),
     LogsListRequest(LogsListRequest),
 }
@@ -704,6 +852,11 @@ impl ::std::convert::From<ResistLevelsRequest> for ClientMessage {
 impl ::std::convert::From<ResistSpellRequest> for ClientMessage {
     fn from(value: ResistSpellRequest) -> Self {
         Self::ResistSpellRequest(value)
+    }
+}
+impl ::std::convert::From<SpellsSearchRequest> for ClientMessage {
+    fn from(value: SpellsSearchRequest) -> Self {
+        Self::SpellsSearchRequest(value)
     }
 }
 impl ::std::convert::From<LogsSetDirRequest> for ClientMessage {
@@ -3161,10 +3314,20 @@ impl ::std::convert::TryFrom<::std::string::String> for FireMessageKind {
 ///  "type": "object",
 ///  "required": [
 ///    "events",
+///    "logSize",
+///    "offset",
 ///    "pct"
 ///  ],
 ///  "properties": {
 ///    "events": {
+///      "type": "integer"
+///    },
+///    "logSize": {
+///      "description": "`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.",
+///      "type": "integer"
+///    },
+///    "offset": {
+///      "description": "THE MARK: the end of the last complete line this fold has folded, and `pct`'s own numerator. It is the SAME coordinate `HealthMark.offset` reports and the same one cache law 3 names (state is addressed by log identity and byte offset), which is why it carries that field's name rather than a new one - it is a fact about the LOG, not about the wire, and nothing here is a framing concern. It rides the frame because `pct` cannot be turned back into it: a client holding only a percentage can say `62%` and can never say `128 MB of 205 MB`, and the second sentence is the one that tells a person whether to wait or to go and make coffee.",
 ///      "type": "integer"
 ///    },
 ///    "pct": {
@@ -3180,6 +3343,11 @@ impl ::std::convert::TryFrom<::std::string::String> for FireMessageKind {
 #[serde(deny_unknown_fields)]
 pub struct FoldProgress {
     pub events: i64,
+    ///`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.
+    #[serde(rename = "logSize")]
+    pub log_size: i64,
+    ///THE MARK: the end of the last complete line this fold has folded, and `pct`'s own numerator. It is the SAME coordinate `HealthMark.offset` reports and the same one cache law 3 names (state is addressed by log identity and byte offset), which is why it carries that field's name rather than a new one - it is a fact about the LOG, not about the wire, and nothing here is a framing concern. It rides the frame because `pct` cannot be turned back into it: a client holding only a percentage can say `62%` and can never say `128 MB of 205 MB`, and the second sentence is the one that tells a person whether to wait or to go and make coffee.
+    pub offset: i64,
     ///How far the fold has got, 0 to 100, FRACTIONAL. The engine emits the number it actually measured and does not pre-round it: rounding is a display decision and belongs to whoever is drawing the bar. That is not in tension with the renderer-never-munges rule - that rule is about DOMAIN data (no client-side filtering, sorting or aggregation of the world), and formatting a progress readout for the pixel it lands on is not domain work. A NOTE FOR WORKED EXAMPLES: Rust serializes an f64 whole value as X.0, so a fixture carrying `62` would come back `62.0` and stop being byte-verbatim across the two languages. Examples therefore use a genuinely fractional value (62.4), which round-trips identically in both.
     pub pct: f64,
 }
@@ -6766,6 +6934,9 @@ impl ::std::convert::TryFrom<::std::string::String> for ReplyKind {
 ///      "$ref": "#/$defs/ResistSpellResult"
 ///    },
 ///    {
+///      "$ref": "#/$defs/SpellsSearchResult"
+///    },
+///    {
 ///      "$ref": "#/$defs/LogsListResult"
 ///    }
 ///  ]
@@ -6792,6 +6963,7 @@ pub enum ReplyResult {
     RespawnConfirmAck(RespawnConfirmAck),
     ResistLevelsResult(ResistLevelsResult),
     ResistSpellResult(ResistSpellResult),
+    SpellsSearchResult(SpellsSearchResult),
     LogsListResult(LogsListResult),
 }
 impl ::std::convert::From<EchoResult> for ReplyResult {
@@ -6877,6 +7049,11 @@ impl ::std::convert::From<ResistLevelsResult> for ReplyResult {
 impl ::std::convert::From<ResistSpellResult> for ReplyResult {
     fn from(value: ResistSpellResult) -> Self {
         Self::ResistSpellResult(value)
+    }
+}
+impl ::std::convert::From<SpellsSearchResult> for ReplyResult {
+    fn from(value: SpellsSearchResult) -> Self {
+        Self::SpellsSearchResult(value)
     }
 }
 impl ::std::convert::From<LogsListResult> for ReplyResult {
@@ -9325,6 +9502,204 @@ impl ::std::convert::From<[::std::string::String; 2usize]> for SortTerm {
         Self(value)
     }
 }
+///One spell as the Actions/Spells window draws it: a name, a level, and the two words it is filed under. The CATEGORY AND SUBCATEGORY ARRIVE AS WORDS AND NEVER AS IDS - a client receiving `114` would have to join it against a table it is not allowed to have, which is exactly the munging ruling 4 forbids.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellCatalogueRow",
+///  "description": "One spell as the Actions/Spells window draws it: a name, a level, and the two words it is filed under. The CATEGORY AND SUBCATEGORY ARRIVE AS WORDS AND NEVER AS IDS - a client receiving `114` would have to join it against a table it is not allowed to have, which is exactly the munging ruling 4 forbids.",
+///  "type": "object",
+///  "required": [
+///    "classes",
+///    "level",
+///    "name"
+///  ],
+///  "properties": {
+///    "category": {
+///      "description": "The Category column's word. Absent when the row files itself under none - 34,462 of the file's ~74k rows carry a zero there, which is the file saying uncategorised rather than naming category zero - and absent for every row when the string table could not be read.",
+///      "type": "string"
+///    },
+///    "classes": {
+///      "description": "Every in-scope class that can cast it, with the level each learns it at, in the client file's column order.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/SpellClassLevel"
+///      }
+///    },
+///    "level": {
+///      "description": "THE LEVEL THE LIST IS SORTED AND FILED BY: the LOWEST level at which any class in scope learns this, i.e. the earliest a character with this combo could have had it. The game's own window never has to answer this because a character there is one class; a combo of three needs one number to sort by, and `classes` beside it carries the whole truth so nothing is hidden by the choice.",
+///      "type": "integer"
+///    },
+///    "name": {
+///      "description": "The client file's OWN spelling. The log and `spells_us.txt` outrank the wiki on a spell's name, always - the repo already says so where the two disagree (`spellCorrectionsList.ts`'s fifth drift class restores the game's spelling against a retitled wiki page), and this is that authority at its source.",
+///      "type": "string"
+///    },
+///    "subcategory": {
+///      "description": "The Subcategory column's word. Absent independently of `category`.",
+///      "type": "string"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellCatalogueRow {
+    ///The Category column's word. Absent when the row files itself under none - 34,462 of the file's ~74k rows carry a zero there, which is the file saying uncategorised rather than naming category zero - and absent for every row when the string table could not be read.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub category: ::std::option::Option<::std::string::String>,
+    ///Every in-scope class that can cast it, with the level each learns it at, in the client file's column order.
+    pub classes: ::std::vec::Vec<SpellClassLevel>,
+    ///THE LEVEL THE LIST IS SORTED AND FILED BY: the LOWEST level at which any class in scope learns this, i.e. the earliest a character with this combo could have had it. The game's own window never has to answer this because a character there is one class; a combo of three needs one number to sort by, and `classes` beside it carries the whole truth so nothing is hidden by the choice.
+    pub level: i64,
+    ///The client file's OWN spelling. The log and `spells_us.txt` outrank the wiki on a spell's name, always - the repo already says so where the two disagree (`spellCorrectionsList.ts`'s fifth drift class restores the game's spelling against a retitled wiki page), and this is that authority at its source.
+    pub name: ::std::string::String,
+    ///The Subcategory column's word. Absent independently of `category`.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub subcategory: ::std::option::Option<::std::string::String>,
+}
+///A category and the subcategories found under it IN THIS SCOPE - never the whole vocabulary, so a control never offers a value that would return nothing. Alphabetical, both levels.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellCategoryFacet",
+///  "description": "A category and the subcategories found under it IN THIS SCOPE - never the whole vocabulary, so a control never offers a value that would return nothing. Alphabetical, both levels.",
+///  "type": "object",
+///  "required": [
+///    "name",
+///    "subcategories"
+///  ],
+///  "properties": {
+///    "name": {
+///      "type": "string"
+///    },
+///    "subcategories": {
+///      "type": "array",
+///      "items": {
+///        "type": "string"
+///      }
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellCategoryFacet {
+    pub name: ::std::string::String,
+    pub subcategories: ::std::vec::Vec<::std::string::String>,
+}
+///One class that can cast a spell, and when it learns it. The level is always 1..=254: the client file writes 255 for `this class cannot use it` and 0 for nothing, and neither becomes a row here.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellClassLevel",
+///  "description": "One class that can cast a spell, and when it learns it. The level is always 1..=254: the client file writes 255 for `this class cannot use it` and 0 for nothing, and neither becomes a row here.",
+///  "type": "object",
+///  "required": [
+///    "class",
+///    "level"
+///  ],
+///  "properties": {
+///    "class": {
+///      "$ref": "#/$defs/ClassAbbr"
+///    },
+///    "level": {
+///      "type": "integer"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellClassLevel {
+    pub class: ClassAbbr,
+    pub level: i64,
+}
+///How the list is ordered. TWO MEMBERS AND NO MORE, and the restraint is the design: an unknown sort is `badParams` because this enum refuses it, which satisfies the standing law that an unknown filter or sort field is refused rather than accepted-and-ignored (serving every row while the client believes it sorted is the one answer that cannot be debugged) without anyone having to remember to write a check. `level` is DESCENDING - the in-game window's own order - and every sort ends in the source's own tiebreak so the order is TOTAL: the corpus is a hash map with randomised iteration, so an order stopping at the level would answer the same query differently on every call, which is the shuffled-window defect in its purest form.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellSort",
+///  "description": "How the list is ordered. TWO MEMBERS AND NO MORE, and the restraint is the design: an unknown sort is `badParams` because this enum refuses it, which satisfies the standing law that an unknown filter or sort field is refused rather than accepted-and-ignored (serving every row while the client believes it sorted is the one answer that cannot be debugged) without anyone having to remember to write a check. `level` is DESCENDING - the in-game window's own order - and every sort ends in the source's own tiebreak so the order is TOTAL: the corpus is a hash map with randomised iteration, so an order stopping at the level would answer the same query differently on every call, which is the shuffled-window defect in its purest form.",
+///  "type": "string",
+///  "enum": [
+///    "level",
+///    "name"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum SpellSort {
+    #[serde(rename = "level")]
+    Level,
+    #[serde(rename = "name")]
+    Name,
+}
+impl ::std::fmt::Display for SpellSort {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Level => f.write_str("level"),
+            Self::Name => f.write_str("name"),
+        }
+    }
+}
+impl ::std::str::FromStr for SpellSort {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "level" => Ok(Self::Level),
+            "name" => Ok(Self::Name),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for SpellSort {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for SpellSort {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SpellSort {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 ///`shared/resistTypes.ts SpellTableState`, minus its `loading` member. The app's own reader has a fourth state because its parse is on a worker thread and a caller can arrive mid-flight; this engine's read BLOCKS the connection thread that asked, so by the time a reply exists the question is settled. `missing` and `unloadable` are two states rather than one because they are two different sentences to a person: no file at that path, versus a file that could not be read.
 ///
 /// <details><summary>JSON schema</summary>
@@ -9403,6 +9778,269 @@ impl ::std::convert::TryFrom<::std::string::String> for SpellTableState {
     ) -> ::std::result::Result<Self, self::error::ConversionError> {
         value.parse()
     }
+}
+///EVERY FILTER IS AND-ED AND AN ABSENT ONE FILTERS NOTHING. The corpus is always the spells a PLAYER can learn: a row no class can cast is a mob's or an item's copy of a spell, and the in-game window does not list those either, so they are in no answer here and there is no option to ask for them.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellsSearchParams",
+///  "description": "EVERY FILTER IS AND-ED AND AN ABSENT ONE FILTERS NOTHING. The corpus is always the spells a PLAYER can learn: a row no class can cast is a mob's or an item's copy of a spell, and the in-game window does not list those either, so they are in no answer here and there is no option to ask for them.",
+///  "type": "object",
+///  "properties": {
+///    "category": {
+///      "description": "An exact category, spelled as `categories` in the result spells it. Case-insensitive so a value round-tripped through a stored preference still matches. A category no row carries is not an error - it is an empty list, which is what a filter that excludes everything means.",
+///      "type": "string"
+///    },
+///    "classes": {
+///      "description": "Scope the list to these classes - the player's own combo, which is what the surface sends by default. ABSENT OR EMPTY MEANS EVERY CLASS, which is the show-all toggle; the two spellings are one state because an optional array cannot carry its own absence into Rust (typify defaults it to an empty vector), so giving them different meanings would make the languages disagree about a request neither could round-trip. The app names the classes rather than the engine reading its own combo module, deliberately: this is a question about a static client file, and answering it out of fold state would make a catalogue lookup depend on how far a replay had got. THERE IS NO `maxItems` HERE AND THAT IS DELIBERATE: a `maxItems` with no `minItems` anchor generates a tuple UNION in TypeScript that no ordinary array satisfies (`resist.levels` escapes that only because its `minItems: 1` makes it a rest-tuple), and this list must be allowed to be empty. The bound belongs in the engine, which sorts and dedupes the columns it derives - at most sixteen by construction, and a repeated class was never meaningful anyway.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/ClassAbbr"
+///      }
+///    },
+///    "limit": {
+///      "description": "How many rows the window holds. Absent takes the engine's default and a number above its cap takes the cap - CLAMPED rather than refused, which is the same call `combat.searchFights` makes about the same kind of number. `total` states how many matched, so a caller says `1-20 of 143` without ever holding 143.",
+///      "type": "integer"
+///    },
+///    "offset": {
+///      "description": "Where the window starts. Past the end is an EMPTY PAGE and never an error: a client holding a stale offset while a filter narrows underneath it is ordinary rather than exceptional, and `total` still says how many there were.",
+///      "type": "integer"
+///    },
+///    "sort": {
+///      "$ref": "#/$defs/SpellSort"
+///    },
+///    "subcategory": {
+///      "description": "An exact subcategory. INDEPENDENT OF `category` AND NOT A REFINEMENT OF IT: the client table files nine rows under a subcategory with no category at all (rogue poisons under `Misc`), so the two are separate filters that happen to nest in the common case.",
+///      "type": "string"
+///    },
+///    "text": {
+///      "description": "A case-insensitive SUBSTRING of the spell's NAME, ITS CATEGORY OR ITS SUBCATEGORY - the three are one haystack, and that is the whole point of the op rather than a convenience. The owner's `tap` search returns `Leech` and `Siphon Strength`, and neither NAME contains `tap`; they are in the list because their category is `Taps`. A name-only filter reproduces the first row of that screenshot and silently loses two thirds of it. It is a substring match rather than the typo-tolerant scorer `combat.searchFights` runs, because that corpus is proper nouns a player half-remembers and this one is a vocabulary they are browsing. An empty or absent value filters nothing, which is a browse rather than a search - unlike `knowledge.search`, where an empty query answers with nothing, because there the whole corpus is the alternative and here the window already bounds it.",
+///      "type": "string"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellsSearchParams {
+    ///An exact category, spelled as `categories` in the result spells it. Case-insensitive so a value round-tripped through a stored preference still matches. A category no row carries is not an error - it is an empty list, which is what a filter that excludes everything means.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub category: ::std::option::Option<::std::string::String>,
+    ///Scope the list to these classes - the player's own combo, which is what the surface sends by default. ABSENT OR EMPTY MEANS EVERY CLASS, which is the show-all toggle; the two spellings are one state because an optional array cannot carry its own absence into Rust (typify defaults it to an empty vector), so giving them different meanings would make the languages disagree about a request neither could round-trip. The app names the classes rather than the engine reading its own combo module, deliberately: this is a question about a static client file, and answering it out of fold state would make a catalogue lookup depend on how far a replay had got. THERE IS NO `maxItems` HERE AND THAT IS DELIBERATE: a `maxItems` with no `minItems` anchor generates a tuple UNION in TypeScript that no ordinary array satisfies (`resist.levels` escapes that only because its `minItems: 1` makes it a rest-tuple), and this list must be allowed to be empty. The bound belongs in the engine, which sorts and dedupes the columns it derives - at most sixteen by construction, and a repeated class was never meaningful anyway.
+    #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+    pub classes: ::std::vec::Vec<ClassAbbr>,
+    ///How many rows the window holds. Absent takes the engine's default and a number above its cap takes the cap - CLAMPED rather than refused, which is the same call `combat.searchFights` makes about the same kind of number. `total` states how many matched, so a caller says `1-20 of 143` without ever holding 143.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub limit: ::std::option::Option<i64>,
+    ///Where the window starts. Past the end is an EMPTY PAGE and never an error: a client holding a stale offset while a filter narrows underneath it is ordinary rather than exceptional, and `total` still says how many there were.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub offset: ::std::option::Option<i64>,
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub sort: ::std::option::Option<SpellSort>,
+    ///An exact subcategory. INDEPENDENT OF `category` AND NOT A REFINEMENT OF IT: the client table files nine rows under a subcategory with no category at all (rogue poisons under `Misc`), so the two are separate filters that happen to nest in the common case.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub subcategory: ::std::option::Option<::std::string::String>,
+    ///A case-insensitive SUBSTRING of the spell's NAME, ITS CATEGORY OR ITS SUBCATEGORY - the three are one haystack, and that is the whole point of the op rather than a convenience. The owner's `tap` search returns `Leech` and `Siphon Strength`, and neither NAME contains `tap`; they are in the list because their category is `Taps`. A name-only filter reproduces the first row of that screenshot and silently loses two thirds of it. It is a substring match rather than the typo-tolerant scorer `combat.searchFights` runs, because that corpus is proper nouns a player half-remembers and this one is a vocabulary they are browsing. An empty or absent value filters nothing, which is a browse rather than a search - unlike `knowledge.search`, where an empty query answers with nothing, because there the whole corpus is the alternative and here the window already bounds it.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub text: ::std::option::Option<::std::string::String>,
+}
+impl ::std::default::Default for SpellsSearchParams {
+    fn default() -> Self {
+        Self {
+            category: Default::default(),
+            classes: Default::default(),
+            limit: Default::default(),
+            offset: Default::default(),
+            sort: Default::default(),
+            subcategory: Default::default(),
+            text: Default::default(),
+        }
+    }
+}
+///SEARCH THE CLIENT'S OWN SPELL TABLE BY TYPE (JOS-507). The in-game Actions/Spells window can search by TYPE - a `tap` search over a SHD/BRD/WIZ combo returns every tap by level, with a Category column reading `Taps` and a Subcategory column reading `Health`, `Duration Tap` or `Power Tap` - and this is that capability, off the same source the game itself uses. `spells_us.txt` files every spell under two integer ids (fields 86 and 87, verified against the owner's install) and `dbstr_us.txt` type 5 says what those ids are called; both sit in the install the attach named, so this needs no configuration and no discovery. IT IS A WINDOWED QUERY AND NEVER A BULK READ, which is the standing no-bulk-frame ruling rather than a phase: the parsed table is 48,256 entries and 6.13 MiB of JSON against an 8 MiB frame ceiling on one machine, against a table that grows with every client patch. So the engine filters, sorts and windows, and the app draws what arrives without re-deriving any of it (ruling 4). It is a `spells.*` op rather than a second `resist.*` one because it answers about the table as a CATALOGUE - what exists, filed under what - where `resist.spell` answers about ONE spell's mechanics; and it is not `knowledge.search`, which ranks the committed wiki scrape and knows nothing about categories at all. NOTHING DERIVED FROM EITHER CLIENT FILE IS EVER COMMITTED, which is why every test on both sides is driven by hand-authored rows.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellsSearchRequest",
+///  "description": "SEARCH THE CLIENT'S OWN SPELL TABLE BY TYPE (JOS-507). The in-game Actions/Spells window can search by TYPE - a `tap` search over a SHD/BRD/WIZ combo returns every tap by level, with a Category column reading `Taps` and a Subcategory column reading `Health`, `Duration Tap` or `Power Tap` - and this is that capability, off the same source the game itself uses. `spells_us.txt` files every spell under two integer ids (fields 86 and 87, verified against the owner's install) and `dbstr_us.txt` type 5 says what those ids are called; both sit in the install the attach named, so this needs no configuration and no discovery. IT IS A WINDOWED QUERY AND NEVER A BULK READ, which is the standing no-bulk-frame ruling rather than a phase: the parsed table is 48,256 entries and 6.13 MiB of JSON against an 8 MiB frame ceiling on one machine, against a table that grows with every client patch. So the engine filters, sorts and windows, and the app draws what arrives without re-deriving any of it (ruling 4). It is a `spells.*` op rather than a second `resist.*` one because it answers about the table as a CATALOGUE - what exists, filed under what - where `resist.spell` answers about ONE spell's mechanics; and it is not `knowledge.search`, which ranks the committed wiki scrape and knows nothing about categories at all. NOTHING DERIVED FROM EITHER CLIENT FILE IS EVER COMMITTED, which is why every test on both sides is driven by hand-authored rows.",
+///  "type": "object",
+///  "required": [
+///    "id",
+///    "op",
+///    "params"
+///  ],
+///  "properties": {
+///    "id": {
+///      "$ref": "#/$defs/RequestId"
+///    },
+///    "op": {
+///      "type": "string",
+///      "enum": [
+///        "spells.search"
+///      ]
+///    },
+///    "params": {
+///      "$ref": "#/$defs/SpellsSearchParams"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellsSearchRequest {
+    pub id: RequestId,
+    pub op: SpellsSearchRequestOp,
+    pub params: SpellsSearchParams,
+}
+///`SpellsSearchRequestOp`
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "type": "string",
+///  "enum": [
+///    "spells.search"
+///  ]
+///}
+/// ```
+/// </details>
+#[derive(
+    ::serde::Deserialize,
+    ::serde::Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum SpellsSearchRequestOp {
+    #[serde(rename = "spells.search")]
+    SpellsSearch,
+}
+impl ::std::fmt::Display for SpellsSearchRequestOp {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::SpellsSearch => f.write_str("spells.search"),
+        }
+    }
+}
+impl ::std::str::FromStr for SpellsSearchRequestOp {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "spells.search" => Ok(Self::SpellsSearch),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for SpellsSearchRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<&::std::string::String> for SpellsSearchRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: &::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SpellsSearchRequestOp {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+///A window onto the client's spell catalogue, already filtered, already sorted. `spellTable` and `path` ride EVERY answer for `ResistSpellResult`'s reason exactly - an empty list means several different things to a person (no such install, a file that would not read, a filter that excludes everything) and a reply carrying only the rows would flatten them into one silence. IT IS `spellTable` RATHER THAN `table`, AND THE MATRIX IS WHY: `resist.spell` already owns the bare word `table` as its discriminator in `src/shared/dataServer/ops.ts`, and a second result carrying that field would make that guard accept two shapes it could no longer tell apart. Same lesson as `perf.budgets` picking `budgets` over the tempting generic `epoch`, reached from the other direction. This shape's own discriminator is `spells`.
+///
+/// <details><summary>JSON schema</summary>
+///
+/// ```json
+///{
+///  "title": "SpellsSearchResult",
+///  "description": "A window onto the client's spell catalogue, already filtered, already sorted. `spellTable` and `path` ride EVERY answer for `ResistSpellResult`'s reason exactly - an empty list means several different things to a person (no such install, a file that would not read, a filter that excludes everything) and a reply carrying only the rows would flatten them into one silence. IT IS `spellTable` RATHER THAN `table`, AND THE MATRIX IS WHY: `resist.spell` already owns the bare word `table` as its discriminator in `src/shared/dataServer/ops.ts`, and a second result carrying that field would make that guard accept two shapes it could no longer tell apart. Same lesson as `perf.budgets` picking `budgets` over the tempting generic `epoch`, reached from the other direction. This shape's own discriminator is `spells`.",
+///  "type": "object",
+///  "required": [
+///    "categories",
+///    "limit",
+///    "offset",
+///    "path",
+///    "spellTable",
+///    "spells",
+///    "total"
+///  ],
+///  "properties": {
+///    "categories": {
+///      "description": "The category vocabulary present in this scope, for a filter control to draw. THE ENGINE HAS TO SUPPLY THIS AND THE APP CANNOT SHIP IT: the words are Daybreak's and live only in the player's own `dbstr_us.txt`, so a hardcoded list would be both redistributed client data and wrong on the next patch. It describes the CLASS AND TEXT scope and deliberately ignores the `category`/`subcategory` filters it populates - a control that collapsed to the value just picked is one a user cannot get back out of. Empty when the string table could not be read.",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/SpellCategoryFacet"
+///      }
+///    },
+///    "limit": {
+///      "description": "The window's size AS THE ENGINE APPLIED IT, which is the request's value clamped to the cap. Echoing the effective number rather than the requested one is what lets a caller notice it was clamped.",
+///      "type": "integer"
+///    },
+///    "offset": {
+///      "description": "The window's start, echoed - including when the request omitted it, so a caller paging through never has to remember what it asked for.",
+///      "type": "integer"
+///    },
+///    "path": {
+///      "description": "Where this engine looked for `spells_us.txt`. Present always, because the sentence a missing table produces has to name a place.",
+///      "type": "string"
+///    },
+///    "spellTable": {
+///      "$ref": "#/$defs/SpellTableState"
+///    },
+///    "spells": {
+///      "description": "The window. Filtered, sorted and bounded by the request - the renderer draws these in the order they arrive and never re-sorts or re-filters them (ruling 4).",
+///      "type": "array",
+///      "items": {
+///        "$ref": "#/$defs/SpellCatalogueRow"
+///      }
+///    },
+///    "total": {
+///      "description": "How many rows MATCHED, before the window was taken. A surface says `1-20 of 143` off this without ever holding 143.",
+///      "type": "integer"
+///    }
+///  },
+///  "additionalProperties": false
+///}
+/// ```
+/// </details>
+#[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SpellsSearchResult {
+    ///The category vocabulary present in this scope, for a filter control to draw. THE ENGINE HAS TO SUPPLY THIS AND THE APP CANNOT SHIP IT: the words are Daybreak's and live only in the player's own `dbstr_us.txt`, so a hardcoded list would be both redistributed client data and wrong on the next patch. It describes the CLASS AND TEXT scope and deliberately ignores the `category`/`subcategory` filters it populates - a control that collapsed to the value just picked is one a user cannot get back out of. Empty when the string table could not be read.
+    pub categories: ::std::vec::Vec<SpellCategoryFacet>,
+    ///The window's size AS THE ENGINE APPLIED IT, which is the request's value clamped to the cap. Echoing the effective number rather than the requested one is what lets a caller notice it was clamped.
+    pub limit: i64,
+    ///The window's start, echoed - including when the request omitted it, so a caller paging through never has to remember what it asked for.
+    pub offset: i64,
+    ///Where this engine looked for `spells_us.txt`. Present always, because the sentence a missing table produces has to name a place.
+    pub path: ::std::string::String,
+    #[serde(rename = "spellTable")]
+    pub spell_table: SpellTableState,
+    ///The window. Filtered, sorted and bounded by the request - the renderer draws these in the order they arrive and never re-sorts or re-filters them (ruling 4).
+    pub spells: ::std::vec::Vec<SpellCatalogueRow>,
+    ///How many rows MATCHED, before the window was taken. A surface says `1-20 of 143` off this without ever holding 143.
+    pub total: i64,
 }
 ///`SubscribeAck`
 ///

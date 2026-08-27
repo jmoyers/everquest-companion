@@ -36,29 +36,47 @@ use crate::combat::procdetect::{add_spell_proc, SpellProcFold, SpellProcLane};
 use crate::combat::procwindows::WindowAccum;
 use crate::combat::rounds::{RoundAccum, SwingRecord};
 use crate::jsmap::JsMap;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 /// The engine's internal damage record. Sourced from the canonical `damage` event, but with a
 /// non-null attacker — caster-less other-player DoTs carry `attacker: null` and are dropped by the
 /// caller before this is built.
+///
+/// ── IT BORROWS THE PARSER'S OWN BYTES (JOS-506) ───────────────────────────────────────────────
+///
+/// This used to be eight `String`s and a `Vec<String>` built fresh for EVERY damage line in the log,
+/// and then CLONED once more by `ingest_damage` at lane assignment. Nothing on the routing path
+/// keeps the record: it is read, folded, and dropped inside one call. What DOES retain a name — a
+/// meter row, a timeline instant, a modifier tally — owns it at the point of retention, which is
+/// where the allocation belongs and where it was always happening anyway.
+///
+/// TWO FIELDS ARE `Cow` AND THE REST ARE PLAIN SLICES, and the split says exactly which of them the
+/// engine can rewrite. `skill` is rewritten twice (the special-attack lane rename, and the cast-less
+/// origin marker `lane_name_for` appends) and `category` is rewritten once (the derived fallback,
+/// which answers with a `'static` taxonomy constant and so still allocates nothing). Everything else
+/// is the parser's text verbatim, so it is a slice of the payload and cannot be anything else.
+///
+/// The lifetime is the EVENT's, not the engine's: a `DamageEvent` is valid for exactly the call that
+/// built it, which is the same discipline `Event<'a>` itself carries.
 #[derive(Debug, Clone)]
-pub struct DamageEvent {
+pub struct DamageEvent<'a> {
     pub ts: i64,
-    pub attacker: String,
-    pub target: String,
+    pub attacker: &'a str,
+    pub target: &'a str,
     pub amount: i64,
-    pub dtype: String,
-    pub dclass: Option<String>,
-    pub skill: String,
+    pub dtype: &'a str,
+    pub dclass: Option<&'a str>,
+    pub skill: Cow<'a, str>,
     pub crit: bool,
     /// Taxonomy category. Derived from dtype+modifiers when the event omits it, so aggregation
     /// always has an axis.
-    pub category: String,
+    pub category: Cow<'a, str>,
     /// Parsed paren-modifier tokens, e.g. `["Riposte", "Critical"]`.
-    pub modifiers: Vec<String>,
+    pub modifiers: &'a [&'a str],
     /// The un-conjugated melee verb (`strike`, `kick`), on melee/slay lines only. The join key
     /// between a swing and the active special attack.
-    pub verb: Option<String>,
+    pub verb: Option<&'a str>,
 }
 
 /// The identity of a meter ROW. Bundled because the three always travel together — the outgoing
@@ -557,11 +575,11 @@ impl Agg {
         self.out.remove(id)
     }
 
-    pub fn add_out(&mut self, r: &SourceRef, ev: &DamageEvent, ambiguous: bool) {
+    pub fn add_out(&mut self, r: &SourceRef, ev: &DamageEvent<'_>, ambiguous: bool) {
         add_to_source(self.out_row(r), ev, ambiguous);
     }
 
-    pub fn add_inc(&mut self, id: &str, name: &str, ev: &DamageEvent) {
+    pub fn add_inc(&mut self, id: &str, name: &str, ev: &DamageEvent<'_>) {
         add_to_source(self.inc_row(id, name), ev, false);
     }
 
@@ -612,7 +630,7 @@ fn bump(map: &mut JsMap<NamedTotal>, id: &str, name: &str, amount: i64, counted:
     }
 }
 
-fn add_to_source(src: &mut SourceStat, ev: &DamageEvent, ambiguous: bool) {
+fn add_to_source(src: &mut SourceStat, ev: &DamageEvent<'_>, ambiguous: bool) {
     src.total += ev.amount;
     src.hits += 1;
     if ev.crit {
@@ -639,25 +657,25 @@ fn add_to_source(src: &mut SourceStat, ev: &DamageEvent, ambiguous: bool) {
 /// The COUNT-ONLY counters a landed swing feeds: the legacy melee-rounds heuristic, the base modifier
 /// tallies, and the attack-round grouper. Not one of them touches `src.total`, a category total or a
 /// lane total — which is exactly why adding them moved no damage number anywhere in the engine.
-fn add_swing_counters(src: &mut SourceStat, ev: &DamageEvent) {
+fn add_swing_counters(src: &mut SourceStat, ev: &DamageEvent<'_>) {
     let is_swing = ev.category == "melee" || ev.category == "slay";
     // Only melee/slay hits cluster into "rounds" (spells and DoTs are single applications).
     if is_swing {
         accrue_round(&mut src.rounds, &ev.skill, ev.ts);
     }
-    tally_modifiers(src, &ev.modifiers, false, ev.amount);
+    tally_modifiers(src, ev.modifiers, false, ev.amount);
     // A SWING is a melee/slay line that named its VERB — the join key the round grouper is keyed on.
     // Spells, DoTs and damage shields name no verb and are not swings.
     if is_swing {
-        if let Some(verb) = &ev.verb {
+        if let Some(verb) = ev.verb {
             src.round_acc.add(&SwingRecord {
                 ts: ev.ts,
                 verb,
-                skill: &ev.skill,
-                target: &ev.target,
+                skill: ev.skill.as_ref(),
+                target: ev.target,
                 amount: ev.amount,
                 avoided: false,
-                modifiers: &ev.modifiers,
+                modifiers: ev.modifiers,
             });
         }
     }
@@ -665,13 +683,14 @@ fn add_swing_counters(src: &mut SourceStat, ev: &DamageEvent) {
 
 /// Fold the decomposed base modifiers of one line into a source's tallies. COUNTS, plus the landed
 /// line's own amount re-read into `total`. An avoided swing passes 0 and is the only caller that may.
-fn tally_modifiers(src: &mut SourceStat, mods: &[String], avoided: bool, amount: i64) {
+fn tally_modifiers<S: AsRef<str>>(src: &mut SourceStat, mods: &[S], avoided: bool, amount: i64) {
     for name in mods {
+        let name = name.as_ref();
         if !src.mods.contains_key(name) {
             src.mods.insert(
-                name.clone(),
+                name.to_string(),
                 ModifierTally {
-                    name: name.clone(),
+                    name: name.to_string(),
                     count: 0,
                     avoided: 0,
                     total: 0,
@@ -690,19 +709,19 @@ fn tally_modifiers(src: &mut SourceStat, mods: &[String], avoided: bool, amount:
 
 /// Category rollup (drill-down level 2/3): the same skill breakdown, partitioned by taxonomy
 /// category so a source can be opened into melee/slay/spell/dot/ds.
-fn add_to_category(src: &mut SourceStat, ev: &DamageEvent) {
-    if !src.by_category.contains_key(&ev.category) {
+fn add_to_category(src: &mut SourceStat, ev: &DamageEvent<'_>) {
+    if !src.by_category.contains_key(ev.category.as_ref()) {
         src.by_category.insert(
-            ev.category.clone(),
+            ev.category.to_string(),
             CategoryStat {
-                category: ev.category.clone(),
+                category: ev.category.to_string(),
                 ..CategoryStat::default()
             },
         );
     }
     let c = src
         .by_category
-        .get_mut(&ev.category)
+        .get_mut(ev.category.as_ref())
         .expect("just inserted");
     c.total += ev.amount;
     c.hits += 1;
@@ -782,18 +801,18 @@ fn lane<'a>(map: &'a mut JsMap<SkillStat>, name: &str) -> &'a mut SkillStat {
 mod tests {
     use super::*;
 
-    fn hit(skill: &str, amount: i64, crit: bool) -> DamageEvent {
+    fn hit(skill: &str, amount: i64, crit: bool) -> DamageEvent<'_> {
         DamageEvent {
             ts: 0,
-            attacker: "You".into(),
-            target: "a bat".into(),
+            attacker: "You",
+            target: "a bat",
             amount,
-            dtype: "melee".into(),
+            dtype: "melee",
             dclass: None,
             skill: skill.into(),
             crit,
             category: "melee".into(),
-            modifiers: Vec::new(),
+            modifiers: &[],
             verb: None,
         }
     }

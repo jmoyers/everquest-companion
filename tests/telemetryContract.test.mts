@@ -261,6 +261,19 @@ function unreleasedViews(src: string): string[] | null {
   return [...spread.matchAll(/'([a-z]+)'/g)].map((m) => m[1])
 }
 
+/**
+ * The view ids `KNOWN_VIEWS` lists — the ones this build can RESTORE, which is the same thing as
+ * the ones that are tabs. Read out of the source for `unreleasedViews`' reason.
+ *
+ * `null` means the declaration stopped parsing, which the caller treats as a failure rather than
+ * as an empty answer: a broken regex here would silently exempt every view in the app.
+ */
+function knownViews(src: string): string[] | null {
+  const block = /const KNOWN_VIEWS: View\[\] = \[([\s\S]*?)\n\]/.exec(src)?.[1]
+  if (block === undefined) return null
+  return [...new Set([...block.matchAll(/'([a-z]+)'/g)].map((m) => m[1]))]
+}
+
 test('the view list is the SAME set the app can render', () => {
   // Same duplication, same tripwire — read out of appViews.ts's source, because that module is
   // renderer-only (it reads a vite define) and cannot be imported under plain node.
@@ -295,8 +308,40 @@ test('the view list is the SAME set the app can render', () => {
     assert.ok(gated.length > 0, 'the UNRELEASED spread is there and empty — delete it or fill it')
   }
   const unreleased = gated ?? []
-  const reportable = declared.filter((v) => !unreleased.includes(v))
+
+  // ...AND MINUS THE DRILLS (JOS-508). A second exempt category, and it is a DIFFERENT claim from
+  // the one above: an UNRELEASED view is one no user can reach, while a DRILL is one every user
+  // can reach and no user can arrive at cold. `KNOWN_VIEWS` is exactly that distinction already —
+  // it is the list `loadView()` will restore, so a member of the union that is absent from it has
+  // no nav row, no persisted arrival and no existence except as the far end of a link.
+  //
+  // WHY THEY ARE EXEMPT IS THE DEPLOY ARGUMENT ABOVE, UNCHANGED: the enum is validated by the
+  // ingest Lambda, which is deployed by hand while the app auto-updates, so a client reporting a
+  // value the deployed validator has not learned 400s the whole batch. `lib/telemetry.ts
+  // dwellView` already fails closed for exactly this — its header calls a view the schema does not
+  // carry "the ONE deliberate exception" — so a drill reports nothing, distorts no other tab's
+  // dwell, and needs no deploy ordering arranged around a feature release. Putting `spell` into
+  // TELEMETRY_VIEWS is a later, owner-sequenced change: server first, then client, as always.
+  //
+  // THE TRIPWIRE IS NOT WEAKENED, and this is the part worth checking rather than believing: an
+  // ordinary NEW TAB must be in `KNOWN_VIEWS` or it cannot be restored and its nav row would strand
+  // anyone who quit on it — so it is `reportable` by construction and still fails here until the
+  // schema (and therefore TELEMETRY.md) learns about it. The only thing this exempts is a view that
+  // has already given up being a destination.
+  const known = knownViews(src)
+  assert.ok(known !== null && known.length > 5, 'failed to read KNOWN_VIEWS out of appViews.ts')
+  const drills = declared.filter((v) => !known.includes(v) && !unreleased.includes(v))
+  const reportable = declared.filter((v) => !unreleased.includes(v) && !drills.includes(v))
   assert.deepEqual(reportable.sort(), [...TELEMETRY_VIEWS].sort())
+
+  // The mirror of the UNRELEASED rule below: a drill must not ALSO be in the schema. If one is
+  // ever promoted, it becomes a tab (into KNOWN_VIEWS) in the same edit that puts it in the enum.
+  for (const view of drills) {
+    assert.ok(
+      !(TELEMETRY_VIEWS as readonly string[]).includes(view),
+      `'${view}' is a link-only drill but is already in TELEMETRY_VIEWS`
+    )
+  }
 
   // And the other half of the same rule: an unreleased view must NOT already be in the schema.
   // Graduation is both edits at once — out of this spread, into TELEMETRY_VIEWS — and doing only

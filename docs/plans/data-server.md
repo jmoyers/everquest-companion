@@ -124,6 +124,12 @@ parses, aggregates, compresses, and serves; the UI becomes a query/subscribe cli
     (`oracle:rust-fold`, no TS arm) gates the deletion release and phase-4 stabilization, then
     retires when CI budgets land. No Rust-side recorder is built unless the net is later made
     permanent.
+27a. *(2026-08-26, decision sheet 7a)* **1.11.0 ships at the measured fold speed; the combat-
+    allocation lever lands right after.** The typed event stream (JOS-505) took the 209 MB fold
+    31.07 s → 23.63 s; G3 (<20 s) is 3.6 s short, the remaining gap is named to file and line
+    (per-event heap allocation in combat), and the owner's ruling is ship-then-optimize: "lets do
+    the combat alloc work right after ship. ship first." The CI budget floor holds the line
+    meanwhile.
 27. *(2026-08-25, decision sheet 5a/6a — the deletion release's two gaps)* **Fire frames reach
     word parity, and it is RELEASE-GATING.** The `fire` frame is extended so everything the
     retired TS evaluator could speak rides the frame — captures, the `{target}`, the resolved

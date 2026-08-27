@@ -652,7 +652,12 @@ async function main(): Promise<void> {
   // best-spells readout is byte-identical to what it was, which is what that step's `note` arm
   // covers. It is the owner's own committed dump, so the focus effects in force are real ones.
   const { app, close, log } = await launchOnFixture('e2e-leveling.log', {
-    inventory: 'Primitive_freeport-Inventory.txt'
+    inventory: 'Primitive_freeport-Inventory.txt',
+    // JOS-507 — hand-authored `spells_us.txt` + `dbstr_us.txt` so the readout's search-by-TYPE step
+    // holds on any machine rather than only on one with EverQuest installed. It changes nothing the
+    // other steps read: the ranked tables and the wiki search are the committed catalog's, and this
+    // is a file only the engine's `spells.search` opens.
+    clientTables: true
   })
 
   let page: Page | null = null

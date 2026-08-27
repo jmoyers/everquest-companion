@@ -1,7 +1,7 @@
 //! `src/main/log/parseAcquire.ts` — every sentence in which an item or a coin reaches the player
 //! WITHOUT a corpse in it.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
 use regex::Regex;
 
@@ -99,39 +99,39 @@ fn parse_coins(r: &AcquireRes, clause: &str) -> Option<Vec<(&'static str, i64)>>
 fn classify_coin(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     if let Some(m) = r.coin_corpse.captures(c.text) {
         if let Some(coins) = parse_coins(r, &m[1]) {
-            out.begin("coin");
+            out.begin(Kind::Coin);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("source", "corpse");
-            out.coins("coins", &coins);
+            out.s(Key::Source, "corpse");
+            out.coins(Key::Coins, &coins);
             return true;
         }
     }
     if let Some(m) = r.coin_item.captures(c.text) {
         if let Some(coins) = parse_coins(r, &m[1]) {
-            out.begin("coin");
+            out.begin(Kind::Coin);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("source", "item");
-            out.coins("coins", &coins);
+            out.s(Key::Source, "item");
+            out.coins(Key::Coins, &coins);
             return true;
         }
     }
     if let Some(m) = r.coin_vendor.captures(c.text) {
         if let Some(coins) = parse_coins(r, &m[1]) {
-            out.begin("coin");
+            out.begin(Kind::Coin);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("source", "vendor");
-            out.coins("coins", &coins);
-            out.s("npc", js_trim(&m[2]));
-            out.s("item", js_trim(&m[3]));
+            out.s(Key::Source, "vendor");
+            out.coins(Key::Coins, &coins);
+            out.s(Key::Npc, js_trim(&m[2]));
+            out.s(Key::Item, js_trim(&m[3]));
             return true;
         }
     }
     if let Some(m) = r.coin_bare.captures(c.text) {
         if let Some(coins) = parse_coins(r, &m[1]) {
-            out.begin("coin");
+            out.begin(Kind::Coin);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("source", "unstated");
-            out.coins("coins", &coins);
+            out.s(Key::Source, "unstated");
+            out.coins(Key::Coins, &coins);
             return true;
         }
     }
@@ -150,12 +150,12 @@ fn classify_purchase(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
         parse_coins(r, &clause)
     };
     let Some(price) = price else { return false };
-    out.begin("purchase");
+    out.begin(Kind::Purchase);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("item", js_trim(&m[2]));
-    out.i("count", m[1].parse().unwrap_or(0));
-    out.s("npc", js_trim(&m[3]));
-    out.coins("price", &price);
+    out.s(Key::Item, js_trim(&m[2]));
+    out.i(Key::Count, m[1].parse().unwrap_or(0));
+    out.s(Key::Npc, js_trim(&m[3]));
+    out.coins(Key::Price, &price);
     true
 }
 
@@ -187,10 +187,10 @@ fn classify_item_arrival(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
 }
 
 fn item_received(c: &Ctx, out: &mut Ev, item: &str, via: &str) {
-    out.begin("itemReceived");
+    out.begin(Kind::ItemReceived);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("item", item);
-    out.s("via", via);
+    out.s(Key::Item, item);
+    out.s(Key::Via, via);
 }
 
 /// Every way an item or a coin reaches you that does not name a corpse. ONE cheap gate per family.

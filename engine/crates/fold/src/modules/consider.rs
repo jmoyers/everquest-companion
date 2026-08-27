@@ -540,7 +540,7 @@ mod tests {
         }
     }
 
-    fn ev(json: &str) -> Event {
+    fn ev(json: &str) -> Event<'static> {
         Event::from_json(json).expect("a JSON object")
     }
 

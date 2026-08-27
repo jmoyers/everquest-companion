@@ -59,6 +59,7 @@
 //! story (ruling 18 law 5). What it will not do is notice a patch mid-session, which costs a
 //! restart the player has already performed.
 
+use fold::dbstr::{parse_spell_categories, CategoryNames};
 use fold::spells_us::{parse_spells_us, SpellInfo, SpellTable};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -72,8 +73,13 @@ use std::sync::OnceLock;
 pub struct ClientSpells {
     /// `<eqRoot>/spells_us.txt`, derived from the attach's log path.
     path: PathBuf,
+    /// `<eqRoot>/dbstr_us.txt`, beside it. See [`ClientSpells::category_names`].
+    dbstr_path: PathBuf,
     /// The parsed table, or `None` when the file could not be read. Filled once.
     table: OnceLock<Option<SpellTable>>,
+    /// The spell-category vocabulary, read from `dbstr_us.txt`. Filled once, INDEPENDENTLY of
+    /// `table`: a surface can want the words without the rows and the two files fail separately.
+    categories: OnceLock<CategoryNames>,
 }
 
 /// Why there is no table, in the words `shared/resistTypes.ts SpellTableState` uses — so the two
@@ -100,7 +106,9 @@ impl ClientSpells {
         let root = log.parent()?.parent()?;
         Some(Self {
             path: root.join("spells_us.txt"),
+            dbstr_path: root.join("dbstr_us.txt"),
             table: OnceLock::new(),
+            categories: OnceLock::new(),
         })
     }
 
@@ -130,6 +138,27 @@ impl ClientSpells {
         self.table()?.get(&eqlog::names::spell_canon_key(name))
     }
 
+    /// THE WORDS BEHIND THE CATEGORY IDS (JOS-507), parsing `dbstr_us.txt` if nobody has yet.
+    ///
+    /// `spells_us.txt` files a spell under integer ids and nothing else; the string table one
+    /// directory over is where `114` becomes `Taps`. Both live in the install the attach named, so
+    /// this needs no new configuration and no discovery — see [`ClientSpells::beside_log`].
+    ///
+    /// AN UNREADABLE STRING TABLE IS AN EMPTY MAP, NOT A FAILURE, and that is the same judgement
+    /// `table` makes about a missing spell table one paragraph up. What it costs is exact and small:
+    /// every id resolves to no word, so a row reports no category and a surface offers no category
+    /// filter — which is a degraded LIST rather than a broken one. Refusing the whole search because
+    /// the second file is absent would turn a cosmetic loss into an outage.
+    ///
+    /// THE READ IS THE SAME SHAPE AS THE TABLE'S: on whichever connection thread asks first, exactly
+    /// once per install, memoised including its failure. It is a tenth of the spell table's size.
+    pub fn category_names(&self) -> &CategoryNames {
+        self.categories.get_or_init(|| {
+            read_latin1(&self.dbstr_path)
+                .map_or_else(CategoryNames::new, |text| parse_spell_categories(&text))
+        })
+    }
+
     /// WHY there is no answer, for a surface that has to say something. Forces the read, like
     /// [`ClientSpells::table`], because "is it there" cannot be answered without looking.
     #[must_use]
@@ -155,9 +184,16 @@ impl ClientSpells {
 /// `from_utf8_lossy` would do exactly that, so the bytes are widened one at a time instead, which
 /// is what latin1 IS.
 fn read(path: &Path) -> Option<SpellTable> {
+    Some(parse_spells_us(&read_latin1(path)?))
+}
+
+/// One client file's bytes, widened to text. See [`read`] for why the encoding is latin-1 and why
+/// `from_utf8_lossy` is the wrong tool: it would SUBSTITUTE a replacement character, and in both of
+/// these files the thing it would corrupt is a NAME, which is a join key on one side and a display
+/// string on the other.
+fn read_latin1(path: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
-    let text: String = bytes.iter().map(|&b| char::from(b)).collect();
-    Some(parse_spells_us(&text))
+    Some(bytes.iter().map(|&b| char::from(b)).collect())
 }
 
 #[cfg(test)]

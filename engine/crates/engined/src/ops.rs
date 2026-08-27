@@ -29,8 +29,9 @@ use protocol::generated::{
     ViewUnsubscribeRequestOp,
 };
 use protocol::generated::{
-    ClientSpell, ClientSpellDebuff, ClientSpellDebuffAxis, ClientSpellSlot, ResistAxis,
-    ResistSpellRequestOp, ResistSpellResult, SpellTableState,
+    ClassAbbr, ClientSpell, ClientSpellDebuff, ClientSpellDebuffAxis, ClientSpellSlot, ResistAxis,
+    ResistSpellRequestOp, ResistSpellResult, SpellCatalogueRow, SpellCategoryFacet,
+    SpellClassLevel, SpellSort, SpellTableState, SpellsSearchRequestOp, SpellsSearchResult,
 };
 use protocol::generated::{LogsListRequestOp, LogsListResult, LogsSetDirRequestOp};
 
@@ -103,6 +104,91 @@ fn client_spell(info: &fold::spells_us::SpellInfo) -> ClientSpell {
                 max: d.max,
             })
             .collect(),
+    }
+}
+
+/// The most spell rows one `spells.search` window may hold.
+///
+/// It is a bound on a stranger's request rather than a tuned number, and it is generous on purpose:
+/// this is a BROWSE as much as a search — a player scrolling `Direct Damage` for their combo is
+/// looking at a list, not at a type-ahead — so the cap sits well above any page a surface draws
+/// while staying far enough under the frame ceiling that no window can approach it. The corpus
+/// behind it is ~48k rows, which is exactly why the window exists.
+const MAX_SPELL_ROWS: i64 = 200;
+
+/// What a `spells.search` with no `limit` gets.
+const DEFAULT_SPELL_ROWS: i64 = 50;
+
+/// CLAMPED, NEVER REFUSED — [`clamp_hits`]'s argument, applied to the same kind of number.
+fn clamp_spell_rows(limit: Option<i64>) -> usize {
+    let wanted = limit.map_or(DEFAULT_SPELL_ROWS, |n| n.clamp(0, MAX_SPELL_ROWS));
+    usize::try_from(wanted).unwrap_or(0)
+}
+
+/// The wire's answer to one `spells.search`.
+///
+/// `found` is `None` when there is no table to search, which is an EMPTY ANSWER rather than a
+/// failure — `spell_table` beside it says which of the three situations produced it, and `path`
+/// names the place this engine looked so the sentence a surface writes can be specific.
+fn spells_search_result(
+    found: Option<&crate::spell_search::Found>,
+    spells: &crate::spells::ClientSpells,
+    offset: usize,
+    limit: usize,
+) -> SpellsSearchResult {
+    let as_i64 = |n: usize| i64::try_from(n).unwrap_or(i64::MAX);
+    SpellsSearchResult {
+        spells: found
+            .map(|f| {
+                f.rows
+                    .iter()
+                    .map(|row| SpellCatalogueRow {
+                        name: row.name.clone(),
+                        level: i64::from(row.level),
+                        classes: row
+                            .classes
+                            .iter()
+                            .map(|c| SpellClassLevel {
+                                // EVERY CODE THIS PARSER PRODUCES IS A WIRE MEMBER — both lists are
+                                // the same sixteen classes — so the fallback is unreachable and is
+                                // written as a WARRIOR rather than a panic, because a row with one
+                                // class mis-spelled is a smaller failure than a dead connection.
+                                class: ClassAbbr::try_from(c.class).unwrap_or(ClassAbbr::War),
+                                level: i64::from(c.level),
+                            })
+                            .collect(),
+                        category: row.category.clone(),
+                        subcategory: row.subcategory.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        total: found.map_or(0, |f| as_i64(f.total)),
+        offset: as_i64(offset),
+        limit: as_i64(limit),
+        categories: found
+            .map(|f| {
+                f.categories
+                    .iter()
+                    .map(|facet| SpellCategoryFacet {
+                        name: facet.name.clone(),
+                        subcategories: facet.subcategories.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        spell_table: table_state(spells),
+        path: spells.path().to_string_lossy().into_owned(),
+    }
+}
+
+/// The client table's state in the wire's words. Shared by the two ops that report it, so the two
+/// can never describe the same three situations differently.
+fn table_state(spells: &crate::spells::ClientSpells) -> SpellTableState {
+    match spells.state() {
+        crate::spells::TableState::Ok => SpellTableState::Ok,
+        crate::spells::TableState::Missing => SpellTableState::Missing,
+        crate::spells::TableState::Unloadable => SpellTableState::Unloadable,
     }
 }
 
@@ -546,16 +632,94 @@ impl Session {
                         ReplyResult::ResistSpellResult(ResistSpellResult {
                             spell: spells.spell(&name).map(client_spell),
                             spell_name: name,
-                            table: match spells.state() {
-                                crate::spells::TableState::Ok => SpellTableState::Ok,
-                                crate::spells::TableState::Missing => SpellTableState::Missing,
-                                crate::spells::TableState::Unloadable => {
-                                    SpellTableState::Unloadable
-                                }
-                            },
+                            table: table_state(&spells),
                             path: spells.path().to_string_lossy().into_owned(),
                         }),
                     ),
+                }
+            }
+
+            // ── SPELLS.SEARCH (JOS-507) ────────────────────────────────────────────────────────
+            //
+            // THE CLIENT'S SPELL CATALOGUE, SEARCHED BY TYPE. The in-game Actions/Spells window can
+            // search by TYPE, and it can because `spells_us.txt` files every spell under a category
+            // and a subcategory id while `dbstr_us.txt` says what those ids are called. Both are in
+            // the install the attach named, so this op adds no configuration and no discovery.
+            //
+            // A WINDOW, NEVER THE TABLE — the same standing ruling `resist.spell` lives under, and
+            // the reason this is a filtered/sorted/windowed query rather than a bulk read that the
+            // app would then re-cut. The engine does the whole job so the renderer can draw the rows
+            // in the order they arrive (ruling 4).
+            //
+            // THE ONE REFUSAL IS THE SAME ONE `resist.spell` HAS: nothing attached means no log,
+            // which means no directory to look beside. Everything else is an ANSWER — a missing
+            // table, an unreadable one, a filter that excludes everything — and `spellTable` and
+            // `path` ride every reply so a surface can tell those apart and name the place it looked.
+            ClientMessage::SpellsSearchRequest(request) => {
+                let params = request.params;
+                match world.client_spells() {
+                    None => error(
+                        request.id,
+                        ErrorCode::Unavailable,
+                        "no log is attached, so there is no install to read a spell table beside"
+                            .to_owned(),
+                    ),
+                    Some(spells) => {
+                        // THE CLASS CODES BECOME THE CLIENT FILE'S COLUMNS HERE, through the parser
+                        // that owns the file's column order — never through a second copy of it.
+                        // Every code the wire can carry has a column, because both lists are the
+                        // same sixteen classes; `filter_map` is the total function that says so
+                        // without a panic standing behind it.
+                        // SORTED AND DEDUPED, which is where this list's BOUND lives. The schema
+                        // carries no `maxItems` (it would generate a tuple union in TypeScript that
+                        // no ordinary array satisfies), so a stranger may send the same class ten
+                        // thousand times; after this it is at most sixteen entries by construction.
+                        // A repeated class was never meaningful, and the scope test below is a
+                        // linear scan per row — an unbounded one would be the whole cost of the op.
+                        let mut columns: Vec<usize> = params
+                            .classes
+                            .iter()
+                            .filter_map(|c| fold::spells_us::class_column(&c.to_string()))
+                            .collect();
+                        columns.sort_unstable();
+                        columns.dedup();
+                        let limit = clamp_spell_rows(params.limit);
+                        let offset = params
+                            .offset
+                            .and_then(|n| usize::try_from(n).ok())
+                            .unwrap_or(0);
+                        let query = crate::spell_search::Query {
+                            text: params.text.as_deref(),
+                            category: params.category.as_deref(),
+                            subcategory: params.subcategory.as_deref(),
+                            // ABSENT AND EMPTY ARE ONE STATE, and they have to be: an optional array
+                            // arrives in Rust as an empty `Vec` with its absence already gone, so
+                            // giving the two different meanings would make the languages disagree
+                            // about a request neither could round-trip. Both mean every class, which
+                            // is the surface's show-all.
+                            classes: (!columns.is_empty()).then_some(columns.as_slice()),
+                            sort: match params.sort {
+                                Some(SpellSort::Name) => crate::spell_search::Sort::Name,
+                                Some(SpellSort::Level) | None => crate::spell_search::Sort::Level,
+                            },
+                            offset,
+                            limit,
+                        };
+                        // NO TABLE IS AN EMPTY ANSWER, NOT A FAILURE. `spellTable` beside it says
+                        // which of the three situations produced it.
+                        let found = spells.table().map(|table| {
+                            crate::spell_search::search(table, spells.category_names(), &query)
+                        });
+                        reply(
+                            request.id,
+                            ReplyResult::SpellsSearchResult(spells_search_result(
+                                found.as_ref(),
+                                &spells,
+                                offset,
+                                limit,
+                            )),
+                        )
+                    }
                 }
             }
 
@@ -1074,6 +1238,7 @@ fn is_known_op(op: &str) -> bool {
         KnowledgeDefineRequestOp::KnowledgeDefine.to_string(),
         ResistLevelsRequestOp::ResistLevels.to_string(),
         ResistSpellRequestOp::ResistSpell.to_string(),
+        SpellsSearchRequestOp::SpellsSearch.to_string(),
         LogsSetDirRequestOp::LogsSetDir.to_string(),
         LogsListRequestOp::LogsList.to_string(),
     ]
@@ -1083,8 +1248,12 @@ fn is_known_op(op: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify, refuse, Outcome, Session, Unreadable, MAX_MOB_LEVEL_ASKS};
+    use super::{
+        classify, refuse, Outcome, Session, Unreadable, DEFAULT_SPELL_ROWS, MAX_MOB_LEVEL_ASKS,
+        MAX_SPELL_ROWS,
+    };
     use crate::world::World;
+    use protocol::generated::{ClassAbbr, SpellTableState, SpellsSearchRequestOp};
     use protocol::generated::{
         ClientMessage, EchoParams, EchoRequest, EchoRequestOp, EngineMessage, ErrorCode,
         ErrorReply, Hello, HelloOp, ModuleSnapshotParams, ModuleSnapshotRequest,
@@ -1427,6 +1596,237 @@ mod tests {
         let refusal = refusal_for(resist_levels(15, 1));
         assert_eq!(*refusal.id, 15);
         assert!(matches!(refusal.error.code, ErrorCode::Unavailable));
+    }
+
+    // ── spells.search (JOS-507) ───────────────────────────────────────────────────────────────
+
+    /// One `spells.search`. Every filter is optional, so the helper takes the two the claims below
+    /// actually vary and leaves the rest absent.
+    fn spells_search(
+        id: i64,
+        text: Option<&str>,
+        classes: &[ClassAbbr],
+        limit: Option<i64>,
+    ) -> ClientMessage {
+        ClientMessage::SpellsSearchRequest(protocol::generated::SpellsSearchRequest {
+            id: RequestId(id),
+            op: SpellsSearchRequestOp::SpellsSearch,
+            params: protocol::generated::SpellsSearchParams {
+                text: text.map(str::to_owned),
+                category: None,
+                subcategory: None,
+                classes: classes.to_vec(),
+                sort: None,
+                offset: None,
+                limit,
+            },
+        })
+    }
+
+    /// A staged install: a directory with a `Logs/` beside a hand-authored `spells_us.txt` and
+    /// `dbstr_us.txt`. HAND-AUTHORED, always — the client's files are Daybreak's and no slice of
+    /// either may enter this repo.
+    fn staged_install(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "engined-ops-spells-{}-{}-{tag}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(dir.join("Logs")).expect("a scratch install");
+
+        let row = |id: &str, name: &str, cat: &str, sub: &str, class: usize, level: &str| {
+            let mut f = vec!["0".to_string(); 173];
+            for field in f.iter_mut().take(52).skip(36) {
+                *field = "255".to_string();
+            }
+            f[0] = id.to_owned();
+            f[1] = name.to_owned();
+            f[86] = cat.to_owned();
+            f[87] = sub.to_owned();
+            f[36 + class] = level.to_owned();
+            f.join("^")
+        };
+        std::fs::write(
+            dir.join("spells_us.txt"),
+            format!(
+                "{}\n{}\n{}\n",
+                // SHD 1, Taps / Health — the row the owner's screenshot settled.
+                row("341", "Lifetap", "114", "43", 4, "1"),
+                // SHD 34, Taps / Power Tap — no `tap` in the name at all.
+                row("343", "Siphon Strength", "114", "76", 4, "34"),
+                // WIZ 29, Direct Damage — matched by neither name nor type.
+                row("600", "Lightning Bolt", "25", "0", 11, "29"),
+            ),
+        )
+        .expect("the staged spell table");
+        std::fs::write(
+            dir.join("dbstr_us.txt"),
+            "114^5^Taps^0^\n43^5^Health^0^\n76^5^Power Tap^0^\n25^5^Direct Damage^0^\n",
+        )
+        .expect("the staged string table");
+        dir
+    }
+
+    #[test]
+    fn spells_search_is_an_op_this_build_knows() {
+        // The known-op list is built from the generated tag enums, and an op missing from it answers
+        // `unknownOp` to a request with a typo'd param — which sends a client hunting for a missing
+        // feature instead of for its own mistake.
+        let raw = serde_json::json!({"id": 60, "op": "spells.search", "params": {"txt": "tap"}});
+        let Some(EngineMessage::ErrorReply(refusal)) = refuse(&classify(&raw)) else {
+            panic!("a refusal");
+        };
+        assert!(matches!(refusal.error.code, ErrorCode::BadParams));
+    }
+
+    #[test]
+    fn a_spells_search_with_nothing_attached_is_unavailable() {
+        // THE ONE REFUSAL THIS OP HAS, and it is about the world rather than the request: no log
+        // means no install directory to look beside. Note this canNOT use `refusal_for`, which
+        // attaches — see the second half.
+        let (world, mut session) = table();
+        let messages = sent(session.dispatch(&world, spells_search(61, Some("tap"), &[], None)));
+        let [EngineMessage::ErrorReply(refusal)] = messages.as_slice() else {
+            panic!("a refusal, got {messages:?}");
+        };
+        assert_eq!(*refusal.id, 61);
+        assert!(matches!(refusal.error.code, ErrorCode::Unavailable));
+    }
+
+    #[test]
+    fn an_attached_install_with_no_spell_table_answers_rather_than_refuses() {
+        // AND THIS IS THE HALF THAT MATTERS MORE. An `EQ_INSTALL_DIR` pointed at a folder of logs
+        // with no EverQuest behind it is a real configuration, and what it must produce is a list
+        // that says so — naming the path it looked at — never an error a surface has to translate.
+        // Flattening it into `unavailable` would also put an ordinary state into every error log
+        // this app collects.
+        let (world, mut session) = table();
+        world.attach(A_LOG, None);
+        let messages = sent(session.dispatch(&world, spells_search(64, Some("tap"), &[], None)));
+        let [EngineMessage::Reply(reply)] = messages.as_slice() else {
+            panic!("a reply, got {messages:?}");
+        };
+        let ReplyResult::SpellsSearchResult(result) = &reply.result else {
+            panic!("a spells.search result");
+        };
+        assert!(matches!(result.spell_table, SpellTableState::Missing));
+        assert!(result.spells.is_empty());
+        assert!(result.categories.is_empty());
+        assert_eq!(result.total, 0);
+        assert!(
+            result.path.ends_with("spells_us.txt"),
+            "the sentence a missing table produces has to name a place"
+        );
+    }
+
+    #[test]
+    fn a_tap_search_answers_off_the_players_own_two_files() {
+        let dir = staged_install("tap");
+        let (world, mut session) = table();
+        world.attach(
+            dir.join("Logs")
+                .join("eqlog_Primitive_freeport.txt")
+                .to_string_lossy()
+                .as_ref(),
+            None,
+        );
+        let messages = sent(session.dispatch(
+            &world,
+            spells_search(62, Some("tap"), &[ClassAbbr::Shd, ClassAbbr::Brd], None),
+        ));
+        let [EngineMessage::Reply(reply)] = messages.as_slice() else {
+            panic!("a reply, got {messages:?}");
+        };
+        let ReplyResult::SpellsSearchResult(result) = &reply.result else {
+            panic!("a spells.search result");
+        };
+        // LEVEL DESCENDING, the in-game window's order.
+        let names: Vec<&str> = result.spells.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Siphon Strength", "Lifetap"]);
+        // …AND `Siphon Strength` HAS NO `tap` IN ITS NAME. It is in the list because its CATEGORY is
+        // `Taps`, which is the whole capability this op exists for.
+        let siphon = &result.spells[0];
+        assert_eq!(siphon.level, 34);
+        assert_eq!(siphon.category.as_deref(), Some("Taps"));
+        assert_eq!(siphon.subcategory.as_deref(), Some("Power Tap"));
+        assert_eq!(siphon.classes.len(), 1);
+        assert!(matches!(siphon.classes[0].class, ClassAbbr::Shd));
+        assert_eq!(siphon.classes[0].level, 34);
+        // The words come from the player's own string table and ride the answer so a control can be
+        // drawn from them — the app cannot ship this list.
+        assert_eq!(result.total, 2);
+        assert_eq!(result.categories.len(), 1);
+        assert_eq!(result.categories[0].name, "Taps");
+        assert_eq!(result.categories[0].subcategories, ["Health", "Power Tap"]);
+        // `spellTable` and `path` ride EVERY answer, and the field is `spellTable` rather than
+        // `table` because `resist.spell` owns that word in the app's guard matrix.
+        assert!(matches!(result.spell_table, SpellTableState::Ok));
+        assert!(result.path.ends_with("spells_us.txt"));
+        assert_eq!(result.offset, 0);
+        assert_eq!(result.limit, DEFAULT_SPELL_ROWS);
+    }
+
+    #[test]
+    fn an_over_long_limit_is_clamped_rather_than_refused_and_the_reply_says_so() {
+        let dir = staged_install("clamp");
+        let (world, mut session) = table();
+        world.attach(
+            dir.join("Logs")
+                .join("eqlog_Primitive_freeport.txt")
+                .to_string_lossy()
+                .as_ref(),
+            None,
+        );
+        let messages = sent(session.dispatch(&world, spells_search(63, None, &[], Some(100_000))));
+        let [EngineMessage::Reply(reply)] = messages.as_slice() else {
+            panic!("a reply");
+        };
+        let ReplyResult::SpellsSearchResult(result) = &reply.result else {
+            panic!("a spells.search result");
+        };
+        // ECHOING THE EFFECTIVE NUMBER rather than the requested one is what lets a caller notice it
+        // was clamped — a silently shrunk window it cannot see is a window it did not ask for.
+        assert_eq!(result.limit, MAX_SPELL_ROWS);
+        // No class scope is every class, so the wizard's row is here too.
+        assert_eq!(result.total, 3);
+    }
+
+    #[test]
+    fn a_repeated_class_is_deduped_rather_than_scanned_ten_thousand_times() {
+        // THE BOUND ON THIS LIST LIVES HERE rather than in the schema: a `maxItems` with no
+        // `minItems` anchor generates a tuple union in TypeScript that no ordinary array satisfies,
+        // and this list must be allowed to be empty. So the columns are sorted and deduped, and a
+        // stranger sending the same class ten thousand times gets the same answer as one sending it
+        // once — for the same work, which is the half that matters.
+        let dir = staged_install("dedupe");
+        let (world, mut session) = table();
+        world.attach(
+            dir.join("Logs")
+                .join("eqlog_Primitive_freeport.txt")
+                .to_string_lossy()
+                .as_ref(),
+            None,
+        );
+        let mut answer = |classes: &[ClassAbbr]| {
+            let messages = sent(session.dispatch(&world, spells_search(65, None, classes, None)));
+            let [EngineMessage::Reply(reply)] = messages.as_slice() else {
+                panic!("a reply");
+            };
+            let ReplyResult::SpellsSearchResult(result) = &reply.result else {
+                panic!("a spells.search result");
+            };
+            result
+                .spells
+                .iter()
+                .map(|s| s.name.clone())
+                .collect::<Vec<_>>()
+        };
+        let once = answer(&[ClassAbbr::Shd]);
+        let many = answer(&vec![ClassAbbr::Shd; 10_000]);
+        assert_eq!(once, many);
+        assert_eq!(once, ["Siphon Strength", "Lifetap"]);
     }
 
     // ── logs.setDir / logs.list (owner ruling 21, decision sheet 1a — JOS-498) ─────────────────

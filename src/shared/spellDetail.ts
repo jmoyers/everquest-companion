@@ -27,6 +27,60 @@
 
 import type { SpellMetrics } from './spellMetrics'
 import type { FocusKind } from './wornFocus'
+import type { ClassAbbr } from './classCombo'
+
+// ── THE LINE, WHICH IS NOT THE RANK (JOS-508) ──────────────────────────────────────────────────
+//
+// Everything above this comment's own header talks about RANKS — the roman-numeral tail, and the
+// `lineage` block that enumerates the ranks a source names. What follows is the OTHER thing this
+// repo calls a line, and the two must never be conflated again: an UPGRADE LADDER, `Minor Healing`
+// → `Light Healing` → `Healing` → `Greater Healing`, which is a per-class ordering of DIFFERENT
+// spells. `src/main/data/spellLineLookup.ts` states the boundary in full ("A RANK IS NOT A LINE");
+// its data is the committed research table `src/main/data/spellLines.json`, and the ladder is
+// keyed BY CLASS because the same name sits at a different rung for a cleric and a shaman.
+//
+// THE LEVELS ARE TWO DIFFERENT CLAIMS AND ARE CARRIED SEPARATELY. `SpellLineStep.level` is the
+// level the ladder's OWN class gains that rung at — a fact about the table. `yoursAt` is when the
+// CURRENT COMBO gets it, which is the minimum over the classes the loadout has actually resolved,
+// and is `null` when none of them can cast that rung at all. Averaging them, or letting one stand
+// in for the other, is exactly the wrong answer a player would act on.
+
+/** One rung of an upgrade ladder, as the committed research table orders it. */
+export interface SpellLineStep {
+  /** the spell's name, as the table spells it. */
+  name: string
+  /** the level `SpellLinePath.cls` gains this rung at — the table's own number. */
+  level: number
+  /** true for the one rung the drilldown is about. Exactly one step carries it, or none. */
+  queried: boolean
+  /**
+   * WHEN THE CURRENT COMBO GETS THIS RUNG — the lowest level any RESOLVED class of the loadout
+   * gains it at, read off the spell DB's own per-class levels rather than off the ladder.
+   *
+   * `null` is the honest "not for your classes": either the loadout is unknown, or no class in it
+   * can cast this rung. It is never filled in with the ladder's own level, because a paladin
+   * reading a cleric's ladder must not be told he gets Complete Healing at 39.
+   */
+  yoursAt: number | null
+}
+
+/** The ladder one class files one spell under, with the spell's own place in it marked. */
+export interface SpellLinePath {
+  /** the research line's display name ("Healing"). */
+  line: string
+  /** whose ladder this is — a ladder has no class-free reading (spellLineLookup.ts). */
+  cls: ClassAbbr
+  /** true when `cls` is one of the loadout's resolved classes. False ⇒ say so on screen. */
+  mine: boolean
+  /** false for destination/per-item SETS (travel rings, Imbue gems, poison tiers). */
+  ladder: boolean
+  /** every rung, in the table's own level order. Never re-sorted downstream (ruling 4). */
+  steps: SpellLineStep[]
+  /** the nearest strictly-lower rung, or null. Same rule `replacedBy` applies on the row. */
+  prior: string | null
+  /** the nearest strictly-higher rung, or null. */
+  next: string | null
+}
 
 /** One worn focus effect that lifted one side of a spell's figures (JOS-452). */
 export interface SpellDetailFocus {
@@ -158,6 +212,24 @@ export interface SpellDetail {
   /** null when the name carries no numeral AND no source names any other rank of its line. */
   lineage: SpellLineage | null
   /**
+   * THE UPGRADE LADDER THIS SPELL SITS ON (JOS-508) — see the header block above `SpellLineStep`
+   * for why this is a different thing from `lineage` and must stay one.
+   *
+   * `null` when no class's research ladder carries the name at all, which is most of the catalog
+   * (the table places 1,789 members and the DB holds ~1,900 spells, but the two sets only partly
+   * overlap). The drilldown draws no progression then, rather than a ladder of one.
+   */
+  linePath: SpellLinePath | null
+  /**
+   * THE LOADOUT THE JOIN WAS READ AGAINST — the combo module's RESOLVED classes, in its own order.
+   *
+   * Empty is a real and common answer: a fresh log, or a combo that knows two of three slots and
+   * nothing about the third. It rides the record so the page can say WHOSE levels it is printing
+   * rather than implying they are yours, and so a card that reports "not for your classes" can
+   * distinguish that from "we do not know your classes yet".
+   */
+  combo: ClassAbbr[]
+  /**
    * THE WIKI BADGES THIS SPELL'S PAGE OUT OF ERA (JOS-393) — `true` or absent, never `false`, the
    * law `SpellEntry.outOfEra` states in full.
    *
@@ -223,6 +295,72 @@ export function spellFactsAreForLine(d: SpellDetail): boolean {
 export function spellClassLine(d: SpellDetail): string | null {
   if (d.classLevels.length === 0) return null
   return d.classLevels.map((c) => `${c.cls} ${String(c.level)}`).join(' · ')
+}
+
+// ── THE LADDER'S OWN SELECTION (JOS-508) ───────────────────────────────────────────────────────
+//
+// The same discipline the stat rows keep, one section down the page: a sentence exists if and only
+// if a source stated the thing behind it, and every one of these is a pure function of the record
+// so the drilldown's prose is unit-tested rather than read off a screenshot. The renderer maps
+// these; it never sorts, filters or aggregates the steps (ruling 4).
+
+/**
+ * WHEN YOU GET THIS RUNG, in words — or the honest refusal.
+ *
+ * Three answers and never a fourth: a level the loadout actually reaches, "not for your classes"
+ * when the resolved loadout cannot cast it, and "loadout unknown" when there is no resolved
+ * loadout to ask. The third is not the second: a player whose combo has not been inferred yet has
+ * been told nothing, and telling him the spell is not his would be a claim nobody made.
+ */
+export function spellStepWhen(step: SpellLineStep, combo: readonly ClassAbbr[]): string {
+  if (step.yoursAt !== null) return `you: ${String(step.yoursAt)}`
+  return combo.length === 0 ? 'loadout unknown' : 'not for your classes'
+}
+
+/**
+ * IS THIS ONE OF THE CLASSES YOU ARE PLAYING?
+ *
+ * A one-line predicate with a widening in it, and the widening is why it is HERE rather than
+ * inline at the chip: `classLevels` types its class as a bare `string` (it predates the closed
+ * `ClassAbbr` union in this record) while `combo` is the union, so a caller comparing them has to
+ * widen ONE of the two. Doing it once, in the file that owns both fields, keeps the cast out of
+ * the renderer and out of any future second reader.
+ */
+export function spellClassIsYours(d: SpellDetail, cls: string): boolean {
+  return (d.combo as readonly string[]).includes(cls)
+}
+
+/**
+ * WHOSE LADDER THIS IS, when it is not yours — or null when it is.
+ *
+ * The page leads with a progression, and a progression drawn from a class you are not playing is
+ * a useful thing to see and a dangerous thing to mistake for your own. `mine` decides; the class
+ * is named either way by the heading, so this line exists only to carry the caveat.
+ */
+export function spellLineNote(d: SpellDetail): string | null {
+  const path = d.linePath
+  if (path === null || path.mine) return null
+  return d.combo.length === 0
+    ? `${path.cls} levels - your loadout is not known yet`
+    : `${path.cls} levels - not one of your classes`
+}
+
+/**
+ * THE NEIGHBOUR SENTENCE — what this spell replaces and what replaces it, or null when the table
+ * names neither.
+ *
+ * A SET rather than a ladder (`ladder: false` — travel destinations, the Imbue gems, the poison
+ * tiers) names no neighbour at all by the lookup's own rule, so this is null for those and the
+ * page still draws the membership. "Ring of Butcher replaces Ring of Surefall Glade" is a sentence
+ * about two different places, not about an upgrade.
+ */
+export function spellNeighbourLine(d: SpellDetail): string | null {
+  const path = d.linePath
+  if (path === null) return null
+  const parts: string[] = []
+  if (path.prior !== null) parts.push(`replaces ${path.prior}`)
+  if (path.next !== null) parts.push(`replaced by ${path.next}`)
+  return parts.length === 0 ? null : parts.join(' · ')
 }
 
 /**

@@ -1014,6 +1014,21 @@ export const IPC = {
   // The token stays in the preload's closure and in the client it serves; it is never persisted,
   // never put in the DOM, and dies with the renderer.
   onEnginePort: 'engine:port',
+  // main -> renderer, PUSH: one `EngineLaunchSay` whenever the engine's LAUNCH state changes
+  // (JOS-503) — the historical fold's progress while one is running, and the reason it will not
+  // start when it will not. Never null: there is always a launch state, and `starting` is the
+  // honest one before anything has happened. Pushed on change only, never polled; during a fold
+  // that is the engine's own ~4 Hz progress cadence and nothing at all once it is live.
+  onEngineLaunch: 'engine:launch',
+  // renderer -> main: what `onEngineLaunch` last pushed. Not a poll — the ONE read a window makes
+  // on mount, because a push-only channel leaves a renderer that started (or reloaded) after the
+  // engine failed with no way to learn about a state that will never change again.
+  // Returns: EngineLaunchSay.
+  engineLaunchState: 'engine:launchState',
+  // renderer -> main: the failure card's RETRY button. Forgives the crash-loop trail, cancels any
+  // pending backoff and launches now (src/main/dataServer/supervisor.ts `restart`). A respawn is a
+  // launch (spawn contract rule 5), so this is a fresh token, port and epoch world. Returns void.
+  engineRetry: 'engine:retry',
 
   // ---- misc pushes ----
   onLine: 'log:line',

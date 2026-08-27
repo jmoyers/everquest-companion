@@ -162,6 +162,27 @@ function describePerf(message: PerfMessage): string {
   return `${message.op}#${String(message.id)}`
 }
 
+/**
+ * The client's spell-catalogue family (JOS-507) — one op today, given a family for the reason the
+ * header records about the last split: `describeCore`'s own branches are what put that function over
+ * the complexity ceiling, and lint caught this one adding the thirteenth. A family is the shape this
+ * file already reaches for when that happens.
+ */
+type SpellsMessage = Extract<ClientMessage, { op: `spells.${string}` }>
+
+function isSpells(message: ClientMessage): message is SpellsMessage {
+  return message.op.startsWith('spells.')
+}
+
+function describeSpells(message: SpellsMessage): string {
+  // IT NAMES WHAT IT FILTERED BY, because that is the whole question here: a `tap` TEXT search and a
+  // `Taps` CATEGORY search return overlapping lists for entirely different reasons, and a transcript
+  // printing only the id could not tell the two apart — which is exactly the distinction the JOS-507
+  // fixture exists to show.
+  const by = message.params.text ?? message.params.category ?? ''
+  return `${message.op}#${String(message.id)} ${JSON.stringify(by)}`
+}
+
 /** Same trick on the client half. */
 export function describeClient(message: ClientMessage): string {
   // ORDER IS LOAD-BEARING: `knowledge.define` satisfies both tests at runtime, and it belongs to the
@@ -170,13 +191,17 @@ export function describeClient(message: ClientMessage): string {
   if (isCombat(message)) return describeCombat(message)
   if (isKnowledge(message)) return describeKnowledge(message)
   if (isPerf(message)) return describePerf(message)
+  if (isSpells(message)) return describeSpells(message)
   return describeCore(message)
 }
 
 /** The un-familied core of the client union — split from `describeClient` when the third family
  *  landed and the dispatcher's own branches put one function over the complexity ceiling. */
 function describeCore(
-  message: Exclude<ClientMessage, DefineMessage | CombatMessage | KnowledgeMessage | PerfMessage>
+  message: Exclude<
+    ClientMessage,
+    DefineMessage | CombatMessage | KnowledgeMessage | PerfMessage | SpellsMessage
+  >
 ): string {
   switch (message.op) {
     case 'hello':

@@ -55,8 +55,9 @@ use crate::combat::procwindows::WindowFold;
 use crate::combat::routing::{self, Attribution, HealLine, MissLine, MitigationLine, ResistLine};
 use crate::combat::spellfacts::is_pet_summon_spell;
 use crate::combat::state::EngineState;
-use crate::event::Event;
-use eqlog::names::id_key;
+use crate::event::{Event, Key, Kind};
+use eqlog::names::{id_key, id_key_ref};
+use std::borrow::Cow;
 
 /// Fold one canonical event into the state machine.
 pub fn ingest_event(st: &mut EngineState, ev: &Event) {
@@ -110,7 +111,7 @@ fn sweep_coat_class(st: &mut EngineState, ev: &Event) {
     if st.coat_utility.is_none() && st.coat_combat.is_empty() {
         return;
     }
-    let states_loadout = matches!(ev.kind(), "selfWho" | "level");
+    let states_loadout = matches!(ev.kind_of(), Kind::SelfWho | Kind::Level);
     if !states_loadout && ev.ts() - st.coat_class_checked_ts < CLASS_CHECK_MS {
         return;
     }
@@ -129,7 +130,7 @@ const CLASS_CHECK_MS: i64 = 15 * 60_000;
 // ── WORLD ─────────────────────────────────────────────────────────────────────────────────────
 
 fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
-    match ev.kind() {
+    match ev.kind_of() {
         // CHARACTER REBIRTH — a same-name character was wiped and recreated. The DPS meter is
         // session-scoped (the live encounter history and the zone aggregate, already reset on every
         // zone line), so we deliberately KEEP it: a rebirth is not a reason to lose the current
@@ -141,7 +142,7 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
         // …and the SPECIAL-ATTACK LANES retire with them: "you will now use Dragon Punch" was said to
         // the PREVIOUS character. The lanes fall back to the parser's generic names until this
         // character's own state line says otherwise, never a carried-over guess.
-        "epoch" => {
+        Kind::Epoch => {
             finalize_current(st);
             st.pet_names.clear();
             st.world.reset();
@@ -158,13 +159,13 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
             st.specials.reset();
             true
         }
-        "zone" => {
+        Kind::Zone => {
             finalize_current(st);
             // Freeze the just-left stay's aggregate into the capped history BEFORE resetting, so its
             // overall meter stays selectable. A stay with no attributed damage is dropped, matching
             // the empty-encounter drop rule.
             st.finalize_zone_session(ZoneSessionClose::Zone);
-            st.zone = ev.str("zone").map(str::to_string);
+            st.zone = ev.str(Key::Zone).map(str::to_string);
             // The accumulator half of the boundary — shared with the session mark. Everything BELOW
             // this line is the part a mark deliberately omits, because it is a statement about the
             // ROOM changing and a mark makes no such statement.
@@ -181,15 +182,15 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
             // Somebody else's charm cannot survive a zone either, and neither can a cast in flight.
             // The friendly SET survives — it is about people, not about the room.
             st.ally.zone();
-            let zone = ev.str("zone").unwrap_or_default().to_owned();
+            let zone = ev.str(Key::Zone).unwrap_or_default().to_owned();
             st.log(ev.ts(), "zone", "info", format!("▸ entered {zone}"));
             true
         }
-        "charm" => {
+        Kind::Charm => {
             ingest_charm(st, ev);
             true
         }
-        "petClaim" => {
+        Kind::PetClaim => {
             // …INCLUDING THE ONE THIS ENGINE ITSELF DERIVES. `via: 'petBuff'` never comes off a line:
             // it is `bind_pet_buff_landing` handed to the bus, and the bus delivers it straight back
             // here. Re-binding would be harmless — every route is idempotent — but the refusal is
@@ -197,45 +198,48 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
             // the emitter so the two can never be moved apart. This fold installs no emitter (the
             // golden's construction does not), so the kind cannot arrive; the guard is stated because
             // its absence is a property of the construction and not of the rule.
-            if ev.str("via") != Some("petBuff") {
-                if let Some(name) = ev.str("name").map(str::to_string) {
-                    let via = ev.str("via").unwrap_or("tell").to_owned();
+            if ev.str(Key::Via) != Some("petBuff") {
+                if let Some(name) = ev.str(Key::Name).map(str::to_string) {
+                    let via = ev.str(Key::Via).unwrap_or("tell").to_owned();
                     bind_pet_claim(st, &name, ev.ts(), &via);
                 }
             }
             true
         }
-        "allyPetLeader" => {
+        Kind::AllyPetLeader => {
             // The speaker just named somebody its leader, which settles what it IS whether or not
             // the ally model goes on to bind it.
-            if let Some(pet) = ev.str("pet") {
-                let why = format!("named {} its leader", ev.str("owner").unwrap_or_default());
+            if let Some(pet) = ev.str(Key::Pet) {
+                let why = format!(
+                    "named {} its leader",
+                    ev.str(Key::Owner).unwrap_or_default()
+                );
                 st.retract_other(&id_key(pet), &why);
             }
             ingest_ally_pet_leader(st, ev);
             true
         }
-        "petSay" => {
+        Kind::PetSay => {
             // A `says` line is BROADCAST and proves nothing about whose pet the speaker is — that is
             // JOS-49's ruling and it stands. What it DOES prove is that the speaker is SOMEBODY's
             // pet, which is exactly the fact the record-everything ladder cannot get any other way:
             // EQ spells a summoned pet's name with the same grammar it gives people, so without this
             // the strangers' pets in a raid keep rows of their own. Measured on the owner's whole
             // log: it settles 8 names no other rung reaches.
-            if let Some(name) = ev.str("name") {
+            if let Some(name) = ev.str(Key::Name) {
                 let why = format!(
                     "said a pet sentence ({})",
-                    ev.str("say").unwrap_or_default()
+                    ev.str(Key::Say).unwrap_or_default()
                 );
                 st.retract_other(&id_key(name), &why);
             }
             true
         }
-        "uncharm" => {
+        Kind::Uncharm => {
             // `Your <charm spell> spell has worn off of <mob>` — only the CASTER sees this, so it is
             // also retroactive proof the bind was ours. Corroborate FIRST (a bind that ends this way
             // was real even if the pet never spoke or swung), then release.
-            if let Some(mob) = ev.str("mob").map(str::to_string) {
+            if let Some(mob) = ev.str(Key::Mob).map(str::to_string) {
                 let key = id_key(&mob);
                 st.charm.note_pet_evidence(&key);
                 st.world.uncharm(&mob, ev.ts());
@@ -246,11 +250,11 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
             }
             true
         }
-        "cc" => {
+        Kind::Cc => {
             ingest_cc(st, ev);
             true
         }
-        "death" => {
+        Kind::Death => {
             ingest_death(st, ev);
             true
         }
@@ -263,7 +267,7 @@ fn ingest_world(st: &mut EngineState, ev: &Event) -> bool {
 /// an observation — nothing else — so it stays available to the petClaim PROMOTE path and never
 /// enters the attribution set.
 fn ingest_charm(st: &mut EngineState, ev: &Event) {
-    let Some(mob) = ev.str("mob").map(str::to_string) else {
+    let Some(mob) = ev.str(Key::Mob).map(str::to_string) else {
         return;
     };
     let key = id_key(&mob);
@@ -387,7 +391,7 @@ fn bind_pet_claim(st: &mut EngineState, name: &str, ts: i64, via: &str) {
 /// `<PetName> says, 'My leader is <Player>.'` about SOMEBODY ELSE — the strongest ally bind, and the
 /// only one that reaches a stranger's SUMMONED pet.
 fn ingest_ally_pet_leader(st: &mut EngineState, ev: &Event) {
-    let (Some(pet), Some(owner)) = (ev.str("pet"), ev.str("owner")) else {
+    let (Some(pet), Some(owner)) = (ev.str(Key::Pet), ev.str(Key::Owner)) else {
         return;
     };
     let (pet, owner) = (pet.to_string(), owner.to_string());
@@ -442,12 +446,12 @@ fn ingest_ally_pet_leader(st: &mut EngineState, ev: &Event) {
 /// shape is exempt by construction: it is derived from `Your <spell> spell has worn off of <mob>`,
 /// which only the caster sees and which names us as that caster.
 fn ingest_cc(st: &mut EngineState, ev: &Event) {
-    let refresh = ev.bool("refresh");
+    let refresh = ev.bool(Key::Refresh);
     if !refresh && !st.charm.cc_broadcast(ev.ts()) {
         // A stranger's crowd control is an observation about the room, not an event in our fight —
         // and the refusal is SAID, because a line the engine dropped on purpose is the half a bug
         // report can never see any other way.
-        let mob = ev.str("mob").unwrap_or_default().to_owned();
+        let mob = ev.str(Key::Mob).unwrap_or_default().to_owned();
         st.log(
             ev.ts(),
             "cc",
@@ -456,7 +460,7 @@ fn ingest_cc(st: &mut EngineState, ev: &Event) {
         );
         return;
     }
-    let Some(mob) = ev.str("mob").map(str::to_string) else {
+    let Some(mob) = ev.str(Key::Mob).map(str::to_string) else {
         return;
     };
     eval_closure(st, ev.ts());
@@ -473,7 +477,7 @@ fn ingest_cc(st: &mut EngineState, ev: &Event) {
         .insert(inst.instance_id, ev.ts() + CC_HOLD_MS);
     st.last_activity_ts = ev.ts();
     let tag = if refresh { "refresh" } else { "applied" };
-    let spell = match ev.str("spell") {
+    let spell = match ev.str(Key::Spell) {
         Some(s) => format!(" ({s})"),
         None => String::new(),
     };
@@ -481,7 +485,7 @@ fn ingest_cc(st: &mut EngineState, ev: &Event) {
 }
 
 fn ingest_death(st: &mut EngineState, ev: &Event) {
-    let Some(name) = ev.str("name").map(str::to_string) else {
+    let Some(name) = ev.str(Key::Name).map(str::to_string) else {
         return;
     };
     let key = id_key(&name);
@@ -498,10 +502,10 @@ fn ingest_death(st: &mut EngineState, ev: &Event) {
             format!("✕ {} died - {}'s pet is gone", gone.display, gone.charmer),
         );
     }
-    let killer_key = if ev.bool("bySelf") {
+    let killer_key = if ev.bool(Key::BySelf) {
         Some("you".to_string())
     } else {
-        ev.str("killer").map(id_key)
+        ev.str(Key::Killer).map(id_key)
     };
     let res = st.world.death(&name, ev.ts(), killer_key.as_deref());
     let pet_note = if res.was_pet { " (pet)" } else { "" };
@@ -529,32 +533,32 @@ fn ingest_death(st: &mut EngineState, ev: &Event) {
 /// The sentence a mitigation line gets in the ring — `mitigationLine`, verbatim, and the ONE branch
 /// on `mtype` that decides which of the three prevention shapes it was.
 fn mitigation_line(ev: &Event) -> String {
-    let source = ev.str("source").unwrap_or("?");
-    match ev.str("mtype") {
-        Some("rune") => format!("⛊ rune +{} absorption", ev.int("amount").unwrap_or(0)),
+    let source = ev.str(Key::Source).unwrap_or("?");
+    match ev.str(Key::Mtype) {
+        Some("rune") => format!("⛊ rune +{} absorption", ev.int(Key::Amount).unwrap_or(0)),
         Some("absorbSwing") => format!("⛊ absorbed {source}'s blow"),
         _ => format!("⛊ absorbed {source}'s damage shield"),
     }
 }
 
 fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
-    match ev.kind() {
-        "damage" => {
+    match ev.kind_of() {
+        Kind::Damage => {
             ingest_damage(st, ev);
             true
         }
-        "heal" => {
+        Kind::Heal => {
             let line = HealLine {
                 ts: ev.ts(),
-                target: ev.str("target").unwrap_or_default().to_string(),
-                healer: ev.str("healer").map(str::to_string),
-                amount: ev.int("amount").unwrap_or(0),
-                raw_amount: ev.int("rawAmount"),
-                spell: ev.str("spell").map(str::to_string),
-                crit: ev.bool("crit"),
+                target: ev.str(Key::Target).unwrap_or_default().to_string(),
+                healer: ev.str(Key::Healer).map(str::to_string),
+                amount: ev.int(Key::Amount).unwrap_or(0),
+                raw_amount: ev.int(Key::RawAmount),
+                spell: ev.str(Key::Spell).map(str::to_string),
+                crit: ev.bool(Key::Crit),
             };
             routing::route_heal(st, &line);
-            fold_heal_analytics(st, &line, ev.bool("overTime"));
+            fold_heal_analytics(st, &line, ev.bool(Key::OverTime));
             let spell = match &line.spell {
                 Some(s) => format!(" ({s})"),
                 None => String::new(),
@@ -575,12 +579,12 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
         // A heal with NO AMOUNT cannot enter the proc model — a 0-amount "Mend proc" is a fabricated
         // observation — so it reaches the healing ledger's own count-lane and nothing else. It never
         // opens, joins or extends an encounter and never moves the damage timeline (law 8).
-        "healUnstated" => {
-            routing::route_heal_unstated(st, ev.ts(), ev.str("skill").unwrap_or_default());
+        Kind::HealUnstated => {
+            routing::route_heal_unstated(st, ev.ts(), ev.str(Key::Skill).unwrap_or_default());
             // …and the ring SAYS SO out loud rather than printing a 0 that reads like a measurement.
             let (target, skill) = (
-                ev.str("target").unwrap_or_default().to_owned(),
-                ev.str("skill").unwrap_or_default().to_owned(),
+                ev.str(Key::Target).unwrap_or_default().to_owned(),
+                ev.str(Key::Skill).unwrap_or_default().to_owned(),
             );
             st.log(
                 ev.ts(),
@@ -592,39 +596,39 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
         }
         // Damage PREVENTED, not hit points restored, so it never touches a DAMAGE total. It does reach
         // the HEALING total as a rune/absorbed row.
-        "mitigation" => {
+        Kind::Mitigation => {
             routing::route_mitigation(
                 st,
                 &MitigationLine {
                     ts: ev.ts(),
-                    mtype: ev.str("mtype").unwrap_or_default(),
-                    amount: ev.int("amount"),
+                    mtype: ev.str(Key::Mtype).unwrap_or_default(),
+                    amount: ev.int(Key::Amount),
                 },
             );
             st.log(ev.ts(), "mitigation", "info", mitigation_line(ev));
             true
         }
-        "miss" => {
-            let Some(mtype) = ev.str("mtype").and_then(MissType::parse) else {
+        Kind::Miss => {
+            let Some(mtype) = ev.str(Key::Mtype).and_then(MissType::parse) else {
                 return true;
             };
-            let attacker = ev.str("attacker").unwrap_or_default().to_string();
+            let attacker = ev.str(Key::Attacker).unwrap_or_default().to_string();
             routing::route_miss(
                 st,
                 &MissLine {
                     ts: ev.ts(),
                     attacker: attacker.clone(),
-                    target: ev.str("target").unwrap_or_default().to_string(),
+                    target: ev.str(Key::Target).unwrap_or_default().to_string(),
                     mtype,
-                    verb: ev.str("verb").map(str::to_string),
+                    verb: ev.str(Key::Verb).map(str::to_string),
                     // A miss line names no skill, so the round lane's floor is the parser's own
                     // `meleeSkill(verb)` answer, reached through the parser's own port so the two
                     // ends cannot answer differently.
                     verb_skill: ev
-                        .str("verb")
+                        .str(Key::Verb)
                         .map(|v| eqlog::parse::combat::melee_skill(v).to_string()),
                     modifiers: ev
-                        .arr_str("modifiers")
+                        .arr_str(Key::Modifiers)
                         .iter()
                         .map(|s| s.to_string())
                         .collect(),
@@ -632,7 +636,7 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
             );
             // YOUR avoided swing is still a swing ATTEMPT, and the mechanical proc denominator is
             // attempts — a proc that cannot fire on a miss still had the chance to.
-            if id_key(&attacker) == "you" {
+            if id_key_ref(&attacker) == "you" {
                 fold_both(st, ev.ts(), |agg, active| {
                     agg.windows.fold(
                         &WindowFold {
@@ -647,14 +651,14 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
             }
             true
         }
-        "resist" => {
-            let caster = ev.str("caster").unwrap_or_default().to_string();
-            let spell = ev.str("spell").unwrap_or_default().to_string();
-            let incoming = ev.bool("incoming");
+        Kind::Resist => {
+            let caster = ev.str(Key::Caster).unwrap_or_default().to_string();
+            let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
+            let incoming = ev.bool(Key::Incoming);
             // `<mob> resisted your <Charm>!` is the third way an armed cast fails to land. Only OUR
             // OWN outgoing resist counts; an incoming one — we shrugged off a mob's spell — says
             // nothing about what we were casting.
-            if !incoming && id_key(&caster) == "you" {
+            if !incoming && id_key_ref(&caster) == "you" {
                 // A FULLY-RESISTED cast landed NOTHING, so like a fizzle it must not stay in the window
                 // to claim the next proc of the same name. `forget` drops only an UNCLAIMED record,
                 // which is what keeps a partially-resisted AoE honest: if a target of the same firing
@@ -667,7 +671,7 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
                 &ResistLine {
                     ts: ev.ts(),
                     caster,
-                    target: ev.str("target").unwrap_or_default().to_string(),
+                    target: ev.str(Key::Target).unwrap_or_default().to_string(),
                     spell,
                     incoming,
                 },
@@ -683,12 +687,15 @@ fn ingest_combat(st: &mut EngineState, ev: &Event) -> bool {
 fn ingest_damage(st: &mut EngineState, ev: &Event) {
     // Caster-less other-player DoTs (`attacker: null`) are not our fight — and the RAW LINE is what
     // the ring keeps for one, because there is nothing else to say about a line nobody owns.
-    let Some(attacker) = ev.str("attacker").map(str::to_string) else {
+    let Some(attacker) = ev.str(Key::Attacker) else {
         st.log(ev.ts(), "other", "dropped", ev.raw().to_owned());
         return;
     };
     eval_closure(st, ev.ts());
-    let dmg = to_damage_event(st, ev, attacker);
+    // Built here rather than inside `to_damage_event` so the record can BORROW it — see that
+    // function's header.
+    let modifiers = ev.arr_str(Key::Modifiers);
+    let dmg = to_damage_event(st, ev, attacker, &modifiers);
     // WHERE IT CAME FROM, BEFORE IT IS FILED. The verdict names the LANE, so it has to be reached
     // before `route()` folds the hit — and it is reached exactly once, here, because it CONSUMES the
     // cast claim (asking twice would take two claims off one cast line and count the second landing as
@@ -697,22 +704,32 @@ fn ingest_damage(st: &mut EngineState, ev: &Event) {
     // The lane a cast-less firing lands in. A fresh record, never a mutation of the one the ledger
     // gets: `spell_procs` is keyed by the SPELL, so the ledger row, its PPM and its tag stay ONE lane
     // however many meter rows the spell now occupies.
+    //
+    // THE CLONE IS NOW FREE (JOS-506) and the record is still fresh. Every field but `skill` and
+    // `category` is a reference and `category` is borrowed on this path, so `dmg.clone()` copies
+    // pointers rather than re-allocating eight strings and a list — which is what it did on every
+    // cast-less firing in the log before this.
     let laned = match origin {
         None => None,
         Some(o) => Some(DamageEvent {
-            skill: lane_name_for(&dmg.skill, o),
+            skill: Cow::Owned(lane_name_for(&dmg.skill, o)),
             ..dmg.clone()
         }),
     };
     // Read the engine's active-time clock either side of `route()`: the DIFFERENCE is the exact
     // capped-gap delta it accrued for this hit. A fresh encounter (one `route()` opened) contributes
     // 0, which is precisely what the routing path does for a first hit.
+    //
+    // ONE CLONE, AND ONLY THE ONE THAT HAS TO CROSS THE `&mut` (JOS-506). The `before` reading is
+    // owned because `route()` takes the whole state mutably and may replace the encounter under it;
+    // the `after` reading has no such problem and used to clone anyway, which cost a second heap
+    // allocation on EVERY damage line in the log to answer a question that is a string COMPARE.
     let enc_before = st.current.as_ref().map(|e| e.id.clone());
     let active_before = st.current.as_ref().map_or(0, |e| e.active_ms);
     let Some(at) = routing::route(st, laned.as_ref().unwrap_or(&dmg)) else {
         return;
     };
-    let same_encounter = st.current.as_ref().map(|e| e.id.clone()) == enc_before;
+    let same_encounter = st.current.as_ref().map(|e| e.id.as_str()) == enc_before.as_deref();
     let delta = if same_encounter {
         st.current.as_ref().map_or(0, |e| e.active_ms) - active_before
     } else {
@@ -731,13 +748,13 @@ fn damage_origin(st: &mut EngineState, ev: &DamageEvent) -> Option<SpellOrigin> 
     if ev.amount <= 0 {
         return None;
     }
-    if !proc_eligible_damage(&ev.dtype, &ev.skill) {
+    if !proc_eligible_damage(ev.dtype, &ev.skill) {
         return None;
     }
-    if id_key(&ev.attacker) != "you" {
+    if id_key_ref(ev.attacker) != "you" {
         return None;
     }
-    if routing::classify(st, &ev.attacker, &ev.target) != Attribution::OutYou {
+    if routing::classify(st, ev.attacker, ev.target) != Attribution::OutYou {
         return None;
     }
     // The cast ledger answers cast-or-not; the held-clicky set is what turns a `proc` verdict into a
@@ -752,17 +769,32 @@ fn damage_origin(st: &mut EngineState, ev: &DamageEvent) -> Option<SpellOrigin> 
 ///
 /// `active` is the state timeline's O(1) open set, read at the event's own instant and PASSED (never
 /// re-read) into every accumulator, because the whole point of folding on ingest is that "what was on
-/// when this fired" is knowable only now. It is CLONED once per fold rather than borrowed, because the
-/// set and the two aggregates are three fields of one state object.
+/// when this fired" is knowable only now.
+///
+/// IT IS BORROWED, NOT CLONED (JOS-506). The clone was here because `fresh_encounter` takes `&mut
+/// self` and the set is a third field of the same state object — but `state_timeline`, `zone_agg` and
+/// `current` are DISJOINT FIELDS, and the borrow checker allows exactly that split as long as the
+/// freshness question is asked BEFORE the mutable borrow is taken. `fresh_encounter_id` is that
+/// question, already spelled once in `state.rs` beside `fresh_encounter` itself, so this reads the
+/// rule rather than restating it.
+///
+/// The semantics are untouched and cannot drift: `f` is handed `&mut Agg` and `&HashSet`, so it has
+/// no way to reach the timeline and mutate the set mid-fold — which is the one thing the clone was
+/// protecting against, and the type system was already protecting against it. What the clone
+/// actually cost was a fresh hash table plus one heap allocation PER OPEN SPAN, on every damage
+/// line, every avoided swing and every cast-less heal in the log.
 fn fold_both(
     st: &mut EngineState,
     ts: i64,
     f: impl Fn(&mut crate::combat::aggregate::Agg, &std::collections::HashSet<String>),
 ) {
-    let active = st.state_timeline.active.clone();
-    f(&mut st.zone_agg, &active);
-    if let Some(enc) = st.fresh_encounter(ts) {
-        f(&mut enc.agg, &active);
+    let fresh = st.fresh_encounter_id(ts);
+    f(&mut st.zone_agg, &st.state_timeline.active);
+    if fresh {
+        let active = &st.state_timeline.active;
+        if let Some(enc) = st.current.as_mut() {
+            f(&mut enc.agg, active);
+        }
     }
 }
 
@@ -827,7 +859,7 @@ fn fold_heal_analytics(st: &mut EngineState, ev: &HealLine, over_time: bool) {
     let Some(spell) = ev.spell.clone() else {
         return;
     };
-    if id_key(ev.healer.as_deref().unwrap_or("")) != "you" {
+    if id_key_ref(ev.healer.as_deref().unwrap_or("")) != "you" {
         return;
     }
     let quick_buff_ts = st.quick_buff_ts;
@@ -869,35 +901,43 @@ fn fold_heal_analytics(st: &mut EngineState, ev: &HealLine, over_time: bool) {
 /// the amount, the type, the category and the attribution are untouched, so every damage total stays
 /// byte-identical (law 8's tripwire). Gated on the attacker being YOU, because the state line is
 /// first-person-only and a mob's `strikes` must stay generic melee.
-fn to_damage_event(st: &EngineState, ev: &Event, attacker: String) -> DamageEvent {
-    let verb = ev.str("verb").map(str::to_string);
-    let mut skill = ev.str("skill").unwrap_or_default().to_string();
-    if id_key(&attacker) == "you" {
-        if let Some(lane) = st.specials.lane_skill(verb.as_deref()) {
-            skill = lane.to_string();
+/// THE MODIFIER LIST IS THE CALLER'S (JOS-506). `arr_str` has to build a list — the payload stores
+/// the tokens as a run rather than as a slice — so it is built ONCE, in `ingest_damage`'s frame, and
+/// the record borrows it. That is what lets the record itself be pure references: a `Vec<&str>` over
+/// no modifiers (which is the overwhelming majority of lines) allocates nothing at all, where the
+/// `Vec<String>` this replaces allocated a string per token AND a list to hold them.
+fn to_damage_event<'a>(
+    st: &EngineState,
+    ev: &'a Event,
+    attacker: &'a str,
+    modifiers: &'a [&'a str],
+) -> DamageEvent<'a> {
+    let verb = ev.str(Key::Verb);
+    let mut skill = Cow::Borrowed(ev.str(Key::Skill).unwrap_or_default());
+    if id_key_ref(attacker) == "you" {
+        if let Some(lane) = st.specials.lane_skill(verb) {
+            // The one owned spelling on this path, and it has to be: the lane name is the ENGINE's
+            // state, not the event's, so it cannot be borrowed for the event's lifetime.
+            skill = Cow::Owned(lane.to_string());
         }
     }
-    let modifiers: Vec<String> = ev
-        .arr_str("modifiers")
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let dtype = ev.str("dtype").unwrap_or_default().to_string();
+    let dtype = ev.str(Key::Dtype).unwrap_or_default();
     DamageEvent {
         ts: ev.ts(),
         attacker,
-        target: ev.str("target").unwrap_or_default().to_string(),
-        amount: ev.int("amount").unwrap_or(0),
+        target: ev.str(Key::Target).unwrap_or_default(),
+        amount: ev.int(Key::Amount).unwrap_or(0),
         // Prefer the parse-time category; derive as a fallback so any path that omits it still
-        // aggregates under the right axis.
-        category: ev
-            .str("category")
-            .map(str::to_string)
-            .unwrap_or_else(|| eqlog::taxonomy::damage_category(&dtype, &modifiers).to_string()),
+        // aggregates under the right axis. The fallback answers with a `'static` taxonomy constant,
+        // so neither arm allocates.
+        category: match ev.str(Key::Category) {
+            Some(c) => Cow::Borrowed(c),
+            None => Cow::Borrowed(eqlog::taxonomy::damage_category(dtype, modifiers)),
+        },
         dtype,
-        dclass: ev.str("dclass").map(str::to_string),
+        dclass: ev.str(Key::Dclass),
         skill,
-        crit: ev.bool("crit"),
+        crit: ev.bool(Key::Crit),
         modifiers,
         verb,
     }
@@ -910,9 +950,9 @@ fn to_damage_event(st: &EngineState, ev: &Event, attacker: String) -> DamageEven
 /// header) and the CHARM/CC/pet-buff ownership model, whose only honest owner signal is the
 /// exclusivity of `You begin casting <Spell>.`
 fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
-    match ev.kind() {
-        "castBegin" => {
-            if let Some(spell) = ev.str("spell") {
+    match ev.kind_of() {
+        Kind::CastBegin => {
+            if let Some(spell) = ev.str(Key::Spell) {
                 st.recent_casts.note(spell, ev.ts());
                 st.charm.note_cast_begin(spell, ev.ts());
             }
@@ -924,7 +964,7 @@ fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
             // present. A historical fold therefore never arms it, which is why every golden's
             // `petNudge` is absent and why the oracle cannot see this line at all.
             if !st.hydrating {
-                if let Some(spell) = ev.str("spell") {
+                if let Some(spell) = ev.str(Key::Spell) {
                     if is_pet_summon_spell(spell) {
                         st.pet_nudge.note_summon_cast(ev.ts());
                     }
@@ -932,10 +972,10 @@ fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
             }
             true
         }
-        "castFizzle" | "castInterrupted" => {
+        Kind::CastFizzle | Kind::CastInterrupted => {
             // A cast that resolved to nothing explains no landing, and nothing it might have
             // "resolved" is ours. An interrupt can still RECOVER, which is what `castResumed` is for.
-            if let Some(spell) = ev.str("spell") {
+            if let Some(spell) = ev.str(Key::Spell) {
                 st.recent_casts.forget(spell);
                 st.charm.note_cast_failed(spell, ev.ts());
                 // The same argument, for the nudge: a summon that never resolved summoned nothing,
@@ -947,11 +987,11 @@ fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
             }
             true
         }
-        "otherCastBegin" => {
+        Kind::OtherCastBegin => {
             // THE LINE COMBAT NEVER INGESTED — the only sentence in this log that says who ELSE is
             // casting what, and therefore the only thing that can name the owner of a caster-less
             // `<mob> has been charmed.` broadcast.
-            let (Some(caster), Some(spell)) = (ev.str("caster"), ev.str("spell")) else {
+            let (Some(caster), Some(spell)) = (ev.str(Key::Caster), ev.str(Key::Spell)) else {
                 return true;
             };
             let caster_key = id_key(caster);
@@ -969,7 +1009,7 @@ fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
         // and will land, so give it back its claim, with its ORIGINAL cast ts. DELIBERATELY does not
         // re-arm the charm/CC model: that model's own evidence rules are a separate question and were
         // not measured here.
-        "castResumed" => {
+        Kind::CastResumed => {
             st.recent_casts.resume();
             true
         }
@@ -985,16 +1025,16 @@ fn ingest_cast(st: &mut EngineState, ev: &Event) -> bool {
 /// same question and none of them is an event in a fight: they are what the character has DECIDED to
 /// do, persisting across pulls and zones until the game prints a different decision.
 fn ingest_choice(st: &mut EngineState, ev: &Event) -> bool {
-    match ev.kind() {
-        "stanceChange" => {
-            if let Some(name) = ev.str("stance").map(str::to_string) {
+    match ev.kind_of() {
+        Kind::StanceChange => {
+            if let Some(name) = ev.str(Key::Stance).map(str::to_string) {
                 apply_stance(st, "stance", &name, ev.ts());
                 st.log(ev.ts(), "stance", "info", format!("▸ stance: {name}"));
             }
             true
         }
-        "invocationChange" => {
-            if let Some(name) = ev.str("invocation").map(str::to_string) {
+        Kind::InvocationChange => {
+            if let Some(name) = ev.str(Key::Invocation).map(str::to_string) {
                 apply_stance(st, "invocation", &name, ev.ts());
                 st.log(
                     ev.ts(),
@@ -1005,11 +1045,11 @@ fn ingest_choice(st: &mut EngineState, ev: &Event) -> bool {
             }
             true
         }
-        "specialAttack" => {
+        Kind::SpecialAttack => {
             // `You will now use Dragon Punch instead of Eagle Strike while attacking.` — the ONE line
             // that names the special behind an otherwise anonymous `You strike …`. It opens nothing,
             // closes nothing, and moves no total; it changes what a later swing is CALLED.
-            if let Some(skill) = ev.str("skill").map(str::to_string) {
+            if let Some(skill) = ev.str(Key::Skill).map(str::to_string) {
                 let lane = st.specials.note(&skill);
                 // A special OUTSIDE the verified lane table is still SEEN and still logged. Saying so
                 // is the honest report: the line was read and deliberately not acted on.
@@ -1017,7 +1057,7 @@ fn ingest_choice(st: &mut EngineState, ev: &Event) -> bool {
                     None => " (no verb lane - label unchanged)".to_owned(),
                     Some(l) => format!(" ({l} lane)"),
                 };
-                let from = match ev.str("replaces") {
+                let from = match ev.str(Key::Replaces) {
                     Some(r) => format!(" instead of {r}"),
                     None => String::new(),
                 };
@@ -1039,34 +1079,34 @@ fn ingest_choice(st: &mut EngineState, ev: &Event) -> bool {
 /// coats · procs · dispel landings · Quick Buff · your own death. Everything here is an ANNOTATION:
 /// none of it opens, extends or closes an encounter.
 fn ingest_modifier(st: &mut EngineState, ev: &Event) {
-    match ev.kind() {
-        "poisonCoat" => route_coat(
+    match ev.kind_of() {
+        Kind::PoisonCoat => route_coat(
             st,
             &CoatLine {
                 ts: ev.ts(),
-                poison: ev.str("poison").unwrap_or("unknown"),
-                group: ev.str("group").unwrap_or("unknown"),
-                who: ev.str("who").unwrap_or_default(),
+                poison: ev.str(Key::Poison).unwrap_or("unknown"),
+                group: ev.str(Key::Group).unwrap_or("unknown"),
+                who: ev.str(Key::Who).unwrap_or_default(),
             },
         ),
-        "poisonDry" => route_dry(st, ev.str("group").unwrap_or_default(), ev.ts()),
-        "poisonProc" => route_proc(
+        Kind::PoisonDry => route_dry(st, ev.str(Key::Group).unwrap_or_default(), ev.ts()),
+        Kind::PoisonProc => route_proc(
             st,
             &ProcLine {
                 ts: ev.ts(),
-                strike: ev.str("strike").unwrap_or_default(),
+                strike: ev.str(Key::Strike).unwrap_or_default(),
                 candidates: ev
-                    .arr_str("candidates")
+                    .arr_str(Key::Candidates)
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                target: ev.str("target").unwrap_or_default(),
-                effect: ev.str("effect").unwrap_or_default(),
+                target: ev.str(Key::Target).unwrap_or_default(),
+                effect: ev.str(Key::Effect).unwrap_or_default(),
             },
         ),
-        "buffApply" => {
-            let names = ev.candidate_names("candidates");
-            let target = ev.str("target").unwrap_or_default().to_string();
+        Kind::BuffApply => {
+            let names = ev.candidate_names(Key::Candidates);
+            let target = ev.str(Key::Target).unwrap_or_default().to_string();
             // THE PET BIND RUNS FIRST so the three curated gates below see a world model that already
             // knows whose the buffed entity is. FOUR disjoint gates over ONE event, and not one of
             // them consumes another's lines: this one BINDS, the dispel family names a lane on a MOB,
@@ -1088,9 +1128,9 @@ fn ingest_modifier(st: &mut EngineState, ev: &Event) {
         // fade line has nothing else to say. Reading the wrong one silently answers an empty list, and
         // an empty list means this gate NEVER fires — which leaves every tracked buff span open to be
         // superseded or censored later instead of ending `observed` where the game printed an end.
-        "buffWearOff" => {
+        Kind::BuffWearOff => {
             let names: Vec<String> = ev
-                .arr_str("candidates")
+                .arr_str(Key::Candidates)
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
@@ -1100,12 +1140,12 @@ fn ingest_modifier(st: &mut EngineState, ev: &Event) {
         // ONLY — no cast line for any of them — so without this stamp 254 buff landings in the real
         // log read as cast-less procs. Recording the activation is the whole fix: the burst is cast
         // evidence in a different shape.
-        "aaActivate" => {
-            if id_key(ev.str("name").unwrap_or_default()) == QUICK_BUFF_AA {
+        Kind::AaActivate => {
+            if id_key_ref(ev.str(Key::Name).unwrap_or_default()) == QUICK_BUFF_AA {
                 st.quick_buff_ts = ev.ts();
             }
         }
-        "playerDeath" => {
+        Kind::PlayerDeath => {
             // BLADE COATS DIE WITH YOU. The wiki's Rogue page states poisons "remain active until
             // class swap or death", and the log corroborates it without ever printing a dry line:
             // `Your Paralytic Poison spell did not take hold. (Blocked by Neurotoxic Poison.)` at
@@ -1156,18 +1196,20 @@ fn ingest_modifier(st: &mut EngineState, ev: &Event) {
 /// stopped being attributed, CHECK THE CANDIDATE LIST FIRST — there is no time limit on a summoned
 /// pet and no rule here that drops one, so an absent bind is almost always a bind that never happened.
 fn bind_pet_buff_landing(st: &mut EngineState, ev: &Event) {
-    let target = ev.str("target").unwrap_or_default().to_string();
+    let target = ev.str(Key::Target).unwrap_or_default().to_string();
     // The parser emits `target: 'self'` for the msgCastOnYou form; only a NAMED landing can bind.
     if target == "self" || target.is_empty() {
         return;
     }
-    let names = ev.candidate_names("candidates");
+    let names = ev.candidate_names(Key::Candidates);
     if !st.charm.pet_buff_landing(&names, ev.ts()) {
         return;
     }
     // A landing on YOURSELF is a self-buff the DB mislabels, never a pet — the third-person form can
     // still name you when another player's buff lands on you in the same second.
-    if id_key(&target) == st.player_key.clone().unwrap_or_default() {
+    // The `unwrap_or_default` is load-bearing and is kept verbatim: with no player key known yet the
+    // comparison is against the EMPTY string, which a whitespace-only target's key also is.
+    if id_key_ref(&target).as_ref() == st.player_key.as_deref().unwrap_or_default() {
         return;
     }
     bind_pet_claim(st, &target, ev.ts(), "petBuff");

@@ -60,6 +60,27 @@ const F_CLASS_FIRST: usize = 36;
 const F_CLASS_COUNT: usize = 16;
 /// The bard's index among the sixteen class-level fields (WAR CLR PAL RNG SHD DRU MNK BRD …).
 const CLASS_BARD: usize = 7;
+/// The spell's CATEGORY id — `Taps`, `Direct Damage`, `Heals` — as the in-game Actions/Spells
+/// window's Category column prints it. The word lives in `dbstr_us.txt` (see [`crate::dbstr`]);
+/// this column is only ever the number.
+///
+/// MEASURED AGAINST THE OWNER'S INSTALL (JOS-507, 2026-08-26) rather than transcribed from a
+/// third-party field map, because the owner's screenshot gave a ground truth to aim at: `Lifetap`
+/// reads `86 = 114`, which type 5 of the string table names `Taps`, and `87 = 43`, which it names
+/// `Health` — the exact two words the screenshot shows in those two columns for that spell. Across
+/// the whole file column 86 carries 64 distinct ids and column 87 carries 162, and every one of
+/// them is a name the string table has.
+const F_CATEGORY: usize = 86;
+/// The spell's SUBCATEGORY id — `Health`, `Duration Tap`, `Power Tap` under `Taps`. See
+/// [`F_CATEGORY`] for the measurement that settled both indices.
+///
+/// IT IS INDEPENDENT OF THE CATEGORY AND NOT NESTED UNDER IT: nine rows on the owner's install carry
+/// a subcategory with NO category (a handful of rogue poisons filed under `Misc`), so a reader that
+/// only looked at 87 when 86 was set would silently lose them. Column 88 is a THIRD such column —
+/// 37 distinct names, and only three rows in the whole `Taps` family use it — and it is deliberately
+/// not read: the game's own window prints two columns, and a third would be this parser claiming a
+/// surface the client does not have.
+const F_SUBCATEGORY: usize = 87;
 const F_RESIST_ADJ: usize = 78;
 const F_AE_MAX_TARGETS: usize = 143;
 const F_SLOTS: usize = 172;
@@ -171,6 +192,36 @@ pub struct HpDuration {
 /// rows read, and a 0 mana is what every bard song says.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpellInfo {
+    /// The row's OWN spelling of the name, kept because the table is keyed by
+    /// [`eqlog::names::spell_canon_key`] and a folded key is not something a surface may print.
+    ///
+    /// THE CLIENT'S SPELLING OUTRANKS THE WIKI'S, always — the repo already says so where the two
+    /// disagree (`spellCorrectionsList.ts`'s fifth drift class, restoring `Invisibility vs. Undead`
+    /// against a retitled wiki page). This is that same authority at its source.
+    pub name: String,
+    /// The category id, or `None` when the row files itself under none. See [`F_CATEGORY`].
+    ///
+    /// ABSENT-MEANS-NOTHING, like every other optional here: 34,462 of the file's ~74k rows carry a
+    /// zero in this column, and a zero is the file saying "uncategorised" rather than naming
+    /// category zero — there is no category zero, the string table's ids start at 1.
+    pub category: Option<u32>,
+    /// The subcategory id, or `None`. See [`F_SUBCATEGORY`] — independent of [`SpellInfo::category`]
+    /// rather than nested under it.
+    pub subcategory: Option<u32>,
+    /// The level each of the sixteen classes learns this at, `0` meaning the class cannot use it.
+    ///
+    /// WHY THE WHOLE ROW IS KEPT AND NOT JUST A FLAG: the level is what the in-game window SORTS BY
+    /// and prints, and a spell list scoped to a class combo has to answer "at what level" per class
+    /// in that combo. The two booleans this file already derived ([`SpellInfo::song`] and the
+    /// playability that decides a key contest) are now read off this array rather than computed
+    /// beside it, so there is one traversal of the class columns and one definition of what a valid
+    /// level is.
+    ///
+    /// `u8` IS EXACT HERE AND NOT A TRUNCATION, measured: every one of the ~1.18M class-level cells
+    /// on the owner's install is an integer in `0..=255`, so nothing is lost narrowing them. The
+    /// valid window is `1..=254` — `255` is the file's "cannot use" and `0` is nothing — which the
+    /// `u8` holds exactly.
+    pub class_levels: ClassLevels,
     pub axis: Option<Axis>,
     pub resist_adj: f64,
     pub cast_ms: f64,
@@ -188,6 +239,34 @@ pub struct SpellInfo {
 
 /// The whole parsed table, keyed by `spellCanonKey(name)`.
 pub type SpellTable = HashMap<String, SpellInfo>;
+
+/// One row's sixteen class levels, in the file's own column order — WAR CLR PAL RNG SHD DRU MNK BRD
+/// ROG SHM NEC WIZ MAG ENC BST BER. `0` means the class cannot use the spell at all.
+///
+/// THE ORDER IS THE FILE'S AND IS NOT RE-DECLARED ANYWHERE ELSE IN THIS CRATE. It is confirmed from
+/// two directions: [`CLASS_BARD`] at index 7 has always been what makes a row a song, and the rows
+/// this module's own suite pins (Tashani at index 13 is an enchanter spell, Chaos Flux at 11 a
+/// wizard's, Malaisement at 10 a necromancer's) all read correctly under it.
+pub type ClassLevels = [u8; F_CLASS_COUNT];
+
+/// The sixteen class columns, in the file's order, spelled the way the APP spells a class
+/// (`src/shared/classCombo.ts CLASS_ABBRS`).
+///
+/// IT LIVES HERE BECAUSE THE ORDER IS A FACT ABOUT THE FILE, and this module is the only one that
+/// reads the file. A consumer scoping a spell list to a class combo needs to turn `SHD` into column
+/// 4, and the alternative — every consumer keeping its own copy of the order — is exactly the
+/// duplicated-join-key mistake `mapFromLoc` exists to prevent. NOTE the app's own list is sorted
+/// ALPHABETICALLY and this one is not: this is the client's column order and nothing may re-sort it.
+pub const CLASS_ORDER: [&str; F_CLASS_COUNT] = [
+    "WAR", "CLR", "PAL", "RNG", "SHD", "DRU", "MNK", "BRD", "ROG", "SHM", "NEC", "WIZ", "MAG",
+    "ENC", "BST", "BER",
+];
+
+/// The column a class code names, or `None` for a code this file has no column for.
+#[must_use]
+pub fn class_column(abbr: &str) -> Option<usize> {
+    CLASS_ORDER.iter().position(|&c| c == abbr)
+}
 
 // ── the JavaScript arithmetic this parser is written in ────────────────────────────────────────
 
@@ -443,28 +522,51 @@ fn hp_slots_of(slots: &[Slot], per_tick: bool) -> Vec<HpSlot> {
         .collect()
 }
 
-/// `classLevels` — whether ANY class can cast this, and whether only the bard can.
+/// `classLevels` — the level each of the sixteen classes learns this at, `0` for "cannot use".
 ///
 /// A valid level is `1..=254`: `>= 255` is the file's "cannot use" and `<= 0` is nothing. Note the
 /// bound is on the NUMBER rather than on an integer, exactly as the TypeScript's is — a
 /// non-integral value in that column would pass, which no real row has and both sides agree on.
-fn class_levels(f: &[&str]) -> (bool, bool) {
-    let mut any = false;
-    let mut non_bard = false;
-    let mut bard = false;
-    for i in 0..F_CLASS_COUNT {
+///
+/// THIS USED TO ANSWER TWO BOOLEANS and now answers the row those booleans are read off
+/// ([`any_class`], [`bard_only`]). The widening is what JOS-507's surface needs — a spell list scoped
+/// to a combo prints a level per class — and it collapses what were two traversals of the same
+/// sixteen columns into one definition of a valid level.
+fn class_levels(f: &[&str]) -> ClassLevels {
+    let mut levels: ClassLevels = [0; F_CLASS_COUNT];
+    for (i, level) in levels.iter_mut().enumerate() {
         let v = js_number(f.get(F_CLASS_FIRST + i).copied().unwrap_or(""));
         if !v.is_finite() || v >= 255.0 || v <= 0.0 {
             continue;
         }
-        any = true;
-        if i == CLASS_BARD {
-            bard = true;
-        } else {
-            non_bard = true;
+        // EXACT, NOT LOSSY: the guard above bounds `v` to `0 < v < 255`, and every class-level cell
+        // on the owner's install is an integer — so the narrowing drops nothing a real row carries.
+        // A hypothetical fractional level would floor, which is the reading a player would give it.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "bounded to 0 < v < 255 by the guard above; measured integral in every real row"
+        )]
+        {
+            *level = v as u8;
         }
     }
-    (any, bard && !non_bard)
+    levels
+}
+
+/// Can ANY class cast this? A row nobody can learn is a mob's or an item's copy, which is the one
+/// override on the table's first-wins dedupe.
+fn any_class(levels: &ClassLevels) -> bool {
+    levels.iter().any(|&l| l > 0)
+}
+
+/// Can ONLY the bard cast this? That is what makes a row a SONG rather than a cast.
+fn bard_only(levels: &ClassLevels) -> bool {
+    levels[CLASS_BARD] > 0
+        && levels
+            .iter()
+            .enumerate()
+            .all(|(i, &l)| i == CLASS_BARD || l == 0)
 }
 
 /// A field, as `f[i]` reads over there: `undefined` past the end, which `Number` reads as `NaN` and
@@ -473,10 +575,30 @@ fn field<'a>(f: &[&'a str], i: usize) -> Option<&'a str> {
     f.get(i).copied()
 }
 
+/// A category or subcategory id — `Number(x) || 0`, then absent-means-nothing.
+///
+/// A ZERO IS AN ABSENCE AND NOT AN ID: the string table's spell-category namespace starts at 1, so
+/// nothing names zero, and 34,462 of the file's rows carry one in the category column. The cast
+/// saturates rather than wrapping for an absurd value, which is harmless — an id no string table
+/// entry claims resolves to no word and the row simply reports no category.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "guarded positive; a value past u32 saturates to an id nothing names, which reads as no category"
+)]
+fn category_id(f: &[&str], i: usize) -> Option<u32> {
+    let v = js_number_or_zero(field(f, i));
+    (v > 0.0).then_some(v as u32)
+}
+
 /// `rowInfo` — one row's whole answer.
-fn row_info(f: &[&str]) -> SpellInfo {
+///
+/// The NAME and the CLASS LEVELS arrive from the caller rather than being re-read here: both are
+/// needed by [`parse_spells_us`] before it decides whether this row wins its key at all, and reading
+/// them twice would be two chances to disagree about what a valid level is.
+fn row_info(f: &[&str], name: &str, class_levels: ClassLevels) -> SpellInfo {
     let slots = parse_slots(field(f, F_SLOTS));
-    let (_any, bard_only) = class_levels(f);
+    let bard_only = bard_only(&class_levels);
     let recast_ms = js_number_or_zero(field(f, F_RECAST_MS));
     let ae = js_number_or_zero(field(f, F_AE_MAX_TARGETS));
     let mana = js_number_or_zero(field(f, F_MANA));
@@ -484,6 +606,10 @@ fn row_info(f: &[&str]) -> SpellInfo {
     let formula = js_number_or_zero(field(f, F_DURATION_FORMULA));
     let hp = hp_slots_of(&slots, formula != 0.0);
     SpellInfo {
+        name: name.to_owned(),
+        category: category_id(f, F_CATEGORY),
+        subcategory: category_id(f, F_SUBCATEGORY),
+        class_levels,
         // NOT `|| 0`: the resist type goes into `axisFromResistType` as `Number(...)` alone, and an
         // unparseable one is NaN, which matches no arm and is therefore `None` — the same answer a
         // chromatic spell gets, and the right one.
@@ -556,7 +682,8 @@ pub fn parse_spells_us(text: &str) -> SpellTable {
         if key.is_empty() {
             continue;
         }
-        let (playable, _bard_only) = class_levels(&f);
+        let levels = class_levels(&f);
+        let playable = any_class(&levels);
         if let Some(&held) = playable_by_key.get(&key) {
             // `prefer(existing, playable)` — replace only when the incumbent is unplayable and the
             // newcomer is not.
@@ -564,7 +691,7 @@ pub fn parse_spells_us(text: &str) -> SpellTable {
                 continue;
             }
         }
-        table.insert(key.clone(), row_info(&f));
+        table.insert(key.clone(), row_info(&f, name, levels));
         playable_by_key.insert(key, playable);
     }
     table
@@ -707,6 +834,32 @@ mod tests {
             (F_SLOTS, "1|46|40|0|100|40"),
         ]);
         assert!(info.debuff_slots.is_empty());
+    }
+
+    /// The class order is the FILE's, and these four rows are the cross-check: this module's own
+    /// suite has always pinned Tashani as an enchanter spell (column 13), Chaos Flux as a wizard's
+    /// (11) and Malaisement as a necromancer's (10), and the bard has been column 7 since the song
+    /// rule was written. If the order were wrong, every one of those would name the wrong class.
+    #[test]
+    fn the_class_order_is_the_files_and_names_the_classes_the_suite_already_pinned() {
+        assert_eq!(class_column("ENC"), Some(13));
+        assert_eq!(class_column("WIZ"), Some(11));
+        assert_eq!(class_column("NEC"), Some(10));
+        assert_eq!(class_column("BRD"), Some(CLASS_BARD));
+        assert_eq!(class_column("SHD"), Some(4));
+        assert_eq!(class_column("NOT A CLASS"), None);
+        // The app's own list is the same SET, alphabetically ordered — this one is the client's
+        // column order and is deliberately not sorted.
+        let mut sorted = CLASS_ORDER;
+        sorted.sort_unstable();
+        assert_eq!(
+            sorted,
+            [
+                "BER", "BRD", "BST", "CLR", "DRU", "ENC", "MAG", "MNK", "NEC", "PAL", "RNG", "ROG",
+                "SHD", "SHM", "WAR", "WIZ"
+            ],
+            "the same sixteen codes src/shared/classCombo.ts CLASS_ABBRS carries"
+        );
     }
 
     /// Mesmerization (`1|31|2|0|100|55`) — the level cap, from the PRIMARY slot.
@@ -881,6 +1034,74 @@ mod tests {
             // Unplayable rows still parse — they simply LOSE a key contest to a playable row.
             assert!(!table.values().next().expect("one").song);
         }
+    }
+
+    // ── the category columns (JOS-507) ────────────────────────────────────────────────────────
+
+    /// Lifetap — THE ROW THE OWNER'S SCREENSHOT SETTLED. `86 = 114` and `87 = 43` are what the
+    /// install really carries, and `dbstr_us.txt` type 5 names them `Taps` and `Health`, which is
+    /// exactly what the in-game window prints in those two columns for that spell. The words are
+    /// [`crate::dbstr`]'s business; the numbers are this file's.
+    #[test]
+    fn lifetap_carries_the_category_and_subcategory_the_screenshot_shows() {
+        let info = one(&[
+            (F_ID, "341"),
+            (F_NAME, "Lifetap"),
+            (F_CATEGORY, "114"),
+            (F_SUBCATEGORY, "43"),
+            (F_CLASS_FIRST + 4, "1"),
+            (F_CLASS_FIRST + 10, "1"),
+        ]);
+        assert_eq!(info.category, Some(114));
+        assert_eq!(info.subcategory, Some(43));
+        // …and the row's own spelling is kept, because the table is keyed by the folded key and a
+        // folded key is not something a surface may print.
+        assert_eq!(info.name, "Lifetap");
+        // SHD 1 and NEC 1 — the two classes the real row names, at the levels it names them.
+        assert_eq!(info.class_levels[4], 1);
+        assert_eq!(info.class_levels[10], 1);
+        assert_eq!(info.class_levels[7], 0, "the bard learns no lifetap");
+    }
+
+    /// A ZERO IS AN ABSENCE, not category zero — the string table's ids start at 1, and 34,462 of
+    /// the file's rows read zero here.
+    #[test]
+    fn an_uncategorised_row_reports_no_category_rather_than_zero() {
+        let info = one(&[(F_ID, "1"), (F_NAME, "Uncategorised")]);
+        assert_eq!(info.category, None);
+        assert_eq!(info.subcategory, None);
+    }
+
+    /// A SUBCATEGORY IS NOT NESTED UNDER A CATEGORY. Nine rows on the owner's install carry one with
+    /// no category at all — rogue poisons filed under `Misc` — and a reader that only looked at 87
+    /// when 86 was set would lose them silently.
+    #[test]
+    fn a_subcategory_with_no_category_is_still_read() {
+        let info = one(&[
+            (F_ID, "2398"),
+            (F_NAME, "Destroy Mind Poison"),
+            (F_SUBCATEGORY, "83"),
+        ]);
+        assert_eq!(info.category, None);
+        assert_eq!(info.subcategory, Some(83));
+    }
+
+    /// The class-level row is the whole row, and `255`/`0` are both "cannot use" in it — the same
+    /// window [`SpellInfo::song`] and the dedupe's playability have always used, now read once.
+    #[test]
+    fn the_class_levels_row_holds_a_level_per_class_and_zero_for_the_rest() {
+        let info = one(&[
+            (F_ID, "703"),
+            (F_NAME, "Chords of Dissonance"),
+            (F_CLASS_FIRST + CLASS_BARD, "5"),
+        ]);
+        assert_eq!(info.class_levels[CLASS_BARD], 5);
+        assert_eq!(
+            info.class_levels.iter().filter(|&&l| l > 0).count(),
+            1,
+            "every other class column defaults to 255, which is the file's cannot-use"
+        );
+        assert!(info.song);
     }
 
     // ── the row filters ───────────────────────────────────────────────────────────────────────

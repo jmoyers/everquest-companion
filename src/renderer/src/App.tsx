@@ -3,10 +3,11 @@ import { Box, CssBaseline } from '@mui/material'
 import type { AppFocus, CharacterRef, CharacterSnap } from '@shared/types'
 import TitleBar from './components/TitleBar'
 import NavDrawer from './components/NavDrawer'
-// The gear area's in-area tab bar (JOS-324) — four views behind one nav row. It sits ABOVE the
-// scrolling content box rather than inside it, so it stays put under a long table and so the
-// views' own `height: 100%` still means "the content area", not "the content area minus a bar".
-import GearAreaTabs from './components/GearAreaTabs'
+// THE CONTENT COLUMN — everything right of the nav drawer. Moved out of this file at its 400-
+// code-line ceiling (JOS-503), where the house rule is to split rather than to ratchet; it carries
+// the app's ONE scroller plus the two fixed bands above it (the gear area's in-area tab bar,
+// JOS-324, and the engine's launch banner, JOS-503). Its header holds all three arguments.
+import MainColumn from './components/MainColumn'
 // The two app-wide celebration snackbars — they fire on ANY tab, so they live at app level. Their
 // markup moved into its own file when this one hit the factoring ceiling (see its header).
 import CelebrationToasts from './components/CelebrationToasts'
@@ -15,7 +16,7 @@ import CelebrationToasts from './components/CelebrationToasts'
 // element and no state. Main guarantees it can ask at most once per candidate log per app session.
 import LogSwitchNudge from './components/LogSwitchNudge'
 import NoLogsEmptyState from './components/NoLogsEmptyState'
-import { VIEW_KEY, isGearAreaView, loadView, rememberGearTab, type View } from './appViews'
+import { VIEW_KEY, loadView, rememberGearTab, type View } from './appViews'
 // The app's navigation MODEL — the deep-link routers and their nonce contract. See appRouting.ts.
 import { useAppRouting, usePrefsRouting, type AppRouting, type PrefsRouting } from './appRouting'
 // The mouse's Back button (JOS-201): the app-level answer, behind whatever drill is on screen.
@@ -55,6 +56,8 @@ import DevTriageView from './devTriage'
 // keep the tree out of packaged bytes. The owner released the tab, so that file is gone and this is
 // an ordinary static import like the eleven views above it.
 import CharacterView from './features/character/CharacterView'
+import { SpellDrill } from './features/spells/SpellPage'
+import { SpellLinkProvider } from './lib/spellLink'
 import { OWNER_TOOLS } from './devFlags'
 import { useFeedbackDialog, type FeedbackPrefill } from './features/feedback/useFeedback'
 // Usage analytics (docs/plans/usage-analytics.md). The notice is mounted unconditionally and
@@ -175,6 +178,10 @@ function PlainView({
           to show it. Keyed like the rest — the sheet and its carry-all ledger are one character's,
           and the remount is how this app says that. */}
       {view === 'character' && <CharacterView key={viewKey} />}
+      {/* THE SPELL DRILLDOWN (JOS-508). Its view check and its payload check live in the feature
+          file, not here: this switch is one branch per view and a branch needing both would have
+          cost `PlainView` two points of the measured complexity ceiling. */}
+      <SpellDrill view={view} viewKey={viewKey} routing={routing} />
     </>
   )
 }
@@ -215,8 +222,15 @@ function ViewContent({
   // a machine with no EverQuest install must still reach it.
   if (OWNER_TOOLS && view === 'triage') return <DevTriageView />
   if (!hasCharacters) return <NoLogsEmptyState onOpenPreferences={onOpenPreferences} />
+  // EVERY SPELL NAME BELOW THIS LINE IS A LINK (JOS-508) — one provider rather than a prop threaded
+  // through AlertsView, BuffsView and LevelingView to the five places a name is drawn.
+  // `lib/spellLink.tsx`'s header carries the argument; the short form is that whether a spell name
+  // links is a property of the APP, not a per-caller decision. It sits HERE rather than at App's
+  // root because this is the exact subtree that draws spell names: Preferences and the owner-only
+  // triage tab return above it and draw none, and the overlay bundle — a different window, mounting
+  // no provider at all — keeps the plain text it has always had.
   return (
-    <>
+    <SpellLinkProvider open={routing.openSpell}>
       <PlainView
         view={view}
         viewKey={viewKey}
@@ -276,7 +290,7 @@ function ViewContent({
           onFocusConsumed={routing.clearCombatFocus}
         />
       )}
-    </>
+    </SpellLinkProvider>
   )
 }
 
@@ -389,45 +403,6 @@ function useAppCelebrations(
  * A component rather than two lines in App because App is at its factoring ceiling — and because
  * "what may appear along the bottom" is a real thing to be able to read in one place.
  */
-/**
- * THE CONTENT COLUMN: everything to the right of the nav drawer, in the two pieces it has.
- *
- * `app-content` is the app's ONE scroller between a view and the window — every feature view sizes
- * itself with `height: 100%` against it, and a long list clips inside its own box rather than
- * growing the page (the Task-#56 law, measured by `pageOverflow` in half the e2e suite).
- *
- * ABOVE it, and deliberately OUTSIDE it, sits the gear area's tab bar (JOS-324): four views behind
- * one nav row need a header, and a header inside the scroller would both slide away under a long
- * table and silently eat the height that every `height: 100%` is measured against — turning that
- * page-overflow assertion red across four unrelated specs. Out here it is a fixed band and the
- * scroll box simply flexes into what is left. Its clicks go through `selectView`, the same MANUAL
- * navigator the nav rows use, so the Back stack reads a tab switch as exactly what it is.
- *
- * A component rather than two nested boxes in App for the reason `BottomStrips` is one: App sits
- * at the measured 100-code-line function ceiling, and this is a self-contained piece of shell.
- */
-function MainColumn({
-  view,
-  onSelect,
-  children
-}: {
-  view: View
-  onSelect: (v: View) => void
-  children: JSX.Element
-}): JSX.Element {
-  return (
-    <Box
-      component="main"
-      sx={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-    >
-      {isGearAreaView(view) && <GearAreaTabs view={view} onSelect={onSelect} />}
-      <Box data-testid="app-content" sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-        {children}
-      </Box>
-    </Box>
-  )
-}
-
 function BottomStrips({ prefs }: { prefs: PrefsRouting }): JSX.Element {
   return (
     <>
@@ -633,7 +608,8 @@ export default function App(): JSX.Element {
         onSelectCharacter={(logPath) => void selectCharacter(logPath, onCharacterSwitched)}
       />
 
-      {/* Everything below the bar: nav drawer + main content, side by side. */}
+      {/* Everything below the bar: nav drawer + main content, side by side. The engine's launch
+          banner (JOS-503) is mounted inside `MainColumn`, above the scroller — see its header. */}
       <Box sx={{ display: 'flex', flexGrow: 1, minHeight: 0 }}>
         {/* MANUAL navigation: `selectView`, not the raw setter — the user choosing a tab by hand
             is also the user ending whatever deep-link journey was parked (navOrigin.ts). */}
@@ -642,7 +618,7 @@ export default function App(): JSX.Element {
             which is not a view, so the destination travels as the router rather than as a tab. */}
         <NavDrawer view={view} onSelect={selectView} prefs={prefsRouting} onSendFeedback={() => feedback.openFeedback()} />
 
-        <MainColumn view={view} onSelect={selectView}>
+        <MainColumn view={view} onSelect={selectView} onReport={feedback.openFeedback}>
           <ViewContent
             view={view}
             hasCharacters={characters.length > 0}

@@ -18,12 +18,17 @@
 //! terminating newline it has in hand, and `scanLog` returns without flushing the carry, because
 //! the live tailer will re-read those bytes when the game finishes the line.
 
-use crate::event::Ev;
+use crate::event::{Ev, Payload};
 use crate::parse::Parser;
 
-/// Fold a complete file, calling `emit` with each event's serialized JSON, in emission order.
-/// Returns the number of events (which is `ScanResult.seq`).
-pub fn scan_bytes(parser: &Parser, bytes: &[u8], mut emit: impl FnMut(&str)) -> u64 {
+/// Fold a complete file, calling `emit` with each event's serialized JSON AND its typed payload, in
+/// emission order. Returns the number of events (which is `ScanResult.seq`).
+///
+/// BOTH HALVES, ALWAYS (JOS-505). The string is the parser oracle's artifact and the NDJSON modes'
+/// output; the payload is what the fold reads. They are handed over together because they are one
+/// event written twice, and a caller that took only one of them would have no way to ask for the
+/// other afterwards — the writer's buffers are reused and the next line overwrites both.
+pub fn scan_bytes(parser: &Parser, bytes: &[u8], mut emit: impl FnMut(&str, &Payload)) -> u64 {
     let mut seq: i64 = 0;
     let mut ev = Ev::new();
     let mut start = 0usize;
@@ -37,7 +42,8 @@ pub fn scan_bytes(parser: &Parser, bytes: &[u8], mut emit: impl FnMut(&str)) -> 
             let line = String::from_utf8_lossy(&bytes[start..end]);
             if parser.parse_event(&line, seq, &mut ev) {
                 seq += 1;
-                emit(ev.finish());
+                let (json, payload) = ev.done();
+                emit(json, payload);
             }
         }
         start = nl + 1;

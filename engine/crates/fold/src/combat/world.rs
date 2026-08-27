@@ -48,7 +48,7 @@
 //! (measured: 614 such retirements in the owner's whole log).
 
 use crate::jsmap::JsMap;
-use eqlog::names::id_key;
+use eqlog::names::{id_key, id_key_ref};
 use std::collections::{HashMap, HashSet};
 
 /// How long a LIVE hostile instance may go completely unobserved before its slot is eligible for
@@ -226,7 +226,7 @@ impl WorldModel {
         if self.insts[at].display == name {
             return;
         }
-        if id_key(&self.insts[at].display) != id_key(name) {
+        if id_key_ref(&self.insts[at].display) != id_key_ref(name) {
             return; // never relabel across identities
         }
         // `/^[a-z]/` is ASCII-only in JS, so this is `is_ascii_lowercase` and not `is_lowercase`.
@@ -246,7 +246,9 @@ impl WorldModel {
     /// and the caller knows this reference is the pet (e.g. the pet as damage attacker); otherwise
     /// a hostile instance is preferred (mob references).
     pub fn resolve(&mut self, name: &str, ts: i64, prefer_charmed: bool) -> Resolved {
-        let key = id_key(name);
+        // BORROWED (JOS-506): every use below is a lookup or a comparison, and the two callers on
+        // the damage path reach this twice per attributed line.
+        let key = id_key_ref(name);
         if key == "you" {
             // 'you' is not modeled as a spawnable instance; every caller special-cases it first.
             // The synthetic sentinel is returned so none of them can crash on a `None`.
@@ -308,8 +310,8 @@ impl WorldModel {
     /// refreshes instances that already exist, so a whiff at a mob we have never damaged still has
     /// zero world-model side effects (law 8, the same guarantee `note_presence` makes).
     pub fn note_seen(&mut self, name: &str, ts: i64) {
-        let key = id_key(name);
-        let live: Vec<usize> = match self.active_by_name.get(&key) {
+        let key = id_key_ref(name);
+        let live: Vec<usize> = match self.active_by_name.get(key.as_ref()) {
             Some(l) => l.clone(),
             None => return,
         };
@@ -323,7 +325,7 @@ impl WorldModel {
     /// The charmed pet instance for a name (attribution helper). No staleness sweep — pets are
     /// exempt from it, so there is nothing for one to do here.
     pub fn pet_instance(&self, name: &str) -> Option<Resolved> {
-        self.charmed_active(&id_key(name))
+        self.charmed_active(&id_key_ref(name))
             .map(|at| self.resolved(at))
     }
 

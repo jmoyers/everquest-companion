@@ -67,8 +67,15 @@ function nameKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** Where one member sits: its line and its index in it. */
-interface Placement {
+/**
+ * Where one member sits: its line and its index in it.
+ *
+ * EXPORTED SINCE JOS-508, for the spell drilldown — which needs the WHOLE ladder rather than the
+ * two neighbours `replacedBy` names. It is the same object the index already holds, handed out
+ * rather than rebuilt, so the page's progression and the row's `replaces` clause can never be two
+ * readings of the file. `line.members` is the imported JSON: read it, never mutate it.
+ */
+export interface Placement {
   line: SpellLine
   index: number
 }
@@ -127,8 +134,7 @@ function nextTier(line: SpellLine, at: number): string | null {
  * Butcher replaces Ring of Surefall Glade" is a sentence about two different places.
  */
 export function replacedBy(spellName: string, cls: ClassAbbr): SpellLinePlace {
-  index ??= buildIndex()
-  const found = index.get(cls)?.get(nameKey(spellName))
+  const found = lineContaining(spellName, cls)
   if (!found) return NOT_IN_A_LINE
   const { line, index: at } = found
   if (!line.ladder) return { replaces: null, replacedBy: null, line: line.name }
@@ -137,6 +143,19 @@ export function replacedBy(spellName: string, cls: ClassAbbr): SpellLinePlace {
     replacedBy: nextTier(line, at),
     line: line.name
   }
+}
+
+/**
+ * THE LINE THIS CLASS FILES THIS SPELL UNDER, and where in it — or null.
+ *
+ * `replacedBy` above is this function plus the strictly-earlier rule; the drilldown page (JOS-508)
+ * needs the other half, which is every rung rather than the two adjacent ones. Sharing the lazily
+ * built index means asking "what does it replace" and "show me the whole ladder" are one lookup
+ * into one table, and the FIRST-PLACEMENT-WINS tiebreak above applies to both by construction.
+ */
+export function lineContaining(spellName: string, cls: ClassAbbr): Placement | null {
+  index ??= buildIndex()
+  return index.get(cls)?.get(nameKey(spellName)) ?? null
 }
 
 /** Every line the file carries for a class, for tests and any future line-browsing surface. */

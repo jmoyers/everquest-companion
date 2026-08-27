@@ -56,6 +56,7 @@
  * Run: `npm run test:e2e -- engine-boots`
  */
 import { tmpdir } from 'node:os'
+import type { Page } from 'playwright-core'
 import { PROTOCOL_VERSION } from '../../src/shared/dataServer/protocol.generated'
 import {
   buildEngineIfStale,
@@ -64,6 +65,8 @@ import {
   failures,
   note,
   reportRun,
+  settle,
+  settleGone,
   sleep
 } from './appHarness.mjs'
 import { closeWindows, mainWindow } from './appWindow.mjs'
@@ -193,6 +196,119 @@ async function stepReady(launch: FixtureLaunch, out: AppOutput, firstPid: number
     log.includes('EngineExited') ? 'named' : `${String(log.length)} bytes, no EngineExited`
   )
   return ready
+}
+
+// ---- STEP 2b — the catch-up bar, over the respawn this spec already causes (JOS-503) ---------
+//
+// WHAT IS BEING PROVEN: while the engine folds history, the shell shows a progress surface with a
+// percentage and human byte counts, and when the fold goes live that surface RESOLVES AND GOES.
+// Both halves by DOM, because both are things a person sees.
+//
+// WHY IT RIDES THE RESPAWN. Step 2 kills the engine and the supervisor puts one back — and a
+// respawn is a launch (spawn contract rule 5), so the replacement re-attaches and re-folds the
+// whole log from byte zero. That is a genuine historical catch-up at a moment this spec chooses,
+// which is the one thing a launch-time observation cannot give: by the time `launchOnFixture` hands
+// a spec its window, the first fold is already over.
+//
+// WHY THE HARNESS MAKES THE LOG BIGGER FIRST, stated plainly because it is an arrangement rather
+// than a measurement. `e2e-telemetry.log` is 489 BYTES. A release engine folds that faster than a
+// frame, and a bar that flashed for one paint would be worse product than no bar — so on a log that
+// small, showing nothing is the CORRECT behaviour and there would be nothing here to assert. The
+// harness therefore appends bytes until the catch-up is long enough to be a catch-up: ~3.3 MB, which
+// at the release fold rate this suite builds (~3.8 MB/s, JOS-501's G3 measurement) is most of a
+// second — several of the engine's own ~4 Hz progress frames, and more than one turn of main's
+// 400 ms `waitForFold` health poll. The product is unchanged; only the log is.
+//
+// WHY A MUTATION OBSERVER AND NOT A POLL. A settle loop re-reads every 120 ms and would be racing a
+// surface whose whole lifetime is under a second on a fast machine — and a flaky claim about a
+// progress bar is worse than none. The recorder is installed BEFORE the kill, latches the bar's own
+// rendered text the first time it appears, and is read afterwards. It is still the DOM answering:
+// what is latched is `innerText` of the real element, which is why the assertions below can be
+// about the WORDS and not merely about a node having existed.
+
+/** The band the shell mounts for a running fold, and the three readouts on it. */
+const PROGRESS = '[data-testid="engine-launch-progress"]'
+
+/** Roughly 3.3 MB of log — see the note above for the arithmetic and why it is the harness's job. */
+const CATCH_UP_LINES = 60_000
+const FILLER = 'You cannot see your target.'
+
+/**
+ * How many lines go in one `append` call, and it is a LANGUAGE limit rather than an IO one.
+ *
+ * `FixtureLog.append(...messages)` is variadic, so a spread is an ARGUMENT LIST — and 60,000 of them
+ * is `RangeError: Maximum call stack size exceeded` before a single byte is written (measured here,
+ * first run). The write itself is one `writeSync` + one `fsyncSync` per call whatever the batch
+ * size, so chunking costs sixty syscall pairs and nothing else. Anything bulk-staging a fixture has
+ * to do this; the ceiling is the interpreter's, not the harness's.
+ */
+const APPEND_CHUNK = 1_000
+
+/**
+ * Make the next fold long enough to watch, and start watching. Called BEFORE the kill.
+ *
+ * The filler is a line this repo folds into no state at all, on purpose: what the bar measures is
+ * BYTES, and a spec that inflated the log with combat would be quietly asserting about a world it
+ * had also changed.
+ */
+async function armCatchUp(launch: FixtureLaunch, page: Page): Promise<void> {
+  let wrote = 0
+  while (wrote < CATCH_UP_LINES) {
+    const batch = Math.min(APPEND_CHUNK, CATCH_UP_LINES - wrote)
+    wrote += launch.log.append(...new Array<string>(batch).fill(FILLER))
+  }
+  note(`staged ${String(wrote)} filler lines so the respawn has a real catch-up to show`)
+  // EVERY FUNCTION IN HERE IS AN ANONYMOUS ARGUMENT, and that is a constraint rather than a style.
+  // `page.evaluate` ships the function's SOURCE to the page, and this suite runs through tsx —
+  // esbuild's `keepNames` rewrites a function bound to a `const` into a `__name(fn, "fn")` call
+  // whose helper exists only in the module scope that was left behind. Measured on the first run of
+  // this step: `ReferenceError: __name is not defined`, from the page, with no other clue. A named
+  // helper would have read better and cannot be used; the observer's callback is inlined instead.
+  await page.evaluate((sel) => {
+    const store = window as unknown as { __eqcFoldBar?: string | null }
+    const first = document.querySelector(sel)
+    store.__eqcFoldBar = first === null ? null : (first as HTMLElement).innerText
+    new MutationObserver(() => {
+      const el = document.querySelector(sel)
+      if (el !== null && store.__eqcFoldBar === null) {
+        store.__eqcFoldBar = (el as HTMLElement).innerText
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  }, PROGRESS)
+}
+
+/**
+ * STEP 2b — read what the recorder caught, and prove the bar goes away again.
+ *
+ * THE RESOLUTION IS THE SECOND HALF AND IT IS NOT A FORMALITY: a progress surface that survived its
+ * own fold would sit permanently over a working app, and it is the failure mode a bar wired to the
+ * wrong edge produces. `settleGone` is how this suite asserts an absence.
+ */
+async function stepCatchUp(page: Page): Promise<void> {
+  const seen = await settle(
+    () => page.evaluate(() => (window as unknown as { __eqcFoldBar?: string | null }).__eqcFoldBar ?? null),
+    (t) => t !== null,
+    { timeoutMs: 60_000 }
+  )
+  if (!check('while the engine re-folds the log, the shell SHOWS a catch-up bar', seen !== null, seen ?? 'never appeared')) {
+    return
+  }
+  const text = (seen ?? '').replace(/\s+/g, ' ')
+  // A PERCENTAGE, which is what makes it a progress bar rather than a spinner.
+  check('…carrying a percentage the engine measured', /\d+%/.test(text), text.slice(0, 140))
+  // AND HUMAN BYTE COUNTS, which is the half `pct` alone could never say and the reason the wire
+  // grew `offset` and `logSize` at all: "62%" does not tell anybody whether to wait.
+  check(
+    '…and how much of the log it has read, in units a person reads',
+    /\d[\d.]* (B|KB|MB|GB) of \d[\d.]* (B|KB|MB|GB)/.test(text),
+    text.slice(0, 140)
+  )
+  // The event count rides along because it is what says the fold is doing work rather than seeking.
+  check('…and how many events that has produced', /events/.test(text), text.slice(0, 140))
+  // THE GO-LIVE BEAT: the bar resolves and disappears. Generous, because it is waiting on a whole
+  // re-fold of a log this step just made several megabytes long.
+  const gone = await settleGone(page, PROGRESS, { timeoutMs: 90_000 })
+  check('…and when the fold goes live the bar resolves and is gone', gone, gone ? 'gone' : 'still on screen')
 }
 
 /**
@@ -326,13 +442,18 @@ async function main(): Promise<void> {
   const out = tapOutput(launch.app)
   const seen: number[] = []
   try {
-    await mainWindow(launch.app)
+    const page = await mainWindow(launch.app)
     const firstPid = await stepSpawned(launch, before)
     if (firstPid !== null) {
       seen.push(firstPid)
+      // BEFORE THE KILL: give the respawn a catch-up worth watching, and start watching for it.
+      // The recorder has to exist before the fold does, which is the whole reason this is two
+      // calls with step 2 between them rather than one step of its own.
+      await armCatchUp(launch, page)
       const ready = await stepReady(launch, out, firstPid)
       if (ready) {
         seen.push(ready.pid)
+        await stepCatchUp(page)
         await stepWrongToken(ready)
       }
     }

@@ -404,7 +404,7 @@ pub fn break_probe_text(row: &BuffTimerRow, spell: &str) -> String {
 /// One hypothetical break, ready to be offered to a def's own matcher.
 pub struct BreakProbe {
     /// The event a break of this row would be, as the parser would emit it.
-    pub ev: Event,
+    pub ev: Event<'static>,
     /// The spell name this probe stands for — what the break line prints.
     pub spell: String,
 }
@@ -1007,7 +1007,7 @@ mod tests {
         }
     }
 
-    fn ev(line: &str) -> Event {
+    fn ev(line: &str) -> Event<'static> {
         Event::from_json(line).expect("a JSON object")
     }
 

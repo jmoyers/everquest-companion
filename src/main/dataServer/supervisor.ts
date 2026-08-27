@@ -45,7 +45,13 @@
 // stdin and nowhere else), so an in-app client can only exist if the owner of the secret offers it.
 // The supervisor still knows nothing about what the client then says.
 
-import { LineDecoder, type ByteChannel } from '../../shared/dataServer/ndjson'
+import type { EngineFaultKind } from '../../shared/engineLaunch'
+import type { ByteChannel } from '../../shared/dataServer/ndjson'
+// THE CHILD'S OWN SHAPES AND ITS LINE READER, split out at the measured 400-code-line ceiling
+// (JOS-503) — where the house rule is to split rather than to ratchet. See `supervisorChild.ts`'s
+// header for why that is the natural seam, and note that nothing about this file's structural
+// Electron-freedom changed: that file imports the shared line codec and nothing else.
+import { describeErr, readLines, type SupervisedChild } from './supervisorChild'
 import { PROTOCOL_VERSION } from '../../shared/dataServer/protocol.generated'
 import { engineHealthCheck, type EngineHealth } from './engineHealth'
 import {
@@ -68,47 +74,25 @@ import {
   type EngineTimer
 } from './engineProtocol'
 
-// ------------------------------------------------------------------ the child, structurally
-//
-// Every shape below is `node:child_process`'s reduced to what a lifecycle decision needs — the
-// `PriorityWebContents` discipline (processPriority.ts): the real objects satisfy these by
-// structure, and a test's fakes do too, so neither is a cast. Method parameters compare
-// BIVARIANTLY, which is why `signal: string | null` here accepts Node's `NodeJS.Signals | null`.
-
-export interface SupervisedStdin {
-  write(chunk: string): unknown
-  /** Closing stdin IS the shutdown signal — contract rule 3. */
-  end(): unknown
-  on(event: 'error', listener: (err: Error) => void): unknown
-}
-
-export interface SupervisedStream {
-  setEncoding(encoding: string): unknown
-  on(event: 'data', listener: (chunk: string) => void): unknown
-}
-
-export interface SupervisedChild {
-  /** OPTIONAL, not `number | undefined`: Node declares it optional on `ChildProcess` (it is absent
-   *  until the process actually exists), and a required-but-undefined property is a different type
-   *  that the real object does not satisfy. */
-  readonly pid?: number
-  readonly stdin: SupervisedStdin | null
-  readonly stdout: SupervisedStream | null
-  readonly stderr: SupervisedStream | null
-  on(event: 'exit', listener: (code: number | null, signal: string | null) => void): unknown
-  on(event: 'error', listener: (err: Error) => void): unknown
-  /** NO SIGNAL PARAMETER, and that is the interface stating a policy rather than being lazy: the
-   *  escalation sends the DEFAULT (`SIGTERM`, which on Windows is a `TerminateProcess`), and a seam
-   *  that could carry a signal would be a seam somebody could send `SIGKILL` through on a platform
-   *  that does not have it. It also makes the shape satisfiable: Node's `kill(signal?: Signals |
-   *  number)` is not comparable to a `string` parameter in either direction. */
-  kill(): unknown
-  /** The engine must never hold a quitting app open. */
-  unref(): unknown
-}
+// THE CHILD, STRUCTURALLY, LIVES NEXT DOOR NOW (JOS-503) — `supervisorChild.ts`, split out at the
+// measured 400-code-line ceiling where the house rule is to split rather than to ratchet. It is
+// RE-EXPORTED here because this file is the module every caller already names for the supervision
+// feature, and a split made to satisfy a line budget must not become import churn across callers.
+export type { SupervisedChild, SupervisedStdin, SupervisedStream } from './supervisorChild'
 
 /** Where the supervisor is right now. Observable so the dev log and a test can both read it. */
 export type EngineStatus = 'stopped' | 'absent' | 'starting' | 'ready' | 'backoff' | 'stopping'
+
+/**
+ * THE FAILURES A *LAUNCH* CAN HAVE — `EngineFailure` minus the one that is not about a launch.
+ *
+ * `shutdown-exit` is a child that exited badly after the app closed its stdin. It is handled in
+ * `onExit`'s stopping arm, which returns before `endLaunch` — so it can never fold into a restart
+ * trail, and the paragraph there says so at length. This type is that paragraph made STRUCTURAL:
+ * `fold` and `endLaunch` cannot be handed it, which is also what lets a fault carry `cause.failure`
+ * straight across to `EngineFaultKind` with no unreachable branch to prove dead (JOS-503).
+ */
+export type LaunchFailure = Exclude<EngineFailure, 'shutdown-exit'>
 
 /**
  * A LAUNCH THAT PROVED ITSELF, and everything a client needs to talk to it (JOS-479).
@@ -133,6 +117,30 @@ export interface ReadyEngine {
   readonly engineVersion: string
   /** The generation the engine reported at the health probe, before any attach of ours. */
   readonly epoch: number
+}
+
+/**
+ * WHY A LAUNCH IS NOT GOING TO WORK, at the two moments a PERSON should be told (JOS-503).
+ *
+ * This is not a second reporting channel beside `report`. That one exists for the error store and
+ * fires on every ended launch, because a fleet wants the whole trail; this one fires exactly twice
+ * in a session — when the resolver finds nothing, and when the quick-exit trail COLLAPSES — because
+ * a person wants to be told once, when the answer has stopped changing.
+ *
+ * `null` is the other edge and it means recovery: a launch reached READY, so whatever card was on
+ * screen is about a world that has since started working.
+ *
+ * IT CARRIES NO PATHS. The candidate list belongs to whoever resolved the binary
+ * (`engineHost.ts resolveEngineBinary`), and a supervisor that took `resolveBinary(): string | null`
+ * has never seen it. The composition root grafts it on, which is the same split every other fact in
+ * this file keeps.
+ */
+export interface EngineFaultCause {
+  readonly kind: EngineFaultKind
+  /** Consecutive failed launches, INCLUDING this one. 0 for an absence — nothing was attempted. */
+  readonly attempts: number
+  /** The one bounded, token-redacted line of context `EngineExitCause` already built. */
+  readonly detail: string | null
 }
 
 /** Everything the composition root hands this module. No Electron reaches past this interface. */
@@ -162,6 +170,13 @@ export interface EngineSupervisorDeps {
    * consumer holding a socket to a dead engine is a consumer whose next request hangs.
    */
   onReady?(engine: ReadyEngine | null): void
+  /**
+   * THE PERSON'S EDGE (JOS-503) — see `EngineFaultCause`. Called with a cause when a launch is not
+   * going to work and with `null` when one reaches READY. Never called for `shutdown-exit`, which
+   * is structurally impossible here: that path returns from `onExit`'s stopping arm without ever
+   * reaching `fold`.
+   */
+  onFault?(fault: EngineFaultCause | null): void
   /** TEST SEAMS — every clock, and the wire version. */
   protocolVersion?: number
   announceTimeoutMs?: number
@@ -268,6 +283,36 @@ export class EngineSupervisor {
     this.retire(l)
   }
 
+  /**
+   * TRY AGAIN, BECAUSE A PERSON ASKED (JOS-503) — the failure card's retry button.
+   *
+   * NOT `stop()` THEN `start()`, and the difference is not stylistic. `stop()` retires the child and
+   * leaves `this.launch` set until the exit event arrives, so a `start()` on the next line finds a
+   * launch in flight and no-ops; the retry would appear to do nothing. What a person means by "try
+   * again" is also not "kill whatever is running" — it is "stop waiting and go now".
+   *
+   * So this FORGIVES and HURRIES: the failure count and the exit trail reset (a retry is a new run,
+   * and holding a collapsed trail across it would mean the next real failure was never reported),
+   * any pending backoff is cancelled, and a launch begins immediately. A launch already in flight is
+   * LEFT ALONE — it is already the answer to the question, and beginning a second one would orphan
+   * the first with its port and its token.
+   *
+   * It is exactly right for both terminal states: an absence has no launch and no timer, so it
+   * re-probes the disk at once (which is what makes it the correct button after somebody has
+   * restored a quarantined file), and a collapsed crash loop is sitting on a 30 s timer that this
+   * cancels.
+   */
+  restart(): void {
+    this.stopping = false
+    this.failures = 0
+    this.trail = NEW_ENGINE_EXIT_TRAIL
+    if (this.launch) return
+    this.cancelRestart?.()
+    this.cancelRestart = null
+    this.deps.debug('data-server engine: retrying the launch (asked for)')
+    this.beginLaunch()
+  }
+
   /** Where the supervisor is. */
   get state(): EngineStatus {
     return this.status
@@ -303,6 +348,11 @@ export class EngineSupervisor {
       // developer's own cargo tree. The app runs without it.
       this.status = 'absent'
       this.deps.debug('data-server engine: no engine binary found; the supervisor is idle (phase 3)')
+      // …AND SOMEBODY IS TOLD (JOS-503). The paragraph above is still true — this is not an error
+      // and not a retry — but it stopped being true that nobody needs to know: post-cutover there is
+      // no fold to fall back to, so this condition IS a permanently empty app, and the one thing it
+      // must not be is silent. `attempts` is 0 because nothing was launched.
+      this.deps.onFault?.({ kind: 'no-binary', attempts: 0, detail: null })
       return
     }
     const token = this.deps.mintToken()
@@ -486,6 +536,10 @@ export class EngineSupervisor {
     this.status = 'ready'
     this.failures = 0
     this.trail = NEW_ENGINE_EXIT_TRAIL
+    // WHATEVER CARD IS ON SCREEN IS ABOUT A WORLD THAT NOW WORKS (JOS-503). Cleared on the same
+    // proven round trip that resets the trail, because they are the same fact: this supervisor has
+    // stopped having a diagnosis.
+    this.deps.onFault?.(null)
     this.deps.onPid?.(l.child.pid ?? null)
     this.deps.debug(
       `data-server engine ready: pid ${String(l.child.pid ?? 0)}, port ${String(announce.port)}, ` +
@@ -514,7 +568,7 @@ export class EngineSupervisor {
    * `exit` that follows a kill WE issued is a no-op rather than a second report and a second
    * respawn. Every failure mode in this file lands here and nowhere else.
    */
-  private endLaunch(l: Launch, failure: EngineFailure, info: EndInfo): void {
+  private endLaunch(l: Launch, failure: LaunchFailure, info: EndInfo): void {
     if (l.finished) return
     l.finished = true
     clearLaunchTimers(l)
@@ -539,11 +593,20 @@ export class EngineSupervisor {
   }
 
   /** Count the failure, fold it into the trail, report what the fold says to report. */
-  private fold(cause: Omit<EngineExitCause, 'attempt'>): void {
+  private fold(cause: Omit<EngineExitCause, 'attempt' | 'failure'> & { failure: LaunchFailure }): void {
     this.failures += 1
     const step = engineExitStep(this.trail, { ...cause, attempt: this.failures })
+    const collapsing = !this.trail.collapsed && step.trail.collapsed
     this.trail = step.trail
     if (step.log) this.deps.report(step.log)
+    // THE COLLAPSE EDGE IS THE ONE A PERSON IS TOLD ABOUT (JOS-503), and it is the right moment for
+    // exactly the reason `engineExitStep` collapses at all: before it, a fast failure really can be
+    // a machine having a moment and a card would be crying wolf; at it, the trail has become the one
+    // shape that only a condition which is not clearing can produce. The retry backoff keeps running
+    // underneath — a card is not a surrender — but the sentence has stopped changing, so it is said.
+    if (collapsing) {
+      this.deps.onFault?.({ kind: cause.failure, attempts: step.trail.streak, detail: cause.detail })
+    }
   }
 
   /** The backoff. Capped, and the counter resets the moment a launch reaches READY. */
@@ -601,40 +664,6 @@ function clearLaunchTimers(l: Launch): void {
   l.cancelAnnounce = null
   l.cancelHealth = null
   l.cancelGrace = null
-}
-
-/**
- * Split one of the child's streams into lines. `LineDecoder` is the shared codec — the same one the
- * wire uses — so there is exactly one answer in this repo to "where does a line end".
- *
- * IT CANNOT THROW INTO THE STREAM. `LineDecoder.push` raises on a frame past its ceiling, and a
- * throw inside a `'data'` handler is an uncaught exception in the main process — i.e. a child that
- * printed 8 MB with no newline could take the app down. A decoder that has given up is simply
- * stopped: the launch will fail its announce timeout or its next health probe, which are the paths
- * built to handle it.
- */
-function readLines(stream: SupervisedStream | null, onLine: (line: string) => void): void {
-  if (!stream) return
-  const decoder = new LineDecoder()
-  let dead = false
-  stream.setEncoding('utf8')
-  stream.on('data', (chunk: string) => {
-    if (dead) return
-    let lines: string[]
-    try {
-      lines = decoder.push(chunk)
-    } catch {
-      dead = true
-      return
-    }
-    for (const line of lines) {
-      if (line.trim() !== '') onLine(line)
-    }
-  })
-}
-
-function describeErr(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 /** A stream line on its way to the dev log: bounded and control-free, like every other outside

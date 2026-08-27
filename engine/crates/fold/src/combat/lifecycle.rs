@@ -362,18 +362,18 @@ mod tests {
     use super::*;
     use crate::combat::aggregate::{DamageEvent, SourceKind, SourceRef};
 
-    fn hit(amount: i64) -> DamageEvent {
+    fn hit(amount: i64) -> DamageEvent<'static> {
         DamageEvent {
             ts: 0,
-            attacker: "You".into(),
-            target: "a bat".into(),
+            attacker: "You",
+            target: "a bat",
             amount,
-            dtype: "melee".into(),
+            dtype: "melee",
             dclass: None,
             skill: "Melee".into(),
             crit: false,
             category: "melee".into(),
-            modifiers: Vec::new(),
+            modifiers: &[],
             verb: None,
         }
     }

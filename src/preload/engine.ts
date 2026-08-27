@@ -42,6 +42,7 @@ import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import { messagePortChannel } from '../shared/dataServer/messagePortChannel'
 import type { ByteChannel } from '../shared/dataServer/ndjson'
+import type { EngineLaunchSay } from '../shared/engineLaunch'
 
 /** One brokered connection, as the renderer sees it: bytes, and the secret to open with. */
 export interface EngineConnection extends ByteChannel {
@@ -118,5 +119,35 @@ export const engineBridge = {
       return null
     }
     return arriving
-  }
+  },
+
+  // ── THE LAUNCH, AS THE SHELL SEES IT (JOS-503) ──────────────────────────────────────────────
+  //
+  // A PUSH AND A READ, and the read is not a poll. `onEngineLaunch` carries every change; the one
+  // `engineLaunchState()` exists because a window that mounted (or reloaded, or was opened by the
+  // updater) AFTER the state stopped changing would otherwise never learn it — and the states that
+  // stop changing are precisely the two the shell has to draw. One call at mount, never again.
+  //
+  // NOTHING ABOUT THIS CROSSES THE ENGINE'S WIRE. The renderer's own `EngineClient` could hear the
+  // progress half itself (`client.onProgress`), and deliberately does not: the FAILURE half has no
+  // socket to arrive on, and splitting one question across two transports would make the shell
+  // reconcile what main already knows. `main/dataServer/engineLaunchState.ts` carries the argument.
+
+  /** Every change to the engine's launch state. Returns the unsubscriber. */
+  onEngineLaunch: (cb: (say: EngineLaunchSay) => void): (() => void) => {
+    const listener = (_e: unknown, say: EngineLaunchSay): void => {
+      cb(say)
+    }
+    ipcRenderer.on(IPC.onEngineLaunch, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.onEngineLaunch, listener)
+    }
+  },
+
+  /** What the push last carried. The ONE read a window makes, on mount. */
+  engineLaunchState: (): Promise<EngineLaunchSay> =>
+    ipcRenderer.invoke(IPC.engineLaunchState) as Promise<EngineLaunchSay>,
+
+  /** The failure card's retry button. Resolves when main has taken the ask, not when it worked. */
+  engineRetry: (): Promise<void> => ipcRenderer.invoke(IPC.engineRetry) as Promise<void>
 }

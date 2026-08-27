@@ -41,6 +41,8 @@ decision a test can watch being made rather than an absence nobody can observe.
 | `engineProtocol.ts` | The pure facts both halves share: the announce line's grammar, the binary's candidate paths, backoff, the exit-trail fold, `redactToken`. No I/O. |
 | `token.ts` | Minting the per-launch secret. (`src/shared/dataServer/token.ts` holds the shape rules; loopback is not a permission boundary — the token is.) |
 | `supervisor.ts` | The lifecycle STATE MACHINE: spawn, watch, respawn, kill. Electron-free and dependency-injected, so every failure path is a unit test with no app and no Rust. |
+| `supervisorChild.ts` | What a CHILD PROCESS looks like from here: the three structural shapes a real `ChildProcess` and a test's fake both satisfy, plus the line reader. Split out of `supervisor.ts` at its line ceiling (JOS-503) along a section header that file already had; it imports the shared line codec and nothing else, so the state machine's Electron-freedom is unchanged. |
+| `engineLaunchState.ts` | **What the SHELL is told about the launch** (JOS-503): one `EngineLaunchSay`, pushed on change — the historical fold's progress while one is running, and the reason the engine will not start when it will not. See "The launch, as a window sees it" below. |
 | `engineHost.ts` | The composition root's half: which binary, which spawn, which socket, which clock, where a line goes. The only file anyone would rewrite to run the engine some other way. |
 | `socketChannel.ts` | The only file in the feature that knows a socket exists. |
 | `engineHealth.ts` | "Is it actually serving?", asked as `hello` + `session.health` over the product's own door. |
@@ -444,6 +446,54 @@ deliberately not thrown.** Throwing it is a follow-up whose whole content is the
 and the predicate that guards it — and that predicate has to be a fact about a live engine, not a
 flag.
 
+## The launch, as a window sees it (JOS-503)
+
+The table at the top of this page — "the engine is absent / still folding / on another log" ⇒ "the
+read gets an empty shape" — is the whole truth about a READ, and for a whole release it was also the
+whole truth a USER got. Two of those rows are states somebody is sitting in front of:
+
+| While | The shell draws | Because |
+| --- | --- | --- |
+| the engine folds history (launch, character switch, respawn re-fold) | a progress band: percent, bytes of total in human units, an event count, and an estimate when the samples can carry one | every panel is empty and "loading" with no sense of how long is the difference between waiting and wondering whether it is broken |
+| the supervisor lands in a terminal state (no binary; or a crash-loop trail that COLLAPSED) | a card: plain words per failure class, the consequence stated without softening, and RETRY / REPORT / where-it-looked | post-cutover there is no TypeScript fold to degrade to, so this is a permanently empty window and the reason used to live only in `errors.log` |
+
+**ONE OBJECT, ONE CHANNEL, ONE COMPONENT.** They are the same question at two moments — *can this app
+answer me yet, and if not, why not* — so `engineLaunchState.ts` holds one `EngineLaunchSay` and
+pushes it on `engine:launch`; `src/renderer/src/components/EngineLaunchBanner.tsx` draws whichever
+state is current and renders nothing in the three phases that have nothing to say.
+
+**WHY MAIN PUSHES THE PROGRESS HALF, WHICH THE RENDERER COULD READ ITSELF.** A renderer is a
+first-class peer of the engine (the brokerage above) and `client.onProgress` exists. But the FAILURE
+half has no socket to arrive on — the renderer's evidence would be an absence, and an absence cannot
+be told from "not yet". Only the supervisor knows the difference. Splitting one question across two
+transports would make the shell reconcile what main already knows.
+
+**THE THREE EDGES, AND WHO OWNS EACH.** `supervisor.ts onFault` (a diagnosis that has stopped
+changing, at most twice a session; `null` on READY — never on a launch merely ending, or a crash loop
+would flicker the card); `engineClientHost.ts` for the fold's beginning (an ACCEPTED
+`session.attach`, the earliest instant it is true), its measurements (`client.onProgress`) and its
+landing (beside the go-live edge in `waitForFold`). The host clock is read exactly once, where a
+progress frame arrives, and passed down — so the estimate's arithmetic (`src/shared/engineLaunch.ts`)
+reads no clock and is integer maths in a unit test.
+
+**LIVE PROGRESS FRAMES ARE DROPPED.** The engine reports progress from its TAIL as well as its scan.
+Nothing draws those — the bar is about a historical catch-up — so a session where somebody is playing
+would otherwise pay 4 Hz of IPC forever for no reader. `noteFoldProgress` records only while the
+phase is `folding`.
+
+**THE CANDIDATE PATHS ARE SHOWN AND NEVER SENT.** "Where it looked" is the actionable half of an
+absence — it is how somebody finds the file their antivirus took — so it draws behind a disclosure on
+the card. It is deliberately NOT in the report prefill: those strings carry the user's own home
+directory, and the prefill carries the failure class alone (`engine-fault: <kind>`), which is all
+triage needs to grep.
+
+**THE SCHEMA GREW TWO FIELDS AND THEY ARE NOT CALLED `bytes`.** `FoldProgress` carries `offset` and
+`logSize` beside `pct`, because a percentage cannot be turned back into "148.8 MB of 238.4 MB" and
+the second sentence is the one that tells a person whether to wait. `bytes` is a name
+`tests/protocolSchema.test.mts` REFUSES outright — the framing vocabulary is banned so the wire
+method stays swappable (owner ruling 15) — and the schema already had its own word for this
+coordinate in `HealthMark.offset`. One vocabulary, end to end.
+
 ## A FLAG IS NOT "AN ENGINE EXISTS" (JOS-496 — read this before adding a gate)
 
 The flags are gone (JOS-499) and this section stays, because the MISTAKE outlives them and the
@@ -474,7 +524,9 @@ proxy for.
 
 | | |
 | --- | --- |
-| `tests/dataServerSupervisor.test.mts` | Every lifecycle failure path, plus the READY handover. No app, no Rust. |
+| `tests/dataServerSupervisor.test.mts` | Every lifecycle failure path, plus the READY handover. No app, no Rust. Its harness is `dataServerSupervisorHarness.mts`, shared with the row below. |
+| `tests/dataServerSupervisorFault.test.mts` | The PERSON's edge (JOS-503): no fault while a fast failure could still be a hiccup, exactly one at the collapse, none after it, cleared by READY — and the retry, which forgives the trail, re-probes the disk on an absence, and leaves a live launch alone. |
+| `tests/engineLaunch.test.mts` | The banner's arithmetic and its prose: every case in which the ETA is REFUSED rather than guessed, the bounded ring, and the words for every failure class. |
 | `tests/dataServerBroker.test.mts` | Both ends of the brokered wire: splits cross unchanged, four teardown paths, and a real conversation delivered one character at a time. |
 | `tests/e2e/engine-loot-view.e2e.mts` | The row-parity oracle — the app-fed and served ledgers, compared as DOM. |
 | `tests/dataServerMirrors.test.mts` | The pushed cache the fourteen synchronous readers use: cursor ordering, the echo test, and the one coalesced refusal sentence. |
@@ -484,6 +536,6 @@ proxy for.
 | `tests/e2e/engine-boots.e2e.mts` | The real binary under the real app: spawn, ready, respawn, wrong token, quit, absence. |
 | `tests/enginePerf.test.mts` | The performance panel's engine row above the FFI boundary: the per-pid CPU arithmetic over a fake pid, the formatters' absent cases, and `useEnginePerf` run for real (arming, disarming, the null push). |
 | `tests/e2e/engine-loot-view.e2e.mts` | ALSO hosts `enginePerfSteps.mts` — the ENGINE section of the in-app performance panel, whose verbatim text the run prints, budget verdicts included (JOS-502). It rides that spec because the only expensive thing it needs is an engine that has folded and served, which the ledger comparison has just spent a scan and a subscription reaching. **This row named `perf.e2e.mts` until JOS-502 and was wrong**: the module's own header named a third spec, `engine-parity.e2e.mts`, which went with the parity probe in JOS-499 — so for a whole release nothing imported it, no runner ran it, and it had rotted (it still demanded a parity verdict that stopped being possible the day there stopped being two folds). Dead test code documented in two places as live is worth one sentence here. |
-| `tests/e2e/engine-absent.e2e.mts` | A checkout with no binary: the app boots, says what it looked for, invents nothing, does not crash. |
+| `tests/e2e/engine-absent.e2e.mts` | A checkout with no binary: the app boots, says what it looked for, invents nothing, does not crash — and, since JOS-503, SAYS SO ON SCREEN with a retry, a report path and where it looked. That fifth claim is the one this spec's header used to say it was deliberately not making. |
 | `npm run budget:ci` | **The oracle's successor** (JOS-501): the engine measures its own fold rate and serve latency through `perf.snapshot`, against a committed ceiling, over a deterministic generated corpus. Gates every push. |
 | `npm run budget:g3` | The same instrument on the owner's 209 MB fixture, at the release cut. Prints; never asserts. |
