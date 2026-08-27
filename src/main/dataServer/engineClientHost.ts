@@ -102,6 +102,10 @@ import { lookupItem } from '../itemLookup'
 import { noteEngineEdge } from '../telemetry/breadcrumbs'
 import { lookupMob } from '../mobLookup'
 import { attachStateDir, takeArtifactsBack } from './artifactOwner'
+// THE LAUNCH BANNER'S THREE EDGES (JOS-503). This file is the only place that knows when a
+// historical fold BEGINS (an accepted attach), how far it has got (the engine's progress frames)
+// and when it LANDS (the go-live edge below) — so it feeds all three to the one state main pushes.
+import { noteEngineFolding, noteEngineLive, noteFoldProgress } from './engineLaunchState'
 import { SERVABLE, type Readiness } from './readShim'
 import type { ReadyEngine } from './supervisor'
 import type { ParamsFor, RequestOp, ResultFor } from '../../shared/dataServer/ops'
@@ -294,6 +298,19 @@ async function openConnection(mine: number, info: ReadyEngine, client: EngineCli
   // THE FIRES — logged and counted always, PLAYED when the cutover armed. See `noteFire`.
   client.onFire((fire) => {
     noteFire(fire)
+  })
+  // THE FOLD'S OWN MEASUREMENT (JOS-503), for the launch banner. The identity guard is the
+  // CONNECTION one and not the turn one, for the reason spelled out on `onConCard` below: `gen`
+  // advances on every world rebuild, so `gen !== mine` here would silence the bar one second into
+  // every launch — which is precisely the bug that cost the cursor listener a whole e2e round.
+  //
+  // THE HOST CLOCK IS READ HERE AND NOWHERE DEEPER. `Date.now()` is the estimate's only clock, and
+  // it is taken at the one instant it is honest: when the frame arrived. Passing it down means the
+  // arithmetic in `shared/engineLaunch.ts` reads no clock at all and is pure integer maths in a
+  // test. A live-tail frame is dropped by `noteFoldProgress` itself — see its header.
+  client.onProgress((progress) => {
+    if (live?.client !== client) return
+    noteFoldProgress(progress, Date.now())
   })
   // THE CON CARDS (JOS-496, boundary verdict 2) — `onFire`'s shape exactly, and for its reasons: a
   // thing that HAPPENED, connection-wide, nothing to reconcile. This file offers the frame and
@@ -556,6 +573,11 @@ async function sendAttach(mine: number, l: LiveEngine, logPath: string): Promise
       `data-server engine attached: ${logPath} (epoch ${String(result.epoch)}, ` +
         `accepted ${String(result.accepted)})`
     )
+    // A HISTORICAL FOLD HAS JUST STARTED (JOS-503) — the earliest instant that is true, and the
+    // only place in the product that knows it. Gated on `accepted`, because `false` means this
+    // attach LOST to a later one: the engine is folding somebody else's log and the caller has no
+    // business claiming the banner for a fold it does not own (the winner's own attach already did).
+    if (result.accepted) noteEngineFolding()
     return result.epoch
   } catch (err) {
     debug(`data-server client: session.attach was refused (${describeErr(err)})`)
@@ -692,6 +714,13 @@ async function waitForFold(mine: number, l: LiveEngine): Promise<EngineHealthSay
         // ring shows `engine:live` followed by module cursors.
         noteEngineEdge('engine:live')
       }
+      // THE BANNER RESOLVES HERE (JOS-503), and OUTSIDE the `first` test on purpose. `first` is
+      // about this app's own read path changing hands, which happens once; this is about a window
+      // being told the catch-up is over, and a second turn that finds the engine already live
+      // (a world rebuild on an unchanged log) must still take a stale bar down rather than leave
+      // one up because the interesting edge belonged to an earlier turn. `set` is a no-op when
+      // nothing changed, so saying it every poll costs a comparison.
+      noteEngineLive()
     }
     if (health.status === 'live' || Date.now() >= deadline) return health
     await delay(FOLD_POLL_MS)

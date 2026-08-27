@@ -49,6 +49,10 @@ mod logs;
 mod ops;
 mod search;
 mod spawn;
+/// SEARCHING that table by TYPE (JOS-507) — the filter/sort/window the in-game Actions window's
+/// Category and Subcategory columns make possible. `spells` owns the files; this owns the question,
+/// the same split `search` and `fold::combat` make for fights.
+mod spell_search;
 /// The CLIENT's spell table, read by this process (boundary verdict 7). `fold::spells_us` is the
 /// format; this is the file, the laziness and the once-ness.
 mod spells;

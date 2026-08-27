@@ -54,6 +54,10 @@ import { registerWorldIpc } from './world'
 // launch it hands out (src/main/dataServer/), like the toast and con-card producer channels above,
 // rather than in a file here — everything it does is socket + port lifecycle.
 import { registerRendererBrokerIpc } from '../dataServer/rendererBroker'
+// …and what the shell may ASK about that engine's launch (JOS-503): the fold's progress while one
+// is running, the reason it will not start when it will not, and the retry button. A leaf here
+// rather than beside the broker because the retry reaches the composition root — see its header.
+import { registerEngineLaunchIpc } from './engine'
 // WHO DRAWS THE CON CARD (JOS-496, boundary verdict 2). Under serve the engine resolves the card
 // and `dataServer/conCardServe.ts` opens the window, so the TypeScript hook — which today calls
 // synchronously into Electron from inside the fold — stands down. Composed HERE and passed as a
@@ -112,4 +116,7 @@ export function registerIpc(): void {
   // rather than the default it used to be. One gate, in engineHost.ts — a second `if` around this
   // call would be a second place to forget.
   registerRendererBrokerIpc()
+  // Registered in every build for the third time and the same reason (JOS-503): the state these
+  // answer with is most interesting precisely on the launches where there is no engine at all.
+  registerEngineLaunchIpc()
 }

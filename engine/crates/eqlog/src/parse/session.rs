@@ -1,7 +1,7 @@
 //! `src/main/log/parseSession.ts` — the three lines that say whether the character is IN THE WORLD
 //! at all, plus the `/outputfile` receipt.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
 
 use super::Ctx;
@@ -16,7 +16,7 @@ pub fn classify_session_start(c: &Ctx, out: &mut Ev) -> bool {
     if c.text.as_bytes().first() != Some(&b'W') || c.text != WELCOME_LINE {
         return false;
     }
-    out.begin("sessionStart");
+    out.begin(Kind::SessionStart);
     out.envelope(c.seq, c.ts, c.raw);
     true
 }
@@ -27,12 +27,12 @@ pub fn classify_camp(c: &Ctx, out: &mut Ev) -> bool {
         return false;
     }
     if c.text == CAMP_START_LINE {
-        out.begin("campStart");
+        out.begin(Kind::CampStart);
         out.envelope(c.seq, c.ts, c.raw);
         return true;
     }
     if c.text == CAMP_ABORT_LINE {
-        out.begin("campAbort");
+        out.begin(Kind::CampAbort);
         out.envelope(c.seq, c.ts, c.raw);
         return true;
     }
@@ -48,8 +48,8 @@ pub fn classify_output_file(c: &Ctx, out: &mut Ev) -> bool {
     if file.is_empty() {
         return false;
     }
-    out.begin("outputFile");
+    out.begin(Kind::OutputFile);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("file", file);
+    out.s(Key::File, file);
     true
 }

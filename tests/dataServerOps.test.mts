@@ -62,6 +62,7 @@ const EVERY_OP: RequestOp[] = [
   'knowledge.define',
   'resist.levels',
   'resist.spell',
+  'spells.search',
   'logs.setDir',
   'logs.list'
 ]
@@ -180,6 +181,20 @@ test('EVERY GUARD IS DISCRIMINATING — no two ops accept each other’s result'
     'resist.spell': {
       spellName: 'Tashani',
       table: 'missing',
+      path: 'C:/nowhere/EverQuest Legends/spells_us.txt'
+    },
+    // THE CATALOGUE SEARCH (JOS-507), and its EMPTY shape for the same reason `resist.levels`'s and
+    // `logs.list`'s are empty: a filter that excludes everything is a real answer, and so is an
+    // install with no `spells_us.txt` behind it. Note `spellTable` rather than `table` — the word
+    // above is already `resist.spell`'s discriminator, and a second arm carrying it would be a shape
+    // that guard could not refuse. This is the collision being designed out rather than caught.
+    'spells.search': {
+      spells: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+      categories: [],
+      spellTable: 'missing',
       path: 'C:/nowhere/EverQuest Legends/spells_us.txt'
     },
     // LOG DISCOVERY (JOS-498). The push answers with the ack six ops already share — one directory

@@ -95,6 +95,14 @@ import { noteEngineLaunch, stopRendererBroker } from './rendererBroker'
 // THE AUDIO CUTOVER (JOS-491), behind THIS file's flag plus one of its own. It is armed and
 // disarmed beside the supervisor for the reason the client is: one lifecycle, one place.
 import { armEngineAlerts, disarmEngineAlerts } from './alertsAudio'
+// THE LAUNCH, AS THE SHELL SEES IT (JOS-503). One object, pushed on change; this file feeds it the
+// two edges only the supervisor has — a launch beginning, and a diagnosis that has stopped changing.
+import {
+  noteEngineCandidates,
+  noteEngineFault,
+  noteEngineRetrying,
+  noteEngineStarting
+} from './engineLaunchState'
 
 /** How long a loopback connect may take before the probe gives up on it. Loopback either answers
  *  immediately or is not listening; this is a bound on the pathological case, not a budget. */
@@ -170,6 +178,12 @@ function resolveEngineBinary(): string | null {
     // wrong value simply falls through to the ordinary search.
     override: E2E ? (process.env.EQ_ENGINE_BIN ?? '') : ''
   })
+  // THE SAME LIST THE NARRATION USES, KEPT FOR THE PERSON (JOS-503). "Where it looked" is the
+  // actionable half of an absence — it is how somebody discovers their antivirus took the file out
+  // of a directory they can go and check — and until now it existed only in a dev-log line that
+  // `engine-absent.e2e.mts` measured as unreadable even to a test. Recorded on EVERY resolution,
+  // including the successful ones, because a retry that succeeds must not leave a stale list behind.
+  noteEngineCandidates(candidates)
   const found = candidates.find((path) => existsSync(path))
   if (found === undefined) {
     logInfo(`[everquest-companion] engine binary not found; looked in: ${candidates.join(', ')}`)
@@ -417,10 +431,34 @@ export function startEngineSupervisor(): void {
       // own: a report whose ring shows `engine:spawned` and no `engine:ready` says the child
       // started and never proved itself, and that is a different bug from one that never spawned.
       if (info !== null) noteEngineEdge('engine:ready')
+      // …AND THE SHELL IS TOLD A LAUNCH IS UNDER WAY (JOS-503). Both edges say the same thing to a
+      // window: nothing to draw yet. `noteEngineStarting` deliberately cannot take a standing card
+      // down — see its own comment for why a crash loop would otherwise flicker one.
+      noteEngineStarting()
       onEngineReady(info)
+    },
+    // THE DIAGNOSIS, WHEN IT HAS STOPPED CHANGING (JOS-503). Fires twice at most in a session and
+    // is what puts the failure card on screen; `null` is a launch that reached READY and takes it
+    // back off. The candidate paths are grafted on inside `noteEngineFault` from the list above.
+    onFault: (fault) => {
+      noteEngineFault(fault)
     }
   })
   supervisor.start()
+}
+
+/**
+ * TRY AGAIN — the failure card's button, arriving over `IPC.engineRetry` (JOS-503).
+ *
+ * The card comes down FIRST and unconditionally, before anything is asked of the supervisor: a
+ * person who clicked a button is owed an immediate answer, and if the retry fails the same way the
+ * fault edge will put the card straight back with a fresh count. A retry on a launch that never
+ * started one at all (no supervisor — this is only reachable before `startEngineSupervisor`) is a
+ * no-op rather than an error, because there is nothing for it to be wrong about.
+ */
+export function retryEngineSupervisor(): void {
+  noteEngineRetrying()
+  supervisor?.restart()
 }
 
 /**

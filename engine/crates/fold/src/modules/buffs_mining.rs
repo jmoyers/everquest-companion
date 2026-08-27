@@ -12,7 +12,7 @@
 //! rebuilt one are the same value by construction — the flag is set by an OBSERVATION and by nothing
 //! else — so dropping it changes no output. Phase 3's live tail is where it comes back.
 
-use crate::event::Event;
+use crate::event::{Event, Key, Kind};
 use crate::message_overlay::{message_text_of, MessageOverlayMiner, SeedMessage};
 use crate::spell_facts::{looks_landing_message, SpellFacts};
 use serde_json::Value;
@@ -44,19 +44,19 @@ impl OverlayMining {
     /// events (buffApply / spellEmote = landing, buffWearOff / illusionFade / buffFade = wears-off)
     /// are candidate messages associated to the nearest anchor within the window.
     pub fn observe(&mut self, ev: &Event) {
-        match ev.kind() {
-            "castBegin" => {
-                let spell = ev.str("spell").unwrap_or_default().to_string();
+        match ev.kind_of() {
+            Kind::CastBegin => {
+                let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
                 self.miner.observe_cast(&spell, ev.ts());
             }
-            "buffApply" | "spellEmote" => self.note(ev, "landing"),
-            "buffWearOff" | "illusionFade" | "buffFade" => self.note(ev, "wearsOff"),
+            Kind::BuffApply | Kind::SpellEmote => self.note(ev, "landing"),
+            Kind::BuffWearOff | Kind::IllusionFade | Kind::BuffFade => self.note(ev, "wearsOff"),
             // The AA potion quaff is a LANDING message the leveling analytics now claim as their own
             // kind. It fell through here as `unknown` before that rule existed and the overlay
             // learned it as a verified Bottle of Alternate Adventure landing (it is absent from
             // spells.json, so the DB table never had it) — so it keeps the same miner path, and the
             // learned overlay is byte-identical to what it was.
-            "aaPotion" | "unknown" => {
+            Kind::AaPotion | Kind::Unknown => {
                 // A line the parser classified as NOTHING but that could be an un-catalogued landing
                 // message — Symbol of Pinzarn's real "The symbol of Pinzarn flashes before your
                 // eyes.", whose wiki `msg_cast_on_you` is WRONG, so the DB table never matched it.

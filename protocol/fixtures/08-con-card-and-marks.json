@@ -26,7 +26,12 @@
         "kind": "epoch",
         "epoch": 2,
         "reason": "progress",
-        "progress": { "pct": 62.4, "events": 1571003 }
+        "progress": {
+          "pct": 62.4,
+          "events": 1571003,
+          "offset": 156000000,
+          "logSize": 250000000
+        }
       }
     },
     {

@@ -134,7 +134,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       },
       {
         kind: 'changed',
-        text: 'Right after launch or a character switch, panels now say they are loading and then fill in all at once the moment the engine catches up - instead of trickling in slowly while the app worked through your history.'
+        text: 'Right after launch or a character switch, a progress bar now shows the catch-up honestly - percent done, how much of your log is read, and about how long is left - and panels fill in all at once the moment it finishes. And if the engine ever cannot start (an overzealous antivirus, a broken install), the app says exactly that in plain words, with a retry button and a one-click bug report - instead of sitting silently empty.'
       },
       {
         kind: 'new',

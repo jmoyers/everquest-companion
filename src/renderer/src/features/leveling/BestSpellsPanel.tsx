@@ -109,6 +109,11 @@ import { comboClassSet } from '@shared/levelUnlocks'
 // list draws (JOS-446): one wording, one tooltip.
 import { CELL_SX, HeadCell, SpellRow, widthOf } from './BestSpellsRows'
 import { BestSpellsResults, BestSpellsSearchField } from './BestSpellsSearch'
+// SEARCH BY TYPE (JOS-507) — a THIRD body, engaged only by the type control. See that file's header
+// for why the categories are served rather than joined in this window (ruling 4), and the panel's
+// own 260px measurement below for why they are chips rather than columns.
+import { ALL_TYPES, BestSpellsCatalogue, SpellTypeFilter } from './BestSpellsCatalogue'
+import { useSpellCatalogue } from './useSpellCatalogue'
 import { useObservedSpellRanks } from '../../lib/useObservedSpellRanks'
 import type { ObservedSpellRanksSnap } from '@shared/spellRanks'
 import { LevelStepper } from './LevelStepper'
@@ -438,6 +443,17 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
   // thing that switches the body, and nothing about the tables reads it.
   const [query, setQuery] = useState('')
   const searching = query.trim() !== ''
+  // THE TYPE FILTER (JOS-507). `ALL_TYPES` is the default and the disengaged state: while it holds,
+  // nothing below asks the engine anything and the two bodies above are byte for byte what they were
+  // before this control existed — which is also what keeps the readout's existing e2e family, whose
+  // steps derive their target spell at runtime, looking at the same rows.
+  const [category, setCategory] = useState<string>(ALL_TYPES)
+  // Scoped to the loadout by default, with the show-all toggle the catalogue body draws.
+  const [scoped, setScoped] = useState(true)
+  // …AND THE CONTROL ASKS ONCE IT IS OPENED. The facets that populate it are the engine's, so the
+  // first open is what fetches them; until then a panel nobody has touched issues no request at all.
+  const [touched, setTouched] = useState(false)
+  const filtering = category !== ALL_TYPES
   // Re-ranked by the LEVEL, the SORT and the RANKS, and by nothing else — the whole readout is one
   // pure call over an already-cached dataset, so stepping the level or the slider costs one fold of
   // ~1,450 rows. All four tables are built every time on purpose: the tab labels carry counts, so
@@ -474,6 +490,22 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
   )
   // The loadout set the result chips are filled against: a class you could be running, at a glance.
   const loadout = useMemo(() => new Set<string>(best.classes), [best.classes])
+  // THE CLIENT TABLE'S OWN ANSWER (JOS-507). Asked only once the control has been opened or a type
+  // is picked, and the engine does the whole filter/sort/window — nothing here re-derives a row.
+  // The text box feeds it too, so `tap` means the same thing to both bodies: the engine matches a
+  // name, a category OR a subcategory, which is why `Leech` is a tap.
+  const catalogue = useSpellCatalogue(
+    {
+      text: query.trim(),
+      category: filtering ? category : null,
+      subcategory: null,
+      // EMPTY IS EVERY CLASS on the wire — the show-all toggle, and the reading the schema states.
+      classes: scoped ? best.classes : [],
+      // Enough to fill the column without a second page; the engine clamps and echoes what it used.
+      limit: TOP_N * 5
+    },
+    touched || filtering
+  )
   if (best.classes.length === 0) return null
   return (
     <Paper
@@ -483,6 +515,7 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
       data-level={String(level)}
       data-simulate={String(simulate)}
       data-searching={String(searching)}
+      data-filtering={String(filtering)}
     >
       <ReadoutHeader best={best} tab={tab} level={level} onLevel={(n) => viewed.pick(n)} />
       <TabBar best={best} tab={tab} onPick={setPicked} />
@@ -491,10 +524,22 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
           spell; over the slider because the slider governs both bodies equally and reads as part of
           the table either way. */}
       <BestSpellsSearchField query={query} onChange={setQuery} />
+      {/* THE TYPE CONTROL SITS UNDER THE BOX IT NARROWS (JOS-507). Under rather than beside: the
+          band has a 260px floor and two controls on one line would leave the placeholder as two
+          visible words. Its options are the ENGINE's — the vocabulary is the player's own file's,
+          so there is no list this app could ship. */}
+      <SpellTypeFilter
+        category={category}
+        state={catalogue}
+        onChange={setCategory}
+        onOpen={() => setTouched(true)}
+      />
       <SpellRankSlider rank={simulate} onChange={setSimulate} />
       {/* KEYED BY THE TAB so the two disclosures inside reset when the table changes: `+7 more` left
           open on the DD table is not a statement about the DoT table underneath it. */}
-      {searching ? (
+      {filtering ? (
+        <BestSpellsCatalogue state={catalogue} scoped={scoped} onScoped={setScoped} />
+      ) : searching ? (
         <BestSpellsResults
           results={results}
           tab={tab}

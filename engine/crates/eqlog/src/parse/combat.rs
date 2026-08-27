@@ -5,7 +5,7 @@
 //! ASCII-only in JavaScript and Unicode-aware in the `regex` crate, and a mob name with a
 //! non-ASCII letter in it is exactly the line that would then part company.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::names::norm;
 use crate::taxonomy::{damage_category, has_critical, parse_modifiers};
 use regex::Regex;
@@ -193,15 +193,17 @@ struct Dmg<'a> {
 
 /// `dmg()` — the damage-shield shape, which carries no paren modifier and maps its category 1:1.
 fn dmg(c: &Ctx, out: &mut Ev, spec: Dmg<'_>) {
-    out.begin("damage");
+    out.begin(Kind::Damage);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("attacker", spec.attacker);
-    out.s("target", spec.target);
-    out.i("amount", spec.amount);
-    out.s("dtype", spec.dtype);
-    out.s("skill", spec.skill);
-    out.b("crit", spec.crit);
-    out.s("category", damage_category(spec.dtype, &[]));
+    out.s(Key::Attacker, spec.attacker);
+    out.s(Key::Target, spec.target);
+    out.i(Key::Amount, spec.amount);
+    out.s(Key::Dtype, spec.dtype);
+    out.s(Key::Skill, spec.skill);
+    out.b(Key::Crit, spec.crit);
+    // The empty list needs an element type now that `damage_category` is element-generic; `&str` is
+    // the arbitrary half of a choice that has no elements to make it matter.
+    out.s(Key::Category, damage_category(spec.dtype, &[] as &[&str]));
 }
 
 /// Misses / avoided swings (by far the most common combat line).
@@ -242,26 +244,26 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         } else {
             ("absorb", norm(&m[2]))
         };
-        out.begin("miss");
+        out.begin(Kind::Miss);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("attacker", &attacker);
-        out.s("target", &target);
-        out.s("mtype", mtype);
+        out.s(Key::Attacker, &attacker);
+        out.s(Key::Target, &target);
+        out.s(Key::Mtype, mtype);
         // `missAnnotations`: verb then modifiers, each spread only when present.
         if let Some(v) = r.miss_verb.captures(c.text) {
-            out.s("verb", &melee_verb_base(&v[1]));
+            out.s(Key::Verb, &melee_verb_base(&v[1]));
         }
         if let Some(md) = r.miss_mod.captures(c.text) {
-            out.strs("modifiers", &parse_modifiers(Some(&md[1])));
+            out.strs(Key::Modifiers, &parse_modifiers(Some(&md[1])));
         }
         return true;
     }
     // MISS_RE declined: the safety net for a COMPOUND trailing modifier its single-word tail rejects.
     if let Some(a) = r.skin_absorb_blow.captures(c.text) {
-        out.begin("mitigation");
+        out.begin(Kind::Mitigation);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("mtype", "absorbSwing");
-        out.s("source", &norm(&a[1]));
+        out.s(Key::Mtype, "absorbSwing");
+        out.s(Key::Source, &norm(&a[1]));
         return true;
     }
     false
@@ -271,10 +273,10 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
 pub fn classify_mitigation(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You gain a rune for ") {
         if let Some(m) = r.rune_gain.captures(c.text) {
-            out.begin("mitigation");
+            out.begin(Kind::Mitigation);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("mtype", "rune");
-            out.i("amount", m[1].parse().unwrap_or(0));
+            out.s(Key::Mtype, "rune");
+            out.i(Key::Amount, m[1].parse().unwrap_or(0));
             return true;
         }
     }
@@ -282,10 +284,10 @@ pub fn classify_mitigation(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         .starts_with("YOUR magical skin absorbs the damage of ")
     {
         if let Some(m) = r.skin_absorb_ds.captures(c.text) {
-            out.begin("mitigation");
+            out.begin(Kind::Mitigation);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("mtype", "absorbDamageShield");
-            out.s("source", &norm(&m[1]));
+            out.s(Key::Mtype, "absorbDamageShield");
+            out.s(Key::Source, &norm(&m[1]));
             return true;
         }
     }
@@ -300,33 +302,33 @@ pub fn classify_resist(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     }
     if text.starts_with("You resist") {
         if let Some(m) = r.resist_incoming.captures(text) {
-            out.begin("resist");
+            out.begin(Kind::Resist);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("caster", &norm(&m[1]));
-            out.s("target", "You");
-            out.s("spell", crate::jsstr::js_trim(&m[2]));
-            out.b("incoming", true);
+            out.s(Key::Caster, &norm(&m[1]));
+            out.s(Key::Target, "You");
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[2]));
+            out.b(Key::Incoming, true);
             return true;
         }
         return false;
     }
     // The possessive-YOUR form FIRST — 712 spell names contain `'s`.
     if let Some(m) = r.resist_yours.captures(text) {
-        out.begin("resist");
+        out.begin(Kind::Resist);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("caster", "you");
-        out.s("target", &norm(&m[1]));
-        out.s("spell", crate::jsstr::js_trim(&m[2]));
-        out.b("incoming", false);
+        out.s(Key::Caster, "you");
+        out.s(Key::Target, &norm(&m[1]));
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[2]));
+        out.b(Key::Incoming, false);
         return true;
     }
     if let Some(m) = r.resist_caster.captures(text) {
-        out.begin("resist");
+        out.begin(Kind::Resist);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("caster", &norm(&m[2]));
-        out.s("target", &norm(&m[1]));
-        out.s("spell", crate::jsstr::js_trim(&m[3]));
-        out.b("incoming", false);
+        out.s(Key::Caster, &norm(&m[2]));
+        out.s(Key::Target, &norm(&m[1]));
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[3]));
+        out.b(Key::Incoming, false);
         return true;
     }
     false
@@ -373,18 +375,18 @@ fn points_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     if let Some(m) = r.spell.captures(text) {
         let modifier = m.get(6).map(|g| g.as_str());
         let mods = parse_modifiers(modifier);
-        out.begin("damage");
+        out.begin(Kind::Damage);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("attacker", &norm(&m[1]));
-        out.s("target", &norm(&m[2]));
-        out.i("amount", m[3].parse().unwrap_or(0));
-        out.s("dtype", "spell");
-        out.s("dclass", &m[4]);
-        out.s("skill", crate::jsstr::js_trim(&m[5]));
-        out.b("crit", has_critical(&mods));
-        out.s_opt("modifier", modifier);
-        out.strs("modifiers", &mods);
-        out.s("category", damage_category("spell", &mods));
+        out.s(Key::Attacker, &norm(&m[1]));
+        out.s(Key::Target, &norm(&m[2]));
+        out.i(Key::Amount, m[3].parse().unwrap_or(0));
+        out.s(Key::Dtype, "spell");
+        out.s(Key::Dclass, &m[4]);
+        out.s(Key::Skill, crate::jsstr::js_trim(&m[5]));
+        out.b(Key::Crit, has_critical(&mods));
+        out.s_opt(Key::Modifier, modifier);
+        out.strs(Key::Modifiers, &mods);
+        out.s(Key::Category, damage_category("spell", &mods));
         return true;
     }
     if let Some(m) = r.melee.captures(text) {
@@ -397,18 +399,18 @@ fn points_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
                 .unwrap_or_else(|| "hit".to_string())
                 .as_str(),
         );
-        out.begin("damage");
+        out.begin(Kind::Damage);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("attacker", &norm(&m[1]));
-        out.s("target", &norm(&m[2]));
-        out.i("amount", m[3].parse().unwrap_or(0));
-        out.s("dtype", "melee");
-        out.s("skill", melee_skill(&verb));
-        out.s("verb", &verb);
-        out.b("crit", has_critical(&mods));
-        out.s_opt("modifier", modifier);
-        out.strs("modifiers", &mods);
-        out.s("category", damage_category("melee", &mods));
+        out.s(Key::Attacker, &norm(&m[1]));
+        out.s(Key::Target, &norm(&m[2]));
+        out.i(Key::Amount, m[3].parse().unwrap_or(0));
+        out.s(Key::Dtype, "melee");
+        out.s(Key::Skill, melee_skill(&verb));
+        out.s(Key::Verb, &verb);
+        out.b(Key::Crit, has_critical(&mods));
+        out.s_opt(Key::Modifier, modifier);
+        out.strs(Key::Modifiers, &mods);
+        out.s(Key::Category, damage_category("melee", &mods));
         return true;
     }
     false
@@ -436,17 +438,17 @@ fn taken_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         // "from <Spell>" with no "by <caster>" and not "your" — fall through to the caster-less form.
         if let Some(attacker) = attacker {
             let mods = parse_modifiers(modifier);
-            out.begin("damage");
+            out.begin(Kind::Damage);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("attacker", &attacker);
-            out.s("target", &target);
-            out.i("amount", amount);
-            out.s("dtype", "dot");
-            out.s("skill", crate::jsstr::js_trim(&skill));
-            out.b("crit", crit);
-            out.s_opt("modifier", modifier);
-            out.strs("modifiers", &mods);
-            out.s("category", "dot");
+            out.s(Key::Attacker, &attacker);
+            out.s(Key::Target, &target);
+            out.i(Key::Amount, amount);
+            out.s(Key::Dtype, "dot");
+            out.s(Key::Skill, crate::jsstr::js_trim(&skill));
+            out.b(Key::Crit, crit);
+            out.s_opt(Key::Modifier, modifier);
+            out.strs(Key::Modifiers, &mods);
+            out.s(Key::Category, "dot");
             return true;
         }
     }
@@ -454,17 +456,17 @@ fn taken_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         let modifier = m.get(4).map(|g| g.as_str());
         let crit = r.critical.is_match(modifier.unwrap_or(""));
         let mods = parse_modifiers(modifier);
-        out.begin("damage");
+        out.begin(Kind::Damage);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s_or_null("attacker", None);
-        out.s("target", &norm(&m[1]));
-        out.i("amount", m[2].parse().unwrap_or(0));
-        out.s("dtype", "dot");
-        out.s("skill", crate::jsstr::js_trim(&m[3]));
-        out.b("crit", crit);
-        out.s_opt("modifier", modifier);
-        out.strs("modifiers", &mods);
-        out.s("category", "dot");
+        out.s_or_null(Key::Attacker, None);
+        out.s(Key::Target, &norm(&m[1]));
+        out.i(Key::Amount, m[2].parse().unwrap_or(0));
+        out.s(Key::Dtype, "dot");
+        out.s(Key::Skill, crate::jsstr::js_trim(&m[3]));
+        out.b(Key::Crit, crit);
+        out.s_opt(Key::Modifier, modifier);
+        out.strs(Key::Modifiers, &mods);
+        out.s(Key::Category, "dot");
         return true;
     }
     false
@@ -486,10 +488,10 @@ pub fn classify_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
 /// Heals, plus the one heal family that states no amount.
 pub fn classify_heal(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You mend") && r.mend.is_match(c.text) {
-        out.begin("healUnstated");
+        out.begin(Kind::HealUnstated);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("skill", "Mend");
-        out.s("target", "You");
+        out.s(Key::Skill, "Mend");
+        out.s(Key::Target, "You");
         return true;
     }
     if !c.text.contains(" healed ") {
@@ -506,23 +508,26 @@ pub fn classify_heal(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     } else {
         norm(t_raw)
     };
-    out.begin("heal");
+    out.begin(Kind::Heal);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("target", &target);
-    out.i("amount", m[4].parse().unwrap_or(0));
+    out.s(Key::Target, &target);
+    out.i(Key::Amount, m[4].parse().unwrap_or(0));
     // `rawAmount: m[5] ? Number(m[5]) : undefined` — the key is written and then dropped by
     // `JSON.stringify` when the group did not participate.
-    out.i_opt("rawAmount", m.get(5).and_then(|g| g.as_str().parse().ok()));
+    out.i_opt(
+        Key::RawAmount,
+        m.get(5).and_then(|g| g.as_str().parse().ok()),
+    );
     // `spell: m[6]?.trim() || undefined` — an empty trim is absent, not "".
     let spell = m.get(6).map(|g| crate::jsstr::js_trim(g.as_str()));
-    out.s_opt("spell", spell.filter(|s| !s.is_empty()));
-    out.s("healer", &healer);
+    out.s_opt(Key::Spell, spell.filter(|s| !s.is_empty()));
+    out.s(Key::Healer, &healer);
     out.b(
-        "crit",
+        Key::Crit,
         r.critical.is_match(m.get(7).map_or("", |g| g.as_str())),
     );
     if m.get(3).is_some() {
-        out.b("overTime", true);
+        out.b(Key::OverTime, true);
     }
     true
 }

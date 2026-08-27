@@ -75,7 +75,7 @@ use crate::combat::procdetect::RecentCasts;
 use crate::combat::roster::{RosterSnap, RosterSource};
 use crate::combat::statetimeline::StateTimeline;
 use crate::combat::world::{Resolved, WorldModel};
-use eqlog::names::id_key;
+use eqlog::names::{id_key, id_key_ref};
 use std::collections::HashSet;
 
 /// One half of the combat-modifier pair — the last stance (or invocation) the player committed to,
@@ -718,7 +718,7 @@ impl EngineState {
         if self.current.is_none() {
             return;
         }
-        let key = id_key(name);
+        let key = id_key_ref(name);
         if self.is_known_player(&key) {
             return;
         }
@@ -736,7 +736,7 @@ impl EngineState {
             Some(enc) => enc
                 .engaged
                 .iter()
-                .filter(|id| name_key_of(id) == Some(key.as_str()))
+                .filter(|id| name_key_of(id) == Some(key.as_ref()))
                 .cloned()
                 .collect(),
             None => return,
@@ -797,7 +797,7 @@ impl EngineState {
     /// So the label is discarded here and the call is made anyway. The caller gates on the FRESH
     /// encounter exactly as the TS does; without one, the raw name stands and nothing is touched.
     pub fn defender_label(&mut self, name: &str, ts: i64) -> String {
-        let key = id_key(name);
+        let key = id_key_ref(name);
         if key == "you" {
             return "You".to_string();
         }
@@ -805,7 +805,7 @@ impl EngineState {
             Some(enc) => enc
                 .engaged
                 .iter()
-                .any(|id| name_key_of(id) == Some(key.as_str())),
+                .any(|id| name_key_of(id) == Some(key.as_ref())),
             None => false,
         };
         if engaged {

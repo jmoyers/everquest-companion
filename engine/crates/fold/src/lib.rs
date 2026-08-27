@@ -44,6 +44,10 @@
 //! against.
 
 pub mod combat;
+/// The CLIENT's string table (`dbstr_us.txt`), parsed down to its spell-category namespace — the
+/// words behind the integer ids `spells_us.txt` stores (JOS-507). PURE over a string, like
+/// `spells_us`; the file belongs to `engined::spells`, which owns the install directory both sit in.
+pub mod dbstr;
 pub mod epoch;
 pub mod event;
 pub mod jsfn;
@@ -142,7 +146,7 @@ pub trait EqModule {
     /// after the primary event has reached every module, which is exactly `LogBus.emit`'s drain.
     ///
     /// One producer (`buffs`, `buffExpired`). Defaulted empty for the other nineteen.
-    fn take_derived(&mut self) -> Vec<Event> {
+    fn take_derived(&mut self) -> Vec<Event<'static>> {
         Vec::new()
     }
 
@@ -423,13 +427,37 @@ impl Registry {
     /// the caller's because it is the bus's: `Fold` owns it and drains it, and a module that emits
     /// while a drain is running appends to the very queue being drained — which is what
     /// `LogBus.drain`'s shift-until-empty does.
-    pub fn dispatch(&mut self, ev: &Event, live: bool, derived: &mut Vec<Event>) {
+    pub fn dispatch(&mut self, ev: &Event, live: bool, derived: &mut Vec<Event<'static>>) {
         for m in &mut self.mods {
             m.on_event(ev, live);
             let mut out = m.take_derived();
             if !out.is_empty() {
                 derived.append(&mut out);
             }
+        }
+    }
+
+    /// [`Registry::dispatch`] with a stopwatch around each module — THE MEASUREMENT INSTRUMENT
+    /// (JOS-504) and nothing else: `parity --stages` is its one caller, the sink receives
+    /// `(module index, nanoseconds)` per delivery, and the delivery semantics are line-for-line
+    /// `dispatch`'s. Kept as a SECOND function rather than a flag on the first so the production
+    /// dispatch never pays two clock reads per module per event; if `dispatch` changes, this
+    /// changes with it or the attribution is measuring a pipeline that no longer exists.
+    pub fn dispatch_timed(
+        &mut self,
+        ev: &Event,
+        live: bool,
+        derived: &mut Vec<Event<'static>>,
+        sink: &mut dyn FnMut(usize, u64),
+    ) {
+        for (i, m) in self.mods.iter_mut().enumerate() {
+            let t = std::time::Instant::now();
+            m.on_event(ev, live);
+            let mut out = m.take_derived();
+            if !out.is_empty() {
+                derived.append(&mut out);
+            }
+            sink(i, u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX));
         }
     }
 
@@ -453,7 +481,7 @@ impl Registry {
     /// the structural half of "never tick during a historical fold"; over here the historical fold
     /// is `fold_bytes`, which does not call this at all, so the guard has nothing to guard. The
     /// caller drives the clock and the caller is the live tail.
-    pub fn tick(&mut self, now_ms: i64, derived: &mut Vec<Event>) {
+    pub fn tick(&mut self, now_ms: i64, derived: &mut Vec<Event<'static>>) {
         // THE TIMER PROJECTION, BUILT ONCE AND BEFORE THE LOOP (JOS-492) — see
         // [`EqModule::on_tick`] for why it is a parameter rather than a handle, and for why this
         // instant is the one the TS's lazy pull would have read at.
@@ -718,7 +746,7 @@ pub struct Fold {
     /// The bus's derived queue. THREE producers, exactly as over there: the registry's own modules
     /// (`buffs`, whose `buffExpired` cluster 2c brought), the epoch detector, and the offline-gap
     /// detector.
-    derived: Vec<Event>,
+    derived: Vec<Event<'static>>,
     events: u64,
     last_ts: i64,
 }
@@ -861,12 +889,84 @@ impl Fold {
     /// them as parsed values at once costs more than the machine has — `goldenOracle.mts`'s rule
     /// about its own artifacts, and it applies just as hard to the fold's input.
     pub fn fold_bytes(&mut self, parser: &eqlog::Parser, bytes: &[u8]) {
-        eqlog::scan::scan_bytes(parser, bytes, |line| {
-            if let Some(ev) = Event::from_json(line) {
-                self.on_primary(&ev, false);
-            }
+        eqlog::scan::scan_bytes(parser, bytes, |_json, payload| {
+            self.on_primary(&Event::typed(payload), false);
         });
     }
+
+    /// [`Fold::fold_bytes`] with per-consumer attribution — THE MEASUREMENT INSTRUMENT (JOS-504),
+    /// `parity --stages`'s second half. Returns nanoseconds per registered module (delivery
+    /// order), for the combat engine, for the two detectors, and for `Event::from_json`. The bus
+    /// semantics are `on_primary`/`observe`'s exactly — primaries then a shift-until-empty drain —
+    /// restated here with stopwatches because a flag on the production path would make every
+    /// ordinary fold pay the clock reads. OBSERVER COST, stated: ~2 clock reads per consumer per
+    /// event (~40-60 ns a pair), inflating each bucket equally by well under a second across a
+    /// 2.5M-event log — shares are trustworthy, absolutes are a shade high.
+    pub fn fold_bytes_attributed(
+        &mut self,
+        parser: &eqlog::Parser,
+        bytes: &[u8],
+    ) -> FoldAttribution {
+        let mut out = FoldAttribution {
+            module_ids: self.registry.ids(),
+            module_ns: vec![0u64; self.registry.ids().len()],
+            combat_ns: 0,
+            detectors_ns: 0,
+            reparse_ns: 0,
+        };
+        eqlog::scan::scan_bytes(parser, bytes, |_json, payload| {
+            // THE RE-PARSE IS GONE (JOS-505) and the bucket stays, reading zero, because the
+            // attribution table is compared against JOS-504's baseline table and a row that
+            // vanished would read as a row nobody measured. It is now the cost of WRAPPING the
+            // parser's payload, which is a discriminant copy and a reference.
+            let t = std::time::Instant::now();
+            let ev = Event::typed(payload);
+            out.reparse_ns += u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            self.events += 1;
+            self.last_ts = self.last_ts.max(ev.ts());
+            self.observe_attributed(&ev, false, &mut out);
+            let mut i = 0;
+            while i < self.derived.len() {
+                let d = self.derived[i].clone();
+                i += 1;
+                self.observe_attributed(&d, false, &mut out);
+            }
+            self.derived.clear();
+        });
+        out
+    }
+
+    /// `observe`, with the stopwatches — see [`Fold::fold_bytes_attributed`].
+    fn observe_attributed(&mut self, ev: &Event, live: bool, out: &mut FoldAttribution) {
+        self.registry
+            .dispatch_timed(ev, live, &mut self.derived, &mut |i, ns| {
+                out.module_ns[i] += ns;
+            });
+        if let Some(c) = &mut self.combat {
+            let t = std::time::Instant::now();
+            c.on_event(ev, live, self.registry.roster());
+            out.combat_ns += u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        }
+        let t = std::time::Instant::now();
+        if let Some(d) = self.epoch.observe(ev) {
+            self.derived.push(d);
+        }
+        if let Some(d) = self.sessions.observe(ev) {
+            self.derived.push(d);
+        }
+        out.detectors_ns += u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    }
+}
+
+/// Where an attributed fold's time went — [`Fold::fold_bytes_attributed`]'s answer.
+#[derive(Debug)]
+pub struct FoldAttribution {
+    /// Registered module ids, delivery order — index-aligned with `module_ns`.
+    pub module_ids: Vec<&'static str>,
+    pub module_ns: Vec<u64>,
+    pub combat_ns: u64,
+    pub detectors_ns: u64,
+    pub reparse_ns: u64,
 }
 
 /// THE APP'S PERSISTED KNOWLEDGE, ALREADY PARSED — what [`Registry::seed_persisted`] puts back.
@@ -2212,7 +2312,7 @@ mod tests {
             fn snapshot(&self) -> Value {
                 json!({ "seq": 0, "state": {} })
             }
-            fn take_derived(&mut self) -> Vec<Event> {
+            fn take_derived(&mut self) -> Vec<Event<'static>> {
                 vec![Event::from_value(
                     json!({ "kind": "buffExpired", "seq": 7, "ts": 42, "raw": "x" }),
                 )]
@@ -2240,7 +2340,7 @@ mod tests {
         // timezone rather than to the claim.
         let bytes: &[u8] = b"[Wed Aug 19 16:00:00 2026] You gain experience! (3.288%)\n";
         let mut landed = None;
-        eqlog::scan::scan_bytes(&parser, bytes, |line| {
+        eqlog::scan::scan_bytes(&parser, bytes, |line, _payload| {
             landed = Event::from_json(line).map(|ev| ev.ts());
         });
         let landed = landed.expect("the parser dated the line");

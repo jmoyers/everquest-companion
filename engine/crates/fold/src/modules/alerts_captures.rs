@@ -450,7 +450,7 @@ mod tests {
     use regex::Regex;
     use serde_json::json;
 
-    fn ev(v: serde_json::Value) -> Event {
+    fn ev(v: serde_json::Value) -> Event<'static> {
         Event::from_value(v)
     }
 

@@ -39,6 +39,23 @@ export type View =
   // compile-time strip behind `UNRELEASED`, absent from every packaged build) until the owner
   // released it in JOS-327; it is an ordinary member of both lists below now.
   | 'character'
+  // THE SPELL DRILLDOWN (JOS-508) — the first member of this union that is NOT a tab.
+  //
+  // It has no nav row (components/NavDrawer.tsx `ROWS` is an explicit list and this is not in it)
+  // and it is deliberately ABSENT from `KNOWN_VIEWS` below, which is the one thing making that
+  // work: a view id the build cannot restore bounces to the default on launch, and a spell page
+  // with no spell is exactly the thing nobody should be able to come back to. It is reached ONLY
+  // by clicking a spell name — every one of them, through `lib/spellLink.tsx` — and left by Back.
+  //
+  // AND IT IS ABSENT FROM `TELEMETRY_VIEWS` (shared/telemetry.ts) ON PURPOSE. That enum is
+  // validated by the ingest Lambda, so a new member is a SERVER DEPLOY before it is a client
+  // change; `lib/telemetry.ts dwellView` already fails closed for a view the schema does not
+  // carry — its header calls that "the ONE deliberate exception" — so this page reports no dwell
+  // and distorts no other tab's, with no deploy ordering to arrange. The same applies to
+  // `noteCurrentView` in main, which drops an unknown id and keeps the last one it trusted: an
+  // error thrown here is attributed to the tab you came from, which for a drill is the honest
+  // answer anyway. Widening either enum is a separate, owner-sequenced change.
+  | 'spell'
 
 export const VIEW_KEY = 'eq.view'
 export const DEFAULT_VIEW: View = 'overview'
@@ -75,7 +92,11 @@ export const VIEW_LABELS: Record<View, string> = {
   timers: 'Timers',
   preferences: 'Preferences',
   triage: 'Triage',
-  character: 'Character'
+  character: 'Character',
+  // Named even though no nav row draws it: this table is also what a drill's Back button reads
+  // (navOrigin.ts), so the day a spell page links onward to something else, that something's Back
+  // says "Back to Spell" without anybody remembering to come here.
+  spell: 'Spell'
 }
 
 // Every member of `View` this BUILD can actually render. A view missing here is silently

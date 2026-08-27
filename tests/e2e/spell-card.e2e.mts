@@ -335,6 +335,197 @@ async function checkTheBuffRowCard(page: Page, log: FixtureLog): Promise<void> {
   await closeCard(page)
 }
 
+/** Everything the drilldown page is saying, as plain values a check can read. */
+interface PageRead {
+  present: boolean
+  spell: string
+  title: string
+  line: string
+  lineClass: string
+  /** one entry per rung: `<name>|<level>|<when>|<here>`. */
+  steps: string[]
+  neighbours: string[]
+  /** one entry per class chip: `<class>|<label>|<mine>`. */
+  classes: string[]
+  back: string
+}
+
+/** Read the drilldown. Same no-named-bindings-inside-evaluate law as `readCard` above. */
+function readPage(page: Page): Promise<PageRead> {
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-testid="spell-page"]')
+    if (!el) {
+      return {
+        present: false,
+        spell: '',
+        title: '',
+        line: '',
+        lineClass: '',
+        steps: [],
+        neighbours: [],
+        classes: [],
+        back: ''
+      }
+    }
+    const section = el.querySelector('[data-testid="spell-line-section"]')
+    return {
+      present: true,
+      spell: el.getAttribute('data-spell') ?? '',
+      title: (el.querySelector('[data-testid="spell-page-title"]')?.textContent ?? '').trim(),
+      line: section?.getAttribute('data-line') ?? '',
+      lineClass: section?.getAttribute('data-line-class') ?? '',
+      steps: Array.from(el.querySelectorAll('[data-testid="spell-line-step"]')).map((n) =>
+        [
+          n.getAttribute('data-spell') ?? '',
+          (n.children[0].textContent ?? '').trim(),
+          (n.querySelector('[data-testid="spell-line-when"]')?.textContent ?? '').trim(),
+          n.getAttribute('data-here') ?? ''
+        ].join('|')
+      ),
+      neighbours: Array.from(el.querySelectorAll('[data-testid="spell-line-neighbours"]')).map((n) =>
+        (n.textContent ?? '').trim()
+      ),
+      classes: Array.from(el.querySelectorAll('[data-testid="spell-class-level"]')).map((n) =>
+        [n.getAttribute('data-class') ?? '', (n.textContent ?? '').trim(), n.getAttribute('data-mine') ?? ''].join('|')
+      ),
+      back: (el.querySelector('[data-testid="spell-page-back"]')?.textContent ?? '').trim()
+    }
+  })
+}
+
+/**
+ * THE DRILLDOWN (JOS-508) — click a spell name anywhere and get its LINE, its schedule and its
+ * classes.
+ *
+ * WHY IT IS AN E2E CLAIM AND NOT A UNIT ONE. `tests/spellLinePath.test.mts` owns the join facet by
+ * facet against the real committed sources and can see none of the four things below, each of which
+ * is a separate part that only a running app has all of:
+ *
+ *   1. THE LINK EXISTS AT ALL, on a surface nobody edited. The click lands on the Buffs tab's live
+ *      buff row — a file this ticket did not touch — because the affordance was wired inside
+ *      `SpellTooltip` and published by a context. If that seam is wrong, every unit test still
+ *      passes and no spell name in the product is clickable.
+ *   2. THE ROUTE RESOLVES. A `View` member with no nav row, absent from `KNOWN_VIEWS`, reached only
+ *      through the router's origin stack. Nothing below `App.tsx` can prove that mounts.
+ *   3. THE PAGE IS FED BY THE REAL IPC, combo and all: `spells:detail` now awaits the combo module
+ *      through the engine shim, and a page drawn before that resolves would show a schedule of
+ *      blanks. The `when` column is therefore asserted as a CLOSED SET rather than a value — the
+ *      loadout this fixture resolves to is not this spec's subject, but "it said one of the three
+ *      things it is allowed to say" is exactly the regression that would catch a broken join.
+ *   4. THE LADDER IS WALKABLE. Every rung is itself a link, so a click hops to that spell's page and
+ *      Back retraces the hop — which is the origin stack doing its job across a same-view link, the
+ *      one case none of the app's other deep links exercises.
+ */
+async function checkTheDrilldown(page: Page): Promise<void> {
+  // The buff row is still on screen from the step above, and its name is a link now.
+  await page.click('[data-testid="active-buff-name"]', { timeout: 30_000 })
+  const first = await settle(() => readPage(page), (p) => p.present && p.classes.length > 0, {
+    timeoutMs: 20_000
+  })
+  if (!check('clicking a spell name opens its drilldown page', first.present, JSON.stringify(first))) return
+  checkTheIdentity(first)
+  checkTheLadderRows(first)
+  checkTheClassTable(first)
+  await checkTheWalk(page, first)
+
+  // And out of the drill entirely, to the tab the whole journey started on.
+  await page.click('[data-testid="spell-page-back"]', { timeout: 20_000 })
+  const home = await settle(
+    () => page.evaluate(() => document.querySelectorAll('[data-testid="active-buff-name"]').length),
+    (n) => n > 0,
+    { timeoutMs: 20_000 }
+  )
+  check('Back out of the drill lands on the tab the name was clicked from', home > 0, `${String(home)} buff rows`)
+}
+
+/** Whose page this is, and where Back goes. Three small readers rather than one, for the cap. */
+function checkTheIdentity(first: PageRead): void {
+  check(
+    'the page is about the name that was clicked, rank suffix intact',
+    first.spell === 'Clarity III' && first.title === 'Clarity III',
+    `data-spell=${first.spell} title=${first.title}`
+  )
+  check(
+    'the LINE is named, and it is named with the class whose ladder it is',
+    first.line.length > 0 && first.lineClass.length > 0,
+    `${first.line} · ${first.lineClass}`
+  )
+  check('the Back button names where the drill came from', first.back === 'Buffs', first.back)
+}
+
+/** SECTION 2: the progression, and the schedule column beside it. */
+function checkTheLadderRows(first: PageRead): void {
+  check(
+    'the line is drawn as a progression - more than one rung, exactly one of them marked as here',
+    first.steps.length > 1 && first.steps.filter((s) => s.endsWith('|yes')).length === 1,
+    first.steps.join(' / ')
+  )
+  // THE SCHEDULE COLUMN, as a CLOSED SET. Three answers are legal and a fourth is a defect: a level
+  // the loadout reaches, an honest refusal, or "we do not know your classes yet". The loadout this
+  // fixture resolves to is not this spec's subject — that it said one of the three things the model
+  // permits is what would catch a join that silently stopped answering.
+  const whens = first.steps.map((s) => s.split('|')[2])
+  const legal = (w: string): boolean =>
+    /^you: \d+$/.test(w) || w === 'not for your classes' || w === 'loadout unknown'
+  check(
+    'every rung says WHEN, and only in the words the model is allowed to use',
+    whens.length > 0 && whens.every(legal),
+    whens.join(' / ')
+  )
+}
+
+/** SECTION 3: every class that gets the spell, with its level. */
+function checkTheClassTable(first: PageRead): void {
+  const shaped = (c: string): boolean => /\|[A-Z]{3} \d+\|/.test(c)
+  check(
+    'the class table lists every class that gets the spell, with its level',
+    first.classes.length > 0 && first.classes.every(shaped),
+    first.classes.join(' / ')
+  )
+}
+
+/**
+ * WALKING THE LADDER — every rung is a link, so a click hops to that spell's own page.
+ *
+ * The claim that needed its own step: a SAME-VIEW link. Every other deep link in this app crosses
+ * from one tab to another, so the origin model's behaviour when the destination IS the current view
+ * is exercised nowhere else — and it turned out to be the thing this spec was written wrong about
+ * first time round. `navOrigin.ts afterLink` returns the trail UNTOUCHED when `from.view === to`
+ * ("you did not travel, so the trail behind you is still the trail behind you"), so a ladder walk
+ * keeps ONE origin: the surface the first spell name was clicked on. One Back leaves the whole
+ * excursion, the button says so out loud, and the way back up the ladder is the ladder — which is
+ * why the last assertion here is that the walked page draws the rung we came from.
+ *
+ * That is asserted rather than worked around because it is the behaviour, and a spec that quietly
+ * expected a growing trail would be pressure to change `afterLink` for the five links already
+ * depending on it.
+ */
+async function checkTheWalk(page: Page, first: PageRead): Promise<void> {
+  const other = first.steps.map((s) => s.split('|')[0]).find((n) => n !== 'Clarity')
+  if (!check('the ladder offers another rung to walk to', other !== undefined, first.steps.join(' / '))) return
+  await page.click(`[data-testid="spell-line-step"][data-spell="${other}"] p`, { timeout: 20_000 })
+  // THE TITLE IS NOT THE CONDITION — it is the name that was clicked and renders on the same frame
+  // as the mount, before `spells:detail` has answered. Waiting on it alone read an empty ladder off
+  // a page that was still loading (wave E3: wait for the condition, never for what appears first).
+  // The class table is the last thing the record fills in, so it is the settled state.
+  const walked = await settle(
+    () => readPage(page),
+    (p) => p.present && p.title === other && p.classes.length > 0,
+    { timeoutMs: 20_000 }
+  )
+  check('clicking a rung opens THAT spell’s page', walked.title === other, walked.title)
+  check(
+    'a same-view hop keeps ONE origin - Back still names where the excursion began',
+    walked.back === 'Buffs',
+    walked.back
+  )
+  check(
+    '…and the way back up the ladder is the ladder: the rung we came from is drawn, and linked',
+    walked.steps.some((s) => s.startsWith('Clarity|')),
+    walked.steps.join(' / ')
+  )
+}
+
 /** Open the Alerts tab, then the suggestion picker, and wait for its rows to arrive over IPC. */
 async function openPicker(page: Page): Promise<number> {
   await page.click('[data-testid="nav-alerts"]', { timeout: 60_000 })
@@ -376,6 +567,10 @@ async function main(): Promise<void> {
     }
     await page.keyboard.press('Escape')
     await checkTheBuffRowCard(page, log)
+    // JOS-508 rides the same buff row: the card is what a HOVER says, the page is what a CLICK
+    // says, and doing them back to back on one anchor is the proof that the link did not cost the
+    // hover (`SpellTooltip` stayed `disableInteractive`; only the anchor gained a handler).
+    await checkTheDrilldown(page)
     check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
     if (failures.length) await dumpArtifacts(page, 'spell-card-FAIL')
   } finally {

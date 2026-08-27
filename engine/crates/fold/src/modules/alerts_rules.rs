@@ -64,7 +64,7 @@
 //! already has a rule for. It is written down here because the SET of patterns that fall into it is
 //! bigger on this side, and that is a fact about the cutover rather than about any one def.
 
-use crate::event::Event;
+use crate::event::{Event, Key};
 use crate::jsmap::JsMap;
 use crate::modules::alerts_captures::{
     harvest_captures, merge_captures, wants_target_token, with_auto_captures, CaptureMap,
@@ -75,7 +75,7 @@ use crate::modules::alerts_early::{
     EarlyWarnings,
 };
 use crate::modules::buff_timer_rows::BuffTimerRow;
-use eqlog::jsstr::{js_trim, write_js_number};
+use eqlog::jsstr::js_trim;
 use eqlog::names::{id_key, spell_canon_key};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
@@ -241,27 +241,6 @@ fn fold_reaches(field: &Field, ev: &Event) -> bool {
     ev.kind() == "damage" && matches!(ev.str("dtype"), Some("spell" | "dot"))
 }
 
-/// Stringify ONE event field for matching — JS's own `String()` coercion, reproduced rather than
-/// improved on, because the coerced text is exactly what every existing alert def is matched
-/// against: an array joins with ',' (a nullish element contributing ''), and an object element
-/// renders as the literal '[object Object]'.
-fn field_text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => {
-            let mut out = String::new();
-            write_js_number(&mut out, n.as_f64().unwrap_or_default());
-            out
-        }
-        // Only reachable as an array ELEMENT — `join` renders nullish as ''. A top-level null is
-        // refused before this is called (`field_matches`), exactly as `raw == null` refuses it.
-        Value::Null => String::new(),
-        Value::Array(a) => a.iter().map(field_text).collect::<Vec<_>>().join(","),
-        Value::Object(_) => "[object Object]".to_owned(),
-    }
-}
-
 /// THE SPELL NAMES ONE EVENT CAN HONESTLY ANSWER TO (JOS-84) — every name in the event's
 /// `candidates` list, string elements and `{name}` objects alike, or empty when it carries none.
 ///
@@ -269,17 +248,12 @@ fn field_text(v: &Value) -> String {
 /// different spells), so the parser puts a BEST-EFFORT pick in `spell` and the truth in
 /// `candidates`. A `where.spell` matcher tests the whole set, or an enchanter's Shiftless Deeds
 /// alert is compared against the string "Forlorn Deeds" and can never fire.
+///
+/// BOTH SHAPES, and the union lives on the event rather than here (JOS-505): `buffWearOff` writes a
+/// plain `string[]` where `buffApply`/`cc`/`charm` write objects, and which one a def will meet is
+/// not a fact this file knows.
 fn candidate_names(ev: &Event) -> Vec<String> {
-    let Some(Value::Array(list)) = ev.get("candidates") else {
-        return Vec::new();
-    };
-    list.iter()
-        .filter_map(|c| match c {
-            Value::String(s) => Some(s.clone()),
-            Value::Object(o) => o.get("name")?.as_str().map(str::to_owned),
-            _ => None,
-        })
-        .collect()
+    ev.any_candidate_names(Key::Candidates)
 }
 
 /// Compile one matcher spec. A value wrapped in slashes is a case-insensitive regex; anything else
@@ -361,9 +335,11 @@ fn accepts(field: &Field, text: &str, folds: bool) -> bool {
 /// reason `matched_spell_name` reports that name rather than the event's best-effort pick: the text
 /// the pattern matched is the text it named.
 fn field_matches(ev: &Event, field: &Field) -> Option<Hit> {
-    let raw = ev.get(&field.key)?;
+    // `field.key` is a string because an alert definition is user-authored: it may name any field,
+    // including one no event carries, and that has always read as ABSENT (`Event::field_text`
+    // answers `None`) — which is an immediate no-match, exactly as the paragraph above says.
+    let text = ev.field_text(field.key.as_str())?;
     let folds = fold_reaches(field, ev);
-    let text = field_text(raw);
     if accepts(field, &text, folds) {
         return Some(captures_from(field, &text));
     }
@@ -989,7 +965,7 @@ mod tests {
     use crate::event::Event;
     use serde_json::{json, Value};
 
-    fn ev(line: &str) -> Event {
+    fn ev(line: &str) -> Event<'static> {
         Event::from_json(line).expect("a JSON object")
     }
 

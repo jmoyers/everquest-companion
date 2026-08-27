@@ -47,6 +47,8 @@ function bare(over: Partial<SpellDetail> = {}): SpellDetail {
     classLevels: [],
     effectClasses: [],
     lineage: null,
+    linePath: null,
+    combo: [],
     ...over
   }
 }

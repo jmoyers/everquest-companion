@@ -357,12 +357,16 @@ fn server_of(log: &std::path::Path) -> Option<String> {
 }
 
 impl EventSink for FoldSink {
-    /// One event. `Event::from_json` is the FOLD's own door — a line it declines is a line no
-    /// module wanted, and the ingest's own count already recorded that the parser produced it.
+    /// One event, straight from the parser into the fold (JOS-505).
+    ///
+    /// IT USED TO PARSE THE NDJSON BACK. `Event::from_json` was the fold's door and could decline a
+    /// line; now there is nothing to decline, because the payload IS what the parser wrote and a
+    /// parse that produced no event never reaches this method at all. The `Option` that guarded it
+    /// described a failure only a corrupt string could cause, and the string is no longer on the
+    /// path.
     fn event(&mut self, event: &Event<'_>) {
-        if let Some(ev) = fold::event::Event::from_json(event.json) {
-            self.fold.on_primary(&ev, event.live);
-        }
+        self.fold
+            .on_primary(&fold::event::Event::typed(event.payload), event.live);
     }
 
     /// THE LIVE HEARTBEAT, straight through (owner ruling 22, JOS-481). One line, because the whole
@@ -755,19 +759,6 @@ mod tests {
     use crate::ingest::{Event, EventSink, SinkInputs};
     use std::path::{Path, PathBuf};
 
-    /// One event the `kills` module counts: a death you landed. Written as the parser writes it —
-    /// `death` is the kind, `bySelf` is the counted filter, `name` is what the map is keyed by.
-    ///
-    /// THE `seq` IS IN THE JSON, and that is the thing worth knowing here: `ingest::Event::seq` is
-    /// the INGEST's counter, and a module's published `seq` comes off the event's own field, which
-    /// the parser stamped. The two agree on a real scan by construction; a test that hardcoded one
-    /// and varied the other would be pinning a number nothing produces.
-    fn death(seq: i64) -> String {
-        format!(
-            r#"{{"kind":"death","name":"a sand giant","bySelf":true,"seq":{seq},"ts":1787181707000,"raw":"a sand giant has been slain by Primitive!"}}"#
-        )
-    }
-
     fn inputs<'a>(log: &'a Path, clock: &'a eqlog::Clock) -> SinkInputs<'a> {
         SinkInputs {
             log,
@@ -905,10 +896,32 @@ mod tests {
         assert!(sink.snapshot("combat").is_none(), "combat is not a module");
     }
 
-    /// Feed one death, stamped with `seq`.
+    /// Feed one death you landed, stamped with `seq` — the event the `kills` module counts:
+    /// `death` is the kind, `bySelf` is the counted filter, `name` is what the map is keyed by.
+    ///
+    /// BUILT THROUGH THE PARSER'S OWN WRITER (JOS-505) rather than as a JSON literal, which it used
+    /// to be: the sink reads the TYPED half now, so a hand-written string would drive a path
+    /// production does not take. It also removes a trap the literal carried — the two halves cannot
+    /// disagree, because there is one statement of the event.
+    ///
+    /// THE `seq` IS IN THE EVENT, and that is the thing worth knowing here: `ingest::Event::seq` is
+    /// the INGEST's counter, and a module's published `seq` comes off the event's own field, which
+    /// the parser stamped. The two agree on a real scan by construction; a test that hardcoded one
+    /// and varied the other would be pinning a number nothing produces.
     fn kill(sink: &mut dyn EventSink, seq: i64) {
+        let mut ev = eqlog::event::Ev::new();
+        ev.begin(eqlog::event::Kind::Death);
+        ev.envelope(
+            seq,
+            1_787_181_707_000,
+            "a sand giant has been slain by Primitive!",
+        );
+        ev.s(eqlog::event::Key::Name, "a sand giant");
+        ev.b(eqlog::event::Key::BySelf, true);
+        let (json, payload) = ev.done();
         sink.event(&Event {
-            json: &death(seq),
+            json,
+            payload,
             seq,
             live: false,
         });

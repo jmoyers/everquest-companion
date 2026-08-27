@@ -20,12 +20,46 @@ pub fn norm(name: &str) -> String {
 }
 
 /// `idKey` — the lowercased identity key. Unicode default case conversion, not ASCII-only.
+///
+/// THE OWNED SPELLING, kept because ~40 call sites genuinely RETAIN the key (a set membership, a map
+/// entry, a struct field). Every site that only wants to COMPARE or to LOOK UP should reach for
+/// [`id_key_ref`] instead; this one is that function plus the copy.
 pub fn id_key(name: &str) -> String {
-    let n = js_trim(name).to_lowercase();
-    if n == "you" || n == "yourself" || n == "your" {
-        return "you".to_string();
+    id_key_ref(name).into_owned()
+}
+
+/// `idKey`, BORROWED WHERE THE NAME IS ALREADY ITS OWN KEY (JOS-506).
+///
+/// The fold asks this question several times per damage line and almost every answer is thrown away
+/// immediately after a comparison — so the allocation was the whole cost of the call. EQ names are
+/// ASCII and the overwhelming majority of the log's identity questions are asked about a name that
+/// is already lowercase (`a large rat`, `you`), which is exactly the case that can answer with a
+/// slice of the caller's own bytes.
+///
+/// THE FAST PATH IS EXACT, NOT APPROXIMATE, and the reason is a property of ASCII rather than a
+/// guess: `str::to_lowercase` is Unicode default case conversion, whose only non-per-character rule
+/// is the Greek final sigma — so for a string whose bytes are all ASCII and none of them `A`–`Z`,
+/// lowercasing is the identity function and the trimmed slice IS the key. Anything else (an
+/// uppercase letter, any non-ASCII byte) falls through to the same `to_lowercase` the owned
+/// spelling always ran, so a name this repo has never seen behaves exactly as it did before.
+///
+/// The `you`/`yourself`/`your` fold answers with a `'static` slice, which a `Cow<'_, str>` accepts
+/// for any lifetime — so even the rewriting case allocates nothing.
+pub fn id_key_ref(name: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let n = js_trim(name);
+    if n.bytes().all(|b| b.is_ascii() && !b.is_ascii_uppercase()) {
+        // Already lowercase, so `to_lowercase` would have handed back these same bytes.
+        return match n {
+            "yourself" | "your" => Cow::Borrowed("you"),
+            _ => Cow::Borrowed(n),
+        };
     }
-    n
+    let l = n.to_lowercase();
+    if l == "you" || l == "yourself" || l == "your" {
+        return Cow::Borrowed("you");
+    }
+    Cow::Owned(l)
 }
 
 /// `RANK_TAIL_RE` — a trailing, word-bounded I–X at the END of a name. Case SENSITIVE, exactly as
@@ -113,5 +147,61 @@ pub fn clean_mob(s: Option<&str>) -> Option<String> {
         None
     } else {
         Some(out.to_string())
+    }
+}
+
+#[cfg(test)]
+mod id_key_tests {
+    use super::{id_key, id_key_ref};
+    use std::borrow::Cow;
+
+    /// The names the fold actually asks about, plus the ones that decide the fast path's edges: the
+    /// three self-words in both cases, an uppercase name, a name needing a trim, and two non-ASCII
+    /// spellings whose lowercasing is NOT byte-wise (a Turkish dotted capital I lowercases to two
+    /// code points; a Greek capital sigma is the one character with a context-sensitive rule).
+    const CASES: &[&str] = &[
+        "you",
+        "You",
+        "YOU",
+        "your",
+        "Your",
+        "yourself",
+        "Yourself",
+        "a large rat",
+        "A Large Rat",
+        "  Primitive  ",
+        "Innoruuk`s Chosen",
+        "",
+        "   ",
+        "İstanbul",
+        "ΣΟΦΟΣ",
+        "Straße",
+    ];
+
+    /// THE BORROWED SPELLING IS THE OWNED ONE. Stated as an identity over every case rather than as
+    /// a table of expected strings, because the claim this ticket makes is precisely that the two
+    /// cannot disagree - a table would let them drift and still pass.
+    #[test]
+    fn the_borrowed_key_is_the_owned_key() {
+        for name in CASES {
+            assert_eq!(
+                id_key_ref(name).as_ref(),
+                id_key(name).as_str(),
+                "id_key_ref disagreed with id_key on {name:?}"
+            );
+        }
+    }
+
+    /// …and it is a BORROW where the point was to avoid the allocation. Pinned so a later edit that
+    /// quietly turns the fast path into a copy is a failing test rather than a silent regression.
+    #[test]
+    fn an_already_lowercase_name_allocates_nothing() {
+        assert!(matches!(id_key_ref("a large rat"), Cow::Borrowed(_)));
+        assert!(matches!(id_key_ref("you"), Cow::Borrowed(_)));
+        // The self-word rewrite answers with a 'static slice, so it does not allocate either.
+        assert!(matches!(id_key_ref("yourself"), Cow::Borrowed(_)));
+        assert_eq!(id_key_ref("yourself"), "you");
+        // An uppercase name is the case that genuinely has to build a new string.
+        assert!(matches!(id_key_ref("A Large Rat"), Cow::Owned(_)));
     }
 }

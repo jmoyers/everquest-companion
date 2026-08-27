@@ -1,7 +1,7 @@
 //! `src/main/log/parseWorld.ts` — consider, deaths, zones, the loot family, item merges, turn-ins,
 //! levels, experience and the AA economy.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
 use crate::names::{clean_mob, norm};
 use regex::Regex;
@@ -125,15 +125,15 @@ fn loot(
     disposition: Option<&str>,
     count_str: Option<&str>,
 ) {
-    out.begin("loot");
+    out.begin(Kind::Loot);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("item", js_trim(item));
-    out.s_opt("source", source.as_deref());
+    out.s(Key::Item, js_trim(item));
+    out.s_opt(Key::Source, source.as_deref());
     if let Some(d) = disposition {
-        out.s("disposition", d);
+        out.s(Key::Disposition, d);
     }
     if let Some(n) = count_str {
-        out.i("count", n.parse().unwrap_or(0));
+        out.i(Key::Count, n.parse().unwrap_or(0));
     }
 }
 
@@ -147,53 +147,53 @@ pub fn classify_consider(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some((_, faction)) = CONSIDER_FACTION_RUNGS.iter().find(|(p, _)| *p == &m[3]) else {
         return false;
     };
-    out.begin("consider");
+    out.begin(Kind::Consider);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("mob", js_trim(&m[1]));
-    out.b("rare", m.get(2).is_some());
-    out.i("level", m[5].parse().unwrap_or(0));
-    out.s("faction", faction);
-    out.s("difficulty", js_trim(&m[4]));
+    out.s(Key::Mob, js_trim(&m[1]));
+    out.b(Key::Rare, m.get(2).is_some());
+    out.i(Key::Level, m[5].parse().unwrap_or(0));
+    out.s(Key::Faction, faction);
+    out.s(Key::Difficulty, js_trim(&m[4]));
     true
 }
 
 pub fn classify_death(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text == YOU_DIED {
-        out.begin("playerDeath");
+        out.begin(Kind::PlayerDeath);
         out.envelope(c.seq, c.ts, c.raw);
         return true;
     }
     if text.contains("slain") {
         if let Some(pd) = r.player_death.captures(text) {
-            out.begin("playerDeath");
+            out.begin(Kind::PlayerDeath);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("killer", js_trim(&pd[1]));
+            out.s(Key::Killer, js_trim(&pd[1]));
             return true;
         }
         if let Some(m) = r.slain_self.captures(text) {
-            out.begin("death");
+            out.begin(Kind::Death);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("name", &norm(&m[1]));
-            out.b("bySelf", true);
+            out.s(Key::Name, &norm(&m[1]));
+            out.b(Key::BySelf, true);
             return true;
         }
         if let Some(m) = r.slain_by.captures(text) {
-            out.begin("death");
+            out.begin(Kind::Death);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("name", &norm(&m[1]));
-            out.b("bySelf", false);
-            out.s("killer", js_trim(&m[2]));
+            out.s(Key::Name, &norm(&m[1]));
+            out.b(Key::BySelf, false);
+            out.s(Key::Killer, js_trim(&m[2]));
             return true;
         }
     }
     // The killerless MOB death. `bySelf:false` with NO killer is the honest shape.
     if text.ends_with(" died.") {
         if let Some(m) = r.mob_died.captures(text) {
-            out.begin("death");
+            out.begin(Kind::Death);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("name", &norm(&m[1]));
-            out.b("bySelf", false);
+            out.s(Key::Name, &norm(&m[1]));
+            out.b(Key::BySelf, false);
             return true;
         }
     }
@@ -210,9 +210,9 @@ pub fn classify_zone(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     if r.pseudo_zone.is_match(&m[1]) {
         return false;
     }
-    out.begin("zone");
+    out.begin(Kind::Zone);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("zone", js_trim(&m[1]));
+    out.s(Key::Zone, js_trim(&m[1]));
     true
 }
 
@@ -298,7 +298,7 @@ pub fn classify_loot(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
             m.get(1).map(|g| g.as_str()),
         );
         // `{ ...loot(…), created }` — the spread first, then the one added key.
-        out.s("created", js_trim(&m[4]));
+        out.s(Key::Created, js_trim(&m[4]));
         return true;
     }
     false
@@ -317,18 +317,18 @@ pub fn classify_item_merge(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
             .item_tier
             .captures(js_trim(&item))
             .and_then(|t| t[1].parse::<i64>().ok());
-        out.begin("itemMerge");
+        out.begin(Kind::ItemMerge);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("item", &item);
-        out.i_opt("tier", tier);
+        out.s(Key::Item, &item);
+        out.i_opt(Key::Tier, tier);
         return true;
     }
     if let Some(f) = r.item_merge_fail.captures(text) {
-        out.begin("itemMergeFailed");
+        out.begin(Kind::ItemMergeFailed);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("reason", "mismatch");
-        out.s("target", js_trim(&f[1]));
-        out.s("component", js_trim(&f[2]));
+        out.s(Key::Reason, "mismatch");
+        out.s(Key::Target, js_trim(&f[1]));
+        out.s(Key::Component, js_trim(&f[2]));
         return true;
     }
     let reason = match text {
@@ -340,9 +340,9 @@ pub fn classify_item_merge(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     };
     match reason {
         Some(reason) => {
-            out.begin("itemMergeFailed");
+            out.begin(Kind::ItemMergeFailed);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("reason", reason);
+            out.s(Key::Reason, reason);
             true
         }
         None => false,
@@ -352,18 +352,18 @@ pub fn classify_item_merge(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
 pub fn classify_turn_in(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.contains("offered") {
         if let Some(m) = r.offer.captures(c.text) {
-            out.begin("offer");
+            out.begin(Kind::Offer);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("item", js_trim(&m[1]));
-            out.s("npc", js_trim(&m[2]));
+            out.s(Key::Item, js_trim(&m[1]));
+            out.s(Key::Npc, js_trim(&m[2]));
             return true;
         }
     }
     if c.text.contains("complete the trade") {
         if let Some(m) = r.trade_done.captures(c.text) {
-            out.begin("trade");
+            out.begin(Kind::Trade);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("npc", js_trim(&m[1]));
+            out.s(Key::Npc, js_trim(&m[1]));
             return true;
         }
     }
@@ -377,9 +377,9 @@ pub fn classify_level(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.level.captures(c.text) else {
         return false;
     };
-    out.begin("level");
+    out.begin(Kind::Level);
     out.envelope(c.seq, c.ts, c.raw);
-    out.i("level", m[1].parse().unwrap_or(0));
+    out.i(Key::Level, m[1].parse().unwrap_or(0));
     true
 }
 
@@ -391,11 +391,11 @@ pub fn classify_exp(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.exp.captures(c.text) else {
         return false;
     };
-    out.begin("expGain");
+    out.begin(Kind::ExpGain);
     out.envelope(c.seq, c.ts, c.raw);
-    out.b("party", m.get(1).is_some());
+    out.b(Key::Party, m.get(1).is_some());
     if let Some(pct) = m.get(2) {
-        out.f("pct", pct.as_str().parse().unwrap_or(f64::NAN));
+        out.f(Key::Pct, pct.as_str().parse().unwrap_or(f64::NAN));
     }
     true
 }
@@ -410,10 +410,10 @@ pub fn classify_aa(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
         } else {
             g[1].parse().unwrap_or(0)
         };
-        out.begin("aaGain");
+        out.begin(Kind::AaGain);
         out.envelope(c.seq, c.ts, c.raw);
-        out.i("amount", amount);
-        out.i("nowHave", g[2].parse().unwrap_or(0));
+        out.i(Key::Amount, amount);
+        out.i(Key::NowHave, g[2].parse().unwrap_or(0));
         return true;
     }
     let Some(cost_m) = r.aa_spend.captures(c.text) else {
@@ -422,11 +422,11 @@ pub fn classify_aa(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     let cost: i64 = cost_m[1].parse().unwrap_or(0);
     if let Some(imp) = r.aa_improved.captures(c.text) {
         let rank: i64 = imp[2].parse().unwrap_or(0);
-        out.begin("aaSpend");
+        out.begin(Kind::AaSpend);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("ability", &format!("{} {}", js_trim(&imp[1]), rank));
-        out.i("cost", cost);
-        out.i("rank", rank);
+        out.s(Key::Ability, &format!("{} {}", js_trim(&imp[1]), rank));
+        out.i(Key::Cost, cost);
+        out.i(Key::Rank, rank);
         return true;
     }
     let ability = r
@@ -438,10 +438,10 @@ pub fn classify_aa(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
                 .map(|g| g.as_str().to_string())
         })
         .unwrap_or_else(|| "ability".to_string());
-    out.begin("aaSpend");
+    out.begin(Kind::AaSpend);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("ability", js_trim(&ability));
-    out.i("cost", cost);
+    out.s(Key::Ability, js_trim(&ability));
+    out.i(Key::Cost, cost);
     true
 }
 
@@ -449,7 +449,7 @@ pub fn classify_aa_potion(c: &Ctx, out: &mut Ev) -> bool {
     if c.text != AA_POTION_LANDING {
         return false;
     }
-    out.begin("aaPotion");
+    out.begin(Kind::AaPotion);
     out.envelope(c.seq, c.ts, c.raw);
     true
 }
