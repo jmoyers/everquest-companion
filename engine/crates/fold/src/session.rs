@@ -150,7 +150,7 @@ impl SessionDetector {
     /// Other producers' DERIVED events are ignored: an `offlineGap` is our own output (a feedback
     /// loop), and an `epoch`/`buffExpired` restates a primary event whose timestamp is already
     /// recorded.
-    pub fn observe(&mut self, ev: &Event) -> Option<Event> {
+    pub fn observe(&mut self, ev: &Event) -> Option<Event<'static>> {
         if matches!(ev.kind(), "offlineGap" | "epoch" | "buffExpired") {
             return None;
         }
@@ -181,7 +181,7 @@ impl SessionDetector {
     /// The gap implied by a login at `to_ts`, or `None`. A log whose first login has shown no
     /// in-world evidence yet has no observed "before", and inventing one out of the preamble is
     /// exactly the mistake this file exists to avoid.
-    fn build_gap(&self, to_ts: i64, seq: i64, raw: &str) -> Option<Event> {
+    fn build_gap(&self, to_ts: i64, seq: i64, raw: &str) -> Option<Event<'static>> {
         let from_ts = self.evidence_ts;
         if from_ts <= 0 || to_ts - from_ts <= OFFLINE_GAP_MIN_MS {
             return None;
@@ -203,7 +203,7 @@ impl SessionDetector {
 mod tests {
     use super::*;
 
-    fn ev(json: &str) -> Event {
+    fn ev(json: &str) -> Event<'static> {
         Event::from_json(json).expect("an object")
     }
 

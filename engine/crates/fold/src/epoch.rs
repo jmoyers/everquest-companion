@@ -60,7 +60,7 @@ impl EpochDetector {
 
     /// The `EpochEvent` to emit, or `None`. Fires at most once per log; an event whose stamp the
     /// parser could not read (`ts` 0) never trips it, which falls out of the comparison.
-    pub fn observe(&mut self, ev: &Event) -> Option<Event> {
+    pub fn observe(&mut self, ev: &Event) -> Option<Event<'static>> {
         if ev.kind() == "epoch" || self.fired || ev.ts() < self.launch_ms {
             return None;
         }
@@ -79,7 +79,7 @@ impl EpochDetector {
 mod tests {
     use super::*;
 
-    fn at(ts: i64) -> Event {
+    fn at(ts: i64) -> Event<'static> {
         Event::from_value(json!({ "kind": "zone", "seq": 1, "ts": ts, "raw": "x" }))
     }
 

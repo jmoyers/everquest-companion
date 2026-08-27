@@ -101,12 +101,12 @@ fn extra_swing_mod(m_lower: &str) -> Option<RoundExclusion> {
 /// `verb_lower` is the caller's already-lowercased verb: `RoundAccum::add` needs the same string a
 /// statement later, and lowercasing it twice per swing on a 1.4M-event fold is a measurable cost for
 /// no meaning.
-pub fn round_exclusion(verb_lower: &str, modifiers: &[String]) -> Option<RoundExclusion> {
+pub fn round_exclusion<S: AsRef<str>>(verb_lower: &str, modifiers: &[S]) -> Option<RoundExclusion> {
     if let Some(why) = excluded_verb(verb_lower) {
         return Some(why);
     }
     for m in modifiers {
-        if let Some(why) = extra_swing_mod(&m.to_lowercase()) {
+        if let Some(why) = extra_swing_mod(&m.as_ref().to_lowercase()) {
             return Some(why);
         }
     }
@@ -116,7 +116,12 @@ pub fn round_exclusion(verb_lower: &str, modifiers: &[String]) -> Option<RoundEx
 /// One logged swing ATTEMPT, reduced to what round structure needs. Landed and avoided swings both
 /// arrive here: a round is swings ATTEMPTED, and a double attack whose second swing missed is still a
 /// double attack.
-pub struct SwingRecord<'a> {
+///
+/// THE MODIFIER LIST IS ELEMENT-GENERIC (JOS-506), defaulting to the `String` the miss path still
+/// carries. The damage path's modifiers are now borrowed slices of the parser's own buffers, and the
+/// miss path's are still owned — one generic parameter lets both feed this without either side
+/// allocating a list to satisfy the other's spelling.
+pub struct SwingRecord<'a, S: AsRef<str> = String> {
     pub ts: i64,
     /// Un-conjugated melee verb (`slash`, `backstab`) — the ROUND identity.
     pub verb: &'a str,
@@ -127,7 +132,7 @@ pub struct SwingRecord<'a> {
     /// Landed amount, or 0 for an avoided swing. Used ONLY for the fan-out signature.
     pub amount: i64,
     pub avoided: bool,
-    pub modifiers: &'a [String],
+    pub modifiers: &'a [S],
 }
 
 /// The bucket index (0-based) for a round of `swings` swings; the last bucket is 4+.
@@ -251,7 +256,7 @@ impl RoundAccum {
     }
 
     /// Fold one logged swing attempt. Excluded swings are TALLIED, never dropped silently.
-    pub fn add(&mut self, rec: &SwingRecord) {
+    pub fn add<S: AsRef<str>>(&mut self, rec: &SwingRecord<'_, S>) {
         let verb = rec.verb.to_lowercase();
         if let Some(why) = round_exclusion(&verb, rec.modifiers) {
             self.excluded[why.slot()] += 1;

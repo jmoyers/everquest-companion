@@ -346,7 +346,7 @@ fn resolve_respawn(
 /// THE NAMES A TYPED EVENT STATES, and which family stated them — the whole of round 3's evidence
 /// intake. Four readers rather than one switch, because the four groups ARE the four
 /// `RespawnSeenVia` values: the factoring and the vocabulary agree.
-fn seen_names_of(ev: &Event) -> Option<(Vec<Option<&str>>, &'static str)> {
+fn seen_names_of<'e>(ev: &'e Event<'_>) -> Option<(Vec<Option<&'e str>>, &'static str)> {
     // Somebody swung at it, or it swung at somebody. `attacker` is null on caster-less DoT lines.
     match ev.kind() {
         "damage" | "miss" => {
@@ -893,7 +893,7 @@ mod tests {
         }
     }
 
-    fn ev(json: &str) -> Event {
+    fn ev(json: &str) -> Event<'static> {
         Event::from_json(json).expect("a JSON object")
     }
 

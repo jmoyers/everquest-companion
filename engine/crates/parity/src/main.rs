@@ -33,6 +33,7 @@ struct Args {
     golden: Option<String>,
     tz: Option<String>,
     snapshots: bool,
+    stages: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -40,21 +41,26 @@ fn parse_args() -> Result<Args, String> {
     let mut golden: Option<String> = None;
     let mut tz: Option<String> = None;
     let mut snapshots = false;
+    let mut stages = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--golden" => golden = Some(it.next().ok_or("--golden needs a path")?),
             "--tz" => tz = Some(it.next().ok_or("--tz needs an IANA zone name")?),
             "--snapshots" => snapshots = true,
+            "--stages" => stages = true,
             other if other.starts_with("--") => return Err(format!("unknown flag {other}")),
             other => log = Some(other.to_string()),
         }
     }
     Ok(Args {
-        log: log.ok_or("usage: parity <logfile> [--golden <path>] [--snapshots] [--tz <zone>]")?,
+        log: log.ok_or(
+            "usage: parity <logfile> [--golden <path>] [--snapshots] [--stages] [--tz <zone>]",
+        )?,
         golden,
         tz,
         snapshots,
+        stages,
     })
 }
 
@@ -92,6 +98,9 @@ fn main() -> ExitCode {
     }
 
     let parser = eqlog::parser_for(&character, tz);
+    if args.stages {
+        return stages(&parser, &bytes, tz, &character, &file_name, &args.log);
+    }
     if args.snapshots {
         return snapshots(&parser, &bytes, tz, &character, &file_name, &args.log);
     }
@@ -99,7 +108,7 @@ fn main() -> ExitCode {
         None => {
             let stdout = std::io::stdout();
             let mut out = BufWriter::with_capacity(1 << 20, stdout.lock());
-            let n = eqlog::scan::scan_bytes(&parser, &bytes, |line| {
+            let n = eqlog::scan::scan_bytes(&parser, &bytes, |line, _payload| {
                 let _ = out.write_all(line.as_bytes());
                 let _ = out.write_all(b"\n");
             });
@@ -229,6 +238,311 @@ fn snapshots(
     ExitCode::SUCCESS
 }
 
+/// THE STAGE BASELINE (JOS-504, owner ask 2026-08-26): where does a full-speed historical fold
+/// actually spend its time? Five passes over the same in-memory bytes, each adding ONE stage of
+/// the production pipeline, so each stage's cost is the DELTA between neighbours:
+///
+///   lines      — split on `\n`, trim `\r`, materialize the `&str` (`from_utf8_lossy`)
+///   parse      — + `parser.parse_event` (events recognized, both halves built)
+///   serialize  — + `ev.done()` (the NDJSON string the production seam still emits)
+///   fold       — the whole thing: `Fold::fold_bytes`, 20 modules + combat, exactly what
+///                `--snapshots` runs minus the final envelope serialization
+///
+/// JOS-505 TOOK A STAGE OUT OF THE PIPELINE, and this table had to stop counting it as one. The
+/// fold used to parse the NDJSON back into a `serde_json::Value` before any module could read a
+/// field; it reads the parser's typed payload now, so `reparse` is no longer a stage and
+/// `modules+combat` is measured against `serialize` rather than against it. The old pass is still
+/// RUN and still printed — under the line, labelled as the cost the deleted round trip would have
+/// had — because a number this table used to carry should not simply vanish from it, and because
+/// it is the honest measure of what the change was worth on this machine.
+///
+/// The construction mirrors `snapshots()` field for field so the `fold` row is the production
+/// fold and not a lighter cousin. Each pass reports MB/s over the SAME byte count, so the rows
+/// are directly comparable; wall times are one run each — run it three times and read the middle
+/// if the machine is busy. PRINTS, NEVER ASSERTS (the G3 rule: a wall clock is a claim about a
+/// machine, and this binary does not know which one it is on).
+fn stages(
+    parser: &eqlog::Parser,
+    bytes: &[u8],
+    tz: eqlog::Tz,
+    character: &str,
+    file_name: &str,
+    log_path: &str,
+) -> ExitCode {
+    let mb = bytes.len() as f64 / 1_000_000.0;
+    let rate = |ms: u128| -> f64 {
+        if ms == 0 {
+            f64::INFINITY
+        } else {
+            mb / (ms as f64 / 1000.0)
+        }
+    };
+    fn split(bytes: &[u8], per_line: &mut dyn FnMut(&str)) {
+        let mut start = 0usize;
+        while let Some(off) = bytes[start..].iter().position(|&b| b == b'\n') {
+            let nl = start + off;
+            let mut end = nl;
+            if end > start && bytes[end - 1] == b'\r' {
+                end -= 1;
+            }
+            if end > start {
+                let line = String::from_utf8_lossy(&bytes[start..end]);
+                per_line(&line);
+            }
+            start = nl + 1;
+        }
+    }
+
+    let t = std::time::Instant::now();
+    let mut lines = 0u64;
+    split(bytes, &mut |_line| lines += 1);
+    let lines_ms = t.elapsed().as_millis();
+
+    let t = std::time::Instant::now();
+    let mut parsed = 0u64;
+    {
+        let mut ev = eqlog::event::Ev::new();
+        let mut seq: i64 = 0;
+        split(bytes, &mut |line| {
+            if parser.parse_event(line, seq, &mut ev) {
+                seq += 1;
+                parsed += 1;
+            }
+        });
+    }
+    let parse_ms = t.elapsed().as_millis();
+
+    let t = std::time::Instant::now();
+    let mut ser_bytes = 0u64;
+    {
+        let mut ev = eqlog::event::Ev::new();
+        let mut seq: i64 = 0;
+        split(bytes, &mut |line| {
+            if parser.parse_event(line, seq, &mut ev) {
+                seq += 1;
+                ser_bytes += ev.finish().len() as u64;
+            }
+        });
+    }
+    let ser_ms = t.elapsed().as_millis();
+
+    let t = std::time::Instant::now();
+    let mut reparsed = 0u64;
+    {
+        let mut ev = eqlog::event::Ev::new();
+        let mut seq: i64 = 0;
+        split(bytes, &mut |line| {
+            if parser.parse_event(line, seq, &mut ev) {
+                seq += 1;
+                if fold::event::Event::from_json(ev.finish()).is_some() {
+                    reparsed += 1;
+                }
+            }
+        });
+    }
+    let reparse_ms = t.elapsed().as_millis();
+
+    // The full fold, constructed exactly as `snapshots()` constructs it.
+    let known: HashSet<String> = parser
+        .spell_db()
+        .map(|db| db.keys().map(str::to_string).collect())
+        .unwrap_or_default();
+    let spell_classes = parser
+        .spell_db()
+        .map(fold::modules::combo::evidence::spell_class_index)
+        .unwrap_or_default();
+    let clock = eqlog::Clock::new(tz);
+    let launch_ms = fold::epoch::launch_ms(&clock);
+    let Some(construction_now_ms) = last_timestamp_of(&clock, bytes) else {
+        eprintln!("parity: no timestamped line in the last 64 KiB of {log_path}");
+        return ExitCode::from(2);
+    };
+    let deps = fold::ClusterDeps {
+        known_spell: known,
+        spell_classes,
+        launch_ms,
+        construction_now_ms,
+        character: Some(serde_json::json!({
+            "name": character,
+            "server": eqlog::server_of(file_name).unwrap_or_default(),
+            "logPath": log_path,
+        })),
+        self_name: None,
+        respawn_prefs: fold::modules::respawn::RespawnPrefs::default(),
+        facts: parser
+            .spell_db()
+            .map(fold::spell_facts::SpellFacts::project)
+            .unwrap_or_default(),
+    };
+    let t = std::time::Instant::now();
+    let mut engine = fold::combat::CombatEngine::new();
+    engine.reset();
+    engine.set_player_name(character);
+    let mut folder = fold::Fold::new(fold::registered(deps), launch_ms).with_combat(engine);
+    folder.fold_bytes(parser, bytes);
+    let fold_ms = t.elapsed().as_millis();
+
+    println!("stage baseline: {mb:.1} MB, {lines} lines, {parsed} events (tz={tz})");
+    println!("  cumulative                          wall        rate");
+    println!(
+        "  lines (split+materialize)      {lines_ms:>7} ms  {:>7.1} MB/s",
+        rate(lines_ms)
+    );
+    println!(
+        "  + parse                        {parse_ms:>7} ms  {:>7.1} MB/s",
+        rate(parse_ms)
+    );
+    println!(
+        "  + serialize (ev.finish)        {ser_ms:>7} ms  {:>7.1} MB/s",
+        rate(ser_ms)
+    );
+    println!(
+        "  + fold (20 modules + combat)   {fold_ms:>7} ms  {:>7.1} MB/s",
+        rate(fold_ms)
+    );
+    println!("  per-stage share of the full fold:");
+    let stage = |name: &str, ms: u128| {
+        let pct = if fold_ms == 0 {
+            0.0
+        } else {
+            ms as f64 * 100.0 / fold_ms as f64
+        };
+        println!("    {name:<28} {ms:>7} ms  {pct:>5.1}%");
+    };
+    stage("lines", lines_ms);
+    stage("parse", parse_ms.saturating_sub(lines_ms));
+    stage("serialize", ser_ms.saturating_sub(parse_ms));
+    stage("modules+combat", fold_ms.saturating_sub(ser_ms));
+    println!("  (serialized {ser_bytes} bytes of NDJSON)");
+    // NOT A STAGE ANY MORE (JOS-505) — printed under the line rather than in it. See this
+    // function's header for why a retired measurement is kept rather than deleted.
+    println!(
+        "  [retired] the deleted round trip (Event::from_json over the same events): {} ms, {reparsed} values",
+        reparse_ms.saturating_sub(ser_ms)
+    );
+
+    // ── the dispatch floor: what 21 consumers pay just to refuse an event ─────────────────────
+    //
+    // Every module's `on_event` begins by asking whether the event is its business and returning
+    // when it is not — which for sixteen of the twenty is nearly every event. This pass measures
+    // exactly that and nothing else: 21 kind checks per event, no module logic at all.
+    //
+    // IT ASKS THE QUESTION THE WAY PRODUCTION ASKS IT (JOS-505). It used to re-parse the NDJSON and
+    // compare `kind()` against a string, and it measured ~940 ms of a 2.5M-event fold that way. The
+    // modules match on the discriminant now, so the probes are `Kind`s and the pass wraps the
+    // parser's payload — and the floor it reports is a floor somebody could still act on rather
+    // than a memorial to one nobody pays.
+    let t = std::time::Instant::now();
+    let mut floor_hits = 0u64;
+    {
+        let mut ev = eqlog::event::Ev::new();
+        let mut seq: i64 = 0;
+        use eqlog::event::Kind;
+        const PROBES: [Kind; 21] = [
+            Kind::Damage,
+            Kind::Heal,
+            Kind::Loot,
+            Kind::Trade,
+            Kind::ClassUnlock,
+            Kind::Death,
+            Kind::Consider,
+            Kind::ExpGain,
+            Kind::Level,
+            Kind::SelfWho,
+            Kind::OutputFile,
+            Kind::SpellSet,
+            Kind::ItemReceived,
+            Kind::CastBegin,
+            Kind::BuffApply,
+            Kind::BuffFade,
+            Kind::Cc,
+            Kind::Charm,
+            Kind::Resist,
+            Kind::Zone,
+            Kind::Miss,
+        ];
+        split(bytes, &mut |line| {
+            if parser.parse_event(line, seq, &mut ev) {
+                seq += 1;
+                let (_json, payload) = ev.done();
+                let v = fold::event::Event::typed(payload);
+                for probe in PROBES {
+                    if v.kind_of() == probe {
+                        floor_hits += 1;
+                    }
+                }
+            }
+        });
+    }
+    let floor_ms = t.elapsed().as_millis().saturating_sub(ser_ms);
+    println!(
+        "  dispatch floor (21 kind checks/event, minus the serialize pass): ~{floor_ms} ms ({floor_hits} hits)"
+    );
+
+    // ── the attribution pass: WHERE inside the fold (JOS-504) ─────────────────────────────────
+    //
+    // A second, fresh construction (the first fold consumed its world), folded through
+    // `fold_bytes_attributed` — per-module, combat, detectors and the event WRAP, each under its
+    // own stopwatch. Shares are the trustworthy read; the observer cost note is on the method.
+    //
+    // The `wrap` row was `reparse` until JOS-505 and is the same bucket, kept under a name that
+    // says what is in it now: a discriminant copy and a reference where a `serde_json` parse used
+    // to be. Keeping the row is what makes this table comparable with JOS-504's.
+    let known2: HashSet<String> = parser
+        .spell_db()
+        .map(|db| db.keys().map(str::to_string).collect())
+        .unwrap_or_default();
+    let deps2 = fold::ClusterDeps {
+        known_spell: known2,
+        spell_classes: parser
+            .spell_db()
+            .map(fold::modules::combo::evidence::spell_class_index)
+            .unwrap_or_default(),
+        launch_ms,
+        construction_now_ms,
+        character: Some(serde_json::json!({
+            "name": character,
+            "server": eqlog::server_of(file_name).unwrap_or_default(),
+            "logPath": log_path,
+        })),
+        self_name: None,
+        respawn_prefs: fold::modules::respawn::RespawnPrefs::default(),
+        facts: parser
+            .spell_db()
+            .map(fold::spell_facts::SpellFacts::project)
+            .unwrap_or_default(),
+    };
+    let mut engine2 = fold::combat::CombatEngine::new();
+    engine2.reset();
+    engine2.set_player_name(character);
+    let mut folder2 = fold::Fold::new(fold::registered(deps2), launch_ms).with_combat(engine2);
+    let t = std::time::Instant::now();
+    let attr = folder2.fold_bytes_attributed(parser, bytes);
+    let attr_ms = t.elapsed().as_millis();
+    let total_ns: u64 =
+        attr.module_ns.iter().sum::<u64>() + attr.combat_ns + attr.detectors_ns + attr.reparse_ns;
+    println!("  attribution pass ({attr_ms} ms wall incl. observer cost); consumers by share:");
+    let mut rows: Vec<(&str, u64)> = attr
+        .module_ids
+        .iter()
+        .zip(attr.module_ns.iter())
+        .map(|(id, ns)| (*id, *ns))
+        .collect();
+    rows.push(("combat", attr.combat_ns));
+    rows.push(("detectors", attr.detectors_ns));
+    rows.push(("wrap (was reparse)", attr.reparse_ns));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+    for (id, ns) in rows {
+        let pct = if total_ns == 0 {
+            0.0
+        } else {
+            ns as f64 * 100.0 / total_ns as f64
+        };
+        println!("    {id:<24} {:>8} ms  {pct:>5.1}%", ns / 1_000_000);
+    }
+    ExitCode::SUCCESS
+}
+
 /// `goldenOracle.mts lastTimestampOf` — the last timestamped LINE's epoch millis, read from the
 /// TAIL so it costs nothing whatever the slice weighs.
 ///
@@ -281,7 +595,7 @@ fn diff(
     let mut first: Option<(u64, String, String)> = None;
     let mut at: u64 = 0;
     let started = std::time::Instant::now();
-    let n = eqlog::scan::scan_bytes(parser, bytes, |got| {
+    let n = eqlog::scan::scan_bytes(parser, bytes, |got, _payload| {
         if first.is_some() {
             return;
         }

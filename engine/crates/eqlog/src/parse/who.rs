@@ -2,7 +2,7 @@
 //! skill tick, the active special attack, and a primary-class unlock. Plus the item-activation line,
 //! which is evidence about evidence.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
 use regex::Regex;
 
@@ -64,22 +64,22 @@ pub fn classify_self_who(r: &WhoRes, character: Option<&str>, c: &Ctx, out: &mut
     if name.to_lowercase() != js_trim(self_name).to_lowercase() {
         return false;
     }
-    out.begin("selfWho");
+    out.begin(Kind::SelfWho);
     out.envelope(c.seq, c.ts, c.raw);
-    out.i("level", m[1].parse().unwrap_or(0));
+    out.i(Key::Level, m[1].parse().unwrap_or(0));
     out.strs(
-        "classes",
+        Key::Classes,
         &m[2].split('/').map(|s| s.to_string()).collect::<Vec<_>>(),
     );
     let race = m
         .get(4)
         .map_or(String::new(), |g| js_trim(g.as_str()).to_string());
     if !race.is_empty() {
-        out.s("race", &race);
+        out.s(Key::Race, &race);
     }
     let zone = js_trim(&r.who_zone_shortname.replace(&m[6], "")).to_string();
     if !zone.is_empty() {
-        out.s("zone", &zone);
+        out.s(Key::Zone, &zone);
     }
     true
 }
@@ -92,11 +92,11 @@ pub fn classify_skill_up(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.skill_up.captures(c.text) else {
         return false;
     };
-    out.begin("skillUp");
+    out.begin(Kind::SkillUp);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("skill", js_trim(&m[1]));
+    out.s(Key::Skill, js_trim(&m[1]));
     if let Some(v) = m.get(2) {
-        out.i("value", v.as_str().parse().unwrap_or(0));
+        out.i(Key::Value, v.as_str().parse().unwrap_or(0));
     }
     true
 }
@@ -113,13 +113,13 @@ pub fn classify_special_attack(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     if skill.is_empty() {
         return false;
     }
-    out.begin("specialAttack");
+    out.begin(Kind::SpecialAttack);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("skill", &skill);
-    out.b("autoAttack", m.get(3).is_some());
+    out.s(Key::Skill, &skill);
+    out.b(Key::AutoAttack, m.get(3).is_some());
     let replaces = m.get(2).map(|g| js_trim(g.as_str())).unwrap_or("");
     if !replaces.is_empty() {
-        out.s("replaces", replaces);
+        out.s(Key::Replaces, replaces);
     }
     true
 }
@@ -133,9 +133,9 @@ pub fn classify_class_unlock(c: &Ctx, out: &mut Ev) -> bool {
     if class_name.is_empty() {
         return false;
     }
-    out.begin("classUnlock");
+    out.begin(Kind::ClassUnlock);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("className", class_name);
+    out.s(Key::ClassName, class_name);
     true
 }
 
@@ -151,11 +151,11 @@ pub fn classify_item_activate(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     if item.is_empty() {
         return false;
     }
-    out.begin("itemActivate");
+    out.begin(Kind::ItemActivate);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("item", &item);
+    out.s(Key::Item, &item);
     out.s(
-        "effect",
+        Key::Effect,
         if &m[2] == "shimmers briefly" {
             "shimmer"
         } else {

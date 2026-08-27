@@ -1,0 +1,126 @@
+{
+  "moment": "searching the client's own spell table by TYPE — the in-game Actions window's Category and Subcategory columns, in the app",
+  "source": "JOS-507 (boundary verdict 7's second question; not a plan-doc moment — the four numbered moments are 01-04)",
+  "note": "THE OWNER'S SCREENSHOT IS THE SPECIFICATION: a `tap` search over a SHD/BRD/WIZ combo returning every tap by level, filed under Category `Taps` and Subcategory `Health` / `Duration Tap` / `Power Tap`. The app can offer this because the player's own install states it — `spells_us.txt` files every spell under two integer ids (fields 86 and 87, verified against that install) and `dbstr_us.txt` type 5 says what the ids are called — and the engine reads both, beside the log the attach named. WHAT THIS CONVERSATION SHOWS THAT PROSE CANNOT: the first reply's rows are `Leech` and `Siphon Strength` before `Lifetap`, and NEITHER OF THE FIRST TWO NAMES CONTAINS THE SUBSTRING `tap`. They are in the list because their CATEGORY is `Taps` — that is what searching by TYPE means, and a name-only filter would return the third row alone. The order is level DESCENDING, the game's own, and it ends in the source's own tiebreak so it is total: the corpus is a hash map with randomised iteration, so an order stopping at the level would answer the same query differently on every call. `categories` rides the answer because the app CANNOT ship that list — the vocabulary is Daybreak's and lives only in the player's install — and it describes the class and text scope while deliberately ignoring the category filter it populates, so a control never collapses to the value just picked. The second exchange is the same question asked by TYPE with no text at all, windowed, showing `total` behind a window of two. The last is the state an `EQ_INSTALL_DIR` pointed at a folder of logs produces: `spellTable: missing` with the path it looked at, which is an ANSWER and never an error — and note the field is `spellTable` rather than `table`, because `resist.spell` already owns that word as its discriminator in the app's guard matrix and a second arm carrying it would be a shape that guard could no longer refuse. NO BULK FRAME, EVER: the parsed table is 48,256 entries and 6.13 MiB against an 8 MiB ceiling, so there is a window here and there will never be an op without one.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 1,
+        "op": "spells.search",
+        "params": { "text": "tap", "classes": ["SHD", "BRD", "WIZ"], "limit": 3 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": {
+          "spells": [
+            {
+              "name": "Leech",
+              "level": 49,
+              "classes": [{ "class": "SHD", "level": 49 }],
+              "category": "Taps",
+              "subcategory": "Duration Tap"
+            },
+            {
+              "name": "Siphon Strength",
+              "level": 34,
+              "classes": [{ "class": "SHD", "level": 34 }],
+              "category": "Taps",
+              "subcategory": "Power Tap"
+            },
+            {
+              "name": "Lifetap",
+              "level": 1,
+              "classes": [{ "class": "SHD", "level": 1 }],
+              "category": "Taps",
+              "subcategory": "Health"
+            }
+          ],
+          "total": 3,
+          "offset": 0,
+          "limit": 3,
+          "categories": [
+            { "name": "Taps", "subcategories": ["Duration Tap", "Health", "Power Tap"] }
+          ],
+          "spellTable": "ok",
+          "path": "C:/Users/Public/Daybreak Game Company/Installed Games/EverQuest Legends/spells_us.txt"
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 2,
+        "op": "spells.search",
+        "params": {
+          "category": "Taps",
+          "subcategory": "Health",
+          "classes": ["SHD", "BRD", "WIZ"],
+          "sort": "name",
+          "offset": 0,
+          "limit": 2
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": {
+          "spells": [
+            {
+              "name": "Lifedraw",
+              "level": 29,
+              "classes": [{ "class": "SHD", "level": 29 }],
+              "category": "Taps",
+              "subcategory": "Health"
+            },
+            {
+              "name": "Lifespike",
+              "level": 15,
+              "classes": [{ "class": "SHD", "level": 15 }],
+              "category": "Taps",
+              "subcategory": "Health"
+            }
+          ],
+          "total": 5,
+          "offset": 0,
+          "limit": 2,
+          "categories": [
+            { "name": "Taps", "subcategories": ["Duration Tap", "Health", "Power Tap"] }
+          ],
+          "spellTable": "ok",
+          "path": "C:/Users/Public/Daybreak Game Company/Installed Games/EverQuest Legends/spells_us.txt"
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": { "id": 3, "op": "spells.search", "params": { "text": "tap" } }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": {
+          "spells": [],
+          "total": 0,
+          "offset": 0,
+          "limit": 50,
+          "categories": [],
+          "spellTable": "missing",
+          "path": "C:/nowhere/EverQuest Legends/spells_us.txt"
+        }
+      }
+    }
+  ]
+}

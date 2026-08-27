@@ -30,6 +30,7 @@ import type {
   ResistSpellResult,
   RespawnConfirmAck,
   SessionMarkAck,
+  SpellsSearchResult,
   SubscribeAck
 } from './protocol.generated'
 
@@ -99,6 +100,13 @@ interface ResultRegistry {
   // would make that unanswerable from the value — the same argument that keeps the five `*.define`
   // ops five entries.
   'resist.spell': ResistSpellResult
+  // THE SAME TABLE, ASKED A DIFFERENT KIND OF QUESTION (JOS-507). `resist.spell` answers about ONE
+  // spell's mechanics; this answers about the table as a CATALOGUE — what exists, filed under what,
+  // learnable by whom and when. It is a `spells.*` op rather than a third `resist.*` one for that
+  // reason, and it is not `knowledge.search`, which ranks the committed wiki scrape and knows
+  // nothing about the client's categories at all. Its own shape, because a windowed list with facets
+  // beside it shares no field with any of the three.
+  'spells.search': SpellsSearchResult
   // LOG DISCOVERY (owner ruling 21, decision sheet 1a — JOS-498). A COMMAND AND A QUERY, and the
   // command answers with the ack six ops already share: `logs.setDir` pushes one directory, which is
   // not a list, so there is nothing per-family to report back and `DefineAck` is exactly right. It
@@ -226,6 +234,14 @@ export const RESULT_GUARDS: Record<RequestOp, (result: ReplyResult) => boolean> 
   // are real answers rather than wrong shapes. Same lesson as `knowledge.item`'s `record` over its
   // `found`, reached from the other direction.
   'resist.spell': (r) => 'table' in r,
+  // `spells` — this shape's own word, and the reason the RESULT calls its state field `spellTable`
+  // rather than `table`. `resist.spell` above owns the bare `table`, and a second arm carrying that
+  // field would have made this the shape that guard could no longer refuse: the exact failure the
+  // matrix has now caught four times (`status`, `accepted`, `hits`, and this one at design time).
+  // So the schema gave way instead, which is what `perf.budgets` did when it declined to restate
+  // `uptimeMs`. The field is required even when it is EMPTY — a filter that excludes everything is a
+  // real answer here and must not read as a wrong shape.
+  'spells.search': (r) => 'spells' in r,
   // `applied` — the push joins the ack family, and the guard says so rather than pretending
   // otherwise. `logs.setDir` carries ONE DIRECTORY and therefore no `count`, which is the same
   // answer `buffTrust.define` and `respawn.define` give, so no field could separate it from the six

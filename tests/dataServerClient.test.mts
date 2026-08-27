@@ -180,7 +180,14 @@ test('THE FOUR PLAN-DOC MOMENTS MATERIALIZE THE WINDOW THE FIXTURES DESCRIBE', (
   assert.equal(loot.handle.state.rows, null, 'the loot window survived an epoch bump')
   assert.equal(loot.handle.state.loading, true)
   assert.equal(meter.handle.state.rows, null, 'the bump is connection-wide, not per subscription')
-  assert.deepEqual(r.progress, [{ pct: 62.4, events: 1571003 }], 'the loading UI heard nothing')
+  // THE LOADING UI HEARS ALL FOUR COORDINATES (JOS-503). `pct` alone cannot be turned back into
+  // "148.8 MB of 238.4 MB", so the mark and the size the fold divided by ride the same frame — the
+  // schema's own `offset` vocabulary (`HealthMark.offset`, cache law 3), never a framing word.
+  assert.deepEqual(
+    r.progress,
+    [{ pct: 62.4, events: 1571003, offset: 156000000, logSize: 250000000 }],
+    'the loading UI heard nothing'
+  )
 
   r.deliver(readdress(switchDoc[1] as ResetMessage, loot.id))
   assert.deepEqual(loot.handle.state, { rows: [], total: 0, epoch: 4, loading: false, error: null })

@@ -24,7 +24,7 @@
 // "+N more") so the two hover cards in this app look like one family; only the anchoring Tooltip
 // is MUI, exactly as the mob card's own Timers-tab anchor is.
 
-import { type JSX, type ReactElement, useEffect, useState } from 'react'
+import { cloneElement, type JSX, type ReactElement, useEffect, useState } from 'react'
 import type { SpellDetail } from '@shared/spellDetail'
 import {
   spellClassLine,
@@ -40,6 +40,7 @@ import { nameStatesRank, observedRankLabel, observedRankRow } from '@shared/spel
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, CardSection, LABEL_STYLE, MoreLine, TEXT_STYLE } from './hoverCards'
 import { Tooltip } from './Tooltip'
 import { useObservedSpellRanks } from './useObservedSpellRanks'
+import { useSpellLink, type OpenSpell } from './spellLink'
 
 /** How many effect lines / rank members the card lists before collapsing to "+N more". */
 const MAX_LISTED = 8
@@ -97,8 +98,14 @@ const NATURE_COLOR: Record<SpellDetail['nature'], string> = {
  * Never throws: the handler answers a `found: false` record for a name it does not know, and an
  * IPC failure leaves `data` null, which the card reports as "looking up" rather than as an empty
  * spell window.
+ *
+ * EXPORTED SINCE JOS-508 for the drilldown page, which draws this card AND three sections beside
+ * it off the SAME record. Sharing the hook rather than letting the page mount its own `SpellCard`
+ * beside its own lookup is what keeps that to one IPC call - and, more importantly, guarantees the
+ * ladder under the card and the card itself describe one answer rather than two round trips that
+ * could straddle a combo correction.
  */
-function useSpellOnOpen(name: string): { data: SpellDetail | null; loading: boolean } {
+export function useSpellDetail(name: string): { data: SpellDetail | null; loading: boolean } {
   const [data, setData] = useState<SpellDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -362,9 +369,22 @@ function CardHeader({
   )
 }
 
-/** The card body. Exported for the surfaces that draw it somewhere other than a Tooltip. */
-export function SpellCard({ name }: { name: string }): JSX.Element {
-  const { data, loading } = useSpellOnOpen(name)
+/**
+ * The card body over a record SOMEBODY ELSE fetched (JOS-508).
+ *
+ * Split out of `SpellCard` so the drilldown page can draw the card and its own three sections off
+ * one lookup. `SpellCard` below is this plus the hook, unchanged in shape and behaviour, and every
+ * existing caller still passes only a name.
+ */
+export function SpellCardBody({
+  name,
+  data,
+  loading
+}: {
+  name: string
+  data: SpellDetail | null
+  loading: boolean
+}): JSX.Element {
   const accent = data ? NATURE_COLOR[data.nature] : CARD_TEXT
   const classLine = data ? spellClassLine(data) : null
   return (
@@ -398,6 +418,13 @@ export function SpellCard({ name }: { name: string }): JSX.Element {
   )
 }
 
+/** The card, fetching its own record. Exported for the surfaces that draw it somewhere other than
+ *  a Tooltip — the drilldown page (features/spells) is the one that does. */
+export function SpellCard({ name }: { name: string }): JSX.Element {
+  const { data, loading } = useSpellDetail(name)
+  return <SpellCardBody name={name} data={data} loading={loading} />
+}
+
 /**
  * HOW THE TOOLTIP DRESSES THIS CARD, hoisted to module scope so every anchor in a list passes the
  * SAME object identity - the JOS-206 finding, which the mob card's `MOB_CARD_SLOT_PROPS` states in
@@ -411,21 +438,75 @@ const SPELL_CARD_SLOT_PROPS = {
   tooltip: { sx: { p: 0, bgcolor: 'transparent', maxWidth: 'none' } }
 } as const
 
+/**
+ * What this component adds to an anchor when the app published an opener. Declaring it — rather
+ * than cloning into `ReactElement`'s `any` props — is what keeps the type-aware lint honest about
+ * a call site that hands over something these cannot be attached to.
+ */
+interface SpellAnchorProps {
+  onClick?: (e: React.MouseEvent) => void
+  onKeyDown?: (e: React.KeyboardEvent) => void
+  role?: string
+  tabIndex?: number
+  style?: React.CSSProperties
+}
+
 export interface SpellTooltipProps {
   /** the spell name exactly as the surface displays it, rank suffix intact */
   name: string
   /** where the card opens; the default suits a dense row in a list */
   placement?: 'top' | 'right' | 'bottom' | 'left' | 'right-start' | 'bottom-start'
   /** the anchor: any single element that can hold a ref */
-  children: ReactElement
+  children: ReactElement<SpellAnchorProps>
 }
 
 /**
- * Hover a spell name → the card. NON-INTERACTIVE by construction: there is nothing inside to reach
- * (every name in there is plain text), so the pointer never has to travel onto the card to read it,
- * and a list row's hover can close it the moment you leave.
+ * THE ANCHOR, MADE CLICKABLE — or handed back untouched (JOS-508).
+ *
+ * CLONED RATHER THAN WRAPPED, and that is the whole reason this is five lines instead of a `<span>`:
+ * the five anchors are a `noWrap` Typography in a table cell, an inline `Box` inside a sentence, and
+ * three list rows. A wrapper element changes what ellipsis, flex shrink and baseline alignment do in
+ * every one of them, on surfaces this ticket has no business relayouting. `cloneElement` adds
+ * handlers to the element the surface already chose and changes no box at all.
+ *
+ * `style` rather than `sx` for the cursor, deliberately: an inline style beats MUI's generated
+ * class, so the one anchor that already asks for `cursor: help` (UnlockList's `replaces …` note)
+ * reads as a link here without that file being edited to say so.
+ *
+ * KEYBOARD TOO, because a click affordance that only a mouse can reach is half a feature — and
+ * `role="link"` is what tells a screen reader the name is now a destination rather than a label.
+ */
+function anchorFor(children: ReactElement<SpellAnchorProps>, open: OpenSpell | null, name: string): ReactElement {
+  if (open === null) return children
+  return cloneElement(children, {
+    onClick: () => {
+      open(name)
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      open(name)
+    },
+    role: 'link',
+    tabIndex: 0,
+    style: { cursor: 'pointer' }
+  })
+}
+
+/**
+ * Hover a spell name → the card. Click it → the spell's own page (JOS-508).
+ *
+ * STILL NON-INTERACTIVE, and the two facts are compatible rather than in tension: the card's own
+ * contents remain plain text nobody has to travel onto the popper to reach, and the thing that
+ * became clickable is the ANCHOR, which the pointer is already on. That is also why the drilldown
+ * did not become a link INSIDE the card — `disableInteractive` would have had to go, and with it
+ * the property that a list row's hover closes the moment you leave it.
+ *
+ * The link is ON exactly when an app published an opener (`lib/spellLink.tsx`). Nothing in the
+ * overlay bundle does, so every spell name over the game is the plain text it has always been.
  */
 export function SpellTooltip({ name, placement = 'right', children }: SpellTooltipProps): JSX.Element {
+  const open = useSpellLink()
   return (
     <Tooltip
       title={<SpellCard name={name} />}
@@ -435,7 +516,7 @@ export function SpellTooltip({ name, placement = 'right', children }: SpellToolt
       leaveDelay={60}
       slotProps={SPELL_CARD_SLOT_PROPS}
     >
-      {children}
+      {anchorFor(children, open, name)}
     </Tooltip>
   )
 }

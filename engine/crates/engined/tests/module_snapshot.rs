@@ -130,7 +130,7 @@ fn oracle(log: &Path, bytes: &[u8], upto: Option<i64>) -> fold::Fold {
         respawn_prefs: fold::modules::respawn::RespawnPrefs::default(),
     };
     let mut folder = fold::Fold::new(fold::registered(deps), launch_ms);
-    eqlog::scan::scan_bytes(&parser, bytes, |line| {
+    eqlog::scan::scan_bytes(&parser, bytes, |line, _payload| {
         let Some(ev) = fold::event::Event::from_json(line) else {
             return;
         };
@@ -307,7 +307,12 @@ fn every_module_answers_what_a_direct_fold_of_the_same_bytes_publishes() {
     let folded = i64::try_from(wanted.events()).expect("a count");
     let scanned = {
         let parser = eqlog::parser_for("Primitive", eqlog::host_timezone());
-        i64::try_from(eqlog::scan::scan_bytes(&parser, &bytes, |_line| {})).expect("a count")
+        i64::try_from(eqlog::scan::scan_bytes(
+            &parser,
+            &bytes,
+            |_line, _payload| {},
+        ))
+        .expect("a count")
     };
     assert_eq!(folded, scanned, "the fold took every event the scan found");
     id += 1;
@@ -337,7 +342,12 @@ fn a_snapshot_taken_mid_fold_is_a_real_prefix_state() {
     let bytes = std::fs::read(&log).expect("the staged log is readable");
     let whole = {
         let parser = eqlog::parser_for("Primitive", eqlog::host_timezone());
-        i64::try_from(eqlog::scan::scan_bytes(&parser, &bytes, |_line| {})).expect("a count")
+        i64::try_from(eqlog::scan::scan_bytes(
+            &parser,
+            &bytes,
+            |_line, _payload| {},
+        ))
+        .expect("a count")
     };
 
     let engine = Engine::start();
@@ -445,7 +455,12 @@ fn health_carries_the_mark_once_the_fold_is_live() {
     let bytes = std::fs::read(&log).expect("the staged log is readable");
     let scanned = {
         let parser = eqlog::parser_for("Primitive", eqlog::host_timezone());
-        i64::try_from(eqlog::scan::scan_bytes(&parser, &bytes, |_line| {})).expect("a count")
+        i64::try_from(eqlog::scan::scan_bytes(
+            &parser,
+            &bytes,
+            |_line, _payload| {},
+        ))
+        .expect("a count")
     };
 
     client.send(&attach(2, &log.to_string_lossy()));

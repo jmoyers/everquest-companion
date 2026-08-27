@@ -103,7 +103,7 @@ pub mod ledger_file;
 pub mod songs;
 pub mod world;
 
-use crate::event::Event;
+use crate::event::{Event, Key, Kind};
 use crate::modules::consider::mob_key;
 use crate::EqModule;
 use cast_state::{Armed, ArmedCasts, CastState};
@@ -261,53 +261,53 @@ impl ResistFold {
 
     /// State the outcomes are interpreted against. True when the event was one of these.
     fn on_world_event(&mut self, ev: &Event, bucket: &mut ResistBucket) -> bool {
-        match ev.kind() {
-            "zone" => {
-                let zone = ev.str("zone").unwrap_or_default().to_string();
+        match ev.kind_of() {
+            Kind::Zone => {
+                let zone = ev.str(Key::Zone).unwrap_or_default().to_string();
                 self.on_zone(zone, bucket);
                 true
             }
-            "level" => {
-                self.self_level = ev.int("level");
+            Kind::Level => {
+                self.self_level = ev.int(Key::Level);
                 true
             }
-            "selfWho" => {
+            Kind::SelfWho => {
                 if self.self_level.is_none() {
-                    self.self_level = ev.int("level");
+                    self.self_level = ev.int(Key::Level);
                 }
                 // The ONE line in the game that states the loadout, and therefore the only thing
                 // that can answer "how many non-hybrid caster classes" for the overchannel adjust.
-                self.cast.note_classes(&str_array(ev, "classes"));
+                self.cast.note_classes(&str_array(ev, Key::Classes));
                 true
             }
-            "invocationChange" => {
+            Kind::InvocationChange => {
                 self.cast
-                    .note_invocation(ev.str("invocation").unwrap_or_default());
+                    .note_invocation(ev.str(Key::Invocation).unwrap_or_default());
                 true
             }
-            "consider" => {
-                let mob = ev.str("mob").unwrap_or_default().to_string();
+            Kind::Consider => {
+                let mob = ev.str(Key::Mob).unwrap_or_default().to_string();
                 self.names.remember(&mob);
-                if let Some(level) = ev.int("level") {
+                if let Some(level) = ev.int(Key::Level) {
                     let key = self.names.key(&mob);
                     self.levels.note(&key, level);
                 }
                 true
             }
-            "death" => {
-                let key = self.names.key(ev.str("name").unwrap_or_default());
+            Kind::Death => {
+                let key = self.names.key(ev.str(Key::Name).unwrap_or_default());
                 self.debuffs.clear_mob(&key);
                 // A dead mob stops being a song target immediately (rule 3: alive AND in contact).
                 // The song itself keeps running, so nothing here touches the reconstruction.
                 self.contact.drop_mob(&key);
                 true
             }
-            "petClaim" | "petSay" => {
-                self.casters.note_pet(ev.str("name").unwrap_or_default());
+            Kind::PetClaim | Kind::PetSay => {
+                self.casters.note_pet(ev.str(Key::Name).unwrap_or_default());
                 true
             }
-            "allyPetLeader" => {
-                self.casters.note_pet(ev.str("pet").unwrap_or_default());
+            Kind::AllyPetLeader => {
+                self.casters.note_pet(ev.str(Key::Pet).unwrap_or_default());
                 true
             }
             _ => self.on_cast_lifecycle(ev, bucket),
@@ -317,21 +317,21 @@ impl ResistFold {
     /// The cast lifecycle: what is in flight, and what stopped being in flight. A fizzle or an
     /// interrupt DISARMS rather than filing anything — a cast that never happened is not a resist.
     fn on_cast_lifecycle(&mut self, ev: &Event, bucket: &mut ResistBucket) -> bool {
-        match ev.kind() {
-            "castBegin" => {
-                let spell = ev.str("spell").unwrap_or_default().to_string();
-                self.on_cast_begin(&spell, ev.ts(), ev.bool("sung"), bucket);
+        match ev.kind_of() {
+            Kind::CastBegin => {
+                let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
+                self.on_cast_begin(&spell, ev.ts(), ev.bool(Key::Sung), bucket);
                 true
             }
-            "otherCastBegin" => {
-                let caster = ev.str("caster").unwrap_or_default().to_string();
-                let spell = ev.str("spell").unwrap_or_default().to_string();
+            Kind::OtherCastBegin => {
+                let caster = ev.str(Key::Caster).unwrap_or_default().to_string();
+                let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
                 self.on_other_cast(&caster, &spell, ev.ts());
                 true
             }
-            "castFizzle" | "castInterrupted" => {
+            Kind::CastFizzle | Kind::CastInterrupted => {
                 self.casts
-                    .disarm(&spell_canon_key(ev.str("spell").unwrap_or_default()));
+                    .disarm(&spell_canon_key(ev.str(Key::Spell).unwrap_or_default()));
                 true
             }
             _ => false,
@@ -340,26 +340,26 @@ impl ResistFold {
 
     /// The lines that state what happened to a spell.
     fn on_outcome_event(&mut self, ev: &Event, bucket: &mut ResistBucket) {
-        match ev.kind() {
-            "resist" => self.on_resist(ev, bucket),
-            "damage" => self.on_damage(ev, bucket),
-            "miss" => self.on_melee(
-                ev.str("attacker").unwrap_or_default(),
-                ev.str("target").unwrap_or_default(),
+        match ev.kind_of() {
+            Kind::Resist => self.on_resist(ev, bucket),
+            Kind::Damage => self.on_damage(ev, bucket),
+            Kind::Miss => self.on_melee(
+                ev.str(Key::Attacker).unwrap_or_default(),
+                ev.str(Key::Target).unwrap_or_default(),
                 ev.ts(),
             ),
-            "buffApply" => {
+            Kind::BuffApply => {
                 let names = candidate_names(ev);
-                if ev.str("target") == Some("self") {
+                if ev.str(Key::Target) == Some("self") {
                     self.songs.on_self_landing(ev.ts(), &names);
                 } else {
-                    let target = ev.str("target").unwrap_or_default().to_string();
+                    let target = ev.str(Key::Target).unwrap_or_default().to_string();
                     self.on_emote(&target, ev.ts(), Some(&names), bucket);
                 }
             }
-            "cc" | "charm" => {
-                let mob = ev.str("mob").unwrap_or_default().to_string();
-                let names = ev.get("candidates").map(|_| candidate_names(ev));
+            Kind::Cc | Kind::Charm => {
+                let mob = ev.str(Key::Mob).unwrap_or_default().to_string();
+                let names = ev.has(Key::Candidates).then(|| candidate_names(ev));
                 self.on_emote(&mob, ev.ts(), names.as_deref(), bucket);
             }
             _ => {}
@@ -545,16 +545,16 @@ impl ResistFold {
 
     fn on_resist(&mut self, ev: &Event, bucket: &mut ResistBucket) {
         // `You resist <mob>'s <Spell>!` is YOUR resist and a different feature entirely.
-        if ev.bool("incoming") {
+        if ev.bool(Key::Incoming) {
             return;
         }
-        let target = ev.str("target").unwrap_or_default().to_string();
+        let target = ev.str(Key::Target).unwrap_or_default().to_string();
         if !self.targets.is_mob_target(&target) {
             return;
         }
-        let caster = ev.str("caster").unwrap_or_default().to_string();
+        let caster = ev.str(Key::Caster).unwrap_or_default().to_string();
         let kind = self.casters.kind_of(&caster);
-        let spell = ev.str("spell").unwrap_or_default().to_string();
+        let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
         let spell_key = spell_canon_key(&spell);
         // The resist line is the one outcome line that PRINTS the rank (719 of the owner's 3,304
         // do), so it beats the armed cast rather than falling back to it.
@@ -619,12 +619,12 @@ impl ResistFold {
     }
 
     fn on_damage(&mut self, ev: &Event, bucket: &mut ResistBucket) {
-        let attacker = ev.str("attacker").unwrap_or_default().to_string();
+        let attacker = ev.str(Key::Attacker).unwrap_or_default().to_string();
         if attacker.is_empty() {
             return;
         }
-        let dtype = ev.str("dtype").unwrap_or_default().to_string();
-        let target = ev.str("target").unwrap_or_default().to_string();
+        let dtype = ev.str(Key::Dtype).unwrap_or_default().to_string();
+        let target = ev.str(Key::Target).unwrap_or_default().to_string();
         // A swing either way is MELEE CONTACT, which is the only proxy for point-blank range a song
         // pulse gets (rule 3). A damage shield firing means the mob hit you, so it counts too.
         if dtype == "melee" || dtype == "ds" {
@@ -661,7 +661,7 @@ impl ResistFold {
         if !self.targets.is_mob_target(target) {
             return;
         }
-        let skill = ev.str("skill").unwrap_or_default().to_string();
+        let skill = ev.str(Key::Skill).unwrap_or_default().to_string();
         let spell_key = spell_canon_key(&skill);
         self.names.remember(target);
         let ts = ev.ts();
@@ -710,12 +710,9 @@ impl ResistFold {
                 row.land += 1;
             }
         } else {
-            let crit = ev.bool("crit");
-            let modifiers = ev
-                .get("modifiers")
-                .and_then(|v| v.as_array())
-                .map_or(0, Vec::len);
-            let amount = ev.int("amount").unwrap_or(0);
+            let crit = ev.bool(Key::Crit);
+            let modifiers = ev.arr_len(Key::Modifiers);
+            let amount = ev.int(Key::Amount).unwrap_or(0);
             let row = self.row_for(bucket, &obs);
             // A CRITICAL is counted as a landing and kept OUT of the histogram: its number is not
             // the spell's full damage, and letting it in would invent a second "full" value for the
@@ -843,28 +840,14 @@ impl ResistFold {
 }
 
 /// `ev.classes` — the `/who` row's class codes.
-fn str_array(ev: &Event, key: &str) -> Vec<String> {
-    ev.get(key)
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+fn str_array(ev: &Event, key: Key) -> Vec<String> {
+    ev.arr_str(key).into_iter().map(str::to_string).collect()
 }
 
 /// `ev.candidates.map((c) => c.name)` — the candidate SPELL NAMES the parser handed over. EQ prints
 /// one sentence per spell FAMILY, so the parser never claims which one it was (world-model law 3).
 fn candidate_names(ev: &Event) -> Vec<String> {
-    ev.get("candidates")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+    ev.candidate_names(Key::Candidates)
 }
 
 /// The EqModule wrapper.

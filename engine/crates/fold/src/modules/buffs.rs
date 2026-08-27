@@ -59,7 +59,7 @@
 //! runs the EXISTING law-4 censor, which is what leaves charmed pets and hostiles behind on a login
 //! exactly as on any other zone.
 
-use crate::event::Event;
+use crate::event::{Event, Key, Kind};
 use crate::jsmap::JsMap;
 use crate::modules::buff_anchors::CastAnchors;
 use crate::modules::buff_landing::{admit_landing, Candidate};
@@ -123,7 +123,7 @@ pub struct BuffsModule {
     facts: SpellFacts,
     /// The `buffExpired` events synthesized while folding the current PRIMARY event, in emission
     /// order, waiting for the registry to take them.
-    derived: Vec<Event>,
+    derived: Vec<Event<'static>>,
     /// `curSeq`/`curTs` — THE LAST PRIMARY EVENT'S IDENTITY, which is what an expiry is stamped
     /// with (`emitBuffExpired`). It has to be a FIELD rather than a parameter because a wall-clock
     /// tick synthesizes expiries too and has no event of its own to name: over there `onTick` runs
@@ -181,7 +181,7 @@ impl BuffsModule {
     }
 
     fn on_cast_begin(&mut self, ev: &Event, core: &mut BuffsCore) {
-        let spell = ev.str("spell").unwrap_or_default().to_string();
+        let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
         let key = spell_key(&spell);
         core.anchors.note_self_cast(&spell, ev.ts());
         core.stats.touch_last_seen(&key, ev.ts());
@@ -204,11 +204,11 @@ impl BuffsModule {
         if ts - began_ts > EMOTE_WINDOW_MS || ts < began_ts || already_named {
             return;
         }
-        let text = ev.str("text").unwrap_or_default().to_string();
+        let text = ev.str(Key::Text).unwrap_or_default().to_string();
         let n = self.emote_text_count.get(&text).copied().unwrap_or(0) + 1;
         self.emote_text_count.insert(text, n);
         if n >= EMOTE_MIN_OBSERVATIONS {
-            let subject = ev.str("subject").unwrap_or_default();
+            let subject = ev.str(Key::Subject).unwrap_or_default();
             let key = if subject == "self" {
                 SELF_KEY.to_string()
             } else {
@@ -235,7 +235,7 @@ impl BuffsModule {
         };
         let Some(landing) = landing else { return };
         let spec = LandingSpec {
-            target: ev.str("target").unwrap_or_default().to_string(),
+            target: ev.str(Key::Target).unwrap_or_default().to_string(),
             ts,
             illusion: landing.illusion,
             duration_ms: landing.duration_ms,
@@ -257,13 +257,13 @@ impl BuffsModule {
     /// and every tick→fade span was minted as a duration sample — a 5 s median for a 41 s spell.
     /// Only the DIRECT heal line opens anything here.
     fn on_heal(&mut self, ev: &Event, core: &mut BuffsCore) {
-        if ev.get("overTime").and_then(Value::as_bool) == Some(true) {
+        if ev.bool(Key::OverTime) {
             return;
         }
-        let Some(spell) = ev.str("spell").filter(|s| !s.is_empty()) else {
+        let Some(spell) = ev.str(Key::Spell).filter(|s| !s.is_empty()) else {
             return;
         };
-        if id_key(ev.str("healer").unwrap_or_default()) != "you" {
+        if id_key(ev.str(Key::Healer).unwrap_or_default()) != "you" {
             return;
         }
         let key = spell_key(spell);
@@ -290,7 +290,7 @@ impl BuffsModule {
     }
 
     fn on_buff_fade(&mut self, ev: &Event, core: &mut BuffsCore) {
-        let spell = ev.str("spell").unwrap_or_default().to_string();
+        let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
         let key = spell_key(&spell);
         core.stats.note_ever_faded(&key);
         // THE WEAR-OFF CHANNEL IS WITNESSED HERE, AND ONLY FOR THE TARGET-NAMED SENTENCE (JOS-379).
@@ -302,7 +302,7 @@ impl BuffsModule {
         // `Your pet's <X> spell has worn off.`, so the named form is exactly "a target that is not
         // the possessive". A mob cannot be called `pet` — the possessive form never carries a name —
         // so the two cannot collide.
-        let target = ev.str("target");
+        let target = ev.str(Key::Target);
         if target.is_some_and(|t| t != "pet") {
             core.stats.witness_wear_off_channel(&key);
         }
@@ -340,7 +340,7 @@ impl BuffsModule {
     /// and it must NOT trigger single-pet succession against itself; a break→re-charm cycle is the
     /// common case, seconds apart, and preserves everything.
     fn on_charm(&mut self, ev: &Event) {
-        let mob = ev.str("mob").unwrap_or_default().to_string();
+        let mob = ev.str(Key::Mob).unwrap_or_default().to_string();
         let new_key = id_key(&mob);
         let same_as_broken = self.pets.broken_charm_key.as_deref() == Some(new_key.as_str());
         let same_as_charmed = self.pets.charmed_key.as_deref() == Some(new_key.as_str());
@@ -370,7 +370,7 @@ impl BuffsModule {
     }
 
     fn on_pet_claim(&mut self, ev: &Event) {
-        let name = ev.str("name").unwrap_or_default().to_string();
+        let name = ev.str(Key::Name).unwrap_or_default().to_string();
         let key = id_key(&name);
         let known = [
             self.pets.charmed_key.as_deref(),
@@ -403,7 +403,7 @@ impl BuffsModule {
     /// broken-charm slot is what lets a re-charm of the SAME name reconnect with buffs intact; a
     /// death or zone of that name in the meantime retires it through the existing paths.
     fn on_uncharm(&mut self, ev: &Event) {
-        let mob = id_key(ev.str("mob").unwrap_or_default());
+        let mob = id_key(ev.str(Key::Mob).unwrap_or_default());
         if self.pets.charmed_key.as_deref() == Some(mob.as_str()) {
             self.pets.broken_charm_key = self.pets.charmed_key.take();
             self.pets.broken_charm_display = self.pets.charmed_display.take();
@@ -423,7 +423,7 @@ impl BuffsModule {
     /// whole: a death naming the charmed pet went into the conservative never-censor-a-live-pet
     /// branch and nothing at all happened — not even to the slow on the corpse.
     fn on_death(&mut self, ev: &Event, core: &mut BuffsCore) {
-        let name = ev.str("name").unwrap_or_default();
+        let name = ev.str(Key::Name).unwrap_or_default();
         let key = id_key(name);
         self.inst
             .on_entity_death(&key, ev.ts(), &mut core.stats, &self.pets);
@@ -445,7 +445,7 @@ impl BuffsModule {
     /// away, so the ruling stays visible.
     fn death_retires_entity(&self, ev: &Event, key: &str) -> bool {
         let killer_is_you =
-            ev.bool("bySelf") || id_key(ev.str("killer").unwrap_or_default()) == "you";
+            ev.bool(Key::BySelf) || id_key(ev.str(Key::Killer).unwrap_or_default()) == "you";
         if self.pets.summoned_key.as_deref() == Some(key) {
             return !killer_is_you;
         }
@@ -539,36 +539,22 @@ impl BuffsModule {
 
 /// `buffApply.candidates` — `[{ name, durationMs, illusion }]`.
 fn candidates_of(ev: &Event) -> Vec<Candidate> {
-    let Some(list) = ev.get("candidates").and_then(Value::as_array) else {
-        return Vec::new();
-    };
-    list.iter()
-        .map(|c| Candidate {
-            name: c
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            duration_ms: c.get("durationMs").and_then(Value::as_i64),
-            illusion: c
-                .get("illusion")
-                .and_then(Value::as_bool)
-                .unwrap_or_default(),
+    ev.candidates(Key::Candidates)
+        .into_iter()
+        .map(|(name, duration_ms, illusion)| Candidate {
+            name,
+            duration_ms,
+            illusion,
         })
         .collect()
 }
 
 /// `buffWearOff.candidates` — a plain `string[]`.
 fn wear_off_candidates(ev: &Event) -> Vec<String> {
-    ev.get("candidates")
-        .and_then(Value::as_array)
-        .map(|l| {
-            l.iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+    ev.arr_str(Key::Candidates)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 impl EqModule for BuffsModule {
@@ -612,8 +598,8 @@ impl EqModule for BuffsModule {
             return;
         }
         if ev.kind() == "offlineGap" {
-            let from_ts = ev.int("fromTs").unwrap_or(0);
-            let to_ts = ev.int("toTs").unwrap_or(0);
+            let from_ts = ev.int(Key::FromTs).unwrap_or(0);
+            let to_ts = ev.int(Key::ToTs).unwrap_or(0);
             self.frame.close_hole();
             self.inst
                 .on_offline_pause(from_ts, to_ts - from_ts, &core.stats, &self.pets);
@@ -643,43 +629,43 @@ impl EqModule for BuffsModule {
         // miner accretes (message, spell) associations across replay AND live.
         self.mining.observe(ev);
 
-        match ev.kind() {
+        match ev.kind_of() {
             // ── the cast lifecycle + activated AA ──
-            "castBegin" => self.on_cast_begin(ev, &mut core),
-            "spellEmote" => self.on_spell_emote(ev),
+            Kind::CastBegin => self.on_cast_begin(ev, &mut core),
+            Kind::SpellEmote => self.on_spell_emote(ev),
             // `<Name> begins casting <S>.` — an anchor ONLY for a caster on the externals allowlist
             // (default: nobody). The anchors enforce that; the event is folded either way so the
             // refusal lives in one place.
-            "otherCastBegin" => core.anchors.note_other_cast(
-                ev.str("caster").unwrap_or_default(),
-                ev.str("spell").unwrap_or_default(),
+            Kind::OtherCastBegin => core.anchors.note_other_cast(
+                ev.str(Key::Caster).unwrap_or_default(),
+                ev.str(Key::Spell).unwrap_or_default(),
                 ts,
             ),
-            "castFizzle" | "castInterrupted" => {
-                let spell = ev.str("spell").unwrap_or_default().to_string();
+            Kind::CastFizzle | Kind::CastInterrupted => {
+                let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
                 self.inst.clear_pending_cast(&spell_key(&spell));
                 core.anchors.clear_cast(&spell);
             }
             // `You activate Quick Buff.` is a SELF anchor that names no spell — a WINDOW, not a name
             // (owner amendment, 2026-08-09). It applies many spells at once with no cast line of
             // their own, so a rule that demanded one per spell would refuse the player's own buffs.
-            "aaActivate" => {
-                if id_key(ev.str("name").unwrap_or_default()) == QUICK_BUFF {
+            Kind::AaActivate => {
+                if id_key(ev.str(Key::Name).unwrap_or_default()) == QUICK_BUFF {
                     core.anchors.note_quick_buff(ts);
                 }
             }
-            "aaSpend" => {
+            Kind::AaSpend => {
                 if self.permanent_illusion_owned_ts.is_none()
-                    && id_key(ev.str("ability").unwrap_or_default()) == PERMANENT_ILLUSION
+                    && id_key(ev.str(Key::Ability).unwrap_or_default()) == PERMANENT_ILLUSION
                 {
                     self.permanent_illusion_owned_ts = Some(ts);
                 }
             }
             // ── buff application / expiry ──
-            "buffApply" => self.on_buff_apply(ev, &mut core),
+            Kind::BuffApply => self.on_buff_apply(ev, &mut core),
             // The wear-off emote prints to the buff HOLDER, so it clears the SELF instance. MANY
             // spells share one wear-off message, so it is resolved against the ACTIVE self set.
-            "buffWearOff" => {
+            Kind::BuffWearOff => {
                 let cands = wear_off_candidates(ev);
                 self.inst
                     .remove_shared_wear_off(&cands, SELF_KEY, ts, &mut core.stats, &self.pets);
@@ -687,21 +673,21 @@ impl EqModule for BuffsModule {
             // `Your illusion fades.` — only one illusion is ever active on self, so this removes
             // whichever illusion self buff is active. No spell name needed: the line is 27-way
             // ambiguous by design.
-            "illusionFade" => self.inst.clear_self_illusion(&core.stats),
-            "heal" => self.on_heal(ev, &mut core),
-            "buffFade" => self.on_buff_fade(ev, &mut core),
-            "playerDeath" => self.inst.on_player_death(&core.stats, &self.pets),
+            Kind::IllusionFade => self.inst.clear_self_illusion(&core.stats),
+            Kind::Heal => self.on_heal(ev, &mut core),
+            Kind::BuffFade => self.on_buff_fade(ev, &mut core),
+            Kind::PlayerDeath => self.inst.on_player_death(&core.stats, &self.pets),
             // ── entity lifecycle (the who/what) ──
-            "charm" => self.on_charm(ev),
-            "petClaim" => self.on_pet_claim(ev),
-            "uncharm" => self.on_uncharm(ev),
-            "cc" => {
-                let mob = ev.str("mob").unwrap_or_default().to_string();
+            Kind::Charm => self.on_charm(ev),
+            Kind::PetClaim => self.on_pet_claim(ev),
+            Kind::Uncharm => self.on_uncharm(ev),
+            Kind::Cc => {
+                let mob = ev.str(Key::Mob).unwrap_or_default().to_string();
                 self.pets.pet_target_key = Some(id_key(&mob));
                 self.pets.pet_target_display = Some(mob);
             }
-            "death" => self.on_death(ev, &mut core),
-            "zone" => self.inst.on_zone(&core.stats, &mut self.pets),
+            Kind::Death => self.on_death(ev, &mut core),
+            Kind::Zone => self.inst.on_zone(&core.stats, &mut self.pets),
             _ => {}
         }
         drop(core);
@@ -746,7 +732,7 @@ impl EqModule for BuffsModule {
         json!({ "seq": self.seq, "state": self.build_state(&core.stats) })
     }
 
-    fn take_derived(&mut self) -> Vec<Event> {
+    fn take_derived(&mut self) -> Vec<Event<'static>> {
         std::mem::take(&mut self.derived)
     }
 

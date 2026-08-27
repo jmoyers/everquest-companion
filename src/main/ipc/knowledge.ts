@@ -25,6 +25,7 @@ import { currentWornFocus } from '../planner/wornFocusCurrent'
 // already-resolved, so the wait is paid exactly where the race was.
 import { spellTable } from '../resist/spellTable'
 import type { AlertsSnap } from '../../shared/alertTypes'
+import { resolvedClasses, type ClassAbbr, type ComboSnap } from '../../shared/classCombo'
 import {
   OBSERVED_SPELL_RANKS_MODULE_ID,
   observedRankRow,
@@ -57,6 +58,25 @@ async function moduleState(moduleId: string): Promise<unknown> {
   // sites have always handled for a build that does not carry the module.
   const snap = await serveModuleSnapshot(moduleId)
   return snap?.state
+}
+
+/**
+ * THE LOADOUT YOU ARE PLAYING RIGHT NOW, as the combo module has RESOLVED it (JOS-508).
+ *
+ * A FOURTH read off the same door the ranks and the buff stats come through, and the same rules
+ * apply: never mutated, an absent module simply means no answer, and the answer is `[]` rather than
+ * a guess. `resolvedClasses` keeps only slots holding exactly ONE candidate — a trio where two
+ * slots are known and the third is `{CLR,PAL}` reports two classes, which is what "2 of 3 known"
+ * honestly looks like and is exactly what the drilldown needs: every level it prints as YOURS has
+ * to be a level the game will actually give this character.
+ *
+ * ONLY THE OPEN INTERVAL. `snap.current` is the span still running; an earlier interval describes a
+ * loadout that has since been swapped away from, and answering a spell page with it would print
+ * levels for a combo the player is not in.
+ */
+async function currentCombo(): Promise<ClassAbbr[]> {
+  const snap = (await moduleState('combo')) as ComboSnap | undefined
+  return snap?.current ? resolvedClasses(snap.current) : []
 }
 
 export function registerKnowledgeIpc(): void {
@@ -114,21 +134,35 @@ export function registerKnowledgeIpc(): void {
   // fold answers "the highest rank this character holds" over merges as well as casts - which is
   // the number the `yours: VIII` pill already states, and therefore the number the at-rank figures
   // beside it have to be read at, or the card would contradict itself.
+  // AND THE LOADOUT (JOS-508), which is what turns the upgrade ladder from a list of spells into a
+  // SCHEDULE: the level each rung unlocks at for the classes you are actually playing. Read here
+  // rather than in the renderer for the header's reason — the join belongs on the side that already
+  // holds the catalog, and a renderer that assembled it would be munging (ruling 4).
+  //
+  // THE FOUR READS RUN TOGETHER NOW, AND THE FOURTH IS WHY. These were four sequential awaits over
+  // three engine round trips and a worker's parse, none of which depends on any other — so the
+  // handler's latency was their SUM for no reason. Adding a fourth made that visible rather than
+  // merely wasteful: `tests/e2e/unlockRowSteps.mts` had been reading the hover card at mount rather
+  // than at answer, an always-wrong read that the extra milliseconds turned into a reliable failure.
+  // The spec's own wait is fixed there (wave E3's law); this is the other half, and it makes the
+  // card FASTER than it was before this ticket rather than merely no slower.
   ipcMain.handle(IPC.spellsDetail, async (_e, name: unknown) => {
-    const snap = (await moduleState('alerts')) as AlertsSnap | undefined
-    const observed = Object.keys(snap?.spellLastCast ?? {})
     const wanted = typeof name === 'string' ? name : ''
-    const rankSnap = (await moduleState(OBSERVED_SPELL_RANKS_MODULE_ID)) as
-      | ObservedSpellRanksSnap
-      | undefined
-    return buildSpellDetail(appSpellDb(), wanted, observed, {
+    const [snap, rankSnap, client, combo] = await Promise.all([
+      moduleState('alerts') as Promise<AlertsSnap | undefined>,
+      moduleState(OBSERVED_SPELL_RANKS_MODULE_ID) as Promise<ObservedSpellRanksSnap | undefined>,
       // Awaited for the unlocks handler's reason, one hover earlier: a card opened in the first
       // seconds of a launch would otherwise state clientless facts for that one open.
-      client: await spellTable(),
+      spellTable(),
+      currentCombo()
+    ])
+    return buildSpellDetail(appSpellDb(), wanted, Object.keys(snap?.spellLastCast ?? {}), {
+      client,
       rank: observedRankRow(rankSnap, wanted)?.rank,
       // JOS-452 — the same worn-focus answer the planner's inventory payload carries, from the same
       // memoized resolution, so the card and the leveling table can never credit a different item.
-      focus: currentWornFocus()
+      focus: currentWornFocus(),
+      combo
     })
   })
 

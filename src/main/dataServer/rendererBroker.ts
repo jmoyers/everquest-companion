@@ -206,7 +206,15 @@ async function onConnect(event: IpcMainInvokeEvent, nonce: unknown): Promise<Eng
   return { ok: true }
 }
 
-/** Register the one channel. Called from `registerIpc()` beside every other domain. */
+/**
+ * Register the one channel. Called from `registerIpc()` beside every other domain.
+ *
+ * THE LAUNCH-STATE CHANNELS ARE NOT HERE, and the reason is a cycle rather than a category. They
+ * would belong beside this one — the `engine:*` family is registered unconditionally in every build
+ * so a refusal is a decision a test can watch — but `engine:retry` has to reach
+ * `engineHost.ts retryEngineSupervisor`, and `engineHost.ts` imports THIS file. `src/main/ipc/
+ * engine.ts` is the leaf that closes that loop, and it keeps this file's one import direction.
+ */
 export function registerRendererBrokerIpc(): void {
   ipcMain.handle(IPC.engineConnect, onConnect)
 }

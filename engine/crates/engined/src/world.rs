@@ -257,6 +257,17 @@ pub struct FoldMark {
     /// How far through the bytes the mark has reached, as a percentage. A FLOAT (owner ruling 17),
     /// bytes over bytes, engine-measured.
     pub pct: f64,
+    /// `pct`'s DENOMINATOR, carried beside it rather than recomputed by anybody downstream.
+    ///
+    /// The two travel together for one reason: `pct` is lossy about the thing a loading bar most
+    /// wants to say. "62%" cannot be turned back into "128 MB of 205 MB", and the second sentence
+    /// is what tells a person whether to wait. The numerator is [`Self::checkpoint`], which this
+    /// struct already carried, so the denominator is the only fact that was missing — and it is one
+    /// the caller had in its hand at the moment it computed `pct`.
+    ///
+    /// IT CAN GROW BETWEEN TWO MARKS. EverQuest appends while the fold runs, so this is the larger
+    /// of the size at open and the bytes actually read (see `ingest::mark`) rather than a constant.
+    pub total: u64,
     /// The `ts` of the last event folded, if one could be read.
     pub last_ts: Option<i64>,
 }
@@ -1516,6 +1527,14 @@ impl World {
             progress: Some(FoldProgress {
                 pct: mark.pct,
                 events: mark.events,
+                // BOTH COORDINATES, NOT A ROUNDED ONE. `offset` is the mark itself — the same
+                // coordinate `HealthMark.offset` reports, which is why it carries that name — and
+                // `logSize` is what `pct` was divided by. Saturating rather than wrapping: the wire
+                // type is a signed 64-bit integer and a log larger than 8 exabytes is not a thing,
+                // but a silent wrap would draw a NEGATIVE progress bar where a saturate draws a
+                // stuck one.
+                offset: i64::try_from(mark.checkpoint).unwrap_or(i64::MAX),
+                log_size: i64::try_from(mark.total).unwrap_or(i64::MAX),
             }),
         });
         broadcast(&mut state, &frame);
@@ -1862,6 +1881,7 @@ mod tests {
             checkpoint: 4096,
             events,
             pct,
+            total: 8192,
             last_ts: Some(1_787_181_707_000),
         }
     }
@@ -1958,6 +1978,10 @@ mod tests {
             let progress = frame.progress.expect("a progress frame carries progress");
             assert!((progress.pct - 62.4).abs() < f64::EPSILON);
             assert_eq!(progress.events, 1571);
+            // THE TWO COORDINATES A LOADING BAR NEEDS, and they are the mark's own rather than
+            // anything derived from `pct` — which is the whole reason they ride the frame.
+            assert_eq!(progress.offset, 4096);
+            assert_eq!(progress.log_size, 8192);
             break;
         }
         assert_eq!(world.mark().events, 1571);

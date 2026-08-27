@@ -177,7 +177,7 @@ fn parser() -> Parser {
 /// The PROVEN side: `scan_bytes` over the finished file, serialized as NDJSON.
 fn scan_stream(p: &Parser, bytes: &[u8]) -> String {
     let mut out = String::new();
-    scan_bytes(p, bytes, |json| {
+    scan_bytes(p, bytes, |json, _payload| {
         out.push_str(json);
         out.push('\n');
     });

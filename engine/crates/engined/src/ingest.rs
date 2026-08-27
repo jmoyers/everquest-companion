@@ -121,12 +121,21 @@ const TICK_EVERY: Duration = Duration::from_secs(1);
 
 /// One folded event, as the ingest hands it to a sink.
 ///
-/// Borrowed, never owned: the JSON lives in the parser's reused buffer and is valid for exactly
-/// this call. A sink that needs to keep it copies it — which makes the copy the sink's decision,
+/// Borrowed, never owned: BOTH halves live in the parser's reused buffers and are valid for exactly
+/// this call. A sink that needs to keep one copies it — which makes the copy the sink's decision,
 /// stated at the place that pays for it.
 pub struct Event<'a> {
     /// The event, serialized. Byte-identical to the TS pipeline's `JSON.stringify(ev)` (JOS-469).
+    ///
+    /// STILL BUILT EAGERLY AFTER JOS-505, and deliberately: it is the parser oracle's byte-identity
+    /// artifact and the format every golden is recorded in, and JOS-504 measured its construction
+    /// at under half a percent of a fold. The FOLD no longer reads it — that is what `payload` is —
+    /// so the only readers left are the ones that genuinely want the text.
     pub json: &'a str,
+    /// The same event, TYPED (JOS-505) — what the fold reads. Field order, absent-vs-null and every
+    /// value are the writer's own, recorded in the same call that serialized them, so the two
+    /// halves cannot disagree about what the parser said.
+    pub payload: &'a eqlog::event::Payload,
     /// The event's sequence number. Counts EVENTS, not lines, and starts at 0 for each attach.
     pub seq: i64,
     /// `false` for the historical scan, `true` for the live tail. A property of the SOURCE, not of
@@ -1074,8 +1083,10 @@ fn run(
         }
         core.consume(&buf[..got], |line| {
             if parser.parse_event(line, seq, &mut ev) {
+                let (json, payload) = ev.done();
                 sink.event(&Event {
-                    json: ev.finish(),
+                    json,
+                    payload,
                     seq,
                     live: false,
                 });
@@ -1182,8 +1193,10 @@ fn run(
         let before = seq;
         let polled = tail.poll(|line| {
             if parser.parse_event(line, seq, &mut ev) {
+                let (json, payload) = ev.done();
                 sink.event(&Event {
-                    json: ev.finish(),
+                    json,
+                    payload,
                     seq,
                     live: LIVE,
                 });
@@ -1223,6 +1236,9 @@ fn run(
                 checkpoint: tail.checkpoint_offset(),
                 events: seq,
                 pct: pct_of(tail.checkpoint_offset(), live_total),
+                // The LIVE denominator is the tail's own read offset, which is what `pct` is over
+                // here — the file has no fixed size once EverQuest is appending to it.
+                total: live_total,
                 last_ts: sink.report().last_ts,
             };
             announced = seq;
@@ -1574,6 +1590,9 @@ fn mark(core: &TailCore, size: u64, events: i64, sink: &dyn EventSink) -> FoldMa
         checkpoint: core.checkpoint_offset(),
         events,
         pct: pct_of(core.checkpoint_offset(), total),
+        // THE DENOMINATOR RIDES ALONG (JOS-503). It is computed here anyway; carrying it costs a
+        // `u64` and buys the loading bar its human units, which `pct` alone cannot reconstruct.
+        total,
         last_ts: sink.report().last_ts,
     }
 }
@@ -1704,9 +1723,14 @@ mod tests {
     #[test]
     fn the_counting_sink_counts_events_and_remembers_the_logs_own_clock() {
         let mut sink = CountingSink::default();
+        // THE PAYLOAD IS NOT READ HERE, and that is the point of these three tests: a counting sink
+        // folds nothing and takes its clock off the SERIALIZED half (`ts_of`), which is the one
+        // reader of `json` left on the production path. An empty payload is the honest stand-in.
+        let empty = eqlog::event::Payload::default();
         for (seq, ts) in [(0, 100), (1, 200), (2, 300)] {
             sink.event(&Event {
                 json: &format!(r#"{{"kind":"unknown","seq":{seq},"ts":{ts},"raw":"x"}}"#),
+                payload: &empty,
                 seq,
                 live: false,
             });
@@ -1719,13 +1743,16 @@ mod tests {
     #[test]
     fn an_event_with_an_unreadable_stamp_still_counts() {
         let mut sink = CountingSink::default();
+        let empty = eqlog::event::Payload::default();
         sink.event(&Event {
             json: r#"{"kind":"unknown","seq":0,"ts":7,"raw":"x"}"#,
+            payload: &empty,
             seq: 0,
             live: false,
         });
         sink.event(&Event {
             json: r#"{"kind":"nonsense"}"#,
+            payload: &empty,
             seq: 1,
             live: false,
         });
@@ -1829,7 +1856,12 @@ mod tests {
         let bytes = std::fs::read(path).expect("the log is readable");
         let character = character_of(path).expect("the scratch log names a character");
         let parser = eqlog::parser_for(&character, eqlog::host_timezone());
-        i64::try_from(eqlog::scan::scan_bytes(&parser, &bytes, |_line| {})).expect("a count")
+        i64::try_from(eqlog::scan::scan_bytes(
+            &parser,
+            &bytes,
+            |_line, _payload| {},
+        ))
+        .expect("a count")
     }
 
     /// Wait for a condition, failing with `what` if it never holds.

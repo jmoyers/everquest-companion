@@ -15,81 +15,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createEngineSupervisor,
-  type EngineSupervisorDeps,
-  type ReadyEngine
-} from '../src/main/dataServer/supervisor'
-import {
   ENGINE_ANNOUNCE_TIMEOUT_MS,
   ENGINE_HEALTH_INTERVAL_MS,
   ENGINE_QUICK_EXIT_STREAK,
   ENGINE_RESTART_BACKOFF_MS,
-  ENGINE_STOP_GRACE_MS,
-  type EngineExitLog
+  ENGINE_STOP_GRACE_MS
 } from '../src/main/dataServer/engineProtocol'
-import { FakeChild, fakeClock, scriptedChannel, type ChannelBehaviour } from './dataServerSupervisorFakes.mts'
+import { harness, launched, settle } from './dataServerSupervisorHarness.mts'
 
-/** Everything one supervisor-under-test is wired to, and everything it said. */
-function harness(opts: { binary?: string | null; behaviour?: ChannelBehaviour; spawnThrows?: Error } = {}) {
-  const clock = fakeClock()
-  const children: FakeChild[] = []
-  const reports: EngineExitLog[] = []
-  const logs: string[] = []
-  const pids: (number | null)[] = []
-  const readies: (ReadyEngine | null)[] = []
-  const tokens: string[] = []
-  let mintCount = 0
-  // MUTABLE, because a health WATCHDOG is only a watchdog if the answer can change under it: the
-  // engine that was fine a minute ago is exactly the one this has to catch.
-  let behaviour: ChannelBehaviour = opts.behaviour ?? 'ok'
-  const deps: EngineSupervisorDeps = {
-    resolveBinary: () => (opts.binary === undefined ? 'C:/repo/engine/target/debug/engined.exe' : opts.binary),
-    spawn: () => {
-      if (opts.spawnThrows) throw opts.spawnThrows
-      const child = new FakeChild()
-      children.push(child)
-      return child
-    },
-    connect: (_port) => Promise.resolve(scriptedChannel(tokens[tokens.length - 1] ?? '', behaviour)),
-    mintToken: () => {
-      mintCount += 1
-      const token = `${'a'.repeat(63)}${String(mintCount)}`
-      tokens.push(token)
-      return token
-    },
-    timer: clock.timer,
-    now: clock.now,
-    debug: (line) => logs.push(line),
-    report: (log) => reports.push(log),
-    onPid: (pid) => pids.push(pid),
-    onReady: (engine) => readies.push(engine)
-  }
-  return {
-    clock,
-    children,
-    reports,
-    logs,
-    pids,
-    readies,
-    tokens,
-    supervisor: createEngineSupervisor(deps),
-    setBehaviour: (next: ChannelBehaviour) => (behaviour = next)
-  }
-}
-
-/** Drain the microtask queue AND the macrotask turn, so an async health probe has finished. */
-async function settle(): Promise<void> {
-  await new Promise<void>((resolve) => setImmediate(resolve))
-}
-
-/** Start, announce, and wait for the health round-trip to land. The ordinary happy launch. */
-async function launched(h: ReturnType<typeof harness>): Promise<FakeChild> {
-  h.supervisor.start()
-  const child = h.children[h.children.length - 1]
-  child.announce()
-  await settle()
-  return child
-}
+// THE HARNESS AND ITS TWO WAITS LIVE NEXT DOOR (JOS-503) - dataServerSupervisorHarness.mts, split
+// out when this file passed the measured 400-code-line ceiling. Its second reader is
+// dataServerSupervisorFault.test.mts, which owns the onFault edge and the retry.
 
 // ---- 1. absence is a condition, not a crash ------------------------------------------------
 

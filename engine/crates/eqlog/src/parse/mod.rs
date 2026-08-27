@@ -18,7 +18,7 @@ pub mod session;
 pub mod who;
 pub mod world;
 
-use crate::event::Ev;
+use crate::event::{Ev, Kind};
 use crate::spelldb::SpellDb;
 use crate::timestamp::Clock;
 use regex::Regex;
@@ -175,7 +175,7 @@ impl Parser {
             || who::classify_item_activate(&self.who, c, out)
             || casts::classify_spell_emote(&self.casts, c, out);
         if !claimed {
-            out.begin("unknown");
+            out.begin(Kind::Unknown);
             out.envelope(c.seq, c.ts, c.raw);
         }
     }

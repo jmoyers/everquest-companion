@@ -22,6 +22,15 @@
 //!   * the whole spell-DB load path is reproduced (`spelldb/`), because the `candidates` list a
 //!     `buffApply` carries IS that database.
 //!
+//! AND SINCE JOS-505 A PARSE PRODUCES TWO THINGS AT ONCE. The NDJSON line above is still built
+//! eagerly and is still the bar; beside it, in the same calls, `event.rs` records the event as a
+//! TYPED `Payload` — the kind as a discriminant, each field as a `(Key, Slot)` pair in the order it
+//! was written, every string in one reused arena. That is what the FOLD reads: it used to parse the
+//! line back into a `serde_json::Value`, which JOS-504 measured at 9.6% of a whole fold before any
+//! module had looked at a field. `scan_bytes` and the ingest seam hand over both halves together
+//! because they are one event written twice and the writer's buffers are reused — a caller that
+//! took one of them could not ask for the other afterwards.
+//!
 //! CACHE TRANSPARENCY (ruling 18): a parse is a pure function of (bytes, spell-DB version,
 //! character name). Everything stateful lives on `Parser`, nothing outlives it, and no state is
 //! addressed by anything but a byte offset. The one memo the TS keeps — `spellCanonKey`'s cache — is
