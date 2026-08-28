@@ -65,16 +65,67 @@ const MAX_LISTED = 4
 /** Deepest card that still offers hoverable outcomes. 0 = only the top card does. */
 const MAX_HOVER_DEPTH = 0
 
+// ---- item knowledge: ONE lookup per name, for the whole window's lifetime ----------------------
+//
+// `MobCard`'s cache (lib/hoverCards.tsx), ported here by JOS-511 item 4 for the same reason and
+// with the same shape: a Map of answers plus a Map of in-flight promises, so a name is asked at
+// most once and two overlapping opens of it share one request.
+//
+// AND HERE IT IS PERMANENT RATHER THAN TIMED, which is the opposite call from the spell card's
+// (SpellCard.tsx `RECORD_TTL_MS` says why that one is bounded). The difference is what the record
+// is made of: `lookupItem` in main answers from the COMMITTED item DB, then a persisted userData
+// cache, then a politely-queued wiki fallback, and merges the local posky/quest associations —
+// every one of which is a compile-time or on-disk fact, none of which the log moves while the app
+// runs. There is nothing in an `ItemKnowledge` for a stale entry to be stale ABOUT. What the cache
+// removes is the IPC round trip per open, which is the whole cost on a name the reader crosses
+// twice.
+const ITEM_KNOWLEDGE = new Map<string, ItemKnowledge>()
+const ITEM_PENDING = new Map<string, Promise<ItemKnowledge | null>>()
+
+/** Resolve an item's knowledge, at most once per name. Never rejects — a failure resolves null. */
+function lookupItemCached(name: string): Promise<ItemKnowledge | null> {
+  const key = name.toLowerCase()
+  const hit = ITEM_KNOWLEDGE.get(key)
+  if (hit) return Promise.resolve(hit)
+  const inflight = ITEM_PENDING.get(key)
+  if (inflight) return inflight
+  const p = window.eq
+    .lookupItem(name)
+    .then((k: ItemKnowledge) => {
+      ITEM_KNOWLEDGE.set(key, k)
+      ITEM_PENDING.delete(key)
+      return k
+    })
+    .catch(() => {
+      ITEM_PENDING.delete(key)
+      return null
+    })
+  ITEM_PENDING.set(key, p)
+  return p
+}
+
+/** Drop every cached item record. For tests, and for anything that knows the dataset changed. */
+export function clearItemKnowledgeCache(): void {
+  ITEM_KNOWLEDGE.clear()
+  ITEM_PENDING.clear()
+}
+
 /**
  * Fetch an item's knowledge, unless the caller already has it. Runs on MOUNT, which for a
  * tooltip body means "on open". Never throws — main degrades to an offline/negative record.
+ *
+ * A CACHED RECORD IS TAKEN SYNCHRONOUSLY (JOS-511), in the state initializers, so a second open of
+ * a name costs no IPC and no spinner. A caller that already holds the record (`preloaded`, the loot
+ * view's `knowledgeByKey` map) still wins outright and asks nothing at all.
  */
 function useKnowledgeOnOpen(name: string, preloaded?: ItemKnowledge): {
   data: ItemKnowledge | null
   loading: boolean
 } {
-  const [data, setData] = useState<ItemKnowledge | null>(preloaded ?? null)
-  const [loading, setLoading] = useState(!preloaded)
+  const [data, setData] = useState<ItemKnowledge | null>(
+    () => preloaded ?? ITEM_KNOWLEDGE.get(name.toLowerCase()) ?? null
+  )
+  const [loading, setLoading] = useState(() => !preloaded && !ITEM_KNOWLEDGE.get(name.toLowerCase()))
 
   useEffect(() => {
     if (preloaded) {
@@ -82,19 +133,21 @@ function useKnowledgeOnOpen(name: string, preloaded?: ItemKnowledge): {
       setLoading(false)
       return
     }
+    const hit = ITEM_KNOWLEDGE.get(name.toLowerCase())
+    if (hit) {
+      setData(hit)
+      setLoading(false)
+      return
+    }
     let alive = true
     setLoading(true)
-    void window.eq
-      .lookupItem(name)
-      .then((k) => {
-        if (alive) setData(k)
-      })
-      .catch(() => {
-        /* main never rejects; a null record just renders the name honestly */
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
-      })
+    void lookupItemCached(name).then((k) => {
+      if (!alive) return
+      // A null is an IPC failure; the name still renders honestly and nothing overwrites a record
+      // this card may already be showing.
+      if (k) setData(k)
+      setLoading(false)
+    })
     return () => {
       alive = false
     }
@@ -414,7 +467,16 @@ export function KnownItemTooltip({
       // opens DOWNWARD, which is the placement that cannot land on the toolbar above its anchor.
       placement={nested ? 'right' : clickThrough ? 'bottom-start' : 'top'}
       disableInteractive={nested || clickThrough}
+      // `enterNextDelay` MATCHES `enterDelay`, and it is the one that governs a scroll (JOS-511
+      // item 4; `GearRowCompare` is the precedent and its comment carries the reason). MUI's enter
+      // hysteresis is APP-GLOBAL — after ANY tooltip closes, the next one's `enterDelay` is skipped
+      // for ~860ms and this value applies instead, and its default is 0. So a reader who had read
+      // one item card opened every name the pointer crossed on the way down a loot table, each one
+      // fetching. Naming the same number here makes a crossing a crossing either way; the NESTED
+      // card keeps its shorter 120, because reaching one means the pointer is already inside the
+      // card that offered it.
       enterDelay={nested ? 120 : 250}
+      enterNextDelay={nested ? 120 : 250}
       leaveDelay={nested ? 0 : 80}
       // Two constants, picked by the mode — see the block above them for why they are not written
       // here any more.

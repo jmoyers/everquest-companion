@@ -1,26 +1,19 @@
-//! THE ENGINE REPORTS ITSELF, OVER A REAL SOCKET (owner ruling 19 surface, JOS-483).
+//! The engine reports itself, over a real socket.
 //!
-//! `views::meter`'s own unit tests own what the counters COUNT. This suite owns what a CLIENT can
-//! get out of them — which is a different claim, and it is the one the in-app performance panel
-//! rests on. Four things are proved here and each is a sentence the panel would otherwise be
-//! guessing at:
+//! `views::meter`'s own unit tests own what the counters count; this suite owns what a client can
+//! get out of them — the sentences the in-app performance panel rests on:
 //!
-//!   * an engine with nothing attached ANSWERS rather than refusing — `idle`, a real uptime, an
-//!     empty serve list and an ingest that has measured nothing. A panel that could not draw a
-//!     just-launched engine would go blank exactly when somebody is waiting for one to come up;
-//!   * after a real scan of a COMMITTED FIXTURE the ingest half is real: a spell-DB time, a scan
-//!     time and the scan's own byte count, beside the mark and the event count the scan reached;
-//!   * after a subscribe and an append the serve half is real: frames, bytes, a widest frame, and a
-//!     fold-to-frame latency that EXISTS (the diff had a fold behind it) where the opening reset's
-//!     did not;
-//!   * asking twice does not reset anything, and the subscriber count is LIVE — it drops when the
-//!     subscription closes while the frame counts, which are the generation's bill, do not.
+//!   * an engine with nothing attached answers rather than refusing: `idle`, a real uptime, an empty
+//!     serve list, an ingest that has measured nothing;
+//!   * after a real scan the ingest half is real — spell-DB time, scan time and scan bytes, beside
+//!     the mark and the event count the scan reached;
+//!   * after a subscribe and an append the serve half is real, including a fold-to-frame latency
+//!     that exists where the opening reset's did not;
+//!   * asking twice resets nothing, and the subscriber count is live where the frame counts are not.
 //!
-//! THE LOG IS A COPY OF A COMMITTED FIXTURE with the suite's own tail appended, staged under the
-//! product's file-name shape. The fixture buys a scan worth measuring (~450 KB, thousands of
-//! events); the appended lines buy a ledger this suite knows every row of, because the committed
-//! fixtures carry no loot at all (`tests/views.rs` makes the same argument). Nothing here writes to
-//! a real game log.
+//! The log is a copy of a committed fixture with the suite's own tail appended: the fixture buys a
+//! scan worth measuring (~450 KB), and the appended lines buy a ledger this suite knows every row
+//! of, because the committed fixtures carry no loot at all.
 
 mod harness;
 
@@ -43,7 +36,7 @@ const FIXTURE: &str = "cw2-loadout-swap-aug2.log";
 /// The source the panel's serve table is proved over.
 const SOURCE: &str = "loot.ledger";
 
-/// The zone line that fires the rebirth boundary on an empty ledger, dated AFTER the fixture's last
+/// The zone line that fires the rebirth boundary on an empty ledger, dated after the fixture's last
 /// line (Mon Aug 03 2026) so the appended tail is the newest thing in the file.
 const ZONE: &str = "[Wed Aug 19 16:00:00 2026] You have entered Nagafen's Lair.\n";
 
@@ -106,11 +99,9 @@ impl Drop for Staged {
     }
 }
 
-// ---- asking ------------------------------------------------------------------------------------
-
-/// Ask `perf.snapshot` and take the result. Every other frame on the connection — the attach's
-/// epoch announcement, a subscription's reset, a progress tick — is skipped rather than asserted
-/// about: this suite is about ONE reply, and the ordering of the rest is `tests/ingest.rs`'s claim.
+/// Ask `perf.snapshot` and take the result. Every other frame on the connection — the attach's epoch
+/// announcement, a subscription's reset, a progress tick — is skipped rather than asserted about:
+/// this suite is about one reply, and the ordering of the rest is `tests/ingest.rs`'s claim.
 fn ask_perf(client: &mut Client, id: i64) -> PerfSnapshotResult {
     client.send(&perf_snapshot(id));
     loop {
@@ -129,7 +120,7 @@ fn ask_perf(client: &mut Client, id: i64) -> PerfSnapshotResult {
     }
 }
 
-/// Ask `perf.budgets` and take the result (JOS-502). Same skipping posture as [`ask_perf`].
+/// Ask `perf.budgets` and take the result. Same skipping posture as [`ask_perf`].
 fn ask_budgets(client: &mut Client, id: i64) -> PerfBudgetsResult {
     client.send(&perf_budgets(id));
     loop {
@@ -148,7 +139,7 @@ fn ask_budgets(client: &mut Client, id: i64) -> PerfBudgetsResult {
     }
 }
 
-/// Ask `perf.timeline` and take the result (JOS-502). Same skipping posture as [`ask_perf`].
+/// Ask `perf.timeline` and take the result. Same skipping posture as [`ask_perf`].
 fn ask_timeline(client: &mut Client, id: i64) -> PerfTimelineResult {
     client.send(&perf_timeline(id));
     loop {
@@ -183,8 +174,8 @@ fn row<'a>(perf: &'a PerfSnapshotResult, source: &str) -> Option<&'a PerfServeSo
 
 /// Poll `perf.snapshot` until `ready` is happy with the answer, or the suite's patience runs out.
 ///
-/// A FAILURE MECHANISM, not a synchronization one: every assertion below waits for a CONDITION —
-/// the scan finishing, a live line landing — and the deadline only turns a wedge into a red test.
+/// A failure mechanism, not a synchronization one: every assertion below waits for a condition — the
+/// scan finishing, a live line landing — and the deadline only turns a wedge into a red test.
 fn until(
     client: &mut Client,
     id: &mut i64,
@@ -206,8 +197,6 @@ fn until(
     }
 }
 
-// ---- the claims ---------------------------------------------------------------------------------
-
 #[test]
 fn an_engine_with_nothing_attached_answers_rather_than_refusing() {
     // A perf question names nothing that could be absent, so there is no `notFound` to give — and
@@ -223,7 +212,7 @@ fn an_engine_with_nothing_attached_answers_rather_than_refusing() {
         "nothing has served: {:?}",
         perf.serve
     );
-    // NOT ZEROS. Nothing has been measured, so nothing is claimed.
+    // Not zeros: nothing has been measured, so nothing is claimed.
     assert_eq!(perf.ingest.spell_db_ms, None);
     assert_eq!(perf.ingest.scan_ms, None);
     assert_eq!(perf.ingest.scan_bytes, None);
@@ -243,7 +232,7 @@ fn a_finished_scan_reports_what_it_cost_and_where_it_reached() {
         p.status == PerfSnapshotResultStatus::Live
     });
 
-    // THE INGEST HALF IS REAL, and every field of it is now present rather than absent.
+    // The ingest half is real, and every field of it is now present rather than absent.
     let scan_bytes = perf.ingest.scan_bytes.expect("the scan reports its bytes");
     assert!(
         scan_bytes > 400_000,
@@ -281,7 +270,7 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
         p.status == PerfSnapshotResultStatus::Live
     });
 
-    // THE OPENING RESET IS A FRAME WITH NO FOLD BEHIND IT. It is counted and NOT timed — the
+    // The opening reset is a frame with no fold behind it: counted and not timed, which is the
     // discipline `views::meter` keeps, asserted here at the far end of a socket.
     client.send(&subscribe(2, SOURCE));
     let opened = until(
@@ -299,9 +288,8 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
     );
     assert!(opening.widest_payload_weight > 0);
 
-    // …AND NOW A LIVE LINE, which the next frame reports and which therefore HAS a fold instant
-    // behind it. This is the measurement ruling 19 names: fold to frame, end to end, in
-    // microseconds because the whole path is tens of them.
+    // …and now a live line, which the next frame reports and which therefore has a fold instant
+    // behind it: fold to frame, end to end, in microseconds because the whole path is tens of them.
     staged.append(A_LOOT);
     let served = until(&mut client, &mut id, "a frame with a fold behind it", |p| {
         row(p, SOURCE).is_some_and(|r| r.fold_to_frame_us_mean.is_some())
@@ -316,8 +304,7 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
     let max = row_now.fold_to_frame_us_max.expect("…and a worst");
     assert!(max >= mean, "the worst is not better than the mean");
 
-    // ASKING TWICE RESETS NOTHING. Two panels open at once must see the same session, and the
-    // engine's own stderr report must not lose the interval it was about to print.
+    // Asking twice resets nothing: two panels open at once must see the same session.
     id += 1;
     let again = ask_perf(&mut client, id);
     let row_again = row(&again, SOURCE).expect("a row for the source");
@@ -325,8 +312,8 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
     assert!(row_again.payload_weight >= row_now.payload_weight);
     assert_eq!(row_again.subscribers, 1);
 
-    // THE SUBSCRIBER COUNT IS LIVE AND THE FRAME COUNTS ARE NOT. Closing the window stops somebody
-    // watching; it does not un-spend what the generation already spent.
+    // The subscriber count is live and the frame counts are not: closing the window stops somebody
+    // watching, but does not un-spend what the generation already spent.
     client.send(&unsubscribe(3, 2));
     let closed = until(&mut client, &mut id, "the subscription to close", |p| {
         row(p, SOURCE).is_some_and(|r| r.subscribers == 0)
@@ -338,14 +325,11 @@ fn a_subscribe_and_an_append_fill_the_serve_table() {
     );
 }
 
-// ---- surface 8's other two ops (JOS-502) --------------------------------------------------------
-
 #[test]
 fn an_idle_engine_states_its_budgets_and_refuses_to_pretend_it_measured_them() {
-    // THE CASE THE WHOLE `unmeasured` VERDICT EXISTS FOR. A just-launched engine has folded nothing
-    // and served nothing, and it is exactly the window in which somebody opening the performance
-    // panel is most likely to be looking. A budget that read green here would be green for the one
-    // period in which it knows least.
+    // The case the `unmeasured` verdict exists for: a just-launched engine has folded and served
+    // nothing, and that is exactly when somebody is most likely to open the panel. A budget that
+    // read green here would be green for the one period in which it knows least.
     let engine = Engine::start();
     let mut client = engine.connected();
     let answer = ask_budgets(&mut client, 1);
@@ -355,14 +339,14 @@ fn an_idle_engine_states_its_budgets_and_refuses_to_pretend_it_measured_them() {
     for budget in &answer.budgets {
         assert_eq!(budget.verdict, PerfBudgetVerdict::Unmeasured, "{budget:?}");
         assert_eq!(budget.measured, None, "absent, never zero");
-        // …and the DEFINITION is served regardless, which is ruling 3's whole point: the ceiling
-        // and its caveat are what let a reader judge instead of trusting a colour.
+        // …and the definition is served regardless: the ceiling and its caveat are what let a reader
+        // judge instead of trusting a colour.
         assert!(!budget.label.is_empty(), "{budget:?}");
         assert!(!budget.limit.is_empty(), "{budget:?}");
         assert!(!budget.note.is_empty(), "{budget:?}");
     }
-    // THE ROWS ARRIVE IN THE PANEL'S ORDER (ruling 4). A renderer that sorted these would be
-    // munging a served view.
+    // The rows arrive in the panel's order. A renderer that sorted these would be munging a served
+    // view.
     let ids: Vec<PerfBudgetId> = answer.budgets.iter().map(|b| b.id).collect();
     assert_eq!(ids, [PerfBudgetId::FoldRate, PerfBudgetId::ServeLatency]);
 }
@@ -370,9 +354,8 @@ fn an_idle_engine_states_its_budgets_and_refuses_to_pretend_it_measured_them() {
 #[test]
 fn the_fold_rate_budget_says_the_g3_goal_is_not_met_rather_than_hiding_behind_a_pass() {
     // The floor is an eighth of the measured rate, so a pass is a much smaller claim than the
-    // program's goal — and the release cut folds 209 MB in 52.5 s against a 20 s goal. The note is
-    // where that is said out loud, and it rides every panel row and every bug report, so it is
-    // asserted on the WIRE rather than only in the module's own unit tests.
+    // program's goal: the release cut folds 209 MB in 52.5 s against a 20 s goal. The note says so,
+    // and it rides every panel row and bug report, so it is asserted on the wire.
     let engine = Engine::start();
     let mut client = engine.connected();
     let answer = ask_budgets(&mut client, 1);
@@ -401,11 +384,10 @@ fn a_finished_scan_gives_the_fold_rate_budget_something_to_judge() {
     let answer = ask_budgets(&mut client, id);
     let fold = budget(&answer, PerfBudgetId::FoldRate);
 
-    // THE VERDICT IS NOT ASSERTED, AND THAT IS THE JOS-501 LESSON APPLIED. `cargo test` builds
-    // DEBUG, and a debug fold runs about an order of magnitude slower than the release build the
-    // floor was measured against — 0.45 MB/s is what a debug run of the CI budget measured. So this
-    // suite asserts that the budget MEASURED something and rendered it, and leaves judging the
-    // number to `tests/budget.rs`, which knows which profile it is in.
+    // The verdict is not asserted: `cargo test` builds debug, and a debug fold runs about an order
+    // of magnitude slower than the release build the floor was measured against (0.45 MB/s in a
+    // debug run of the CI budget). So this asserts the budget measured something and rendered it,
+    // and leaves judging the number to `tests/budget.rs`, which knows which profile it is in.
     assert_ne!(
         fold.verdict,
         PerfBudgetVerdict::Unmeasured,
@@ -423,10 +405,10 @@ fn a_finished_scan_gives_the_fold_rate_budget_something_to_judge() {
 
 #[test]
 fn an_idle_engine_states_the_timelines_horizon_over_an_empty_ring() {
-    // AN EMPTY TIMELINE IS THE COMMONEST HONEST ANSWER. The ring is filled by the ingest thread's
-    // beat, so an engine with nothing attached has sampled nothing — and the horizon is on the
-    // answer anyway, because a client inferring it from the LENGTH would infer it wrongly for the
-    // whole first period of every generation.
+    // An empty timeline is the commonest honest answer: the ring is filled by the ingest thread's
+    // beat, so an engine with nothing attached has sampled nothing. The horizon is on the answer
+    // anyway, because a client inferring it from the length would infer it wrongly early in every
+    // generation.
     let engine = Engine::start();
     let mut client = engine.connected();
     let answer = ask_timeline(&mut client, 1);
@@ -442,14 +424,12 @@ fn an_idle_engine_states_the_timelines_horizon_over_an_empty_ring() {
 
 #[test]
 fn a_live_engine_fills_the_ring_and_the_ring_stays_bounded() {
-    // THE END-TO-END WIRING CLAIM, and the only test in this repo that proves it: the serve beat
-    // reaches `views::Timeline` with the world's uptime, a window closes, and a moment crosses the
-    // socket. The unit tests in `views::meter` own the ring's arithmetic; nothing but this can say
-    // the ingest loop is actually turning the handle.
+    // The end-to-end wiring claim: the serve beat reaches `views::Timeline` with the world's uptime,
+    // a window closes, and a moment crosses the socket. `views::meter`'s unit tests own the ring's
+    // arithmetic; only this can say the ingest loop is actually turning the handle.
     //
-    // IT COSTS ONE CADENCE OF WALL CLOCK, deliberately. The alternative is a test-only seam that
-    // shortens the cadence in production code, and a horizon that can be changed by an environment
-    // variable is a horizon a shipped build could be talked out of.
+    // It costs one cadence of wall clock deliberately: the alternative is a test-only seam that
+    // shortens the cadence in production code.
     let staged = Staged::new("timeline");
     let engine = Engine::start();
     let mut client = engine.connected();
@@ -486,7 +466,7 @@ fn a_live_engine_fills_the_ring_and_the_ring_stays_bounded() {
         moment.span_ms >= answer.cadence_ms,
         "a window covers at least the cadence it waited for: {moment:?}"
     );
-    // OLDEST FIRST, an ordering the server owes rather than one a caller sorts for.
+    // Oldest first, an ordering the server owes rather than one a caller sorts for.
     assert!(
         answer.timeline.windows(2).all(|w| w[0].at_ms < w[1].at_ms),
         "{:?}",
@@ -496,9 +476,9 @@ fn a_live_engine_fills_the_ring_and_the_ring_stays_bounded() {
 
 #[test]
 fn the_three_perf_ops_answer_on_one_connection_and_none_disturbs_the_others() {
-    // THREE OPS, ONE ASK, ONE DOOR. The registry's guard matrix proves the SHAPES cannot be
-    // confused; this proves the engine does not confuse them either — each reply carries its own
-    // result arm, and asking all three in a row leaves the snapshot's cumulative counters intact.
+    // Three ops, one door. The registry's guard matrix proves the shapes cannot be confused; this
+    // proves the engine does not confuse them either — each reply carries its own result arm, and
+    // asking all three in a row leaves the snapshot's cumulative counters intact.
     let engine = Engine::start();
     let mut client = engine.connected();
 

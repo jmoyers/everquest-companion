@@ -328,11 +328,16 @@ export async function launchApp(
   }
   if (opts.installDir !== undefined) env.EQ_INSTALL_DIR = opts.installDir
   else delete env.EQ_INSTALL_DIR
-  // THE ENGINE THE HARNESS BUILT, NAMED OUTRIGHT (JOS-501). `buildEngineIfStale` builds RELEASE and
-  // the app's resolver prefers DEBUG, so on any machine holding both — every machine a developer has
-  // ever run a plain `cargo build` on — the suite would otherwise pay for one binary and assert
-  // against the other. Same standing as EQ_INSTALL_DIR above: the harness owns the artifact and
-  // hands it over, and `engineHost.ts` reads it only under EQ_E2E=1.
+  // THE ENGINE THE HARNESS BUILT, NAMED OUTRIGHT (JOS-501). `buildEngineIfStale` builds RELEASE,
+  // and the suite must assert against the binary it paid for rather than against whatever the
+  // resolver's default order happens to be. Same standing as EQ_INSTALL_DIR above: the harness owns
+  // the artifact and hands it over, and `engineHost.ts` reads it only under EQ_E2E=1.
+  //
+  // THE ORDER IT USED TO DEFEND IS GONE (JOS-520): the app's resolver preferred DEBUG, so a machine
+  // holding both binaries would answer this suite with the one it did not build — and answered the
+  // OWNER'S DEV APP the same way after a `cargo test`, which is the incident that changed it. Debug
+  // is now an explicit per-launch opt-in (`EQC_ENGINE_PROFILE`) that this harness never sets, so
+  // naming the path is belt-and-braces rather than the only defence. It stays for the reason above.
   //
   // NOT WHEN THE SPEC MOVED `cwd`, and that exemption is the whole of `engine-absent.e2e.mts`: a
   // launch that relocates its working directory is deliberately asking the RESOLVER'S OWN question

@@ -1,43 +1,20 @@
-//! THE THREE COMMITTED CATALOGS THE RESIST FOLD CONSULTS — and the fourth it refuses.
+//! The three committed catalogs the resist fold consults, and the fourth it refuses.
 //!
-//! The fold never reads the client's `spells_us.txt`, and that refusal is the whole design of the
-//! ledger over there (`src/main/resist/fold.ts`): everything a row records is something the LOG
-//! printed, so the ledger means something without a file this project is not allowed to
-//! redistribute, and a patch that retunes a spell costs a re-ESTIMATE rather than a re-fold. What
-//! it DOES consult is committed data, all three pieces of it:
+//! It never reads the client's `spells_us.txt`: everything a row records is something the log
+//! printed, so the ledger means something without a file this project may not redistribute, and a
+//! patch that retunes a spell costs a re-estimate rather than a re-fold. What it does consult:
 //!
-//!   * `src/renderer/src/data/eqlegends/mobs.json` — a creature's LEVEL when no `/con` has stated
-//!     one (`main/mobLookupLocal.ts localMobEntry`), and, as a side effect, "the catalog has heard
-//!     of this name" — which is what admits a proper-named NPC as a caster and as a target.
-//!   * `src/renderer/src/data/eqlegends/bosses.json` — the ONE place this tree states that two
-//!     spellings are one creature (`main/mobAliases.ts`). A `/con` of `Innoruuk` has to answer a
-//!     row keyed `innoruuk, the prince of hate`; JOS-422 is the bug where it did not, and ~672 of
-//!     the owner's own observations went dark because the fold filed `mobLevel: null`.
-//!   * the WIKI spell catalog (`eqlog::spelldb`) — three facts and no more: is this spell a SONG
-//!     (the Bard is the only class that can learn it), does the catalog know a landing SENTENCE for
-//!     it, and is it a resist DEBUFF (an effect line that opens `Decrease <axis> Resist`).
+//!   * `mobs.json` — a creature's level when no `/con` has stated one, and, as a side effect, "the
+//!     catalog has heard of this name", which admits a proper-named NPC as caster and as target.
+//!   * `bosses.json` — the one place this tree states that two spellings are one creature.
+//!   * the wiki spell catalog (`eqlog::spelldb`) — three facts and no more: is the spell a song, is
+//!     a landing sentence known for it, is it a resist debuff.
 //!
-//! ── WHY THESE ARE `OnceLock`S AND THAT IS NOT A CACHE-TRANSPARENCY BREACH (ruling 18) ───────────
-//!
-//! The law forbids a module memoizing an ANSWER keyed by anything but a fold's own inputs. Nothing
-//! here is keyed by a fold's input at all: `include_str!` puts the catalog bytes in the binary and
-//! each table below is a pure function of those bytes, so the `OnceLock` is the same category as
-//! `eqlog`'s `OnceLock` regexes — a compile-once constant that a second `Fold` in the same process
-//! cannot observe as different from a first. The TS side reaches the identical state by building
-//! its indexes at module-import time.
-//!
-//! THE SPELL FACTS ARE PROJECTED AND THE DATABASE IS DROPPED. `eqlog::spelldb::shared()` is what
-//! `eqlog::parser_for` installs, byte for byte and BY IDENTITY since JOS-478 — the catalog is a
-//! pure function of `spells.json`, the overlay sidecar and the committed message-overlay baseline,
-//! so the process builds it once and both readers get that one. It used to be a second `load()`
-//! here, which asked the same catalog the same questions and paid the entire 386 ms build to do
-//! it; the projection below is unchanged, and the one line that changed is which handle it reads.
-//! Only the three booleans-and-a-level survive the call, which is what keeps a fold from borrowing
-//! anything the parser owns.
-//!
-//! AND THE BIG JSON IS `include_str!`'d, NEVER COPIED. `mobs.json` is 3.2 MB and has exactly one
-//! home; the struct below names only `page`, `name` and `level`, which is what makes "we read
-//! nothing else off a mob row" a checkable claim rather than a promise.
+//! The `OnceLock`s memoize no fold answer: `include_str!` puts the catalog bytes in the binary and
+//! each table is a pure function of those bytes, so a second `Fold` in the process cannot observe
+//! one as different. The spell facts are projected out and the database handle dropped, which is
+//! what keeps a fold from borrowing anything the parser owns; `spelldb::shared()` is the same
+//! handle `eqlog::parser_for` installs, so the 386 ms build is paid once for both readers.
 
 use eqlog::jsstr::JS_S;
 use eqlog::names::spell_canon_key;
@@ -48,14 +25,12 @@ use std::sync::OnceLock;
 
 use super::mob_key;
 
-// ── the committed mob catalog ───────────────────────────────────────────────────────────────────
-
 const MOBS_JSON: &str = include_str!("../../../../../../src/renderer/src/data/eqlegends/mobs.json");
 const BOSSES_JSON: &str =
     include_str!("../../../../../../src/renderer/src/data/eqlegends/bosses.json");
 
 /// One row of `mobs.json`, cut down to what the resist fold reads. The scrape carries `zones`,
-/// `drops` and `loc` as well; naming only these three is the claim that none of them is consulted.
+/// `drops` and `loc` too; naming only these three is the claim that none of them is consulted.
 #[derive(Debug, Deserialize)]
 struct MobRow {
     page: String,
@@ -70,14 +45,12 @@ struct MobFile {
     mobs: Vec<MobRow>,
 }
 
-/// `mobLookupLocal.ts`'s index: keyed by the page's `|name` (the IN-GAME spelling a `/con` prints)
-/// FIRST, then by the wiki PAGE TITLE, which only fills gaps — so a real mob's own name can never
-/// be displaced by another page's title. Both passes key through `mobKey`, which folds the casing
-/// and the three apostrophe glyphs.
+/// Keyed by the page's `|name` (the in-game spelling a `/con` prints) first, then by the wiki page
+/// title, which only fills gaps — so a real mob's own name can never be displaced by another page's
+/// title. Both passes key through `mob_key`, which folds casing and the three apostrophe glyphs.
 ///
-/// The stored value is the `level` free text and nothing else; `localMobEntry` is asked two
-/// different questions ("what level" and "have you heard of this name") and `Option<&str>` answers
-/// the first while `Option<…>` itself answers the second.
+/// The stored value is the `level` free text and nothing else: the inner `Option` answers "what
+/// level", the outer one answers "have you heard of this name".
 fn mob_levels() -> &'static HashMap<String, Option<String>> {
     static T: OnceLock<HashMap<String, Option<String>>> = OnceLock::new();
     T.get_or_init(|| {
@@ -99,8 +72,8 @@ fn mob_levels() -> &'static HashMap<String, Option<String>> {
     })
 }
 
-/// `mobLookupLocal.ts localMobEntry` — the catalog's row for a mob, or `None` when it has none.
-/// The `Option<&str>` inside is the row's free-text `level`, which is itself frequently absent.
+/// The catalog's row for a mob, or `None` when it has none. The inner `Option<&str>` is the row's
+/// free-text `level`, which is itself frequently absent.
 pub fn local_mob_entry(name: &str) -> Option<Option<&'static str>> {
     mob_levels().get(&mob_key(name)).map(|lvl| lvl.as_deref())
 }
@@ -109,8 +82,6 @@ pub fn local_mob_entry(name: &str) -> Option<Option<&'static str>> {
 pub fn catalog_knows(name: &str) -> bool {
     mob_levels().contains_key(&mob_key(name))
 }
-
-// ── the roster's alias table ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct BossTarget {
@@ -125,20 +96,19 @@ struct BossFile {
     targets: Vec<BossTarget>,
 }
 
-/// One creature and every spelling the roster states for it — `mobAliases.ts MobIdentity`.
+/// One creature and every spelling the roster states for it.
 #[derive(Debug, Clone)]
 pub struct MobIdentity {
-    /// The name to ASK the catalog with: the roster's own `name`. NEVER what a surface displays.
+    /// The name to ask the catalog with: the roster's own `name`, never what a surface displays.
     pub canonical: String,
-    /// Every `mobKey` the creature answers to, canonical key first.
+    /// Every `mob_key` the creature answers to, canonical key first.
     pub keys: Vec<String>,
     /// The roster stated more than one spelling for this creature.
     pub aliased: bool,
 }
 
-/// THE BYTE-IDENTICAL GUARANTEE: a target whose `name` and every `match` collapse to ONE key is not
-/// indexed at all, so every unaliased name gets the trivial identity and runs the path it ran
-/// before. Measured against the committed roster: 32 targets, exactly 2 aliased.
+/// A target whose `name` and every `match` collapse to one key is not indexed at all, so every
+/// unaliased name gets the trivial identity and runs the ordinary path.
 fn alias_index() -> &'static HashMap<String, MobIdentity> {
     static T: OnceLock<HashMap<String, MobIdentity>> = OnceLock::new();
     T.get_or_init(|| {
@@ -161,9 +131,8 @@ fn alias_index() -> &'static HashMap<String, MobIdentity> {
                 keys: keys.clone(),
                 aliased: true,
             };
-            // A key claimed by two targets keeps the FIRST: the roster is curated and has no such
-            // collision today, and silently merging two gods on a later scrape is not something
-            // this boundary should be able to do by accident.
+            // A key claimed by two targets keeps the first: silently merging two creatures on a
+            // later scrape is not something this boundary should be able to do by accident.
             for k in keys {
                 out.entry(k).or_insert_with(|| id.clone());
             }
@@ -172,8 +141,8 @@ fn alias_index() -> &'static HashMap<String, MobIdentity> {
     })
 }
 
-/// `mobAliases.ts resolveMobIdentity` — any spelling to the one identity the roster states, or to
-/// itself when the roster has never heard of it.
+/// Any spelling to the one identity the roster states, or to itself when the roster has never
+/// heard of it.
 pub fn resolve_mob_identity(name: &str) -> MobIdentity {
     let key = mob_key(name);
     if let Some(known) = alias_index().get(&key) {
@@ -190,22 +159,19 @@ pub fn resolve_mob_identity(name: &str) -> MobIdentity {
     }
 }
 
-// ── the wiki spell catalog, projected to three facts ────────────────────────────────────────────
-
-/// What `songIdentity.ts facts()` computes per catalog key, plus the one thing `world.ts` asks.
+/// The three facts the fold projects out of the wiki spell catalog.
 #[derive(Debug, Clone, Default)]
 pub struct SpellFacts {
-    /// The Bard is the ONLY class the catalog says can learn it. "Only" is load-bearing: a handful
+    /// The Bard is the only class the catalog says can learn it. "Only" is load-bearing: a handful
     /// of lines are shared with other classes and those roll once per cast like anything else.
     pub song: bool,
-    /// The catalog knows a cast-on-other sentence, so every pulse that LANDS prints one and the
+    /// The catalog knows a cast-on-other sentence, so every pulse that lands prints one and the
     /// denominator is exact — lands plus resists, with nothing reconstructed.
     pub landing: bool,
     /// The level the catalog says a bard learns this at, or `None` when it names no class.
     pub learned_at: Option<i64>,
-    /// An effect line that OPENS with `Decrease <axis> Resist` — anchored, exactly as
-    /// `spellEffectClass.ts` anchors its rules, because a stem match would find "Resist" inside a
-    /// spell name.
+    /// An effect line that opens with `Decrease <axis> Resist`. Anchored, because a stem match
+    /// would find "Resist" inside a spell name.
     pub resist_debuff: bool,
 }
 
@@ -230,8 +196,8 @@ fn spell_facts_table() -> &'static HashMap<String, SpellFacts> {
                         .msg_cast_on_other
                         .as_deref()
                         .is_some_and(|m| !m.is_empty()),
-                    // `parseSpellClassLevels` keeps the LOWEST level per class and sorts ascending,
-                    // so the first row is the level a bard gets the line at.
+                    // Levels are lowest-per-class and sorted ascending, so the first row is the
+                    // level a bard gets the line at.
                     learned_at: levels.first().map(|(_, lvl)| *lvl),
                     resist_debuff,
                 },
@@ -252,12 +218,11 @@ fn resist_debuff_line() -> &'static Regex {
     })
 }
 
-/// The facts for a spell NAME, joined the way the TS joins them: `db.byKey.get(spellCanonKey(name))`.
+/// The facts for a spell name.
 ///
-/// The two key spellings are deliberately different and both are ported: the TABLE is built under
-/// `canonKey` (spellDb.ts's own, case-INSENSITIVE rank tail) and the QUERY is `spellCanonKey`
-/// (parseCommon.ts's, case-SENSITIVE). Merging them here would be a third answer to a question the
-/// app has already decided twice.
+/// The two key spellings are deliberately different: the table is built under the spell db's own
+/// canon key (case-insensitive rank tail) and the query uses `spell_canon_key` (case-sensitive).
+/// Merging them would be a third answer to a question already decided twice.
 pub fn facts_for_key(spell_key: &str) -> SpellFacts {
     spell_facts_table()
         .get(spell_key)
@@ -265,17 +230,14 @@ pub fn facts_for_key(spell_key: &str) -> SpellFacts {
         .unwrap_or_default()
 }
 
-/// `world.ts isResistDebuff` — asked with a DISPLAY name, so it canonicalizes first.
+/// Asked with a display name, so it canonicalizes first.
 pub fn is_resist_debuff(display: &str) -> bool {
     facts_for_key(&spell_canon_key(display)).resist_debuff
 }
 
-/// `shared/spellLines.ts parseSpellClassLevels`, cut to what this fold reads: the per-class entry
-/// levels, LOWEST per class, sorted by level then class code.
-///
-/// Only the resist fold's two questions are downstream of it — "is every class BRD" and "what is
-/// the lowest level" — and neither can see the tie order, but the sort is ported anyway so that a
-/// later reader comparing the two files finds the same function rather than a subset of it.
+/// The per-class entry levels off a wiki `classes` blob: lowest per class, sorted by level then
+/// class code. Neither caller can see the tie order; the sort is kept so this stays the same
+/// function as the app's rather than a subset of it.
 fn parse_spell_class_levels(classes: Option<&str>) -> Vec<(&'static str, i64)> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -309,8 +271,7 @@ fn parse_spell_class_levels(classes: Option<&str>) -> Vec<(&'static str, i64)> {
     best
 }
 
-/// `spellLines.ts ABBR_BY_NAME` — the wiki class name to the `/who` code, both spellings of Shadow
-/// Knight included.
+/// The wiki class name to the `/who` code, both spellings of Shadow Knight included.
 fn abbr_by_name(name: &str) -> Option<&'static str> {
     Some(match name {
         "bard" => "BRD",
@@ -333,14 +294,11 @@ fn abbr_by_name(name: &str) -> Option<&'static str> {
     })
 }
 
-/// `shared/resistFormula.ts casterClassCount` — how many of a `/who` row's class codes are
-/// NON-HYBRID casters, which is the `-15`-each half of the overchannel adjust. An unknown loadout
-/// answers 0, which is the honest floor: the `-150` is certain and the rest is not.
+/// How many of a `/who` row's class codes are non-hybrid casters: the `-15`-each half of the
+/// overchannel adjust. An unknown loadout answers 0, the honest floor.
 ///
-/// The seven are exactly the roster the committed class catalog files under the `empowering`
-/// invocation — the game's own "pure caster" grouping. Spelled out rather than read out of a data
-/// file, because a catalog that gains a tenth invocation must not silently change what a resist
-/// estimate means.
+/// The seven are the game's own "pure caster" grouping, spelled out rather than read out of a data
+/// file so a catalog change cannot silently move what a resist estimate means.
 pub fn caster_class_count(classes: &[String]) -> i64 {
     classes
         .iter()
@@ -353,9 +311,9 @@ pub fn caster_class_count(classes: &[String]) -> i64 {
         .count() as i64
 }
 
-/// `world.ts parseCatalogLevel` — the catalog's `level` is free text scraped off a wiki page: "39",
-/// "39 - 43", "45-50". Two numbers is a range; one is a level; anything else says nothing and is
-/// REFUSED rather than guessed at (world-model law 1).
+/// The catalog's `level` is free text scraped off a wiki page: "39", "39 - 43", "45-50". Two
+/// numbers is a range, one is a level, anything else says nothing and is refused rather than
+/// guessed at.
 pub fn parse_catalog_level(text: Option<&str>) -> Option<(i64, i64)> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"[0-9]+").unwrap());
@@ -364,8 +322,8 @@ pub fn parse_catalog_level(text: Option<&str>) -> Option<(i64, i64)> {
     if nums.is_empty() {
         return None;
     }
-    // A digit run too long for an `i64` is a number JS would keep as a lossy float and the `hi > 200`
-    // test would then refuse; refusing it here is the same verdict by a shorter road.
+    // A digit run too long for an `i64` would fail the `hi > 200` test anyway; refusing it here is
+    // the same verdict by a shorter road.
     let lo = nums[0].parse::<i64>().ok()?;
     let hi = if nums.len() > 1 {
         nums[1].parse::<i64>().ok()?
@@ -408,8 +366,7 @@ mod tests {
 
     #[test]
     fn the_committed_mob_catalog_answers_by_either_spelling() {
-        // The page's `|name` is the in-game spelling a `/con` prints, and the folded key finds it
-        // whatever the line's casing was.
+        // The page's `|name` is the spelling a `/con` prints; the folded key finds it any casing.
         assert!(catalog_knows("a Alchemist`s Acolyte"));
         assert!(catalog_knows("A ALCHEMIST'S ACOLYTE"));
         assert!(!catalog_knows("Dranix"));

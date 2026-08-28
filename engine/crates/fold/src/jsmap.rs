@@ -1,25 +1,20 @@
-//! `JsMap` — a string-keyed map that iterates in INSERTION ORDER, because JavaScript's do.
+//! `JsMap` — a string-keyed map that iterates in insertion order, because JavaScript's maps do.
 //!
-//! WHY THIS EXISTS AT ALL. Several ported modules turn a map into an ARRAY at snapshot time —
-//! `spellSets.memorized` is `[...this.memorized.values()]`, and every set definition's `spells` is
-//! the same expression — so the map's iteration order IS the serialized array's order, and array
-//! order is a claim the comparator checks. A `HashMap` would randomize it and a `BTreeMap` would
-//! sort it; neither is what a JS `Map` (or a plain object with non-index keys) does.
+//! Several ported modules turn a map into an array at snapshot time (`[...map.values()]`), so the
+//! iteration order is the serialized array's order, and array order is a claim the comparator
+//! checks. A `HashMap` would randomize it and a `BTreeMap` would sort it.
 //!
-//! THE TWO JS RULES IT REPRODUCES, and they are the same rule:
-//!   * `map.set(k, v)` on a key that is already present KEEPS its original position.
-//!   * `map.delete(k)` removes it and leaves everything else in order.
+//! The two JS rules it reproduces: `set` on a present key keeps its original position, and `delete`
+//! removes one entry and leaves the rest in order.
 //!
-//! O(n) REMOVAL, on purpose. Only `spellSets` deletes (a forgotten gem, a deleted set) and its maps
-//! hold at most a couple of dozen entries; every large map here (kills, itemTiers,
-//! observedSpellRanks, outputFiles) is insert-and-update only. A structure that made deletion cheap
+//! Removal is O(n) on purpose. Only `spellSets` deletes and its maps hold a couple of dozen
+//! entries; every large map here is insert-and-update only, so a structure with cheap deletion
 //! would cost an indirection on the hot path to buy nothing.
 //!
-//! IT SERIALIZES AS A JSON OBJECT, and the insertion order does NOT survive that: `serde_json`'s
-//! `Map` is a `BTreeMap`, so `to_value` sorts the keys. That is FINE and is stated here so nobody
-//! "fixes" it — the phase-2 bar is DEEP equality (owner ruling 12 / `goldenOracle.mts firstDiff`),
-//! under which object key order is not a claim either implementation makes. What the order is
-//! load-bearing for is the arrays derived from `values()`, and those are built before serialization.
+//! Insertion order does not survive serialization — `serde_json`'s `Map` sorts the keys — and that
+//! is fine rather than a bug to fix: parity is deep equality, under which object key order is not a
+//! claim. What the order is load-bearing for is the arrays derived from `values()`, and those are
+//! built before serialization.
 
 use std::collections::HashMap;
 
@@ -104,10 +99,7 @@ impl<V> JsMap<V> {
         self.entries.iter().map(|(_, v)| v)
     }
 
-    /// `for (const v of map.values()) v.field = …` — a walk that WRITES to every value without
-    /// touching the keys. The roster's offline-gap sweep marks its stale members in place, and the
-    /// crowd-control half re-reads the estimator across every live hold of one (line, caster) after
-    /// a sample lands.
+    /// A walk that writes to every value without touching the keys.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.entries.iter_mut().map(|(_, v)| v)
     }
@@ -117,8 +109,8 @@ impl<V> JsMap<V> {
         self.entries.iter().map(|(k, _)| k.as_str())
     }
 
-    /// `[...map.values()]` — the values, owned, in insertion order. The combo scorer turns three of
-    /// its maps straight into arrays this way, and the array's order is a published claim.
+    /// `[...map.values()]` — the values, owned, in insertion order, which is a published claim
+    /// wherever a map becomes an array.
     pub fn into_values(self) -> Vec<V> {
         self.entries.into_iter().map(|(_, v)| v).collect()
     }

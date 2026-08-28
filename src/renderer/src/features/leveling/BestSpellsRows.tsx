@@ -10,7 +10,7 @@
 // The measurements behind the widths and behind the two-line row shape live in `BestSpellsPanel`'s
 // own header, where they were taken; nothing here re-decides them.
 
-import { type JSX, type ReactNode } from 'react'
+import { type JSX, type ReactNode, memo } from 'react'
 import { Stack, TableCell, TableRow, TableSortLabel, Typography } from '@mui/material'
 import {
   COLUMN_LABEL,
@@ -136,8 +136,15 @@ export function HeadCell({
  * `extra` IS THE SEARCH ROW'S HALF (JOS-450): the era chip and the class-level chips a result
  * carries and a ranked row does not. The name line wraps because of it — a result for a spell six
  * classes share is six chips, and the alternative to a second line is a clipped one.
+ *
+ * MEMOIZED (JOS-511 item 3), and the panel's `columns` memo is what makes it hit: this row draws a
+ * `SpellTooltip` anchor, a rank chip and four or five formatted cells, up to ~30 times per table,
+ * and until the columns array stopped being rebuilt per render every one of them re-rendered on
+ * every keystroke in the search box above them. `extra` is a NODE and a caller that mints one per
+ * render (the search results do) opts itself out — which is correct rather than a gap: a row whose
+ * chips were rebuilt has genuinely changed.
  */
-export function SpellRow({
+export const SpellRow = memo(function SpellRow({
   row,
   columns,
   ranks,
@@ -183,4 +190,4 @@ export function SpellRow({
       </TableRow>
     </>
   )
-}
+})

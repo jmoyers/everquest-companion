@@ -1,76 +1,57 @@
-//! THE WORLD MODEL — entity-INSTANCE tracking (`src/main/combat/world.ts`).
+//! The world model — entity-INSTANCE tracking (`src/main/combat/world.ts`).
 //!
-//! The engine used to key everything by bare name, which collapses same-named twins: charm one
-//! `a fire giant warrior` while a hostile `a fire giant warrior` is present and the pet and the mob
-//! it tanks are indistinguishable. Every spawn gets a distinct identity `<nameKey>#<gen>` instead,
-//! so twins are separate entities in encounter aggregation and the charm/death lifecycle is
-//! decidable rather than guessed.
+//! Keying by bare name collapses same-named twins: charm one `a fire giant warrior` while a hostile
+//! one is present and the pet and the mob it tanks become indistinguishable. Every spawn gets a
+//! distinct identity `<nameKey>#<gen>` instead.
 //!
-//! ── THE LIFECYCLE DECISION TABLE ───────────────────────────────────────────────────────────────
+//! The lifecycle table. Every rule is deterministic and ambiguity is FLAGGED rather than resolved
+//! toward the worse failure — a false pet death drops all later pet damage, so the bias is always
+//! away from retiring the pet:
 //!
-//! Every rule is deterministic, and ambiguity is FLAGGED rather than silently resolved toward the
-//! worse failure: a false pet-death drops all subsequent pet damage, so the bias is always AWAY
-//! from retiring the pet.
-//!
-//!   see(name)     resolve an active instance, else spawn a hostile one (gen++). Same-name twins
-//!                 are separated by EVIDENCE (`note_twin_evidence`), never by guesswork.
-//!   charm(name)   bind a lone live hostile instance when there is no evidence of a second twin;
-//!                 otherwise spawn a fresh charmed one (first-ever charm, or re-charm beside a
-//!                 live twin).
-//!   claim(name)   the SUMMONED half. Idempotent FIRST — a live pet of that name just refreshes,
-//!                 so a claim and a later tell converge on one entity — else bind a lone hostile /
-//!                 spawn. Binding a NEW summoned pet RETIRES the prior one (the single-pet
-//!                 invariant; see `retire_prior_summoned`).
-//!   uncharm(name) clear `charmed` on the charmed instance. It stays the SAME instance, hostile-
-//!                 capable again. Does not retire.
-//!   death(…)      decide WHICH instance dies; four cases, all below, all biased toward the pet.
-//!   zone(ts)      retire everything except SUMMONED pets, which the real log proves follow you.
+//!   see(name)     resolve a live instance, else spawn a hostile one (gen++). Twins are separated
+//!                 by evidence (`note_twin_evidence`), never by guesswork.
+//!   charm(name)   bind a lone live hostile when there is no evidence of a second twin; otherwise
+//!                 spawn a fresh charmed one.
+//!   claim(name)   the summoned half, idempotent FIRST so a pet's repeat tells converge on one
+//!                 entity. Binding a new summoned pet retires the prior one.
+//!   uncharm(name) clear `charmed` on the same instance — hostile-capable again, not retired.
+//!   death(…)      decide WHICH instance dies; four cases, all biased toward the pet.
+//!   zone(ts)      retire everything except summoned pets, which the real log proves follow you.
 //!   staleness     a live HOSTILE unseen for `INSTANCE_STALE_MS` is retired the next time its name
-//!                 is resolved, so the sighting after the gap spawns a FRESH generation. Without it
-//!                 a slot is pinned live forever — death is the only other retirement, and a mob
-//!                 killed off-screen (or despawned, or fled) logs NO death line, so every later
-//!                 pull of that name inherited the corpse's identity, gen label and engagement
-//!                 history. PETS ARE EXEMPT: a pet is bound by explicit evidence and may
-//!                 legitimately stand quiet for minutes.
+//!                 resolves, so the sighting after the gap spawns a fresh generation. A mob killed
+//!                 off-screen, despawned or fled logs no death line, so without this every later
+//!                 pull of that name inherits the corpse's identity and engagement history. Pets
+//!                 are exempt: a pet is bound by evidence and may stand quiet for minutes.
 //!
-//! ── RETIREMENT IS FINAL, AND SOMEBODY HAS TO HEAR ABOUT IT (JOS-176) ───────────────────────────
-//!
-//! Over there the world model calls an `onRetire` closure the engine state installs, which deletes
-//! the retired instance's CC hold. A closure that reaches back into the state that owns this model
-//! is not a shape Rust will accept, so the fact is QUEUED instead: `retire()` — still the one place
-//! retirement is recorded — pushes the instance id onto `retired_ids`, and `EngineState` drains it
-//! immediately after every call that can retire. The property the callback existed for is
-//! unchanged and is the reason it must stay drained at the CALL SITE rather than lazily: the hold
-//! in `Encounter.cc_active_until` claims a mez'd mob is still alive, and the moment the world model
-//! retires that instance the claim is false forever, because a later sighting of the name spawns a
-//! fresh `nameKey#gen` and can never redeem it. Before JOS-176 only `ingest_death` cleaned up, so a
-//! mez'd mob aged out by STALENESS went on vetoing the death-close for the rest of its 120 seconds
-//! (measured: 614 such retirements in the owner's whole log).
+//! Retirement is final, and somebody has to hear about it. `retire()` — the one place it is
+//! recorded — queues the instance id, and `EngineState` drains the queue at every call site that
+//! can retire, which is what makes it equivalent to the TS's synchronous `onRetire`. The CC hold in
+//! `Encounter.cc_active_until` claims a mez'd mob is still alive; once the instance is retired that
+//! claim is false forever, because a later sighting of the name spawns a fresh `nameKey#gen`.
 
 use crate::jsmap::JsMap;
 use eqlog::names::{id_key, id_key_ref};
 use std::collections::{HashMap, HashSet};
 
-/// How long a LIVE hostile instance may go completely unobserved before its slot is eligible for
-/// retirement. Deliberately the SAME number as the encounter layer's `PRESENCE_GONE_MS`: an
-/// instance closure has already written off as "gone" is precisely the one whose identity a later
-/// sighting must not inherit, so the two horizons agree by construction rather than by coincidence.
+/// How long a live hostile instance may go completely unobserved before its slot is eligible for
+/// retirement. Deliberately the same number as the encounter layer's `PRESENCE_GONE_MS`: an
+/// instance closure has written off as "gone" is precisely the one whose identity a later sighting
+/// must not inherit, so the two horizons agree by construction.
 pub const INSTANCE_STALE_MS: i64 = crate::combat::encounter::PRESENCE_GONE_MS;
 
 /// How an instance became your pet.
 ///
 /// `Charmed` — bound by a `<mob> has been charmed.` line; cannot survive a zone.
-/// `Summoned` — a class pet (random proper name) bound by a petClaim. It PERSISTS across zone
-/// lines, verified in the real log: a summoned pet kept dealing damage after three zone transitions
-/// with no re-summon.
+/// `Summoned` — a class pet (random proper name) bound by a petClaim. It persists across zone
+/// lines, verified in the real log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PetKind {
     Charmed,
     Summoned,
 }
 
-/// `entityRules.isLeftBehindOnZone` — TRUE if an entity of this kind is retired by a zone line.
-/// Charmed pets and hostile mobs are left behind; summoned pets follow. `None` = a hostile mob.
+/// True if an entity of this kind is retired by a zone line: charmed pets and hostile mobs are left
+/// behind, summoned pets follow. `None` = a hostile mob.
 pub fn is_left_behind_on_zone(kind: Option<PetKind>) -> bool {
     kind != Some(PetKind::Summoned)
 }
@@ -90,10 +71,9 @@ pub struct Instance {
     pub gen: u32,
 }
 
-/// An instance resolved for ATTRIBUTION: the aggregate key, the name key the membership sets are
-/// asked about, and the DISPLAY LABEL the meter row carries. The three always travel together over
-/// there (`world.label(world.resolve(…))` is the idiom at every call site), so they travel together
-/// here rather than handing callers an index into a model they would then have to ask again.
+/// An instance resolved for attribution: the aggregate key, the name key the membership sets are
+/// asked about, and the display label the meter row carries. All three always travel together, so
+/// callers never hold an index into a model they would have to ask again.
 #[derive(Debug, Clone)]
 pub struct Resolved {
     pub instance_id: String,
@@ -111,20 +91,16 @@ pub struct DeathResolution {
 
 #[derive(Default)]
 pub struct WorldModel {
-    /// THE ARENA. Every instance ever spawned, in spawn order; the indices below are handles into
-    /// it. `byName` over there is the same record — "the honest record", read nowhere — and it is
-    /// this vector's order restricted to a name.
+    /// Every instance ever spawned, in spawn order; the indices below are handles into it.
     insts: Vec<Instance>,
-    /// THE LIVE index, nameKey → active handles oldest→newest. Separate from the spawn history for
-    /// one measured reason (JOS-59): a nameKey accumulates one instance per SPAWN and a busy zone
-    /// respawns the same mob hundreds of times — `a greater kobold` alone reaches gen 38 on the
-    /// owner's log — so a read that filtered the whole history allocated a copy of it, two or three
-    /// times per `resolve()`, on every damage, miss, resist and heal line. Retirement is MONOTONE,
-    /// so this list is spliced and never rebuilt.
+    /// The LIVE index, nameKey → active handles oldest→newest, kept separate from the spawn history
+    /// because a busy zone respawns one mob hundreds of times and filtering the whole history
+    /// allocated a copy of it two or three times per `resolve()`. Retirement is monotone, so this
+    /// list is spliced and never rebuilt.
     ///
-    /// AN EMPTIED ENTRY IS KEPT rather than removed, so the map's INSERTION ORDER — which is the
-    /// order `pet_instances()` and `charmed_instances()` report in, and therefore the order the UI
-    /// lists pets in — is exactly what it was when this walked the spawn history.
+    /// An emptied entry is KEPT rather than removed, so the map's insertion order — the order
+    /// `pet_instances()` and `charmed_instances()` report, and therefore the order the UI lists pets
+    /// in — stays what it was when this walked the spawn history.
     active_by_name: JsMap<Vec<usize>>,
     by_id: HashMap<String, usize>,
     /// gen counter per nameKey.
@@ -132,9 +108,8 @@ pub struct WorldModel {
     /// Killers each charmed pet has been observed tanking (pet handle → attacker nameKeys that hit
     /// it / that it hit). Drives death case (b).
     pet_tanked_by: HashMap<usize, HashSet<String>>,
-    /// THE RETIREMENT ANNOUNCEMENT QUEUE — see the module header. Drained by `EngineState` at every
-    /// call site that can retire, which is what keeps it equivalent to the TS's synchronous
-    /// `onRetire` callback rather than merely similar to it.
+    /// The retirement announcement queue — see the module header. Drained by `EngineState` at every
+    /// call site that can retire.
     pub retired_ids: Vec<String>,
 }
 
@@ -174,8 +149,8 @@ impl WorldModel {
             .find(|&i| !self.insts[i].charmed)
     }
 
-    /// Spawn a new instance. A `pet_kind` IS the charm flag: every call that spawned a charmed
-    /// instance always named its kind, and every hostile spawn named none.
+    /// Spawn a new instance. A `pet_kind` IS the charm flag: a charmed spawn always names its kind
+    /// and a hostile spawn never does.
     fn spawn(
         &mut self,
         name_key: &str,
@@ -206,22 +181,18 @@ impl WorldModel {
         at
     }
 
-    /// Adopt a fresher raw sighting as an instance's DISPLAY name — but never let EQ's
+    /// Adopt a fresher raw sighting as an instance's display name — but never let EQ's
     /// sentence-casing overwrite the spawn's true name.
     ///
-    /// EQ capitalizes a lowercase-article mob name whenever the name opens a sentence, so ONE spawn
-    /// is printed two ways: mid-sentence it carries its real name (`You slash a zol ghoul knight
-    /// …`), sentence-initial it is capitalized (`A zol ghoul knight resisted …`). Resist lines and
-    /// incoming melee are ALWAYS sentence-initial; outgoing damage is always mid-sentence.
+    /// EQ capitalizes a lowercase-article mob name whenever it opens a sentence, so one spawn is
+    /// printed two ways: mid-sentence it carries its real name (`You slash a zol ghoul knight …`),
+    /// sentence-initial it is capitalized (`A zol ghoul knight resisted …`). Resist lines and
+    /// incoming melee are always sentence-initial; outgoing damage is always mid-sentence.
     ///
-    /// THE RULE: a lowercase-initial sighting can only have come from mid-sentence, so it is the
-    /// spawn's true name and always wins. A capital-initial sighting may be either, so it may only
-    /// overwrite another capital-initial display. Proper names ("Kahaptra Z`Taj", players, summoned
-    /// pets) have no lowercase variant and keep the old latest-wins behaviour exactly.
-    ///
-    /// Adopting the latest sighting unconditionally is what made one mob read as two rows in the
-    /// per-mob timeline (which groups by the RAW target string): `a zol ghoul knight (230)` with
-    /// all the damage and `A zol ghoul knight (230)` carrying a lone resist.
+    /// So a lowercase-initial sighting can only be mid-sentence and always wins; a capital-initial
+    /// one may only overwrite another capital-initial display. Proper names have no lowercase
+    /// variant and keep latest-wins. Adopting unconditionally made one mob read as two rows in the
+    /// per-mob timeline, which groups by the raw target string.
     fn adopt_display(&mut self, at: usize, name: &str) {
         if self.insts[at].display == name {
             return;
@@ -246,12 +217,12 @@ impl WorldModel {
     /// and the caller knows this reference is the pet (e.g. the pet as damage attacker); otherwise
     /// a hostile instance is preferred (mob references).
     pub fn resolve(&mut self, name: &str, ts: i64, prefer_charmed: bool) -> Resolved {
-        // BORROWED (JOS-506): every use below is a lookup or a comparison, and the two callers on
-        // the damage path reach this twice per attributed line.
+        // Borrowed: every use below is a lookup or a comparison, and the damage path reaches this
+        // twice per attributed line.
         let key = id_key_ref(name);
         if key == "you" {
-            // 'you' is not modeled as a spawnable instance; every caller special-cases it first.
-            // The synthetic sentinel is returned so none of them can crash on a `None`.
+            // 'you' is not modeled as a spawnable instance; the synthetic sentinel is returned so no
+            // caller can crash on a `None`.
             return Resolved {
                 instance_id: "you".to_string(),
                 name_key: "you".to_string(),
@@ -275,17 +246,15 @@ impl WorldModel {
         self.resolved(at)
     }
 
-    /// PER-INSTANCE STALENESS (see the header). Retire every live HOSTILE instance of `name_key`
-    /// that has gone `INSTANCE_STALE_MS` without a single observation, so the caller's sighting
-    /// spawns a fresh generation instead of reviving a mob nobody has seen.
+    /// Per-instance staleness (see the header). Retire every live HOSTILE instance of `name_key`
+    /// unobserved for `INSTANCE_STALE_MS`, so the caller's sighting spawns a fresh generation
+    /// instead of reviving a mob nobody has seen.
     ///
     /// Twin-safe: it walks the whole active list, so a pull where one twin died off-screen and the
-    /// other is still swinging retires only the silent one. And because pets are skipped,
-    /// `note_twin_evidence`'s pet-plus-hostile pairing is untouched — the hostile half it spawns is
-    /// refreshed by the very damage that proved it exists.
+    /// other is still swinging retires only the silent one. Pets are skipped.
     fn retire_stale(&mut self, name_key: &str, ts: i64) {
-        // BACKWARDS BY INDEX: `retire()` splices this very array, and a forward walk would skip the
-        // element that slid into the hole. Every instance here is by definition unretired.
+        // Backwards by index: `retire()` splices this very array, and a forward walk would skip the
+        // element that slid into the hole.
         let mut i = match self.active_by_name.get(name_key) {
             Some(live) => live.len(),
             None => return,
@@ -305,10 +274,10 @@ impl WorldModel {
         }
     }
 
-    /// Record that `name` was observed at `ts` WITHOUT resolving or spawning anything — the
-    /// world-model half of the encounter's PRESENCE axis (misses, resists, CC, heals). It only
-    /// refreshes instances that already exist, so a whiff at a mob we have never damaged still has
-    /// zero world-model side effects (law 8, the same guarantee `note_presence` makes).
+    /// Record that `name` was observed at `ts` without resolving or spawning anything — the
+    /// world-model half of the encounter's presence axis (misses, resists, CC, heals). It refreshes
+    /// only instances that already exist, so a whiff at a mob we have never damaged has zero
+    /// world-model side effects (law 8).
     pub fn note_seen(&mut self, name: &str, ts: i64) {
         let key = id_key_ref(name);
         let live: Vec<usize> = match self.active_by_name.get(key.as_ref()) {
@@ -334,8 +303,8 @@ impl WorldModel {
         let key = id_key(name);
         // A slot nobody has seen for INSTANCE_STALE_MS is not the mob we just charmed.
         self.retire_stale(&key, ts);
-        // Bind an existing lone hostile only when there is exactly ONE active instance and it is
-        // not already charmed — i.e. no evidence of a second twin yet.
+        // Bind an existing lone hostile only when there is exactly one active instance and it is not
+        // already charmed — i.e. no evidence of a second twin yet.
         let act: Vec<usize> = self.active(&key).to_vec();
         let hostiles: Vec<usize> = act
             .iter()
@@ -355,9 +324,9 @@ impl WorldModel {
         self.resolved(at)
     }
 
-    /// `claim(name)` — mark a SUMMONED pet. IDEMPOTENT FIRST, and that ordering is load-bearing:
-    /// a pet re-tells you every few seconds, so the same pet's repeat tells resolve to the same
-    /// live instance and never reach the succession below.
+    /// `claim(name)` — mark a summoned pet. Idempotent FIRST, and that ordering is load-bearing: a
+    /// pet re-tells you every few seconds, so its repeat tells resolve to the same live instance and
+    /// never reach the succession below.
     pub fn claim(&mut self, name: &str, ts: i64) -> Resolved {
         let key = id_key(name);
         self.retire_stale(&key, ts);
@@ -385,25 +354,17 @@ impl WorldModel {
         self.resolved(at)
     }
 
-    /// THE SINGLE-PET INVARIANT, for summoned pets (world-model law 4; JOS-54).
+    /// The single-pet invariant, for summoned pets (world-model law 4).
     ///
-    /// You get one class pet. Re-summoning despawns the one you had — the game prints NOTHING when
-    /// it happens (no death line, no fade, no tell), so the successor's own claim tell is the only
-    /// evidence that ever arrives. MEASURED on the owner's whole log (1.40M lines, 3,175 claim
-    /// tells): without this the replay ended with TWENTY-THREE live summoned pets, every animation
-    /// from Jul 19 to Aug 06 still attributing.
+    /// You get one class pet, and re-summoning despawns the one you had — the game prints nothing
+    /// when it happens, so the successor's own claim tell is the only evidence that ever arrives.
     ///
-    /// RETIREMENT, NOT DELETION. The old pet keeps its instance and everything already attributed
-    /// to it — aggregates key by instanceId, so its rows and its history are exactly as they were.
-    /// What ends is its FUTURE. AND IT COSTS NOTHING: over the whole log the invariant fires 23
-    /// times and the pet it retires lands ZERO further damage lines, ever.
+    /// Retirement, not deletion: the old pet keeps its instance and everything already attributed to
+    /// it (aggregates key by instanceId). What ends is its future.
     ///
-    /// SUMMONED ONLY, and that restraint is measured. 344 charm binds land while a summoned pet is
-    /// flagged live, but exactly FOUR have both entities swinging within five minutes, and in all
-    /// four the "summoned" side is an article-named MOB that reached here by its own tell. So the
-    /// log contains NO case of a proper-named class pet and a charmed pet demonstrably alive
-    /// together — an unobserved shape, which the awaiting-sample law says does not get a rule
-    /// invented for it, least of all one whose failure mode is deleting a live pet's damage.
+    /// Summoned only. A charmed pet and a summoned one demonstrably alive together is an unobserved
+    /// shape, and the awaiting-sample law says it gets no rule invented for it — least of all one
+    /// whose failure mode is deleting a live pet's damage.
     fn retire_prior_summoned(&mut self, pet: usize, ts: i64) {
         let keys: Vec<String> = self
             .active_by_name
@@ -431,9 +392,8 @@ impl WorldModel {
         }
     }
 
-    /// `uncharm(name)` — clear the charmed flag on the pet instance (the SAME instance). Summoned
-    /// pets are never un-charmed by a worn-off charm-spell line (they carry proper names, not the
-    /// charmed mob's), so this is a no-op for them.
+    /// `uncharm(name)` — clear the charmed flag on the pet instance (the same instance). A worn-off
+    /// charm-spell line never names a summoned pet, so this is a no-op for them.
     pub fn uncharm(&mut self, name: &str, ts: i64) -> Option<Resolved> {
         let at = self.charmed_active(&id_key(name))?;
         if self.insts[at].pet_kind == Some(PetKind::Summoned) {
@@ -495,7 +455,7 @@ impl WorldModel {
             };
         };
 
-        // Case 2a: the killer is You. The pet cannot be slain BY you; a hostile twin died.
+        // Case 2a: the killer is You. The pet cannot be slain by you; a hostile twin died.
         if killer_key == Some("you") {
             if let Some(hostile) = hostile {
                 self.retire(hostile, ts);
@@ -515,14 +475,14 @@ impl WorldModel {
             };
         }
 
-        // Case 2b: the killer is a DIFFERENT name (e.g. a fire giant wizard).
+        // Case 2b: the killer is a different name (e.g. a fire giant wizard).
         if let Some(kk) = killer_key {
             if kk != key {
                 return self.death_by_foreign_killer(&key, name, ts, pet, hostile, kk);
             }
         }
 
-        // Case 2c: the killer is the SAME name — pet↔twin, genuinely ambiguous.
+        // Case 2c: the killer is the same name — pet↔twin, genuinely ambiguous.
         if let Some(hostile) = hostile {
             self.retire(hostile, ts);
             return DeathResolution {
@@ -539,10 +499,9 @@ impl WorldModel {
         }
     }
 
-    /// `death()` case 2b: a charmed pet of `name` is live and the killer is a DIFFERENT name, so
-    /// that killer was fighting SOMETHING named `name`. The bias is always AWAY from retiring the
-    /// pet, which is why the twin is preferred and, when no twin exists, a twin SLOT is spawned and
-    /// retired rather than the pet.
+    /// `death()` case 2b: a charmed pet of `name` is live and the killer is a different name, so
+    /// that killer was fighting something named `name`. The bias is away from retiring the pet: the
+    /// twin is preferred, and with no twin a twin SLOT is spawned and retired instead of the pet.
     fn death_by_foreign_killer(
         &mut self,
         key: &str,
@@ -585,8 +544,8 @@ impl WorldModel {
         }
     }
 
-    /// THE ONE PLACE RETIREMENT IS RECORDED. Everything above funnels through it, which is what
-    /// makes the announcement queue (module header) complete rather than best-effort.
+    /// The one place retirement is recorded. Everything above funnels through it, which is what
+    /// makes the announcement queue complete rather than best-effort.
     fn retire(&mut self, at: usize, ts: i64) {
         {
             let inst = &mut self.insts[at];
@@ -606,9 +565,9 @@ impl WorldModel {
         self.retired_ids.push(id);
     }
 
-    /// `zone(ts)` — retire everything EXCEPT summoned pets. Charm cannot survive a zone and hostile
-    /// mobs do not follow you; summoned class pets do (real-log verified). Returns the survivors so
-    /// the engine can rebuild its pet-name index from them.
+    /// `zone(ts)` — retire everything except summoned pets. Charm cannot survive a zone and hostile
+    /// mobs do not follow you; summoned class pets do. Returns the survivors so the engine can
+    /// rebuild its pet-name index from them.
     pub fn zone(&mut self, ts: i64) -> Vec<Resolved> {
         let mut survivors = Vec::new();
         let keys: Vec<String> = self
@@ -617,9 +576,8 @@ impl WorldModel {
             .map(|(k, _)| k.to_string())
             .collect();
         for key in keys {
-            // A COPY, not the live list: `retire()` splices it, and unlike `retire_stale` this loop
-            // must stay FORWARD — the survivors it returns are rendered in this order. Zone lines
-            // are rare, so the copy costs nothing measurable.
+            // A copy, not the live list: `retire()` splices it, and unlike `retire_stale` this loop
+            // must stay forward — the survivors it returns are rendered in this order.
             let list: Vec<usize> = self.active_by_name.get(&key).cloned().unwrap_or_default();
             for at in list {
                 let inst = &self.insts[at];
@@ -635,8 +593,8 @@ impl WorldModel {
         survivors
     }
 
-    /// True if the instance with this id has been retired (dead/zoned). Unknown ids — never spawned
-    /// — are treated as RETIRED: they cannot be a live engagement.
+    /// True if the instance with this id has been retired (dead/zoned). An unknown id counts as
+    /// retired: it cannot be a live engagement.
     pub fn is_retired(&self, instance_id: &str) -> bool {
         match self.by_id.get(instance_id) {
             Some(&at) => self.insts[at].retired,
@@ -645,23 +603,22 @@ impl WorldModel {
     }
 
     /// True if the instance is currently your (live, non-retired) charmed/summoned pet. Such an
-    /// instance is never a hostile we are trying to kill, so it must NOT block an encounter's
-    /// death-close — a charmed pet never dies, and would pin every charm-grind fight open forever.
+    /// instance is never a hostile we are trying to kill, so it must not block an encounter's
+    /// death-close, or a charmed pet would pin every charm-grind fight open forever.
     pub fn is_live_pet(&self, instance_id: &str) -> bool {
         self.by_id
             .get(instance_id)
             .is_some_and(|&at| !self.insts[at].retired && self.insts[at].charmed)
     }
 
-    /// The GENUINELY-CHARMED live pets — mobs bound by a `<mob> has been charmed.` line. A summoned
-    /// class pet is a pet but is NOT charmed, so it is excluded here by `pet_kind`. This is the ONLY
-    /// honest source for a charm roster; the engine's pet-name set is attribution-only and holds
-    /// both kinds.
+    /// The genuinely-charmed live pets — mobs bound by a `<mob> has been charmed.` line. A summoned
+    /// class pet is a pet but is not charmed, so `pet_kind` excludes it. The only honest source for
+    /// a charm roster; the engine's pet-name set is attribution-only and holds both kinds.
     pub fn charmed_instances(&self) -> Vec<Resolved> {
         self.walk_pets(|k| k == Some(PetKind::Charmed))
     }
 
-    /// All live pets, charmed AND summoned — the attribution roster.
+    /// All live pets, charmed and summoned — the attribution roster.
     pub fn pet_instances(&self) -> Vec<Resolved> {
         self.walk_pets(|_| true)
     }
@@ -688,7 +645,7 @@ impl WorldModel {
     }
 
     /// Display label for an instance in encounter views. When more than one instance of a nameKey
-    /// has EVER been spawned, later gens get a ` (N)` suffix so twins are visually distinct; the
+    /// has ever been spawned, later gens get a ` (N)` suffix so twins are visually distinct; the
     /// first gen keeps the bare name.
     fn resolved(&self, at: usize) -> Resolved {
         let inst = &self.insts[at];
@@ -716,7 +673,7 @@ mod tests {
         let a = w.resolve("a spite golem", 1_000, false);
         assert_eq!(a.instance_id, "a spite golem#1");
         assert_eq!(a.label, "a spite golem");
-        // Only a fresh SPAWN mints a gen — a second sighting inside the staleness window is the
+        // Only a fresh spawn mints a gen — a second sighting inside the staleness window is the
         // same mob.
         let again = w.resolve("a spite golem", 2_000, false);
         assert_eq!(again.instance_id, "a spite golem#1");
@@ -747,8 +704,8 @@ mod tests {
         );
     }
 
-    /// A PET IS EXEMPT FROM STALENESS — it is bound by explicit evidence and may legitimately stand
-    /// quiet for minutes; only death, uncharm and zone retire one.
+    /// A pet is exempt from staleness — it is bound by explicit evidence and may stand quiet for
+    /// minutes; only death, uncharm and zone retire one.
     #[test]
     fn a_pet_never_ages_out_but_a_hostile_twin_does() {
         let mut w = WorldModel::new();
@@ -761,7 +718,7 @@ mod tests {
         assert!(w.is_retired("a fire giant warrior#2"));
     }
 
-    /// THE SINGLE-PET INVARIANT: claiming a new summoned pet retires the one you had.
+    /// The single-pet invariant: claiming a new summoned pet retires the one you had.
     #[test]
     fn a_new_summoned_pet_retires_the_prior_one() {
         let mut w = WorldModel::new();
@@ -769,7 +726,7 @@ mod tests {
         let second = w.claim("Gonekn", 1_000);
         assert!(w.is_retired(&first.instance_id));
         assert!(w.is_live_pet(&second.instance_id));
-        // A CHARMED pet is untouched — the two kinds demonstrably co-exist.
+        // A charmed pet is untouched — the two kinds co-exist.
         let charmed = w.charm("a rock golem", 2_000);
         w.claim("Vebarn", 3_000);
         assert!(w.is_live_pet(&charmed.instance_id));
@@ -785,8 +742,8 @@ mod tests {
         assert!(!w.is_retired(&a.instance_id));
     }
 
-    /// The bias is always AWAY from the pet: a foreign killer with no twin spawns and retires a
-    /// GHOST slot rather than killing the pet.
+    /// The bias is always away from the pet: a foreign killer with no twin spawns and retires a
+    /// ghost slot rather than killing the pet.
     #[test]
     fn a_foreign_killer_with_no_twin_retires_a_ghost_and_keeps_the_pet() {
         let mut w = WorldModel::new();
@@ -809,7 +766,7 @@ mod tests {
         assert!(w.is_retired(&pet.instance_id));
     }
 
-    /// Only a SUMMONED pet walks through the door with you.
+    /// Only a summoned pet walks through the door with you.
     #[test]
     fn a_zone_keeps_the_summoned_pet_and_leaves_everything_else() {
         let mut w = WorldModel::new();
@@ -836,7 +793,7 @@ mod tests {
         assert_eq!(w.retired_ids, vec!["a bat#1".to_string()]);
     }
 
-    /// An id nothing ever spawned is RETIRED, not live — it cannot be a live engagement.
+    /// An id nothing ever spawned is retired, not live — it cannot be a live engagement.
     #[test]
     fn an_unknown_instance_id_is_retired() {
         let w = WorldModel::new();

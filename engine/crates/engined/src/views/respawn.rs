@@ -1,30 +1,19 @@
-//! `respawn.watches` — THE MOBS ON A CLOCK (JOS-487).
+//! `respawn.watches` — one row per watched mob per zone: when it comes back, and where that number
+//! came from.
 //!
-//! The rows the Timers tab and the respawn overlay draw: one per watched mob per zone, with what
-//! the app knows about when it comes back and where that number came from.
+//! The order is a function of `now` (recently seen first, then unstale, then by remaining time), so
+//! no sort over a column can express it. The source publishes the module's own position as the
+//! integer field `order` instead, as [`super::timers`] does: the decision stays engine-side and what
+//! crosses the wire is its answer.
 //!
-//! ── THE ORDER IS A FUNCTION OF `now`, SO IT IS A FIELD ─────────────────────────────────────────
+//! The instant behind that order is the module's own (`RespawnModule::now_ms`), never a fresh clock
+//! read. A second clock would order the rows against an instant the model has never seen, and would
+//! put a wall-clock read in the serve path.
 //!
-//! `orderRespawnRows` puts a mob SEEN recently at the top (most recently seen first), then the
-//! unstale rows, then everything else by remaining time — which no sort over a column can express,
-//! because "remaining" is a subtraction against the current instant. So the source publishes the
-//! module's own position as an integer field (`order`), exactly as [`super::timers`] does and for
-//! the same reason: the decision stays engine-side and what crosses the wire is its answer.
-//!
-//! THE INSTANT THE ORDER IS COMPUTED AGAINST IS THE MODULE'S OWN, never a fresh clock read
-//! (`RespawnModule::now_ms`). The module is advanced by the log while folding and by the live tick
-//! once a tail owns the file (owner ruling 22); reading a SECOND clock here to order the rows would
-//! order them against an instant the model has never seen, and it would put a wall-clock read in
-//! the serve path, which ruling 18 law 1 forbids for the reason that makes it cacheable.
-//!
-//! ── ONE OMISSION, NAMED ────────────────────────────────────────────────────────────────────────
-//!
-//! `gapsMs` — the recent measured gaps behind `observedMs` — is NOT a cell, because a `Cell` is a
-//! scalar and a list of six numbers cannot be one. It is not joined into a string either: a client
-//! that had to split `"1080,1102,1075"` back apart would be doing exactly the munging ruling 4
-//! forbids. What the row carries instead is the two numbers the provenance line actually reads —
-//! `observedMs` and `samples` — and the gap list stays where the drill-down already gets it,
-//! `module.snapshot("respawn")`.
+//! `gapsMs` — the recent measured gaps behind `observedMs` — is not a cell: a `Cell` is a scalar,
+//! and joining the list into a string would only make the client split it back apart. The row
+//! carries the two numbers the provenance line reads (`observedMs`, `samples`); the gap list stays
+//! in `module.snapshot("respawn")`, where the drill-down already reads it.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -56,9 +45,9 @@ pub const WATCHES: SourceDef = SourceDef {
 
 /// Build the watch rows, in the module's own order.
 ///
-/// THE KEY IS THE ROW'S OWN `id` — `<zone key>::<mob key>` — which the module already builds to be
-/// stable across ticks and which is the same key its history is filed under. A mob watched in two
-/// zones is two rows and two clocks, which the compound id says and a bare mob key would not.
+/// The key is the row's own `id` (`<zone key>::<mob key>`), which the module builds to be stable
+/// across ticks and files its history under. A mob watched in two zones is two rows and two clocks,
+/// which the compound id says and a bare mob key would not.
 #[must_use]
 pub fn rows(module: &RespawnModule) -> Vec<SourceRow> {
     module
@@ -99,9 +88,8 @@ fn cells(row: &RespawnRow, order: i64) -> Cells {
     cells.insert("baseTs".to_owned(), Cell::int(row.base_ts));
     cells.insert("basis".to_owned(), Cell::text(row.basis));
     cells.insert("source".to_owned(), Cell::text(row.source));
-    // `overridden` IS THE ANSWER RATHER THAN THE COMPARISON. `respawnOverridden` is
-    // `source === 'custom'` app-side, and a client re-deriving it from the word beside it would be
-    // holding a second copy of a rule that lives here.
+    // `overridden` is the answer rather than the comparison: a client re-deriving it from the
+    // `source` word beside it would hold a second copy of a rule that lives here.
     cells.insert("overridden".to_owned(), Cell::flag(row.source == "custom"));
     cells.insert("samples".to_owned(), Cell::int(row.samples));
     cells.insert("kills".to_owned(), Cell::int(row.kills));
@@ -161,8 +149,7 @@ mod tests {
 
     #[test]
     fn a_watched_mob_becomes_a_row_and_an_unwatched_one_does_not() {
-        // TRACKING IS OPT-IN PER MOB (JOS-194), which is the whole of what the respawn fold knows
-        // that the log did not tell it — so the define is what puts this mob on a clock.
+        // Tracking is opt-in per mob, so the define is what puts this mob on a clock.
         let watched = folded(
             &[ZONE, DEATH],
             serde_json::json!({"watches": [{"key": "king tranix", "display": "King Tranix", "customSec": 1080}]}),
@@ -173,8 +160,8 @@ mod tests {
         assert_eq!(built[0].cells["display"], Cell::text("King Tranix"));
         assert_eq!(built[0].cells["zone"], Cell::text("Nagafen's Lair"));
         assert_eq!(built[0].cells["customMs"], Cell::int(1_080_000));
-        // The user typed the number, so the row says the estimate is theirs — as an ANSWER, not as
-        // a comparison the client has to make.
+        // The user typed the number, so the row says the estimate is theirs as an answer rather
+        // than as a comparison the client has to make.
         assert_eq!(built[0].cells["source"], Cell::text("custom"));
         assert_eq!(built[0].cells["overridden"], Cell::flag(true));
         // …and the key is the compound one, because a mob watched in two zones is two clocks.

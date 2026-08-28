@@ -1,60 +1,50 @@
-//! `engined` — THE ENGINE PROCESS (JOS-459). A process that can be spawned, handed a secret, talked
-//! to, and killed (phase 0, JOS-466) — and, since JOS-474, one that INGESTS: `session.attach` opens
-//! the named log, scans it at full speed and follows it live, through `eqlog`.
+//! `engined` — the engine process: spawned, handed a secret, talked to, and killed. `session.attach`
+//! opens the named log, scans it at full speed and follows it live.
 //!
-//! WHERE THE GAME LOGIC IS, AND IS NOT. Not here. `eqlog` owns what an event is (JOS-469, proven
-//! byte-identical to the TS parser) and what a line is (JOS-472, proven scan-equivalent); the fold
-//! that turns events into state arrives in `fold` (JOS-471) and reaches this crate through ONE
-//! trait, [`ingest::EventSink`]. This crate owns the process, the protocol, and the question of who
-//! is folding — see [`ingest`] for the generation law and [`world`] for the one door.
+//! No game logic lives here. `eqlog` owns what an event and a line are, `fold` owns the fold that
+//! turns events into state, and it reaches this crate through one trait, [`ingest::EventSink`]. This
+//! crate owns the process, the protocol, and the question of who is folding.
 //!
-//! THE SPAWN CONTRACT (binding, shared verbatim with the supervisor ticket JOS-467):
+//! The spawn contract, binding and shared with the supervisor:
 //!
-//! 1. The supervisor spawns `engined.exe` with NO SECRETS IN ARGV OR ENV. The first line on stdin
-//!    is the token. Argv is world-readable on both platforms this app can reach — `wmic`, `ps`,
-//!    Task Manager's command-line column — and an environment block is readable by anything that
-//!    can open the process; a pipe the parent already owns is neither.
-//! 2. The engine binds `127.0.0.1:0` (the kernel picks the port) and prints EXACTLY ONE line to
-//!    stdout: `EQC-ENGINE PORT=<port> PROTOCOL=<protocolVersion>`, flushed. NOTHING ELSE EVER GOES
-//!    TO STDOUT — stdout is a machine channel with one reader and one message on it, so a stray
-//!    `println!` is a supervisor that cannot parse its own child. Diagnostics go to stderr.
-//! 3. The engine exits 0 promptly when stdin reaches EOF. That is owner ruling 10 — THE ENGINE DIES
-//!    WITH THE APP — implemented as the only mechanism that cannot lie: the pipe closes when the
-//!    parent's handles close, whether it exited cleanly, crashed, or was killed. No orphan mode, no
-//!    PID file, no heartbeat to forget to send.
-//! 4. Every TCP connection opens with a valid `hello` or is closed. Loopback is not a permission
-//!    boundary (see `protocol::token`), so the port authenticates nobody and the token authenticates
-//!    everybody.
+//! 1. No secrets in argv or env — argv is world-readable and an environment block is readable by
+//!    anything that can open the process. The first line on stdin is the token.
+//! 2. The engine binds `127.0.0.1:0` and prints exactly one line to stdout:
+//!    `EQC-ENGINE PORT=<port> PROTOCOL=<protocolVersion>`, flushed. Nothing else ever goes to
+//!    stdout — it is a machine channel with one reader and one message on it. Diagnostics go to
+//!    stderr.
+//! 3. The engine exits 0 promptly when stdin reaches EOF. The pipe closes when the parent's handles
+//!    close however it ended, which is the only mechanism that cannot lie: no orphan mode, no PID
+//!    file, no heartbeat to forget to send.
+//! 4. Every TCP connection opens with a valid `hello` or is closed. The port authenticates nobody;
+//!    the token authenticates everybody.
 //! 5. A respawn is a launch: fresh token, fresh epoch, fresh world. Resume is always re-query.
 //!
-//! EXIT CODES. `0` is the contract's own ending — stdin reached EOF and the app is gone. `1` is a
-//! refusal to start: no token on stdin, a token that cannot be one, or a loopback socket that would
-//! not bind. There is no third outcome, because everything else this process can meet is a
-//! connection-level failure and a connection-level failure closes a connection, never the process.
+//! Two exit codes, and no third. `0` is the contract's own ending. `1` is a refusal to start: no
+//! token on stdin, a token that cannot be one, or a loopback socket that would not bind. Everything
+//! else this process can meet is connection-level, and closes a connection rather than the process.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-/// THE BUDGETS THIS BUILD ENFORCES (owner ruling 19, JOS-502) — the definitions `tests/budget.rs`
-/// asserts in CI, served live off the generation that is running so the panel and a bug report
-/// state what THIS machine did.
+/// The budgets this build enforces, served live off the running generation so the panel and a bug
+/// report state what this machine did.
 mod budgets;
 mod concard;
 mod conn;
 mod foldsink;
 mod ingest;
-/// WHICH CHARACTERS THIS INSTALL HAS (owner ruling 21). The app pushes the directory; this is the
-/// scan of it, and the one piece of this process that reads a log file's NAME rather than its bytes.
+/// Which characters this install has. The app pushes the directory; this is the scan of it, and the
+/// one piece of this process that reads a log file's NAME rather than its bytes.
 mod logs;
 mod ops;
 mod search;
 mod spawn;
-/// SEARCHING that table by TYPE (JOS-507) — the filter/sort/window the in-game Actions window's
-/// Category and Subcategory columns make possible. `spells` owns the files; this owns the question,
-/// the same split `search` and `fold::combat` make for fights.
+/// Searching that table by type — the filter/sort/window behind the in-game Actions window's
+/// Category and Subcategory columns. `spells` owns the files; this owns the question.
 mod spell_search;
-/// The CLIENT's spell table, read by this process (boundary verdict 7). `fold::spells_us` is the
-/// format; this is the file, the laziness and the once-ness.
+/// The client's spell table, read by this process. `fold::spells_us` is the format; this is the
+/// file, the laziness and the once-ness.
 mod spells;
 mod state;
 mod views;
@@ -92,10 +82,9 @@ fn main() -> ExitCode {
         }
     };
 
-    // Step 2. NUMERIC 127.0.0.1, never the name `localhost` — a name is a resolver's opinion and on
-    // a misconfigured host it has been an IPv6 address, a second interface, or a lookup that took
-    // a second. Port 0 asks the kernel for an ephemeral port, which is what makes two engines (a
-    // dev app and an e2e run, say) coexist without a port-collision story.
+    // Step 2. Numeric 127.0.0.1, never the name `localhost` — a name is a resolver's opinion, and on
+    // a misconfigured host it has been an IPv6 address, a second interface, or a slow lookup. Port 0
+    // asks the kernel for an ephemeral port, so two engines coexist without a collision story.
     let listener = match TcpListener::bind((Ipv4Addr::LOCALHOST, 0)) {
         Ok(listener) => listener,
         Err(e) => {
@@ -111,8 +100,8 @@ fn main() -> ExitCode {
         }
     };
 
-    // THE ONE LINE. It is written before anything else can possibly write to stdout, and after it
-    // this process never touches stdout again.
+    // The one line, written before anything else can possibly write to stdout; after it this
+    // process never touches stdout again.
     let announce = spawn::announce_line(port, PROTOCOL_VERSION);
     {
         let mut stdout = io::stdout().lock();
@@ -129,9 +118,8 @@ fn main() -> ExitCode {
     // outlives its parent.
     spawn::die_with_stdin();
 
-    // THE FOLD IS ON (JOS-478). One line, and it is the whole of what turns a counting engine into
-    // a data-bearing one: every attach now builds the twenty-module registry and folds into it, and
-    // `module.snapshot` answers off it. See `foldsink.rs` for what an attach constructs and why.
+    // Every attach builds the module registry and folds into it; `foldsink.rs` says what an attach
+    // constructs and why.
     let server = Arc::new(Server::new(
         World::with_ingest(ingest::starter(foldsink::folding_sinks())),
         token,
@@ -139,9 +127,8 @@ fn main() -> ExitCode {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                // ONE THREAD PER CONNECTION, and the count is bounded by the app: one connection
-                // per renderer, brokered by main. A thread that blocks on `recv` for an idle
-                // subscription costs a stack and nothing else.
+                // One thread per connection, and the count is bounded by the app: one connection
+                // per renderer. A thread blocked on `recv` for an idle subscription costs a stack.
                 let server = Arc::clone(&server);
                 if let Err(e) = thread::Builder::new()
                     .name("engined-conn".to_owned())
@@ -150,9 +137,8 @@ fn main() -> ExitCode {
                     eprintln!("{DIAGNOSTIC_PREFIX} could not serve a connection: {e}");
                 }
             }
-            // ONE FAILED ACCEPT IS NOT A DEAD ENGINE. A refused or reset connection must never take
-            // the listener down with it — the app would see the engine vanish for someone else's
-            // mistake.
+            // One failed accept is not a dead engine: a refused or reset connection must never take
+            // the listener down, or the app sees the engine vanish for someone else's mistake.
             Err(e) => eprintln!("{DIAGNOSTIC_PREFIX} accept failed: {e}"),
         }
     }

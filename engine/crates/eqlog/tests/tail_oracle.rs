@@ -1,43 +1,23 @@
-//! ============================================================================
-//! THE TAIL ORACLE (JOS-472) — a live tail is a scan that arrived awkwardly.
-//! ============================================================================
+//! The tail oracle: a live tail is a scan that arrived awkwardly.
 //!
-//! The scan of a complete file is PROVEN byte-identical to the TS pipeline (JOS-469, the `parity`
-//! binary over six slices of the owner's real log). So the acceptance for the live tail does not
-//! need a second golden corpus — it needs one claim:
+//! The scan of a complete file is proven byte-identical to the TypeScript pipeline, so the live tail
+//! needs one claim: the lines a tail emits while a file is being written equal the lines the scan
+//! finds in the finished file, whatever the writes looked like.
 //!
-//!   **the lines a tail emits while a file is being written equal the lines the scan finds in the
-//!   finished file, whatever the writes looked like.**
+//! Everything below exists to make that hard to satisfy by luck: the writer chops each fixture at
+//! adversarial boundaries and is forced to include a chunk ending exactly on the newline byte and one
+//! ending between a `\r` and its `\n`; the reader polls at random moments, through a slice size small
+//! enough that boundaries land mid-line and mid-character; every poll re-asserts the mark law against
+//! arithmetic done independently of the tail (read cursor is file size, checkpoint is just past the
+//! last newline written); and the comparison is the serialized event stream, byte for byte.
 //!
-//! Transitively, that makes the tail golden-equivalent too. Everything below exists to make that
-//! claim hard to satisfy by luck:
+//! Line endings are normalized per run, both ways, because whether a fixture is CRLF or LF on disk is
+//! a property of the checkout — an oracle whose CR coverage depends on git's autocrlf setting quietly
+//! stops testing CR handling on somebody's machine.
 //!
-//!   * the WRITER chops each fixture at adversarial boundaries — byte-scale dribble, ordinary
-//!     appends, bursts bigger than one read slice — and the plan is FORCED to include a chunk that
-//!     ends exactly on the newline byte and a chunk that ends between a `\r` and its `\n`;
-//!   * the READER polls at random moments: sometimes after every chunk, sometimes not at all for
-//!     several (a burst piles up), sometimes twice (a quiet period, whose second poll must do
-//!     nothing at all) — and reads through a slice size small enough that slice boundaries land
-//!     mid-line and mid-character too, not just write boundaries;
-//!   * EVERY POLL re-asserts the MARK LAW against arithmetic done independently of the tail: the
-//!     read cursor is the file's size, and the checkpoint is the offset just past the last newline
-//!     written so far — so a partial line is never emitted and never counted;
-//!   * the comparison is the serialized EVENT STREAM, byte for byte, against `scan_bytes` over the
-//!     final file. Not a line count, not a hash of a summary.
-//!
-//! LINE ENDINGS ARE NORMALIZED PER RUN, both ways, on purpose. Whether `tests/fixtures/*.log` is
-//! CRLF or LF on disk is a property of the CHECKOUT (JOS-458 measured CI and dev disagreeing), and
-//! an oracle whose CR coverage depends on git's autocrlf setting is an oracle that quietly stops
-//! testing CR handling on somebody's machine. Each fixture is run as LF, as CRLF, and as checked
-//! out — same lines, different byte arithmetic, which is exactly the pair the mark law must survive.
-//!
-//! DETERMINISTIC SEEDS, NO CLOCK. Every chunking is a pure function of a constant seed printed in
-//! every failure message, so a failing pattern is reproducible from the output alone. Nothing here
-//! reads the wall clock except `the_follow_loop_…`, which asserts on lines rather than on timing.
-//!
-//! The corpus is committed, so this suite runs in CI. The full-size soak over a real multi-megabyte
-//! slice of the owner's log is a LOCAL acceptance step and deliberately not committed (a reporter's
-//! slice never becomes a fixture, and neither does the owner's).
+//! Every chunking is a pure function of a constant seed printed in every failure message, so a
+//! failing pattern is reproducible from the output alone. Nothing here reads the wall clock except
+//! `the_follow_loop_…`, which asserts on lines rather than on timing.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -51,10 +31,6 @@ use eqlog::scan::scan_bytes;
 use eqlog::tail::{FileTail, ReopenReason, TailStart, TAIL_READ_SLICE_BYTES};
 use eqlog::timestamp::Clock;
 
-// ---------------------------------------------------------------------------------------------
-// The corpus and the parser
-// ---------------------------------------------------------------------------------------------
-
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -63,10 +39,8 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The fixtures the EVENT-STREAM oracle runs over. A named list rather than a glob: these were
-/// chosen for shape diversity (a dense pull, a `/who`-anchored window, a loadout swap big enough to
-/// need several read slices, a proc/resist window), and naming them means adding a fixture never
-/// silently changes what this proves.
+/// The fixtures the event-stream oracle runs over. A named list rather than a glob, chosen for shape
+/// diversity, so adding a fixture never silently changes what this proves.
 const ORACLE_FIXTURES: [&str; 4] = [
     "e2e-combat.log",
     "cw1-who-anchored.log",
@@ -109,9 +83,8 @@ struct Run {
     slice_bytes: usize,
 }
 
-/// Strip the `\r` of a CRLF pair — and ONLY that one. Real logs carry bare carriage returns inside
-/// chat lines (see `jsstr::JS_DOT`'s sky-era divergence), and rewriting those would change what the
-/// parser sees.
+/// Strip the `\r` of a CRLF pair and only that one: real logs carry bare carriage returns inside
+/// chat lines, and rewriting those would change what the parser sees.
 fn to_lf(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     for (i, &b) in bytes.iter().enumerate() {
@@ -159,9 +132,8 @@ fn all_fixtures() -> Vec<String> {
     names
 }
 
-/// The bare parser — no spell DB. The tail/scan equivalence is a claim about LINES, and the spell DB
-/// only decorates a `buffApply`'s candidate list; loading it would slow every row down for a
-/// dimension this oracle does not test. The local soak uses the full `parser_for`.
+/// The bare parser, no spell DB: this equivalence is a claim about lines, and the DB only decorates
+/// a `buffApply`'s candidate list.
 fn parser() -> Parser {
     Parser::new(
         Clock::new(chrono_tz::America::Los_Angeles),
@@ -170,11 +142,7 @@ fn parser() -> Parser {
     )
 }
 
-// ---------------------------------------------------------------------------------------------
-// The two sides of the comparison
-// ---------------------------------------------------------------------------------------------
-
-/// The PROVEN side: `scan_bytes` over the finished file, serialized as NDJSON.
+/// The proven side: `scan_bytes` over the finished file, serialized as NDJSON.
 fn scan_stream(p: &Parser, bytes: &[u8]) -> String {
     let mut out = String::new();
     scan_bytes(p, bytes, |json, _payload| {
@@ -184,12 +152,10 @@ fn scan_stream(p: &Parser, bytes: &[u8]) -> String {
     out
 }
 
-/// The TAIL side: the same parse, driven line by line off whatever the tail emitted.
+/// The tail side: the same parse, driven line by line off whatever the tail emitted.
 ///
-/// The seq discipline is `scan.rs` rule 4 restated — `seq` starts at 0, counts EVENTS rather than
-/// lines, and a line that parses to nothing does not advance it. Restating it is what makes the
-/// comparison meaningful: if the tail's lines equal the scan's lines, the same discipline over them
-/// must reproduce the scan's bytes exactly.
+/// The seq discipline is `scan.rs`'s restated — `seq` starts at 0, counts events rather than lines,
+/// and a line that parses to nothing does not advance it.
 fn fold_stream(p: &Parser, lines: &[String]) -> String {
     let mut out = String::new();
     let mut ev = Ev::new();
@@ -204,8 +170,8 @@ fn fold_stream(p: &Parser, lines: &[String]) -> String {
     out
 }
 
-/// `scan.rs`'s splitter, restated as a LINE list so a divergence can be reported as a line rather
-/// than as a megabyte of JSON. Restatements rot, so it is proven against the thing it restates in
+/// `scan.rs`'s splitter, restated as a line list so a divergence can be reported as a line rather
+/// than as a megabyte of JSON. Proven against what it restates in
 /// `the_reference_splitter_is_the_scans_splitter`.
 fn reference_lines(bytes: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
@@ -233,10 +199,6 @@ fn last_newline_end(bytes: &[u8]) -> u64 {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Determinism: the seeded chunker
-// ---------------------------------------------------------------------------------------------
-
 /// xorshift64*, spelled out. A named PRNG rather than a dependency, and never seeded from a clock: a
 /// chunk pattern that breaks the tail must be reproducible from the seed printed in the failure.
 struct Rng(u64);
@@ -262,12 +224,11 @@ impl Rng {
     }
 }
 
-/// Cumulative END offsets of the chunks the writer will append, in order, finishing at `len`.
+/// Cumulative end offsets of the chunks the writer will append, in order, finishing at `len`.
 ///
-/// The forced cuts are what stops this from being a random walk that happens to miss the two
-/// boundaries that matter: a boundary AT a newline's index makes the preceding chunk end on the byte
-/// before it (the `\r` of a CRLF pair — the mid-CRLF cut), and a boundary one past it makes the
-/// chunk end exactly ON the newline byte.
+/// The forced cuts stop this being a random walk that misses the two boundaries that matter: a
+/// boundary at a newline's index ends the preceding chunk on the byte before it (the `\r` of a CRLF
+/// pair), and a boundary one past it ends the chunk exactly on the newline byte.
 fn chunk_plan(bytes: &[u8], rng: &mut Rng) -> Vec<usize> {
     let n = bytes.len();
     let mut plan = Vec::new();
@@ -303,12 +264,8 @@ fn chunk_plan(bytes: &[u8], rng: &mut Rng) -> Vec<usize> {
     plan
 }
 
-// ---------------------------------------------------------------------------------------------
-// The temp file the writer and the tail share
-// ---------------------------------------------------------------------------------------------
-
-/// A directory under the OS temp root, removed on drop. No `tempfile` dependency for four lines of
-/// `create_dir_all`; the name carries the pid and a counter so parallel test threads cannot collide.
+/// A directory under the OS temp root, removed on drop. The name carries the pid and a counter so
+/// parallel test threads cannot collide.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -346,10 +303,6 @@ fn append(path: &Path, bytes: &[u8]) {
     f.write_all(bytes).expect("append");
     f.flush().expect("flush");
 }
-
-// ---------------------------------------------------------------------------------------------
-// THE ORACLE
-// ---------------------------------------------------------------------------------------------
 
 /// What a run actually exercised, so the suite can prove it tested what it claims to test.
 #[derive(Default, Debug)]
@@ -404,7 +357,7 @@ fn run_one(name: &str, bytes: &[u8], run: Run) -> (Vec<String>, Coverage) {
         prev = end;
 
         // Bursts and pauses. `0` piles the next chunk on top without a poll; `1` is a quiet period
-        // whose SECOND poll must be a complete no-op.
+        // whose second poll must be a complete no-op.
         let polls = match rng.below(8) {
             0 => 0,
             1 => 2,
@@ -431,7 +384,7 @@ fn run_one(name: &str, bytes: &[u8], run: Run) -> (Vec<String>, Coverage) {
                     "{name} seed {seed:#x}: idle poll opened a handle"
                 );
             }
-            // THE MARK LAW, re-derived from the bytes written so far rather than from the tail.
+            // The mark law, re-derived from the bytes written so far rather than from the tail.
             assert_eq!(
                 tail.read_offset(),
                 prev as u64,
@@ -480,7 +433,7 @@ fn the_tail_and_the_scan_agree_over_adversarial_chunkings() {
             let want_lines = reference_lines(&bytes);
             let (lines, cov) = run_one(name, &bytes, run);
 
-            // Report the first divergence as a LINE — a diff of two multi-megabyte JSON strings is
+            // Report the first divergence as a line — a diff of two multi-megabyte JSON strings is
             // not a diagnostic.
             if lines != want_lines {
                 let at = lines
@@ -496,7 +449,7 @@ fn the_tail_and_the_scan_agree_over_adversarial_chunkings() {
                     want_lines.len()
                 );
             }
-            // THE ACCEPTANCE: the serialized event streams are equal byte for byte.
+            // The acceptance: the serialized event streams are equal byte for byte.
             let tailed = fold_stream(&p, &lines);
             let scanned = scan_stream(&p, &bytes);
             assert_eq!(
@@ -530,8 +483,8 @@ fn the_tail_and_the_scan_agree_over_adversarial_chunkings() {
 
 #[test]
 fn every_committed_fixture_survives_one_adversarial_chunking() {
-    // Wide rather than deep: one row over the whole corpus, compared at the LINE level (the level
-    // the tail is responsible for). Adding a fixture extends this automatically.
+    // Wide rather than deep: one row over the whole corpus, compared at the line level, which is the
+    // level the tail is responsible for. Adding a fixture extends this automatically.
     let run = RUNS[2];
     for name in all_fixtures() {
         let bytes = fixture(&name, run.endings);
@@ -543,10 +496,6 @@ fn every_committed_fixture_survives_one_adversarial_chunking() {
         );
     }
 }
-
-// ---------------------------------------------------------------------------------------------
-// The named cases the ticket calls out, each on its own so a failure names itself
-// ---------------------------------------------------------------------------------------------
 
 #[test]
 fn a_final_line_with_no_terminator_waits_and_the_mark_waits_with_it() {
@@ -630,8 +579,8 @@ fn a_tail_over_a_file_that_does_not_exist_yet_waits_for_it_without_erroring() {
     );
     let mut lines = Vec::new();
     let stats = tail.poll(|l| lines.push(l.to_string())).unwrap();
-    // The path came back, so the handle is opened under `Replaced` — the poll's version of
-    // chokidar's unlink→add, and the reopen does not itself move the offset.
+    // The path came back, so the handle is opened under `Replaced`, and the reopen does not itself
+    // move the offset.
     assert_eq!(stats.reopened, Some(ReopenReason::Replaced));
     assert_eq!(lines.len(), 1);
 }
@@ -651,7 +600,7 @@ fn the_handoff_from_a_scan_reads_the_bytes_that_arrived_during_it() {
     assert_eq!(lines.len(), 1, "history must not be re-read");
     assert!(lines[0].ends_with("new three."));
 
-    // …and an offset past the end of a file that shrank in between is CLAMPED, never trusted.
+    // …and an offset past the end of a file that shrank in between is clamped, never trusted.
     let size = std::fs::metadata(&path).unwrap().len();
     let mut late = FileTail::open(&path, TailStart::At(1_000_000));
     assert_eq!(late.read_offset(), size);
@@ -673,7 +622,7 @@ fn eof_start_reads_only_what_the_game_writes_next() {
     assert!(lines[0].ends_with("after the tail."));
 }
 
-/// TRUNCATION, characterized in `tail.rs`'s header and reproduced here rule by rule.
+/// Truncation, characterized in `tail.rs`'s header and reproduced here rule by rule.
 #[test]
 fn a_truncated_file_restarts_at_zero_and_the_half_written_line_is_dropped() {
     let scratch = Scratch::new("truncate");
@@ -707,9 +656,9 @@ fn a_truncated_file_restarts_at_zero_and_the_half_written_line_is_dropped() {
 
 #[test]
 fn a_truncation_re_emits_the_lines_that_survived_it_and_says_so() {
-    // The honest half of the characterization: the TS makes no attempt to notice that the first N
-    // bytes of the new file are bytes it already read, so neither does this. A truncation is a NEW
-    // FILE to a byte-level tail; de-duplicating would be a claim about content.
+    // The honest half of the characterization: nothing notices that the first N bytes of the new
+    // file were already read. A truncation is a new file to a byte-level tail, and de-duplicating
+    // would be a claim about content.
     let scratch = Scratch::new("re-emit");
     let path = scratch.log();
     let mut tail = FileTail::open(&path, TailStart::FromStart);
@@ -768,8 +717,8 @@ fn a_rotated_log_is_read_from_the_new_files_first_byte() {
     tail.poll(|l| lines.push(l.to_string())).unwrap();
     assert_eq!(lines.len(), 4);
 
-    // The user renamed or deleted the log and EverQuest made a new one. The poll that finds nothing
-    // at the path is this port's version of chokidar's `unlink`.
+    // The user renamed or deleted the log and EverQuest made a new one; the poll that finds nothing
+    // at the path is the `unlink` case.
     std::fs::remove_file(&path).unwrap();
     assert!(tail.poll(|_| {}).unwrap().missing);
 
@@ -784,13 +733,10 @@ fn a_rotated_log_is_read_from_the_new_files_first_byte() {
 
 #[test]
 fn a_replacement_that_already_outgrew_the_cursor_resumes_mid_file_exactly_as_the_ts_does() {
-    // TRUNCATION RULE 3, pinned as the HOLE it is rather than papered over. `Tailer.ts` reopens on
-    // `unlink`→`add` but deliberately leaves the offset to the shrink test, so a replacement that is
-    // ALREADY longer than the old cursor when it is first seen gets read from the middle. It is
-    // unreachable in practice — a fresh EverQuest log starts at zero bytes and the cursor it is
-    // being compared against is megabytes in, so a poll (or chokidar's `add`) always catches it
-    // small — and reproducing it is the point: the port must not quietly acquire behaviour the
-    // oracle never proved.
+    // Truncation rule 3, pinned as the hole it is: a reopen leaves the offset to the shrink test, so
+    // a replacement already longer than the old cursor when first seen is read from the middle. It
+    // is unreachable in practice — a fresh EverQuest log starts at zero bytes — and reproducing it
+    // is the point: the port must not quietly acquire behaviour the oracle never proved.
     let scratch = Scratch::new("outgrown");
     let path = scratch.log();
     let mut tail = FileTail::open(&path, TailStart::FromStart);
@@ -838,7 +784,7 @@ fn a_read_slice_is_bounded_and_a_burst_takes_the_slices_it_should() {
     assert_eq!(stats.slices as usize, written.div_ceil(64));
 }
 
-/// The POLLING loop itself, on a thread, against a writer that pauses — the only test here that
+/// The polling loop itself, on a thread, against a writer that pauses — the only test here that
 /// involves real time, and it asserts on lines rather than on timing.
 #[test]
 fn the_follow_loop_picks_up_appends_until_it_is_stopped() {
@@ -868,7 +814,7 @@ fn the_follow_loop_picks_up_appends_until_it_is_stopped() {
 
     let mut got = vec![rx.recv().expect("the pre-existing line")];
     for i in 0..3 {
-        // A quiet period, then an append. `recv` blocks on the CONDITION rather than sleeping on a
+        // A quiet period, then an append. `recv` blocks on the condition rather than sleeping on a
         // guess about the poll interval.
         std::thread::sleep(Duration::from_millis(30));
         append(

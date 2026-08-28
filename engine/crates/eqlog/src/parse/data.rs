@@ -1,13 +1,13 @@
-//! The two TABLES the cascade matches against by equality rather than by pattern:
-//! `shared/poisons.ts`'s roster and `shared/considerFaction.ts`'s ladder.
+//! The two tables the cascade matches against by equality rather than by pattern: the poison roster
+//! and the consider-faction ladder.
 //!
-//! Both are transcribed verbatim, in their source order, because both orders are semantic — the
-//! consider alternation is built from the ladder in ladder order, and a poison proc's `strikes[0]`
-//! is the name the event carries.
+//! Both keep their source order, because both orders are semantic — the consider alternation is
+//! built from the ladder in ladder order, and a poison proc's first strike is the name the event
+//! carries.
 
-/// `POISON_BY_COAT_MSG` — the exact `You coat your blades …` line → (poison name, group).
-/// Only the three fields `poisonCoat` carries are kept; the roster's levels, strike lists and
-/// exclusivity lines are model facts the parser never reads.
+/// The exact `You coat your blades …` line to (poison name, group). Only the three fields a coat
+/// event carries are kept; the roster's levels and exclusivity lines are model facts the parser
+/// never reads.
 pub const POISON_BY_COAT_MSG: [(&str, &str, &str); 20] = [
     (
         "You coat your blades in a weak paralytic.",
@@ -107,7 +107,7 @@ pub const POISON_BY_COAT_MSG: [(&str, &str, &str); 20] = [
     ),
 ];
 
-/// `POISON_DRY_MSG` — the two wears-off lines, split by group.
+/// The two wears-off lines, split by group.
 pub const POISON_DRY_MSG: [(&str, &str); 2] = [
     ("The poison dries from the blade.", "utility"),
     ("The venom drips away.", "combat"),
@@ -119,7 +119,7 @@ pub struct PoisonProc {
     pub effect: &'static str,
 }
 
-/// `POISON_PROCS` — a Strike's landing emote, by the suffix that identifies it.
+/// A Strike's landing emote, by the suffix that identifies it.
 pub const POISON_PROCS: [PoisonProc; 10] = [
     PoisonProc {
         suffix: "'s limbs move slower!",
@@ -173,9 +173,9 @@ pub const POISON_PROCS: [PoisonProc; 10] = [
     },
 ];
 
-/// `CONSIDER_FACTION_RUNGS` — phrase → rung, friendliest first. The parser builds its alternation
-/// from this list IN THIS ORDER, and a rung the ladder does not carry makes the line DECLINE rather
-/// than mis-split a mob name.
+/// Phrase to rung, friendliest first. The parser builds its alternation from this list in this
+/// order, and a rung the ladder does not carry makes the line decline rather than mis-split a mob
+/// name.
 pub const CONSIDER_FACTION_RUNGS: [(&str, &str); 9] = [
     ("regards you as an ally", "ally"),
     ("looks upon you warmly", "warmly"),

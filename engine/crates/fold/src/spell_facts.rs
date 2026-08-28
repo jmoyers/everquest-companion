@@ -1,33 +1,24 @@
-//! `src/main/data/spellDb.ts`, as the FOLD reads it — the per-line facts the buffs model asks the
+//! `src/main/data/spellDb.ts`, as the fold reads it — the per-line facts the buffs model asks the
 //! spell catalog for, projected into an owned table at construction.
 //!
-//! WHY A PROJECTION RATHER THAN A BORROW. `eqlog` owns the catalog because the PARSER's output
-//! depends on it (the `candidates` list a `buffApply` carries IS that table). This crate could hold
-//! a `&SpellDb` instead — but the 2a scaffold's own rule is that nothing in `fold` borrows the
-//! parser, which is what lets a `Fold` outlive, precede or be moved independently of the `Parser`
-//! that fed it. Everything the buffs model asks of the DB is a lookup on `db.byKey` for one of six
-//! scalar facts, so the whole dependency is ~1,900 small rows copied once.
+//! A projection rather than a borrow, because nothing in `fold` borrows the parser: that is what
+//! lets a `Fold` outlive, precede or be moved independently of the `Parser` that fed it. The whole
+//! dependency is ~1,900 small rows copied once.
 //!
-//! THE TWO DERIVED FACTS ARE DERIVED HERE, at projection time, because both are pure functions of a
-//! row and neither can therefore disagree with itself later:
+//! Two facts are derived here, at projection time, because both are pure functions of a row and so
+//! cannot disagree with themselves later:
 //!
-//!   * NATURE — `spellNature(spellType)`, the fold of the DB's 33-value `spellType` vocabulary onto
-//!     beneficial / detrimental / unknown. It is the ONE answer to "is this a good thing or a bad
-//!     thing" (JOS-140 ruling 8), and the owner's ruling is that buff-vs-debuff comes from here and
-//!     from nowhere else — never from the shape of the target. The defect that named the ruling:
-//!     `Resist Magic` is spellType `Resist Buff`, which matched neither of the two string literals
-//!     the buffs model used to test, so a friendly resist buff landing on somebody the model was not
-//!     currently holding as a pet tallied 'hostile' and walked onto the DEBUFFS overlay.
-//!   * CALMS TARGET — `spellCalmsTarget(entry)`, the second and orthogonal question (JOS-213): does
-//!     the beneficial thing this spell does happen to an ENEMY? Pacify, Soothe, Calm, Lull. The
-//!     roster is DERIVED from the three landing sentences spells.json groups the family by, not
-//!     typed, so a re-scrape that adds a rank joins it for free.
+//!   * nature — the fold of the DB's `spellType` vocabulary onto beneficial / detrimental /
+//!     unknown. It is the one answer to "buff or debuff", which never comes from the shape of the
+//!     target.
+//!   * calms target — the orthogonal question: does this spell's beneficial effect happen to an
+//!     enemy (Pacify, Soothe, Calm, Lull)? Derived from the landing sentences rather than typed, so
+//!     a re-scrape that adds a rank joins the family for free.
 //!
-//! `by_key` IS KEYED BY THE DB'S OWN `canonKey` — the CASE-INSENSITIVE rank tail
-//! (`eqlog::names::db_canon_key`) — and is looked up with keys the modules built through
-//! `spellCanonKey`, whose rank tail is case-SENSITIVE. The two are deliberately separate functions
-//! over there as well; keeping the asymmetry is what makes a lookup here answer exactly what the
-//! lookup there answers.
+//! `by_key` is keyed by the DB's own `canonKey` (case-insensitive rank tail) and looked up with
+//! keys the modules built through `spellCanonKey` (case-sensitive rank tail). The two are separate
+//! functions over there as well, and keeping the asymmetry is what makes a lookup here answer
+//! exactly what the lookup there answers.
 
 use eqlog::names::db_canon_key;
 use eqlog::spelldb::{cast_on_other_suffix, SpellDb};
@@ -42,13 +33,13 @@ pub enum Nature {
     Unknown,
 }
 
-/// `BENEFICIAL_TYPES` — the counts beside each are the committed spells.json's, kept because they
-/// are what makes the table auditable rather than a list somebody wrote down.
+/// `BENEFICIAL_TYPES`. The counts beside each are the committed spells.json's, kept so the table is
+/// auditable rather than a list somebody wrote down.
 const BENEFICIAL_TYPES: &[&str] = &[
     "Beneficial",              // 1079
     "Statistic Buff",          // 34
     "Resist Buff",             // 11
-    "Pet",                     // 9 — the pet SUMMONS; a friendly cast either way
+    "Pet",                     // 9 — the pet summons; a friendly cast either way
     "Utility Beneficial",      // 6
     "Heal",                    // 6
     "Heal Over Time",          // 6
@@ -63,7 +54,7 @@ const BENEFICIAL_TYPES: &[&str] = &[
     "Beneficial (Group only)", // 1
     "Invisibility",            // 1
     "Buff",                    // 1
-    "Proc Buff",               // 1 — Spirit of the Puma, the reported case
+    "Proc Buff",               // 1 — Spirit of the Puma
     "Regen",                   // 1
     "Damage Shield",           // 1 — cast on you/your pet, not on the mob
     "Block",                   // 1
@@ -104,16 +95,16 @@ fn nature_of(spell_type: Option<&str>) -> Nature {
     }
 }
 
-/// One catalog row, reduced to what the fold reads. Anything not here is a field the buffs model
-/// demonstrably never asks about, and leaving it out is what makes that claim checkable.
+/// One catalog row, reduced to what the fold reads. Anything absent is a field the buffs model
+/// never asks about, and leaving it out is what makes that claim checkable.
 #[derive(Debug, Clone)]
 pub struct SpellRow {
-    /// The DB's own spelling — the IDENTITY a resolved landing carries (JOS-238).
+    /// The DB's own spelling — the identity a resolved landing carries.
     pub name: String,
     pub duration_ms: Option<i64>,
-    /// Read VERBATIM and only ever compared against `"Permanent"`. `durationMs == null` alone is
-    /// NOT the same question: 453 Self rows carry a null duration and most of them are instant
-    /// nukes, while the 62 permanents state the word.
+    /// Read verbatim and only ever compared against `"Permanent"`. `duration_ms == None` is not the
+    /// same question: hundreds of rows carry a null duration and are instant nukes, while the
+    /// permanents state the word.
     pub duration_text: Option<String>,
     pub illusion: bool,
     pub nature: Nature,
@@ -125,16 +116,15 @@ pub struct SpellRow {
     pub msg_wears_off: Option<String>,
 }
 
-/// The projected catalog. An EMPTY one is exactly the TS's absent `db?`: every read is a lookup
-/// that answers nothing, which is what `db?.byKey.get(k)` does with no DB at all — so the fold has
-/// one code path where the TS has an optional, and no behaviour rides on the difference.
+/// The projected catalog. An empty one is exactly the TS's absent `db?`: every read answers
+/// nothing, so the fold has one code path where the TS has an optional.
 #[derive(Debug, Clone, Default)]
 pub struct SpellFacts {
     by_key: HashMap<String, SpellRow>,
 }
 
 impl SpellFacts {
-    /// Project `db.byKey` — the FIRST row per canonical name, which is what `buildSpellDb` keeps.
+    /// Project `db.byKey` — the first row per canonical name, which is what `buildSpellDb` keeps.
     pub fn project(db: &SpellDb) -> Self {
         let mut by_key = HashMap::new();
         for s in db.by_key_values() {
@@ -172,10 +162,9 @@ impl SpellFacts {
     }
 }
 
-/// `messageOverlay.ts messageMatchesOtherSuffix` — the same tail test `eqlog`'s own matcher makes,
-/// ported a second time because the MINER asks it of a line the DB never matched. (The eqlog copy
-/// is private to the baseline-only overlay pass; this is the fold's, and the two are pinned to each
-/// other by the goldens.)
+/// `messageOverlay.ts messageMatchesOtherSuffix` — the same tail test `eqlog`'s matcher makes,
+/// ported a second time because the miner asks it of a line the DB never matched. The two copies
+/// are pinned to each other by the goldens.
 pub fn message_matches_other_suffix(text: &str, suffix: &str) -> bool {
     let tail = if suffix.starts_with("'s") {
         suffix.to_string()
@@ -185,21 +174,18 @@ pub fn message_matches_other_suffix(text: &str, suffix: &str) -> bool {
     text.ends_with(&tail) && text.len() > tail.len()
 }
 
-/// `buffsShapes.ts looksLandingMessage` — is an un-catalogued line plausibly a SELF spell-landing
-/// flavor message the DB missed (Task #36)?
+/// `buffsShapes.ts looksLandingMessage` — is an un-catalogued line plausibly a self spell-landing
+/// flavor message the DB missed?
 ///
-/// It must be ABOUT THE CASTER (contain "you"/"your"), a short sentence ending in a period, with no
-/// digits (damage/heal lines carry numbers), no chat/tell/`by`/`from` markers, and not a
-/// casting-system or UI line. That deliberately excludes third-person mob-subject lines ("a
-/// revenant staggers.", "…spell is interrupted.") — combat spam that would poison the overlay with
-/// coincidental burst pairings. Symbol of Pinzarn's real "The symbol of Pinzarn flashes before your
-/// eyes." passes, because it names "your eyes"; a mob effect line does not.
+/// It must be about the caster (contain "you"/"your"), a short sentence ending in a period, with no
+/// digits (damage and heal lines carry numbers), no chat/tell/`by`/`from` markers, and not a
+/// casting-system or UI line. That excludes third-person mob-subject lines, which are combat spam
+/// that would poison the overlay with coincidental burst pairings.
 ///
 /// Deliberately permissive: the miner's unambiguous-anchor and repeat-count rules reject
-/// coincidental pairings, so a false candidate never earns a VERIFIED verdict.
+/// coincidental pairings, so a false candidate never earns a verified verdict.
 ///
-/// `text.length` IS UTF-16 UNITS over there, and the two bounds below are a length test — so this
-/// counts them, rather than bytes.
+/// The length bounds count UTF-16 units rather than bytes, because `text.length` does.
 pub fn looks_landing_message(text: &str) -> bool {
     let len = text.encode_utf16().count();
     if !(6..=90).contains(&len) {
@@ -217,17 +203,16 @@ pub fn looks_landing_message(text: &str) -> bool {
     !has_non_landing_marker(text)
 }
 
-/// `/\byou\b|\byour\b/i`, spelled as the TWO alternatives it is over there rather than as one
-/// factored group — a factored `(?:you|your)\b` asks the engine's alternation preference a question
-/// this one never has to.
+/// `/\byou\b|\byour\b/i`, spelled as the two alternatives it is over there: a factored
+/// `(?:you|your)\b` would depend on the engine's alternation preference.
 fn you_word() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"(?i)(?-u:\b)you(?-u:\b)|(?-u:\b)your(?-u:\b)").unwrap())
 }
 
-/// `CASTING_SYSTEM_RE` — casting-system / UI feedback lines that are SELF-directed in shape but are
-/// never a spell-landing emote. They recur across every spell, so they are pure noise, and they are
-/// rejected so a coincidental burst pairing cannot verify them.
+/// Casting-system and UI feedback lines that are self-directed in shape but never a spell-landing
+/// emote. They recur across every spell, so a coincidental burst pairing could otherwise verify
+/// them.
 fn casting_system() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -245,8 +230,8 @@ fn casting_system() -> &'static regex::Regex {
     })
 }
 
-/// `hasNonLandingMarker` — the chat/combat/system markers that disqualify an otherwise
-/// landing-SHAPED line.
+/// `hasNonLandingMarker` — the chat, combat and system markers that disqualify an otherwise
+/// landing-shaped line.
 fn has_non_landing_marker(text: &str) -> bool {
     if text.contains("' told you") || text.contains(" tells ") || text.contains(" says") {
         return true;
@@ -265,7 +250,7 @@ fn has_non_landing_marker(text: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// The two shapes the mining rule exists to tell apart, verbatim from the TS header.
+    /// The two shapes the mining rule exists to tell apart.
     #[test]
     fn a_landing_message_is_about_you_and_carries_no_numbers() {
         assert!(looks_landing_message(
@@ -288,7 +273,7 @@ mod tests {
         assert!(!looks_landing_message("You are healed by your pet."));
     }
 
-    /// The suffix tail test refuses a line that IS the suffix, which is what stops a bare wiki
+    /// The suffix tail test refuses a line that is only the suffix, which stops a bare wiki
     /// sentence from being read as a named-target landing.
     #[test]
     fn the_other_suffix_test_needs_something_in_front_of_the_tail() {

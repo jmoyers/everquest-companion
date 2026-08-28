@@ -1,5 +1,4 @@
-//! `src/main/log/parseAcquire.ts` — every sentence in which an item or a coin reaches the player
-//! WITHOUT a corpse in it.
+//! Every sentence in which an item or a coin reaches the player without a corpse in it.
 
 use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
@@ -7,7 +6,7 @@ use regex::Regex;
 
 use super::Ctx;
 
-/// `, '` — the repo's own chat marker, the guard on the one free-text-at-the-start shape here.
+/// The chat marker: the guard on the one shape here that starts with free text.
 const CHAT_QUOTE_MARKER: &str = ", '";
 
 pub struct AcquireRes {
@@ -23,8 +22,6 @@ pub struct AcquireRes {
     item_fashioned: Regex,
 }
 
-/// `Default` is `new`: a compiled pattern table has exactly one value, so there is nothing to
-/// choose between them. (Clippy asks for it on every one of these six holders.)
 impl Default for AcquireRes {
     fn default() -> Self {
         Self::new()
@@ -59,8 +56,8 @@ impl AcquireRes {
     }
 }
 
-/// `parseCoins` — take every `<digits> <denomination>` pair IN ORDER, then PROVE the clause held
-/// nothing else. That proof is what lets the callers anchor loosely.
+/// Take every `<digits> <denomination>` pair in order, then prove the clause held nothing else.
+/// That proof is what lets the callers anchor loosely.
 fn parse_coins(r: &AcquireRes, clause: &str) -> Option<Vec<(&'static str, i64)>> {
     let mut coins: Vec<(&'static str, i64)> = Vec::new();
     let mut rest = String::new();
@@ -138,7 +135,7 @@ fn classify_coin(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// The merchant buy. An EMPTY price clause is the free form and is honest as `{}`.
+/// The merchant buy. An empty price clause is the free form and is honest as `{}`.
 fn classify_purchase(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.purchase.captures(c.text) else {
         return false;
@@ -193,7 +190,7 @@ fn item_received(c: &Ctx, out: &mut Ev, item: &str, via: &str) {
     out.s(Key::Via, via);
 }
 
-/// Every way an item or a coin reaches you that does not name a corpse. ONE cheap gate per family.
+/// Every way an item or a coin reaches you that does not name a corpse. One cheap gate per family.
 pub fn classify_acquire(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You rece") {
         return classify_coin(r, c, out);

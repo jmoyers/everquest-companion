@@ -1,4 +1,4 @@
-//! `src/main/log/parseWorld.ts` — consider, deaths, zones, the loot family, item merges, turn-ins,
+//! Consider, deaths, zones, the instance-creation notice, the loot family, item merges, turn-ins,
 //! levels, experience and the AA economy.
 
 use crate::event::{Ev, Key, Kind};
@@ -22,6 +22,7 @@ pub struct WorldRes {
     destroy: Regex,
     zone: Regex,
     pseudo_zone: Regex,
+    instance_create: Regex,
     slain_self: Regex,
     slain_by: Regex,
     player_death: Regex,
@@ -40,7 +41,6 @@ pub struct WorldRes {
     item_tier: Regex,
 }
 
-/// See `AcquireRes`'s note: `Default` is `new`.
 impl Default for WorldRes {
     fn default() -> Self {
         Self::new()
@@ -83,6 +83,8 @@ impl WorldRes {
             destroy: Regex::new(r"^You successfully destroyed ([0-9]+) (.+?)\.$").unwrap(),
             zone: Regex::new(r"^You have entered (.+?)\.$").unwrap(),
             pseudo_zone: Regex::new(r"(?i)^an area where ").unwrap(),
+            instance_create: Regex::new(r"^Player (.+?) creating instance (.+?) ([0-9]+)\.$")
+                .unwrap(),
             slain_self: Regex::new(r"^You have slain (.+?)!$").unwrap(),
             slain_by: Regex::new(r"^(.+?) has been slain by (.+?)!$").unwrap(),
             player_death: Regex::new(r"^You have been slain by (.+?)!$").unwrap(),
@@ -116,7 +118,7 @@ impl WorldRes {
     }
 }
 
-/// `loot()` — the shared capture layout: optional stack count, item, source, disposition.
+/// The shared loot capture layout: optional stack count, item, source, disposition.
 fn loot(
     c: &Ctx,
     out: &mut Ev,
@@ -187,7 +189,7 @@ pub fn classify_death(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
             return true;
         }
     }
-    // The killerless MOB death. `bySelf:false` with NO killer is the honest shape.
+    // The killerless mob death: `bySelf:false` with no killer is the honest shape.
     if text.ends_with(" died.") {
         if let Some(m) = r.mob_died.captures(text) {
             out.begin(Kind::Death);
@@ -213,6 +215,34 @@ pub fn classify_zone(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     out.begin(Kind::Zone);
     out.envelope(c.seq, c.ts, c.raw);
     out.s(Key::Zone, js_trim(&m[1]));
+    true
+}
+
+/// `Player <Name> creating instance <Zone> <Id>.`
+///
+/// The zone line is the only sentence that states a difficulty, and it marks an instance only two
+/// ways: an adjective parenthetical (d1-d4) or a `- Solo`/`- Group` suffix (d0). A base-difficulty
+/// raid or personal instance prints neither — the zone line is byte-identical to the open-world
+/// entry — so this notice is the only evidence that an instance of that zone exists. It is not a
+/// statement about your position, and the kills fold that reads it is careful about that.
+///
+/// The creator and the instance id are captured as evidence even though nothing reads them today;
+/// the zone name is all the kills fold asks for.
+///
+/// The id is the last number, which is what anchoring the trailing digits buys: a zone whose name
+/// ends in an ordinal backtracks into the zone capture rather than splitting the name.
+pub fn classify_instance_create(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
+    if !c.text.starts_with("Player ") {
+        return false;
+    }
+    let Some(m) = r.instance_create.captures(c.text) else {
+        return false;
+    };
+    out.begin(Kind::InstanceCreate);
+    out.envelope(c.seq, c.ts, c.raw);
+    out.s(Key::Player, js_trim(&m[1]));
+    out.s(Key::Zone, js_trim(&m[2]));
+    out.i(Key::Instance, m[3].parse().unwrap_or(0));
     true
 }
 
@@ -297,7 +327,7 @@ pub fn classify_loot(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
             Some("combined"),
             m.get(1).map(|g| g.as_str()),
         );
-        // `{ ...loot(…), created }` — the spread first, then the one added key.
+        // The shared loot fields first, then the one added key.
         out.s(Key::Created, js_trim(&m[4]));
         return true;
     }
@@ -311,8 +341,7 @@ pub fn classify_item_merge(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     }
     if let Some(m) = r.item_merge.captures(text) {
         let item = js_trim(&m[1]).to_string();
-        // `itemTierFromName` — a ` +N` result is an item level; a Roman-rank result is a merged
-        // SPELL SCROLL and carries no tier.
+        // A ` +N` tail is an item level; a Roman-rank tail is a merged spell scroll and has no tier.
         let tier = r
             .item_tier
             .captures(js_trim(&item))
@@ -383,7 +412,7 @@ pub fn classify_level(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     true
 }
 
-/// Experience gains. `pct` is OMITTED — never 0 — when the line stated no percentage.
+/// Experience gains. `pct` is omitted, never 0, when the line stated no percentage.
 pub fn classify_exp(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     if !c.text.starts_with("You gain ") {
         return false;

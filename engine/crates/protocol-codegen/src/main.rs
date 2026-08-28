@@ -4,9 +4,8 @@
 //! `npm run gen:protocol` drives this after generating the TypeScript twin, so one command
 //! regenerates both sides from the one artifact.
 //!
-//! `--check` writes nothing and exits non-zero when the committed file is stale. That is the same
-//! question `tests/staleness.rs` asks; the flag exists so a person can ask it without running a
-//! test harness.
+//! `--check` writes nothing and exits non-zero when the committed file is stale — the same question
+//! `tests/staleness.rs` asks, without a test harness.
 
 use std::process::ExitCode;
 

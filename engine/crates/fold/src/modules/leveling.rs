@@ -1,8 +1,8 @@
 //! `src/main/modules/leveling.ts` — level-ups, AA gains, AA spends and AA-potion quaffs, all four
 //! append-only and in log order (the unspent/net-spent math the view does depends on that order).
 //!
-//! THE POTION IS NOT PERSISTED, deliberately: the quaff is a LOG LINE, so a relaunch replays it
-//! and re-derives the charge state exactly.
+//! The potion is deliberately not persisted: the quaff is a log line, so a relaunch replays it and
+//! re-derives the charge state exactly.
 
 use crate::event::Event;
 use crate::EqModule;
@@ -45,6 +45,9 @@ pub struct LevelingModule {
     aa_spends: Vec<AaSpendRow>,
     aa_potions: Vec<AaPotionRow>,
     seq: i64,
+    /// The announce cursor — see [`crate::announce`]. Four arms append and a fifth clears; that is
+    /// the whole of what this module publishes, and every other log line leaves it untouched.
+    announce: crate::announce::Announce,
 }
 
 impl LevelingModule {
@@ -64,13 +67,23 @@ impl EqModule for LevelingModule {
         self.aa_spends.clear();
         self.aa_potions.clear();
         self.seq = 0;
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
         self.seq = ev.seq();
+        // One bump for five arms, ahead of the match rather than inside each, because the arms are
+        // exactly the mutations: four appends and a clear.
+        let published = matches!(
+            ev.kind(),
+            "epoch" | "level" | "aaGain" | "aaSpend" | "aaPotion"
+        );
+        if published {
+            self.announce.changed(self.seq);
+        }
         match ev.kind() {
-            // Character rebirth (Task #49): the prior epoch's levels/AA belong to a dead same-name
-            // character, and the AA identity (allocated/unspent/earned) is only true without them.
+            // Character rebirth: the prior epoch's levels and AA belong to a dead same-name
+            // character, and the AA identity (allocated/unspent/earned) holds only without them.
             "epoch" => {
                 self.levels.clear();
                 self.aa_gains.clear();
@@ -97,10 +110,9 @@ impl EqModule for LevelingModule {
         }
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a ding, an AA line or a rebirth. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {

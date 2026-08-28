@@ -1,61 +1,43 @@
-//! THE EVENT WRITER — a JSON object built key by key, in the order the TS object literal states,
-//! AND (JOS-505) the same event as a TYPED PAYLOAD built in the same pass.
+//! The event writer: a JSON object built key by key in the order the app's object literal states
+//! it, and the same event as a typed payload built in the same pass.
 //!
-//! WHY THE JSON IS NOT A `serde` ENUM. The phase-1 bar is byte identity with `JSON.stringify(ev)`,
-//! and what `JSON.stringify` writes is the object's INSERTION ORDER — which in the TS parser is a
-//! property of the CODE PATH, not of the kind. `damage` alone is written four different ways
-//! (`dclass` only on the typed-nuke path, `verb` only on the melee one, `modifiers` absent entirely
-//! on the damage-shield one), a field set to `undefined` disappears, and `group` puts `change`
-//! ahead of `seq`/`ts`/`raw` where every other kind puts them first. A derived struct per kind
-//! would have to be a struct per BRANCH, and the ordering claim would live in a `#[derive]` far
-//! from the branch that makes it.
+//! The JSON is not a `serde` enum because the bar is byte identity with `JSON.stringify`, which
+//! writes insertion order — a property of the code path, not of the kind. `damage` alone is written
+//! four different ways, a field set to `undefined` disappears, and `group` puts `change` ahead of
+//! `seq`/`ts`/`raw` where every other kind puts them first. A derived struct per kind would have to
+//! be a struct per branch, with the ordering claim far from the branch that makes it. So a
+//! classifier writes its fields in the same sequence its counterpart lists them, and the two can be
+//! read side by side.
 //!
-//! So a classifier writes its fields in the same sequence its TS twin lists them, and the two can
-//! be read side by side. The buffer is reused across events; nothing here allocates per line.
+//! [`Payload`] is those same writes recorded as data: the kind as a discriminant, each field as a
+//! `(Key, Slot)` pair in write order. The fold reads it; re-parsing the NDJSON string back into a
+//! `serde_json::Value` cost 9.6% of a whole fold. The string is still written because it is the
+//! parser oracle's byte-identity artifact.
 //!
-//! ── THE TYPED HALF (JOS-505) ───────────────────────────────────────────────────────────────────
+//! It allocates nothing per event: every string a field carries goes into one reused arena and is
+//! referred to by an `(offset, length)` pair, and every side table is a reused `Vec` cleared by
+//! [`Ev::begin`].
 //!
-//! [`Payload`] is the SAME writes, recorded as data instead of as text: the kind as an enum
-//! discriminant, each field as a `(Key, Slot)` pair in the order it was written. It exists because
-//! the fold used to reach its fields by parsing the NDJSON string back into a `serde_json::Value`
-//! and walking that map by string key — measured at 9.6% of a whole fold for the re-parse alone,
-//! with the consumers that walk the result another 69% (JOS-504's stage baseline). The payload is
-//! what those consumers read now; the string is still written, because it is the parser oracle's
-//! byte-identity artifact and the golden format.
+//! Absent is not null, and the writer is where that distinction is made. `s_opt`/`i_opt` push no
+//! entry at all; `s_or_null`/`i_or_null` push [`Slot::Null`]. A reader that collapses the two must
+//! be able to tell them apart first — `buffFade.target` absent means self, which is a different
+//! claim from a `target` of nothing.
 //!
-//! IT ALLOCATES NOTHING PER EVENT, which is the whole point and is why it is written the way it is
-//! rather than as a `Vec<(String, String)>`. Every string a field carries is appended to ONE reused
-//! `arena: String` and referred to by a `(offset, length)` pair; the field list, the string-array
-//! side table, the candidate side table and the coin side table are all reused `Vec`s cleared by
-//! [`Ev::begin`]. After the first few lines of a log, a parse touches the allocator zero times.
-//!
-//! ABSENT IS NOT NULL, AND THE WRITER IS WHERE THAT DISTINCTION IS MADE. `s_opt`/`i_opt` are the
-//! fields the TS wrote as `undefined`: `JSON.stringify` omits the key, and here they push NO entry
-//! at all. `s_or_null`/`i_or_null` are the fields whose absence the TS spells `null`: the key is
-//! present, and here the entry is [`Slot::Null`]. A reader that collapses the two (the fold's
-//! `Event::str` does, deliberately) must be able to tell them apart first — `buffFade.target`
-//! absent means SELF, and that is a different claim from a `target` of nothing.
-//!
-//! KEYS ARE FIRST-WINS ON LOOKUP, and no classifier writes a key twice. That is not a hope: a
-//! repeated key would print twice in the NDJSON, `JSON.stringify` over a TS object literal cannot
-//! produce a duplicate key, and the six-slice byte-identity oracle compares against exactly that
-//! output. [`Ev::note`] carries a `debug_assert` so a future classifier that repeats one fails a
-//! debug test rather than shifting a lookup silently.
+//! Keys are first-wins on lookup, and no classifier writes a key twice: a repeated key would print
+//! twice in the NDJSON, which `JSON.stringify` over an object literal cannot produce. [`Ev::note`]
+//! carries a `debug_assert` so a classifier that repeats one fails a debug test rather than
+//! shifting a lookup silently.
 
 use crate::jsstr::{write_js_number, write_json_string};
 
-/// EVERY EVENT KIND, as a discriminant — the `kind` field, without the string.
+/// Every event kind, as a discriminant. A closed enum rather than an interned string because the
+/// fold's dispatch floor is this comparison: twenty-one consumers ask "is this mine" about every
+/// event, which cost ~940 ms of a 2.5M-event fold as a map lookup and a string compare. Every
+/// variant's [`Kind::as_str`] is the exact text the parser writes.
 ///
-/// It is a closed enum rather than an interned string because the fold's dispatch floor IS this
-/// comparison: twenty-one consumers ask "is this mine" about every event, and JOS-504 measured that
-/// question alone at ~940 ms of a 2.5M-event fold when the answer was a map lookup and a string
-/// compare. Every variant's [`Kind::as_str`] is the exact text the parser writes.
-///
-/// THE LAST THREE ARE THE FOLD'S OWN. `epoch`, `offlineGap` and `buffExpired` are synthesized by
-/// the fold rather than by any classifier here; they are named in this enum because the fold's
-/// event type dispatches on it and a derived event must answer the same question a primary does.
-/// [`Kind::Other`] is what an unrecognized string becomes — reachable only from a hand-built test
-/// fixture, never from a parse.
+/// The last three are synthesized by the fold rather than by any classifier here, and are named
+/// here because a derived event must answer the same question a primary does. [`Kind::Other`] is
+/// what an unrecognized string becomes — reachable only from a hand-built fixture, never a parse.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Kind {
     AaActivate,
@@ -85,6 +67,7 @@ pub enum Kind {
     Heal,
     HealUnstated,
     IllusionFade,
+    InstanceCreate,
     InvocationChange,
     ItemActivate,
     ItemMerge,
@@ -118,7 +101,7 @@ pub enum Kind {
     Uncharm,
     Unknown,
     Zone,
-    // ── the fold's own, never written by a classifier ────────────────────────────────────────
+    // The fold's own, never written by a classifier.
     Epoch,
     OfflineGap,
     BuffExpired,
@@ -161,6 +144,7 @@ impl Kind {
             Kind::Heal => "heal",
             Kind::HealUnstated => "healUnstated",
             Kind::IllusionFade => "illusionFade",
+            Kind::InstanceCreate => "instanceCreate",
             Kind::InvocationChange => "invocationChange",
             Kind::ItemActivate => "itemActivate",
             Kind::ItemMerge => "itemMerge",
@@ -205,8 +189,8 @@ impl Kind {
     /// which a parse cannot produce, so it only ever describes a hand-built value.
     #[must_use]
     pub fn parse(s: &str) -> Kind {
-        // Written as a match on the string rather than a map so that a call with a literal
-        // argument folds away entirely at compile time.
+        // A match on the string, not a map: a call with a literal argument folds away at compile
+        // time.
         match s {
             "aaActivate" => Kind::AaActivate,
             "aaGain" => Kind::AaGain,
@@ -235,6 +219,7 @@ impl Kind {
             "heal" => Kind::Heal,
             "healUnstated" => Kind::HealUnstated,
             "illusionFade" => Kind::IllusionFade,
+            "instanceCreate" => Kind::InstanceCreate,
             "invocationChange" => Kind::InvocationChange,
             "itemActivate" => Kind::ItemActivate,
             "itemMerge" => Kind::ItemMerge,
@@ -277,7 +262,7 @@ impl Kind {
 
     /// Every kind this build knows, for the round-trip test. `Other` is deliberately absent: it is
     /// the answer to an unknown string, not a kind anything writes.
-    pub const ALL: [Kind; 62] = [
+    pub const ALL: [Kind; 63] = [
         Kind::AaActivate,
         Kind::AaGain,
         Kind::AaPotion,
@@ -305,6 +290,7 @@ impl Kind {
         Kind::Heal,
         Kind::HealUnstated,
         Kind::IllusionFade,
+        Kind::InstanceCreate,
         Kind::InvocationChange,
         Kind::ItemActivate,
         Kind::ItemMerge,
@@ -343,16 +329,11 @@ impl Kind {
     ];
 }
 
-/// EVERY FIELD NAME ANY EVENT CAN CARRY, as a discriminant.
+/// Every field name any event can carry, as a discriminant.
 ///
-/// The list is CLOSED and that is load-bearing in both directions. Writing is closed by
-/// construction: [`Ev`]'s methods take a `Key`, so a classifier cannot invent a field name. Reading
-/// is closed by [`Key::parse`] answering `None`, which every reader treats as ABSENT — the same
-/// answer a `serde_json::Map` gave for a key nobody wrote, and the reason a user-authored alert
-/// definition naming a field that does not exist behaves exactly as it did before.
-///
-/// The last three are the fold's own derived fields (`offlineGap`'s span and its camp pairing);
-/// everything else is written by a classifier in `parse/`.
+/// The list is closed in both directions. Writing is closed by construction, since [`Ev`]'s methods
+/// take a `Key`. Reading is closed by [`Key::parse`] answering `None`, which every reader treats as
+/// absent — so a user-authored alert naming a field that does not exist still matches nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
     Ability,
@@ -389,6 +370,7 @@ pub enum Key {
     Healer,
     Illusion,
     Incoming,
+    Instance,
     Invocation,
     Item,
     Killer,
@@ -406,6 +388,7 @@ pub enum Key {
     Party,
     Pct,
     Pet,
+    Player,
     Poison,
     Price,
     Race,
@@ -478,6 +461,7 @@ impl Key {
             Key::Healer => "healer",
             Key::Illusion => "illusion",
             Key::Incoming => "incoming",
+            Key::Instance => "instance",
             Key::Invocation => "invocation",
             Key::Item => "item",
             Key::Killer => "killer",
@@ -495,6 +479,7 @@ impl Key {
             Key::Party => "party",
             Key::Pct => "pct",
             Key::Pet => "pet",
+            Key::Player => "player",
             Key::Poison => "poison",
             Key::Price => "price",
             Key::Race => "race",
@@ -528,11 +513,8 @@ impl Key {
         }
     }
 
-    /// The discriminant for a field-name string, or `None` for a name no event carries.
-    ///
-    /// `None` MEANS ABSENT, and that is the whole contract: an alert definition may name any field
-    /// it likes, and one naming a field the parser never writes matched nothing before this type
-    /// existed and matches nothing now.
+    /// The discriminant for a field-name string, or `None` for a name no event carries. `None`
+    /// means absent.
     #[must_use]
     pub fn parse(s: &str) -> Option<Key> {
         // A match on the string, not a map — a call site passing a literal folds to a constant.
@@ -571,6 +553,7 @@ impl Key {
             "healer" => Key::Healer,
             "illusion" => Key::Illusion,
             "incoming" => Key::Incoming,
+            "instance" => Key::Instance,
             "invocation" => Key::Invocation,
             "item" => Key::Item,
             "killer" => Key::Killer,
@@ -588,6 +571,7 @@ impl Key {
             "party" => Key::Party,
             "pct" => Key::Pct,
             "pet" => Key::Pet,
+            "player" => Key::Player,
             "poison" => Key::Poison,
             "price" => Key::Price,
             "race" => Key::Race,
@@ -623,7 +607,7 @@ impl Key {
     }
 
     /// Every key, for the round-trip test.
-    pub const ALL: [Key; 81] = [
+    pub const ALL: [Key; 83] = [
         Key::Ability,
         Key::Action,
         Key::Amount,
@@ -658,6 +642,7 @@ impl Key {
         Key::Healer,
         Key::Illusion,
         Key::Incoming,
+        Key::Instance,
         Key::Invocation,
         Key::Item,
         Key::Killer,
@@ -675,6 +660,7 @@ impl Key {
         Key::Party,
         Key::Pct,
         Key::Pet,
+        Key::Player,
         Key::Poison,
         Key::Price,
         Key::Race,
@@ -708,10 +694,10 @@ impl Key {
     ];
 }
 
-/// ONE FIELD'S VALUE, without the string that names it.
+/// One field's value, without the string that names it.
 ///
-/// `Copy`, 16 bytes, and every string-shaped variant is a RANGE rather than a pointer: text lives
-/// in [`Payload`]'s arena, lists live in its side tables. That is what makes a whole field list a
+/// `Copy`, 16 bytes, and every string-shaped variant is a range rather than a pointer: text lives
+/// in [`Payload`]'s arena, lists in its side tables. That is what makes a whole field list a
 /// contiguous scan of one or two cache lines instead of a walk over a heap-allocated map.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Slot {
@@ -723,7 +709,7 @@ pub enum Slot {
     Int(i64),
     Float(f64),
     Bool(bool),
-    /// The field the TS wrote as an explicit `null` — present, and explicitly nothing.
+    /// A field written as an explicit `null` — present, and explicitly nothing.
     Null,
     /// A range into [`Payload`]'s string-array table.
     Strs {
@@ -751,9 +737,9 @@ pub struct CandSlot {
     pub illusion: bool,
 }
 
-/// ONE EVENT, TYPED — the same writes [`Ev`] serialized, kept as data.
+/// One event, typed: the same writes [`Ev`] serialized, kept as data.
 ///
-/// Reused across events: [`Ev::begin`] clears it and nothing here allocates once the buffers have
+/// Reused across events — [`Ev::begin`] clears it and nothing here allocates once the buffers have
 /// reached their working size.
 #[derive(Clone, Debug, Default)]
 pub struct Payload {
@@ -790,13 +776,12 @@ impl Payload {
         self.text(self.raw)
     }
 
-    /// HOW MANY FIELDS WERE WRITTEN BEFORE THE ENVELOPE — 0 for every kind but `group`, which puts
-    /// `change` ahead of `seq`/`ts`/`raw`.
+    /// How many fields were written before the envelope: 0 for every kind but `group`.
     ///
-    /// It is recorded because the envelope is stored OUT of the field list (a dedicated slot each,
-    /// because `seq`/`ts`/`raw` are read on every event by every consumer) and reconstructing the
-    /// writer's key order later would otherwise be impossible. Nothing reads it today; a future
-    /// ticket that stops writing the NDJSON eagerly needs exactly this and nothing else.
+    /// Recorded because the envelope is stored out of the field list — `seq`/`ts`/`raw` get a
+    /// dedicated slot each, being read on every event — so the writer's key order would otherwise
+    /// be unrecoverable. Nothing reads it today; anything that stops writing the NDJSON eagerly
+    /// needs exactly this.
     #[must_use]
     pub fn envelope_after(&self) -> usize {
         self.envelope_after as usize
@@ -817,10 +802,9 @@ impl Payload {
 
     /// The slot a key holds, or `None` when the writer never wrote it.
     ///
-    /// A FORWARD LINEAR SCAN, and that is the fast answer rather than the lazy one: an event
-    /// carries a handful of fields, they are contiguous and 16 bytes wide, and the ones read
-    /// hottest (`attacker`, `target`, `amount`) are written first. First-wins is exact because no
-    /// classifier writes a key twice — see this file's header.
+    /// A forward linear scan, which is the fast answer rather than the lazy one: an event carries a
+    /// handful of fields, they are contiguous and 16 bytes wide, and the hottest are written first.
+    /// First-wins is exact because no classifier writes a key twice.
     #[must_use]
     pub fn slot(&self, key: Key) -> Option<Slot> {
         self.fields.iter().find(|(k, _)| *k == key).map(|(_, s)| *s)
@@ -838,9 +822,8 @@ impl Payload {
     pub fn int(&self, key: Key) -> Option<i64> {
         match self.slot(key)? {
             Slot::Int(v) => Some(v),
-            // `as_i64` on a JSON number is what this replaces, and it answered for an integral
-            // float too. No field is written both ways, but the coercion is kept rather than
-            // narrowed so a reader cannot tell the two representations apart.
+            // The `serde_json` reader this replaces answered for an integral float too. No field is
+            // written both ways; the coercion is kept so a reader cannot tell them apart.
             Slot::Float(v) if v.fract() == 0.0 => Some(v as i64),
             _ => None,
         }
@@ -863,7 +846,7 @@ impl Payload {
         }
     }
 
-    /// A string-array field — `selfWho.classes`, `buffWearOff.candidates`, `damage.modifiers`.
+    /// A string-array field.
     #[must_use]
     pub fn strs(&self, key: Key) -> Option<impl Iterator<Item = &str>> {
         let Slot::Strs { at, len } = self.slot(key)? else {
@@ -877,7 +860,7 @@ impl Payload {
         )
     }
 
-    /// The `candidates` list in its OBJECT shape — `{name, durationMs}` or
+    /// The `candidates` list in its object shape: `{name, durationMs}` or
     /// `{name, durationMs, illusion}`.
     #[must_use]
     pub fn cands(&self, key: Key) -> Option<impl Iterator<Item = (&str, Option<i64>, bool)>> {
@@ -892,8 +875,7 @@ impl Payload {
         )
     }
 
-    /// A coin object — `coin.coins`, `purchase.price`. The pairs are in the order the denominations
-    /// appeared in the clause.
+    /// A coin object. The pairs are in the order the denominations appeared in the clause.
     #[must_use]
     pub fn coins(&self, key: Key) -> Option<&[(&'static str, i64)]> {
         let Slot::Coins { at, len } = self.slot(key)? else {
@@ -951,8 +933,8 @@ impl Ev {
         }
     }
 
-    /// Open a fresh object and write its `kind` — every kind but `group` follows it with the
-    /// envelope, so `begin` deliberately does NOT write one (see `envelope`).
+    /// Open a fresh object and write its `kind`. `begin` deliberately does not write the envelope,
+    /// because `group` puts a field ahead of it.
     pub fn begin(&mut self, kind: Kind) {
         self.buf.clear();
         self.buf.push('{');
@@ -962,8 +944,8 @@ impl Ev {
         write_json_string(&mut self.buf, kind.as_str());
     }
 
-    /// `seq`, `ts`, `raw` — the three `LogEventBase` fields, in the order the TS literals spread
-    /// them. Called AFTER whatever a kind puts ahead of them (`group.change` is the only one).
+    /// `seq`, `ts`, `raw` — the three base fields, in write order. Called after whatever a kind
+    /// puts ahead of them (`group.change` is the only one).
     pub fn envelope(&mut self, seq: i64, ts: i64, raw: &str) {
         self.p.envelope_after = u8::try_from(self.p.fields.len()).unwrap_or(u8::MAX);
         self.json_key(Key::Seq);
@@ -983,12 +965,10 @@ impl Ev {
         &self.buf
     }
 
-    /// Close the object and hand back BOTH halves — the NDJSON line and the typed payload.
+    /// Close the object and hand back both halves — the NDJSON line and the typed payload.
     ///
-    /// One method rather than two calls because `finish` takes `&mut self` and a caller holding its
-    /// answer could not then ask for the payload. The production ingest seam wants both at once:
-    /// the string is what a golden compares and what an NDJSON mode emits, the payload is what the
-    /// fold reads.
+    /// One method rather than two calls because `finish` takes `&mut self`, so a caller holding its
+    /// answer could not then ask for the payload.
     pub fn done(&mut self) -> (&str, &Payload) {
         self.buf.push('}');
         (&self.buf, &self.p)
@@ -1010,8 +990,8 @@ impl Ev {
         self.buf.push_str("\":");
     }
 
-    /// Record one typed field. The `debug_assert` is the first-wins claim in this file's header,
-    /// enforced where it would be broken rather than where it is relied on.
+    /// Record one typed field. The `debug_assert` enforces the header's first-wins claim where it
+    /// would be broken rather than where it is relied on.
     fn note(&mut self, k: Key, slot: Slot) {
         debug_assert!(
             !self.p.fields.iter().any(|(x, _)| *x == k),
@@ -1029,8 +1009,8 @@ impl Ev {
         self.note(k, Slot::Str { at: r.0, len: r.1 });
     }
 
-    /// A field JS wrote as `undefined` when absent — `JSON.stringify` omits the key entirely, and
-    /// the payload records nothing.
+    /// A field written as `undefined` when absent: the key is omitted entirely and the payload
+    /// records nothing.
     pub fn s_opt(&mut self, k: Key, v: Option<&str>) {
         if let Some(v) = v {
             self.s(k, v);
@@ -1049,8 +1029,7 @@ impl Ev {
         }
     }
 
-    /// A field whose ABSENCE is spelled `null` in the TS (`durationMs`, `attacker` on a
-    /// caster-less DoT) — present, and explicitly nothing.
+    /// A field whose absence is spelled `null` — present, and explicitly nothing.
     pub fn i_or_null(&mut self, k: Key, v: Option<i64>) {
         match v {
             Some(v) => self.i(k, v),
@@ -1107,7 +1086,7 @@ impl Ev {
         );
     }
 
-    /// `candidates: cands.map((s) => ({ name, durationMs }))` — the charm/cc shape.
+    /// The charm/cc candidate shape: `{name, durationMs}`.
     pub fn cands_nd(&mut self, k: Key, v: impl Iterator<Item = (String, Option<i64>)>) {
         self.json_key(k);
         self.buf.push('[');
@@ -1137,7 +1116,7 @@ impl Ev {
         self.note(k, Slot::Cands { at, len: n });
     }
 
-    /// `candidates: cands.map((s) => ({ name, durationMs, illusion }))` — the buffApply shape.
+    /// The buffApply candidate shape: `{name, durationMs, illusion}`.
     pub fn cands_ndi(&mut self, k: Key, v: impl Iterator<Item = (String, Option<i64>, bool)>) {
         self.json_key(k);
         self.buf.push('[');
@@ -1169,8 +1148,8 @@ impl Ev {
         self.note(k, Slot::Cands { at, len: n });
     }
 
-    /// `coins` / `price` — an object whose KEY ORDER is the order the denominations appeared in the
-    /// clause (`parseCoins` assigns as it scans), which is why it is a slice of pairs and not a map.
+    /// A coin object whose key order is the order the denominations appeared in the clause, which
+    /// is why it is a slice of pairs and not a map.
     pub fn coins(&mut self, k: Key, v: &[(&'static str, i64)]) {
         self.json_key(k);
         self.buf.push('{');
@@ -1195,9 +1174,8 @@ impl Ev {
     }
 }
 
-/// `i64` to decimal without a heap allocation. `i64::to_string` allocates a `String` per number and
-/// this writer emits three of them (`seq`, `ts`, and usually one more) on every line of a 209 MB
-/// log — the one allocation this file was still paying per event.
+/// `i64` to decimal without a heap allocation. `to_string` allocates per number and this writer
+/// emits three per line — the one allocation this file was still paying per event.
 struct Itoa {
     buf: [u8; 20],
     at: usize,
@@ -1255,8 +1233,8 @@ mod tests {
         assert_eq!(Key::parse("nothing-writes-this"), None);
     }
 
-    /// The list is a hand-written duplicate of the enum, so the one thing it can get wrong is
-    /// missing a variant — which would make a real field read as absent forever.
+    /// The lists are hand-written duplicates of the enums, so the one thing they can get wrong is
+    /// a missing variant — which would make a real field read as absent forever.
     #[test]
     fn the_key_and_kind_tables_are_complete() {
         let mut names: Vec<&str> = Key::ALL.iter().map(|k| k.as_str()).collect();
@@ -1292,7 +1270,7 @@ mod tests {
         assert_eq!(p.str(Key::Attacker), Some("Primitive"));
         assert_eq!(p.int(Key::Amount), Some(231));
         assert_eq!(p.bool(Key::Crit), Some(false));
-        // An explicit null is PRESENT and holds no string; an omitted key is not there at all.
+        // An explicit null is present and holds no string; an omitted key is not there at all.
         assert_eq!(p.slot(Key::Spell), Some(Slot::Null));
         assert_eq!(p.str(Key::Spell), None);
         assert_eq!(p.slot(Key::Modifier), None);
@@ -1302,7 +1280,7 @@ mod tests {
     }
 
     /// `group` is the one kind that writes a field ahead of the envelope, and the payload has to be
-    /// able to say so or a later ticket could not rebuild the line from it.
+    /// able to say so or the line could not be rebuilt from it.
     #[test]
     fn the_group_kind_records_its_pre_envelope_field() {
         let mut ev = Ev::new();

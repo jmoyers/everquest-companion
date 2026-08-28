@@ -105,8 +105,9 @@ function runSpec(spec: string): Promise<Result> {
  * that engine in DEBUG, so a full sweep meant up to four unoptimised engines folding at once. It
  * carried its own instruction: *"THE REAL FIX IS A RELEASE ENGINE FOR THE SUITE. Delete this list
  * the day it is made."* JOS-501 made it — `buildEngineIfStale` builds `--release`, and the harness
- * hands the app that binary outright (`EQ_ENGINE_BIN`) so the resolver's debug-first order cannot
- * quietly give a spec the other one back.
+ * hands the app that binary outright (`EQ_ENGINE_BIN`) so a spec cannot quietly be given the other
+ * one back. (The debug-first order that made the hand-over load-bearing is itself gone — JOS-520
+ * made debug an explicit per-launch opt-in the harness never sets.)
  *
  * THE MEASUREMENT THAT EARNED THE DELETION. `bosses-week` — the only entry, and the worst case,
  * because it launches TWICE on the owner's REAL INSTALL and each launch waits on a whole-log fold:

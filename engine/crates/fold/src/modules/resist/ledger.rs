@@ -1,94 +1,64 @@
-//! THE RESIST LEDGER: per-source buckets of POOLED observations, and the key they pool by
-//! (`src/main/resist/ledger.ts`, `src/shared/resistDecay.ts`).
+//! The resist ledger: per-source buckets of pooled observations, and the key they pool by.
 //!
-//! ── A RE-FOLD REPLACES A SOURCE'S BUCKET, IT NEVER ADDS TO IT (JOS-231) ─────────────────────────
+//! A re-fold replaces a source's bucket, it never adds to it. The app re-reads the whole log at
+//! startup, so idempotence has to be structural rather than a discipline the caller remembers:
+//! `begin_source(key)` discards the bucket before its log is folded again. A bucket for a character
+//! you are not folding is knowledge nothing can re-derive, so it survives untouched.
 //!
-//! Learned the expensive way on the message overlay: seeding a fold from its own persisted output
-//! doubled every count on every cold launch. The app re-reads the whole log at startup, so
-//! idempotence cannot be a discipline the caller remembers — it has to be structural.
-//! `begin_source(key)` DISCARDS the bucket before its log is folded again, and a bucket for a
-//! character you are not folding is knowledge nothing can re-derive, so it survives untouched.
+//! A bucket holds counts, never verdicts. No R, no interval, no "immune" — a stored verdict is a
+//! second opinion waiting to disagree with the derived one when a patch moves a resist adjust.
 //!
-//! ── AND A BUCKET HOLDS COUNTS, NEVER VERDICTS ──────────────────────────────────────────────────
+//! The pooling key is every term of `rc` except R itself, plus the week. Rank and invocation are
+//! resist adjust (-15 per rank; -150 for overchannel plus -15 per non-hybrid caster class), so
+//! casts that rolled against different numbers may not be pooled. The class count is keyed on only
+//! when overchannel was up, since that is the only time it moves `rc`. The week is about age, not
+//! `rc`: a row pools counts, so one spanning March and this evening would have no honest weight.
+//! Weekly because a 21-day half-life cannot use a finer resolution.
 //!
-//! There is no R, no interval and no "immune" anywhere in this file. A stored verdict is a second
-//! opinion waiting to disagree with the derived one, and every one of them would have to be
-//! recomputed when a patch moves a spell's resist adjust.
-//!
-//! ── THE POOLING KEY IS EVERY TERM OF `rc` EXCEPT R ITSELF ───────────────────────────────────────
-//!
-//! `row_key` is what the golden's two integers are counted over, so every term in it is
-//! load-bearing to the bar — a single wrong `mobLevel` or ISO week splits or merges a row and the
-//! count moves. Three of its terms carry an argument rather than being obvious:
-//!
-//!   THE RANK AND THE INVOCATION ARE IN IT (JOS-387), because both are resist adjust: a rank is -15
-//!   each and overchannel is -150 plus -15 per non-hybrid caster class, so two casts of the same
-//!   spell at different ranks — or one in overchannel and one out of it — rolled against different
-//!   numbers and may not be pooled.
-//!
-//!   THE CLASS COUNT IS IN IT ONLY WHERE IT MATTERS. It contributes to `rc` only when overchannel
-//!   was up, so keying on it unconditionally would split every ordinary row on a value that changes
-//!   nothing about them. A size decision made once, here, rather than a special case scattered
-//!   through the estimator.
-//!
-//!   THE WEEK IS IN IT (JOS-397), and it is the one term that is not about `rc` at all. It is about
-//!   AGE: a row POOLS counts, so a row that spanned March and this evening would have no age and no
-//!   honest weight to give. Weekly rather than daily because a 21-day half-life cannot use a finer
-//!   resolution and a day bucket would multiply the ledger by seven to say the same thing.
-//!
-//! ── AND THE WEEK KEY IS COMPUTED IN UTC, WHICH IS WHY `--tz` CANNOT MOVE IT ─────────────────────
-//!
-//! `isoWeekKey` is arithmetic on the epoch instant: `weekStart` divides by the week, and the year
-//! comes from `getUTCFullYear` of the week's Thursday. The zone reaches this fold only through the
-//! TIMESTAMP the parser resolved (`eqlog::Clock`), never through the week arithmetic itself — so
-//! the port needs no local-time machinery, and a golden recorded under one zone re-checks under the
-//! same one for the same reason the event stream does.
-//!
-//! ISO'S OWN YEAR RULE is ported rather than approximated: the week belongs to the year containing
-//! its THURSDAY, which is why the last days of December can read `2027-W01`. The string is a ledger
-//! KEY — compared for equality across builds — and a numbering that drifted between two readings
-//! would silently re-pool a cell.
+//! The week key is UTC arithmetic on the epoch instant, so `--tz` cannot move it — the zone reaches
+//! this fold only through the timestamp the parser resolved. ISO's year rule is ported rather than
+//! approximated (the week belongs to the year containing its Thursday, so late December can read
+//! `2027-W01`): the string is a key compared across builds, and drifting numbering would re-pool a
+//! cell.
 
 use crate::jsmap::JsMap;
 use std::collections::HashMap;
 
-/// `shared/resistTypes.ts MAX_DISTINCT_DAMAGE_VALUES`.
 pub const MAX_DISTINCT_DAMAGE_VALUES: usize = 32;
 
 const DAY_MS: i64 = 86_400_000;
 const WEEK_MS: i64 = 7 * DAY_MS;
-/// 1970-01-01 was a THURSDAY, so the Monday that opens epoch week zero is three days earlier. This
+/// 1970-01-01 was a Thursday, so the Monday opening epoch week zero is three days earlier. This
 /// offset is the whole of the ISO week arithmetic; everything else is division.
 const EPOCH_MONDAY: i64 = -3 * DAY_MS;
 
-/// `resistDecay.ts weekStart` — Monday 00:00 UTC of the week containing `ts`. `Math.floor` on a
-/// negative quotient is `div_euclid`, not truncation, and the two part company before 1970.
+/// Monday 00:00 UTC of the week containing `ts`. `div_euclid` rather than truncation, which is what
+/// the app's `Math.floor` does; the two part company before 1970.
 pub fn week_start(ts: i64) -> i64 {
     (ts - EPOCH_MONDAY).div_euclid(WEEK_MS) * WEEK_MS + EPOCH_MONDAY
 }
 
-/// `resistDecay.ts isoWeekKey` — the ISO-8601 week the instant falls in, as `2026-W33`.
+/// The ISO-8601 week the instant falls in, as `2026-W33`.
 pub fn iso_week_key(ts: i64) -> String {
     let monday = week_start(ts);
-    // `new Date(monday + 3 days).getUTCFullYear()`.
+    // The year of the week's Thursday, which is ISO's own rule.
     let year = civil_year_of(monday + 3 * DAY_MS);
     let week = round_half_up((monday - week_start(jan_4_utc(year))) as f64 / WEEK_MS as f64) + 1;
     format!("{year}-W{week:02}")
 }
 
-/// `Math.round` — half goes UP (toward +infinity), unlike Rust's `f64::round`, which goes away from
-/// zero. The two only differ on a negative half, which this arithmetic cannot produce; spelled out
-/// anyway because the difference is exactly the kind that hides for a year.
+/// JS `Math.round`: half goes up, unlike Rust's `f64::round`, which goes away from zero. They only
+/// differ on a negative half, which this arithmetic cannot produce.
 fn round_half_up(v: f64) -> i64 {
     (v + 0.5).floor() as i64
 }
 
-/// `Date.UTC(year, 0, 4)` — January 4th, the day ISO guarantees is in week 1.
+/// January 4th, the day ISO guarantees is in week 1.
 fn jan_4_utc(year: i64) -> i64 {
     days_from_civil(year, 1, 4) * DAY_MS
 }
 
-/// `getUTCFullYear` — the proleptic Gregorian year an epoch instant falls in.
+/// The proleptic Gregorian year an epoch instant falls in.
 fn civil_year_of(ms: i64) -> i64 {
     let days = ms.div_euclid(DAY_MS);
     // Howard Hinnant's `civil_from_days`, reduced to the year it answers.
@@ -117,9 +87,8 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// `resistDecay.ts laterWeek` — a STRING compare, and it is exact rather than approximate:
-/// `YYYY-Www` is zero-padded and fixed-width, so its lexicographic order IS its chronological order,
-/// ISO's year-boundary rule included (`2027-W01` sorts after `2026-W52`).
+/// A string compare, and it is exact: `YYYY-Www` is zero-padded and fixed-width, so lexicographic
+/// order is chronological order, ISO's year-boundary rule included.
 pub fn later_week(a: Option<&str>, b: Option<&str>) -> Option<String> {
     match (a, b) {
         (None, b) => b.map(str::to_string),
@@ -128,7 +97,6 @@ pub fn later_week(a: Option<&str>, b: Option<&str>) -> Option<String> {
     }
 }
 
-/// `ResistCasterKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CasterKind {
     SelfCast,
@@ -146,7 +114,6 @@ impl CasterKind {
     }
 }
 
-/// `ResistFamily`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     Cast,
@@ -162,8 +129,8 @@ impl Family {
     }
 }
 
-/// `ledger.ts RowSpec` — everything a row is keyed BY, plus the two things that ride along for the
-/// UI and are deliberately NOT in the key (`zone`, and the catalog range beside the midpoint).
+/// Everything a row is keyed by, plus the two things that ride along for the UI and are
+/// deliberately not in the key: `zone`, and the catalog range beside the midpoint.
 #[derive(Debug, Clone)]
 pub struct RowSpec {
     pub mob_key: String,
@@ -182,11 +149,10 @@ pub struct RowSpec {
     pub week: Option<String>,
 }
 
-/// `ledger.ts rowKey`, term for term and separator for separator.
+/// The pooling key, term for term and separator for separator with the app's `rowKey`.
 ///
-/// The separator is a PRINTABLE byte, deliberately: AGENTS.md's rule about raw control bytes in
-/// source exists because one makes git classify the file as binary and blame, diff and grep go
-/// dark. No EQ mob or spell name has ever contained a pipe, so it costs nothing.
+/// The separator is a printable byte on purpose: a raw control byte makes git classify the file as
+/// binary. No EQ mob or spell name contains a pipe, so it costs nothing.
 pub fn row_key(row: &RowSpec) -> String {
     let num = |v: Option<i64>| v.map(|n| n.to_string()).unwrap_or_default();
     let oc = match row.overchannel {
@@ -215,13 +181,13 @@ pub fn row_key(row: &RowSpec) -> String {
     .join("|")
 }
 
-/// `ledger.ts ResistRow` — the spec plus what accretes onto it.
+/// The spec plus what accretes onto it.
 #[derive(Debug, Clone)]
 pub struct ResistRow {
     pub spec: RowSpec,
     pub resist: i64,
     pub land: i64,
-    /// The damage histogram, keyed by the number the line printed (`String(amount)`).
+    /// The damage histogram, keyed by the decimal number the line printed.
     pub dmg: HashMap<String, i64>,
     /// The row gave up on the histogram — see `add_damage`.
     pub variable: bool,
@@ -229,9 +195,8 @@ pub struct ResistRow {
     pub last_ts: i64,
 }
 
-/// One bucket, accreting. A `JsMap` because `rows()` publishes the map in a stated order over
-/// there; here nothing but the COUNT of it is published, and the insertion order is kept anyway so
-/// that a later ticket which does publish the rows finds the order already right.
+/// One bucket, accreting. A `JsMap` so insertion order is kept: only the count is published today,
+/// but the app publishes the rows in that order and this must be able to.
 #[derive(Debug, Default)]
 pub struct ResistBucket {
     by_key: JsMap<ResistRow>,
@@ -251,10 +216,9 @@ impl ResistBucket {
         self.by_key.is_empty()
     }
 
-    /// THE NEWEST WEEK THIS BUCKET HOLDS, maintained as rows arrive rather than scanned for: the
-    /// read side asks for it on every card draw (it is the instant every row's age is measured
-    /// against), and the alternative is a pass over four thousand rows per draw to re-derive a
-    /// maximum the writer already knew.
+    /// The newest week this bucket holds — the instant every row's age is measured against.
+    /// Maintained as rows arrive rather than scanned for, because the read side asks on every card
+    /// draw and the scan is a pass over thousands of rows to re-derive what the writer knew.
     pub fn newest_week(&self) -> Option<&str> {
         self.newest.as_deref()
     }
@@ -263,15 +227,9 @@ impl ResistBucket {
         self.by_key.values()
     }
 
-    /// THE SERIALIZATION ORDER — `ResistBucket.rows()` over there, which sorts by the pooling key
-    /// before it hands the array out, and says why: *"sorted for a byte-stable serialization: a
-    /// re-run on unchanged input must diff to nothing."*
-    ///
-    /// It is a SECOND reader rather than a change to [`ResistBucket::rows`] because the two orders
-    /// answer different questions and both are load-bearing. `rows()` is insertion order, which is
-    /// what the fold and the counts walk; this is key order, which is what goes on disk and what
-    /// the write's coalescing fingerprint is taken over. Sorting the live map would have made every
-    /// insert O(n log n) to buy a property only the writer needs.
+    /// The serialization order: sorted by pooling key so a re-run on unchanged input diffs to
+    /// nothing. A second reader rather than a change to [`ResistBucket::rows`] because insertion
+    /// order is what the fold walks and key order is only what the writer needs.
     #[must_use]
     pub fn rows_in_key_order(&self) -> Vec<&ResistRow> {
         let mut out: Vec<(&str, &ResistRow)> = self.by_key.iter().collect();
@@ -279,23 +237,19 @@ impl ResistBucket {
         out.into_iter().map(|(_, row)| row).collect()
     }
 
-    /// SEED ONE PERSISTED ROW — `ResistBucket.seed`, one row at a time.
-    ///
-    /// Filed under its OWN pooling key, which is what makes a seed idempotent with a fold: a row
-    /// the log is about to re-derive lands on the same key and is replaced rather than added to.
-    /// The newest week moves with it, exactly as `seed` over there moves it, because the read side
-    /// measures every row's age against that maximum and a seeded bucket that under-reported it
-    /// would age its own rows from the wrong instant.
+    /// Seed one persisted row, filed under its own pooling key — which is what makes a seed
+    /// idempotent with a fold: a row the log re-derives lands on the same key and replaces it. The
+    /// newest week moves with it, or a seeded bucket would age its rows from the wrong instant.
     pub fn seed_row(&mut self, row: ResistRow) {
         self.newest = later_week(self.newest.as_deref(), row.spec.week.as_deref());
         self.by_key.insert(row_key(&row.spec), row);
     }
 
-    /// `ResistBucket.row` — get or mint the row this spec pools into, widening its span.
+    /// Get or mint the row this spec pools into, widening its span.
     ///
-    /// A MINTED ROW IS A ROW EVEN IF NOTHING IS THEN COUNTED ON IT, and that is not a quirk to tidy:
-    /// `onSpellDamage` mints the row before `onDotTick` decides the tick is a repeat, so the ledger
-    /// carries all-zero rows and the golden's `rows` integer counts them.
+    /// A minted row is a row even if nothing is then counted on it, and that is not a quirk to
+    /// tidy: damage mints the row before the tick handler decides the tick is a repeat, so the
+    /// ledger carries all-zero rows and the golden's `rows` integer counts them.
     pub fn row(&mut self, spec: RowSpec, ts: i64) -> &mut ResistRow {
         self.newest = later_week(self.newest.as_deref(), spec.week.as_deref());
         let key = row_key(&spec);
@@ -324,15 +278,13 @@ impl ResistBucket {
     }
 }
 
-/// `ResistBucket.addDamage` — record one damage number.
+/// Record one damage number.
 ///
-/// PAST THE CAP THE ROW GIVES UP ON THE HISTOGRAM: a spell whose damage genuinely varies carries no
-/// partial information anyway (the estimator can only read "message or no message" off it), and an
-/// unbounded map is a disk-size bug with a long tail. `variable` says the give-up happened, so a
-/// later reader can tell it from a spell that simply has not been cast much.
+/// Past the cap the row gives up on the histogram: a spell whose damage genuinely varies carries no
+/// partial information anyway, and an unbounded map is a disk-size bug with a long tail.
+/// `variable` says the give-up happened, so a reader can tell it from a rarely-cast spell.
 ///
-/// A free function rather than a method because the caller is already holding the row: over there
-/// the bucket and the row are two references into the same graph, and here the borrow says so.
+/// A free function rather than a method because the caller is already holding the row.
 pub fn add_damage(row: &mut ResistRow, amount: i64) {
     let key = amount.to_string();
     if row.variable {
@@ -351,12 +303,10 @@ pub fn add_damage(row: &mut ResistRow, amount: i64) {
     *row.dmg.entry(key).or_insert(0) += 1;
 }
 
-/// `ResistLedgerStore` — every bucket, keyed by source.
+/// Every bucket, keyed by source.
 ///
-/// WHAT THE BENCH CONSTRUCTS, and therefore what the golden was recorded through: `memorySeam()`
-/// over a private store with NOTHING seeded. The shipped `resistBaseline.json` is not loaded, and
-/// `beginSource` is called exactly once, by `reset()`, with the module's constructed default key
-/// `'log'`. So the ledger these counts are taken over is one bucket wide.
+/// The bench constructs a private store with nothing seeded and one `begin_source` call under the
+/// default key, so the ledger the goldens are counted over is one bucket wide.
 #[derive(Debug, Default)]
 pub struct ResistLedgerStore {
     buckets: JsMap<ResistBucket>,
@@ -367,14 +317,13 @@ impl ResistLedgerStore {
         Self::default()
     }
 
-    /// Discard a source's bucket before its log is folded again. THE idempotence seam.
+    /// Discard a source's bucket before its log is folded again. The idempotence seam.
     pub fn begin_source(&mut self, key: &str) {
         self.buckets.insert(key.to_string(), ResistBucket::new());
     }
 
-    /// EVERY SOURCE KEY, SORTED ASCENDING — `ResistLedgerStore.keys()`, which sorts for the same
-    /// reason `rows()` does: this is the order the file's `sources` array is written in, and a
-    /// stable order is what lets an unchanged ledger fingerprint to the same bytes twice.
+    /// Every source key, ascending: the order the file's `sources` array is written in, so an
+    /// unchanged ledger fingerprints to the same bytes twice.
     #[must_use]
     pub fn source_keys(&self) -> Vec<&str> {
         let mut keys: Vec<&str> = self.buckets.keys().collect();
@@ -382,9 +331,8 @@ impl ResistLedgerStore {
         keys
     }
 
-    /// One bucket, read-only. `None` for a source this store has never held — which is the honest
-    /// answer rather than an empty bucket, because minting one on a READ would make the store grow
-    /// every time somebody asked about a character it has never seen.
+    /// One bucket, read-only. `None` rather than an empty bucket for a source never held, so the
+    /// store does not grow every time somebody asks about a character it has never seen.
     #[must_use]
     pub fn bucket(&self, key: &str) -> Option<&ResistBucket> {
         self.buckets.get(key)
@@ -397,7 +345,7 @@ impl ResistLedgerStore {
         self.buckets.get_mut(key).expect("just inserted")
     }
 
-    /// The newest week ANY bucket holds: the instant every row's age is measured against.
+    /// The newest week any bucket holds: the instant every row's age is measured against.
     pub fn newest_week(&self) -> Option<String> {
         let mut best: Option<String> = None;
         for bucket in self.buckets.values() {
@@ -406,8 +354,8 @@ impl ResistLedgerStore {
         best
     }
 
-    /// `memorySeam().counts()` — the module's whole published surface: how many pooled rows the
-    /// ledger holds, and how many distinct creatures they are about.
+    /// The module's whole published surface: how many pooled rows the ledger holds, and how many
+    /// distinct creatures they are about.
     pub fn counts(&self) -> (usize, usize) {
         let mut rows = 0usize;
         let mut mobs: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -514,7 +462,7 @@ mod tests {
             caster_classes: Some(3),
             week: Some("2026-W34".into()),
         };
-        // The zone and the catalog range ride the row and are NOT in the key.
+        // The zone and the catalog range ride the row and are not in the key.
         assert_eq!(
             row_key(&base),
             "a rat|malosi|cast|self|51|20||0|-||2026-W34"

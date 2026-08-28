@@ -66,7 +66,7 @@
 // for a ranked spell they understate; src/main/modules/observedSpellRanks.ts carries that
 // statement in full, and it stays off the screen (the caveat diet).
 
-import { type JSX, useState } from 'react'
+import { type JSX, memo, useState } from 'react'
 import { Box, Chip, Collapse, Stack, Typography } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { ClassAbbr } from '@shared/classCombo'
@@ -105,7 +105,7 @@ const KIND_COLOR: Record<UnlockRow['kind'], string> = {
  * because that row is drawn at no level and a bare `CLR` would be a fact withheld. A LEVEL row's
  * chips stay bare: the level is stated once, for the whole panel, by the stepper.
  */
-function ClassChips({
+const ClassChips = memo(function ClassChips({
   row,
   resolved
 }: {
@@ -132,7 +132,7 @@ function ClassChips({
       ))}
     </>
   )
-}
+})
 
 /**
  * `yours: III` — the rank of this line the log has watched you reach (JOS-446).
@@ -147,8 +147,13 @@ function ClassChips({
  *
  * EXPORTED for the best-spells readout next door (JOS-445 landed in the same merge window):
  * one chip, one wording, one tooltip — the `outOfEraLabel` arrangement, one component further.
+ *
+ * MEMOIZED (JOS-511 item 3) on the two scalars it takes. It is drawn once per spell row on the
+ * unlock lists AND once per row of the best-spells table, and `observedRankLabel` is a map read per
+ * row: when anything else on either surface moves — a keystroke, a level step, a spell-set push —
+ * the chip now re-renders nowhere.
  */
-export function RankChip({
+export const RankChip = memo(function RankChip({
   name,
   ranks
 }: {
@@ -169,7 +174,7 @@ export function RankChip({
       />
     </Tooltip>
   )
-}
+})
 
 /**
  * `out of era` — the wiki's verdict on a spell's page, as the item card's own label and colour
@@ -302,7 +307,7 @@ function MemorizedNote({ row, sets }: { row: UnlockRow; sets: SpellSetsSnap }): 
  * gem (shared/spellSets.ts rule 1: presence only, never a claim of absence), so a fresh log says
  * nothing here rather than telling a player their bar is empty.
  */
-function RowDetail({
+const RowDetail = memo(function RowDetail({
   row,
   resolved,
   sets
@@ -333,9 +338,26 @@ function RowDetail({
       {memorized}
     </Stack>
   )
-}
+})
 
-function Row({
+/**
+ * ONE ROW, MEMOIZED (JOS-511 item 3, and the sequence in that ticket is the point: the props were
+ * stabilized FIRST, in `NewAtLevelPanel`, or this would be a memo that never hits).
+ *
+ * Every prop it takes is now stable across a render that did not change it: `row` comes out of the
+ * memoized unlock join, `resolved` is one `Set` per combo snapshot, and `sets`/`ranks` are module
+ * snapshots that move only when their module pushes. So a keystroke in the search box, a level
+ * step, a pointer drag on the charts two columns over — none of them re-render a row any more.
+ *
+ * The KEY is untouched (`kind:name`, the ticket's instruction): a memo is about re-render cost,
+ * and changing identity would be about reconciliation, which was never the complaint.
+ *
+ * `ClassChips`, `RankChip` and `RowDetail` are memoized separately because they measure separately:
+ * when this row DOES re-render it is usually because one module pushed, and only the child reading
+ * that module has to follow it — a `ranks` push must reach `RankChip` and has nothing to say to the
+ * class chips or the detail line beside it.
+ */
+const Row = memo(function Row({
   row,
   resolved,
   sets,
@@ -401,7 +423,7 @@ function Row({
       <RowDetail row={row} resolved={resolved} sets={sets} />
     </Box>
   )
-}
+})
 
 /**
  * THE DISCLOSURE (JOS-393) — `+N out of era`, and the rows behind it.

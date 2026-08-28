@@ -135,6 +135,33 @@ export interface EngineLaunchSay {
 /** What a window is told before anything has happened: a launch on its way, nothing to draw. */
 export const ENGINE_LAUNCH_STARTING: EngineLaunchSay = { phase: 'starting', fold: null, fault: null }
 
+/**
+ * DOES THIS PROGRESS FRAME BELONG ON THE BANNER? (JOS-518.)
+ *
+ * TWO REASONS TO REFUSE ONE, AND THEY ARE DEFENCE IN DEPTH RATHER THAN A BELT AND BRACES:
+ *
+ *   1. THE FLAG. The engine's LIVE TAIL emits the same shape as its historical scan and has done
+ *      since the beginning (`ingest.rs`: "a live progress frame is the only wire evidence a live
+ *      line landed"), so a session where somebody is playing produces these forever. `live` is the
+ *      engine saying which loop it was in, and that is the STRUCTURAL refusal: it does not depend on
+ *      this process having got any other piece of state right.
+ *   2. THE PHASE. The bar is only on screen while a historical catch-up is running, so a frame
+ *      arriving in any other phase has no reader.
+ *
+ * WHY BOTH, when either would do on a correct app. The 1.11.0 reports are what this is made of: the
+ * fold wait expired, nothing ever moved the phase off `folding`, and the tail's own frames then kept
+ * the bar alive at 100% with the count climbing for the rest of the session. The phase test alone
+ * was the whole defence and it failed the moment ONE unrelated thing went wrong. A frame that says
+ * it came from the tail is refused whatever this process believes about itself.
+ *
+ * `live !== true` RATHER THAN `!live`, because the field is absent on a scan frame and absent is the
+ * common case — the two spellings agree today and only one of them keeps agreeing if the wire ever
+ * carries an explicit `false`.
+ */
+export function foldFrameCounts(phase: EngineLaunchPhase, live: boolean | undefined): boolean {
+  return live !== true && phase === 'folding'
+}
+
 // ── the sample ring, and the rate it exists to measure ────────────────────────────────────────
 
 /**

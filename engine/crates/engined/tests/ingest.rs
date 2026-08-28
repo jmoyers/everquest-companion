@@ -1,19 +1,16 @@
-//! AN ATTACH THAT ACTUALLY FOLDS, OVER A REAL SOCKET, AGAINST THE REAL BINARY (JOS-474).
+//! An attach that actually folds, over a real socket, against the real binary.
 //!
-//! `src/ingest.rs`'s own tests drive the ingest in-process and can hold it still at a gate; they
-//! own the claims about WHAT is folded. This suite owns the claims a client can make — that the
-//! frames the schema promises actually arrive, in the order it promises them, carrying measurements
-//! that survive serialization into another language's shapes:
+//! `src/ingest.rs`'s own tests own the claims about what is folded. This suite owns the claims a
+//! client can make:
 //!
 //!   * an attach over the wire reaches `live`, and the last progress frame before it lands carries
-//!     the EXACT event count `eqlog`'s proven scan finds in those same bytes;
-//!   * progress frames are BOUNDED — a cadence, never a frame per line — and monotonic;
+//!     the exact event count `eqlog`'s proven scan finds in those same bytes;
+//!   * progress frames are bounded — a cadence, never a frame per line — and monotonic;
 //!   * a landing fold resets every open subscription, once, naming the generation that landed;
 //!   * a line appended after the tail takes over arrives, and says so on the wire.
 //!
-//! THE LOG IS A COPY OF A COMMITTED FIXTURE, staged in a scratch directory under the name the
-//! product uses (`eqlog_<Name>_<server>.txt`) so the character comes off the file name exactly as
-//! it does in the field. Nothing here writes to a real game log, and the fixture is never modified.
+//! The log is a copy of a committed fixture staged under the product's own file-name shape
+//! (`eqlog_<Name>_<server>.txt`), so the character comes off the file name as it does in the field.
 
 mod harness;
 
@@ -31,7 +28,7 @@ use protocol::generated::{EngineMessage, EpochReason, HealthResultStatus, ReplyR
 const FIXTURE: &str = "cw2-loadout-swap-aug2.log";
 const REPEATS: usize = 2;
 
-/// How long a `settle` may take before the test is called hung. A FAILURE MECHANISM: nothing here
+/// How long a `settle` may take before the test is called hung. A failure mechanism: nothing here
 /// waits for the clock, every assertion waits for a condition.
 const PATIENCE: Duration = Duration::from_secs(60);
 
@@ -78,8 +75,8 @@ impl Drop for Scratch {
     }
 }
 
-/// THE ORACLE: what `eqlog`'s proven scan finds in these exact bytes. Never a number typed here —
-/// a frozen count would stop meaning anything the first time the parser learned a line shape.
+/// What `eqlog`'s proven scan finds in these exact bytes. Never a number typed here: a frozen count
+/// would stop meaning anything the first time the parser learned a line shape.
 fn scan_oracle(path: &Path) -> i64 {
     let bytes = std::fs::read(path).expect("the log is readable");
     let parser = eqlog::parser_for("Primitive", eqlog::host_timezone());
@@ -106,6 +103,9 @@ fn append(path: &Path, line: &str) {
 struct Progress {
     pct: f64,
     events: i64,
+    /// Which loop emitted it. Carried through the reduction rather than asserted on receipt, because
+    /// the claim is about the whole sequence: every frame of a historical scan is unflagged.
+    live: Option<bool>,
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
     let engine = Engine::start();
     let mut client = engine.connected();
 
-    // A SUBSCRIPTION FIRST, so the landing fold has something to reset. The opening reset names
+    // A subscription first, so the landing fold has something to reset. The opening reset names
     // generation 1 — the world before the attach.
     client.send(&subscribe(7, "loot.ledger"));
     let EngineMessage::Reply(_ack) = client.recv() else {
@@ -157,6 +157,7 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
                     frames.push(Progress {
                         pct: carried.pct,
                         events: carried.events,
+                        live: carried.live,
                     });
                 }
                 EpochReason::Restart => panic!("nothing restarts here"),
@@ -172,9 +173,8 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
                 landing = reset;
                 break;
             }
-            // THE MODULE DIRTY BITS (JOS-487) ARE CONNECTION-WIDE and interleave with everything
-            // else on this stream by design, so this test skips them rather than asserting an
-            // ordering it does not care about. Their own ordering is asserted in `module_changed`.
+            // Module dirty bits are connection-wide and interleave with everything else by design,
+            // so this test skips them; their own ordering is asserted in `module_changed`.
             EngineMessage::ModuleChangedMessage(_) => {}
             other => panic!("nothing else belongs on this stream: {other:?}"),
         }
@@ -187,13 +187,13 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
     );
     assert_eq!(attach_reply, Some(2));
 
-    // THE LANDING RESET: the subscription, reopened, naming the generation that landed.
+    // The landing reset: the subscription, reopened, naming the generation that landed.
     assert_eq!(*landing.id, 7);
     assert_eq!(*landing.epoch, 2);
     assert_eq!(landing.total, 0, "empty until the fold registry arrives");
     assert!(landing.rows.is_empty());
 
-    // THE FRAMES. Bounded, monotonic, and the last one states the whole fold.
+    // The frames: bounded, monotonic, and the last one states the whole fold.
     assert!(!frames.is_empty(), "a fold announces itself at least once");
     assert!(
         frames.len() <= 16,
@@ -206,6 +206,13 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
             "progress only goes forward: {pair:?}"
         );
     }
+    // …and not one of them claims to be live: every frame up to and including the landing one came
+    // out of the scan loop, so the flag is absent on all of them. `Some(false)` would fail here too,
+    // deliberately — the field is present only when true.
+    assert!(
+        frames.iter().all(|frame| frame.live.is_none()),
+        "a historical scan flags nothing: {frames:?}"
+    );
     let last = *frames.last().expect("a frame");
     assert_eq!(
         last.events, expected,
@@ -217,12 +224,9 @@ fn an_attach_folds_the_log_and_the_wire_says_so() {
         last.pct
     );
 
-    // …and health agrees, over the same connection.
-    //
-    // THE REPLY IS WAITED FOR RATHER THAN ASSUMED TO BE NEXT. A live tail publishes connection-wide
-    // frames on its own cadence — progress, and since JOS-487 the module dirty bits — so "the next
-    // message is my answer" was only ever true because nothing else was talking yet. A request/reply
-    // client correlates on the id, which is exactly what this now does.
+    // …and health agrees, over the same connection. The reply is waited for rather than assumed to
+    // be next: a live tail publishes connection-wide frames on its own cadence, so a request/reply
+    // client correlates on the id.
     client.send(&health(4));
     let reply = loop {
         match client.recv() {
@@ -264,7 +268,7 @@ fn a_line_appended_after_the_fold_lands_arrives_live() {
         }
     }
 
-    // THE GAME WRITES A LINE. It travels the whole path — the file, the tail's poll, the parser,
+    // The game writes a line. It travels the whole path — the file, the tail's poll, the parser,
     // the sink — and the engine says so on the connection-wide channel.
     append(
         &log,
@@ -281,6 +285,15 @@ fn a_line_appended_after_the_fold_lands_arrives_live() {
                         (progress.pct - 100.0).abs() < f64::EPSILON,
                         "a caught-up tail is at its ceiling: {}",
                         progress.pct
+                    );
+                    // The frame says which loop made it. Everything else about it — `pct` at 100, a
+                    // count one above the scan's — is also what the last frame of a historical fold
+                    // looks like, so without the flag a client cannot tell a finished catch-up from
+                    // one still going that has reached the end of what it can see.
+                    assert_eq!(
+                        progress.live,
+                        Some(true),
+                        "a tail frame is flagged, and by the tail rather than by its numbers"
                     );
                     break;
                 }

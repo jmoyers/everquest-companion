@@ -19,9 +19,10 @@
  * Run: `node --import tsx tests/e2e/perf.e2e.mts` (it is also in tests/e2e/run-all.mts).
  */
 import type { ElectronApplication, Page } from 'playwright-core'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import {
+  MAIN_ENTRY,
   buildIfStale,
   check,
   countOf,
@@ -141,6 +142,15 @@ async function stepPopover(page: Page): Promise<void> {
     text.slice(0, 160)
   )
   check('…counts the renderer’s own long tasks', /long tasks/i.test(text))
+  // THE DEV-ONLY HALF, PROVEN BY ITS ABSENCE (JOS-513). This spec runs a production-shaped build
+  // (`buildIfStale` → `electron-vite build`, where `import.meta.env.DEV` is a literal `false`), so
+  // the render meter's whole story — no Profiler in the tree, no ring, no poll, no row — is exactly
+  // what an installed app does. In a dev window this section is present and reads commits/second;
+  // here it must not exist at all, and only a real build can say that.
+  check(
+    '…and the dev-only render-commit rows are ABSENT from a production build of the same popover',
+    (await countOf(page, '[data-testid="perf-render"]')) === 0
+  )
   check(
     '…and draws the last two minutes as a sparkline with a real path',
     (await page.evaluate(
@@ -151,6 +161,33 @@ async function stepPopover(page: Page): Promise<void> {
   )
   await page.keyboard.press('Escape')
   await settleGone(page, POPOVER, { timeoutMs: 8_000 })
+}
+
+/**
+ * THE RENDER METER IS NOT IN THE BYTES (JOS-513) — the strip, proven by grep rather than by intent.
+ *
+ * The step above shows the section is not on screen; this one shows there is nothing to show. They
+ * are different claims and the difference is the one this repo has been burned by before: a
+ * dev-only feature can be perfectly hidden and still be compiled into every installer (the triage
+ * tab's first build shipped 917 kB of AWS SDK behind a boolean — AGENTS.md's "a dynamic import() is
+ * BUNDLED, not externalized"). It cost this ticket one measurement to learn the same lesson in a
+ * smaller way: gating on an IMPORTED constant left the whole meter in `index-*.js`, because rollup
+ * does not fold a cross-module constant. `import.meta.env.DEV`, substituted per module at transform
+ * time, does.
+ *
+ * `.js` only, deliberately: a sourcemap is a copy of the SOURCE and carries every string in it, so
+ * asserting over `.map` files would assert that the build ships no sourcemaps — a different claim,
+ * and not this one's business.
+ */
+function stepMeterStrippedFromBuild(): void {
+  const assets = join(dirname(MAIN_ENTRY), '..', 'renderer', 'assets')
+  const bundles = readdirSync(assets).filter((f) => f.endsWith('.js'))
+  const carrying = bundles.filter((f) => readFileSync(join(assets, f), 'utf8').includes('perf-render'))
+  check(
+    'the dev-only render meter is not merely hidden in a build — it is not in the bytes',
+    bundles.length > 0 && carrying.length === 0,
+    `${String(bundles.length)} renderer bundle(s); carrying the meter: ${carrying.join(', ') || 'none'}`
+  )
 }
 
 /** How this spec reads the stored "yield CPU to the game" answer, from inside the running app. */
@@ -372,6 +409,8 @@ async function main(): Promise<void> {
       await stepChipReadsNumbers(page)
       await stepPopover(page)
     }
+    // A file check rather than a page one, and it reads the very build this launch is running.
+    stepMeterStrippedFromBuild()
     // Same section, same pane, already open — so this costs a click rather than a navigation.
     await stepYieldToGame(page)
     await stepStartupPane(page)

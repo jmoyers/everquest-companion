@@ -1,0 +1,39 @@
+# ============================================================================
+# clippy.toml — the engine's factoring thresholds, stated where clippy can read
+# them (JOS-523)
+# ============================================================================
+#
+# THE GATE IS NOT THIS FILE. Engine factoring is enforced by
+# `npm run check:rust-factoring` (scripts/checkRustFactoring.mts) against
+# engine/factoring-baseline.json, because the rule the owner ratified is FILE
+# length and clippy has no lint that can express it. Read that script's header
+# for the numbers and the counting rules.
+#
+# WHAT THIS FILE IS FOR. The two clippy lints that overlap the ratchet —
+# `clippy::too_many_lines` (pedantic) and `clippy::cognitive_complexity`
+# (nursery) — are both allow-by-default, so CI's `cargo clippy --all-targets
+# --all-features -- -D warnings` never asks them anything and these keys are
+# inert TODAY. They are here so that the day someone turns either lint on, it
+# speaks with the SAME numbers as the ratchet instead of clippy's defaults
+# (100 lines / cognitive complexity 25) — one threshold per idea, not two.
+#
+# WHY THEY ARE NOT ON YET, stated so nobody re-litigates it by accident: both
+# fire on the 41-file debt register the ratchet was created to freeze, and
+# clippy's only per-site escape hatch is an `#[allow]` attribute IN THE SOURCE.
+# Turning them on today would mean sprinkling allows across the very files
+# JOS-525 exists to shrink — a per-file permission slip with no shrink-only
+# discipline, which is precisely what the baseline JSON replaces. Enable them
+# when the register is empty, not before.
+#
+# NOTE the two lints measure different things and neither is the ratchet's
+# metric: `too_many_lines` counts a function's lines (comments skipped, like
+# ours), while `cognitive_complexity` is Rust's nesting-weighted score, not the
+# cyclomatic count the script computes. Same intent, different rulers — which
+# is why the script stays the gate.
+
+# Mirrors max-lines-per-function 100 (eslint.config.mjs FACTORING_RULES).
+too-many-lines-threshold = 100
+
+# Mirrors complexity 12. Clippy's cognitive complexity weights nesting, so this
+# is the closest honest analogue rather than the same number measured twice.
+cognitive-complexity-threshold = 12

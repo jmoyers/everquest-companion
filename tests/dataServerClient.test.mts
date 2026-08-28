@@ -393,6 +393,92 @@ test('a reply carrying another op-s result shape is refused', async () => {
   })
 })
 
+// ---- 3b. the per-request deadline (JOS-518) ------------------------------------------------------
+//
+// THE FAILURE THIS CLOSES was the only one a connection could not report: an engine that ACCEPTS a
+// request and then never answers. The transport is fine, the state is `ready`, nothing errors — and
+// the caller's promise is simply never settled. Two 1.11.0 reports of an app stuck at "100%" were
+// downstream of the same class of silence, and `waitForFold` is the caller that could not survive
+// it, so this is where the mechanism is pinned.
+//
+// THE CLOCK IS MOCKED, deliberately: the deadline is fifteen SECONDS and a suite that waited it out
+// would be fifteen seconds slower for one assertion. `mock.timers` replaces the global the client
+// calls, so what is driven is the real mechanism and only the passage of time is faked.
+
+test('AN ENGINE THAT NEVER REPLIES REJECTS AT THE DEADLINE, AND THE CONNECTION SURVIVES', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const r = rig()
+  shakeHands(r)
+  const silent = r.client.request('session.health', {})
+
+  t.mock.timers.tick(14_999)
+  assert.equal(r.client.state, 'ready', 'nothing has happened yet')
+
+  t.mock.timers.tick(2)
+  await assert.rejects(silent, (error: unknown) => {
+    assert.ok(error instanceof EngineError)
+    // A DISTINCT CODE. `unavailable` is what a dead connection says, and a caller that could not
+    // tell the two apart could not do the one useful thing here — ask again.
+    assert.equal(error.code, 'timeout')
+    assert.equal(error.requestId, 1)
+    return true
+  })
+
+  // THE CONNECTION IS UNTOUCHED, which is the whole difference from every other rejection in this
+  // file: one ask went unanswered, and that is not a fact about the socket.
+  assert.equal(r.client.state, 'ready')
+  assert.deepEqual(r.states, ['ready'])
+  const next = r.client.request('echo', { text: 'still here' })
+  r.deliver({ kind: 'reply', id: 2, ok: true, result: { text: 'still here' } })
+  assert.deepEqual(await next, { text: 'still here' })
+})
+
+test('a request that WAS answered is never given up on afterwards', async (t) => {
+  // The other half: an armed deadline that outlived its request would reject a promise somebody had
+  // already resolved — invisible in production, because a settled promise ignores a second call.
+  // What it would really cost is the pending entry and the timer, per request, for the life of the
+  // connection. `takePending` is the one place both go.
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const r = rig()
+  shakeHands(r)
+  const health = r.client.request('echo', { text: 'prompt' })
+  r.deliver({ kind: 'reply', id: 1, ok: true, result: { text: 'prompt' } })
+  assert.deepEqual(await health, { text: 'prompt' })
+
+  t.mock.timers.tick(60_000)
+  assert.equal(r.client.state, 'ready')
+  assert.equal(
+    r.notes.some((note) => note.includes('given up on')),
+    false,
+    'a settled request kept a live timer'
+  )
+})
+
+test('a connection that dies takes the deadline with it, and says `unavailable`', async (t) => {
+  // Precedence matters: a dead socket is the stronger statement, and a caller that saw `timeout`
+  // fifteen seconds after the engine actually died would retry into nothing.
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const r = rig()
+  shakeHands(r)
+  const pending = r.client.request('session.health', {})
+  r.transport.close() // the engine's end of the socket went away
+  // …and the client finds out the way it always does, on the next thing it tries to send. The
+  // memory transport reports nothing on a peer's close (see its header) — which is the honest model
+  // of a half-open socket, and the reason this line is here rather than an oversight.
+  await assert.rejects(r.client.request('echo', { text: 'into the void' }), EngineError)
+  await assert.rejects(pending, (error: unknown) => {
+    assert.ok(error instanceof EngineError)
+    assert.equal(error.code, 'unavailable')
+    return true
+  })
+  t.mock.timers.tick(60_000)
+  assert.equal(
+    r.notes.some((note) => note.includes('given up on')),
+    false,
+    'the deadline fired for a request the connection had already rejected'
+  )
+})
+
 // ---- 4. the two laws, asserted over the source ---------------------------------------------------
 
 test('THE CLIENT AND THE HOOK CANNOT SORT, FILTER OR AGGREGATE (owner ruling 4)', () => {

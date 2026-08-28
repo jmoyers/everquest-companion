@@ -23,8 +23,14 @@
 // (`ingest.rs`: "a live progress frame is the only wire evidence a live line landed"), so a session
 // where somebody is playing produces these forever. Nothing draws them — the bar is about a
 // historical CATCH-UP — so a push per frame for the rest of a raid would be cost with no reader.
-// `noteFoldProgress` therefore records only while the phase is `folding`, which is exactly the
-// window the bar is on screen for.
+//
+// AND SINCE JOS-518 THE FRAME ITSELF SAYS WHICH LOOP MADE IT. This used to be a phase test alone —
+// record only while `folding` — and that was the whole defence, on a wire where the two loops emit
+// an identical shape. It failed the way single defences do: the fold wait expired at its 120-second
+// budget, nothing ever moved the phase off `folding`, and the tail's own frames then held a bar at
+// 100% with the event count climbing for the rest of the session, which is what two 1.11.0 reports
+// described. `FoldProgress.live` is the engine's own answer and is asked FIRST; the phase is still
+// asked too. `foldFrameCounts` in `src/shared/engineLaunch.ts` is both, and carries the argument.
 //
 // ── THE PUSH IS A CHANGE NOTICE, NOT A HEARTBEAT ──────────────────────────────────────────────
 //
@@ -39,7 +45,7 @@ import type {
   EngineLaunchSay,
   FoldSay
 } from '../../shared/engineLaunch'
-import { ENGINE_LAUNCH_STARTING } from '../../shared/engineLaunch'
+import { ENGINE_LAUNCH_STARTING, foldFrameCounts } from '../../shared/engineLaunch'
 import type { FoldProgress } from '../../shared/dataServer/protocol.generated'
 import { IPC } from '../../shared/ipc'
 import { sendToMain } from '../windows'
@@ -135,7 +141,11 @@ export function noteEngineLive(): void {
 
 /** One progress frame, stamped with the host clock the estimate is taken against. */
 export function noteFoldProgress(progress: FoldProgress, at: number): void {
-  if (say.phase !== 'folding') return
+  // TWO REASONS A FRAME IS NOT RECORDED, and the decision is `foldFrameCounts` rather than an `if`
+  // here so the whole matrix is drivable in a unit test (this file imports `windows.ts`, which
+  // imports Electron, so nothing can call it under plain node). Its header carries the argument for
+  // why the flag AND the phase are both asked.
+  if (!foldFrameCounts(say.phase, progress.live)) return
   const fold: FoldSay = {
     pct: progress.pct,
     offset: progress.offset,

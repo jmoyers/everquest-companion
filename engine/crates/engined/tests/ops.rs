@@ -1,9 +1,9 @@
-//! EVERY OP, OVER A REAL SOCKET, AGAINST THE REAL BINARY.
+//! Every op, over a real socket, against the real binary.
 //!
-//! The op table has unit tests beside the code; those prove the shapes. THIS suite proves the
-//! shapes survive the round trip — serialization, framing, a kernel's chunking, a second process's
-//! deserialization — and it is the only place the CONNECTION-WIDE behaviour can be seen at all,
-//! because an epoch that reaches every connection needs more than one connection to be a claim.
+//! The op table has unit tests beside the code; those prove the shapes. This suite proves the shapes
+//! survive the round trip — serialization, framing, a kernel's chunking, a second process's
+//! deserialization — and it is the only place connection-wide behaviour can be seen at all, because
+//! an epoch that reaches every connection needs more than one connection to be a claim.
 
 mod harness;
 
@@ -15,8 +15,8 @@ fn echo_returns_the_text_it_was_given() {
     let engine = Engine::start();
     let mut client = engine.connected();
 
-    // Newlines, tabs, quotes and a backslash-n that is NOT a newline: the payload that would break
-    // a line-framed wire if JSON did not escape control characters inside strings.
+    // Newlines, tabs, quotes and a backslash-n that is not a newline: the payload that would break a
+    // line-framed wire if JSON did not escape control characters inside strings.
     let text = "line one\nline two\t\"quoted\"\\n \u{1f5e1}";
     client.send(&echo(1, text));
 
@@ -64,11 +64,10 @@ fn attach_bumps_the_generation_and_announces_it_to_every_connection() {
         "C:/Users/Public/Daybreak Game Company/Installed Games/EverQuest Legends/Logs/eqlog.txt",
     ));
 
-    // THE ANNOUNCEMENT PRECEDES THE REPLY ON THE ATTACHER'S OWN CONNECTION, and that ordering is
-    // pinned rather than accidental: the bump and its broadcast happen in one critical section, so
-    // the announcement is already in every outbox — this one included — before the reply is
-    // composed. A client can therefore never see a reply naming a generation it has not been told
-    // about.
+    // The announcement precedes the reply on the attacher's own connection: the bump and its
+    // broadcast happen in one critical section, so the announcement is already in every outbox
+    // before the reply is composed. A client can never see a reply naming a generation it has not
+    // been told about.
     let EngineMessage::EpochMessage(announced) = attacher.recv() else {
         panic!("the attacher hears the bump first");
     };
@@ -92,7 +91,7 @@ fn attach_bumps_the_generation_and_announces_it_to_every_connection() {
     assert!(result.accepted);
     assert_eq!(*result.epoch, 2);
 
-    // CONNECTION-WIDE means the connection that did nothing hears it too.
+    // Connection-wide means the connection that did nothing hears it too.
     let EngineMessage::EpochMessage(heard) = bystander.recv() else {
         panic!("every connection hears a bump");
     };
@@ -146,10 +145,8 @@ fn progress_is_acknowledged_as_the_subscription_it_is() {
     assert_eq!(*ack.subscription, 5);
     assert!(ack.subscribed);
 
-    // NOTHING FOLLOWS, and that is the honest answer in phase 0: the attach stub starts no fold, so
-    // there is no progress to report. The frames, when they exist, are `EpochMessage`s carrying
-    // `progress` on this same connection-wide channel — which is exactly what the next assertion
-    // shows arriving, carrying no progress.
+    // Nothing follows: this attach starts no fold, so there is no progress to report. The frames,
+    // when they exist, are `EpochMessage`s carrying `progress` on this same connection-wide channel.
     client.send(&attach(6, "C:/nowhere.txt"));
     let EngineMessage::EpochMessage(announced) = client.recv() else {
         panic!("a bump");
@@ -248,8 +245,8 @@ fn an_unknown_op_is_refused_by_name_and_the_connection_survives() {
     assert!(!refusal.ok);
     assert!(matches!(refusal.error.code, ErrorCode::UnknownOp));
 
-    // A REFUSED REQUEST IS NOT A BROKEN CONNECTION. The client asked for something that does not
-    // exist; the conversation is still perfectly well-formed.
+    // A refused request is not a broken connection: the client asked for something that does not
+    // exist, and the conversation is still well-formed.
     client.send(&echo(43, "still talking"));
     let EngineMessage::Reply(reply) = client.recv() else {
         panic!("a reply");

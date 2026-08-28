@@ -2,54 +2,31 @@
 //! (`shared/respawn.ts`) and the committed wiki floor it numbers rows from
 //! (`shared/respawnWiki.ts` / `data/respawns.json`) — DEATH LINES IN, LIVE COUNTDOWNS OUT.
 //!
-//! THE FOLD OWNS THREE THINGS THE PURE CODE CANNOT:
+//! The fold owns three things the pure code cannot:
 //!
-//!   1. THE ZONE STAY. A death→death gap is only a respawn sample when you never left the zone
-//!      between the two deaths, and only the fold knows where you have been. `zone_since` is the
-//!      timestamp of the `You have entered` line that started the current stay; a gap qualifies
-//!      when the EARLIER death also falls inside it. A zone line ENDS the stay even when it names
-//!      the same zone — you left and came back, and the interval in between is not time you spent
-//!      watching a spawn point (same-name re-entry is the case a name comparison would get wrong).
-//!      That same zone is ALSO what the display scopes to, deliberately ONE piece of zone state
-//!      serving both jobs: a second tracker would be free to disagree with the one that decides
-//!      whether a gap counts.
-//!   2. THE LRU. A months-long replay walks past thousands of distinct mob names and every one of
-//!      them is a potential watch candidate, so the history is capped at `MAX_HISTORY` and evicted
-//!      by last death. The map is re-inserted on every death so ITERATION ORDER IS LRU ORDER.
-//!   3. ITS OWN REVISION NUMBER — the JOS-87 rule again. This module has a SECOND INPUT (the
-//!      user's watch list, edited over IPC while the log sits idle), so reporting the last event's
-//!      `seq` would let `useModule`'s `d.seq <= knownSeq` dedupe swallow the push that carries a
-//!      watch just added. By round 3 there are THREE such inputs — the watch list, a zone line and
-//!      a confirmed sighting — and every one of them moves `rev`.
+//!   1. The ZONE STAY. A death→death gap is a respawn sample only if you never left the zone
+//!      between the two deaths. `zone_since` is the timestamp of the `You have entered` line that
+//!      started the current stay, and a gap qualifies when the EARLIER death also falls inside it.
+//!      A zone line ends the stay even when it names the same zone — you left and came back. That
+//!      same zone scopes the display, deliberately one piece of state serving both jobs, so no
+//!      second tracker can disagree with the one deciding whether a gap counts.
+//!   2. The LRU. A long replay walks past thousands of distinct mob names, so the history is capped
+//!      at `MAX_HISTORY` and evicted by last death. The map is re-inserted on every death, so
+//!      iteration order IS LRU order.
+//!   3. Its own revision number. Three inputs advance no log seq — the watch list edited over IPC,
+//!      a zone line and a confirmed sighting — so reporting the last event's `seq` would let a
+//!      reader's `d.seq <= knownSeq` dedupe swallow the push that carries them.
 //!
-//! THE 60-SECOND FLOOR IS MEASURED, NOT CHOSEN. Across all 394 respawns the committed floor states
-//! a duration for, the SHORTEST is 78 s (`Groi Gutblade`), the 1st percentile is 165 s and the
-//! median is 22 minutes. So two deaths of one name inside a minute are two mobs standing together —
-//! a placeholder pair, a trash group — dying in one pull, and reading that as a respawn would drive
-//! the estimate to a number the mob can never honour. The sample is REFUSED outright rather than
-//! recorded and left for the wiki floor to lift, because 85% of the mobs in the dungeons this
-//! feature targets have no wiki floor to lift it with.
+//! The 60-second floor is measured, not chosen: across the 394 respawns the committed floor states
+//! a duration for, the shortest is 78 s and the median is 22 minutes. Two deaths of one name inside
+//! a minute are two mobs dying in one pull, and the sample is refused outright rather than recorded
+//! and left for a wiki floor to lift — most mobs in the dungeons this targets have no wiki floor.
 //!
-//! ── THE CONSTRUCTION CLOCK, WHICH IS WHY THIS FILE TAKES A PARAMETER (JOS-465) ─────────────────
-//!
-//! Over there `nowMs` is seeded from `Date.now()` at construction and at `reset()` — correctly, a
-//! fresh fold is entitled to today's reading — and NOTHING advances it during a historical fold, so
-//! it survives into `snapshot()` where `orderRespawnRows` reads it. That makes a respawn snapshot
-//! partly a statement about WHEN THE WORLD WAS BUILT, and a golden recorded on Monday would not
-//! re-check on Tuesday. The recorder therefore pins it (`WorldOpts.constructionNowMs`) to an
-//! instant derived from the LOG: the last timestamped LINE of the slice, read from the file's tail
-//! through the parser's own `Clock`. This module takes that instant as `construction_now_ms` and
-//! seeds from it at construction AND at reset, which is the only way the pin means the same thing
-//! on both sides. NO WALL CLOCK IS READ HERE, ever (ruling 18): one is HANDED in by `on_tick`,
-//! which is the live tail's heartbeat and which a historical fold — the only thing the oracle
-//! records — never calls (JOS-481).
-//!
-//! WHAT THE SIX SLICES ACTUALLY EXERCISE, said out loud: the bench world installs no
-//! `respawnPrefs`, so the watch list is EMPTY, `watch_of` answers `None` for every mob and
-//! `rows` is `[]` on all six goldens. The clock therefore orders nothing and is unobservable in the
-//! corpus. It is plumbed anyway because the alternative is a module that silently stops matching
-//! the day somebody folds a world with a watch in it — and because the pin exists precisely so the
-//! unobservable can be checked rather than hoped for.
+//! No wall clock is read here, ever: one is handed in by `on_tick`, the live tail's heartbeat,
+//! which a historical fold never calls. `construction_now_ms` is seeded at construction and again
+//! at `reset()`, where the TS reads `Date.now()`. Because nothing advances it during a historical
+//! fold it survives into `snapshot()`, so a recorder pins it to an instant derived from the log —
+//! the only way the pin means the same thing on both sides.
 
 use crate::event::Event;
 use crate::jsmap::JsMap;
@@ -64,8 +41,8 @@ const RESPAWN_SHAPE_VERSION: i64 = 4;
 const MIN_GAP_MS: i64 = 60_000;
 /// Distinct (zone, mob) pairs the history keeps before evicting the least recently killed.
 const MAX_HISTORY: usize = 800;
-/// How often a CONTINUING sighting re-publishes. A fight prints several lines a second and every
-/// one names the mob, so RECORDING a sighting is free but PUSHING it is not.
+/// How often a continuing sighting re-publishes. A fight prints several lines a second and every
+/// one names the mob, so recording a sighting is free but pushing it is not.
 const SEEN_REFRESH_MS: i64 = 5_000;
 const RESPAWN_MAX_ROWS: usize = 60;
 const RESPAWN_MAX_RECENT: usize = 40;
@@ -74,10 +51,8 @@ const RESPAWN_MAX_GAPS: usize = 6;
 /// Beyond this a sighting has gone stale and a clock has stopped meaning anything.
 const RESPAWN_LINGER_MS: i64 = 30 * 60 * 1000;
 
-// ───────────────────────────────────────────────────────────── the committed wiki floor
-
-/// One row of `data/respawns.json`. `seconds` is ABSENT on 113 of the 507 rows: the grammar is a
-/// WHITELIST, so anything it cannot fully consume ("Triggered", "6-8 hours", "?") keeps its
+/// One row of `data/respawns.json`. `seconds` is absent on roughly a fifth of the rows: the grammar
+/// is a whitelist, so anything it cannot fully consume ("Triggered", "6-8 hours", "?") keeps its
 /// verbatim text and states no number. A half-read duration would put a fabricated number on a
 /// countdown.
 #[derive(Debug, Clone, Deserialize)]
@@ -94,8 +69,8 @@ struct WikiRespawnData {
     rows: Vec<WikiRespawn>,
 }
 
-/// Read straight out of `src/main/data/`, the `eqlog::spelldb` precedent: exactly one copy of the
-/// committed floor, and a re-scrape reaches both readers at once.
+/// Read straight out of `src/main/data/`: exactly one copy of the committed floor, so a re-scrape
+/// reaches both readers at once.
 const RESPAWNS_JSON: &str = include_str!("../../../../../src/main/data/respawns.json");
 
 fn wiki() -> &'static std::collections::HashMap<String, WikiRespawn> {
@@ -108,10 +83,8 @@ fn wiki() -> &'static std::collections::HashMap<String, WikiRespawn> {
     })
 }
 
-// ───────────────────────────────────────────────────────────── the published shapes
-
-/// One live respawn clock. Every optional field is ABSENT rather than null when the fold has
-/// nothing to say — the golden was recorded through `JSON.stringify`.
+/// One live respawn clock. Every optional field is absent rather than null when the fold has
+/// nothing to say — the published shape came through `JSON.stringify`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RespawnRow {
@@ -191,9 +164,8 @@ pub struct RespawnWatchPref {
     pub custom_sec: Option<i64>,
 }
 
-/// `DEFAULT_RESPAWN_PREFS` is an EMPTY list, and it is the shipped default: tracking is opt-in per
-/// mob, so a caller that passes nothing gets a module that clocks nothing. That is what the bench
-/// and every non-Electron caller wants, and it is what all six goldens recorded.
+/// `DEFAULT_RESPAWN_PREFS` is an empty list and that is the shipped default: tracking is opt-in per
+/// mob, so a caller that passes nothing gets a module that clocks nothing.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RespawnPrefs {
     pub watches: Vec<RespawnWatchPref>,
@@ -202,15 +174,14 @@ pub struct RespawnPrefs {
 impl RespawnPrefs {
     /// Read a pushed `respawn.define` payload — `{ watches: [...] }`, as the store holds it.
     ///
-    /// IT NORMALIZES THE WAY `shared/respawn.ts normalizeRespawnPrefs` DOES, and that is not
-    /// belt-and-braces: the app normalizes at both the store reader AND the IPC handler precisely so
-    /// a hand-edited settings file and a renderer cannot hold two ideas of what a watch is, and an
-    /// engine that trusted the wire would be a third. The key is lowercased and capped, a watch with
-    /// no key is dropped, a duplicate key is dropped, an out-of-range `customSec` is dropped (which
-    /// reads as "use what you learn", never as zero), and the list is capped.
+    /// It normalizes as `shared/respawn.ts normalizeRespawnPrefs` does, because an engine that
+    /// trusted the wire would be a third place with its own idea of what a watch is. The key is
+    /// lowercased and capped, a watch with no key or a duplicate key is dropped, an out-of-range
+    /// `customSec` is dropped (reading as "use what you learn", never as zero), and the list is
+    /// capped.
     ///
-    /// `None` for a payload that is not an object at all — the caller leaves the previous set
-    /// standing, which is the honest outcome for app knowledge that arrived malformed.
+    /// `None` for a payload that is not an object, which leaves the previous set standing — the
+    /// honest outcome for app knowledge that arrived malformed.
     pub fn read(payload: &Value) -> Option<RespawnPrefs> {
         /// `RESPAWN_MAX_WATCHES`.
         const MAX_WATCHES: usize = 200;
@@ -273,8 +244,6 @@ impl RespawnPrefs {
     }
 }
 
-// ───────────────────────────────────────────────────────────── the fold's own record
-
 /// What the fold knows about one mob in one zone.
 #[derive(Debug, Clone)]
 struct MobHistory {
@@ -283,22 +252,22 @@ struct MobHistory {
     zone: String,
     /// The most recent death, ms.
     last_ts: i64,
-    /// The SMALLEST qualifying gap seen — an UPPER BOUND on the respawn, never the respawn.
+    /// The smallest qualifying gap seen — an upper bound on the respawn, never the respawn.
     min_gap_ms: Option<i64>,
     /// How many qualifying gaps back `min_gap_ms`.
     samples: i64,
-    /// The gaps themselves, OLDEST FIRST, capped at `RESPAWN_MAX_GAPS`. Kept beside `samples` and
+    /// The gaps themselves, oldest first, capped at `RESPAWN_MAX_GAPS`. Kept beside `samples` and
     /// `min_gap_ms` rather than replacing them: those two are computed over EVERY qualifying gap
-    /// and must not start describing only the last six.
+    /// and must not start describing only the last few.
     gaps: Vec<i64>,
     /// Deaths counted, qualifying or not.
     kills: i64,
-    /// The last event that NAMED this mob while the fold stood in this zone. Never a death.
+    /// The last event that named this mob while the fold stood in this zone. Never a death.
     seen_ts: Option<i64>,
     seen_via: Option<&'static str>,
     /// The last `seen_ts` a delta actually carried — see `SEEN_REFRESH_MS`.
     seen_pub_ts: Option<i64>,
-    /// A sighting the USER confirmed as the spawn. Competes with `last_ts` for the clock's base and
+    /// A sighting the user confirmed as the spawn. Competes with `last_ts` for the clock's base and
     /// the LATER one wins, which is why a death needs no code to undo it.
     confirmed_ts: Option<i64>,
 }
@@ -311,10 +280,10 @@ fn base_of(h: &MobHistory) -> i64 {
     }
 }
 
-/// `resolveRespawn` — the estimate ladder. Rung 2 is FLOORED by rung 3 rather than averaged with
-/// it (the smallest gap you measured is an upper bound, so the wiki lifting it is a correction);
-/// rung 1 is never floored at all, because the user is looking at the spawn and the wiki is
-/// describing a different server.
+/// `resolveRespawn` — the estimate ladder. Rung 2 is FLOORED by rung 3 rather than averaged with it
+/// (the smallest gap you measured is an upper bound, so the wiki lifting it is a correction); rung
+/// 1 is never floored, because the user is looking at the spawn and the wiki describes another
+/// server.
 fn resolve_respawn(
     custom_ms: Option<i64>,
     observed_ms: Option<i64>,
@@ -343,9 +312,8 @@ fn resolve_respawn(
     (None, "none")
 }
 
-/// THE NAMES A TYPED EVENT STATES, and which family stated them — the whole of round 3's evidence
-/// intake. Four readers rather than one switch, because the four groups ARE the four
-/// `RespawnSeenVia` values: the factoring and the vocabulary agree.
+/// The names a typed event states, and which family stated them. The groups ARE the four
+/// `RespawnSeenVia` values, so the factoring and the vocabulary agree.
 fn seen_names_of<'e>(ev: &'e Event<'_>) -> Option<(Vec<Option<&'e str>>, &'static str)> {
     // Somebody swung at it, or it swung at somebody. `attacker` is null on caster-less DoT lines.
     match ev.kind() {
@@ -366,7 +334,7 @@ fn seen_names_of<'e>(ev: &'e Event<'_>) -> Option<(Vec<Option<&'e str>>, &'stati
 }
 
 /// `main/log/reducers.ts isCountedKill` — self-slain always counts; slain-by counts only when the
-/// killer isn't you. (kills.rs carries the same port; it is private there.)
+/// killer isn't you. `kills.rs` carries the same port privately.
 fn is_counted_kill(ev: &Event) -> bool {
     if ev.bool("bySelf") {
         return true;
@@ -381,18 +349,18 @@ pub struct RespawnModule {
     history: JsMap<MobHistory>,
     zone: String,
     /// When the current continuous stay in `zone` began. Zero before any zone line, and a zero
-    /// start qualifies NOTHING — a stay that never began is not a stay.
+    /// start qualifies nothing — a stay that never began is not a stay.
     zone_since: i64,
     prefs: RespawnPrefs,
-    /// THE MODULE'S OWN REVISION — see the header. Never a LogEvent seq.
+    /// The module's own revision — see the header. Never a LogEvent seq.
     rev: i64,
-    /// The pinned construction instant (header). Re-read at `reset()`, exactly as `Date.now()` is
-    /// over there — and pinned to the same value, because the fold advances no clock.
+    /// The pinned construction instant (see the header). Re-read at `reset()` to the same value,
+    /// because the fold advances no clock.
     construction_now_ms: i64,
     now_ms: i64,
-    /// The watch list as a lookup. NOT a micro-optimization: every damage and miss line in the log
-    /// asks this two questions, and a linear scan of up to 200 entries per name would be tens of
-    /// millions of string comparisons before the app finished starting.
+    /// The watch list as a lookup. Not a micro-optimization: every damage and miss line asks this
+    /// two questions, and a linear scan of up to 200 entries per name would be tens of millions of
+    /// string comparisons before the app finished starting.
     watch_index: std::collections::HashMap<String, RespawnWatchPref>,
 }
 
@@ -423,23 +391,20 @@ impl RespawnModule {
 
     /// Is this mob watched? `None` for every mob, until the player says otherwise.
     ///
-    /// THE ONLY ADMISSION RULE IS THE WATCH LIST (owner ruling, 2026-08-10). The prototype also
-    /// admitted the 394 mobs the committed floor gives a duration for, and that is gone: EQ's names
-    /// are duplicated across zones and spawn points, so a clock nobody asked for is a clock about a
-    /// mob the app cannot identify. The wiki still NUMBERS a watched row and still floors it; it no
-    /// longer decides that a row exists.
+    /// The watch list is the only admission rule. EQ's names are duplicated across zones and spawn
+    /// points, so a clock nobody asked for is a clock about a mob the app cannot identify. The wiki
+    /// still numbers a watched row and still floors it; it does not decide that a row exists.
     fn watch_of(&self, key: &str) -> Option<Option<i64>> {
         let explicit = self.watch_index.get(key)?;
         Some(explicit.custom_sec.map(|s| s * 1000))
     }
 
     /// The log named something. Mark it seen if — and only if — it is a mob the user watches AND
-    /// this fold has a clock for it in the zone the fold is standing in.
+    /// this fold has a clock for it in the zone it is standing in.
     ///
-    /// THE TWO GUARDS ARE THE POINT. Watching is the admission rule for everything here, so an
-    /// unwatched name is dropped before it can cost anything, which is what makes it acceptable to
-    /// run this over every combat line in a dungeon. And the entry is looked up under the CURRENT
-    /// zone's id, so the only row a sighting can light is one for where you are standing.
+    /// Both guards matter: an unwatched name is dropped before it costs anything, which is what
+    /// makes running this over every combat line acceptable, and the entry is looked up under the
+    /// CURRENT zone's id, so a sighting can only light a row for where you are standing.
     fn mark_seen(&mut self, name: Option<&str>, via: &'static str, ts: i64) {
         let Some(name) = name else { return };
         if name.is_empty() {
@@ -454,8 +419,8 @@ impl RespawnModule {
             return;
         };
         let base = base_of(h);
-        // A mention from before the clock started is not a sighting of the spawn the clock is
-        // about, so the transition is judged against the BASE rather than the previous `seen_ts`.
+        // A mention from before the clock started is not a sighting of the spawn it is about, so
+        // the transition is judged against the BASE rather than the previous `seen_ts`.
         let was_seen = h.seen_ts.is_some_and(|s| s > base);
         if h.seen_ts.is_some_and(|s| ts < s) {
             return;
@@ -469,26 +434,21 @@ impl RespawnModule {
         self.rev += 1;
     }
 
-    /// "YES, THAT SIGHTING WAS THE SPAWN — START THE CLOCK THERE" (owner ruling, round 3), and it
-    /// is `src/main/modules/respawn.ts confirmSighting` line for line.
+    /// "That sighting was the spawn — start the clock there", `respawn.ts confirmSighting` line
+    /// for line.
     ///
-    /// THE ONE THING A SIGHTING IS NEVER ALLOWED TO DO ON ITS OWN. Everything else in this module
-    /// records evidence: a death starts a clock, a mention lights a row. This MOVES a clock, and
-    /// only a person can ask for it — which is why it arrives as a pushed command
-    /// (`respawn.confirmSighting`) rather than out of an event, and why it is the third input the
-    /// header names as advancing `rev` without advancing any log seq.
+    /// The one thing a sighting may never do on its own. Everything else here records evidence; this
+    /// MOVES a clock, so only a person can ask for it, which is why it arrives as a pushed command
+    /// rather than out of an event and is the third input advancing `rev` with no log seq.
     ///
-    /// `id` IS THE ROW'S OWN ID, which is how the surfaces name a row and how this fold keys its
+    /// `id` is the row's own id, which is how the surfaces name a row and how this fold keys its
     /// history — one identifier, no second addressing scheme to keep in step.
     ///
-    /// TWO REFUSALS AND BOTH ARE ABOUT THE ROW, never about what the world is doing. `false` when
-    /// the id names no entry, and `false` when the entry is not CURRENTLY seen — the same test
-    /// [`Self::row_for`] uses to decide a row may open in the seen state, so a click can only
-    /// confirm a sighting the screen was actually drawing. A stale click (the mob died between the
-    /// render and the press) is therefore a no-op rather than a clock re-based onto an instant
-    /// nothing is claiming any more. Nothing needs to undo a confirmation afterwards either: the
-    /// later of `confirmed_ts` and `last_ts` is the base ([`base_of`]), so the next death wins by
-    /// arithmetic.
+    /// Two refusals, both about the row rather than about the world: `false` when the id names no
+    /// entry, and `false` when the entry is not CURRENTLY seen — the same test [`Self::row_for`]
+    /// uses to let a row open in the seen state, so a click can only confirm a sighting the screen
+    /// was drawing. Nothing needs to undo a confirmation either: the base is the later of
+    /// `confirmed_ts` and `last_ts` ([`base_of`]), so the next death wins by arithmetic.
     pub fn confirm_sighting(&mut self, id: &str) -> bool {
         let Some(h) = self.history.get_mut(id) else {
             return false;
@@ -498,8 +458,8 @@ impl RespawnModule {
             return false;
         };
         h.confirmed_ts = Some(seen);
-        // THE REVISION MOVES, for the reason the header gives: a confirmation advances no log seq,
-        // so a reader deduping on `seq` would swallow the very push that carries it (JOS-87).
+        // The revision moves: a confirmation advances no log seq, so a reader deduping on `seq`
+        // would swallow the very push that carries it.
         self.rev += 1;
         true
     }
@@ -509,7 +469,7 @@ impl RespawnModule {
         let mut h = match self.history.get(&id) {
             Some(prior) => {
                 let mut h = prior.clone();
-                // Re-insert so the map's iteration order is the LRU order (oldest first).
+                // Re-insert so the map's iteration order is LRU order (oldest first).
                 self.history.remove(&id);
                 let gap = ts - h.last_ts;
                 if self.zone_since > 0 && h.last_ts >= self.zone_since && gap >= MIN_GAP_MS {
@@ -518,7 +478,7 @@ impl RespawnModule {
                         None => gap,
                     });
                     h.samples += 1;
-                    // Oldest first here and reversed on the way out, so the cap drops the OLDEST
+                    // Oldest first here and reversed on the way out, so the cap drops the oldest
                     // rather than the freshest evidence.
                     h.gaps.push(gap);
                     if h.gaps.len() > RESPAWN_MAX_GAPS {
@@ -555,11 +515,9 @@ impl RespawnModule {
         self.rev += 1;
     }
 
-    /// ONE HISTORY ENTRY AS A ROW, or `None` when the mob is not watched — and that is now the ONLY
-    /// reason this returns `None` (owner ruling, round 8). It used to SWEEP, throwing away any row
-    /// whose estimate had elapsed more than half an hour ago, so a player clicking Watch on a kill
-    /// from hours earlier got a successful write, a bumped revision, a pushed delta — and no row.
-    /// It no longer takes the clock either: nothing it computes depends on `now`.
+    /// One history entry as a row, or `None` when the mob is not watched — the only reason this
+    /// returns `None`. It never sweeps stale rows, and it takes no clock: nothing it computes
+    /// depends on `now`.
     fn row_for(&self, h: &MobHistory) -> Option<RespawnRow> {
         let custom_ms = self.watch_of(&h.key)?;
         let wiki_row = wiki().get(&h.key);
@@ -588,8 +546,8 @@ impl RespawnModule {
             custom_ms,
             wiki_text: wiki_row.map(|w| w.text.clone()),
             wiki_ms,
-            // The page those words came from, so the edit modal can LINK to it — quoting a source
-            // the reader cannot open is the half of provenance this feature was missing.
+            // The page those words came from, so the edit modal can link to it: quoting a source
+            // the reader cannot open is half a provenance.
             wiki_page: wiki_row.map(|w| w.page.clone()),
         };
         // A mention from the fight that KILLED the mob is not a sighting of the spawn that follows,
@@ -598,8 +556,8 @@ impl RespawnModule {
             row.seen_ts = h.seen_ts;
             row.seen_via = h.seen_via;
         }
-        // NEWEST FIRST on the wire (the row reads left to right and the freshest gap is the one
-        // worth reading), and a COPY, so a reader holding a snapshot never sees the fold mutate it.
+        // Newest first on the wire, and a COPY, so a reader holding a snapshot never sees the fold
+        // mutate it.
         if !h.gaps.is_empty() {
             let mut out = h.gaps.clone();
             out.reverse();
@@ -608,18 +566,17 @@ impl RespawnModule {
         Some(row)
     }
 
-    /// `orderRespawnRows` — SEEN first (freshest evidence leading), then the live clocks by soonest
-    /// due, then the ones with no estimate, and STALE last of all. Ties break on display name so
-    /// the list never shuffles under a re-render.
+    /// `orderRespawnRows` — SEEN first, then live clocks by soonest due, then the ones with no
+    /// estimate, and STALE last. Ties break on display name so the list never shuffles under a
+    /// re-render.
     ///
-    /// SEEN OUTRANKS EVERY COUNTDOWN because it is a different KIND of fact: every other row is the
-    /// app's estimate of when something might happen, and a seen row is the log stating that it
-    /// already has. AND STALE SINKS for the mirror reason — a row whose estimate elapsed hours ago
-    /// still reads `remainingMs: 0`, so without this a night's worth of old kills would sit ON TOP
-    /// of the clock actually running in front of you.
+    /// Seen outranks every countdown because it is a different KIND of fact: every other row is an
+    /// estimate of when something might happen, and a seen row is the log saying it already has.
+    /// Stale sinks for the mirror reason — a row whose estimate elapsed hours ago still reads
+    /// `remainingMs: 0`, and would otherwise sit on top of the clock running in front of you.
     fn order_rows(rows: &mut [RespawnRow], now_ms: i64) {
-        /// The three fields of `respawnReading` the ordering asks about. `fraction`/`due`/
-        /// `overdueMs` are display-only and no caller of this function reads them.
+        /// The fields of `respawnReading` the ordering asks about. `fraction`/`due`/`overdueMs` are
+        /// display-only and no caller of this function reads them.
         fn reading(row: &RespawnRow, now_ms: i64) -> (bool, i64, bool, Option<i64>) {
             let elapsed = (now_ms - row.base_ts).max(0);
             let ago = match row.seen_ts {
@@ -644,7 +601,7 @@ impl RespawnModule {
                         Some(left.max(0)),
                     )
                 }
-                // No estimate to elapse, so the ELAPSED time is what goes stale.
+                // No estimate to elapse, so the elapsed time is what goes stale.
                 _ => (
                     seen,
                     ago.unwrap_or(0),
@@ -681,29 +638,28 @@ impl RespawnModule {
         })
     }
 
-    /// THE WATCH-ROW PULL SEAM (JOS-487) — the rows the Timers surface draws, in the order it draws
-    /// them, typed rather than serialized.
+    /// The watch-row pull seam — the rows the Timers surface draws, in the order it draws them,
+    /// typed rather than serialized.
     ///
-    /// It goes through [`Self::collect`] rather than re-walking the history, which costs the
-    /// candidate list this caller throws away — forty small rows — and buys the one thing that
-    /// matters: there is no second opinion about which mobs are on a clock. The alternative was a
-    /// copy of a forty-line loop that could drift from the snapshot's.
+    /// It goes through [`Self::collect`] rather than re-walking the history, at the cost of a
+    /// candidate list this caller throws away, so there is no second opinion about which mobs are
+    /// on a clock.
     #[must_use]
     pub fn watch_rows(&self, now_ms: i64) -> Vec<RespawnRow> {
         self.collect(now_ms).0
     }
 
-    /// THE ORDERING CLOCK this module was last advanced to — the log's own `ts` while folding, and
-    /// the wall clock once a live tail is ticking it. The view layer needs it because respawn's
-    /// order is a function of `now` (a mob seen recently sorts to the top) and reading a SECOND
-    /// clock to cut the window would order the rows against an instant the module has never seen.
+    /// The ordering clock this module was last advanced to — the log's own `ts` while folding, and
+    /// the wall clock once a live tail is ticking it. The view layer needs it because respawn order
+    /// is a function of `now`, and a SECOND clock would order the rows against an instant the
+    /// module has never seen.
     #[must_use]
     pub fn now_ms(&self) -> i64 {
         self.now_ms
     }
 
-    /// THE CHANGE SIGNAL — the private revision counter this module publishes as its `seq` (JOS-87,
-    /// because a watch advances no log seq).
+    /// The change signal — the private revision counter this module publishes as its `seq`, because
+    /// a watch advances no log seq.
     #[must_use]
     pub fn revision(&self) -> i64 {
         self.rev
@@ -713,9 +669,8 @@ impl RespawnModule {
     fn collect(&self, now_ms: i64) -> (Vec<RespawnRow>, Vec<RespawnCandidate>) {
         let mut rows: Vec<RespawnRow> = Vec::new();
         let mut recent: Vec<RespawnCandidate> = Vec::new();
-        // The map iterates OLDEST-FIRST (the LRU order), so sort for "most recent". `sort_by` is
-        // stable and so is `Array.prototype.sort`, which is what keeps ties in LRU order on both
-        // sides.
+        // The map iterates oldest-first (LRU order), so sort for "most recent". `sort_by` is stable
+        // and so is `Array.prototype.sort`, which keeps ties in LRU order on both sides.
         let mut entries: Vec<&MobHistory> = self.history.values().collect();
         entries.sort_by_key(|h| std::cmp::Reverse(h.last_ts));
         for h in entries {
@@ -752,8 +707,8 @@ impl EqModule for RespawnModule {
         self.history.clear();
         self.zone = String::new();
         self.zone_since = 0;
-        // Re-read the "wall clock" — which here is the PINNED construction instant, for the reason
-        // the header gives. Over there this line is `Date.now()`.
+        // Re-read the "wall clock", which here is the pinned construction instant — see the
+        // header. Over there this line is `Date.now()`.
         self.now_ms = self.construction_now_ms;
         self.rev += 1;
     }
@@ -761,20 +716,18 @@ impl EqModule for RespawnModule {
     fn on_event(&mut self, ev: &Event, _live: bool) {
         match ev.kind() {
             "epoch" => {
-                // A character rebirth invalidates the LIVE clocks (they were another character's
-                // evening) and takes the learned gaps with them for one reason only: the gaps are
-                // recomputed by the very same fold that is replaying past this line, so nothing is
-                // lost that the log still states. Game knowledge that persists across epochs is
-                // knowledge the log CANNOT restate.
+                // A character rebirth invalidates the live clocks and takes the learned gaps with
+                // them, because the gaps are recomputed by the same fold replaying past this line:
+                // nothing is lost that the log still states. Only knowledge the log CANNOT restate
+                // persists across an epoch.
                 self.history.clear();
                 self.rev += 1;
             }
             "zone" => {
                 self.zone = ev.str("zone").unwrap_or_default().to_string();
                 self.zone_since = ev.ts();
-                // AND THE REVISION MOVES, because the zone is now part of what the screen shows.
-                // MEASURED in the e2e before this line existed: both surfaces kept drawing the old
-                // zone's clocks for as long as the log stayed quiet.
+                // The revision moves, because the zone is part of what the screen shows: without
+                // this both surfaces keep drawing the old zone's clocks while the log stays quiet.
                 self.rev += 1;
             }
             "death" => {
@@ -784,8 +737,8 @@ impl EqModule for RespawnModule {
                 }
             }
             _ => {
-                // EVERYTHING ELSE IS POSSIBLE EVIDENCE THAT A WATCHED MOB IS UP. A death is checked
-                // first and returns, so the corpse can never mark its own row seen.
+                // Everything else is possible evidence that a watched mob is up. A death is checked
+                // first and returns, so a corpse can never mark its own row seen.
                 if let Some((names, via)) = seen_names_of(ev) {
                     let ts = ev.ts();
                     let owned: Vec<Option<String>> =
@@ -798,24 +751,20 @@ impl EqModule for RespawnModule {
         }
     }
 
-    /// `respawn.ts onTick`, which is one assignment and — deliberately — nothing else.
+    /// `respawn.ts onTick` — one assignment and, deliberately, nothing else.
     ///
-    /// IT PUBLISHES NOTHING, and the revision does NOT move. The set of rows changes only when a
-    /// death, a watch edit, a zone line or a sighting changes it, and every one of those already
-    /// bumps `rev`; what the clock buys is the ORDER `build` publishes in, which is why it is
-    /// recorded here and read there. Bumping the revision on a heartbeat would make this module
-    /// republish once a second forever for a world nobody touched — and, engine-side, would make a
-    /// matched-mark comparison against the app impossible for a module whose `seq` IS that counter.
+    /// It publishes nothing and the revision does NOT move. The set of rows changes only when a
+    /// death, a watch edit, a zone line or a sighting changes it, and each already bumps `rev`; the
+    /// clock only buys the ORDER `build` publishes in. Bumping on a heartbeat would republish once
+    /// a second forever for a world nobody touched.
     ///
-    /// ON A HISTORICAL FOLD THIS IS NEVER CALLED and the clock stays the pinned construction
-    /// instant, which is what keeps the six goldens re-checking tomorrow (see the header). A LIVE
-    /// world gets today's reading once a second, exactly as the app's does.
+    /// Never called on a historical fold, so the clock stays the pinned construction instant (see
+    /// the header). A live world gets today's reading once a second.
     fn on_tick(&mut self, now_ms: i64, _rows: &[crate::modules::buff_timer_rows::BuffTimerRow]) {
         self.now_ms = now_ms;
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// The same cursor `snapshot` publishes, without building the state to read it.
     fn published_seq(&self) -> Option<i64> {
         Some(self.rev)
     }
@@ -828,13 +777,13 @@ impl EqModule for RespawnModule {
         Some(self)
     }
 
-    /// THE VIEW PULL SEAM (JOS-487). See `EqModule::as_respawn`.
+    /// The view pull seam. See `EqModule::as_respawn`.
     fn as_respawn(&self) -> Option<&RespawnModule> {
         Some(self)
     }
 
-    /// THE WRITE SEAM (JOS-494) — the one above, by `&mut`. See `EqModule::as_respawn_mut` for why
-    /// they are two methods.
+    /// The write seam — the one above, by `&mut`. See `EqModule::as_respawn_mut` for why they are
+    /// two methods.
     fn as_respawn_mut(&mut self) -> Option<&mut RespawnModule> {
         Some(self)
     }
@@ -847,10 +796,8 @@ impl crate::Defines for RespawnModule {
 
     /// `respawnModule.setPrefs(next)` — the watch list, replaced whole.
     ///
-    /// AND THE REVISION MOVES, which is the second of the three duties `ipc/respawn.ts` names and
-    /// the one a define could quietly skip: a watch is a second input that advances no log seq, so
-    /// a renderer deduping on `seq` would drop the very push that carries it (JOS-87). The third
-    /// duty — push NOW rather than at the next heartbeat — is the serve layer's over here: a
+    /// The revision must move: a watch advances no log seq, so a renderer deduping on `seq` would
+    /// drop the very push that carries it. Pushing it out promptly is the serve layer's job — a
     /// revision that moved is what makes the next cadence tick re-cut the window.
     fn define(&mut self, payload: &Value) {
         let Some(prefs) = RespawnPrefs::read(payload) else {
@@ -869,18 +816,17 @@ mod tests {
     use crate::EqModule;
 
     /// The zone line the stay begins with. Every timestamp below is derived from this one, so the
-    /// arithmetic in the assertions is readable rather than a set of magic epochs.
+    /// arithmetic in the assertions reads instead of being a set of magic epochs.
     const T_ZONE: i64 = 1_787_181_000_000;
     /// The kill that starts the clock — a minute into the stay.
     const T_DEATH: i64 = T_ZONE + 60_000;
-    /// The line that NAMES the mob again, two minutes after it died. Nothing about this instant
-    /// moves a clock on its own; that is the ruling this file's round 3 turns on.
+    /// The line that names the mob again, two minutes after it died. It moves no clock on its own.
     const T_SEEN: i64 = T_DEATH + 120_000;
     /// Ten seconds later — where the ordering clock stands while the assertions read rows.
     const NOW: i64 = T_SEEN + 10_000;
 
     /// The user's own number, so the estimate ladder answers `custom` and the countdown is a round
-    /// minute. It is the same construction `tests/respawnSeen.test.mts` uses over there.
+    /// minute.
     const CUSTOM_SEC: i64 = 60;
 
     fn watching_the_knight() -> RespawnPrefs {
@@ -907,8 +853,7 @@ mod tests {
         )
     }
 
-    /// `<Mob> hits YOU for N points of damage.` — the shape the e2e plays, and the shape the owner
-    /// was looking at when the ruling was made.
+    /// `<Mob> hits YOU for N points of damage.` — the shape the e2e plays.
     fn hits_you(seq: i64, ts: i64) -> String {
         format!(
             r#"{{"kind":"damage","seq":{seq},"ts":{ts},"raw":"h","attacker":"a vis ghoul knight","target":"You","amount":106}}"#
@@ -932,10 +877,8 @@ mod tests {
 
     #[test]
     fn confirming_a_sighting_re_bases_the_clock_and_says_that_is_what_happened() {
-        // THE APP NEVER DOES THIS BY ITSELF (owner ruling, round 3). The fixture above lit the row
-        // — a combat line naming a watched mob — and the clock did NOT move for it; this call is
-        // the person saying "that sighting WAS the spawn". `tests/respawnSeen.test.mts` makes the
-        // same claim against the TypeScript, assertion for assertion.
+        // The app never does this by itself: the fixture lit the row with a combat line naming a
+        // watched mob and the clock did not move, and this call is the person confirming it.
         let mut m = seen_after_a_kill();
 
         let before = only_row(&m);
@@ -956,12 +899,11 @@ mod tests {
             "the clock now counts from the sighting"
         );
         assert_eq!(after.basis, "sighting");
-        // THE ROW LEAVES THE SEEN STATE, because the evidence is now AT the base rather than after
+        // The row leaves the seen state, because the evidence is now AT the base rather than after
         // it. Fresh evidence will mark it again, which is correct: it is up.
         assert_eq!(after.seen_ts, None);
         assert_eq!(after.seen_via, None);
-        // AND THE LADDER LEARNED NOTHING FROM IT. A confirmation is not a death and never a gap
-        // sample: the estimate is still the user's minute and the kill count is still one.
+        // A confirmation is not a death and never a gap sample, so the ladder learned nothing.
         assert_eq!(after.samples, 0);
         assert_eq!(after.kills, 1);
         assert_eq!(after.estimate_ms, Some(CUSTOM_SEC * 1000));
@@ -970,9 +912,8 @@ mod tests {
 
     #[test]
     fn a_kill_of_the_seen_mob_resumes_the_normal_death_driven_clock() {
-        // "Death messages keep driving the cycle exactly as today." The later of (death,
-        // confirmation) wins by arithmetic, so the next kill takes the base back with no code
-        // anywhere that undoes a confirmation.
+        // The later of (death, confirmation) wins by arithmetic, so the next kill takes the base
+        // back with no code anywhere that undoes a confirmation.
         let mut m = seen_after_a_kill();
         let id = only_row(&m).id;
         assert!(m.confirm_sighting(&id));
@@ -986,18 +927,15 @@ mod tests {
         assert_eq!(row.base_ts, t_second_death);
         assert_eq!(row.kills, 2);
         assert_eq!(row.seen_ts, None);
-        // THE GAP IS MEASURED BETWEEN THE TWO DEATHS (seven minutes), never from the confirmation.
+        // The gap is measured between the two deaths, never from the confirmation.
         assert_eq!(row.samples, 1);
         assert_eq!(row.observed_ms, Some(420_000));
     }
 
     #[test]
     fn a_confirmation_with_nothing_to_confirm_is_refused_rather_than_invented() {
-        // THE TWO REFUSALS, AND BOTH ARE ABOUT THE ROW. A row that is due but has been seen by
-        // nothing is a countdown the log is not claiming anything about; an id this fold does not
-        // carry is a click that raced a death or a stale window. Neither may move a clock, and
-        // neither may move the revision — a push that carried no change would make every dedupe
-        // downstream a lie.
+        // Neither refusal may move a clock, and neither may move the revision — a push carrying no
+        // change would make every dedupe downstream a lie.
         let mut m = RespawnModule::new(NOW, watching_the_knight());
         m.on_event(&ev(&zone(T_ZONE)), false);
         m.on_event(&ev(&death(1, T_DEATH)), false);

@@ -1,23 +1,17 @@
-//! The data-server wire contract, engine side.
-//!
-//! THREE THINGS LIVE HERE and nothing else does — no socket, no process, no game logic (JOS-464
-//! is phase 0's first ticket: the artifact, the codegen and the checks only).
+//! The data-server wire contract, engine side. No socket, no process, no game logic.
 //!
 //! 1. [`generated`] — the message types, generated from `protocol/schema/*.schema.json` by
-//!    `npm run gen:protocol`. Committed, and pinned by a staleness test in `protocol-codegen`
-//!    that regenerates and diffs. Never hand-edit it.
-//! 2. [`transport`] — THE SEAM. A [`transport::Transport`] moves whole MESSAGES. Exactly one
-//!    module below it knows that today's wire is one JSON object per LF-terminated line, and
-//!    swapping that for WebSockets over the open internet is adding a sibling of it. Nothing in
-//!    `generated`, and nothing that will later sit above this crate, may learn what a frame is.
-//! 3. [`token`] — the per-launch shared secret's constant-time compare. The engine only ever
-//!    VERIFIES a token; minting is Electron main's job, because main is what spawns the process
-//!    and hands it the secret.
+//!    `npm run gen:protocol`. Committed, pinned by a staleness test that regenerates and diffs.
+//!    Never hand-edit it.
+//! 2. [`transport`] — the seam. A [`transport::Transport`] moves whole messages; exactly one module
+//!    below it knows what a frame is, and a different wire is a sibling of that module. Nothing in
+//!    `generated`, and nothing above this crate, may learn what a frame is.
+//! 3. [`token`] — the per-launch shared secret's constant-time compare. The engine only verifies a
+//!    token; minting belongs to whoever spawns the process and hands it the secret.
 //!
-//! THE VERSION IS FATAL, NOT NEGOTIABLE. [`generated::PROTOCOL_VERSION`] is a single integer
-//! bumped on any breaking change. A client presents its own at hello; a mismatch closes the
-//! connection with both sides logging. There is no compatibility mode, because both sides
-//! generate from the same committed artifact — skew means somebody shipped half a build.
+//! The version is fatal, not negotiable: [`generated::PROTOCOL_VERSION`] is one integer bumped on
+//! any breaking change, and a mismatch at hello closes the connection. There is no compatibility
+//! mode — both sides generate from the same committed artifact, so skew means half a build shipped.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

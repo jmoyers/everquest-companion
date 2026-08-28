@@ -1,100 +1,47 @@
-//! `src/main/resist/module.ts` + `fold.ts` — log lines in, POOLED OBSERVATIONS out (JOS-382).
+//! Log lines in, pooled resist observations out.
 //!
-//! ── WHAT THIS MODULE PUBLISHES, AND WHY IT IS TWO INTEGERS ──────────────────────────────────────
+//! The published state is two integers, and this module is a pull rather than a push: the ledger is
+//! ~700 kB and its only consumer wants one mob at a time, so `flush_delta` stays `None`, the mob
+//! page asks a separate IPC, and `snapshot()` carries counts for diagnostics. Those counts are an
+//! unforgiving surface — every term of `ledger.rs row_key` is load-bearing, so one wrong mob level
+//! or ISO week splits or merges a row and the count moves.
 //!
-//! A PULL, NOT A PUSH. The generic delta transport exists so a renderer can mirror a module's state
-//! incrementally; this module's state is a ~700 kB ledger whose only consumer wants ONE mob out of
-//! it at a time, on a page the user has to navigate to. So `flush_delta` stays `None`, the mob page
-//! asks a separate IPC for exactly what it is about to draw, and `snapshot()` carries COUNTS for
-//! diagnostics. The one-transport rule deserves an explicit exception rather than a silent one.
+//! It does not reset at an epoch boundary. What a mob resists is game knowledge, not
+//! character-scoped state, and a rebirth does not unlearn it; the per-character bucket still means
+//! a re-fold replaces that character's contribution and nothing else.
 //!
-//! Two integers is a tiny published surface and an unforgiving one: `rows` is the number of distinct
-//! pooling keys the ledger holds and `mobs` is the number of distinct creatures across them, so the
-//! ENTIRE fold has to be exact. Every term of `ledger.rs row_key` is load-bearing — one wrong
-//! `mobLevel`, one wrong ISO week, one landing filed that should have been cancelled, and a row
-//! splits or merges and the count moves.
+//! No wall clock reaches a historical fold, so `settle` is never called during one and the
+//! end-of-fold state deliberately holds a deferred landing that arrived within `LAND_DEFER_MS` of
+//! the last event, and a song's last open pulse with its interpolation unemitted. A port that
+//! "helpfully" settled at the end would move every recorded number in the same direction.
 //!
-//! ── IT DOES NOT RESET AT AN EPOCH BOUNDARY, AND THAT IS DELIBERATE ──────────────────────────────
+//! How each outcome is earned:
 //!
-//! Character-scoped state (loot, kills, leveling) belongs to a character and dies with one. What a
-//! mob RESISTS is GAME knowledge, like the mined message overlay and the mined respawn durations,
-//! and a rebirth does not unlearn it. The per-character BUCKET still exists, so a re-fold of that
-//! character's log replaces its own contribution and nothing else. So there is no `epoch` branch
-//! below — the event is folded like any other, and the only thing it moves is `seq`.
+//!   Resist   the game saying it flatly. Incoming resists (`You resist <mob>'s <Spell>!`) are yours
+//!            and out of scope entirely.
+//!   Damage   the number goes into the row's histogram, from which the estimator derives
+//!            full-versus-partial. A critical counts as a landing and stays out of the histogram:
+//!            its number is not the spell's full damage and would invent a second "full" value.
+//!   Land     the first tick of a DoT after its cast, and a cast-on-other emote joined back to your
+//!            own `You begin casting` — never both for one spell on one mob, because a spell that
+//!            emotes and damages produced one roll. The emote's landing is therefore deferred and
+//!            cancelled by any damage line that follows it for the same mob and spell.
+//!   Song     decided by spell identity, never by a begin line; see `songs.rs`. A song is never
+//!            filed as a cast.
 //!
-//! ── HOW THE GOLDEN'S WORLD WAS CONSTRUCTED ─────────────────────────────────────────────────────
+//! It never reads the client's `spells_us.txt`: everything it writes is something the log printed,
+//! so the ledger is meaningful without a file this project may not redistribute and a patch that
+//! retunes a spell costs a re-estimate rather than a re-fold. The exclusions that need the table
+//! live in the estimator.
 //!
-//! `foldArm.mts` builds the module with the WIKI spell catalog and NO ledger seam, so the module
-//! makes its own in-memory store with nothing seeded — the shipped `resistBaseline.json` is NOT
-//! loaded. It never calls `beginSource`, so the source key stays its constructed default `'log'` and
-//! `reset()` opens exactly one bucket. `catalog.rs` carries the argument for how the same three
-//! committed catalogs are reached from here.
+//! Other people's casts are recorded and never estimated from. A `pc` row carries no level, since
+//! nothing this app reads states one; an `npc`'s level comes off the same catalog-or-`/con` ladder
+//! the target's level climbs. An npc deliberately gets no armed cast: third-party cast-begins
+//! outnumber yours nearly two to one, and arming them would put the join window in contention on
+//! every landing sentence you earned.
 //!
-//! ── NO WALL CLOCK, AND WHAT THAT COSTS THE LEDGER (ruling 18) ───────────────────────────────────
-//!
-//! The TS module does two things on the registry's 1 s heartbeat: `fold.settle(nowMs)` and, every
-//! sixtieth tick, a ledger persist. NEITHER IS PART OF A HISTORICAL FOLD. The registry does not tick
-//! during a replay, which is exactly right for the persist (a replay is re-deriving what is already
-//! on disk) — and it means the golden was recorded with `settle` NEVER CALLED.
-//!
-//! Since JOS-481 `on_tick` IS implemented, and it changes none of that: a live tail hands the wall
-//! clock in ~1×/sec and `fold_bytes` never does, so a golden's world is still the unsettled one and
-//! the end-of-fold state is deliberately:
-//!
-//!   * A DEFERRED LANDING that arrived within `LAND_DEFER_MS` of the last event is never filed.
-//!     `flush_deferred` runs at the top of every event, so a deferred landing only survives to the
-//!     end when nothing came more than three seconds after it.
-//!   * A SONG'S LAST OPEN PULSE is never closed, so neither it nor the interpolation leading up to
-//!     it is emitted. `close_open` is driven by the NEXT witness of that song, by a zone line, or by
-//!     `finish()` — and `finish()` is the profile generator's call, not the module's.
-//!
-//! Both are faithful, both are what the recorded numbers contain, and a port that "helpfully"
-//! settled at the end would fail all six slices in the same direction. THE PERSIST IS STILL NOT
-//! HERE: the engine's ledger lives in memory and its disk IO is boundary verdict 4's later ticket.
-//!
-//! ── HOW EACH OUTCOME IS EARNED ─────────────────────────────────────────────────────────────────
-//!
-//!   RESIST   `<mob> resisted your <Spell>!` — the game saying it flatly. Incoming resists
-//!            (`You resist <mob>'s <Spell>!`) are YOURS and out of scope entirely.
-//!   DAMAGE   `X hit <mob> for N points of <type> damage by <Spell>.` — the number goes into the
-//!            row's histogram, from which the estimator later derives full-versus-partial. A
-//!            CRITICAL is counted as a landing and kept OUT of the histogram: its number is not the
-//!            spell's full damage, and letting it in would invent a second "full" value.
-//!   LAND     the first tick of a DoT after its cast, and a cast-on-other emote joined back to your
-//!            own `You begin casting` — but NEVER both for one spell on one mob, because a spell
-//!            that both emotes and prints damage produced ONE roll. The emote's landing is therefore
-//!            DEFERRED and cancelled by any damage line that follows it for the same mob and spell,
-//!            which is the log-only way of saying what the brief says with the client table.
-//!   SONG     decided by spell IDENTITY, never by a begin line — `songs.rs` states why at length.
-//!            A song is NEVER filed as a cast.
-//!
-//! ── IT NEVER READS THE CLIENT'S SPELL TABLE ────────────────────────────────────────────────────
-//!
-//! `spells_us.txt` knows a spell's resist axis, its resist adjust and its level caps. This fold
-//! knows none of them, on purpose: everything it writes is something the LOG printed, so the ledger
-//! is meaningful without a file this project may not redistribute, a shipped baseline is a
-//! table-independent artifact, and a patch that retunes a spell costs a re-ESTIMATE rather than a
-//! re-fold of every log the user has ever tailed. The two exclusions the brief asks for therefore
-//! live in the estimator, where the facts are.
-//!
-//! ── OTHER PEOPLE'S CASTS ARE RECORDED, AND NEVER ESTIMATED FROM ────────────────────────────────
-//!
-//! The owner's ruling admits `self` and `pc` casters; JOS-385 added `npc` — charmed pets and
-//! ordinary NPC casters. A stranger's rows carry no level (nothing this app reads states one) and
-//! the estimator drops them by design; an npc's level comes off the same catalog-or-`/con` ladder
-//! the TARGET's level climbs, so an npc row usually carries both levels and therefore an `rc`.
-//!
-//! WHAT AN NPC DOES **NOT** GET, deliberately: an armed cast. `on_other_cast` arms `pc` casts only,
-//! so an npc's emote-only landing is never claimed. The log carries 45k third-party cast-begins
-//! against 25k of yours, and arming all of them would put the join window in contention on every
-//! landing sentence YOU earned.
-//!
-//! ── AND A ROW'S TARGET HAS TO BE A CREATURE ────────────────────────────────────────────────────
-//!
-//! `world.rs is_mob_target` gates EVERY filing — the resist arm, the damage arm, the emote arm and
-//! the song sink. It is newer than the rest (JOS-385) even though it fixes something older: R is a
-//! statement about a creature, and while only players could cast, nothing ever checked that the
-//! thing being cast ON was one.
+//! A row's target has to be a creature. `world.rs is_mob_target` gates every filing — resist,
+//! damage, emote and song — because R is a statement about a creature.
 
 pub mod cast_state;
 pub mod catalog;
@@ -119,41 +66,38 @@ use world::{CasterIndex, DebuffWindows, MeleeContact, MobLevels, MobNames, Targe
 /// How long a deferred emote-landing waits to see whether a damage line cancels it.
 pub const LAND_DEFER_MS: i64 = 3_000;
 
-/// The separator inside every composite key this module builds. A PRINTABLE byte, deliberately:
-/// AGENTS.md's rule about raw control bytes in source exists because one makes git classify the file
-/// as binary and blame, diff and grep go dark. No EQ mob or spell name has ever contained a pipe.
+/// The separator inside every composite key this module builds. A printable byte on purpose: a raw
+/// control byte makes git classify the file as binary. No EQ mob or spell name contains a pipe.
 const SEP: char = '|';
 
 /// Is this name the player? The parser's `norm` produces exactly `You` for every spelling the log
-/// uses, so the identity compare answers almost every call and `id_key` (a trim plus a lower-case)
-/// is the fallback for the shapes that reach here unnormalised. Worth spelling out because this runs
-/// on every melee swing in a two-million-line replay.
+/// uses, so the identity compare answers almost every call and `id_key` is the fallback for shapes
+/// that reach here unnormalised. Ordered that way because this runs on every melee swing.
 fn is_self(name: &str) -> bool {
     name == "You" || id_key(name) == "you"
 }
 
 /// One thing the log said, as this fold names it before the bucket pools it.
 struct Observation {
-    /// The mob's name as the LINE spelled it; the key is folded from it (world-model law 2).
+    /// The mob's name as the line spelled it; the key is folded from it.
     mob: String,
     spell_key: String,
     family: Family,
     kind: CasterKind,
-    /// The CASTER's level, or `None` when nothing has stated it.
+    /// The caster's level, or `None` when nothing has stated it.
     level: Option<i64>,
     ts: i64,
-    /// The spell upgrade rank this observation was made at. -15 of resist adjust each (JOS-387).
+    /// The spell upgrade rank this observation was made at: -15 of resist adjust each.
     rank: i64,
     /// Whether the overchannel invocation was up. Three states — see `cast_state.rs`.
     overchannel: Option<bool>,
 }
 
-/// A LANDING WAITING TO SEE WHETHER A DAMAGE LINE CANCELS IT — which is an `Observation` and nothing
-/// else, held for `LAND_DEFER_MS` before it is filed. Spelled as the same fields rather than as a
-/// near-copy: the two lists had drifted apart once already (the rank and the invocation had to be
-/// added to both by JOS-387), and a deferred filing that could carry a different set of facts from
-/// an immediate one is a bug with nowhere to be caught. The family is always `cast`: a song pulse is
-/// never deferred, because its sentence IS the landing.
+/// A landing waiting to see whether a damage line cancels it: an `Observation` held for
+/// `LAND_DEFER_MS` before it is filed. The fields must stay identical to `Observation`'s, because a
+/// deferred filing carrying a different set of facts from an immediate one is a bug with nowhere to
+/// be caught. The family is always `cast`: a song pulse is never deferred, its sentence is the
+/// landing.
 struct Deferred {
     mob: String,
     spell_key: String,
@@ -164,7 +108,6 @@ struct Deferred {
     overchannel: Option<bool>,
 }
 
-/// `resist/fold.ts ResistFold`.
 #[derive(Default)]
 pub struct ResistFold {
     levels: MobLevels,
@@ -181,8 +124,7 @@ pub struct ResistFold {
     deferred: Option<Deferred>,
     /// Mob names both ways, memoised. The measurement behind the memo is in `world.rs`.
     names: MobNames,
-    /// The TS keeps this verdict cache at module scope; here it is per-fold, which is the same
-    /// answers and nothing outliving a `Fold` (ruling 18).
+    /// Per-fold rather than module-scoped, so no verdict cache outlives a `Fold`.
     targets: TargetVerdicts,
 }
 
@@ -191,28 +133,19 @@ impl ResistFold {
         Self::default()
     }
 
-    /// ONE CREATURE'S LEVEL, FOR A READER (JOS-497 item 1) — `fold.ts levelOf`, whose whole body is
-    /// `return this.levels.levelOf(key, display)`.
-    ///
-    /// The `&self` form, so the ingest's one door can carry it; [`world::MobLevels::level_of_ref`]
-    /// is where the argument for the two forms answering identically lives.
+    /// One creature's level, for a reader. The `&self` form, so the ingest's one door can carry it;
+    /// [`world::MobLevels::level_of_ref`] states why it answers the same as the fold's own.
     #[must_use]
     pub fn level_of_ref(&self, mob_key: &str, display: &str) -> Option<world::MobLevelFact> {
         self.levels.level_of_ref(mob_key, display)
     }
 
-    /// `ResistFold.beginSource` — start folding a source.
+    /// Start folding a source: the session reset. The bucket discard that makes a re-fold idempotent
+    /// belongs to whoever owns the ledger, and the bucket is threaded through `on_event` because a
+    /// Rust fold cannot hold a second mutable handle on the ledger's graph.
     ///
-    /// Over there the ledger's own freshly-discarded bucket is handed IN so the fold writes straight
-    /// into it: the DISCARD is what makes a re-fold idempotent and it belongs to whoever owns the
-    /// ledger (JOS-231). Here the bucket is threaded through `on_event` instead, for the same reason
-    /// and with the same owner — a Rust fold cannot hold a second mutable handle on the ledger's
-    /// graph — so what is left of `beginSource` is the SESSION RESET, which is the half that is
-    /// about this fold's own state.
-    ///
-    /// THE INVOCATION IS NOT SESSION STATE and is reset here anyway, which is deliberate: a relog
-    /// carries the invocation across a camp and a zone line must not forget it, but a new SOURCE is
-    /// a different log being folded from its own beginning.
+    /// The invocation is not session state and is reset here anyway: a relog carries it across a
+    /// camp, but a new source is a different log being folded from its own beginning.
     pub fn begin_source(&mut self) {
         self.levels.reset();
         self.casters.reset();
@@ -228,18 +161,14 @@ impl ResistFold {
         self.names.reset();
     }
 
-    /// `ResistFold.settle` — the live tail's heartbeat (JOS-481), and the two things it is careful
-    /// NOT to be.
+    /// The live tail's heartbeat: settle, never finish. A landing that has waited out its cancel
+    /// window is decided and a song pulse that can gain no more witnesses is closed, but a bard
+    /// mid-rotation still has an open run, and ending it here would forfeit the interpolation the
+    /// next gap is entitled to. Hence `songs.settle` rather than `songs.flush`, which a zone line
+    /// does call.
     ///
-    /// SETTLE, NEVER FINISH: a landing that has waited out its cancel window is decided, and a song
-    /// pulse that can gain no more witnesses is closed — but a bard mid-rotation still has an open
-    /// RUN, and ending it here would forfeit the interpolation the next gap is entitled to. That is
-    /// why this calls `songs.settle` and not `songs.flush`, which a zone line does call.
-    ///
-    /// AND IT IS NOT THE PERSIST. Over there `onTick` also writes the ledger to disk every sixtieth
-    /// beat; the engine's ledger is in memory and its IO is a later ticket (boundary verdict 4, the
-    /// cutover ledger's item 6). A heartbeat that quietly grew a disk write here would be the engine
-    /// taking ownership of an artifact the app still owns.
+    /// It is not the persist: the engine's ledger is in memory, and a heartbeat that grew a disk
+    /// write would be the engine taking ownership of an artifact the app still owns.
     pub fn settle(&mut self, now: i64, bucket: &mut ResistBucket) {
         self.flush_deferred(now, bucket);
         let mut out = Vec::new();
@@ -249,10 +178,8 @@ impl ResistFold {
 
     fn on_event(&mut self, ev: &Event, bucket: &mut ResistBucket) {
         self.flush_deferred(ev.ts(), bucket);
-        // TWO CASCADES, along the seam the module already has: lines that move the WORLD (where you
-        // are, what level you are, which mob is which, which casts are in flight) and lines that ARE
-        // an outcome. Split because one switch over both is a single method with more branches than
-        // the factoring rules allow, and because the two halves are read for different reasons.
+        // Two cascades: lines that move the world (where you are, what level you are, which mob is
+        // which, which casts are in flight) and lines that are an outcome.
         if self.on_world_event(ev, bucket) {
             return;
         }
@@ -275,7 +202,7 @@ impl ResistFold {
                 if self.self_level.is_none() {
                     self.self_level = ev.int(Key::Level);
                 }
-                // The ONE line in the game that states the loadout, and therefore the only thing
+                // The one line in the game that states the loadout, and therefore the only thing
                 // that can answer "how many non-hybrid caster classes" for the overchannel adjust.
                 self.cast.note_classes(&str_array(ev, Key::Classes));
                 true
@@ -297,7 +224,7 @@ impl ResistFold {
             Kind::Death => {
                 let key = self.names.key(ev.str(Key::Name).unwrap_or_default());
                 self.debuffs.clear_mob(&key);
-                // A dead mob stops being a song target immediately (rule 3: alive AND in contact).
+                // A dead mob stops being a song target immediately (rule 3: alive and in contact).
                 // The song itself keeps running, so nothing here touches the reconstruction.
                 self.contact.drop_mob(&key);
                 true
@@ -315,7 +242,7 @@ impl ResistFold {
     }
 
     /// The cast lifecycle: what is in flight, and what stopped being in flight. A fizzle or an
-    /// interrupt DISARMS rather than filing anything — a cast that never happened is not a resist.
+    /// interrupt disarms rather than filing anything — a cast that never happened is not a resist.
     fn on_cast_lifecycle(&mut self, ev: &Event, bucket: &mut ResistBucket) -> bool {
         match ev.kind_of() {
             Kind::CastBegin => {
@@ -366,13 +293,11 @@ impl ResistFold {
         }
     }
 
-    // ---- world housekeeping ---------------------------------------------------------------
-
     fn on_zone(&mut self, zone: String, bucket: &mut ResistBucket) {
         self.flush_deferred(i64::MAX, bucket);
-        // A zone change is a real discontinuity: the song may well have stopped, so rule 2
-        // extrapolates past nothing. Flushed BEFORE the contact map is dropped, because a pulse
-        // being filed here still asks who was in melee range when it fired.
+        // A zone change is a real discontinuity, so rule 2 extrapolates past nothing. Flushed
+        // before the contact map is dropped, because a pulse filed here still asks who was in
+        // melee range when it fired.
         let mut out = Vec::new();
         self.songs.flush(&mut out);
         self.apply_song_out(out, bucket);
@@ -382,12 +307,11 @@ impl ResistFold {
         self.casts.reset();
     }
 
-    /// Melee proximity, which exists for ONE reader: song rule 3, which needs to know who was in
-    /// range when a pulse fired. So it is not tracked until a song has been seen — MEASURED, because
-    /// this is the busiest arm in the whole fold (two swings a second for hours) and the owner's
-    /// two-million-line log contains five sing lines. The priced cost is the contact from the six
-    /// seconds before the very first song evidence of a session, which can only UNDER-count a song's
-    /// attempts: the safe direction, and the one rule 3 already errs in.
+    /// Melee proximity, which exists for one reader: song rule 3, which needs to know who was in
+    /// range when a pulse fired. Not tracked until a song has been seen, because this is the
+    /// busiest arm in the fold — two swings a second for hours. The cost is the contact from the
+    /// six seconds before a session's first song evidence, which can only under-count a song's
+    /// attempts: the direction rule 3 already errs in.
     fn on_melee(&mut self, attacker: &str, target: &str, ts: i64) {
         if !self.songs.active() {
             return;
@@ -406,8 +330,6 @@ impl ResistFold {
         self.contact.note(&key, ts);
         self.names.remember(mob);
     }
-
-    // ---- casts ---------------------------------------------------------------------------
 
     fn on_cast_begin(&mut self, spell: &str, ts: i64, sung: bool, bucket: &mut ResistBucket) {
         let key = spell_canon_key(spell);
@@ -457,8 +379,8 @@ impl ResistFold {
         candidates: Option<&[String]>,
         bucket: &mut ResistBucket,
     ) {
-        // A SONG PULSE NEEDS NO ARMED CAST, and that is the whole point: under the Symphonic Aura
-        // there is no cast line to arm. The sentence itself is the landing.
+        // A song pulse needs no armed cast: under the Symphonic Aura there is no cast line to arm,
+        // and the sentence itself is the landing.
         let mob = self.names.key(mob_display);
         let mut out = Vec::new();
         let handled =
@@ -471,7 +393,7 @@ impl ResistFold {
         let Some(cast) = self.casts.take(ts, candidates) else {
             return;
         };
-        // A buff you landed on a GROUPMATE prints the same sentence shape as a debuff on a mob, and
+        // A buff landed on a groupmate prints the same sentence shape as a debuff on a mob, and
         // filed as a row it becomes a person's name in the ledger. See `world.rs`.
         if !self.targets.is_mob_target(mob_display) {
             return;
@@ -481,12 +403,12 @@ impl ResistFold {
         if catalog::is_resist_debuff(&cast.display) {
             self.debuffs.open(&key, &cast.spell_key, ts);
         }
-        // ONE CAST IS ONE ROLL. If this cast already printed damage on this mob, the damage line IS
+        // One cast is one roll. If this cast already printed damage on this mob, the damage line is
         // the observation and the emote is the same roll saying so twice.
         if cast.damaged.contains(&key) {
             return;
         }
-        // DEFERRED: a damage line for the same mob and spell cancels it.
+        // Deferred: a damage line for the same mob and spell cancels it.
         self.flush_deferred(i64::MAX, bucket);
         self.deferred = Some(Deferred {
             mob: mob_display.to_string(),
@@ -506,8 +428,8 @@ impl ResistFold {
             Some(_) => {}
         }
         let d = self.deferred.take().expect("checked above");
-        // Only YOUR emote-landings are attributable. A stranger's sentence names no caster, and an
-        // npc's cast is never armed in the first place.
+        // Only your own emote-landings are attributable. A stranger's sentence names no caster, and
+        // an npc's cast is never armed in the first place.
         if d.kind != CasterKind::SelfCast {
             return;
         }
@@ -541,10 +463,8 @@ impl ResistFold {
         }
     }
 
-    // ---- outcomes ------------------------------------------------------------------------
-
     fn on_resist(&mut self, ev: &Event, bucket: &mut ResistBucket) {
-        // `You resist <mob>'s <Spell>!` is YOUR resist and a different feature entirely.
+        // `You resist <mob>'s <Spell>!` is your own resist and a different feature entirely.
         if ev.bool(Key::Incoming) {
             return;
         }
@@ -556,8 +476,8 @@ impl ResistFold {
         let kind = self.casters.kind_of(&caster);
         let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
         let spell_key = spell_canon_key(&spell);
-        // The resist line is the one outcome line that PRINTS the rank (719 of the owner's 3,304
-        // do), so it beats the armed cast rather than falling back to it.
+        // The resist line is the one outcome line that often prints the rank, so it beats the armed
+        // cast rather than falling back to it.
         let line_rank = spell_rank(&spell);
         if kind == CasterKind::SelfCast {
             self.cast.note_song_rank(&spell_key, line_rank);
@@ -604,9 +524,9 @@ impl ResistFold {
         .resist += 1;
     }
 
-    /// The CASTER's level, by kind. Self is the session level; another player's is never stated
+    /// The caster's level, by kind. Self is the session level; another player's is never stated
     /// anywhere this app reads; an NPC's is the same catalog-or-`/con` ladder the target's level
-    /// climbs (JOS-385). `None` is a first-class answer and simply drops the row from the fit.
+    /// climbs. `None` is a first-class answer and simply drops the row from the fit.
     fn caster_level(&mut self, kind: CasterKind, caster: &str) -> Option<i64> {
         match kind {
             CasterKind::SelfCast => self.self_level,
@@ -625,11 +545,11 @@ impl ResistFold {
         }
         let dtype = ev.str(Key::Dtype).unwrap_or_default().to_string();
         let target = ev.str(Key::Target).unwrap_or_default().to_string();
-        // A swing either way is MELEE CONTACT, which is the only proxy for point-blank range a song
+        // A swing either way is melee contact, which is the only proxy for point-blank range a song
         // pulse gets (rule 3). A damage shield firing means the mob hit you, so it counts too.
         if dtype == "melee" || dtype == "ds" {
             self.on_melee(&attacker, &target, ev.ts());
-            // The behavioural guard runs whatever the songs are doing: a name YOU have landed damage
+            // The behavioural guard runs whatever the songs are doing: a name you have landed damage
             // on is a mob, and that is what keeps a proper-named guard out of the player roster.
             if is_self(&attacker) {
                 self.casters.note_struck(&target);
@@ -653,7 +573,7 @@ impl ResistFold {
         kind: CasterKind,
         bucket: &mut ResistBucket,
     ) {
-        // BEFORE the target test, not after: this is what makes a proper-named creature you have
+        // Before the target test, not after: this is what makes a proper-named creature you have
         // nuked a creature, and it is the evidence the catalog most often lacks.
         if kind == CasterKind::SelfCast {
             self.casters.note_struck(target);
@@ -679,8 +599,8 @@ impl ResistFold {
             self.casts.note_damaged(i, target_key);
         }
         let level = self.caster_level(kind, attacker);
-        // A damage line almost never prints the rank (four lines in two million, all Harm Touch), so
-        // the armed cast is the ordinary source and the line is the exception that beats it.
+        // A damage line almost never prints the rank, so the armed cast is the ordinary source and
+        // the line is the rare exception that beats it.
         let line_rank = spell_rank(&skill);
         let armed = self
             .casts
@@ -714,9 +634,8 @@ impl ResistFold {
             let modifiers = ev.arr_len(Key::Modifiers);
             let amount = ev.int(Key::Amount).unwrap_or(0);
             let row = self.row_for(bucket, &obs);
-            // A CRITICAL is counted as a landing and kept OUT of the histogram: its number is not
-            // the spell's full damage, and letting it in would invent a second "full" value for the
-            // estimator to read partials against.
+            // A critical counts as a landing and stays out of the histogram: its number is not the
+            // spell's full damage, and would invent a second "full" value to read partials against.
             if crit || modifiers > 0 {
                 row.land += 1;
             } else {
@@ -725,13 +644,10 @@ impl ResistFold {
         }
     }
 
-    // ---- songs ---------------------------------------------------------------------------
-
-    /// Apply what the song half asked for, in the order it asked. `SongOut::File` is one `sink`
-    /// call; `SongOut::Pulse` is `filePulse` — RULE 3, which lives here because it needs the world:
-    /// one reconstructed pulse becomes one attempt against every mob that was alive and in melee
-    /// contact inside the last pulse interval, PLUS every mob the log NAMED as resisting it, which
-    /// is proof of range no proximity heuristic can improve on.
+    /// Apply what the song half asked for, in the order it asked. `SongOut::Pulse` is rule 3, which
+    /// lives here because it needs the world: one reconstructed pulse becomes one attempt against
+    /// every mob alive and in melee contact inside the last pulse interval, plus every mob the log
+    /// named as resisting it — proof of range no proximity heuristic can improve on.
     fn apply_song_out(&mut self, out: Vec<SongOut>, bucket: &mut ResistBucket) {
         for item in out {
             match item {
@@ -758,15 +674,13 @@ impl ResistFold {
         }
     }
 
-    /// The row one song pulse belongs to, or nothing at all when the pulse landed on a PERSON.
+    /// The row one song pulse belongs to, or nothing when the pulse landed on a person.
     ///
-    /// Songs are never filed as an ordinary cast and NPC casters are never filed as a song:
-    /// `SongFold` recognises a song by spell identity and hands back anything that is not the tailed
-    /// character's, so `kind` here is always `self` by construction.
+    /// `kind` is always `self` by construction: `SongFold` recognises a song by spell identity and
+    /// hands back anything that is not the tailed character's.
     ///
-    /// The target test is not decoration on this arm — it is the arm it matters most on. A bard's
-    /// group songs pulse on GROUPMATES and print a landing sentence naming each of them, so the
-    /// JOS-382 baseline carries a group song filed against five people's names.
+    /// The target test matters most on this arm: a bard's group songs pulse on groupmates and print
+    /// a landing sentence naming each of them.
     fn file_song(
         &mut self,
         bucket: &mut ResistBucket,
@@ -787,9 +701,7 @@ impl ResistFold {
             level: self.self_level,
             ts,
             rank: self.cast.song_rank(song_key),
-            // A SONG IS NOT A CAST SPELL, so the wiki's -150 does not reach it (JOS-387). If the
-            // owner's log ever shows a song's resist rate moving with the invocation state, that is
-            // a finding to report, not a term to model.
+            // A song is not a cast spell, so the -150 overchannel adjust does not reach it.
             overchannel: Some(false),
         };
         let row = self.row_for(bucket, &obs);
@@ -799,8 +711,6 @@ impl ResistFold {
             row.land += 1;
         }
     }
-
-    // ---- rows ----------------------------------------------------------------------------
 
     fn spec(&mut self, obs: &Observation) -> RowSpec {
         let key = self.names.key(&obs.mob);
@@ -822,9 +732,9 @@ impl ResistFold {
             mob_level_hi: ranged.map(|l| l.hi),
             rank: obs.rank,
             overchannel: obs.overchannel,
-            // THE ONE KEY TERM THAT IS NOT ABOUT `rc` (JOS-397): a row's age, so recent evidence can
-            // weigh more than old. Taken off the LOG's own clock, like every other fact here, and
-            // never off a wall clock — a replay must produce the same ledger twice.
+            // The one key term that is not about `rc`: a row's age, so recent evidence can weigh
+            // more than old. Off the log's own clock, never a wall clock — a replay must produce
+            // the same ledger twice.
             week: Some(iso_week_key(obs.ts)),
         }
     }
@@ -839,13 +749,12 @@ impl ResistFold {
     }
 }
 
-/// `ev.classes` — the `/who` row's class codes.
 fn str_array(ev: &Event, key: Key) -> Vec<String> {
     ev.arr_str(key).into_iter().map(str::to_string).collect()
 }
 
-/// `ev.candidates.map((c) => c.name)` — the candidate SPELL NAMES the parser handed over. EQ prints
-/// one sentence per spell FAMILY, so the parser never claims which one it was (world-model law 3).
+/// The candidate spell names the parser handed over. EQ prints one sentence per spell family, so
+/// the parser never claims which one it was.
 fn candidate_names(ev: &Event) -> Vec<String> {
     ev.candidate_names(Key::Candidates)
 }
@@ -870,63 +779,50 @@ impl ResistModule {
             ledger: ResistLedgerStore::new(),
             fold: ResistFold::new(),
             seq: 0,
-            // The constructed default. `beginSource` names the character whose log is about to be
-            // folded, and the bench never calls it — so this is the key the golden was recorded
-            // under.
+            // The constructed default. `begin_source` names the character whose log is about to be
+            // folded; the bench never calls it, so this is the key the goldens were recorded under.
             source_key: "log".to_string(),
         }
     }
 
-    /// Name the character whose log is about to be folded. DISCARDS that character's bucket first
-    /// (JOS-231), so re-reading the same log every launch REPLACES its contribution instead of
-    /// doubling it.
+    /// Name the character whose log is about to be folded. Discards that character's bucket first,
+    /// so re-reading the same log every launch replaces its contribution instead of doubling it.
     ///
-    /// `pipeline.ts` is the caller; `foldArm.mts` — and therefore every golden — is not, which is
-    /// why the source key below stays `'log'` for the whole of a parity run.
+    /// The parity bench never calls it, so the source key stays the constructed default there.
     pub fn begin_source(&mut self, key: &str) {
         self.source_key = key.to_string();
         self.ledger.begin_source(key);
         self.fold.begin_source();
     }
 
-    /// SEED THE PERSISTED BUCKETS (JOS-496 item 3) — `store.ts resistLedger()`'s
-    /// `for (const src of loadUserSources()) created.bucket(src.key).seed(src.rows)`.
+    /// Seed the persisted buckets.
     ///
-    /// IT MUST RUN BEFORE [`ResistModule::begin_source`], never after, and the two-call shape is
-    /// what makes that orderable at all: seeding puts every persisted bucket back, and the fold's
-    /// own source is discarded afterwards by the one call that names it. Reversed, this run's
-    /// character would be seeded with the counts its own log is about to re-state — the JOS-231
-    /// doubling, on the resist ledger this time.
+    /// It must run before [`ResistModule::begin_source`], never after: seeding puts every persisted
+    /// bucket back and the fold's own source is discarded afterwards by the one call that names it.
+    /// Reversed, this run's character would be seeded with counts its own log is about to re-state.
     ///
-    /// NOTHING IN THIS CRATE CALLS IT. `registered()` cannot reach a file and does not know a state
-    /// directory exists; the one caller is `engined::foldsink`, which is handed one at attach. That
-    /// is the same structural argument `Registry::install_knowledge` makes, and it is what keeps
-    /// the six-slice oracle's world file-free by construction rather than by discipline.
+    /// Nothing in this crate calls it — the one caller is `engined::foldsink`, which is handed the
+    /// sources at attach. That is what keeps the parity oracle's world file-free by construction.
     pub fn seed(&mut self, sources: &[ledger_file::LedgerSource]) {
         ledger_file::seed_store(&mut self.ledger, sources);
     }
 
-    /// THE USER'S HALF OF THE LEDGER, as it goes on disk — `store.ts saveUserSources`'s filter and
-    /// both of its sort orders. The shipped baseline's bucket and every empty bucket are dropped.
+    /// The user's half of the ledger, as it goes on disk. The shipped baseline's bucket and every
+    /// empty bucket are dropped.
     #[must_use]
     pub fn user_ledger_file(&self) -> ledger_file::UserLedgerFile {
         ledger_file::ledger_file_of(&self.ledger)
     }
 
-    /// THE PULL SEAM FOR ONE CREATURE'S LEVEL (JOS-497 item 1) — `resist/module.ts levelOf`.
+    /// The pull seam for one creature's level, since this module publishes only counts and has no
+    /// cursor to mirror.
     ///
-    /// It is the LAST thing `src/main/ipc/resist.ts` still asked the app's own fold synchronously,
-    /// and JOS-496 named it in place rather than leaving it: the resist module publishes COUNTS
-    /// (`{rows, mobs}`) and nothing else, so there was no op to ask and no cursor to mirror. This is
-    /// the op's half.
+    /// It takes both the key and the display name because the two are used for different things: a
+    /// `/con` this session is filed under the folded key, and the committed catalog is looked up
+    /// under the name the log spelled. The caller folds the key so one spelling rule serves the
+    /// whole engine.
     ///
-    /// IT TAKES BOTH THE KEY AND THE DISPLAY NAME, exactly as the TypeScript does, because the two
-    /// are used for different things: a `/con` this session is filed under the folded key, and the
-    /// committed catalog is looked up under the name the log spelled. The caller folds the key
-    /// (`consider::mob_key`) so that one spelling rule serves the whole engine.
-    ///
-    /// `&self`, THROUGH [`MobLevels::level_of_ref`], for the ingest door's no-mutation law — that
-    /// function carries the argument for why the answer is the same as the fold's own.
+    /// `&self`, through [`MobLevels::level_of_ref`], for the ingest door's no-mutation law.
     #[must_use]
     pub fn level_of(&self, mob_key: &str, display: &str) -> Option<world::MobLevelFact> {
         self.fold.level_of_ref(mob_key, display)
@@ -940,9 +836,8 @@ impl EqModule for ResistModule {
 
     fn reset(&mut self) {
         self.seq = 0;
-        // A fresh fold, and the ledger DISCARDS this source's bucket before its log is folded again
-        // (JOS-231). The discard is what makes a re-fold idempotent and it belongs to whoever owns
-        // the ledger.
+        // A fresh fold, and the ledger discards this source's bucket before its log is folded
+        // again: the discard is what makes a re-fold idempotent.
         self.fold = ResistFold::new();
         self.ledger.begin_source(&self.source_key);
         self.fold.begin_source();
@@ -959,12 +854,10 @@ impl EqModule for ResistModule {
         fold.on_event(ev, ledger.bucket_mut(source_key));
     }
 
-    /// `resist/module.ts onTick`, minus its second half. See [`ResistFold::settle`] for both.
+    /// See [`ResistFold::settle`].
     ///
-    /// `seq` DOES NOT MOVE, exactly as over there: this module publishes the last event's seq, and
-    /// a settle is not an event. What it can change is the ledger's row and mob COUNTS, which is
-    /// the published state — a deferred landing filed by the passage of time is a row the app would
-    /// already be showing.
+    /// `seq` does not move: this module publishes the last event's seq and a settle is not an
+    /// event. What it can change is the ledger's row and mob counts.
     fn on_tick(&mut self, now_ms: i64, _rows: &[crate::modules::buff_timer_rows::BuffTimerRow]) {
         let Self {
             ledger,
@@ -975,8 +868,7 @@ impl EqModule for ResistModule {
         fold.settle(now_ms, ledger.bucket_mut(source_key));
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// The same cursor `snapshot` publishes, without building the state to read it.
     fn published_seq(&self) -> Option<i64> {
         Some(self.seq)
     }
@@ -986,7 +878,7 @@ impl EqModule for ResistModule {
         json!({ "seq": self.seq, "state": { "rows": rows, "mobs": mobs } })
     }
 
-    /// THE PERSISTED-LEDGER SEAMS (JOS-496 item 3). See `EqModule::as_resist_mut`.
+    /// The persisted-ledger seams.
     fn as_resist_mut(&mut self) -> Option<&mut ResistModule> {
         Some(self)
     }

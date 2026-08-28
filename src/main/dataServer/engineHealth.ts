@@ -211,8 +211,35 @@ interface ProbeState {
   sendHealth(): void
 }
 
+/**
+ * Frames the engine broadcasts to every open connection (world.rs `broadcast()`); the probe skips
+ * these and keeps waiting, because they are addressed to the connection, not to its request.
+ * `reset`/`diff` stay fatal: this connection never subscribes, so receiving one is a real violation.
+ * A `Record` keyed by the kind union, so a new schema kind stops the build here instead of being
+ * silently classed either way.
+ */
+const CONNECTION_WIDE: Readonly<Record<EngineMessage['kind'], boolean>> = {
+  hello: false,
+  reply: false,
+  error: false,
+  reset: false,
+  diff: false,
+  epoch: true,
+  fire: true,
+  conCard: true,
+  knowledgeMiss: true,
+  moduleChanged: true
+}
+
+/** Skipping never resets the conversation timeout: a peer that streams broadcasts forever without
+ *  answering still fails at the same 5 s. */
+function isConnectionWide(msg: EngineMessage): boolean {
+  return CONNECTION_WIDE[msg.kind]
+}
+
 /** Step one: the handshake answer, and the ONE compatibility check in the whole feature. */
 function handleHello(msg: EngineMessage, probe: ProbeState): void {
+  if (isConnectionWide(msg)) return
   if (msg.kind !== 'hello') {
     probe.fail('unexpected', `the engine sent \`${msg.kind}\` before answering hello`)
     return
@@ -238,6 +265,7 @@ function handleHello(msg: EngineMessage, probe: ProbeState): void {
 
 /** Step two: the answer to `session.health`, or the reasons it was not one. */
 function handleHealth(msg: EngineMessage, probe: ProbeState): void {
+  if (isConnectionWide(msg)) return
   if (msg.kind === 'error') {
     probe.fail('refused', `session.health was refused: ${msg.error.code} — ${msg.error.message}`)
     return

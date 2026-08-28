@@ -106,6 +106,11 @@ import { attachStateDir, takeArtifactsBack } from './artifactOwner'
 // historical fold BEGINS (an accepted attach), how far it has got (the engine's progress frames)
 // and when it LANDS (the go-live edge below) — so it feeds all three to the one state main pushes.
 import { noteEngineFolding, noteEngineLive, noteFoldProgress } from './engineLaunchState'
+// THE WAIT ITSELF (JOS-518). A leaf with its request, its turn, its sleep and its log sink handed
+// in, so the shapes that matter — a fold past the old budget, a poll refused once and then answered,
+// a connection that dies mid-wait — are drivable in a unit test. Its header carries the owner ruling
+// that a folding engine is never given up on.
+import { waitForFold, type FoldHealth } from './foldWait'
 import { SERVABLE, type Readiness } from './readShim'
 import type { ReadyEngine } from './supervisor'
 import type { ParamsFor, RequestOp, ResultFor } from '../../shared/dataServer/ops'
@@ -115,12 +120,11 @@ import type { CharacterRef } from '../../shared/types'
  *  round trip on this port, so this is a bound on the pathological case and not a budget. */
 const CONNECT_TIMEOUT_MS = 2_000
 
-/** How long the probe waits for the ENGINE's fold to land before it gives up and reports what it
- *  actually found. A bound rather than a deadline: an engine still `folding` is not broken, and the
- *  line says `folding` and reports every module as drifted, which is the honest reading. Generous
- *  because a first attach on the owner's real log is hundreds of megabytes. */
-const FOLD_WAIT_BUDGET_MS = 120_000
-const FOLD_POLL_MS = 400
+// `FOLD_WAIT_BUDGET_MS` LIVED HERE AND IS GONE (JOS-518). It was 120 seconds, and it was a survivor
+// of the deleted parity probe — where a bound on patience only ever cost a verdict. Post-cutover
+// this loop arms the whole read path, so an expiry stranded the session permanently on any fold
+// slower than two minutes. `foldWait.ts` carries the owner's ruling and the whole argument; what
+// remains here is the wiring and the go-live edge, which is the part only this file knows.
 
 /** One live engine and the client talking to it. */
 interface LiveEngine {
@@ -177,11 +181,28 @@ let engineLiveOn: string | null = null
  */
 let engineLogMtime: number | null = null
 
+/**
+ * HOW BIG THE ENGINE LAST SAID THIS LOG WAS — the newest `logSize` off a progress frame, or null
+ * before one has arrived (JOS-518).
+ *
+ * IT EXISTS FOR ONE SENTENCE, and it is the sentence a person waiting out a nine-gigabyte fold most
+ * needs: `still folding — 3.2 GB of 9.1 GB`. A percentage cannot say that and neither can an offset
+ * with no denominator, and `session.health` — the round trip the wait is already making — carries a
+ * mark but no size. So the number is taken from the frames the engine is already sending rather
+ * than by this process `statSync`ing a file the engine owns (owner ruling 21).
+ *
+ * IT DIES WITH THE TURN, for `engineLiveOn`'s reason exactly: a denominator measured on the world
+ * somebody has since replaced is a fact about a different fold, and quoting it under the new one
+ * would print a bar's worth of arithmetic about the wrong file.
+ */
+let lastFoldLogSize: number | null = null
+
 /** THE ONE PLACE THE TURN ADVANCES, so nothing that must die with it can be forgotten. */
 function bumpGen(): number {
   gen += 1
   engineLiveOn = null
   engineLogMtime = null
+  lastFoldLogSize = null
   // THE MIRRORS DIE WITH THE TURN, for `engineLiveOn`'s reason exactly: a served `character` state
   // measured on the world somebody has since replaced is a fact about a different log, and a
   // synchronous reader holding it would answer with authority about a character the app has left.
@@ -310,6 +331,11 @@ async function openConnection(mine: number, info: ReadyEngine, client: EngineCli
   // test. A live-tail frame is dropped by `noteFoldProgress` itself — see its header.
   client.onProgress((progress) => {
     if (live?.client !== client) return
+    // THE DENOMINATOR, KEPT (JOS-518) — see `lastFoldLogSize`. Taken from every frame including a
+    // live-tail one, because what it states is how big the engine believes the FILE to be, which is
+    // true of the log whichever loop measured it; the banner's own live-frame refusal is a separate
+    // question and `noteFoldProgress` owns it.
+    lastFoldLogSize = progress.logSize
     noteFoldProgress(progress, Date.now())
   })
   // THE CON CARDS (JOS-496, boundary verdict 2) — `onFire`'s shape exactly, and for its reasons: a
@@ -532,10 +558,11 @@ async function attachAndProbe(mine: number): Promise<void> {
   // the path and does attach, which is the case the re-attach exists for.
   if (l.attachedTo !== target && (await sendAttach(mine, l, target)) === null) return
   if (gen !== mine) return
-  // THE FOLD IS WAITED FOR, AND NOTHING IS COMPARED (JOS-499). `waitForFold` is what records
+  // THE FOLD IS WAITED FOR, AND NOTHING IS COMPARED (JOS-499). The wait is what records
   // `engineLiveOn`, which is what `engineServeReadiness()` reads on every served IPC — so this
-  // call is the arming of the read path, not the preamble to a probe.
-  await waitForFold(mine, l)
+  // call is the arming of the read path, not the preamble to a probe. It has no deadline (JOS-518):
+  // a folding engine is never given up on, so this `await` runs for as long as the log is big.
+  await waitForFoldHere(mine, l)
 }
 
 /**
@@ -626,29 +653,21 @@ function onWorldRebuilt(character: CharacterRef | null): void {
 // WHAT IT PROVED IS NOT LOST, it is just finished: the six-slice golden oracle
 // (`npm run oracle:rust-fold`) is what established the equivalence this probe watched for drift
 // against, and owner ruling 26 keeps it running against the RECORDED goldens for one more
-// release. `waitForFold` below survives it, because polling `session.health` until the engine
-// goes live is what arms the serve path — see `engineLiveOn`.
+// release. The fold WAIT survives it, because polling `session.health` until the engine goes live
+// is what arms the serve path (see `engineLiveOn`) — the loop itself now lives in `foldWait.ts`,
+// and what is left here is the one thing that file cannot know: what going live MEANS to this app.
 
-/** What `session.health` last said. Only the fields the line quotes. */
-interface EngineHealthSay {
-  readonly status: string
-  readonly epoch: number
-  readonly events?: number
-  /** The engine's own (log identity, byte offset). Absent until it has folded something. */
-  readonly mark?: { readonly logPath?: string; readonly offset?: number }
-  /** THE LOG FILE'S mtime, as the ENGINE stats it (owner ruling 21). Absent before an attach, and
-   *  absent when the stat failed — never zero, which would claim 1970. */
-  readonly logMtimeMs?: number
-}
+// `EngineHealthSay` LIVED HERE AND IS `FoldHealth` IN `foldWait.ts` NOW (JOS-518) — the loop that
+// reads it moved, and the shape belongs beside its reader.
 
 /**
- * THE GO-LIVE SENTENCE, built out of line so `waitForFold` keeps its own shape.
+ * THE GO-LIVE SENTENCE, built out of line so `sawHealth` keeps its own shape.
  *
  * The optional clauses are appended rather than interpolated because both are genuinely absent on a
  * fresh attach — an engine that has folded nothing has no event count and no byte mark — and an
  * empty interpolation would print a dangling comma rather than saying nothing.
  */
-function servingLine(logPath: string | null, health: EngineHealthSay): string {
+function servingLine(logPath: string | null, health: FoldHealth): string {
   const parts = [`epoch ${String(health.epoch)}`]
   if (health.events !== undefined) parts.push(`${String(health.events)} events`)
   if (health.mark?.offset !== undefined) parts.push(`at byte ${String(health.mark.offset)}`)
@@ -658,74 +677,81 @@ function servingLine(logPath: string | null, health: EngineHealthSay): string {
   )
 }
 
-/** Poll `session.health` until the engine's ingest is `live`, or the budget runs out. Null only
- *  when this turn was superseded or the connection failed — both of which mean "say nothing". */
-async function waitForFold(mine: number, l: LiveEngine): Promise<EngineHealthSay | null> {
-  const deadline = Date.now() + FOLD_WAIT_BUDGET_MS
-  for (;;) {
-    let health: EngineHealthSay
-    try {
-      health = await l.client.request('session.health', {})
-    } catch (err) {
-      debug(`data-server client: session.health was refused (${describeErr(err)})`)
-      return null
-    }
-    if (gen !== mine) return null
-    // THE SHIM'S READINESS, TAKEN OFF A ROUND TRIP THE PROBE WAS MAKING ANYWAY (JOS-489). It is
-    // recorded on the way past rather than in the caller because THIS is the only place in the file
-    // that has heard the engine say `live`, and because the loop can exit either way: a budget
-    // expiry returns a health that is still `folding`, and recording that as live would be the shim
-    // serving prefixes to a hydrating window.
-    if (health.status === 'live') {
-      // THE GO-LIVE EDGE (JOS-493), taken exactly once per turn: the shim starts serving on this
-      // assignment, so the windows that hydrated during the fold are holding this process's own
-      // state and are about to be handed the other world's cursors. `pushWorldChanged` tells them
-      // to take the served world now rather than at whatever unrelated moment re-hydrates them
-      // next — and it is inside the `first` test because this loop can run many times per turn.
-      const first = engineLiveOn === null
-      engineLiveOn = l.attachedTo
-      // THE SERVED FILE FACT, on the way past (owner ruling 21). Absent means absent — never zero,
-      // which would graft a `lastPlayed` of 1970 onto a character card.
-      engineLogMtime = health.logMtimeMs ?? null
-      if (first) {
-        pushWorldChanged()
-        // THE MIRRORS ARE PRIMED ON THE SAME EDGE, and it has to be this one rather than the first
-        // read: the engine publishes a cursor when a module MOVES, and a module that has finished
-        // folding and gone quiet will not move again for minutes. A mirror waiting for a cursor that
-        // is not coming would fall back on every draw of a card the engine could answer perfectly.
-        primeMirrors()
-        // THE GO-LIVE SENTENCE (JOS-499), and it replaces a line rather than adding one.
-        //
-        // The PARITY line used to be printed at exactly this moment — it was the app's own
-        // statement that both folds had landed on the same log and the engine's ingest was live —
-        // and two e2e specs used it as their READINESS PRECONDITION rather than for its verdict.
-        // The verdict is gone with the second world; the readiness it also carried is a real fact
-        // about this launch and is still the one moment worth naming, because it is precisely when
-        // `engineServeReadiness()` starts answering yes and every read in the product changes hands.
-        //
-        // IT REPORTS WHAT IT CAN VOUCH FOR: the log both sides agree on, the engine's own event
-        // count and byte mark. Those come off the health round trip this loop was making anyway, so
-        // the line costs nothing and is evidence rather than an announcement.
-        debug(servingLine(l.attachedTo, health))
-        // …AND A BREADCRUMB FOR THE SAME EDGE (JOS-501). It is the last of the four the ring gets
-        // from the engine's lifecycle, and the most diagnostic of them: it is the moment every
-        // read in the product changes hands, so a crash report whose ring stops at `engine:ready`
-        // says the fold never landed, which is a completely different investigation from one whose
-        // ring shows `engine:live` followed by module cursors.
-        noteEngineEdge('engine:live')
-      }
-      // THE BANNER RESOLVES HERE (JOS-503), and OUTSIDE the `first` test on purpose. `first` is
-      // about this app's own read path changing hands, which happens once; this is about a window
-      // being told the catch-up is over, and a second turn that finds the engine already live
-      // (a world rebuild on an unchanged log) must still take a stale bar down rather than leave
-      // one up because the interesting edge belonged to an earlier turn. `set` is a no-op when
-      // nothing changed, so saying it every poll costs a comparison.
-      noteEngineLive()
-    }
-    if (health.status === 'live' || Date.now() >= deadline) return health
-    await delay(FOLD_POLL_MS)
-    if (gen !== mine) return null
+/**
+ * ONE HEALTH ANSWER, ON THE WAY PAST — and everything this app does about the engine going live.
+ *
+ * THE SHIM'S READINESS, TAKEN OFF A ROUND TRIP THE WAIT WAS MAKING ANYWAY (JOS-489). It is recorded
+ * here rather than by the loop's caller because this is the only place in this process that has
+ * heard the engine say `live`, and it is recorded only on `live`: a folding answer written down as
+ * live would be the shim serving a mid-scan prefix to a hydrating window.
+ */
+function sawHealth(l: LiveEngine, health: FoldHealth): void {
+  if (health.status !== 'live') return
+  // THE GO-LIVE EDGE (JOS-493), taken exactly once per turn: the shim starts serving on this
+  // assignment, so the windows that hydrated during the fold are holding this process's own
+  // state and are about to be handed the other world's cursors. `pushWorldChanged` tells them
+  // to take the served world now rather than at whatever unrelated moment re-hydrates them
+  // next — and it is inside the `first` test because this loop can run many times per turn.
+  const first = engineLiveOn === null
+  engineLiveOn = l.attachedTo
+  // THE SERVED FILE FACT, on the way past (owner ruling 21). Absent means absent — never zero,
+  // which would graft a `lastPlayed` of 1970 onto a character card.
+  engineLogMtime = health.logMtimeMs ?? null
+  if (first) {
+    pushWorldChanged()
+    // THE MIRRORS ARE PRIMED ON THE SAME EDGE, and it has to be this one rather than the first
+    // read: the engine publishes a cursor when a module MOVES, and a module that has finished
+    // folding and gone quiet will not move again for minutes. A mirror waiting for a cursor that
+    // is not coming would fall back on every draw of a card the engine could answer perfectly.
+    primeMirrors()
+    // THE GO-LIVE SENTENCE (JOS-499), and it replaces a line rather than adding one.
+    //
+    // The PARITY line used to be printed at exactly this moment — it was the app's own
+    // statement that both folds had landed on the same log and the engine's ingest was live —
+    // and two e2e specs used it as their READINESS PRECONDITION rather than for its verdict.
+    // The verdict is gone with the second world; the readiness it also carried is a real fact
+    // about this launch and is still the one moment worth naming, because it is precisely when
+    // `engineServeReadiness()` starts answering yes and every read in the product changes hands.
+    //
+    // IT REPORTS WHAT IT CAN VOUCH FOR: the log both sides agree on, the engine's own event
+    // count and byte mark. Those come off the health round trip this loop was making anyway, so
+    // the line costs nothing and is evidence rather than an announcement.
+    debug(servingLine(l.attachedTo, health))
+    // …AND A BREADCRUMB FOR THE SAME EDGE (JOS-501). It is the last of the four the ring gets
+    // from the engine's lifecycle, and the most diagnostic of them: it is the moment every
+    // read in the product changes hands, so a crash report whose ring stops at `engine:ready`
+    // says the fold never landed, which is a completely different investigation from one whose
+    // ring shows `engine:live` followed by module cursors.
+    noteEngineEdge('engine:live')
   }
+  // THE BANNER RESOLVES HERE (JOS-503), and OUTSIDE the `first` test on purpose. `first` is
+  // about this app's own read path changing hands, which happens once; this is about a window
+  // being told the catch-up is over, and a second turn that finds the engine already live
+  // (a world rebuild on an unchanged log) must still take a stale bar down rather than leave
+  // one up because the interesting edge belonged to an earlier turn. `set` is a no-op when
+  // nothing changed, so saying it every poll costs a comparison.
+  noteEngineLive()
+}
+
+/**
+ * WAIT OUT THE CATCH-UP — the loop's argument is in `foldWait.ts`; this is its wiring.
+ *
+ * THE TURN IS ASKED FOR RATHER THAN CAPTURED. `mine` closes over the number this turn was given and
+ * compares it against the module's live `gen` on every ask, which is the same rule every `await` in
+ * this file is followed by — and moving the loop out is precisely why it has to be a callback: the
+ * generation is this file's state and a leaf must never hold a copy of it.
+ */
+async function waitForFoldHere(mine: number, l: LiveEngine): Promise<FoldHealth | null> {
+  return waitForFold({
+    ask: () => l.client.request('session.health', {}),
+    mine: () => gen === mine,
+    rest: delay,
+    saw: (health) => {
+      sawHealth(l, health)
+    },
+    note: debug,
+    logSize: () => lastFoldLogSize
+  })
 }
 
 // ── what the performance panel can ask this file (JOS-483) ─────────────────────────────────────

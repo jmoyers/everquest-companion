@@ -73,12 +73,21 @@ import { spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { logError, logInfo } from '../errorLog'
+import { logError, logInfo, logWarn } from '../errorLog'
 import { E2E } from '../e2e'
 import { setEnginePid } from '../processPriority'
 import { noteEngineEdge } from '../telemetry/breadcrumbs'
 import { mintToken } from './token'
-import { engineBinaryCandidates, isCargoTargetBinary, stagedEngineNames } from './engineProtocol'
+import {
+  ENGINE_PROFILE_ENV,
+  engineBinaryCandidates,
+  engineProfileNotice,
+  engineProfileOptIn,
+  isCargoTargetBinary,
+  stagedEngineNames,
+  type EngineBinaryEnv,
+  type EngineProfile
+} from './engineProtocol'
 import { connectToEngine } from './socketChannel'
 import {
   createEngineSupervisor,
@@ -164,20 +173,26 @@ export function engineSupervisorStatus(): EngineStatus | null {
  *
  * It NARRATES ITS OWN FAILURE. A resolver that answers null in silence is how "the feature is off"
  * and "the feature is broken" become the same observation; naming every path it looked at makes
- * the dev's next move obvious (`cargo build -p engined`).
+ * the dev's next move obvious (`cargo build --release -p engined` — RELEASE since JOS-520, which is
+ * the profile a dev tree resolves unless a launch opts into debug by name).
  */
 function resolveEngineBinary(): string | null {
-  const candidates = engineBinaryCandidates({
+  const env: EngineBinaryEnv = {
     appPath: app.getAppPath(),
     resourcesPath: process.resourcesPath ?? '',
     cwd: process.cwd(),
     // THE HARNESS NAMES ITS OWN BINARY (JOS-501), and only the harness: read under `EQ_E2E=1`
-    // alone, the same standing the staged EQ install has. The e2e suite builds the engine in
-    // RELEASE and the candidate order below prefers debug, so without this a machine holding both
-    // would run the suite against the binary the suite did not build. Not a gate — an absent or
-    // wrong value simply falls through to the ordinary search.
-    override: E2E ? (process.env.EQ_ENGINE_BIN ?? '') : ''
-  })
+    // alone, the same standing the staged EQ install has. The suite pays for a release build and
+    // must assert against the binary it paid for rather than against whatever the resolver's
+    // default order happens to be. Not a gate — an absent or wrong value simply falls through to
+    // the ordinary search.
+    override: E2E ? (process.env.EQ_ENGINE_BIN ?? '') : '',
+    // …AND THE PROFILE OPT-IN (JOS-520), read here because this file owns the environment and
+    // `engineProtocol.ts` owns nothing but arithmetic. Per LAUNCH and never written down, which is
+    // the whole of "afterwards it should swap back".
+    profile: devEngineProfile()
+  }
+  const candidates = engineBinaryCandidates(env)
   // THE SAME LIST THE NARRATION USES, KEPT FOR THE PERSON (JOS-503). "Where it looked" is the
   // actionable half of an absence — it is how somebody discovers their antivirus took the file out
   // of a directory they can go and check — and until now it existed only in a dev-log line that
@@ -187,12 +202,56 @@ function resolveEngineBinary(): string | null {
   const found = candidates.find((path) => existsSync(path))
   if (found === undefined) {
     logInfo(`[everquest-companion] engine binary not found; looked in: ${candidates.join(', ')}`)
+    // THE ONE NEW WAY TO BE ABSENT (JOS-520), answered where it is discovered. A checkout that has
+    // built ONLY `cargo build -p engined` now resolves nothing, because `target/debug` is no longer
+    // a candidate — and a developer reading a list of release paths could reasonably conclude the
+    // resolver is broken. So the same line that says where it looked says what it deliberately did
+    // not look at, and how to ask for it. Dev-only and opt-in-only: a packaged user has no cargo
+    // tree, and somebody who already named a profile does not need the hint.
+    if (!app.isPackaged && env.profile === undefined) {
+      logInfo(
+        `[everquest-companion] …a cargo DEBUG build is not a candidate unless a launch names it: ` +
+          `set ${ENGINE_PROFILE_ENV}=debug to run it, or build release with \`cargo build --release -p engined\``
+      )
+    }
     return null
   }
+  // A NON-RELEASE ENGINE SAYS SO, EVERY TIME (JOS-520, invariant 1). `logWarn` rather than
+  // `logInfo` on purpose: this is exactly what that channel is for — "a condition worth noticing
+  // that is not a failure" — and the app is about to run an engine that is a factor of ten slower
+  // than the one it normally runs. Computed on `found`, BEFORE staging, because the staged copy
+  // lands in `userData/engine-run` and no longer carries the profile in its path.
+  const notice = engineProfileNotice(found, env)
+  if (notice !== null) logWarn(`[everquest-companion] ${notice}`)
   // A CARGO-BUILT BINARY IS RUN FROM A COPY — see `stageDevBinary` for the whole argument. The
   // packaged path never reaches it, and a copy that could not be made falls through to the original,
   // which is exactly the behaviour every launch before JOS-496 had.
   return isCargoTargetBinary(found) ? stageDevBinary(found) : found
+}
+
+/**
+ * THE PROFILE OPT-IN, READ ONCE PER RESOLUTION (JOS-520).
+ *
+ * NOT CACHED IN A MODULE CONSTANT, and that is deliberate rather than lazy: a respawn re-resolves
+ * the binary, and reading the variable each time means the answer is always a fact about the
+ * environment this process actually has rather than about the moment a module was first imported.
+ * It is one `process.env` read on a path that already touches the disk several times.
+ *
+ * A MISTYPED VALUE IS SAID OUT LOUD instead of being silently treated as absent. Somebody who typed
+ * `EQC_ENGINE_PROFILE=dbg` believes they are running the debug engine; a silent fall-back to
+ * release would be the same class of quiet wrong answer this whole ticket exists to remove — just
+ * pointed the other way.
+ */
+function devEngineProfile(): EngineProfile | undefined {
+  const raw = process.env[ENGINE_PROFILE_ENV] ?? ''
+  const profile = engineProfileOptIn(raw)
+  if (profile === null && raw.trim() !== '') {
+    logWarn(
+      `[everquest-companion] ${ENGINE_PROFILE_ENV}=${raw} is not a cargo profile — ` +
+        'expected `debug` or `release`; this launch resolves the RELEASE engine as usual'
+    )
+  }
+  return profile ?? undefined
 }
 
 // ------------------------------------------------------------------ the dev copy (JOS-496)
@@ -442,6 +501,14 @@ export function startEngineSupervisor(): void {
     // back off. The candidate paths are grafted on inside `noteEngineFault` from the list above.
     onFault: (fault) => {
       noteEngineFault(fault)
+    },
+    // THE CYCLING EDGE (JOS-519). `onPid(null)` above already wrote `engine:gone` for this same
+    // ending — this is the one bit that ending did not carry: the engine had REACHED READY, so what
+    // the ring shows is not a launch that failed but a working engine being replaced, which the user
+    // meets as another "Catching up on your log". The error-store entry that names the count is the
+    // supervisor's own (`report`); this is the sequence a crash report carries.
+    onServedExit: () => {
+      noteEngineEdge('engine:cycled')
     }
   })
   supervisor.start()

@@ -1,21 +1,14 @@
-//! JAVASCRIPT STRING SEMANTICS, SPELLED OUT — the three places Rust's defaults are not V8's.
+//! JavaScript string semantics, spelled out: the three places Rust's defaults are not V8's.
 //!
-//! The bar for this crate is a BYTE-IDENTICAL event stream against a TS parser (JOS-469), so every
-//! `.trim()`, every `\s` in a regex and every `JSON.stringify` on the other side has to be
-//! reproduced rather than approximated. Three of them differ from the obvious Rust spelling:
+//!   * `String.prototype.trim` strips the ECMA-262 WhiteSpace ∪ LineTerminator set; Rust's
+//!     `str::trim` strips Unicode `White_Space`. They disagree both ways — JS strips U+FEFF and
+//!     does not strip U+0085 NEL — and either is one code point away from a mis-normed mob name.
+//!   * `\s` inside a JS regex is that same ECMA set. `JS_S` is it as a regex class.
+//!   * `JSON.stringify` escapes `"`, `\` and the C0 controls and nothing else — no `/`, no DEL, no
+//!     non-ASCII. The whole golden rests on `write_json_string`.
 //!
-//!   * `String.prototype.trim` strips the ECMA-262 WhiteSpace ∪ LineTerminator set. Rust's
-//!     `str::trim` strips `char::is_whitespace`, i.e. the Unicode `White_Space` property. The two
-//!     disagree in both directions: JS strips U+FEFF (which is NOT White_Space) and does not strip
-//!     U+0085 NEL (which is). Both are one code point away from a mis-`norm`ed mob name.
-//!   * `\s` inside a JS regex is that same ECMA set. `JS_S` below is it as a regex class, so a
-//!     pattern ported from the TS side keeps meaning what it meant.
-//!   * `JSON.stringify` escapes `"`, `\` and the C0 controls and NOTHING else — no `/`, no DEL, no
-//!     non-ASCII. `write_json_string` is that, and it is the function the whole golden rests on.
-//!
-//! `to_lowercase` deliberately is NOT here: JS `toLowerCase` is Unicode Default Case Conversion and
-//! so is Rust's `str::to_lowercase`, which is why `idKey`/`spellCanonKey` can call it directly (the
-//! ticket names this one explicitly — the fold is not ASCII-only).
+//! `to_lowercase` is deliberately absent: JS `toLowerCase` and Rust's `str::to_lowercase` are both
+//! Unicode Default Case Conversion, so callers use Rust's directly.
 
 /// The ECMA-262 `WhiteSpace ∪ LineTerminator` set, as a regex character class. Interpolated into
 /// every ported pattern that wrote `\s`.
@@ -27,16 +20,12 @@ pub const JS_S: &str =
 pub const JS_S_INNER: &str =
     "\\t\\n\\x0B\\x0C\\r \\u{A0}\\u{1680}\\u{2000}-\\u{200A}\\u{2028}\\u{2029}\\u{202F}\\u{205F}\\u{3000}\\u{FEFF}";
 
-/// JAVASCRIPT'S `.` — every character except a LINE TERMINATOR, which in ECMA-262 is FOUR
-/// characters and not one: U+000A, U+000D, U+2028 and U+2029. The `regex` crate's `.` excludes only
-/// U+000A.
+/// JavaScript's `.`: every character except a line terminator, which in ECMA-262 is four characters
+/// (U+000A, U+000D, U+2028, U+2029). The `regex` crate's `.` excludes only U+000A.
 ///
-/// MEASURED, and it is the fourth divergence this port had (sky-era, event 239,868): the owner's log
-/// carries chat lines with bare CARRIAGE RETURNS inside them —
-/// `Velkator tells general2:1, 'rebaseline<CR>Count items from<CR>/outputfile inventory'` — because
-/// the splitter cuts on `\n` and strips only a TRAILING `\r`. `LINE_RE`'s `(.*)$` cannot cross one,
-/// so `parseEvent` returns null, the line becomes NO EVENT AT ALL and `seq` does not advance. With
-/// the Rust `.` it matched, and the whole slice's sequence was one ahead of the golden from there on.
+/// It matters because the log carries chat lines with bare carriage returns inside them — the
+/// splitter cuts on `\n` and strips only a trailing `\r`. `LINE_RE`'s `(.*)$` cannot cross one, so
+/// the line becomes no event at all and `seq` does not advance.
 pub const JS_DOT: &str = "[^\\n\\r\\u{2028}\\u{2029}]";
 
 /// One character of `JS_S`. See the header for the two disagreements with `char::is_whitespace`.
@@ -92,12 +81,11 @@ pub fn write_json_string(out: &mut String, s: &str) {
     out.push('"');
 }
 
-/// `JSON.stringify` on a NUMBER.
+/// `JSON.stringify` on a number.
 ///
-/// The one place a naive `{}` would diverge: JS has a single numeric type, so an integral double
-/// prints WITHOUT a fraction (`3`, never `3.0`). Every integer field here is already an `i64`; this
-/// exists for `expGain.pct`, which the ticket names as the one true f64 in the stream — and a log
-/// that ever prints `(3%)` would make it integral.
+/// JS has a single numeric type, so an integral double prints without a fraction (`3`, never
+/// `3.0`). Every integer field here is already an `i64`; this exists for `expGain.pct`, the one
+/// true f64 in the stream, which a log printing `(3%)` makes integral.
 pub fn write_js_number(out: &mut String, v: f64) {
     if v.fract() == 0.0 && v.abs() < 9.0e15 {
         out.push_str(&format!("{}", v as i64));

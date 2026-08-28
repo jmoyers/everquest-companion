@@ -125,6 +125,56 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.14.0',
+    date: '2026-08-27',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Your meters no longer vanish mid-session to an engine restart. A routine health check could mistake the engine\'s own status broadcasts for a fault and restart it - most often during the catch-up read, which then started over. The check now knows those messages are normal.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Kills in a base-difficulty raid or personal instance now count toward the weekly ladder. The game prints the same zone line for a base instance as for the open world, so those clears were filed as open-world kills - the app now reads the creating-instance notice and files them right, including your past clears.',
+        fromReport: true
+      }
+    ]
+  },
+  {
+    version: '1.13.0',
+    date: '2026-08-27',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'The catch-up bar can no longer get stuck at 100%. The app used to stop waiting after two minutes on a big log or a slow disk - it now waits as long as your log takes, and it can tell catching up from live play, so the bar always finishes.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'An engine that stops answering or keeps restarting mid-session now shows up in diagnostics, so a report about "it never finishes loading" arrives with its cause.'
+      }
+    ]
+  },
+  {
+    version: '1.12.0',
+    date: '2026-08-26',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Scrolling no longer stutters during combat. The app was quietly redrawing almost every panel ten times a second whenever your log was busy - it now redraws only what actually changed, batched to the display’s own rhythm, and the busiest page went from a fifth of the machine’s attention to under three percent. Hover cards also stopped piling up while you scroll: sweeping the pointer across a list opens at most one.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Search your spells by type, just like the game’s own window - type “tap” and get every tap you can cast, by level, with category and subcategory shown, scoped to your class combo.'
+      },
+      {
+        kind: 'new',
+        text: 'Every spell name in the app is now a link. Click one and get its page: the upgrade line it belongs to, the level YOUR combo gets each step, and every class that learns it.'
+      }
+    ]
+  },
+  {
     version: '1.11.0',
     date: '2026-08-26',
     entries: [

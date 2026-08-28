@@ -1,30 +1,26 @@
 //! `src/main/modules/observedSpellRanks.ts` — which rank of each spell line this character has
-//! actually been observed to hold (JOS-446).
+//! actually been observed to hold.
 //!
-//! TWO WITNESSES, AND THE ASYMMETRY BETWEEN THEM IS THE DESIGN.
-//!   1. THE MERGE LINE proves the MOMENT OF LEVELLING — the same sentence `itemTiers` reads, whose
-//!      rank-suffixed half carries no ` +N` and is this module's.
-//!   2. A CAST AT A RANK proves POSSESSION — `You begin casting X IV.` and `<mob> resisted your
-//!      X IV!` are the two families that keep the numeral. They are undated as acquisitions and
-//!      are the ONLY witness for a rank levelled before the log began.
+//! Two witnesses, and the asymmetry between them is the design. A MERGE line proves the moment of
+//! levelling — the same sentence `itemTiers` reads, whose rank-suffixed half is this module's. A
+//! CAST at a rank proves possession: `You begin casting X IV.` and `<mob> resisted your X IV!` are
+//! the two families that keep the numeral, and they are the only witness for a rank levelled before
+//! the log began.
 //!
-//! UNION, HIGHEST WINS. `rank` is the max over both; `mergedRank`/`castRank` keep the halves apart
-//! and each appears only once its own witness has spoken. A LOWER later observation never lowers
-//! anything — ranks do not downgrade (the owner's ruling, AGENTS.md).
+//! Union, highest wins. `rank` is the max over both; `mergedRank`/`castRank` keep the halves apart,
+//! each appearing only once its own witness has spoken. A lower later observation never lowers
+//! anything — ranks do not downgrade.
 //!
-//! THE MERGE LANE NEEDS THE CATALOG; THE CAST LANE DOES NOT. A merge names an ITEM, and an item
-//! whose name ends in a roman numeral is not a spell, so a merge is admitted only when its base
-//! joins the catalog. A cast names a spell BY CONSTRUCTION — the measured case is `Lay on Hands`,
-//! which the wiki scrape carries no page for and which the owner casts at rank IX.
+//! The merge lane needs the catalog, the cast lane does not: a merge names an ITEM, and an item
+//! ending in a roman numeral need not be a spell, while a cast names a spell by construction. Some
+//! castable abilities (`Lay on Hands`) have no wiki page at all.
 //!
-//! UNSUFFIXED NAMES ARE NOT EVIDENCE. Rank 1 is the default state, not an observation, so folding
-//! `You begin casting Clarity.` would mint a row for every spell ever cast.
+//! Unsuffixed names are not evidence — rank 1 is the default state, so folding `You begin casting
+//! Clarity.` would mint a row for every spell ever cast.
 //!
-//! THE TWO KEY FOLDS ARE DIFFERENT ON PURPOSE. The row key is `spellCanonKey` (case-SENSITIVE rank
-//! tail, `parseCommon.ts`); the catalog probe is `spellDb.byKey`, which is keyed by the DB's own
-//! case-INSENSITIVE `canonKey`. `wiring.ts` composes them exactly this way — `knownSpell: (key) =>
-//! spellDb.byKey.has(key)` over a `spellCanonKey` — so the port does too, rather than "tidying"
-//! the two folds into one.
+//! The two key folds differ on purpose: the row key is `spellCanonKey` (case-SENSITIVE rank tail)
+//! while the catalog probe is `spellDb.byKey`, keyed by the DB's case-INSENSITIVE `canonKey`.
+//! `wiring.ts` composes them exactly that way, so the port does too.
 
 use crate::event::Event;
 use crate::jsfn::parse_spell_rank;
@@ -60,10 +56,11 @@ enum Witness {
 pub struct ObservedSpellRanksModule {
     rows: JsMap<ObservedSpellRankRow>,
     seq: i64,
-    /// `ObservedSpellRanksDeps.knownSpell`. An EMPTY set is the TS's absent-dependency default:
-    /// no merge is ever admitted, which withholds a claim rather than inventing spells out of
-    /// item names.
+    /// `ObservedSpellRanksDeps.knownSpell`. An empty set is the absent-dependency default: no merge
+    /// is admitted, withholding a claim rather than inventing spells out of item names.
     known_spell: HashSet<String>,
+    /// The announce cursor — see [`crate::announce`]. Bumped inside `observe`, past its refusals.
+    announce: crate::announce::Announce,
 }
 
 impl ObservedSpellRanksModule {
@@ -72,13 +69,13 @@ impl ObservedSpellRanksModule {
             rows: JsMap::new(),
             seq: 0,
             known_spell,
+            announce: crate::announce::Announce::default(),
         }
     }
 
-    /// Fold one observation of `raw` (a display name that may carry a roman numeral) at `ts`.
-    ///
-    /// An UNSUFFIXED name is not evidence and returns immediately, so this is also the cheap exit
-    /// for the overwhelming majority of casts and for every ` +N` item merge.
+    /// Fold one observation of `raw` (a display name that may carry a roman numeral) at `ts`. An
+    /// unsuffixed name is not evidence and returns immediately, which is also the cheap exit for
+    /// most casts and for every ` +N` item merge.
     fn observe(&mut self, raw: &str, ts: i64, how: Witness) {
         let parsed = parse_spell_rank(raw);
         if !parsed.suffixed || parsed.base.is_empty() {
@@ -92,9 +89,8 @@ impl ObservedSpellRanksModule {
             return;
         }
         let prev = self.rows.get(&key).cloned();
-        // `base` keeps the raw casing and punctuation the LOG used while the key is the lowercased
-        // fold. The FIRST spelling seen wins and is never rewritten: the log outranks the wiki on
-        // names (the JOS-440 ruling), so a later sighting has nothing to improve.
+        // `base` keeps the raw casing and punctuation the log used; the key is the lowercased fold.
+        // The first spelling seen wins and is never rewritten — the log outranks the wiki on names.
         let mut next = match prev.clone() {
             Some(p) => ObservedSpellRankRow { last_at: ts, ..p },
             None => ObservedSpellRankRow {
@@ -120,6 +116,8 @@ impl ObservedSpellRanksModule {
         }
         next.rank = next.rank.max(parsed.rank);
         self.rows.insert(key, next);
+        // `last_at` is this sighting's instant, so a row that reaches here is always rewritten.
+        self.announce.changed(self.seq);
     }
 }
 
@@ -131,15 +129,19 @@ impl EqModule for ObservedSpellRanksModule {
     fn reset(&mut self) {
         self.rows.clear();
         self.seq = 0;
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
         self.seq = ev.seq();
         match ev.kind() {
             // Character rebirth: every rank before the boundary belongs to the dead beta character.
-            "epoch" => self.rows.clear(),
+            "epoch" => {
+                self.rows.clear();
+                self.announce.changed(self.seq);
+            }
             // A ` +N` result is an item level (itemTiers owns it) and carries no numeral, so it
-            // falls out of `observe` on the rank test without needing a second check here.
+            // falls out of `observe` on the rank test with no second check here.
             "itemMerge" => {
                 let item = ev.str("item").unwrap_or_default().to_string();
                 self.observe(&item, ev.ts(), Witness::Merge);
@@ -148,9 +150,8 @@ impl EqModule for ObservedSpellRanksModule {
                 let spell = ev.str("spell").unwrap_or_default().to_string();
                 self.observe(&spell, ev.ts(), Witness::Cast);
             }
-            // `<target> resisted your <Spell> <rank>!` — YOUR cast, named with its numeral. The
-            // other two resist shapes are somebody else's spell, and a stranger casting rank VI
-            // says nothing about what you own.
+            // `<target> resisted your <Spell> <rank>!` — your cast, named with its numeral. The
+            // other two resist shapes are somebody else's spell and say nothing about what you own.
             "resist" if !ev.bool("incoming") && ev.str("caster") == Some("you") => {
                 let spell = ev.str("spell").unwrap_or_default().to_string();
                 self.observe(&spell, ev.ts(), Witness::Cast);
@@ -159,10 +160,9 @@ impl EqModule for ObservedSpellRanksModule {
         }
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a rank sighting that reached the map. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {

@@ -431,6 +431,10 @@
         "logSize": {
           "description": "`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.",
           "type": "integer"
+        },
+        "live": {
+          "description": "WHICH OF THE ENGINE'S TWO LOOPS EMITTED THIS FRAME. Absent means the historical SCAN - the catch-up a loading bar is about. `true` means the LIVE TAIL, which emits the identical shape for as long as somebody is playing. Present only when true, like every other flag on this wire: a scan frame says nothing rather than saying false. IT EXISTS BECAUSE THE TWO ARE INDISTINGUISHABLE BY THEIR NUMBERS. A caught-up tail sits at `pct` 100 with `events` climbing, which is exactly what a scan that has just finished looks like, so a client deciding from frame CONTENT whether a catch-up is still running would leave a bar reading `100%` on screen with the count rising forever. The engine knows which loop it is in and this is it saying so.",
+          "type": "boolean"
         }
       },
       "required": ["pct", "events", "offset", "logSize"],

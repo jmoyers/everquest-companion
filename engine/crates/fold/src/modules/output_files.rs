@@ -1,15 +1,13 @@
 //! `src/main/modules/outputFiles.ts` — when the player last exported each `/outputfile` dump.
 //!
-//! NEWEST WINS, AND ONLY THE NEWEST IS KEPT. The log holds every export the character ever made;
-//! the only one that can be a baseline is the one that wrote the file now on disk.
+//! Newest wins, and only the newest is kept: the log holds every export the character ever made,
+//! but the only one that can be a baseline is the one that wrote the file now on disk.
 //!
-//! EPOCH IS DELIBERATELY NOT HANDLED. A dump written by the wiped beta character is not cleared:
-//! the file on disk outlives the epoch too, and this module reports when that file was written,
-//! not whose it was. (It is the one module in this cluster with no `epoch` branch — which is why
-//! the absence is stated here rather than left to look like an omission.)
+//! Epoch is deliberately not handled — the file on disk outlives the epoch too, and this module
+//! reports when that file was written, not whose it was.
 //!
-//! `flushDelta` ALWAYS RETURNS NULL over there: nothing in the renderer subscribes, main reads it
-//! directly through `writtenAt()`. The trait's default `None` is that, unchanged.
+//! `flushDelta` always returns null over there (nothing in the renderer subscribes; main reads it
+//! through `writtenAt()`), which is what the trait's default `None` is.
 
 use crate::event::Event;
 use crate::jsfn::base_name;
@@ -22,6 +20,11 @@ use serde_json::{json, Value};
 pub struct OutputFilesModule {
     written: JsMap<i64>,
     seq: i64,
+    /// The announce cursor — see [`crate::announce`]. It must be seq-valued, not a counter: this
+    /// module is mirrored in main (`serveMirrors.ts MIRRORED_MODULES`), and that mirror stores the
+    /// snapshot's seq and drops any cursor at or below it, so a counter would freeze the mirror on
+    /// its first refresh.
+    announce: crate::announce::Announce,
 }
 
 impl OutputFilesModule {
@@ -30,8 +33,8 @@ impl OutputFilesModule {
     }
 }
 
-/// `fileKey` — the last path segment, trimmed and lowercased. EQ writes dumps into the install
-/// root and prints the bare name, so the join is on that segment, case-insensitively.
+/// `fileKey` — the last path segment, trimmed and lowercased. EQ writes dumps into the install root
+/// and prints the bare name, so the join is on that segment, case-insensitively.
 fn file_key(path_or_name: &str) -> String {
     js_trim(base_name(path_or_name)).to_lowercase()
 }
@@ -44,6 +47,7 @@ impl EqModule for OutputFilesModule {
     fn reset(&mut self) {
         self.written.clear();
         self.seq = 0;
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
@@ -54,15 +58,18 @@ impl EqModule for OutputFilesModule {
         let key = file_key(ev.str("file").unwrap_or_default());
         let ts = ev.ts();
         match self.written.get(&key) {
+            // A dump whose stamp is not newer than the one held changes nothing.
             Some(&prev) if ts <= prev => {}
-            _ => self.written.insert(key, ts),
+            _ => {
+                self.written.insert(key, ts);
+                self.announce.changed(self.seq);
+            }
         }
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a dump not already recorded at that instant or later. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {

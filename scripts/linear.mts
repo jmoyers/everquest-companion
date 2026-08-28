@@ -16,12 +16,20 @@
  * and when merging (→ Done, with the commit hash). Flat organization, no projects/cycles.
  *
  * AUTH: personal API key in .triage/linear.env (gitignored; created 2026-08-05, key name
- * eq-companion-claude-agent). No secret lives in this file.
+ * eq-companion-claude-agent). No secret lives in this file. The env is probed in the main
+ * checkout too (three levels up, the budget-g3.mts pattern) so a gitignored file a worktree
+ * can never have does not force every worker to hand-copy a token.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-const env = readFileSync(join(import.meta.dirname, '..', '.triage', 'linear.env'), 'utf8')
+const ENV_CANDIDATES = [
+  join(import.meta.dirname, '..', '.triage', 'linear.env'),
+  join(import.meta.dirname, '..', '..', '..', '..', '.triage', 'linear.env')
+]
+const envPath = ENV_CANDIDATES.find((p) => existsSync(p))
+if (envPath === undefined) throw new Error('.triage/linear.env not found (checkout or main repo)')
+const env = readFileSync(envPath, 'utf8')
 const KEY = /LINEAR_API_KEY=(\S+)/.exec(env)?.[1] ?? ''
 if (!KEY) throw new Error('LINEAR_API_KEY missing from .triage/linear.env')
 

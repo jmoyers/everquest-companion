@@ -1,32 +1,19 @@
-//! `src/main/modules/buffsInstances.ts` — the buff-INSTANCE store.
-//!
-//! A buff INSTANCE is a pair (spell LINE, targetEntity) keyed by (spellKey, entityKey). This file
-//! owns the three live collections — the single pending cast, the landed-and-open casts awaiting
-//! their fade, and the currently-active instances — plus every mutation of them: landing, fade
-//! pairing (the duration sample), the CENSORING paths (death / zone / log hole / hygiene / entity
-//! retirement) and the offline PAUSE, which is not a censor at all but the one place a live clock is
-//! rewound.
+//! The buff-INSTANCE store: the single pending cast, the landed-and-open casts awaiting their fade,
+//! and the currently-active instances — plus every mutation of them. Landing, fade pairing (the
+//! duration sample), the censoring paths (death / zone / log hole / hygiene / entity retirement),
+//! and the offline PAUSE, which is not a censor at all but the one place a live clock is rewound.
 //!
 //! It knows nothing about log events: the module above translates events into these calls.
 //!
-//! ── THE TWO MAPS ARE `JsMap`s, AND THAT IS LOAD-BEARING ────────────────────────────────────────
+//! `active` is a `JsMap` because its ITERATION ORDER IS PUBLISHED. `remove_shared_wear_off` closes
+//! the matching candidates in map order, which decides the order of the duration samples pushed and
+//! of the derived expiries handed back to the bus; `clear_self_illusion` emits in map order for the
+//! same reason. A hash map here would randomize a sequence the goldens pin.
 //!
-//! `active`'s ITERATION ORDER IS PUBLISHED, twice over. `remove_shared_wear_off` collects the
-//! matching candidates in map order and closes them in that order, which decides the order of the
-//! duration samples pushed AND the order of the derived `buffExpired` events handed back to the bus;
-//! `clear_self_illusion` emits in map order for the same reason. A JS `Map` iterates in insertion
-//! order, so a `HashMap` here would randomize a sequence the golden pins. (The SNAPSHOT sorts by
-//! `startedTs`, so the published array is not what makes this matter — the derived stream is.)
-//!
-//! ── WHAT THE STORE DOES NOT OWN ────────────────────────────────────────────────────────────────
-//!
-//! `SpellStats` and `PetEntities` are handed in on every call rather than held, because the crowd-
-//! control half shares the stats object and Rust will not let two registry modules hold a mutable
-//! reference to one. The TS holds them as fields; the difference is spelling, and the borrow is
-//! taken once at the top of the module's `on_event` and passed down.
-//!
-//! A RESOLVED expiry is reported back through `derived`, a queue the caller drains — the TS's
-//! `onExpired` callback, which the module stamps and emits.
+//! `SpellStats` and `PetEntities` are handed in on every call rather than held, because the
+//! crowd-control half shares the stats object; the borrow is taken once at the top of the module's
+//! `on_event` and passed down. A resolved expiry is reported back through `expired`, a queue the
+//! caller drains.
 
 use crate::jsmap::JsMap;
 use crate::modules::buff_rounds::HoldGroup;
@@ -49,21 +36,21 @@ pub struct LandingSpec {
     pub ts: i64,
     pub illusion: bool,
     pub duration_ms: Option<i64>,
-    /// 'self' or an allowlisted external — the learner's second key (ruling 4).
+    /// 'self' or an allowlisted external — the learner's second key.
     pub caster: Option<String>,
     /// The spell LINE key this instance is identified by, when it differs from what the row is
-    /// NAMED. A family row is named for every candidate and keyed on one of them.
+    /// named. A family row is named for every candidate and keyed on one of them.
     pub line_key: Option<String>,
-    /// The RANKED text the cast line spelled, when a named anchor resolved this landing and it is
-    /// not simply the spell's own name. DISPLAY ONLY.
+    /// The ranked text the cast line spelled, when it is not simply the spell's own name. Display
+    /// only.
     pub cast_name: Option<String>,
     /// The spells this landing sentence could be, when it is a FAMILY the anchor could not narrow.
-    /// Present ⇒ the row shows the ~ chip and mints nothing.
+    /// Present means the row shows the ~ chip and mints nothing.
     pub candidates: Option<Vec<String>>,
     pub permanent_illusion_owned_ts: Option<i64>,
 }
 
-/// A RESOLVED expiry the module is to synthesize a `buffExpired` for.
+/// A resolved expiry the module is to synthesize a `buffExpired` for.
 pub struct Expiry {
     pub spell: String,
     pub target: String,
@@ -104,9 +91,9 @@ impl BuffInstances {
             .any(|(ik, _)| instance_spell_key(ik) == key)
     }
 
-    /// ILLUSION EXCLUSIVITY (Task #36, the user's rule): only ONE illusion can be active on a given
-    /// entity at a time. Removes every illusion-flagged active + open instance bound to `entity_key`
-    /// EXCEPT the one being applied now. Applies to self AND pet.
+    /// Illusion exclusivity: only ONE illusion can be active on an entity at a time. Removes every
+    /// illusion-flagged active and open instance bound to `entity_key` except the one being applied
+    /// now. Applies to self and pet alike.
     fn clear_illusions_on(&mut self, entity_key: &str, keep_key: &str, stats: &SpellStats) {
         let doomed: Vec<String> = self
             .active
@@ -124,11 +111,11 @@ impl BuffInstances {
         }
     }
 
-    /// Remove the (single) illusion-flagged SELF active — the `Your illusion fades.` handler.
+    /// Remove the single illusion-flagged SELF active — the `Your illusion fades.` handler.
     ///
-    /// The raw line names no spell, but the model has RESOLVED it to the one active self illusion,
-    /// so the derived event carries that resolved spell and an alert pinned to
-    /// `Illusion: Wood Elf` can fire on the player-side click-off.
+    /// The raw line names no spell, but the model has resolved it to the one active self illusion,
+    /// so the derived event carries that resolved spell and an alert pinned to a named illusion can
+    /// fire on the player-side click-off.
     pub fn clear_self_illusion(&mut self, stats: &SpellStats) {
         let doomed: Vec<(String, String)> = self
             .active
@@ -143,8 +130,8 @@ impl BuffInstances {
         }
     }
 
-    /// A cast nothing confirmed within the landing window never landed, so its record is DROPPED
-    /// (JOS-118). It opens nothing on the way out.
+    /// A cast nothing confirmed within the landing window never landed, so its record is dropped.
+    /// It opens nothing on the way out.
     pub fn drop_unconfirmed_pending(&mut self, now: i64) {
         if self
             .pending
@@ -155,15 +142,9 @@ impl BuffInstances {
         }
     }
 
-    /// Stage a new cast in flight. A CAST OPENS NOTHING — no instance, no open cast, no row
-    /// (JOS-118, owner: "we should drop provisional all together").
-    ///
-    /// This used to show the cast OPTIMISTICALLY the instant it began: a provisional row bound to a
-    /// GUESS at the target, retracted only by a fizzle or an interrupt. A RESIST is neither, so a
-    /// resisted debuff left a bar on screen naming a mob the log never said it landed on — and
-    /// fifteen seconds later the guess was PROMOTED to a solid row plus an open cast that could pair
-    /// with an unrelated later fade into a duration sample. What went is the DISPLAY, not the
-    /// attribution machinery: the pending record is what the landing side hangs off, and the anchor
+    /// Stage a new cast in flight. A cast opens nothing — no instance, no open cast, no row —
+    /// because a provisional row would be bound to a GUESS at the target and a resist retracts
+    /// nothing. What the pending record is for is the landing side, which hangs off it; the anchor
     /// lives beside it in `buff_anchors.rs`.
     pub fn begin_cast(&mut self, key: String, ts: i64) {
         self.pending = Some(Pending {
@@ -218,11 +199,11 @@ impl BuffInstances {
         Disposition::Zelf
     }
 
-    /// Apply a buff from an EXACT chat MESSAGE match. `target` is 'self' for a cast-on-you/self-heal
-    /// line, else the named target — bound to THAT entity's key.
+    /// Apply a buff from an exact chat-message match. `target` is 'self' for a cast-on-you or
+    /// self-heal line, else the named target — bound to THAT entity's key.
     ///
-    /// A REPEAT LANDING IS A ROUND, NOT AN OVERWRITE (JOS-140): it goes to the instance's
-    /// `HoldGroup`, which decides whether it refreshes the newest landing or opens another.
+    /// A repeat landing is a ROUND, not an overwrite: it goes to the instance's `HoldGroup`, which
+    /// decides whether it refreshes the newest landing or opens another.
     pub fn apply_message_buff(
         &mut self,
         spell: &str,
@@ -231,15 +212,13 @@ impl BuffInstances {
         pets: &mut PetEntities,
     ) {
         let key = spec.line_key.clone().unwrap_or_else(|| spell_key(spell));
-        // WHAT A LANDING MUST STATE TO OPEN A ROW — a duration, an illusion flag, or (JOS-215) the
-        // spell DB's own word that it never expires. The third arm is the reported defect: a
-        // permanent buff has no duration BECAUSE it is permanent, so the first two arms refused 57
-        // of the 62 permanent spells outright — they printed their landing sentence, the parser
-        // emitted a perfectly good `buffApply`, and this line dropped it on the floor.
+        // What a landing must state to open a row: a duration, an illusion flag, or the spell DB's
+        // own word that it never expires. The third arm is not redundant — a permanent buff has no
+        // duration BECAUSE it is permanent, so the first two would refuse nearly all of them.
         if spec.duration_ms.is_none() && !spec.illusion && !stats.is_permanent(&key) {
             return;
         }
-        // A SELF apply of a DETRIMENTAL spell is an incoming debuff a MOB cast on the player — not
+        // A self apply of a DETRIMENTAL spell is an incoming debuff a mob cast on the player, not
         // the player's own buff. The bar shows only the player's beneficial buffs.
         let is_self = spec.target == "self";
         if is_self && stats.class_of(&key) == BuffClass::Debuff {
@@ -251,9 +230,9 @@ impl BuffInstances {
             self.pending = None;
         }
 
-        // WHERE it binds: the entity it names, that entity's disposition, whose cast it is, and
-        // whether it is PERMANENT. Also the one side effect worth naming — the target's display
-        // CASING is remembered here, so the row's chip reads "Cazic-Thule" and not the key.
+        // Where it binds: the entity it names, that entity's disposition, whose cast it is, and
+        // whether it is permanent. The one side effect worth naming is that the target's display
+        // CASING is remembered here, so the row's chip reads the name and not the key.
         let e_key = if is_self {
             SELF_KEY.to_string()
         } else {
@@ -292,7 +271,7 @@ impl BuffInstances {
         );
         {
             let record = self.open.get_mut(&i_key).expect("just opened");
-            // A FAMILY never mints (we do not know which spell it was), so its landings open
+            // A family never mints — we do not know which spell it was — so its landings open
             // contaminated.
             record.group.land(spec.ts, spec.candidates.is_some());
         }
@@ -310,7 +289,7 @@ impl BuffInstances {
                     r.cast_name.clone(),
                 ),
                 // The permanent branch above deleted it: report the landing instant and a count of
-                // one, which is `landingSpec`'s own `at.permanent ? … : …`.
+                // one.
                 None => (spec.ts, 1, spell.to_string(), spec.cast_name.clone()),
             };
             let spec_out = ActiveSpec {
@@ -329,16 +308,14 @@ impl BuffInstances {
             build_active(&spec_out, stats, pets)
         };
         self.active.insert(i_key.clone(), projected);
-        // ILLUSION EXCLUSIVITY: a new illusion apply on this entity replaces any prior illusion
-        // active on it (self OR pet).
+        // A new illusion apply on this entity replaces any prior illusion active on it.
         if spec.illusion {
             self.clear_illusions_on(&e_key, &i_key, stats);
         }
     }
 
-    /// The open record this landing belongs to, created on first sight — or RECREATED when the
-    /// CASTER changed, because a different caster's durations are a different learner key and
-    /// pooling one cycle across the two would be the thing ruling 4 forbids.
+    /// The open record this landing belongs to, created on first sight — or recreated when the
+    /// CASTER changed, because a different caster's durations are a different learner key.
     #[allow(clippy::too_many_arguments)]
     fn open_record(
         &mut self,
@@ -353,7 +330,7 @@ impl BuffInstances {
         if let Some(existing) = self.open.get_mut(i_key) {
             if existing.caster == caster {
                 existing.spell = spell.to_string();
-                // The NEWEST landing's word on what was cast, including "nothing extra" — a re-land
+                // The NEWEST landing's word on what was cast, including "nothing extra": a re-land
                 // through a Quick Buff burst names no rank, and keeping the previous cast's would
                 // attribute a rank to a landing that never stated one.
                 existing.cast_name = cast_name.map(str::to_string);
@@ -361,9 +338,9 @@ impl BuffInstances {
                 return;
             }
         }
-        // SINGLETON unless the entity is a plain HOSTILE: you, your summoned pet and your charmed
-        // pet are identities this model tracks (law 4), so a re-cast on one of them is unambiguously
-        // a refresh. A mob is only ever a NAME, and the world hands out that name more than once.
+        // Singleton unless the entity is a plain HOSTILE: you, your summoned pet and your charmed
+        // pet are identities this model tracks, so a re-cast on one of them is unambiguously a
+        // refresh. A mob is only ever a NAME, and the world hands out that name more than once.
         self.open.insert(
             i_key.to_string(),
             OpenCast {
@@ -379,7 +356,7 @@ impl BuffInstances {
         );
     }
 
-    /// AUTHORITATIVE removal: a `msg_wears_off` proves the SELF instance expired NOW. Pairs a
+    /// Authoritative removal: a wears-off message proves the SELF instance expired now. Pairs a
     /// duration sample if the open cast exists, then clears that instance.
     fn remove_authoritative(
         &mut self,
@@ -405,23 +382,18 @@ impl BuffInstances {
             .unwrap_or_else(|| key.to_string());
         stats.note_ever_faded(key);
         self.record_fade(key, entity_key, &spell, ts, stats, pets);
-        // The wear-off is now RESOLVED to `spell` on `entity_key`. Alerts match this reliable,
-        // unambiguous kind instead of the raw ambiguous `buffWearOff`.
+        // Now resolved to `spell` on `entity_key`. Alerts match this unambiguous kind instead of
+        // the raw ambiguous wear-off.
         self.expire(spell, pets.target_display_for(entity_key));
     }
 
-    /// SHARED wears-off resolution (Task #45). A wears-off line whose message maps to MULTIPLE
-    /// candidate spells (the haste/strength/armor families) removes whichever matching ACTIVE self
-    /// buff(s) exist — resolve against the active set, do not guess a single spell:
-    ///   * exactly ONE candidate active → remove it (the common case; EQ stacking keeps one member
+    /// Shared wears-off resolution. A wears-off line whose message maps to MULTIPLE candidate spells
+    /// resolves against the ACTIVE set rather than guessing a single spell:
+    ///   * exactly one candidate active removes it (the common case; EQ stacking keeps one member
     ///     of a family up at a time);
-    ///   * MULTIPLE active → remove ALL of them (they honestly share this message);
-    ///   * NONE active → no-op. A wears-off for a buff we never tracked must not create a phantom
-    ///     fade sample.
-    ///
-    /// Removing by only the FIRST candidate — the old code — missed the actually-active buff: self
-    /// Quickness/Swift never cleared, because the first candidate `Aanya's Quickening` was never the
-    /// one that was up.
+    ///   * several active removes all of them, because they honestly share this message;
+    ///   * none active is a no-op, so a wears-off for a buff we never tracked cannot create a
+    ///     phantom fade sample.
     pub fn remove_shared_wear_off(
         &mut self,
         candidate_names: &[String],
@@ -448,19 +420,15 @@ impl BuffInstances {
 
     /// Pair a fade with its own open landed instance (a duration sample) and clear the active.
     ///
-    /// A SAMPLE IS MINTED ONLY FROM AN EXACT (spell, entity, CASTER) CHAIN: our own cast (or an
-    /// allowlisted external's), landing on THAT entity, wearing off THAT entity. Only ONE caster's
-    /// modifiers shape a duration anyone is entitled to learn from. A fade that cannot be matched to
-    /// its own exact instance mints NOTHING.
+    /// A sample is minted only from an exact (spell, entity, CASTER) chain: one cast, landing on
+    /// that entity, wearing off that entity. Only one caster's modifiers shape a duration anyone is
+    /// entitled to learn from, and a fade that cannot be matched to its own exact instance mints
+    /// nothing.
     ///
-    /// WHICH LANDING DOES IT CLOSE? The OLDEST (ruling 7). The wear-off names the mob but not which
-    /// mob of that name, so under a fixed duration the oldest landing is the maximum-likelihood one
-    /// to have just ended — and pairing newest-first instead produced, on the reporter's own bytes,
-    /// spans from 42 s to 119 s out of the same lines. The row survives with one fewer on its count
-    /// chip; only an empty group clears it.
-    ///
-    /// CLOSURE stays honest in the other direction too: the fade proves THIS entity's copy is gone,
-    /// so a still-live slow on mob A survives mob B's wear-off.
+    /// It closes the OLDEST landing: the wear-off names the mob but not which mob of that name, so
+    /// under a fixed duration the oldest is the maximum-likelihood one to have just ended. The row
+    /// survives with one fewer on its count chip; only an empty group clears it. The fade proves
+    /// THIS entity's copy is gone, so a still-live slow on mob A survives mob B's wear-off.
     pub fn record_fade(
         &mut self,
         key: &str,
@@ -483,16 +451,14 @@ impl BuffInstances {
                     open.group.is_empty(),
                 )
             };
-            // CENSOR a sample whose land→fade window crossed an offline gap (world-model law 5).
-            // The fade itself is still authoritative — the instance clears exactly as it always did
-            // — but the SPAN is not a duration: it contains an absence whose length we know only to
-            // within the reconnect window, and contributing it would poison the recency-weighted MAX
-            // with a value guaranteed too large.
+            // Censor a sample whose land→fade window crossed an offline gap. The fade itself is
+            // still authoritative and the instance clears, but the SPAN is not a duration: it holds
+            // an absence whose length we know only to within the reconnect window, and contributing
+            // it would poison the recency-weighted MAX with a value guaranteed too large.
             if !spanned {
                 if let Some(ms) = sample.filter(|&s| s > 0 && s <= MAX_SAMPLE_MS) {
-                    // NEVER CENSORED on this path (JOS-180): the wake line is a CROWD-CONTROL
-                    // annotation, and there is no sentence in the log that says a beneficial buff or
-                    // a debuff ended early.
+                    // Never censored on this path: the wake line is a crowd-control annotation, and
+                    // no sentence in the log says a beneficial buff or a debuff ended early.
                     self.add_sample(
                         key,
                         &caster,
@@ -576,28 +542,20 @@ impl BuffInstances {
         }
     }
 
-    /// OFFLINE GAP — the buff-timer PAUSE, and the asymmetry that is the whole of JOS-134.
+    /// The offline-gap PAUSE, and the asymmetry it turns on.
     ///
-    /// YOUR BUFFS PAUSE. Buff timers do NOT run while the character is out of the world; the game
-    /// saves each buff's REMAINING duration and resumes it at login. So a beneficial instance that
-    /// survives a gap has its clock shifted forward by the absence, or every countdown reads as
-    /// long-expired and the hygiene sweep retires a buff that is still up.
+    /// Your buffs pause: EQ does not run buff timers while the character is out of the world, saving
+    /// each buff's remaining duration and resuming it at login (measured — a 16-minute buff landed
+    /// before a 13-hour camp printed its wear-off one minute after the login). So a beneficial
+    /// instance surviving a gap has its clock shifted forward by the absence, or every countdown
+    /// reads long-expired and the hygiene sweep retires a buff that is still up.
     ///
-    /// MEASURED, not assumed. Swift Like the Wind (DB 16 min): landed Fri Jul 31 00:51:59, camped
-    /// 01:05:43, logged in 14:49:15, wore off 14:50:28. Wall-clock elapsed 13h58m29s; measured
-    /// absence 13h43m08s; the difference is 15m21s, which matches this character's observed ONLINE
-    /// duration for that spell (two clean same-evening pairs, 15m13s and 15m09s) to within the
-    /// camp's own fuzz. If timers RAN while offline the buff would have expired unobserved around
-    /// 01:08 and that wear-off line could never have printed at all.
-    ///
-    /// DEBUFFS DO NOT PAUSE, and that is deliberate (owner's design, 2026-08-09). What EQ pauses is
-    /// your CHARACTER; the world it stands in keeps running. A slow you landed on a mob is a timer in
-    /// the world, not a timer on you, so it keeps burning down while you are gone and its clock is
-    /// left exactly where it was.
+    /// Debuffs do not pause. What EQ pauses is your CHARACTER; the world it stands in keeps running,
+    /// so a slow you landed on a mob keeps burning down and its clock is left where it was.
     ///
     /// `from_ts` is the last instant the character is KNOWN to have been in the world, so only
-    /// instances that PREDATE it are shifted: anything raised after it was raised on this side of
-    /// the absence and has nothing to be compensated for.
+    /// instances predating it are shifted: anything raised after it was raised on this side of the
+    /// absence and has nothing to be compensated for.
     pub fn on_offline_pause(
         &mut self,
         from_ts: i64,
@@ -644,8 +602,8 @@ impl BuffInstances {
                 a.started_ts += offline_ms;
             }
         }
-        // A cast in flight when the character left the world never completed — the camp (or the
-        // crash) took it. Shifting it would resurrect a cast that produced no landing message.
+        // A cast in flight when the character left the world never completed. Shifting it would
+        // resurrect a cast that produced no landing message.
         self.pending = None;
     }
 
@@ -656,12 +614,11 @@ impl BuffInstances {
         self.pending = None;
     }
 
-    /// Drop every instance whose clock predates `ts` — the UNEXPLAINED-hole resolution (JOS-134).
+    /// Drop every instance whose clock predates `ts` — the unexplained-hole resolution.
     ///
-    /// A log hole that no login ever explains means we lost the thread rather than that the character
-    /// left, and the old blanket wipe is still the honest answer for what was standing when it
-    /// opened. It is SCOPED rather than blanket because the ruling arrives AFTER the hole did — it
-    /// waits for in-world evidence, and that evidence can be a cast — and anything raised on this
+    /// A log hole no login explains means we lost the thread rather than that the character left, so
+    /// what was standing when it opened goes. It is SCOPED rather than blanket because the ruling
+    /// arrives after the hole did — it waits for in-world evidence — and anything raised on this
     /// side of the hole is evidence from this side of it.
     pub fn drop_predating(&mut self, ts: i64) {
         let dead: Vec<String> = self
@@ -696,23 +653,26 @@ impl BuffInstances {
     /// pause lands — exactly the buff the pause exists to keep. DEBUFFS get no exemption; their
     /// clocks never stop.
     ///
-    /// THE CULL TAKES THE ROW AND LEAVES THE PAIRING RECORD (JOS-156), and that half is deliberate.
-    /// MEASURED before it was written: with the record deleted too, twenty consecutive real-length
-    /// Shiftless Deeds IV cycles (234 s each, against a 150 s DB row) mint ZERO samples and the
-    /// estimate stays pinned to the DB floor forever — because the first cycle that would teach the
-    /// true duration is the first one culled, and the learner can never ratchet past DB + 60 s. It
-    /// costs nothing where the ruling actually bites: when the line is never coming, nothing ever
-    /// pairs with the surviving record and the LONG STOP collects it minting nothing.
+    /// The unwitnessed cull takes the ROW and leaves the PAIRING RECORD, deliberately: the record is
+    /// what lets a late wear-off still mint a sample, and deleting it too pins the estimate to the
+    /// DB floor forever, because the first cycle that would teach the true duration is the first one
+    /// culled. Where the line is never coming, nothing pairs with the surviving record and the long
+    /// stop collects it minting nothing.
+    ///
+    /// Returns whether it changed the PUBLISHED set. It runs once per event and finds nothing to do
+    /// on nearly all of them, which is the difference between announcing on every line and
+    /// announcing when a buff actually aged out. The `reap_orphaned_open` call at the end is
+    /// deliberately not counted: it touches `open`, which is not in the snapshot.
     pub fn sweep_hygiene(
         &mut self,
         now: i64,
         held_before_ts: i64,
         stats: &SpellStats,
         pets: &PetEntities,
-    ) {
-        // CALLED ONCE PER EVENT, so its cost is paid 1.4M times on a full replay. The TS's own note
-        // applies: nothing here spreads the map into a fresh array, and the loop deletes only the
-        // entry it is standing on.
+    ) -> bool {
+        let mut changed = false;
+        // Called once per event, so its cost is paid on every line of a full replay: nothing here
+        // may copy the map, and the loop deletes only the entry it is standing on.
         let keys: Vec<String> = self.active.iter().map(|(ik, _)| ik.to_string()).collect();
         for ik in keys {
             let Some(a) = self.active.get(&ik) else {
@@ -725,29 +685,29 @@ impl BuffInstances {
                 continue;
             }
             let db_ms = stats.db_duration_for(instance_spell_key(&ik));
-            // THE LONG STOP goes first, because it is the one that means "we lost the thread" — and
-            // it is the only one that takes the PAIRING RECORD with it. A MULTISET RETIRES ONE
-            // LANDING AT A TIME: five mobs mezzed in one round age out one after another, and the
-            // row keeps whichever landings are still inside the cap.
+            // The long stop goes first, because it means "we lost the thread" and is the only one
+            // that takes the PAIRING RECORD with it. A multiset retires ONE landing at a time, so
+            // the row keeps whichever landings are still inside the cap.
             let long_cap = hygiene_cap(a, db_ms);
             let elapsed = (now - a.started_ts) as f64;
             if elapsed > long_cap {
-                // `now - longCap` is FRACTIONAL over there whenever the p75 statistic beat the
-                // 90-minute floor, and `dropExpired` compares an integer `startedTs` against it.
-                // For an integer x, `x <= r` is `x <= floor(r)` — so the floor is the exact answer
-                // rather than a rounding of one.
+                // The cap is fractional whenever the p75 statistic beat the 90-minute floor, and
+                // `drop_expired` compares an integer ts against it. For an integer x, `x <= r` is
+                // `x <= floor(r)`, so the floor is the exact answer rather than a rounding of one.
                 let cutoff = (now as f64 - long_cap).floor() as i64;
                 self.retire_expired(&ik, cutoff, stats, pets);
+                changed = true;
                 continue;
             }
             if elapsed > unwitnessed_cull_cap(a) {
                 self.active.remove(&ik);
+                changed = true;
             }
         }
-        // …AND THE RECORDS THE CULL ABOVE LEFT BEHIND (JOS-203). The loop can only ever reach a
-        // record through its active row, so before this the open cast of a culled row had no reaper
-        // at all.
+        // The loop above can only reach a record through its active row, so the records the cull
+        // left behind need their own reaper.
         reap_orphaned_open(&mut self.open, &self.active, stats, now);
+        changed
     }
 
     /// The long-stop path: shed the landings older than `cutoff_ts`, and drop the record when empty.
@@ -767,7 +727,7 @@ impl BuffInstances {
         self.active.remove(ik);
     }
 
-    /// `playerDeath` strips SELF buffs: censor open SELF casts + clear their actives.
+    /// A player death strips SELF buffs: censor open self casts and clear their actives.
     pub fn on_player_death(&mut self, stats: &SpellStats, pets: &PetEntities) {
         let dead: Vec<String> = self
             .open
@@ -797,23 +757,21 @@ impl BuffInstances {
         }
     }
 
-    /// A MOB OF THIS NAME DIED — the death censor, and since JOS-156 the ONE path every death SHAPE
-    /// reaches.
+    /// A mob of this name died — the death censor, and the one path every death shape reaches.
     ///
-    /// IT CLOSES ONE LANDING, NOT THE ROW (ruling 7). A group is a multiset of same-named mobs we
-    /// believe are holding the spell, and one death is evidence about ONE of them. The OLDEST is
-    /// closed for the identical reason a wear-off closes the oldest. This used to delete the whole
-    /// row, so killing one of four slowed mobs cleared all four.
+    /// It closes ONE landing, not the row. A group is a multiset of same-named mobs we believe are
+    /// holding the spell, and one death is evidence about one of them; the oldest is closed for the
+    /// same reason a wear-off closes the oldest.
     ///
-    /// AND IT MINTS NO CYCLE. A land-to-death span is not a duration — the spell was cut short by
-    /// the corpse, not observed running out. `contaminate_all` is the separate half: it is about the
-    /// landings that SURVIVE the close, which are now landings of a group that has lost track of
-    /// which mob is which.
+    /// It mints no CYCLE: a land-to-death span is not a duration, because the spell was cut short by
+    /// the corpse rather than observed running out. `contaminate_all` is the separate half, about
+    /// the landings that SURVIVE the close, which now belong to a group that has lost track of which
+    /// mob is which.
     ///
-    /// WHAT IT DOES MINT, SINCE JOS-379, IS A LOWER BOUND — and the distinction above is exactly why
-    /// it may. The span is a PROOF THE DURATION IS AT LEAST THIS LONG, because no wear-off ever
-    /// printed between the landing and the corpse; a landing still in this group has by construction
-    /// not been closed by one. Every rail that keeps "at least" honest is on `death_bound_span`.
+    /// What it does mint is a LOWER BOUND, and the distinction above is why it may: no wear-off ever
+    /// printed between the landing and the corpse, and a landing still in this group has by
+    /// construction not been closed by one. The rails that keep "at least" honest are on
+    /// [`death_bound_span`].
     pub fn on_entity_death(
         &mut self,
         entity_key: &str,
@@ -839,13 +797,9 @@ impl BuffInstances {
         }
     }
 
-    /// One open record against one corpse: MEASURE it (the lower bound), then close its oldest
-    /// landing and contaminate what is left.
-    ///
-    /// THE BOUND IS READ BEFORE THE CLOSE, because the close is what CONSUMES the landing it
-    /// measures, and MINTED before it too: `add_sample` only re-projects rows that already exist, so
-    /// a row this death is about to delete is re-read and then deleted, which costs nothing and
-    /// keeps the mint beside the reasoning that earned it.
+    /// One open record against one corpse: measure the lower bound, then close its oldest landing
+    /// and contaminate what is left. The bound is read and minted BEFORE the close, because the
+    /// close consumes the landing it measures.
     fn censor_open_on_death(
         &mut self,
         ik: &str,
@@ -861,7 +815,7 @@ impl BuffInstances {
         if !death_censors_open(o, entity_key, is_debuff) {
             return;
         }
-        // NEVER off the `unknown-hostile` bucket `death_censors_open` also sweeps: that row's target
+        // Never off the `unknown-hostile` bucket `death_censors_open` also sweeps: that row's target
         // is an INFERENCE, and a span measured against a mob the log never named is not evidence.
         let ms = if is_debuff && o.entity_key == entity_key {
             death_bound_span(o, entity_key, ts, stats)
@@ -898,10 +852,9 @@ impl BuffInstances {
         }
     }
 
-    /// Retire an ENTITY — NO pet-specific branches. Censors every open cast + active instance bound
-    /// to `entity_key`, buff and debuff alike. Used on uncharm / summoned-pet death / broken-charm
-    /// death / zone-left-behind / single-pet succession; the pet is just the entity currently
-    /// claimed, and buffs on other players are censored the same way.
+    /// Retire an ENTITY, with no pet-specific branches: censor every open cast and active instance
+    /// bound to `entity_key`, buff and debuff alike. A pet is just the entity currently claimed, and
+    /// buffs on other players are censored the same way.
     pub fn retire_entity(&mut self, entity_key: &str, pets: &mut PetEntities) {
         let dead: Vec<String> = self
             .open
@@ -924,8 +877,8 @@ impl BuffInstances {
         pets.retire_slots(entity_key);
     }
 
-    /// ZONE: the player keeps self buffs; a SUMMONED pet follows and keeps its buffs; a CHARMED pet
-    /// is LEFT BEHIND; hostile mobs are left behind.
+    /// Zone: the player keeps self buffs, a SUMMONED pet follows and keeps its buffs, a CHARMED pet
+    /// is left behind, and so are hostile mobs.
     pub fn on_zone(&mut self, stats: &SpellStats, pets: &mut PetEntities) {
         let dead: Vec<String> = self
             .open
@@ -960,15 +913,14 @@ impl BuffInstances {
     }
 }
 
-/// THE SPEC FOR RE-PROJECTING A ROW THAT IS ALREADY LIVE: everything the instance IS, carried
+/// The spec for re-projecting a row that is already live: everything the instance IS, carried
 /// forward from the row being replaced, with only the coordinates a re-projection restates supplied
 /// by the caller.
 ///
-/// IT EXISTS BECAUSE THE STORE RE-PROJECTS FROM TWO PLACES THAT MUST NOT DRIFT — `restat` (the hold
+/// It exists because the store re-projects from two places that must not drift — `restat` (the hold
 /// group moved) and `add_sample` (a fresh duration changed what every live instance of that line
-/// counts down from). Both used to hand-copy the same seven fields, and a display fact added to one
-/// and not the other is precisely the shape of the defect JOS-238 fixed one level up: a row that says
-/// a different thing depending on which internal event last touched it.
+/// counts down from). Hand-copying the fields in both is how a row ends up saying different things
+/// depending on which internal event last touched it.
 fn reproject_spec(
     a: &ActiveBuff,
     key: &str,

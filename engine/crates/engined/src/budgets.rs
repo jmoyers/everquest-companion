@@ -1,57 +1,39 @@
-//! THE BUDGETS, AS THE ENGINE ITSELF STATES THEM (owner ruling 19 surface, JOS-502).
+//! The engine's own performance budgets, judged against the generation that is actually running, so
+//! the in-app panel and a bug report state what THIS machine did. `tests/budget.rs` asserts the same
+//! ceilings in CI against a synthetic corpus.
 //!
-//! > "the performance chip should incl perf of the server in end state."
+//! The op carries the definitions and not just the numbers: these goals are self-measured and never
+//! promised, so a reader is owed the ceiling beside the measurement and the caveat beside both.
 //!
-//! `tests/budget.rs` has asserted these ceilings in CI since JOS-501, against a synthetic corpus on
-//! a runner. This module is the other half of ruling 19: the same two budgets, judged against the
-//! generation that is actually running, so the in-app panel and a bug report state what THIS
-//! machine did. Ruling 3 is why the op carries the DEFINITIONS and not just the numbers —
-//! performance goals here are self-measured and never promised, so a reader is owed the ceiling
-//! beside the measurement and the caveat beside both, rather than a colour he has to trust.
+//! The rows are rendered here rather than in the panel because views arrive render-ready. The two
+//! budgets are in different units and each caveat is prose, so serving raw numbers would push all of
+//! that into the renderer and make a third budget a renderer change.
 //!
-//! ## WHY THE ROWS ARE RENDERED HERE AND NOT IN THE PANEL
-//!
-//! Ruling 4 says views arrive render-ready and the renderer never re-derives. A budget row is that
-//! rule applied to a diagnostic: the comparison that produces a verdict is arithmetic, the two
-//! budgets are measured in DIFFERENT units (bytes per second, microseconds), and the caveat that
-//! keeps each number from being misread is prose. Serving numbers instead would push all three into
-//! the renderer and make a third budget a renderer change. It also means the bug-report block and
-//! the panel print the same sentence, because there is only one place it is written.
-//!
-//! ## WHY THERE IS NO `Duration` OR RATE TYPE IN THE SIGNATURES
-//!
-//! Everything below is a free function over plain integers, so this module depends on nothing in
-//! this crate — not `ingest`, not `views`, not `world`. `world.rs` pulls the three readings out of
-//! the one `PerfAsk` answer it already had and hands them over. The unit tests at the bottom are
-//! therefore the whole contract, with no fold, no socket and no thread in the room.
+//! Everything below is a free function over plain integers, so this module depends on nothing else
+//! in this crate and its unit tests are the whole contract.
 
 use protocol::generated::{PerfBudget, PerfBudgetId, PerfBudgetVerdict};
 
-/// THE FOLD-RATE FLOOR, in bytes per second, and it is the number `tests/budget.rs` asserts.
+/// The fold-rate floor, in bytes per second — the number `tests/budget.rs` asserts.
 ///
-/// MEASURED BEFORE IT WAS CHOSEN (JOS-501): 8.0 MB folded in 1030 ms — 7.8 MB/s, 110,319 events —
-/// on an i9-13900KF release build at below-normal priority with the dev app running. The floor is
-/// an EIGHTH of that, and the gap is not timidity: a shared CI runner is several times slower for
-/// single-threaded work, and a debug build is about an order of magnitude slower, which is the
-/// regression this floor most wants to catch and the one that has actually happened.
+/// Measured before it was chosen: 8.0 MB folded in 1030 ms (7.8 MB/s, 110,319 events) on an
+/// i9-13900KF release build at below-normal priority. The floor is an eighth of that, because a
+/// shared CI runner is several times slower and a debug build about an order of magnitude — the
+/// regression this floor most wants to catch.
 pub const MIN_FOLD_BYTES_PER_SEC: u64 = 1_000_000;
 
-/// THE SERVE-LATENCY CEILING, in microseconds, and it is the number `tests/budget.rs` asserts.
+/// The serve-latency ceiling, in microseconds — the number `tests/budget.rs` asserts.
 ///
-/// READ THE UNIT BEFORE THE NUMBER. `foldToFrameUs` is not compute — it is the whole engine-side
-/// path from the fold that produced the change to the frame reaching the outbox, so the ~10 Hz
-/// coalescing beat and the tail's poll interval are INSIDE it. The measurement behind this constant
-/// is 56 ms for a one-row diff, which is a beat and not work, so a ceiling two orders of magnitude
-/// above it is a WEDGE DETECTOR rather than a performance budget, and [`SERVE_NOTE`] says so on
-/// every row this engine serves.
+/// Read the unit before the number: `foldToFrameUs` is not compute but the whole engine-side path
+/// from the fold that produced a change to the frame reaching the outbox, so the ~10 Hz coalescing
+/// beat and the tail's poll interval are inside it. The measurement behind it is 56 ms for a one-row
+/// diff, a beat rather than work, which makes this a wedge detector rather than a budget.
 pub const MAX_SERVE_LATENCY_US: u64 = 2_000_000;
 
-/// The fold-rate row's caveat — AND THE PLACE THE UNMET G3 GOAL IS SAID OUT LOUD.
+/// The fold-rate row's caveat, and the place the unmet fold-time goal is said out loud.
 ///
-/// The release cut folds the owner's 209 MB log in 52.5 s at 3.8 MB/s against a 20 s goal, and the
-/// goal is NOT met. A budget surface that printed a green row and left that in a planning document
-/// would be the surface lying by omission — a pass here means this build is not BROKEN, which is a
-/// much smaller claim than the program's goal, and the row has to say which claim it is making.
+/// A pass here means this build is not broken, which is a much smaller claim than the program's
+/// goal, and the row has to say which claim it is making.
 const FOLD_NOTE: &str = "The floor is an eighth of the 7.8 MB/s this engine measured on the \
     author's machine, so that a debug build or a wedged scan is what trips it rather than a busy \
     afternoon. It is not the program's goal: folding the owner's 209 MB log in 20 s is the G3 \
@@ -66,9 +48,9 @@ const SERVE_NOTE: &str = "Measured fold-to-outbox, so the engine's ~10 Hz coales
 
 /// What one generation measured, in the three readings the budgets need.
 ///
-/// EVERY FIELD IS AN OPTION AND ABSENT MEANS NOT YET MEASURED, which is the rule `IngestCost` and
-/// `SourceMeter` both already keep and the reason [`PerfBudgetVerdict::Unmeasured`] exists: a scan
-/// still running has no rate, and a session whose every frame was an owed reset has no latency.
+/// Every field is an `Option` and absent means not yet measured, which is why
+/// [`PerfBudgetVerdict::Unmeasured`] exists: a scan still running has no rate, and a session whose
+/// every frame was an owed reset has no latency.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Readings {
     /// Wall time from the first byte read to the fold landing.
@@ -79,12 +61,11 @@ pub struct Readings {
     pub worst_serve_us: Option<u64>,
 }
 
-/// EVERY BUDGET THIS BUILD ENFORCES, judged and rendered, in the order the panel draws them.
+/// Every budget this build enforces, judged and rendered, in the order the panel draws them.
 ///
-/// THE LIST IS NEVER EMPTY AND NEVER SHORT. A budget with nothing to judge yet answers
-/// `unmeasured` rather than dropping out of the list, because a budget that disappears when it is
-/// inconvenient is not a budget — and because a panel whose row count changed under it would make
-/// "the engine is still starting" look like "this build stopped enforcing that".
+/// The list is never empty and never short: a budget with nothing to judge yet answers `unmeasured`
+/// rather than dropping out, because a panel whose row count changed under it would make "the engine
+/// is still starting" look like "this build stopped enforcing that".
 #[must_use]
 pub fn budgets(readings: &Readings) -> Vec<PerfBudget> {
     vec![fold_rate(readings), serve_latency(readings)]
@@ -117,10 +98,8 @@ fn serve_latency(readings: &Readings) -> PerfBudget {
 
 /// Bytes per second over the scan, or `None` while the scan is still running.
 ///
-/// A `scan_ms` OF ZERO IS NOT A DIVISION BY ZERO AND NOT A FAILURE — it is a log small enough to
-/// fold inside the clock's resolution, so the rate is reported as if the scan took one millisecond,
-/// which is the same guard `tests/budget.rs` makes and for the same reason: a fold too fast to time
-/// is not a fold that failed.
+/// A `scan_ms` of zero is a log small enough to fold inside the clock's resolution, so the rate is
+/// reported as if the scan took one millisecond: a fold too fast to time is not a fold that failed.
 fn fold_bytes_per_sec(readings: &Readings) -> Option<u64> {
     let (ms, bytes) = (readings.scan_ms?, readings.scan_bytes?);
     Some(bytes.saturating_mul(1_000) / ms.max(1))
@@ -146,11 +125,10 @@ fn at_most(measured: Option<u64>, ceiling: u64) -> PerfBudgetVerdict {
 
 /// A byte rate a person reads, at a precision that does not throw the measurement away.
 ///
-/// MB/s WITH ONE DECIMAL, because the numbers this budget deals in run from a floor of 1.0 to a
-/// measured 7.8 and the whole question is which side of the floor a build landed on; kB/s below a
-/// megabyte for the same reason `took` drops to microseconds — a rate reported as `0.0 MB/s` reads
-/// as a measurement nobody took rather than as the bad news it is. Locale is fixed en-US (ruling
-/// 25), which is why this is a `format!` and not a locale-aware anything.
+/// MB/s with one decimal, because these numbers run from a floor of 1.0 to a measured 7.8 and the
+/// question is which side of the floor a build landed on; kB/s below a megabyte, because `0.0 MB/s`
+/// reads as a measurement nobody took rather than as the bad news it is. Locale is fixed en-US,
+/// which is why this is a `format!` and not a locale-aware anything.
 fn rate(bytes_per_sec: u64) -> String {
     #[allow(clippy::cast_precision_loss)]
     let per_sec = bytes_per_sec as f64;
@@ -161,12 +139,11 @@ fn rate(bytes_per_sec: u64) -> String {
     }
 }
 
-/// A microsecond count a person reads — the `views::meter` stderr line's own scale, on the wire.
+/// A microsecond count a person reads — `views::meter`'s own scale, on the wire.
 ///
-/// Three bands rather than one format string, and it is the same argument the meter makes: cutting
-/// a fifty-row window off a fold takes tens of microseconds, so a serve path reporting `0.0 ms`
-/// reads as a measurement nobody took, while a two-second ceiling written as `2000000 us` reads as
-/// nothing at all.
+/// Three bands rather than one format string: cutting a fifty-row window off a fold takes tens of
+/// microseconds, so a serve path reporting `0.0 ms` reads as a measurement nobody took, while a
+/// two-second ceiling written as `2000000 us` reads as nothing at all.
 fn took(us: u64) -> String {
     #[allow(clippy::cast_precision_loss)]
     let micros = us as f64;
@@ -193,9 +170,8 @@ mod tests {
 
     #[test]
     fn an_engine_that_has_measured_nothing_says_unmeasured_rather_than_passing() {
-        // THE LOAD-BEARING CASE. A just-launched engine has no scan and no served frame, and a
-        // budget surface that read green there would be green for the whole window in which
-        // somebody is most likely to be looking at it.
+        // A just-launched engine has no scan and no served frame, and a budget surface that read
+        // green there would be green for the whole window somebody is most likely looking at it in.
         let rows = budgets(&Readings::default());
         assert_eq!(rows.len(), 2, "a budget is never omitted");
         for budget in rows {
@@ -208,7 +184,7 @@ mod tests {
 
     #[test]
     fn a_fold_at_the_measured_rate_passes_and_says_what_it_did() {
-        // The JOS-501 measurement: 8 MB in 1030 ms.
+        // The real measurement behind the floor: 8 MB in 1030 ms.
         let readings = Readings {
             scan_ms: Some(1_030),
             scan_bytes: Some(8 * 1024 * 1024),
@@ -237,7 +213,6 @@ mod tests {
     #[test]
     fn the_fold_row_states_the_unmet_g3_goal_rather_than_hiding_behind_a_pass() {
         // A pass on a floor an eighth below the measurement must not read as "the goal is met".
-        // The release cut folds 209 MB in 52.5 s against a 20 s goal; the row says so.
         let readings = Readings {
             scan_ms: Some(1_000),
             scan_bytes: Some(8_000_000),
@@ -291,9 +266,8 @@ mod tests {
 
     #[test]
     fn a_measurement_exactly_on_the_limit_passes_on_both_budgets() {
-        // The boundary is stated as `at least` and `at most`, so equality is a pass on both — and
-        // this is pinned because an off-by-one here would make a CI floor and a served verdict
-        // disagree about the same measurement.
+        // The boundary is `at least` and `at most`, so equality passes on both. An off-by-one here
+        // would make a CI floor and a served verdict disagree about the same measurement.
         let readings = Readings {
             scan_ms: Some(1_000),
             scan_bytes: Some(MIN_FOLD_BYTES_PER_SEC),
@@ -306,7 +280,7 @@ mod tests {
 
     #[test]
     fn the_rows_arrive_in_the_order_the_panel_draws_them() {
-        // Ruling 4: order is the server's, and a renderer that sorted this would be munging.
+        // Order is the server's; a renderer that sorted this would be re-deriving.
         let ids: Vec<PerfBudgetId> = budgets(&Readings::default())
             .into_iter()
             .map(|b| b.id)

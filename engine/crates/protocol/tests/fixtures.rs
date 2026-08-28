@@ -1,17 +1,11 @@
-//! THE WORKED MOMENTS, PROVEN IN RUST.
+//! The worked moments in `protocol/fixtures/*.json`, proven in Rust. This suite deserializes every
+//! one into the generated types and re-serializes it; `tests/protocolSchema.test.mts` does the same
+//! over the same bytes on the TypeScript side. A shape either language cannot express is a red suite
+//! in that language, which is what makes the contract one.
 //!
-//! `protocol/fixtures/*.json` holds the four worked moments from the subscription-diff section of
-//! `docs/plans/data-server.md`, plus the phase-0 handshake. They are the FIRST cross-language
-//! artifacts in this repo: this suite deserializes every one of them into the generated types and
-//! re-serializes it, and `tests/protocolSchema.test.mts` does the same on the TypeScript side over
-//! the same bytes. A shape either language cannot express is a red suite in that language, which
-//! is the only way a "contract" between two codebases stays one.
-//!
-//! ROUND-TRIP MEANS VERBATIM. The comparison is over parsed JSON values rather than bytes — key
-//! order and whitespace are not part of the contract, and no JSON serializer promises them — but
-//! nothing else is forgiven. A dropped field, an added default, an integer that came back as a
-//! float: all of those are a failed assertion here. That last one is not hypothetical; it is why
-//! `protocol::cell::Cell` is hand-written.
+//! Round-trip means verbatim. The comparison is over parsed JSON values rather than bytes — key
+//! order and whitespace are not part of the contract — but nothing else is forgiven: a dropped
+//! field, an added default, or an integer that came back a float all fail here.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -101,8 +95,6 @@ fn round_trip(frame: &Frame, fixture: &str) -> serde_json::Value {
     }
 }
 
-// ---- 1. every fixture, verbatim ---------------------------------------------------------------
-
 #[test]
 fn every_worked_moment_round_trips_verbatim() {
     let all = fixtures();
@@ -123,8 +115,8 @@ fn every_worked_moment_round_trips_verbatim() {
 
 #[test]
 fn every_message_is_also_a_protocol_message() {
-    // The root type the transport seam is generic over has to accept everything either side can
-    // send, or a transport could not carry the whole protocol.
+    // The root type the transport seam is generic over must accept everything either side can send,
+    // or a transport could not carry the whole protocol.
     for fixture in &fixtures() {
         for frame in &fixture.frames {
             let typed: ProtocolMessage = serde_json::from_value(frame.raw.clone())
@@ -155,8 +147,6 @@ fn the_four_plan_doc_moments_are_all_here() {
     }
 }
 
-// ---- 2. the rules the moments are there to demonstrate -----------------------------------------
-
 fn engine_frames(file: &str) -> Vec<EngineMessage> {
     fixtures()
         .into_iter()
@@ -175,10 +165,9 @@ fn rule_one_a_subscription_opens_with_a_full_reset() {
         .try_into()
         .expect("an ack and a reset");
 
-    // THE ACK IS NOT THE DATA. It says the subscription exists; the reset says what is in it. Two
-    // messages rather than one because a subscription can be opened over a view whose first fold
-    // has not landed yet, and a client that conflated them would have nothing to render and no way
-    // to tell that from an empty view.
+    // The ack is not the data: it says the subscription exists, the reset says what is in it. Two
+    // messages because a subscription can be opened over a view whose first fold has not landed,
+    // and a client that conflated them could not tell that from an empty view.
     let EngineMessage::Reply(ack) = ack else {
         panic!("a subscribe request is acknowledged before its data")
     };
@@ -223,7 +212,7 @@ fn rule_two_an_update_carries_only_the_cells_that_moved() {
         "a cell that did not change must be ABSENT, not resent"
     );
 
-    // …and the insert names an anchor. Exactly one of before/after, which the schema cannot say.
+    // …and the insert names exactly one of before/after, which the schema cannot say.
     let DiffOp::InsertOp(insert) = &diff.ops[1] else {
         panic!("the second op is an insert")
     };
@@ -271,20 +260,16 @@ fn rule_three_an_epoch_bump_is_connection_wide_and_the_reset_follows_it() {
     assert_eq!(*bump.epoch, 4);
     assert!(matches!(bump.reason, EpochReason::Attach));
     let progress = bump.progress.expect("an attach reports its fold progress");
-    // EXACT equality on an f64 is right here, and only here: this is the same decimal literal
-    // parsed by the same routine that produced the fixture, so both sides land on the identical
-    // nearest-f64. It is the byte-verbatim claim, restated at the field level - if it ever needed
-    // an epsilon, the round-trip assertion above would already have failed.
+    // Exact f64 equality is right here: the same decimal literal parsed by the same routine that
+    // produced the fixture, so both sides land on the identical nearest-f64.
     assert_eq!(
         progress.pct, 62.4,
         "the fold percent, fractional and unrounded"
     );
     assert_eq!(progress.events, 1_571_003);
 
-    // …AND IT GOES BACK OUT AS THE SAME TEXT. This is the whole reason the worked example uses a
-    // fractional value: `pct` is an f64, and Rust writes a whole f64 as `62.0`, which would not be
-    // the `62` the plan doc prints. Pinned rather than assumed, because the claim the fixtures make
-    // is byte-verbatim across two languages and this is the one field where the two could differ.
+    // …and it goes back out as the same text. The worked example uses a fractional value because
+    // Rust writes a whole f64 as `62.0`, which is not the `62` the other side prints.
     let text = serde_json::to_string(&progress).expect("progress serializes");
     assert!(
         text.contains("\"pct\":62.4"),
@@ -320,8 +305,6 @@ fn rule_four_rows_are_render_ready_scalars() {
     }
 }
 
-// ---- 3. the handshake and the reply envelope ---------------------------------------------------
-
 #[test]
 fn the_handshake_presents_and_answers_this_build_s_version() {
     let fixture = fixtures()
@@ -347,11 +330,9 @@ fn the_handshake_presents_and_answers_this_build_s_version() {
 
 #[test]
 fn ok_agrees_with_kind_in_every_reply_the_repo_ships() {
-    // `kind` is the discriminant both sides branch on; `ok` is the ticket's spelling of the same
-    // fact and a one-field check for a caller that does not want to match. The schema pins the
-    // value with `enum: [true] / [false]` and a 2020-12 validator enforces it, but the Rust type
-    // is a plain bool - typify does not specialize a boolean constant. So the agreement is
-    // asserted here, over every reply this repo commits.
+    // `kind` is the discriminant both sides branch on; `ok` is the same fact as a one-field check.
+    // The schema pins it with `enum: [true] / [false]`, but typify does not specialize a boolean
+    // constant, so the Rust type is a plain bool and the agreement is asserted here instead.
     for fixture in &fixtures() {
         for frame in &fixture.frames {
             if frame.dir != "engine" {
@@ -372,8 +353,8 @@ fn ok_agrees_with_kind_in_every_reply_the_repo_ships() {
 
 #[test]
 fn a_message_from_the_wrong_direction_is_refused() {
-    // The two unions are not interchangeable, and that is what keeps an engine from being handed
-    // its own output. Without the typed tag enums this would silently succeed.
+    // The two unions are not interchangeable, which keeps an engine from being handed its own
+    // output. Without the typed tag enums this would silently succeed.
     let hello = serde_json::json!({
         "op": "hello",
         "token": "0f7d2c9a4b1e6538aa03d7c5e9124f86b0d3a7c1e2f4085967ab3cd12e4f7089",
@@ -387,9 +368,9 @@ fn a_message_from_the_wrong_direction_is_refused() {
 
 #[test]
 fn two_ops_with_identical_parameter_shapes_stay_apart() {
-    // `session.health` and `session.progress` are structurally identical - same id, same op field,
-    // same empty params. Before the tag properties were given real types, an untagged union
-    // deserialized BOTH as the first variant and the op silently vanished. This is the pin.
+    // `session.health` and `session.progress` are structurally identical — same id, same op field,
+    // same empty params. Without real types on the tag properties an untagged union reads both as
+    // the first variant and the op silently vanishes.
     let progress = serde_json::json!({ "id": 4, "op": "session.progress", "params": {} });
     let typed: ClientMessage =
         serde_json::from_value(progress.clone()).expect("a progress request");
@@ -400,14 +381,11 @@ fn two_ops_with_identical_parameter_shapes_stay_apart() {
     assert_eq!(serde_json::to_value(&typed).expect("serializes"), progress);
 }
 
-// ---- 4. the fold serves (JOS-478) --------------------------------------------------------------
-
 #[test]
 fn a_module_snapshot_carries_whatever_shape_its_module_publishes() {
-    // THE POINT OF THE MOMENT. `kills` publishes an object, `loot` publishes an array, and the
-    // protocol names neither: `ModuleState` is replaced by `serde_json::Value` on this side
-    // exactly so both survive. A generated multi-type enum would have lowered the numbers inside
-    // them to f64 as well, which is the `Cell` defect one level up.
+    // `kills` publishes an object and `loot` an array; the protocol names neither, because
+    // `ModuleState` is replaced by `serde_json::Value` so both survive. A generated multi-type enum
+    // would have lowered the numbers inside them to f64, which is the `Cell` defect one level up.
     let frames = engine_frames("06-module-snapshot.json");
     let mut shapes: Vec<(String, bool)> = Vec::new();
     for frame in &frames {
@@ -426,9 +404,8 @@ fn a_module_snapshot_carries_whatever_shape_its_module_publishes() {
         "the moment must demonstrate BOTH published shapes"
     );
 
-    // AND THE COUNTS INSIDE STAY INTEGRAL. This is the whole reason for the replacement: a `41`
-    // that came back `41.0` would fail the verbatim round trip above, and this says so at the
-    // field rather than leaving it to a whole-message compare to explain.
+    // And the counts inside stay integral: a `41` that came back `41.0` would fail the verbatim
+    // round trip above, and this says so at the field rather than at whole-message level.
     let ReplyResult::ModuleSnapshotResult(kills) = module_result(&frames, "kills") else {
         panic!("a kills snapshot")
     };
@@ -438,9 +415,8 @@ fn a_module_snapshot_carries_whatever_shape_its_module_publishes() {
 
 #[test]
 fn a_module_the_registry_does_not_carry_is_not_found() {
-    // The registry is the authority. An empty state would be a lie about a module that does not
-    // exist, and `loot.ledger` is the trap worth pinning: it is a VIEW source name, and a caller
-    // that confuses the two must be told so rather than handed nothing.
+    // The registry is the authority: an empty state would be a lie about a module that does not
+    // exist. `loot.ledger` is a view source name, and a caller that confuses the two is told so.
     let refusal = engine_frames("06-module-snapshot.json")
         .into_iter()
         .find_map(|frame| match frame {
@@ -454,9 +430,8 @@ fn a_module_the_registry_does_not_carry_is_not_found() {
 
 #[test]
 fn health_states_its_coordinate_only_once_it_has_one() {
-    // OPTIONAL IS THE HONEST SHAPE (ruling 18 law 3). The first health answer in the moment is a
-    // fresh process: no attach, so no mark, no count, no log clock — ABSENT, never zero, because
-    // a zero is a measurement and nobody took one. The last answer is live and carries all three.
+    // Optional is the honest shape: a fresh process has no attach, so no mark, no count and no log
+    // clock — absent rather than zero, because a zero is a measurement nobody took.
     let frames = engine_frames("06-module-snapshot.json");
     let mut healths = frames.iter().filter_map(|frame| match frame {
         EngineMessage::Reply(reply) => match &reply.result {
@@ -481,14 +456,11 @@ fn health_states_its_coordinate_only_once_it_has_one() {
     assert_eq!(live.last_event_ts, Some(1_787_181_707_000));
 }
 
-// ---- 5. the combat surface (JOS-485) -----------------------------------------------------------
-
 #[test]
 fn a_combat_snapshot_says_which_clock_it_was_taken_by() {
-    // THE CENTRAL CLAIM OF THE OP. A mid-fold answer is stamped with the LOG's own clock, because a
-    // replay is not a moment in time; a live one is stamped with the process's, because a meter has
-    // to age while the log is quiet. The two answers here are five seconds apart on a fold whose
-    // last event is the same in both — which is the difference, on the wire, in one comparison.
+    // A mid-fold answer is stamped with the log's own clock, because a replay is not a moment in
+    // time; a live one is stamped with the process's, because a meter has to age while the log is
+    // quiet.
     let mut answers = engine_frames("08-combat-snapshot.json")
         .into_iter()
         .filter_map(|frame| match frame {
@@ -501,9 +473,8 @@ fn a_combat_snapshot_says_which_clock_it_was_taken_by() {
 
     let folding = answers.next().expect("the mid-fold answer");
     assert_eq!(folding.now, 1_787_181_707_000, "the log's own last stamp");
-    // …and the keys the caller did not ask for are ABSENT rather than null. `timeline` is the one
-    // that has to be both — absent when unasked, present-and-null when asked and unresolvable —
-    // and this is the half `JSON.stringify` drops over there.
+    // Keys the caller did not ask for are absent rather than null. `timeline` has to be both:
+    // absent when unasked, present-and-null when asked and unresolvable.
     assert!(
         !folding.snapshot.contains_key("timeline"),
         "an unasked timeline is not a key"
@@ -512,9 +483,8 @@ fn a_combat_snapshot_says_which_clock_it_was_taken_by() {
         !folding.snapshot.contains_key("zone"),
         "no zone line folded yet, so there is no zone to state"
     );
-    // THE INTEGERS SURVIVED, which is the whole reason `CombatState` is a raw map: a damage total
-    // that came back as 43504.0 would fail the verbatim round trip above, and this says so at the
-    // field rather than leaving a whole-message compare to explain it.
+    // The integers survived, which is why `CombatState` is a raw map: a damage total that came back
+    // as 43504.0 would fail the verbatim round trip above.
     let you = &folding.snapshot["selected"]["entities"][0];
     assert_eq!(you["total"], 43_504);
     assert!(you["total"].is_i64());
@@ -533,10 +503,8 @@ fn a_combat_snapshot_says_which_clock_it_was_taken_by() {
 
 #[test]
 fn a_search_that_found_nothing_still_says_how_much_it_looked_through() {
-    // `corpus` IS NOT THE RESULT SET, and the two empty answers are what make that a real claim
-    // rather than a description: an empty query and a query nothing matched produce the identical
-    // empty `hits` beside the identical 1,428, because both mean "draw no results" and the
-    // difference between them is the query the client already holds.
+    // `corpus` is not the result set: an empty query and a query nothing matched produce the same
+    // empty `hits` beside the same corpus count.
     let results: Vec<_> = engine_frames("09-combat-search.json")
         .into_iter()
         .filter_map(|frame| match frame {
@@ -560,14 +528,13 @@ fn a_search_that_found_nothing_still_says_how_much_it_looked_through() {
     assert!(no_match.hits.is_empty());
     assert_eq!(no_match.corpus, 1428);
 
-    // A HIT'S SUMMARY IS THE FOLD'S OWN ROW, carried whole. `durationSec` is a float and `total` is
-    // an integer in the same object, which is exactly what an open map preserves and a generated
-    // struct would have flattened to two f64s.
+    // A hit's summary is the fold's own row, carried whole: `durationSec` is a float and `total` an
+    // integer in the same object, which an open map preserves and a generated struct would flatten.
     let top = &found.hits[0].summary;
     assert_eq!(top["name"], "a zol ghoul knight");
     assert!(top["total"].is_i64());
     assert!(top["durationSec"].is_f64());
-    // Ties break by RECENCY: the two hits score identically and the newer `startTs` is first.
+    // Ties break by recency: the two hits score identically and the newer `startTs` is first.
     assert!(
         (found.hits[0].score - found.hits[1].score).abs() < f64::EPSILON,
         "the fixture's two hits are a tie, which is what makes the order a claim"

@@ -28,6 +28,22 @@
  *      WHEN BOTH SIDES CARRY THEM — a build whose fold has no engine subscribed reports them as
  *      SKIPPED by name rather than passing for having said nothing.
  *
+ * ── THE GOLDENS ARE A SNAPSHOT OF A DEAD PIPELINE, AND THE ENGINE HAS MOVED PAST THEM ──────────
+ *
+ * The recorder died with the TS fold it ran, so the goldens on disk are FROZEN at the moment of
+ * the port and can never be re-recorded. That was the design: a safety net against UNINTENDED
+ * drift, kept for one release. The first INTENDED divergence has now shipped, and a runner of
+ * this oracle must know its shape to read a red honestly:
+ *
+ *   JOS-521 (2026-08-26) — the fold now reads the creating-instance notice, so a kill inside a
+ *   bare-named raid/personal instance keys tier 0 where the TS fold keyed TIER_OPEN_WORLD (-1).
+ *   Phase 2: the `kills` module reds with tier moves of exactly -1 → 0 (whole entries relocating
+ *   between those two keys; 3,472 kills across the six-slice corpus, no other tier moves, no kill
+ *   gained or lost). Phase 1: the byte-identity bar reds on `Player <name> creating instance
+ *   <zone> <id>.` lines — `instanceCreate` events where the golden says `unknown` (86 lines
+ *   across the corpus). A red CONFINED to those two shapes is the fix working, not drift; any
+ *   OTHER divergence is still exactly what this net exists to catch.
+ *
  * ── `--ledger`: WHAT A PARTIAL PORT IS ALLOWED TO CLAIM ────────────────────────────────────────
  *
  * `firstDiff` answers "are these the same?" and it is the right instrument for a bar that is
