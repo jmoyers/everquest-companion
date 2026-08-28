@@ -101,6 +101,7 @@ import { EqFolderSetting } from './EqFolderSetting'
 import { combatSection } from './CombatSection'
 import { FeedbackSetting, type OpenFeedback } from './FeedbackSetting'
 import { VoiceSetting } from './VoiceSetting'
+import { aiAssistantSection } from './AiAssistantSetting'
 import { OverlayAutoHideSetting } from './OverlayAutoHideSetting'
 import { OverlaySnapSetting } from './OverlaySnapSetting'
 // The release hold this card is behind (JOS-359). Imported for the FLAG, not for geometry.
@@ -193,6 +194,10 @@ function voiceSection(): PrefSection {
       }
     ]
   }
+}
+
+function aiAssistantPrefSection(): PrefSection {
+  return aiAssistantSection()
 }
 
 /**
@@ -323,6 +328,7 @@ function buildSections({ version, status, onSendFeedback, onWhatsNew }: SectionI
     appearanceSection(),
     combatSection(),
     overlaysSection(),
+    aiAssistantPrefSection(),
     // Right after the overlays, because the promise this switch makes is about them: closing the
     // window keeps them running (JOS-139).
     windowSection(),

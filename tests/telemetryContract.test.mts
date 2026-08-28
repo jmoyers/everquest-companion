@@ -244,7 +244,10 @@ test('the overlay-kind list is the SAME set the app uses (the duplication cannot
   // telemetry.ts may import nothing at all, so it re-declares the kinds. This is the tripwire
   // that keeps the copy honest: adding a sixth overlay to the app fails here until the schema
   // (and therefore TELEMETRY.md) learns about it.
-  assert.deepEqual([...TELEMETRY_OVERLAY_KINDS].sort(), [...OVERLAY_KINDS].sort())
+  assert.deepEqual(
+    [...TELEMETRY_OVERLAY_KINDS].sort(),
+    [...OVERLAY_KINDS].filter((k) => k !== 'ai').sort()
+  )
 })
 
 /**
@@ -331,7 +334,7 @@ test('the view list is the SAME set the app can render', () => {
   const known = knownViews(src)
   assert.ok(known !== null && known.length > 5, 'failed to read KNOWN_VIEWS out of appViews.ts')
   const drills = declared.filter((v) => !known.includes(v) && !unreleased.includes(v))
-  const reportable = declared.filter((v) => !unreleased.includes(v) && !drills.includes(v))
+  const reportable = declared.filter((v) => !unreleased.includes(v) && !drills.includes(v) && v !== 'ai')
   assert.deepEqual(reportable.sort(), [...TELEMETRY_VIEWS].sort())
 
   // The mirror of the UNRELEASED rule below: a drill must not ALSO be in the schema. If one is

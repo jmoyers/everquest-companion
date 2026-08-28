@@ -47,24 +47,24 @@ function runDraft(args: Record<string, unknown>): string {
   })
 }
 
-const HANDLERS: Record<string, (args: Record<string, unknown>) => string> = {
+const HANDLERS: Record<string, (args: Record<string, unknown>) => string | Promise<string>> = {
   search_items: (args) => searchJson('item', asString(args.query), searchItems(asString(args.query))),
   search_spells: (args) => searchJson('spell', asString(args.query), searchSpells(asString(args.query))),
   search_mobs: (args) => searchJson('mob', asString(args.query), searchMobs(asString(args.query))),
   get_output: (args) => JSON.stringify(getOutputDump(asString(args.kind))),
-  get_loadout: () => JSON.stringify(getLoadoutSummary()),
-  get_aa: () => JSON.stringify(getAaSummary()),
-  get_fight: () => JSON.stringify(getFightSummary()),
-  get_zone: () => JSON.stringify(getZoneSummary()),
-  get_buffs: () => JSON.stringify(getBuffsSummary()),
-  get_recent_loot: () => JSON.stringify(getRecentLoot()),
+  get_loadout: async () => JSON.stringify(await getLoadoutSummary()),
+  get_aa: async () => JSON.stringify(await getAaSummary()),
+  get_fight: async () => JSON.stringify(await getFightSummary()),
+  get_zone: async () => JSON.stringify(await getZoneSummary()),
+  get_buffs: async () => JSON.stringify(await getBuffsSummary()),
+  get_recent_loot: async () => JSON.stringify(await getRecentLoot()),
   draft_alert: runDraft
 }
 
-export function executeToolCall(name: string, args: Record<string, unknown>): string {
+export async function executeToolCall(name: string, args: Record<string, unknown>): Promise<string> {
   try {
     const run = HANDLERS[name]
-    return run ? run(args) : JSON.stringify({ error: `Unknown tool: ${name}` })
+    return run ? await run(args) : JSON.stringify({ error: `Unknown tool: ${name}` })
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     return JSON.stringify({ error: `Error executing ${name}: ${message}` })

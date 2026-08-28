@@ -67,15 +67,15 @@ function seedMessages(
   return messages
 }
 
-function applyToolRound(
+async function applyToolRound(
   messages: OrMessage[],
   calls: OrToolCall[],
   drafts: AlertDef[],
   mentions: AiMentions
-): void {
+): Promise<void> {
   messages.push({ role: 'assistant', content: '', tool_calls: calls })
   for (const call of calls) {
-    const result = executeToolCall(call.function.name, parseArgs(call.function.arguments))
+    const result = await executeToolCall(call.function.name, parseArgs(call.function.arguments))
     const draft = draftFromToolResult(result)
     if (draft) drafts.push(draft)
     absorbMentions(mentions, call.function.name, result)
@@ -201,7 +201,7 @@ export class OpenRouterClient {
       return await this.finalText(model, messages, choice.content ?? '', state.onChunk)
     }
     emitToolChunks(calls, state.onChunk)
-    applyToolRound(messages, calls, state.drafts, state.mentions)
+    await applyToolRound(messages, calls, state.drafts, state.mentions)
     return null
   }
 

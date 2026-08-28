@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { AI_RECAP_CAP, formatRecap, retainRecap } from '../src/main/ai/aiRecap'
+import { AI_RECAP_CAP, formatRecap, recapFromServed, retainRecap } from '../src/main/ai/aiRecap'
 import type { LogEvent } from '../src/shared/logEvents'
 
 const T0 = Date.parse('2026-08-01T12:00:00')
@@ -54,4 +54,18 @@ test('retainRecap count-caps at AI_RECAP_CAP', () => {
   }
   assert.equal(held.length, AI_RECAP_CAP)
   assert.equal(held[0].kind === 'damage' ? held[0].amount : -1, 5)
+})
+
+test('recapFromServed names no fight when the engine has no world', () => {
+  const lines = recapFromServed({ combat: null, loot: null, buffs: null, character: null })
+  assert.ok(lines.some((l) => l.includes('Engine has no world yet')))
+  assert.ok(!lines.join('\n').toLowerCase().includes('goblin'))
+  const hydrating = recapFromServed({
+    combat: { hydrating: true, inCombat: true, selected: { name: 'a goblin' } },
+    loot: null,
+    buffs: null,
+    character: null
+  })
+  assert.ok(hydrating.some((l) => l.includes('Engine has no world yet')))
+  assert.ok(!hydrating.join('\n').includes('goblin'))
 })

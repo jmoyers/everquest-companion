@@ -1,13 +1,11 @@
-// Live-only proactive tips. Subscribes after modules fold. Never runs in replay.
+// Live-only proactive tips. Parked: startAiProactive does not subscribe.
 
 import type { WebContents } from 'electron'
 import type { LogEvent } from '../../shared/logEvents'
 import { IPC } from '../../shared/ipc'
-import { bus, characterModule, combat } from '../pipeline'
 import { getMainWindow, getOverlayWindow } from '../windows'
 import { settingsStore } from '../store'
 import { mobsInZone, spellsGained } from './aiKnowledge'
-import { getLoadoutSummary } from './aiPlayerState'
 import { AI_PROACTIVE_SHIPPED } from '../../shared/aiSlash'
 import { proactiveTip } from './aiProactive'
 
@@ -21,8 +19,7 @@ function proactiveOn(): boolean {
 }
 
 function currentLevel(): number | null {
-  const lv = characterModule.snapshot().state.level?.level
-  return typeof lv === 'number' && Number.isFinite(lv) ? lv : null
+  return null
 }
 
 function pushTip(text: string): void {
@@ -50,16 +47,12 @@ function markHook(hook: string, zone: string | null, now: number): void {
 }
 
 function loadoutBits(): { classes: string[]; inferred: boolean } {
-  const raw = getLoadoutSummary()
-  const classes = Array.isArray(raw.classes) ? (raw.classes as string[]) : []
-  return { classes, inferred: raw.inferred === true }
+  return { classes: [], inferred: true }
 }
 
 export function considerProactive(ev: LogEvent, live: boolean): void {
   if (!live || !proactiveOn()) return
-  const snap = combat.snapshot(Date.now(), { maxSegments: 4 })
-  if (snap.hydrating || snap.inCombat) return
-  const zone = characterModule.snapshot().state.zone ?? (ev.kind === 'zone' ? ev.zone : null)
+  const zone = ev.kind === 'zone' ? ev.zone : null
   const now = Date.now()
   if (ev.kind === 'zone') {
     onZone(ev.zone, now)
@@ -115,5 +108,5 @@ function onZone(zone: string, now: number): void {
 }
 
 export function startAiProactive(): void {
-  bus.subscribe(considerProactive)
+  if (!AI_PROACTIVE_SHIPPED) return
 }

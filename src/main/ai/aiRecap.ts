@@ -96,3 +96,29 @@ export function retainRecap(
   const kept = [...existing, next].filter((e) => newestTs - e.ts <= windowMs)
   return kept.length <= cap ? kept : kept.slice(-cap)
 }
+
+const NO_WORLD = 'Engine has no world yet.'
+
+/** Snapshot-shaped recap. Null or hydrating combat never invents a fight. */
+export function recapFromServed(input: {
+  combat: { hydrating: boolean; inCombat?: boolean; zone?: string; selected?: { name?: string } | null } | null
+  loot: unknown
+  buffs: unknown
+  character: unknown
+}): string[] {
+  if (!input.combat || input.combat.hydrating) return [NO_WORLD]
+  const lines: string[] = []
+  const zone = input.combat.zone
+  if (typeof zone === 'string' && zone.length > 0) lines.push(`Zone: ${zone}.`)
+  const fightName = input.combat.selected?.name
+  if (input.combat.inCombat && typeof fightName === 'string' && fightName.length > 0) {
+    lines.push(`Live fight: ${fightName}.`)
+  } else {
+    lines.push('No open pull.')
+  }
+  if (input.loot != null) lines.push('Loot snapshot is present.')
+  if (input.buffs != null) lines.push('Buff snapshot is present.')
+  if (input.character != null) lines.push('Character snapshot is present.')
+  return lines.length > 0 ? lines : [NO_WORLD]
+}
+

@@ -14,10 +14,9 @@ import type { AlertDef, AlertTrigger } from '../../shared/alertTypes'
 import { IPC } from '../../shared/ipc'
 import { EQL_LORE } from '../data/eqlLore'
 import { getOpenRouterClient } from '../ai/AIClientFactory'
-import { getLiveStatus } from '../ai/aiPlayerState'
+import { buildAiRecap, getLiveStatus } from '../ai/aiPlayerState'
 import { startAiProactive } from '../ai/aiProactiveHost'
 import { decryptString, encryptString } from '../ai/SecureStorage'
-import { aiContext } from '../pipeline'
 import { saveAlert, settingsStore } from '../store'
 import { getMainWindow, getOverlayWindow } from '../windows'
 
@@ -95,7 +94,7 @@ export function registerAiIpc(): void {
     void handleUsageGet().then(pushUsage)
   })
 
-  ipcMain.handle(IPC.aiContextGet, () => aiContext.getRecap())
+  ipcMain.handle(IPC.aiContextGet, () => buildAiRecap())
 
   ipcMain.handle(IPC.aiStatusGet, () => getLiveStatus())
 
@@ -180,7 +179,7 @@ async function handleSendPrompt(
     return { text: await client.getUsage(), drafts: [] }
   }
   const requestId = randomUUID()
-  const result = await client.sendPrompt(systemPrompt(config.personalStyle, aiContext.getRecap()), text, {
+  const result = await client.sendPrompt(systemPrompt(config.personalStyle, await buildAiRecap()), text, {
     model: config.model,
     history: parseHistory(historyRaw),
     onChunk: (chunk) => emitAiChunk(event.sender, requestId, chunk)

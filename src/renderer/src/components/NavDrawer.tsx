@@ -14,6 +14,7 @@ import MapIcon from '@mui/icons-material/Map'
 import SpaceDashboardIcon from '@mui/icons-material/SpaceDashboard'
 import CheckroomIcon from '@mui/icons-material/Checkroom'
 import FeedbackIcon from '@mui/icons-material/Feedback'
+import SmartToyIcon from '@mui/icons-material/SmartToy'
 // Dev-only, and its import goes with it: MUI's icon packages declare `sideEffects: false`, so
 // an icon whose only use sits inside a `false &&` branch is tree-shaken out with the branch.
 import RuleFolderIcon from '@mui/icons-material/RuleFolder'
@@ -104,7 +105,8 @@ const ROWS: NavRow[] = [
   { view: 'buffs', icon: <AutoFixHighIcon /> },
   // Respawn clocks (JOS-194) sit beside Buffs because both tabs are the same shape of answer —
   // a list of things counting down — and a player checking one is usually checking the other.
-  { view: 'timers', icon: <TimerIcon /> }
+  { view: 'timers', icon: <TimerIcon /> },
+  { view: 'ai', icon: <SmartToyIcon /> }
 ]
 
 /** Bottom-aligned, outside ROWS — it is not a feature view and never moves. */
