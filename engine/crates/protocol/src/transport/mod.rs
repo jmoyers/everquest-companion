@@ -1,27 +1,16 @@
-//! THE SEAM. A transport moves whole MESSAGES; only what is below it knows about bytes.
+//! The seam: a transport moves whole messages, and only what is below it knows about bytes.
 //!
-//! THE OWNER'S CONSTRAINT, VERBATIM (JOS-464): *"lets make sure the way this works we could change
-//! the wire method at a later date and need to just swap an artifact. im thinking over the open
-//! internet via websockets etc."*
+//! The wire method must be swappable, so `protocol/schema/` describes messages and never bytes — no
+//! newline, no length prefix, no port, no host — and the generated types carry no framing either.
+//! Everything above this crate talks to a [`Transport`] and cannot learn what a frame is.
 //!
-//! Its structural consequence is this module's whole reason to exist. `protocol/schema/` describes
-//! MESSAGES and never bytes — no newline, no length prefix, no port, no host appears anywhere in
-//! it — so the generated types carry no framing either. Everything that will eventually sit above
-//! this crate (the API server, the view engine, the fold) talks to a [`Transport`] and therefore
-//! cannot learn what a frame is even by accident.
+//! * [`ndjson::NdjsonTransport`] — one JSON message per LF-terminated line. The only module in this
+//!   crate that mentions a newline, and the only one that changes if the framing does.
+//! * [`memory::MemoryTransport`] — a connected pair with no bytes at all, for tests. It is the proof
+//!   the seam is real: the same conversation runs over it and over NDJSON with identical results,
+//!   and a conversation that runs with no framing cannot be depending on one.
 //!
-//! Today there are two implementations and today's WIRE is NDJSON:
-//!
-//! * [`ndjson::NdjsonTransport`] — one JSON message per LF-terminated line over any byte stream.
-//!   [`ndjson`] is the ONLY module in this crate that mentions a newline, and the only one that
-//!   would change if the framing did.
-//! * [`memory::MemoryTransport`] — a connected pair with no bytes at all, for tests. It is not a
-//!   toy: it is the proof that the seam is real, because the same protocol conversation runs over
-//!   it and over NDJSON with byte-identical results, and a conversation that can run with no
-//!   framing at all cannot be depending on one.
-//!
-//! ADDING WEBSOCKETS IS ADDING A THIRD FILE HERE. Nothing above it moves — not the schema, not the
-//! generated types, not a line of protocol logic.
+//! A new wire is a new sibling file here. Nothing above it moves.
 
 pub mod memory;
 pub mod ndjson;
@@ -34,20 +23,19 @@ use serde::Serialize;
 pub enum TransportError {
     /// The message could not be turned into its wire form.
     Encode(serde_json::Error),
-    /// What arrived was not a message this side understands. THE PEER IS NOT TRUSTED to send
+    /// What arrived was not a message this side understands. The peer is not trusted to send
     /// well-formed input, even over loopback: a decode failure is a protocol error to report and a
     /// connection to close, never a panic.
     Decode(serde_json::Error),
     /// The underlying byte stream failed. Only framed transports can produce this.
     Io(std::io::Error),
-    /// A frame exceeded the transport's own limit. A framing concern, never a protocol one — see
-    /// [`ndjson::MAX_LINE_BYTES`].
+    /// A frame exceeded the transport's own limit — a framing concern, never a protocol one.
     FrameTooLarge {
         /// The limit that was passed, in bytes.
         limit: usize,
     },
-    /// The peer is gone. Not an error to retry: by ruling, a reconnect is a fresh launch and a
-    /// resume is always a re-query.
+    /// The peer is gone. Not an error to retry: a reconnect is a fresh launch and a resume is a
+    /// re-query.
     Closed,
 }
 
@@ -77,7 +65,7 @@ impl From<std::io::Error> for TransportError {
 /// [`crate::EngineMessage`] and receives [`crate::ClientMessage`], the app's the other way round,
 /// and neither end can send the other's messages by mistake.
 ///
-/// NOTHING HERE MENTIONS BYTES. That absence is the contract — see the module header.
+/// Nothing here mentions bytes; that absence is the contract.
 pub trait Transport {
     /// What this end sends.
     type Outbound: Serialize;

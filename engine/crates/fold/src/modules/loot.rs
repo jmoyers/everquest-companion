@@ -1,14 +1,12 @@
 //! `src/main/modules/loot.ts` — the self-loot history: a `LootEvent` tagged with the zone it
 //! happened in, append-only.
 //!
-//! IT CARRIES THE DESTROY UNCHANGED (JOS-401): `disposition: 'destroyed'` rides the same row shape
-//! as every other disposition, which is the whole reason a destroy was given a disposition instead
-//! of an event kind. This module takes NO position on what any of them mean.
+//! A destroy rides the same row shape as every other disposition, which is why it was given a
+//! disposition rather than an event kind. This module takes no position on what any of them mean.
 //!
-//! EVERY OPTIONAL FIELD IS OMITTED WHEN ABSENT, never written as `null` — `JSON.stringify` drops a
-//! key whose value is `undefined`, and the golden was recorded through it, so a row with no
-//! `source` has no `source` key at all. `zone` is the module's OWN state (the last zone line seen)
-//! and is absent for every row folded before the scan reached one.
+//! Every optional field is omitted when absent, never written as `null`: the published shape came
+//! through `JSON.stringify`, which drops a key whose value is `undefined`. `zone` is the module's
+//! own state (the last zone line seen) and is absent for rows folded before the scan reached one.
 
 use crate::event::Event;
 use crate::EqModule;
@@ -31,18 +29,14 @@ pub struct LootRow {
     created: Option<String>,
 }
 
-/// READ-ONLY ACCESSORS, for the view layer and nothing else (JOS-480).
+/// Read-only accessors, for the view layer and nothing else.
 ///
-/// `loot.ledger` is the first product view source, and it reads THESE rather than the module's
-/// published JSON. That is not an optimization dressed as a design: `snapshot()` serializes the
-/// whole ledger into a fresh `serde_json::Value` tree, and a view that re-derived its window from
-/// one would pay for every row in the log to draw fifty of them — every time a subscription is
-/// serviced. Reading the rows directly costs the window and nothing else.
-///
-/// NOTHING HERE IS MUTABLE and nothing here is new state: these are the fields `snapshot()` already
-/// publishes, named. The published shape is untouched, so the six-slice oracle is untouched.
+/// A view reads these rather than the published JSON: `snapshot()` serializes the whole ledger into
+/// a fresh `Value` tree, so re-deriving a window from one would pay for every row in the log to
+/// draw fifty, on every service of a subscription. Nothing here is new state — these are the fields
+/// `snapshot()` already publishes, named.
 impl LootRow {
-    /// The loot's own instant, in epoch millis — THE LOG'S clock.
+    /// The loot's own instant, in epoch millis — the log's clock.
     #[must_use]
     pub fn ts(&self) -> i64 {
         self.ts
@@ -86,15 +80,16 @@ pub struct LootModule {
     loot: Vec<LootRow>,
     zone: Option<String>,
     seq: i64,
-    /// HOW A READER KNOWS THE LEDGER MOVED, without reading it (JOS-480).
+    /// How a reader knows the ledger moved, without reading it. Bumped on every push and clear, and
+    /// absent from `snapshot()`, so nothing published can see it.
     ///
-    /// Bumped on every push and on every clear, and it is NOT module state: it is absent from
-    /// `snapshot()`, so no golden and no oracle can see it. A length would nearly do — this vector
-    /// only ever grows or empties — but "nearly" is the word that makes a change signal wrong: a
-    /// rebirth boundary that clears 500 rows and folds 500 more between two services of a
-    /// subscription would leave the length exactly where it was, and the view would serve a dead
-    /// character's window as if nothing had happened. A counter cannot do that.
+    /// A length would nearly do — this vector only grows or empties — but a rebirth that clears 500
+    /// rows and folds 500 more between two services would leave the length where it was, and the
+    /// view would serve a dead character's window. A counter cannot do that.
     revision: u64,
+    /// The announce cursor — see [`crate::announce`]. It follows the same two arms `revision` does,
+    /// which are the only ones that touch `self.loot`.
+    announce: crate::announce::Announce,
 }
 
 impl LootModule {
@@ -125,17 +120,21 @@ impl EqModule for LootModule {
         self.zone = None;
         self.seq = 0;
         self.revision += 1;
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
         self.seq = ev.seq();
         match ev.kind() {
-            // Character rebirth (Task #49): loot before the boundary is a dead same-name
-            // character's. `zone` is KEPT — it is world state, not character-scoped.
+            // Character rebirth: loot before the boundary is a dead same-name character's. `zone`
+            // is kept — it is world state, not character-scoped.
             "epoch" => {
                 self.loot.clear();
                 self.revision += 1;
+                self.announce.changed(self.seq);
             }
+            // Not a change to published state: `zone` is the label the NEXT row will carry, and
+            // `snapshot()` publishes `self.loot` alone.
             "zone" => self.zone = ev.str("zone").map(str::to_string),
             "loot" => {
                 self.loot.push(LootRow {
@@ -148,6 +147,7 @@ impl EqModule for LootModule {
                     created: ev.str("created").map(str::to_string),
                 });
                 self.revision += 1;
+                self.announce.changed(self.seq);
             }
             _ => {}
         }
@@ -158,10 +158,9 @@ impl EqModule for LootModule {
         Some(self)
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves when the LEDGER moved, not when the log did. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {

@@ -1,9 +1,8 @@
 //! `src/main/modules/classUnlocks.ts` — the classes this character may run as a primary, as the
 //! LOG stated them, in the order it stated them.
 //!
-//! DEDUPED BY CLASS, FIRST SIGHTING WINS (law 2: keys are case-folded, displays are raw). The
-//! achievement fires once per class per character, so a second row would mean a re-scan read the
-//! same line — and keeping the FIRST instant is what makes the timestamp worth carrying.
+//! Deduped by class, first sighting wins (law 2: keys are case-folded, displays are raw). The
+//! achievement fires once per class per character, so the first instant is the fact worth keeping.
 
 use crate::event::Event;
 use crate::EqModule;
@@ -23,6 +22,9 @@ pub struct ClassUnlocksModule {
     unlocks: Vec<ClassUnlockRow>,
     seen: HashSet<String>,
     seq: i64,
+    /// The announce cursor — see [`crate::announce`]. A second `classUnlock` line for a class
+    /// publishes nothing, so it announces nothing.
+    announce: crate::announce::Announce,
 }
 
 impl ClassUnlocksModule {
@@ -40,6 +42,7 @@ impl EqModule for ClassUnlocksModule {
         self.unlocks.clear();
         self.seen.clear();
         self.seq = 0;
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
@@ -47,6 +50,7 @@ impl EqModule for ClassUnlocksModule {
         if ev.kind() == "epoch" {
             self.unlocks.clear();
             self.seen.clear();
+            self.announce.changed(self.seq);
             return;
         }
         if ev.kind() != "classUnlock" {
@@ -60,12 +64,12 @@ impl EqModule for ClassUnlocksModule {
             ts: ev.ts(),
             class_name: name.to_string(),
         });
+        self.announce.changed(self.seq);
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a class this character had not unlocked before. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {

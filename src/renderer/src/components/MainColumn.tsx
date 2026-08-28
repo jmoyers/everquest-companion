@@ -34,6 +34,9 @@ import { Box } from '@mui/material'
 import GearAreaTabs from './GearAreaTabs'
 import { EngineLaunchBanner } from './EngineLaunchBanner'
 import { isGearAreaView, type View } from '../appViews'
+// THE PER-VIEW COMMIT COUNTER (JOS-513). Dev-only; the gate below is spelled inline because that
+// is the form vite folds at transform time — see lib/renderMeter.tsx's header for the measurement.
+import { RenderProfiler } from '../lib/renderMeter'
 
 export default function MainColumn({
   view,
@@ -55,7 +58,13 @@ export default function MainColumn({
       <EngineLaunchBanner onReport={onReport} />
       {isGearAreaView(view) && <GearAreaTabs view={view} onSelect={onSelect} />}
       <Box data-testid="app-content" sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-        {children}
+        {/* THE VIEWCONTENT SEAM (JOS-513). `children` IS `App`'s `ViewContent`, so this is that
+            seam measured from one component up — which is what lets the render meter mount without
+            touching App.tsx at all. The id is the mounted view, so the panel's per-surface row is
+            named `overview` / `combat` / … in the app's own vocabulary. It counts the SCROLLER's
+            contents only: the launch banner and the gear tabs above are fixed bands and belong to
+            the app-wide row, not to the view's. */}
+        {import.meta.env.DEV ? <RenderProfiler id={view}>{children}</RenderProfiler> : children}
       </Box>
     </Box>
   )

@@ -1,23 +1,16 @@
-//! One render-ready cell — the one type the generator is told to leave alone.
+//! One render-ready cell — the one contract type the generator is told to leave alone.
 //!
-//! WHY THIS IS HAND-WRITTEN when everything else in the contract is generated. `Cell` is
-//! `["string","number","boolean","null"]` in the schema, and typify lowers a multi-type schema to
-//! an untagged enum whose number arm is `f64`. That is type-correct and quietly wrong for this
-//! protocol: `184220` deserializes to `184220.0` and re-serializes as `184220.0`, so a value the
-//! engine was handed is not the value the engine sends on. For a corpus of DAMAGE TOTALS and ITEM
-//! COUNTS that is not a rounding nicety, it is the difference between a number and a number with a
-//! decimal point stapled to it — and it would make the worked examples from the plan doc fail to
-//! round-trip verbatim, which is exactly the property the fixture suite exists to assert.
+//! Hand-written because typify lowers the schema's `["string","number","boolean","null"]` to an
+//! untagged enum whose number arm is `f64`: `184220` would come back `184220.0`, so a value the
+//! engine was handed is not the value it sends on. This type keeps the JSON number exactly as it
+//! arrived; `protocol-codegen` substitutes it for the generated one.
 //!
-//! So `protocol-codegen` replaces the generated `Cell` with this one (`TypeSpaceSettings::
-//! with_replacement`), and this one keeps the JSON number exactly as it arrived. It is still a
-//! CLOSED type: deserialization refuses an object or an array, so `Cells` cannot quietly become a
-//! nesting ground and the renderer's promise — that a cell is what the pixel says — survives.
+//! It is a closed type: deserialization refuses an object or an array, so `Cells` cannot become a
+//! nesting ground.
 //!
-//! THE RULE THIS ENCODES (owner ruling 4): the renderer never munges domain data. A cell arrives
-//! already formatted, already rounded, already in place. A `String` here is display text; a number
-//! is here because the renderer needs the MAGNITUDE (a bar width, a share), never because it is
-//! expected to do the formatting.
+//! The rule it encodes: the renderer never munges domain data. A cell arrives already formatted and
+//! rounded. A string here is display text; a number is here because the renderer needs the magnitude
+//! (a bar width, a share), never because it is expected to do the formatting.
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -39,9 +32,8 @@ impl Cell {
         Self(serde_json::Value::Number(value.into()))
     }
 
-    /// A fractional number. Rounded to what the pixel shows BEFORE it gets here — this type will
-    /// carry whatever it is given, and NaN or an infinity is not representable in JSON, so both
-    /// become null rather than a malformed message.
+    /// A fractional number, rounded to what the pixel shows before it gets here. NaN and infinity
+    /// are not representable in JSON, so both become null rather than a malformed message.
     #[must_use]
     pub fn float(value: f64) -> Self {
         serde_json::Number::from_f64(value)
@@ -54,7 +46,7 @@ impl Cell {
         Self(serde_json::Value::Bool(value))
     }
 
-    /// Nothing. Distinct from an ABSENT cell in a diff: absent means unchanged, null means cleared.
+    /// Nothing. Distinct from an absent cell in a diff: absent means unchanged, null means cleared.
     #[must_use]
     pub fn null() -> Self {
         Self(serde_json::Value::Null)

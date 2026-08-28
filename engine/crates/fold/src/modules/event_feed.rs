@@ -1,36 +1,18 @@
 //! `src/main/modules/eventFeed.ts` — the live "things worth noticing" ring behind the events
-//! overlay (Task #59), and the one module in cluster 2c whose whole argument is a REFUSAL.
+//! overlay.
 //!
-//! THE HYDRATION RULE IS THE MODULE (AGENTS.md "Celebrations"). A startup replay must not spam the
-//! feed with hours-old events, and rather than seed a baseline and diff against it, this module
-//! simply admits nothing historical: `onEvent` writes the seq and returns the instant `live` is
-//! false. The ring therefore starts EMPTY and only ever holds what the tail observed. That is the
-//! silent baseline, expressed as "nothing historical is admitted" — and it is why all six goldens
-//! record this module's state as `[]` while its `seq` is the last event of the slice. THE GOLDENS
-//! ARE UNTOUCHED BY JOS-486 FOR EXACTLY THAT REASON: the oracle folds `live: false` from the first
-//! byte to the last (`fold_bytes`), so every line below the gate is unreachable to it whether or
-//! not a knowledge lookup is installed.
+//! The hydration rule IS the module: nothing historical is admitted. `on_event` records the seq and
+//! returns the instant `live` is false, so the ring starts empty and only ever holds what the tail
+//! observed. That is the silent baseline, spelled as a refusal rather than as a diff against one.
 //!
-//! ── TWO OF THE FOUR SOURCES ARE REAL NOW (JOS-486) ─────────────────────────────────────────────
+//! Two of the four sources are live here. The LOOT source admits a row only through the knowledge
+//! lookup installed by [`crate::EqModule::install_knowledge`] — production only — under the shared
+//! predicate: lore, quest-flagged, or used by at least one known quest. The CONSIDER source needs
+//! no lookup (the line carries every field) but does need the anti-spam window and the
+//! difficulty-clause table below.
 //!
-//!   * THE LOOT SOURCE was structurally absent, not skipped: it admits a row only through
-//!     `deps.lookupItem`, and the world the goldens were recorded in injects none (`foldArm.mts
-//!     construct` passes `lookupItem` nowhere, and that file's header says so: "the two knowledge
-//!     lookups are absent"). It arrives here through [`crate::EqModule::install_knowledge`],
-//!     installed by `engined`'s PRODUCTION construction and by nothing else. Over there the probe is
-//!     a promise and the row lands on a later flush; here the committed corpus is an in-memory index
-//!     in this process, so a notable pickup is admitted inside the same fold. The ADMISSION RULE is
-//!     unchanged and is the shared predicate's: lore, quest-flagged, or used by at least one known
-//!     quest (`shared/itemKnowledge.ts isNotableKnowledge`) — a recipe ingredient is not notable,
-//!     because every bone chip in the game is one.
-//!   * THE CONSIDER SOURCE needed no lookup at all (the log line already carries every field of the
-//!     row) and needed two things this crate did not have: the 10 s per-mob anti-spam window and the
-//!     difficulty-clause table. Both are ported below.
-//!
-//! THE OTHER TWO REMAIN OFF THE BUS. `noteAlertFire` and `report` arrive out of band from main and
-//! the renderer; the first is boundary verdict 4's `alerts.fires` stream (the engine SENDS fires
-//! rather than folding them into a ring — JOS-482), and the second is a renderer detector. Neither
-//! is a fold's to reproduce, and a module that invented either would be inventing a row.
+//! The other two stay off the bus: `noteAlertFire` and `report` arrive out of band from main and
+//! the renderer, and a fold that invented either would be inventing a row.
 
 use crate::event::Event;
 use crate::knowledge::Knowledge;
@@ -43,22 +25,19 @@ use std::sync::Arc;
 /// How many entries the feed keeps. Oldest fall off the back.
 pub const FEED_CAP: usize = 100;
 
-/// CONSIDER ANTI-SPAM WINDOW — `CONSIDER_FEED_DEDUPE_MS`, verbatim.
+/// Consider anti-spam window — `CONSIDER_FEED_DEDUPE_MS`, verbatim.
 ///
-/// Re-conning the same mob inside this window appends NO second feed row. The real log makes this
-/// mandatory rather than decorative: conning is a reflex, and the same mob routinely appears two or
-/// three times a second or two apart (Guard V`Lex at 18:56:38 / :44 / :45; Karam Dragonforge four
-/// times in 25 seconds). The window is per MOB and it lives HERE rather than in the consider module,
-/// because that ring already collapses repeats structurally (one row per mob) — the feed is the only
-/// surface a burst could actually spam.
+/// Re-conning the same mob inside this window appends no second feed row. Observed in the real log:
+/// conning is a reflex and the same mob is routinely re-conned two or three times seconds apart.
+/// The window is per mob and lives here because the consider module already collapses repeats
+/// structurally — the feed is the only surface a burst could spam.
 pub const CONSIDER_FEED_DEDUPE_MS: i64 = 10_000;
 
 /// The difficulty clause → a short label for a dense row — `CONSIDER_DIFFICULTY_SHORT`, verbatim.
 ///
 /// Keys are the phrases observed in the full-log sweep, with the gendered pronoun folded onto the
-/// neuter form by [`difficulty_short`]. A phrase nobody has seen returns nothing and the caller
-/// shows the VERBATIM clause — never a guessed tier, and deliberately no numeric ordering, which
-/// the log does not state.
+/// neuter form by [`difficulty_short`]. An unseen phrase returns nothing and the caller shows the
+/// verbatim clause — never a guessed tier, and no numeric ordering, which the log does not state.
 const CONSIDER_DIFFICULTY_SHORT: &[(&str, &str)] = &[
     ("what would you like your tombstone to say?", "suicide"),
     (
@@ -84,9 +63,8 @@ const CONSIDER_DIFFICULTY_SHORT: &[(&str, &str)] = &[
 
 /// Short label for a difficulty clause, or `None` when nobody has seen the phrase.
 ///
-/// `\b(?:he|she)\b → it` and a whitespace collapse, spelled without a regex because both are word
-/// operations on an ASCII table: the JS `\b` is between a word character and a non-word one, which
-/// for this table is exactly "the whole token is `he` or `she`".
+/// `\b(?:he|she)\b → it` plus a whitespace collapse, spelled without a regex: for this table the JS
+/// word boundary is exactly "the whole token is `he` or `she`".
 #[must_use]
 pub fn difficulty_short(difficulty: &str) -> Option<&'static str> {
     let folded = difficulty
@@ -94,8 +72,8 @@ pub fn difficulty_short(difficulty: &str) -> Option<&'static str> {
         .to_lowercase()
         .split_whitespace()
         .map(|word| {
-            // The word boundary is around the LETTERS, so trailing punctuation stays put:
-            // `she.` folds to `it.` exactly as the JS replace does.
+            // The boundary is around the letters, so trailing punctuation stays put: `she.` folds
+            // to `it.`, as the JS replace does.
             let head: String = word.chars().take_while(char::is_ascii_alphabetic).collect();
             if head == "he" || head == "she" {
                 format!("it{}", &word[head.len()..])
@@ -111,8 +89,8 @@ pub fn difficulty_short(difficulty: &str) -> Option<&'static str> {
         .map(|(_, short)| *short)
 }
 
-/// The consider context of a `con` row — `FeedConsider`, carried structurally so the overlay can
-/// draw the faction rung rather than re-deriving it from prose.
+/// The consider context of a `con` row, carried structurally so the overlay draws the faction rung
+/// rather than re-deriving it from prose.
 #[derive(Debug, Clone, Serialize)]
 pub struct FeedConsider {
     /// The faction rung the con line printed.
@@ -122,12 +100,12 @@ pub struct FeedConsider {
     pub level: Option<i64>,
     /// The rare infix was on the line.
     pub rare: bool,
-    /// VERBATIM difficulty clause.
+    /// Verbatim difficulty clause.
     pub difficulty: String,
 }
 
-/// One row of the feed — `FeedEvent`. Every optional field is `skip_serializing_if` because the
-/// golden was recorded through `JSON.stringify`, which DROPS an `undefined`.
+/// One row of the feed. Every optional field is `skip_serializing_if` because the published shape
+/// came through `JSON.stringify`, which drops an `undefined`.
 #[derive(Debug, Clone, Serialize)]
 pub struct FeedEvent {
     /// `f1`, `f2`, … — monotonic per session, the React key and the dedupe handle.
@@ -151,15 +129,18 @@ pub struct FeedEvent {
 
 #[derive(Default)]
 pub struct EventFeedModule {
-    /// Newest LAST (the UI reverses it). Never grows on a historical fold — see the header.
+    /// Newest last (the UI reverses it). Never grows on a historical fold — see the header.
     ring: Vec<FeedEvent>,
     seq: i64,
     id_counter: i64,
-    /// mob name (trimmed, lowercased) → the ts of the last con ADMITTED. See
+    /// mob name (trimmed, lowercased) → the ts of the last con admitted. See
     /// [`CONSIDER_FEED_DEDUPE_MS`].
     last_con: HashMap<String, i64>,
     /// `deps.lookupItem`, or `None` in every construction but the production one.
     knowledge: Option<Arc<dyn Knowledge>>,
+    /// The announce cursor — see [`crate::announce`]. Every path into the ring goes through
+    /// `append`, so that one function is the whole announce surface.
+    announce: crate::announce::Announce,
 }
 
 impl EventFeedModule {
@@ -167,23 +148,14 @@ impl EventFeedModule {
         Self::default()
     }
 
-    /// THE FEED PULL SEAM (JOS-487) — the ring as the module keeps it, OLDEST FIRST. The view
-    /// reverses it, as the overlay does.
-    ///
-    /// IT HAS SOMETHING IN IT NOW, and that is JOS-486 landing rather than this seam changing: the
-    /// loot source's item probe is a real in-process lookup, so a live loot line puts a row here.
-    /// The seam was written when the ring could still only ever be empty, and the argument that
-    /// justified it then is the one that still holds — the PROJECTION over a ring is a pure function
-    /// and is pinned against a hand-built one, so a broken cell fails a test whether or not a fold
-    /// can produce the entry it mangled.
+    /// The feed pull seam — the ring as the module keeps it, oldest first. The view reverses it.
     #[must_use]
     pub fn ring(&self) -> &[FeedEvent] {
         &self.ring
     }
 
-    /// THE CHANGE SIGNAL — the module's published `seq`, which this module bumps on every APPEND as
-    /// well as on every event (see `append` below). Coarse in the same way `buffs`' is, and for the
-    /// same reason: there is no separate revision counter to read.
+    /// The change signal — the module's published `seq`, bumped on every append as well as on every
+    /// event. Coarse, because there is no separate revision counter to read.
     #[must_use]
     pub fn revision(&self) -> i64 {
         self.seq
@@ -191,12 +163,11 @@ impl EventFeedModule {
 
     /// Append one row and bump the seq.
     ///
-    /// THE SEQ BUMP IS THE TS's AND IT IS NOT AN ACCIDENT. Over there an append carries no fresh
-    /// `LogEvent` seq (the loot probe resolves asynchronously, alert fires and renderer reports
-    /// arrive out of band), so the module bumps its own so `useModule`'s gap check — a delta's seq
-    /// must EXCEED the known one — accepts the delta. It is kept even where this crate's append is
-    /// synchronous, because the number a module publishes is the module's own contract and a fold
-    /// that quietly published a different one would be a divergence nobody could see.
+    /// An append carries no fresh `LogEvent` seq over there (the loot probe resolves
+    /// asynchronously, fires and reports arrive out of band), so the module bumps its own and
+    /// `useModule`'s gap check accepts the delta. Kept here even though this append is synchronous:
+    /// the number a module publishes is its contract, and quietly publishing a different one would
+    /// be a divergence nobody could see.
     fn append(&mut self, row: FeedEvent) {
         self.id_counter += 1;
         let row = FeedEvent {
@@ -208,14 +179,13 @@ impl EventFeedModule {
             self.ring.remove(0);
         }
         self.seq += 1;
+        self.announce.changed(self.seq);
     }
 
     /// Append a consider row, unless the same mob was already admitted inside the anti-spam window.
     ///
-    /// NO LOOKUP GATES ADMISSION — every field came straight off the log line, so the row is honest
-    /// with no corpus read at all. What the mob DROPS is the hover card's job, answered by
-    /// `knowledge.mob`. `page` is deliberately absent: the wiki page is not known at this point and
-    /// a fabricated link is worse than none.
+    /// No lookup gates admission — every field came off the log line. `page` is deliberately absent:
+    /// the wiki page is not known here, and a fabricated link is worse than none.
     fn note_consider(&mut self, ev: &Event) {
         let mob = ev.str("mob").unwrap_or_default();
         let ts = ev.ts();
@@ -230,7 +200,7 @@ impl EventFeedModule {
         let rare = ev.bool("rare");
         let difficulty = ev.str("difficulty").unwrap_or_default().to_string();
         // `Lvl 38 · suicide`, with a `· rare` marker when the line carried the rare-creature infix.
-        // An unrecognized clause falls back to the VERBATIM clause rather than a guessed label.
+        // An unrecognized clause falls back to the verbatim clause rather than a guessed label.
         let mut bits: Vec<String> = Vec::new();
         if let Some(level) = level {
             bits.push(format!("Lvl {level}"));
@@ -258,12 +228,11 @@ impl EventFeedModule {
         });
     }
 
-    /// Probe a freshly-looted item and append a row IFF it is notable — `probeLoot`.
+    /// Probe a freshly-looted item and append a row iff it is notable — `probeLoot`.
     ///
-    /// A DESTROY IS ADMITTED AND SAYS SO (JOS-401). The row is still worth noticing — a lore or
-    /// quest item leaving your bags is exactly the kind of thing this ring is for — but it is not a
-    /// pickup, so it never borrows the `from <mob>` caption a loot row wears. The detail is the
-    /// whole difference, because that caption is all a feed row ever says about how the item moved.
+    /// A destroy is admitted and says so: still worth noticing, but not a pickup, so it never
+    /// borrows the `from <mob>` caption. That caption is all a feed row says about how an item
+    /// moved, so the detail is the whole difference.
     fn probe_loot(&mut self, ev: &Event) {
         let Some(knowledge) = self.knowledge.clone() else {
             return;
@@ -309,9 +278,9 @@ impl EventFeedModule {
 /// `shared/itemKnowledge.ts isNotableKnowledge` — lore, quest-flagged, or used by at least one
 /// known quest. Everything else is ordinary vendor trash.
 ///
-/// TRADESKILL RECIPES DELIBERATELY DO NOT COUNT: this predicate drives the PUSH surfaces (the
-/// pickups strip, this feed), and every bone chip and spider leg in the game is a recipe
-/// ingredient. Recipes answer "what is it for" on the PULL surfaces instead.
+/// Tradeskill recipes deliberately do not count: this predicate drives the PUSH surfaces, and
+/// nearly every common drop in the game is a recipe ingredient. Recipes answer "what is it for" on
+/// the PULL surfaces instead.
 fn is_notable(record: &Value) -> bool {
     let flag = |key: &str| record.get(key).and_then(Value::as_bool).unwrap_or(false);
     flag("lore")
@@ -329,16 +298,16 @@ impl EqModule for EventFeedModule {
 
     fn reset(&mut self) {
         // A character switch is a different world: drop the feed with the rest of the
-        // character-scoped state. The LOOKUP is not cleared — it is a handle on committed data.
+        // character-scoped state. The lookup is not cleared — it is a handle on committed data.
         self.ring.clear();
         self.seq = 0;
         self.id_counter = 0;
         self.last_con.clear();
+        self.announce.reset();
     }
 
-    /// `onEvent` records the seq of EVERY event and then returns unless `live`. That gate is the
-    /// module — see the header — and it is the whole reason a knowledge lookup installed in
-    /// production cannot move a single golden: the oracle folds nothing live.
+    /// Records the seq of every event, then returns unless `live`. That gate is the module — see
+    /// the header.
     fn on_event(&mut self, ev: &Event, live: bool) {
         self.seq = ev.seq();
         if !live {
@@ -351,17 +320,16 @@ impl EqModule for EventFeedModule {
         }
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a row that reached the ring, and nothing else. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {
         json!({ "seq": self.seq, "state": self.ring })
     }
 
-    /// THE VIEW PULL SEAM (JOS-487). See `EqModule::as_event_feed`.
+    /// The view pull seam. See `EqModule::as_event_feed`.
     fn as_event_feed(&self) -> Option<&EventFeedModule> {
         Some(self)
     }
@@ -380,9 +348,8 @@ mod tests {
     use serde_json::{json, Value};
     use std::sync::Arc;
 
-    /// A lookup that answers from a table. It is the SHAPE of the production answer that matters
-    /// here — the corpus itself is `knowledge`'s to prove, and this crate must not be able to reach
-    /// it (that is the dependency direction the seam exists for).
+    /// A lookup that answers from a table: only the SHAPE of the production answer matters here,
+    /// and this crate must not be able to reach the corpus itself.
     struct Table(Vec<(&'static str, Value)>);
 
     impl Knowledge for Table {
@@ -407,7 +374,7 @@ mod tests {
                 found: true,
             }
         }
-        /// Every name this table is asked about is a mob, and nothing on the feed's path asks.
+        /// Nothing on the feed's path asks this.
         fn known_mob(&self, _name: &str) -> bool {
             true
         }
@@ -435,8 +402,7 @@ mod tests {
 
     #[test]
     fn a_historical_fold_admits_nothing_however_notable_the_item() {
-        // THE GOLDEN'S OWN CLAIM, pinned against the one change that could have broken it: a real
-        // lookup installed. The oracle folds `live: false` from the first byte to the last.
+        // The hydration rule, pinned against the one thing that could break it: a real lookup.
         let mut feed = EventFeedModule::new();
         feed.install_knowledge(&(Arc::new(Table(vec![(
             "Rune of Al'Kabor",
@@ -467,7 +433,6 @@ mod tests {
 
     #[test]
     fn with_no_lookup_installed_the_loot_source_is_structurally_off() {
-        // The parity construction, exactly: a module nobody installed a lookup into.
         let mut feed = EventFeedModule::new();
         feed.on_event(&ev(&loot(1, "Rune of Al'Kabor")), true);
         assert!(state(&feed).is_empty());

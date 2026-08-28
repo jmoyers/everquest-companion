@@ -1,6 +1,6 @@
-import { type JSX, useEffect, useState } from 'react'
+import { type JSX, memo, useCallback, useEffect, useState } from 'react'
 import { Box, CssBaseline } from '@mui/material'
-import type { AppFocus, CharacterRef, CharacterSnap } from '@shared/types'
+import type { AppFocus, CharacterRef } from '@shared/types'
 import TitleBar from './components/TitleBar'
 import NavDrawer from './components/NavDrawer'
 // THE CONTENT COLUMN — everything right of the nav drawer. Moved out of this file at its 400-
@@ -8,9 +8,12 @@ import NavDrawer from './components/NavDrawer'
 // the app's ONE scroller plus the two fixed bands above it (the gear area's in-area tab bar,
 // JOS-324, and the engine's launch banner, JOS-503). Its header holds all three arguments.
 import MainColumn from './components/MainColumn'
-// The two app-wide celebration snackbars — they fire on ANY tab, so they live at app level. Their
-// markup moved into its own file when this one hit the factoring ceiling (see its header).
-import CelebrationToasts from './components/CelebrationToasts'
+// THE CELEBRATION SURFACE (JOS-510 item 2). The three always-mounted detectors — boss kills, Sky
+// turn-ins, level dings — plus the two snackbars they open and the alert player, in ONE component
+// that owns its own state and renders nothing else. They used to run at THIS component's root,
+// which meant every push to kills / loot / turnins / leveling / character re-rendered the entire
+// application tree to feed two snackbars. See its header.
+import AppCelebrations from './components/AppCelebrations'
 // "Another character's log is active — switch?" (JOS-432). Self-contained: it subscribes to its own
 // push and switches through the same `character:set` IPC the title bar uses, so the shell gains an
 // element and no state. Main guarantees it can ask at most once per candidate log per app session.
@@ -70,23 +73,7 @@ import { TelemetryNotice } from './features/preferences/TelemetryNotice'
 // an update. See features/whatsnew/WhatsNewTeaser.tsx.
 import { WhatsNewTeaser } from './features/whatsnew/WhatsNewTeaser'
 import { setCurrentView } from './lib/currentView'
-import { useModule } from './lib/useModule'
 import { dwellView, useViewDwell } from './lib/telemetry'
-import AlertPlayer, { fireAppSignal } from './features/alerts/player'
-import { getBossData } from './data'
-import { useBossKills } from './features/bosses/useBossKills'
-import type { TargetStatus } from './features/bosses/bossStatus'
-import { useProgress } from './features/posky/useProgress'
-// The canonical `Class::Name` quest key — the same one the tracker keys its rows on, so the
-// toast's anchor and the accordion it opens are the same string by construction.
-import { questKey } from './features/posky/keys'
-// The third always-mounted celebration watch (docs/plans/levelup-whats-new.md §2): a LIVE ding
-// fires the level-up toast, counting what it unlocked against the loadout AT THE DING'S ts.
-import { useLevelUpToast } from './features/leveling/useLevelUpToast'
-import { skyQuestPage } from '@shared/wiki'
-import { tierStyle } from './lib/tierChip'
-
-const bossData = getBossData()
 
 /**
  * The views the router reaches with at most ONE callback — split out of `ViewContent` purely as
@@ -207,6 +194,12 @@ function ViewContent({
   /** Which Preferences section a deep link asked for, and the way to retire that request. */
   prefs: PrefsRouting
 }): JSX.Element {
+  // ABOVE THE EARLY RETURNS, because hooks are. Both were inline arrows until JOS-510 item 2 —
+  // harmless while this component re-rendered with the whole app anyway, and now the difference
+  // between `PlainView` seeing stable props and seeing two fresh functions every time.
+  const { openSection } = prefs
+  const onOpenVoicePrefs = useCallback(() => openSection('voice'), [openSection])
+  const onOpenOverlayPrefs = useCallback(() => openSection('overlays'), [openSection])
   if (view === 'preferences') {
     return (
       <PreferencesView key={prefs.section ?? 'prefs'} onSendFeedback={onSendFeedback} section={prefs.section} />
@@ -230,8 +223,8 @@ function ViewContent({
         view={view}
         viewKey={viewKey}
         routing={routing}
-        onOpenVoicePrefs={() => prefs.openSection('voice')}
-        onOpenOverlayPrefs={() => prefs.openSection('overlays')}
+        onOpenVoicePrefs={onOpenVoicePrefs}
+        onOpenOverlayPrefs={onOpenOverlayPrefs}
       />
       {/* The Mobs tab stays MOUNTED across a deep link (no `key` churn on target
           change) — remounting per character rebuild only, like every other view. */}
@@ -286,101 +279,25 @@ function ViewContent({
 }
 
 /**
- * The two ALWAYS-MOUNTED celebration watches, so both fire on any tab.
+ * THE MEMO BOUNDARY (JOS-510 item 2), and the whole reason item 3 had to land first.
  *
- * Boss kills: useBossKills gates out the historical baseline. This is the SINGLE
- * always-mounted detector, so it's the one place we fire the 'bossDefeat' app signal for
- * the alerts extension. ONE callback carries all three surfaces — snackbar, sound and toast
- * fire on any roster kill CREDITED to you, repeats included, matching the confetti the Boss
- * tab bursts. A boss killed by a stranger in open world is tracked and celebrated by nobody
- * (owner, 2026-08-05); the credit test is the log's own experience line, which is also why a
- * GROUP kill still celebrates — party experience is experience.
+ * Everything right of the nav drawer hangs off this one element, so this is the seam where a
+ * re-render of the app SHELL stops being a re-render of every tab, card and meter on screen.
+ * Its props are now all stable by construction: `view`, `hasCharacters` and `viewKey` are
+ * primitives; `routing` and `prefs` are memoized objects (appRouting.ts); and the three callbacks
+ * App hands down are `useCallback`s. So a shell re-render that changed none of them compares equal
+ * here and the entire content subtree is skipped.
  *
- * It used to be two (Task #24): the sound rode a narrower `onNewDefeat` — first kill at a new
- * instance tier — so the app cheered a repeat kill on screen and said nothing. Retired by the
- * owner 2026-08-04: "every time is worth celebrating." The alert's own cooldown is the rate
- * limit now, and fireAppSignal applies it, so even if the Boss tab's own detector fires in
- * the same instant it can't double-play.
+ * WHAT THAT ACTUALLY BUYS, concretely. App still re-renders for its own reasons — the character
+ * list arriving, the live dot, the feedback dialog opening and closing — and every one of those
+ * used to walk the whole tree. Opening the feedback dialog is the clearest case: a dialog that
+ * renders in a portal was re-rendering the Combat meter behind it.
  *
- * Sky turn-ins: useProgress seeds a silent baseline on the first hydrated snapshot, so
- * historical completions on load never fire — only a live turn-in transition does
- * (Task #46). This is the SINGLE always-mounted place we fire the 'questComplete' app
- * signal (sound) + the app-wide snackbar; PoskyView's own useProgress additionally bursts
- * confetti when that tab is open, and the shared cooldown stops a double-play. It is also
- * the ONE place a quest completion is reported into the live event feed (Task #59) — only
- * the renderer can match turn-ins against the posky dataset, so main can't detect this
- * itself. The report carries the QUEST link (the class's Plane of Sky Tests wiki page —
- * there are no per-quest pages) and, when the dataset names one, the reward item for the
- * event overlay's hover card. A quest with no known reward reports none: no fabricated
- * item (law 1).
+ * `PlainView` deliberately gets NO memo of its own. It sits inside this boundary and takes the
+ * same `routing` and `viewKey` this does, so by the time it renders at all one of its own props
+ * has genuinely changed — a second comparison there would cost a comparison and skip nothing.
  */
-function useAppCelebrations(
-  onDefeat: (s: TargetStatus) => void,
-  onQuestComplete: (name: string) => void
-): void {
-  // Level-ups: the third watch, and the only one with no on-screen surface of its own — the
-  // overlay card IS the celebration. It seeds its own silent baseline (the startup replay holds
-  // every level the character ever gained) and joins its counts to the combo at the ding's ts.
-  useLevelUpToast()
-
-  // WHERE YOU ARE, from the module that owns that question (the ZoneStrip precedent). Read as a
-  // plain value, not a ref: `useBossKills` refreshes its callback from every render before its
-  // effect runs, so the closure below always holds the zone of the render the kill arrived in.
-  const zone = useModule<CharacterSnap>('character')?.zone
-
-  useBossKills(bossData.targets, {
-    // THE TIER OF THIS KILL, AND THE INSTANCE IT HAPPENED IN (JOS-165). This block used to print
-    // `tierStyle(s.bestTier)` and the roster's static zone — the target's ALL-TIME summary, which
-    // is the right thing for the boss card and a false sentence on a per-event toast: the owner
-    // clears d0 through d4 every week, so a Sunday d1 kill announced itself "D4 · Refined" all
-    // the way back to the first Saturday he beat it at d4. The tier now comes off the KILL
-    // (bossStatus.BossKill) and the zone off the CHARACTER module, so the toast says the instance
-    // you were standing in — raw, as the game spells it (law 2), which is also the only way to
-    // tell "- Solo 1 (Awakened)" from "- Group 2 (Awakened)". Only the toast changed: the card
-    // badge still means highest-ever, because a card is a summary.
-    onKill: ({ status: s, tier }) => {
-      onDefeat(s)
-      fireAppSignal('bossDefeat', s.target.name)
-      window.eq.showToast({
-        id: `boss:${s.target.name}:${String(s.lastTs)}`,
-        kind: 'bossKill',
-        title: `${s.target.name} defeated`,
-        // A zone we have never seen a line for falls back to the roster's — never invented.
-        subtitle: [tierStyle(tier).long, zone ?? s.target.zone].filter(Boolean).join(' · ')
-      })
-    }
-  })
-
-  useProgress({
-    onQuestComplete: (q, count) => {
-      onQuestComplete(q.name)
-      fireAppSignal('questComplete', q.name)
-      // The celebration toast (docs/plans/celebration-toasts.md T4) rides the SAME detector as
-      // the sound and the snackbar — one live-only gate, three surfaces. The reward is sent by
-      // NAME; main resolves the item card, because the overlay fetches nothing.
-      // THE COUNT IS IN THE ID (JOS-131): a Sky quest can be run again, and the overlay keys its
-      // cards by id, so the second turn-in of one quest has to be a second card.
-      window.eq.showToast({
-        id: `quest:${q.className}::${q.name}#${String(count)}`,
-        kind: 'skyQuestComplete',
-        title: `Quest complete: ${q.name}`,
-        subtitle: q.giver ? `${q.className} · turned in to ${q.giver}` : q.className,
-        itemName: q.reward,
-        // ANCHORED AT THE QUEST since wave O2 (wave L shipped the tab and flagged this as the
-        // follow-up): the canonical `Class::Name` key, which is what PoskyView reveals on.
-        focus: { view: 'posky', quest: questKey(q) }
-      })
-      window.eq.reportFeedEvent({
-        kind: 'quest',
-        ts: Date.now(),
-        title: q.name,
-        detail: q.giver ? `turned in to ${q.giver}` : q.className,
-        page: skyQuestPage(q.className),
-        reward: q.reward ? { item: q.reward, page: q.rewardPage, stats: q.rewardStats } : undefined
-      })
-    }
-  })
-}
+const ViewContentMemo = memo(ViewContent)
 
 /**
  * THE BOTTOM EDGE, and both of the things allowed to occupy it.
@@ -495,12 +412,6 @@ export default function App(): JSX.Element {
   const [character, setCharacter] = useState<CharacterRef | null>(null)
   const [characters, setCharacters] = useState<CharacterRef[]>([])
   const [live, setLive] = useState(false)
-  // App-wide "raid target defeated" toast — fires on any tab.
-  const [defeatToast, setDefeatToast] = useState<TargetStatus | null>(null)
-  // App-wide "quest complete" toast — fires on any tab the instant a Sky turn-in
-  // auto-completes a quest.
-  const [questToast, setQuestToast] = useState<string | null>(null)
-
   const [rebuild, setRebuild] = useState(0)
   // The feedback dialog's open-state + seed (Task #65). Also picks up a crash parked by the
   // ErrorBoundary's "Report this", which reloads the window to get here.
@@ -515,8 +426,6 @@ export default function App(): JSX.Element {
   // walk every Back affordance in the app reads. `back()` reports whether it navigated, so a press
   // with nothing parked is a no-op rather than a surprise tab switch.
   useBackFallback(routing.nav.back)
-
-  useAppCelebrations(setDefeatToast, setQuestToast)
 
   // Remember the selected tab across launches (renderer-only) — and, when that tab is one of the
   // gear area's four, remember it a SECOND time as the area's last-used tab (JOS-324). Two keys
@@ -585,6 +494,12 @@ export default function App(): JSX.Element {
   }
 
   const viewKey = `${character?.logPath ?? 'none'}#${rebuild}`
+  // The three callbacks that cross the memo boundary below. Inline arrows here would hand
+  // `ViewContentMemo` three fresh functions on every shell re-render and it would never bail out
+  // once — the boundary would cost a comparison and buy nothing.
+  const onOpenPreferences = useCallback(() => selectView('preferences'), [selectView])
+  const onOpenLeveling = useCallback(() => openLeveling(), [openLeveling])
+  const hasCharacters = characters.length > 0
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
@@ -610,28 +525,23 @@ export default function App(): JSX.Element {
         <NavDrawer view={view} onSelect={selectView} prefs={prefsRouting} onSendFeedback={() => feedback.openFeedback()} />
 
         <MainColumn view={view} onSelect={selectView} onReport={feedback.openFeedback}>
-          <ViewContent
+          <ViewContentMemo
             view={view}
-            hasCharacters={characters.length > 0}
+            hasCharacters={hasCharacters}
             viewKey={viewKey}
             routing={routing}
             prefs={prefsRouting}
-            onOpenPreferences={() => selectView('preferences')}
-            onOpenLeveling={() => openLeveling()}
+            onOpenPreferences={onOpenPreferences}
+            onOpenLeveling={onOpenLeveling}
             onSendFeedback={feedback.openFeedback}
           />
         </MainColumn>
       </Box>
 
-      {/* Always-mounted: plays fired alert sounds regardless of the active tab. */}
-      <AlertPlayer />
-
-      <CelebrationToasts
-        defeatToast={defeatToast}
-        questToast={questToast}
-        onDismissDefeat={() => setDefeatToast(null)}
-        onDismissQuest={() => setQuestToast(null)}
-      />
+      {/* The three always-mounted celebration watches, the two snackbars they open, and the alert
+          player — all of it below this component rather than inside it, so a push to any of the
+          four modules they read re-renders THEM and not the app. See AppCelebrations. */}
+      <AppCelebrations />
 
       <LogSwitchNudge />
 

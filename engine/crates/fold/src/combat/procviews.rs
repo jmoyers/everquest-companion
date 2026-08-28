@@ -1,38 +1,22 @@
-//! THE PROC-LEDGER SERIALIZATION (`src/main/combat/procViews.ts`) — one segment's `Agg` plus the
+//! The proc-ledger serialization (`src/main/combat/procViews.ts`): one segment's `Agg` plus the
 //! session state timeline, turned into the procs view the renderer draws.
 //!
-//! ADDITIVE ONLY (law 8). Everything here is a COUNT or an INDEX over damage the meter already
-//! counted — `direct_damage` is read back out of the same `Agg` the bars come from, never accumulated
-//! a second time. Not one damage total moves.
+//! Additive only — every number here is a count or an index over damage the meter already counted.
 //!
-//! ── THE FOUR COUNTING RULES, because collapsing any of them is how a proc meter starts lying ──
+//! Four counting rules, because collapsing any of them makes a proc meter lie:
 //!
-//!   1. A POISON lane counts EMOTES, and reports tick damage separately. `Blood Siphon Strike` in one
-//!      measured window is four emotes, fourteen DoT ticks for 658 and thirteen heal lines for 611 —
-//!      three numbers, each correct for its own question, and none of them the sum of the others.
-//!   2. A poison lane SUPPRESSES the spell-proc lane of the same name. `Asp Venom Strike` prints both
-//!      an emote and a `poison damage by Asp Venom Strike` line for ONE proc; emitting both lanes
-//!      would count that proc twice in the ppm headline.
-//!   3. A SLAY lane's `direct_damage` is "damage on swings that PROCCED slay", NOT "damage slay
-//!      added" — the swing was going to land anyway. The excess over an ordinary swing rides in
-//!      `marginal_damage` with its assumption stated.
-//!   4. A SPELL lane's `count` is the LARGER of its damage-line and heal-line firings, never their
-//!      sum. One Lifetap Strike prints both, and adding them reported 24 firings for twelve.
+//!   1. A poison lane counts emotes and reports tick damage and healing separately; the three are
+//!      each correct for their own question and are never summed.
+//!   2. A poison lane suppresses the spell-proc lane of the same name — one proc can print both an
+//!      emote and a typed poison-damage line, and emitting both lanes counts it twice.
+//!   3. A slay lane's `direct_damage` is damage on swings that procced slay, not damage slay added;
+//!      the excess over an ordinary swing rides in `marginal_damage` with its assumption stated.
+//!   4. A spell lane's `count` is the larger of its damage-line and heal-line firings, never the sum.
 //!
-//! ── THE LINK FEED, AND THE TWO ORIGINS THAT DELIBERATELY HAVE NONE ───────────────────────────
-//!
-//! A lane's `linked` rows are filled from the per-state firing split the lane carries against the
-//! per-state swing exposure the proc ledger carries — BOTH folded on ingest, because the event ring is
-//! capped, truncated and absent entirely for zone sessions, so a link derived from it would be
-//! silently wrong exactly where the sample is biggest.
-//!
-//! SPELL LANES ONLY. A POISON lane's link to its own coat is TAUTOLOGICAL — an Asp Venom Strike cannot
-//! fire without asp venom on the blade, so `exclusive` there restates the mechanic instead of measuring
-//! anything. A SLAY lane's count comes from the damage taxonomy rather than from a proc fold, and its
-//! `direct_damage` is "damage on swings that procced" rather than damage the proc ADDED, so rolling it
-//! up as a state's exact contribution would overstate it by a whole swing each. Both keep an EMPTY
-//! list, which is the same discipline as everything else here: a number is absent when the sample
-//! cannot support it, never zero-filled.
+//! A lane's `linked` rows come from the per-state firing split against the per-state swing exposure,
+//! both folded on ingest. Spell lanes only: a poison lane's link to its own coat is tautological, and
+//! a slay lane's `direct_damage` is not damage the proc added. Both keep an empty list rather than a
+//! zero-filled one.
 
 use crate::combat::aggregate::{Agg, SourceStat};
 use crate::combat::collate::compare_names;
@@ -54,7 +38,7 @@ use std::collections::HashSet;
 /// `(Finishing Blow)` — the modifier name the parser recombines by hand.
 pub const FINISHING_BLOW: &str = "Finishing Blow";
 
-/// One lane of the shipped Task-#64 ledger (Strikes, poison damage, dispels).
+/// One lane of the counting ledger (Strikes, poison damage, dispels).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcLane {
@@ -66,9 +50,9 @@ pub struct ProcLane {
     pub ambiguous: Option<bool>,
 }
 
-/// A coat applied INSIDE this fight, stamped relative to the fight's own opening instant. Deliberately
-/// not a `CoatSlot`: that shape carries an ABSOLUTE `sinceTs` and answers "when did this go on", while
-/// this one answers "how far into the pull" — two different questions with two different keys.
+/// A coat applied inside this fight, stamped relative to the fight's opening instant. Not a
+/// `CoatSlot`: that shape carries an absolute `sinceTs` and answers "when did this go on", while
+/// this one answers "how far into the pull".
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoatMarkView {
@@ -135,8 +119,8 @@ pub struct ProcsView {
     pub attribution: Option<AttributionReport>,
 }
 
-/// Everything one procs view needs. A fight, the live zone aggregate and a frozen zone session differ
-/// only in these fields.
+/// Everything one procs view needs. A fight, the live zone aggregate and a frozen zone session
+/// differ only in these fields.
 pub struct ProcsViewSpec<'a> {
     pub st: &'a EngineState,
     pub agg: &'a Agg,
@@ -148,7 +132,7 @@ pub struct ProcsViewSpec<'a> {
     /// Segment span in absolute ms — the window the state spans are clipped to.
     pub start_ts: i64,
     pub end_ts: i64,
-    /// Present only for a FIGHT.
+    /// Present only for a fight.
     pub enc: Option<&'a Encounter>,
 }
 
@@ -161,9 +145,8 @@ struct RateBase {
     sources: SourceWindows,
 }
 
-/// THE SOURCE-WINDOW INDEX: every state span this segment saw, with the active seconds it was open
-/// for, resolvable by the two things that GRANT a proc. `unknown` is not an error state — it is the
-/// answer for every item proc, every illusion-granted proc and any buff that predates the window.
+/// Every state span this segment saw, with the active seconds it was open for. `unknown` is not an
+/// error state — it is the answer for every item proc and any buff that predates the window.
 struct SourceWindows {
     active_sec_by_state: JsMap<f64>,
     name_by_state: JsMap<String>,
@@ -184,17 +167,14 @@ fn source_windows(spec: &ProcsViewSpec, states: &[StateSpan]) -> SourceWindows {
     }
 }
 
-/// The source window for a POISON lane: the coat spans of every poison whose roster grants one of the
-/// lane's Strikes.
+/// The source window for a poison lane: the coat spans of every poison whose roster grants one of
+/// the lane's Strikes.
 ///
-/// SUMMING those spans is a UNION and not a double count, and the roster is what makes it so: every
-/// poison that grants a given Strike is mutually EXCLUSIVE with the others that grant it. All the
-/// multi-granting poisons are UTILITY (Weakening Strike comes from Weakening, Binding, Neurotoxic and
-/// Paralytic — one utility slot, so at most one is ever on), and every combat Strike is granted by
-/// exactly one venom. So no two of the spans being added can overlap.
+/// Summing those spans is a union, not a double count: poisons that grant the same Strike are
+/// mutually exclusive. Every multi-granting poison is utility, and only one utility coat can be on;
+/// every combat Strike is granted by exactly one venom.
 ///
-/// Unknown when NO granting coat has an observed span in this segment — the honest state for a coat
-/// applied before the window opened with no priming session behind it.
+/// `None` when no granting coat has an observed span here — a coat applied before the window opened.
 fn poison_source(label: &str, w: &SourceWindows) -> Option<ProcSourceWindow> {
     let strikes: HashSet<&str> = label.split(" / ").map(str::trim).collect();
     let mut sec = 0.0;
@@ -224,8 +204,8 @@ fn poison_source(label: &str, w: &SourceWindows) -> Option<ProcSourceWindow> {
     })
 }
 
-/// The source window for a SPELL lane: the tracked proc buff that GRANTS it, when the catalog names
-/// one and its span was observed here (`Instrument of Nife` → `Condemnation of Nife`).
+/// The source window for a spell lane: the tracked proc buff that grants it, when the catalog names
+/// one and its span was observed here (`Instrument of Nife` grants `Condemnation of Nife`).
 fn spell_source(name: &str, w: &SourceWindows) -> Option<ProcSourceWindow> {
     let key = spell_canon_key(name);
     for b in PROC_BUFF_CATALOG.iter() {
@@ -252,15 +232,12 @@ fn spell_source(name: &str, w: &SourceWindows) -> Option<ProcSourceWindow> {
     None
 }
 
-/// The source-window half of a lane's rate input. THREE STATES, and the third is why this returns a
-/// fragment rather than a window:
-///   KNOWN   — a coat span or a tracked proc-buff span. The rate is over it, exactly.
-///   UNKNOWN — a spell or poison lane whose granting span this segment never saw. The segment is
-///             assumed, and `sourceAmbiguous` says so.
-///   N/A     — a SLAY or AA lane (an innate ability, permanently owned, with no span at all) or a
-///             CLICK lane (the source is an item the dump has just told us the player holds). There is
-///             no span that could have been off, so flagging one ambiguous would invite a reader to
-///             look for a window that does not exist. It divides by the segment, plainly and exactly.
+/// The source-window half of a lane's rate input. Three outcomes:
+///   known   — a coat span or a tracked proc-buff span; the rate is over it exactly.
+///   unknown — a spell or poison lane whose granting span this segment never saw; the segment is
+///             assumed and `sourceAmbiguous` says so.
+///   n/a     — a slay, aa or click lane. There is no span that could have been off, so flagging one
+///             ambiguous would send a reader looking for a window that does not exist.
 fn source_input(origin: &str, label: &str, w: &SourceWindows) -> (Option<ProcSourceWindow>, bool) {
     if origin == "slay" || origin == "aa" || origin == "click" {
         return (None, false);
@@ -286,8 +263,8 @@ fn rate_base(spec: &ProcsViewSpec, states: &[StateSpan]) -> RateBase {
     }
 }
 
-/// One LANE's rates: divided by its source window when the model knows one, and honestly flagged when
-/// it does not.
+/// One lane's rates: divided by its source window when the model knows one, flagged when it does
+/// not.
 fn lane_rate(count: i64, b: &RateBase, origin: &str, label: &str) -> ProcRateView {
     let (source, source_unknown) = source_input(origin, label, &b.sources);
     proc_rate(&RateInput {
@@ -300,10 +277,9 @@ fn lane_rate(count: i64, b: &RateBase, origin: &str, label: &str) -> ProcRateVie
     })
 }
 
-/// An emote label may name SEVERAL Strikes — `screams as poison burns their veins!` is Asp Venom
-/// Strike OR Cobra Venom Strike, and the ledger keeps both in one ` / `-joined label (law 3: shared
-/// messages are the norm; the count is exact, only the name is uncertain). Both candidates are joined
-/// against the damage lanes and both suppress their spell-proc twin.
+/// An emote label may name several Strikes — one emote sentence is shared by two venoms — and the
+/// ledger keeps both in one ` / `-joined label. Every candidate is joined against the damage lanes
+/// and every candidate suppresses its spell-proc twin.
 fn candidate_keys(label: &str) -> Vec<String> {
     label
         .split(" / ")
@@ -311,13 +287,11 @@ fn candidate_keys(label: &str) -> Vec<String> {
         .collect()
 }
 
-/// YOUR damage rows recorded under any of `keys` — THE one place a proc lane is matched against the
-/// meter's own skill lanes. Both consumers read it (the lane's Tier-A damage and the is-a-proc join),
-/// so "which rows is this lane" can never come to mean two things.
+/// Your damage rows recorded under any of `keys` — the one place a proc lane is matched against the
+/// meter's own skill lanes, so "which rows is this lane" cannot come to mean two things.
 ///
-/// Names are matched rank-normalized AND proc-marker-stripped (law 2 at the counting boundary; the
-/// origin split is a display decoration, so both halves of a split spell match) and returned RAW,
-/// because the raw string is what the drill row is labelled with.
+/// Names are matched rank-normalized and proc-marker-stripped, so both halves of a split spell
+/// match, and returned raw because the raw string is what the drill row is labelled with.
 fn skills_matching<'a>(you: Option<&'a SourceStat>, keys: &[String]) -> Vec<(&'a str, i64, i64)> {
     let mut out = Vec::new();
     let Some(you) = you else { return out };
@@ -329,14 +303,14 @@ fn skills_matching<'a>(you: Option<&'a SourceStat>, keys: &[String]) -> Vec<(&'a
     out
 }
 
-/// Damage delivered under a given skill name by YOU, read back out of the same aggregate the meter's
-/// bars come from. An INDEX, never a second accumulation.
+/// Damage delivered under a given skill name by you, read back out of the same aggregate the bars
+/// come from. An index, never a second accumulation.
 fn delivered_by(you: Option<&SourceStat>, keys: &[String]) -> i64 {
     skills_matching(you, keys).iter().map(|s| s.1).sum()
 }
 
-/// YOUR resists on the rows a lane covers. Same join, same aggregate, same discipline as
-/// `delivered_by` — a lane and the drill row beneath it read one counter, not two.
+/// Your resists on the rows a lane covers. Same join and same aggregate as `delivered_by`, so a lane
+/// and the drill row beneath it read one counter and not two.
 fn resisted_by(you: Option<&SourceStat>, keys: &[String]) -> i64 {
     let Some(you) = you else { return 0 };
     you.by_skill
@@ -346,9 +320,8 @@ fn resisted_by(you: Option<&SourceStat>, keys: &[String]) -> i64 {
         .sum()
 }
 
-/// Healing recorded under a given skill name by the cast-less detector. Kept SEPARATE from damage: in
-/// one measured window the tap returns MORE than it deals (474 healed against 458 dealt), so one can
-/// never be derived from the other.
+/// Healing recorded under a given skill name by the cast-less detector. Kept separate from damage: a
+/// tap can return more than it deals, so neither can be derived from the other.
 fn healed_by(agg: &Agg, keys: &[String]) -> i64 {
     agg.procs
         .spell_procs
@@ -358,20 +331,13 @@ fn healed_by(agg: &Agg, keys: &[String]) -> i64 {
         .sum()
 }
 
-/// EFFECT LANDINGS WITH NO DAMAGE LINE — the join that closed the reported defect.
+/// Effect landings with no damage line. Some Strikes print only an emote when they land (`<mob>'s
+/// limbs move slower!`) while their resists print the spell name like any other spell, so without
+/// this join the drill builds a lane for them out of resists alone.
 ///
-/// `<mob>'s limbs move slower!` is the ONLY thing a Weakening Strike prints when it lands; its RESISTS
-/// print the spell name like any other spell. So the drill built a lane for it entirely out of resists
-/// and reported `0 landed · 34 resisted` for a proc that landed 562 times in the same log — while the
-/// Procs tab, three inches away, counted every one of those emotes.
-///
-/// THE GATE IS EXACT RATHER THAN CONVENIENT: a strike lane contributes here ONLY when no row of the
-/// meter's has LANDED A HIT under its name. Where a lane DOES land damage the firings are already
-/// represented — Asp Venom Strike prints an emote AND a damage line for a single proc, and adding its
-/// 424 emotes to its 96 damage hits would report 520 firings for at most 424.
-///
-/// `hits > 0`, NOT "a row exists": the row is exactly what a resist CREATES, and gating on its
-/// existence would have left the defect in place on precisely the lanes that showed it.
+/// A strike lane contributes only when no meter row has landed a hit under its name: where a lane
+/// does land damage its firings are already represented, and adding the emotes would double-count.
+/// The gate is `hits > 0` and not "a row exists", because a resist is exactly what creates the row.
 pub fn effect_landings(agg: &Agg) -> JsMap<(String, i64)> {
     let you = agg.out.get("you");
     let mut out: JsMap<(String, i64)> = JsMap::new();
@@ -416,9 +382,7 @@ fn lane(s: LaneSpec, b: &RateBase) -> ProcLaneView {
         } else {
             0.0
         },
-        // THE OTHER HALF OF THE LANE'S RECORD. `count` is what landed; without this the ledger showed
-        // only landings while the drill showed only resists, and the same Weakening Strike read
-        // `90 landings` in one panel and `0 landed · 34 resisted` in the other.
+        // The other half of the lane's record: `count` is what landed, this is what did not.
         resisted: (s.resisted > 0).then_some(s.resisted),
         resist_pct: (s.resisted > 0).then(|| (s.resisted as f64 / attempts as f64) * 100.0),
         linked: s.linked,
@@ -427,7 +391,7 @@ fn lane(s: LaneSpec, b: &RateBase) -> ProcLaneView {
     }
 }
 
-/// ROGUE-POISON lanes. `count` is the EMOTE count and nothing else (rule 1).
+/// Rogue-poison lanes. `count` is the emote count and nothing else (rule 1).
 fn poison_lanes(spec: &ProcsViewSpec, you: Option<&SourceStat>, b: &RateBase) -> Vec<ProcLaneView> {
     let mut out: Vec<ProcLaneView> = Vec::new();
     for s in spec.agg.procs.strikes.values() {
@@ -457,7 +421,7 @@ fn poison_lanes(spec: &ProcsViewSpec, you: Option<&SourceStat>, b: &RateBase) ->
     out
 }
 
-/// CAST-LESS SPELL lanes, minus any name a poison emote already counted (rule 2).
+/// Cast-less spell lanes, minus any name a poison emote already counted (rule 2).
 fn spell_lanes(
     spec: &ProcsViewSpec,
     b: &RateBase,
@@ -473,9 +437,8 @@ fn spell_lanes(
         }
         out.push(lane(
             LaneSpec {
-                // A HELD CLICKY IS ITS OWN ORIGIN. Same counts, same denominators, same links — the
-                // lane's whole record is unchanged; what moves is the WORD every surface prints over
-                // it, because "proc" was a claim about a mechanism this firing does not have.
+                // A held clicky is its own origin: same counts, same denominators, same links. Only
+                // the word changes, because "proc" claims a mechanism this firing does not have.
                 name: &l.name,
                 origin: if l.click { "click" } else { "spell" },
                 count: lane_count(l),
@@ -495,12 +458,12 @@ fn spell_lanes(
     out
 }
 
-/// THE SLAY LANE (rule 3). One lane, from the taxonomy's own `slay` category — a Slay Undead proc rides
-/// an ordinary swing and prints no spell line of its own.
+/// The slay lane (rule 3), from the taxonomy's own `slay` category — a Slay Undead proc rides an
+/// ordinary swing and prints no spell line of its own.
 ///
-/// Emitted only when it FIRED: a permanent 0-count row on every non-undead pull is noise, and the
-/// absence is already visible in the melee category. `marginal_damage` subtracts the swing that would
-/// have landed anyway, at THIS segment's mean melee hit.
+/// Emitted only when it fired; a permanent 0-count row on every non-undead pull is noise.
+/// `marginal_damage` subtracts the swing that would have landed anyway, at this segment's mean melee
+/// hit.
 fn slay_lanes(you: Option<&SourceStat>, b: &RateBase) -> Vec<ProcLaneView> {
     let Some(slay) = you.and_then(|y| y.by_category.get("slay")) else {
         return Vec::new();
@@ -529,38 +492,31 @@ fn slay_lanes(you: Option<&SourceStat>, b: &RateBase) -> Vec<ProcLaneView> {
     vec![l]
 }
 
-/// THE FINISHING-BLOW LANE — the other swing-borne AA, and the one that was listed NOWHERE.
+/// The Finishing Blow lane — the other swing-borne AA. The modifier has always been parsed and
+/// tallied on the source's `mods`, but the drill groups by skill, so the damage sits invisibly
+/// spread across Slash / Bash / Strike. This gives that counted fact a surface.
 ///
-/// The report was exactly right and its analogy was exactly right. `(Finishing Blow)` has been parsed
-/// since the modifier tallies existed and its damage has been counted on the source's `mods` all
-/// along. What was missing is that NOTHING RENDERED THAT MAP: the drill groups by skill, so the damage
-/// is really there but spread invisibly across Slash / Bash / Strike. The honest description of the
-/// defect is not "unparsed" — it is a counted fact with no surface. This gives it one.
+/// It is not a category, where Slay Undead is one: a category moves the damage out of `melee`, and
+/// Finishing Blow's damage IS a weapon swing's, so moving it would change every melee mean and swing
+/// denominator to fix a listing problem.
 ///
-/// WHY IT IS NOT A CATEGORY, where Slay Undead is one: a category MOVES the damage out of `melee`, and
-/// Slay Undead's move had a mechanism behind it. Finishing Blow's damage IS a weapon swing's — bigger,
-/// from the same swing — and pulling ~1,600 melee lines into a category of their own would change
-/// every melee mean, the swing denominators and the drill's shape to fix a LISTING problem.
-///
-/// THE BASELINE differs from the slay lane's by one subtraction. Slay swings LEFT the melee category,
-/// so `melee` there is already the ordinary body. Finishing Blow swings did NOT, so `melee` here still
-/// contains them, and it is the mean of the swings the proc did NOT ride that the excess is meaningful
-/// against (measured whole-log: 66.3 ordinary against 167.8 with the modifier).
+/// Its baseline differs from the slay lane's by one subtraction. Slay swings left the melee
+/// category, so `melee` there is already the ordinary body; Finishing Blow swings did not, so the
+/// swings the proc rode are subtracted out before the mean is taken.
 fn finishing_blow_lanes(you: Option<&SourceStat>, b: &RateBase) -> Vec<ProcLaneView> {
     let Some(t) = you.and_then(|y| y.mods.get(FINISHING_BLOW)) else {
         return Vec::new();
     };
-    // `count` includes avoided swings; the miss family only ever carries single-word modifiers, so this
+    // `count` includes avoided swings; the miss family only carries single-word modifiers, so this
     // subtraction is a guard and not a correction.
     let hits = t.count - t.avoided;
     if hits <= 0 {
         return Vec::new();
     }
     let melee = you.and_then(|y| y.by_category.get("melee"));
-    // The ORDINARY body: this category minus the swings this proc rode. Both terms are CLAMPED because
-    // a compound carrying BOTH `Slay Undead` and `Finishing Blow` would book its damage under `slay`
-    // while the tally still counted it here. Zero such lines exist in any log swept so far (0 of
-    // 1,729), and a negative baseline is not worth risking on that.
+    // The ordinary body: this category minus the swings this proc rode. Clamped because a compound
+    // carrying both `Slay Undead` and `Finishing Blow` would book under `slay` while the tally still
+    // counted it here. No such line has appeared in a swept log, but a negative baseline is worse.
     let plain_hits = (melee.map_or(0, |m| m.hits) - hits).max(0);
     let plain_total = (melee.map_or(0, |m| m.total) - t.total).max(0);
     let mean_melee = if plain_hits > 0 {
@@ -584,9 +540,9 @@ fn finishing_blow_lanes(you: Option<&SourceStat>, b: &RateBase) -> Vec<ProcLaneV
     vec![l]
 }
 
-/// The lane list, in one pass per origin. Order: poison, then spell, then slay, then aa — the order the
-/// questions get asked, with each block sorted by count desc. The two swing-borne AAs sit together at
-/// the end because they are the two rows whose `direct_damage` is not the damage the proc added.
+/// The lane list, one pass per origin: poison, spell, slay, aa, each block sorted by count desc. The
+/// two swing-borne AAs sit last because they are the rows whose `direct_damage` is not the damage
+/// the proc added.
 fn build_lanes(spec: &ProcsViewSpec, states: &[StateSpan]) -> Vec<ProcLaneView> {
     let b = rate_base(spec, states);
     let you = spec.agg.out.get("you");
@@ -615,16 +571,12 @@ fn build_lanes(spec: &ProcsViewSpec, states: &[StateSpan]) -> Vec<ProcLaneView> 
 
 /// The damage rows one lane covers.
 ///
-/// A SLAY lane is the exception and it is a PRESENTATION one: a Slay Undead proc rides an ordinary
-/// weapon swing, so the aggregate's rows are the WEAPON names and the drill merges them into a single
-/// row labelled with the lane's own name. That merged row is what carries the rate; tagging the weapon
-/// rows instead would put a proc rate on lanes that are mostly ordinary swings.
+/// A slay lane is a presentation exception: the aggregate's rows are the weapon names, and the drill
+/// merges them into one row under the lane's name. Tagging the weapon rows instead would put a proc
+/// rate on lanes that are mostly ordinary swings.
 ///
-/// THE SPLIT: a `spell` lane counts the CAST-LESS firings of that spell, and those now have a meter row
-/// of their own. Tagging every row the spell occupies would put the proc rate on the hand-casts too,
-/// which is the exact confusion the split exists to end. When the spell only ever procced there is one
-/// row and it carries the marker, so this narrows nothing; the filter therefore applies only once a
-/// marked row exists.
+/// A cast-less lane narrows to the marked rows when any exist, so the proc rate does not land on the
+/// hand-casts too — the confusion the origin split exists to end.
 fn tagged_skills(you: Option<&SourceStat>, l: &ProcLaneView) -> Vec<String> {
     if l.origin == "slay" {
         return vec![l.name.clone()];
@@ -640,21 +592,14 @@ fn tagged_skills(you: Option<&SourceStat>, l: &ProcLaneView) -> Vec<String> {
     }
 }
 
-/// THE IS-A-PROC JOIN. One tag per (damage row, lane), so the drill can say `proc · 3.1 ppm` on exactly
-/// the rows the ledger already counts — and on no others.
+/// The is-a-proc join: one tag per (damage row, lane), so the drill marks exactly the rows the
+/// ledger counts. It runs here because this is where both definitions of "proc" live — the Strike
+/// ledger and the cast-less inference — and a second definition downstream is a future
+/// disagreement.
 ///
-/// It runs HERE because this is where both definitions of "proc" live: the Strike ledger is the poison
-/// roster matched exactly and the spell-proc ledger is the cast-less inference. Deriving it again
-/// downstream would be a second definition, and a second definition is a future disagreement.
-///
-/// TWO ABSENCES ARE DELIBERATE: only YOUR rows are tagged (the lanes are folded from your procs, so
-/// tagging a pet's row with them would attribute your blades to the pet), and an `aa` lane is turned
-/// away outright — Finishing Blow rides a swing and keeps it in the `melee` category, so there is NO
-/// row that IS the proc, and both ways to tag it anyway are worse than not tagging it.
-///
-/// AND ONE WAS OVERTURNED: a lane with no damage row used to produce no tag, which cost the owner the
-/// four Strikes they actually care about (Weakening, Clumsiness, Stunning and Banishing deal nothing at
-/// all). A damage-less lane with landings now gets its tag AND its row.
+/// Two absences are deliberate. Only your rows are tagged, since the lanes are folded from your
+/// procs. And an `aa` lane is turned away: Finishing Blow rides a swing that stays in the `melee`
+/// category, so no row IS the proc.
 fn proc_skill_tags(spec: &ProcsViewSpec, lanes: &[ProcLaneView]) -> Vec<ProcSkillTag> {
     let you = spec.agg.out.get("you");
     let landed = effect_landings(spec.agg);
@@ -664,8 +609,8 @@ fn proc_skill_tags(spec: &ProcsViewSpec, lanes: &[ProcLaneView]) -> Vec<ProcSkil
             continue;
         }
         let mut skills = tagged_skills(you, l);
-        // A damage-less strike is its OWN row now: the ledger's label is what the drill names it, so
-        // the tag joins on that name exactly the way a damage row's tag joins on its own.
+        // A damage-less strike (Weakening, Clumsiness and the like deal nothing) is its own row, so
+        // the tag joins on the ledger's label the way a damage row's tag joins on its own.
         if skills.is_empty() && landed.contains_key(&candidate_keys(&l.name)[0]) {
             skills.push(l.name.clone());
         }
@@ -682,17 +627,15 @@ fn proc_skill_tags(spec: &ProcsViewSpec, lanes: &[ProcLaneView]) -> Vec<ProcSkil
     out
 }
 
-/// The "procs per minute" headline: an IDENTITY over the lanes it is built from, so it cannot drift
-/// from the rows beneath it.
+/// The procs-per-minute headline, summed over the lanes it is built from so it cannot drift from the
+/// rows beneath it.
 ///
-/// OVER THE SEGMENT, deliberately, while every lane below it divides by its own source window. "How
-/// many procs did this fight see per minute" is a question about the FIGHT, and summing lanes measured
-/// over disjoint windows would produce a rate with no denominator at all. So this one keeps the segment
-/// and carries no source fields — an absence that means "not applicable", where a lane's absence means
-/// "unknown".
+/// It divides by the segment while every lane divides by its own source window: "how many procs did
+/// this fight see per minute" is a question about the fight, and summing lanes measured over
+/// disjoint windows would give a rate with no denominator. It carries no source fields, an absence
+/// meaning "not applicable" where a lane's means "unknown".
 ///
-/// AND A CLICK LANE IS NOT IN IT. This number is printed as `N procs · X ppm`, and a button the player
-/// pressed is not a proc.
+/// A click lane is excluded: a button the player pressed is not a proc.
 fn overall_rate(lanes: &[ProcLaneView], b: &RateBase) -> ProcRateView {
     proc_rate(&RateInput {
         count: lanes
@@ -710,10 +653,9 @@ fn overall_rate(lanes: &[ProcLaneView], b: &RateBase) -> ProcRateView {
 /// The per-segment proc ledger plus the proc-analytics superset, built entirely from the frozen
 /// aggregate and the session state timeline.
 ///
-/// `enc` is present only for a FIGHT: coats-at-engage and the engage-relative timings are questions
-/// about one pull's opening instant, and a zone session (many pulls, many coat swaps) has no such
-/// instant. So a zone view reports the counts and honestly reports NO `slowLandMs` and no coats, rather
-/// than measuring from an arbitrary zero.
+/// `enc` is present only for a fight: coats-at-engage and the engage-relative timings are questions
+/// about one pull's opening instant, and a zone session has no such instant. A zone view therefore
+/// reports no `slowLandMs` and no coats rather than measuring from an arbitrary zero.
 pub fn build_procs_view(spec: &ProcsViewSpec) -> ProcsView {
     let p = &spec.agg.procs;
     let mut strikes: Vec<ProcLane> = p
@@ -820,8 +762,8 @@ pub fn build_procs_view(spec: &ProcsViewSpec) -> ProcsView {
         proc_skills: proc_skill_tags(spec, &lanes),
         lanes,
         states,
-        // TIER B IS OVERALL-SCOPE ONLY. A single pull has no inactive sample, so offering a per-fight
-        // counterfactual would be an invitation to read one minute of noise as an effect.
+        // Tier B is zone-scope only: a single pull has no inactive sample, so a per-fight
+        // counterfactual would invite reading one minute of noise as an effect.
         attribution,
     }
 }

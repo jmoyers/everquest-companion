@@ -1,46 +1,32 @@
-//! `src/main/modules/buffsSession.ts` — the buffs model's SESSION FRAME: the last instant the
-//! character was seen in the log, and the LOG-HOLE state machine built on it.
+//! The buffs model's SESSION FRAME: the last instant the character was seen in the log, and the
+//! log-hole state machine built on it.
 //!
-//! It holds exactly one question: a break in the event stream arrived — did the character LEAVE, or
-//! did we lose the thread? The two answers are not close together. A logout FREEZES every buff with
-//! the character and hands it back at login; a lost thread means whatever we believed was standing
-//! is stale and belongs in the bin.
+//! It holds one question. A break in the event stream arrived — did the character LEAVE, or did we
+//! lose the thread? A logout freezes every buff with the character and hands it back at login; a
+//! lost thread means whatever we believed was standing is stale.
 //!
-//! ── WHY IT WAITS (JOS-134) ─────────────────────────────────────────────────────────────────────
+//! It waits, because the hole is always observed BEFORE the thing that explains it: every login
+//! prints a reconnect preamble first, so ruling on the spot wipes the model a beat before the
+//! derived gap arrives to pause it.
 //!
-//! A hole used to be read as a logout on the spot and every live instance cleared. The trouble is
-//! one of ORDER: the hole is always observed BEFORE the thing that explains it. Every login prints a
-//! reconnect preamble first, so the first post-absence event tripped the hole, the wipe ran, and the
-//! derived `offlineGap` that measured the absence arrived moments later to pause a model with
-//! nothing left in it. The buff EQ had frozen with your character read as expired the instant you
-//! logged back in.
+//! What it waits for is EVIDENCE, not a clock. A timer would rule on a hole the log had not finished
+//! explaining, and the first event after a hole is not evidence of anything — a preamble line, or
+//! another player's kill arriving while your character is still being placed, says the client is
+//! connected and nothing about you. So a hole is unexplained only when `in_world_evidence` — a line
+//! that could only have been printed for THIS character — arrives with no login in between. That is
+//! one predicate, shared with the offline-gap detector, so the two cannot disagree about what being
+//! in the world means.
 //!
-//! ── WHAT IT WAITS FOR IS EVIDENCE, NOT A CLOCK (JOS-262, owner ruling 2026-08-12) ──────────────
-//!
-//! The wait used to be a window of event time borrowed from the detector's reconnect window, and
-//! both halves of that were measured wrong. The timer ruled on a hole the log had not finished
-//! explaining — start the app while the game is still loading and the 1 s heartbeat runs the window
-//! out against WALL time and wipes the previous session's buffs seconds before the `Welcome` that
-//! would have paused them. And the first event after a hole is not evidence of anything: a preamble
-//! line, or another player's kill arriving while your character is still being placed, says the
-//! client is connected and nothing at all about you.
-//!
-//! So a hole is UNEXPLAINED only when `in_world_evidence` — a line that could only have been printed
-//! for THIS character — arrives with no login in between. ONE PREDICATE, shared with the offline-gap
-//! detector (`crate::session`), so the two can never disagree about what being in the world means.
-//!
-//! ── AND THE HOLD IS WIDER THAN THE HOLE ────────────────────────────────────────────────────────
+//! The hold is wider than the hole:
 //!
 //!   the HOLD (60 s, the detector's emit floor) — every absence a pause can be reported for.
 //!     `held_before_ts` exempts the pre-absence rows from the hygiene sweep for its duration.
 //!   the HOLE (30 min) — an absence long enough that, unexplained, it means we lost the thread.
 //!     Only a hole ever DROPS anything.
 //!
-//! The hold used to start at the hole, which left the whole 1–30 minute band unprotected: a
-//! 20-minute relog reaches the hygiene sweep at the `Welcome` with no hold in place, and the derived
-//! gap that would have rewound the clocks is drained one event LATER — so a pet or ally row past its
-//! 60 s unwitnessed grace was culled a beat before the pause could save it. The row the user loses
-//! is the one the pause exists for.
+//! Starting the hold at the hole instead would leave the 1–30 minute band unprotected: a 20-minute
+//! relog reaches the hygiene sweep at the login line with no hold in place, and the gap that would
+//! have rewound the clocks is drained one event later — culling the row the pause exists for.
 
 use crate::event::Event;
 use crate::modules::buffs_shapes::SESSION_GAP_MS;
@@ -69,9 +55,9 @@ impl SessionFrame {
     }
 
     /// The last-known-online instant of an OPEN absence, or 0. A BUFF older than this is exempt from
-    /// the hygiene sweep for as long as the absence is unresolved: if it turns out to be a logout,
-    /// that buff's clock is about to be rewound, and judging it against a `now` from the far side
-    /// would retire — a beat before the pause lands — the very buff the pause protects.
+    /// the hygiene sweep while the absence is unresolved: if it turns out to be a logout, that
+    /// buff's clock is about to be rewound, and judging it against a `now` from the far side would
+    /// retire the very buff the pause protects, a beat before the pause lands.
     pub fn held_before_ts(&self) -> i64 {
         self.from_ts
     }
@@ -86,22 +72,21 @@ impl SessionFrame {
     /// Fold one primary event. Returns the last-known-online instant of a hole that has JUST been
     /// ruled unexplained — the caller drops what predates it — or `None`.
     pub fn observe(&mut self, ev: &Event) -> Option<i64> {
-        // OPEN FIRST, THEN RULE, and the order is load-bearing in both directions. A hole is always
-        // revealed BY the event on its far side, so the same event has to be able to open it and
-        // answer it: a login on the far side of a 13-hour camp explains the hole it just opened, and
-        // a `You gain experience!` on the far side of one is a character who was in the world with no
-        // login line — we lost the thread, and that is the ruling.
+        // Open first, then rule: a hole is always revealed BY the event on its far side, so the same
+        // event has to be able to open it and answer it. A login on the far side of a long camp
+        // explains the hole it just opened; in-world evidence on the far side of one is a character
+        // who was there with no login line, which is the lost-thread ruling.
         self.open_absence(ev);
         let ruling = self.rule(ev);
         self.last_event_ts = ev.ts();
         ruling
     }
 
-    /// Rule on the OPEN absence, if this event says anything about it. A login EXPLAINS it (and the
+    /// Rule on the OPEN absence, if this event says anything about it. A login EXPLAINS it, and the
     /// hold stays up until the gap that follows closes it, or the sweep on this very event would
-    /// judge the rows the pause is about to rewind); in-world evidence with no login RULES it —
-    /// dropping what predates a HOLE and merely releasing the hold for a shorter absence, which was
-    /// a lull in play rather than a lost thread; anything else leaves the question open.
+    /// judge the rows the pause is about to rewind. In-world evidence with no login RULES it,
+    /// dropping what predates a hole and merely releasing the hold for a shorter absence, which was
+    /// a lull in play rather than a lost thread. Anything else leaves the question open.
     fn rule(&mut self, ev: &Event) -> Option<i64> {
         if self.from_ts == 0 {
             return None;

@@ -90,16 +90,28 @@ test('B2 no kill, no signal — the credited count must actually move', () => {
 })
 
 test('B3 the sound rides the every-kill callback, and the baseline guard is still there', () => {
+  // THE DETECTOR MOVED OUT OF App.tsx IN JOS-510, and the claim did not move with it — it got
+  // stricter. It used to run at the app's ROOT, so every push to the four modules these watches
+  // read re-rendered the whole application tree; it now lives in `components/AppCelebrations.tsx`,
+  // a component whose entire output is two snackbars. "SINGLE always-mounted detector" is
+  // unchanged and is still the rule being pinned: the emitter is asked for in the file that holds
+  // the detector, and App.tsx is separately asked to no longer hold one.
   const app = read('../src/renderer/src/App.tsx')
+  const celebrations = read('../src/renderer/src/components/AppCelebrations.tsx')
   const hook = read('../src/renderer/src/features/bosses/useBossKills.ts')
   const status = read('../src/renderer/src/features/bosses/bossStatus.ts')
 
   // ONE signal call site (AGENTS.md: app signals fire from single always-mounted detectors),
   // and it is inside `onKill` — the callback that fires for repeats too.
-  const calls = app.match(/fireAppSignal\('bossDefeat'/g) ?? []
-  assert.equal(calls.length, 1, 'exactly one bossDefeat emitter in the renderer entry')
+  const calls = celebrations.match(/fireAppSignal\('bossDefeat'/g) ?? []
+  assert.equal(calls.length, 1, 'exactly one bossDefeat emitter in the celebration surface')
+  assert.equal(
+    (app.match(/fireAppSignal\('bossDefeat'/g) ?? []).length,
+    0,
+    'the app root grew a second always-mounted boss detector'
+  )
   // The callback takes the KILL, not the target (JOS-165): `{ status: s, tier }`.
-  const onKill = /onKill:\s*\(\{[^}]*\}\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(app)
+  const onKill = /onKill:\s*\(\{[^}]*\}\)\s*=>\s*\{([\s\S]*?)\n\s{4}\}/.exec(celebrations)
   assert.ok(onKill, 'the detector wires onKill to a block')
   assert.match(onKill[1], /fireAppSignal\('bossDefeat', s\.target\.name\)/)
 
@@ -108,7 +120,11 @@ test('B3 the sound rides the every-kill callback, and the baseline guard is stil
   // NAME it in prose, deliberately: the next reader should learn it was retired on purpose
   // rather than rediscover the idea, so the check strips comments instead of banning the word.
   const code = (src: string): string => src.replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, '')
-  assert.equal(/onNewDefeat/.test(code(app) + code(hook)), false, 'no first-kill-only callback remains')
+  assert.equal(
+    /onNewDefeat/.test(code(app) + code(celebrations) + code(hook)),
+    false,
+    'no first-kill-only callback remains'
+  )
   assert.equal(/newDefeats/.test(code(status) + code(hook)), false, 'and no first-kill-only predicate')
 
   // THE CELEBRATIONS LAW IS UNTOUCHED: hydration still seeds a silent baseline (`prevRef`

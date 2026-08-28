@@ -39,6 +39,7 @@
     "smoke:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sandbox/run-smoke-feedback.ps1",
     "oracle:rust-parser": "node --import tsx tests/bench/rustParity.mts",
     "oracle:rust-fold": "node --import tsx tests/bench/rustParity.mts --snapshots",
+    "check:rust-factoring": "tsx scripts/checkRustFactoring.mts",
     "budget:ci": "cargo test --release --manifest-path engine/Cargo.toml -p engined --test budget the_synthetic -- --nocapture",
     "budget:g3": "tsx scripts/budget-g3.mts",
     "gen:engine-spell-overlay": "tsx scripts/gen-engine-spell-overlay.mts",

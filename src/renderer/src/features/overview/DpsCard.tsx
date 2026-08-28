@@ -52,7 +52,7 @@
 // aggregate the Combat tab's panel header shows. Nesting the pet changes how the rows are laid
 // out, never what they sum to.
 
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useMemo, useRef, type JSX } from 'react'
 import { Button, Stack, Typography } from '@mui/material'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import type { CombatSnapshot, SegmentView, SourceView } from '@shared/combat'
@@ -201,6 +201,10 @@ export function DpsCard({ snap, onOpenCombat }: DpsCardProps): JSX.Element {
   // `defaultDrill` in the tree — which meant a glance card and the tab it links to disagreed about
   // what "no drill" shows.
   const { drill, setDrill, isOpen, setOpen } = useDrillMemory('overview')
+  // Memoized for the reason CombatView's twin is (JOS-510 item 3): both members are already
+  // `useCallback`s, so the object literal was the whole churn, and a context value that changes
+  // identity every render re-renders every consumer beneath it whatever else is memoized.
+  const abilityExpand = useMemo(() => ({ isOpen, setOpen }), [isOpen, setOpen])
 
   // Changing the pet preference still resets the card, because the level-1 layout changes under
   // it — but ONLY on an actual change. A bare `useEffect(…, [combinePetRow])` also fires on MOUNT,
@@ -242,7 +246,7 @@ export function DpsCard({ snap, onOpenCombat }: DpsCardProps): JSX.Element {
           {/* The inline per-ability stats a reader expanded are remembered beside the drill they
               sit inside (JOS-116); the provider is how that answer reaches the shared SkillBar
               without four components growing a pair of props they have no use for. */}
-          <AbilityExpandProvider value={{ isOpen, setOpen }}>
+          <AbilityExpandProvider value={abilityExpand}>
             <DpsRows
               seg={seg}
               panel={body.panel}

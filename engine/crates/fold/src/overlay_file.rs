@@ -1,60 +1,37 @@
-//! `<userData>/message-overlay.json` — THE USER'S REGISTER, READ AND WRITTEN VERBATIM (JOS-496
-//! item 3, boundary verdict 4 / cutover ledger item 6). The pure half; `engined::state` owns the
-//! directory and the disk.
+//! `<userData>/message-overlay.json` — the user's register, read and written verbatim. The pure
+//! half; `engined::state` owns the directory and the disk.
 //!
-//! It mirrors `src/main/data/overlayPersistence.ts` and the `register()` half of
-//! `src/main/data/messageOverlay.ts`. The format is inherited, not negotiated — the app writes this
-//! file today, the engine writes it under the flag, and a user who turns the flag off must not lose
-//! what their logs have taught this install:
+//! The format is inherited, not negotiated: the app writes this file too, and a user who turns the
+//! engine off must not lose what their logs have taught this install.
 //!
 //! ```text
 //! {"version":2,"updatedAt":"<ISO8601>","sources":[{"key":…,"messages":[…]}]}
 //! ```
 //!
-//! ── IT IS A REGISTER, NOT A SNAPSHOT, AND VERSION 2 IS WHY (JOS-231) ───────────────────────────
+//! It is a register, not a snapshot. Counts are stored per source, keyed by the character whose log
+//! produced them, so re-folding a log replaces that log's bucket instead of adding to it — a flat
+//! pile of counts doubles on every launch. No verdict is stored: a stored verdict is a second
+//! opinion waiting to disagree with the derived one.
 //!
-//! Version 1 was the SERVED view — counts and verdicts together — and seeding the next launch's
-//! miner from it fed the fold its own previous output. The app re-mines the whole log every launch,
-//! so every count the log accounted for doubled per launch: MEASURED 22 → 44 → 88. The file stores
-//! counts PER SOURCE now, keyed by the character whose log produced them, so re-folding a log
-//! REPLACES that log's bucket instead of adding to it. No verdict is stored at all — a stored
-//! verdict is a second opinion waiting to disagree with the derived one.
+//! The committed baseline is filed under its own key and deliberately not written back — it is
+//! re-seeded from the bundle every launch, so a copy in userData would only be a staler one. It is
+//! filtered on the way in and on the way out.
 //!
-//! The committed baseline is filed under its own key and deliberately NOT written back: it is
-//! re-seeded from the bundle on every launch, and copying 400 kB of it into userData would only
-//! create a second, staler copy. It is filtered on the way in AND on the way out.
+//! Three separate ordering claims: `sources` in insertion order and not sorted (the resist ledger
+//! does sort its sources; the difference is inherited from two app writers), `messages` by
+//! codepoint on `text`, and `spells` by codepoint on `spell`. Codepoint and never locale, because
+//! `localeCompare` answers from ICU and varies with host locale and Node build; Rust's natural
+//! `&str` `Ord` is that comparator already.
 //!
-//! ── THREE ORDERING CLAIMS, AND THEY ARE NOT THE SAME CLAIM ─────────────────────────────────────
-//!
-//!   * `sources` is in INSERTION order and is NOT sorted — `register()` walks `this.sources`, a JS
-//!     `Map`, and a `Map` iterates in insertion order. That differs from the resist ledger, which
-//!     DOES sort its sources, and the difference is inherited rather than chosen: two files, two
-//!     app writers, and matching each one is the whole job.
-//!   * `messages` within a bucket is sorted by CODEPOINT on `text`.
-//!   * `spells` within a message is sorted by CODEPOINT on `spell`.
-//!
-//! Codepoint, not locale. `String.prototype.localeCompare` answers from ICU — its order is a
-//! function of the host's locale and of the ICU data the Node build shipped with — so the TS was
-//! moved off it explicitly "because the engine this ordering will one day be checked against
-//! compares Rust `str`s — UTF-8 bytewise, which is exactly codepoint order". Rust's natural `Ord`
-//! on `&str` IS that comparator, so nothing is ported here; the claim is simply relied upon, and
-//! `message_overlay.rs`'s header is where it is written down.
-//!
-//! ── `updatedAt` IS THE LOG'S CLOCK ─────────────────────────────────────────────────────────────
-//!
-//! `new Date(this.lastObservedTs).toISOString()`, never `new Date()`. That was a wall-clock read
-//! inside a published fold, found by folding identical bytes twice and diffing (JOS-208): two runs
-//! milliseconds apart disagreed on every fixture over a field describing neither. Here it comes off
-//! [`crate::message_overlay::MessageOverlayMiner::register`], which reads the miner's own newest
-//! observed instant, so a re-fold of unchanged bytes writes an unchanged file — which is also what
-//! lets the write be coalesced at all.
+//! `updatedAt` is the log's clock, never a wall clock, so a re-fold of unchanged bytes writes an
+//! unchanged file — which is what lets the write be coalesced at all.
 
 use serde::{Deserialize, Serialize};
 
 use crate::message_overlay::{role_of, OverlayRegister, OverlaySourceCounts, SeedMessage};
 
-/// `overlayPersistence.ts OVERLAY_REGISTER_VERSION`. Anything else reads as EMPTY — including
-/// every v1 file in the field, whose counts carry exactly the inflation v2 fixes.
+/// `overlayPersistence.ts OVERLAY_REGISTER_VERSION`. Anything else reads as empty, including every
+/// v1 file in the field, whose counts carry the inflation v2 fixes.
 pub const OVERLAY_REGISTER_VERSION: i64 = 2;
 
 /// The persisted file: the register plus its schema version, in the app's key order.
@@ -66,14 +43,12 @@ pub struct OverlayRegisterFile {
     pub sources: Vec<OverlaySourceCounts>,
 }
 
-/// THE READ RULE, and it is ONE rule with no tiers: `loadUserSources` wraps the whole read in a
-/// `try` and answers `[]` for every failure — missing, unparseable, stale-version, wrong shape.
-/// Then it filters out the committed baseline's bucket and any source whose `messages` is not an
-/// array.
+/// One read rule with no tiers: every failure — missing, unparseable, stale-version, wrong shape —
+/// answers with no sources. Then the committed baseline's bucket and any source whose `messages` is
+/// not an array are filtered out.
 ///
-/// NO SALVAGE AND NO QUARANTINE, and unlike the resist ledger that is not a residual — the app has
-/// none either. The overlay is a nicety, not required state, and the active character's log
-/// re-mines itself honestly on the next fold.
+/// No salvage and no quarantine, unlike the resist ledger: the overlay is a nicety rather than
+/// required state, and the active character's log re-mines itself on the next fold.
 #[must_use]
 pub fn read_register(text: &str) -> Vec<OverlaySourceCounts> {
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(text) else {
@@ -97,8 +72,8 @@ pub fn read_register(text: &str) -> Vec<OverlaySourceCounts> {
         .collect()
 }
 
-/// THE WRITE RULE — `overlayFile(register)`: the version, the register's own `updatedAt`, and every
-/// bucket EXCEPT the committed baseline's, in the register's own order.
+/// The write rule: the version, the register's own `updatedAt`, and every bucket except the
+/// committed baseline's, in the register's own order.
 #[must_use]
 pub fn register_file_of(register: OverlayRegister) -> OverlayRegisterFile {
     OverlayRegisterFile {
@@ -112,9 +87,9 @@ pub fn register_file_of(register: OverlayRegister) -> OverlayRegisterFile {
     }
 }
 
-/// One persisted bucket as the miner's `merge` wants it: the source key, and the counts filed
-/// under it. THE KEY TRAVELS WITH THE COUNTS — merging two origins under one key is the JOS-231
-/// defect, because `begin_source` could then only replace both or neither.
+/// One persisted bucket as the miner's `merge` wants it: the source key, and the counts filed under
+/// it. The key travels with the counts, because merging two origins under one key would leave
+/// `begin_source` able to replace only both or neither.
 #[must_use]
 pub fn seeds_of(sources: Vec<OverlaySourceCounts>) -> Vec<(String, Vec<SeedMessage>)> {
     sources
@@ -142,7 +117,7 @@ mod tests {
     use crate::message_overlay::MessageOverlayMiner;
     use crate::spell_facts::SpellFacts;
 
-    /// A hand-written fixture in the app's EXACT shape, baseline bucket included.
+    /// A hand-written fixture in the app's exact shape, baseline bucket included.
     const APP_FILE: &str = concat!(
         r#"{"version":2,"updatedAt":"2026-08-19T16:21:54.000Z","sources":["#,
         r#"{"key":"baseline","messages":[{"text":"You feel different.","role":"landing","spells":[{"spell":"Illusion: Gnome","count":9}]}]},"#,
@@ -191,9 +166,8 @@ mod tests {
         for (key, counts) in seeds_of(read_register(APP_FILE)) {
             miner.merge(&counts, &key);
         }
-        // The miner has no OBSERVATIONS, only merged counts — and a merge carries counts and no
-        // instants, so `updatedAt` is the epoch here. The register the app persists carries its own
-        // stamp; the file writer below takes whichever the register states.
+        // The miner has no observations, only merged counts, and a merge carries no instants, so
+        // `updatedAt` is the epoch here. The file writer takes whichever stamp the register states.
         let mut register = miner.register();
         register.updated_at = "2026-08-19T16:21:54.000Z".to_owned();
         let text = serde_json::to_string(&register_file_of(register)).expect("it serializes");
@@ -212,8 +186,8 @@ mod tests {
     #[test]
     fn messages_and_spells_are_sorted_by_codepoint_and_sources_are_not() {
         let mut miner = miner();
-        // Two buckets, merged in an order that is NOT alphabetical, each holding messages and
-        // spells that are NOT in codepoint order.
+        // Two buckets, merged in an order that is not alphabetical, each holding messages and
+        // spells that are not in codepoint order.
         miner.merge(
             &[(
                 "zeta".to_owned(),
@@ -230,7 +204,7 @@ mod tests {
             "aaa_source",
         );
         let register = miner.register();
-        // SOURCES IN INSERTION ORDER — `zzz_source` was merged first and comes first, which is the
+        // Sources in insertion order: `zzz_source` was merged first and comes first, which is the
         // opposite of what a sort would give.
         let keys: Vec<&str> = register.sources.iter().map(|s| s.key.as_str()).collect();
         assert_eq!(keys, vec!["zzz_source", "aaa_source"]);
@@ -260,9 +234,8 @@ mod tests {
         let before = seeded.sources[0].messages[0].spells[0].count;
         assert_eq!(before, 3);
 
-        // THE COLD-LAUNCH SHAPE, and the whole of JOS-231: seed from the file the last run wrote,
-        // then fold the same log again. Without `begin_source` the counts DOUBLE (22 → 44 → 88 was
-        // the measurement); with it, the bucket is discarded and re-stated.
+        // The cold-launch shape: seed from the file the last run wrote, then fold the same log
+        // again. Without `begin_source` the counts double; with it, the bucket is re-stated.
         let mut again = miner();
         for (key, counts) in seeds_of(read_register(APP_FILE)) {
             again.merge(&counts, &key);

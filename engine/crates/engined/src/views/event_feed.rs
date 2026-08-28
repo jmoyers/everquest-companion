@@ -1,36 +1,13 @@
-//! `eventFeed.recent` — THE EVENTS OVERLAY'S RING (JOS-487).
+//! `eventFeed.recent` — the events overlay's ring.
 //!
-//! ── IT WAS UNREGISTERED FOR TWO REASONS AND TWO TICKETS TOOK THEM AWAY SEPARATELY ──────────────
+//! The row is the module's own `FeedEvent`, read field by field rather than through `snapshot()`'s
+//! JSON. Unlike the app's `FeedEvent` there is no `reward` block: the quest source is not on the
+//! bus at all, and a cell for a block nothing fills would be a column that is null forever.
 //!
-//! `views::mod`'s header used to say that a view over the event feed "could only ever serve an empty
-//! window and no test could tell a working one from a broken one". Both clauses were true when they
-//! were written and neither is now.
-//!
-//! The SECOND clause is what this file answers: the projection is a pure function of a ring, so it
-//! is exercised against a hand-built one below, and a broken cell fails a test whether or not any
-//! fold can produce the entry it mangled. That was the whole of the argument for registering the
-//! source even while the ring was empty — a client subscribing during the cutover is then told
-//! **nothing here yet** rather than **no such surface**, which are different things for a renderer
-//! to be told.
-//!
-//! The FIRST clause went with JOS-486, in the same wave and not by this ticket: the feed's loot
-//! source admits a row only through an injected item probe, and that probe is a real in-process
-//! lookup now. A live loot line puts a row in this ring.
-//!
-//! ── THE ROW IS THE MODULE'S OWN STRUCT ─────────────────────────────────────────────────────────
-//!
-//! `FeedEvent`, read field by field rather than through `snapshot()`'s JSON — the pull-seam rule the
-//! whole view layer keeps. What the fold does NOT carry is worth naming, because the app's own
-//! `FeedEvent` does: there is no `reward` block here (the quest source arrives out of band from the
-//! renderer and is not on the bus at all), so this source publishes no reward cells. A cell for a
-//! block nothing fills would be a column that is null forever.
-//!
-//! ── THE CON BLOCK IS FLATTENED, BECAUSE A `Cell` IS A SCALAR ───────────────────────────────────
-//!
-//! `FeedEvent.con` is an object. It becomes prefixed cells (`conFaction`, `conLevel`, …) rather
-//! than a JSON string: a client that had to `JSON.parse` a cell would be doing the munging ruling 4
-//! forbids, and a nested cell is not a thing the diff protocol can update — `UpdateOp` carries
-//! CHANGED CELLS, so a nested object would be re-sent whole every time one number inside it moved.
+//! `FeedEvent.con` is an object, so it becomes prefixed cells (`conFaction`, `conLevel`, …) rather
+//! than a JSON string a client would have to parse. A nested cell is also not a thing the diff
+//! protocol can update — `UpdateOp` carries changed cells, so a nested object would be re-sent whole
+//! every time one number inside it moved.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -43,7 +20,7 @@ use super::{Field, Order, SourceDef, SourceRow};
 pub const RECENT: SourceDef = SourceDef {
     id: "eventFeed.recent",
     fields: &["at", "seq", "kind", "title"],
-    // NEWEST FIRST — the overlay stores the ring oldest-last and reverses it to draw.
+    // Newest first — the overlay stores the ring oldest-last and reverses it to draw.
     default_sort: &[("at", Order::Desc), ("seq", Order::Desc)],
     tiebreak: ("seq", Order::Asc),
     default_limit: super::DEFAULT_LIMIT,
@@ -55,15 +32,11 @@ pub fn rows(module: &EventFeedModule) -> Vec<SourceRow> {
     rows_of(module.ring())
 }
 
-/// The projection itself, over a ring rather than over a module.
+/// The projection itself, over a ring rather than over a module, so it can be tested directly.
 ///
-/// SPLIT OUT SO IT CAN BE TESTED, and that split is this file's whole answer to the objection that
-/// kept the source unregistered — see the header. It takes the ring directly and pins every cell.
-///
-/// THE KEY IS THE ENTRY'S OWN `id`, which the feed mints per entry (`f1`, `f2`, …) precisely so that
-/// two identical lines a second apart are two rows. Falling back to the position would be wrong for
-/// this ring in a way it is not for the loot ledger: the feed drops from the FRONT at a hundred, so
-/// a position names a different event after the hundred-and-first.
+/// The key is the entry's own minted `id` (`f1`, `f2`, …), so two identical lines a second apart
+/// are two rows. A ring position would not do: the feed drops from the front at a hundred, so a
+/// position names a different event after the hundred-and-first.
 #[must_use]
 pub fn rows_of(ring: &[FeedEvent]) -> Vec<SourceRow> {
     ring.iter()
@@ -104,10 +77,9 @@ fn cells(entry: &FeedEvent) -> Cells {
         "conLevel".to_owned(),
         con.and_then(|c| c.level).map_or_else(Cell::null, Cell::int),
     );
-    // ABSENT AND FALSE ARE THE SAME ANSWER HERE, and only here: `rare` is a flag the parser writes
-    // only when the infix was on the line, so "no con block at all" and "a con block with no rare
-    // flag" both mean this creature is not rare. A cell of `null` would make a renderer branch on a
-    // distinction that carries no information.
+    // Absent and false are the same answer for `rare`, and only for `rare`: the parser writes the
+    // flag only when the infix was on the line, so no con block and a con block without it both
+    // mean not rare.
     cells.insert(
         "conRare".to_owned(),
         Cell::flag(con.is_some_and(|c| c.rare)),
@@ -175,11 +147,11 @@ mod tests {
             built[1].cells["conDifficulty"],
             Cell::text("looks like quite a gamble")
         );
-        // An entry with no con block says NULL for each of its cells rather than dropping them: a
+        // An entry with no con block says null for each of its cells rather than dropping them: a
         // diff needs a cell to be able to become null.
         assert_eq!(built[0].cells["conFaction"], Cell::null());
         assert_eq!(built[0].cells["conLevel"], Cell::null());
-        // …and is not RARE rather than unknown, which is this source's one absent-equals-false.
+        // …and is not rare rather than unknown, which is this source's one absent-equals-false.
         assert_eq!(built[0].cells["conRare"], Cell::flag(false));
         // A row that carries neither detail nor page says so as null too.
         assert_eq!(built[1].cells["detail"], Cell::null());
@@ -206,10 +178,8 @@ mod tests {
 
     #[test]
     fn a_historical_fold_serves_an_empty_window_and_that_is_the_hydration_rule() {
-        // THE MODULE'S OWN LAW, PINNED FROM THIS SIDE: the feed admits nothing historical, so a
-        // whole registry fed a zone, a loot and a consider line with `live: false` still leaves this
-        // ring empty. That is the silent baseline the app's celebration rule asks for, and it is
-        // what stops a startup replay spamming the overlay with hours-old events.
+        // The feed admits nothing historical, which is what stops a startup replay spamming the
+        // overlay with hours-old events.
         let mut f = fold::Fold::new(fold::registered(fold::ClusterDeps::default()), i64::MAX);
         for line in [
             r#"{"kind":"zone","seq":0,"ts":1787181707000,"raw":"z","zone":"Nagafen's Lair"}"#,

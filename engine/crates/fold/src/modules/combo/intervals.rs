@@ -1,31 +1,27 @@
 //! `src/main/modules/comboIntervals.ts` — INTERVAL CONSTRUCTION. Observations + `/who` rows +
 //! level dings + user corrections in, `ComboInterval[]` out. Pure.
 //!
-//! A LOADOUT SWAP PRINTS NOTHING. `grep -ci loadout` over 1.1M lines returns 37 hits and every one
-//! is another player's chat. So every boundary here is INFERENCE, it is always a RANGE
-//! `[startLo, startHi]` rather than an instant, and the detectors are ranked by how much the log
-//! actually said:
+//! A loadout swap prints nothing, so every boundary here is INFERENCE, always a RANGE
+//! `[startLo, startHi]` rather than an instant. The detectors are ranked by how much the log said:
 //!
-//!   who            two consecutive `/who` rows disagree. The game NAMED both loadouts; the swap is
-//!                  somewhere between the rows. Hard, and nothing overrides it.
+//!   who            two consecutive `/who` rows disagree. The game NAMED both loadouts, so the swap
+//!                  is somewhere between the rows. Hard, and nothing overrides it.
 //!   levelDrop      a `Welcome to level N!` with N <= the previous ding. Displayed level is the
-//!                  MINIMUM of the loadout's class levels, so a non-increasing ding is a swap —
-//!                  note `<=`, not `<`: the real log has a genuine 11 → 11 REPEAT 0.9 h apart that
-//!                  a strict-descent predicate misses. (`levelSeries.ts` keeps `<` on purpose and
-//!                  is pinned by its own golden window — do not "fix" it.)
+//!                  MINIMUM of the loadout's class levels, so a non-increasing ding is a swap. Note
+//!                  `<=`, not `<`: real logs contain a genuine same-level repeat hours apart that a
+//!                  strict-descent predicate misses. `levelSeries.ts` keeps `<` on purpose.
 //!   evidenceShift  a class with sustained exclusive evidence goes silent and a different one
-//!                  starts. This is what NARROWS a boundary: the Aug 2 swap is bracketed 33.9 h
-//!                  apart by level dings and to ~60 min (last MNK Feign Death 00:57:55 → first ROG
-//!                  Backstab 01:57:42) by the shift. Both fire for the same swap; the narrower
-//!                  window wins and the other is recorded in `startAlso`.
+//!                  starts. This is what NARROWS a boundary, taking a swap the dings bracket to
+//!                  tens of hours down to about an hour.
 //!
-//! The one thing a `/who` row NEVER loses to is a narrower inferred window — hence the explicit
-//! precedence in `resolve_group`.
+//! Where two detectors fire for one swap the narrower window wins and the other is recorded in
+//! `startAlso` — except that a `/who` row never loses to a narrower inferred window, which is the
+//! explicit precedence in `resolve_group`.
 //!
-//! TWO PLACES HERE COMPARE BY IDENTITY over there (`b !== best` in `pick_boundary`, and
-//! `host.also = …` mutating an element of an array a `filter` is holding references into). Both are
-//! ported as INDEX arithmetic, because Rust will not hand out a reference into a vector and a
-//! mutable borrow of it at once — same elements, same answer, no aliasing.
+//! Two places compare by identity over there (`b !== best` in `pick_boundary`, and `host.also = …`
+//! mutating an element of an array a `filter` holds references into). Both are ported as index
+//! arithmetic, because Rust will not hand out a reference into a vector and a mutable borrow of it
+//! at once.
 
 use super::evidence::ClassObservation;
 use super::levels::{level_range, level_regressed_inside, LevelPoint, LevelStatements, WhoRow};
@@ -42,13 +38,8 @@ const WINDOW_FLOOR_MS: i64 = 15 * 60_000;
 const MAX_SHIFT_CUTS: usize = 16;
 const HOUR_MS: i64 = 3_600_000;
 
-/// A user correction — the ONLY durable combo state (§ 7). Keyed by TIME, never by interval id: a
+/// A user correction — the only durable combo state (§ 7). Keyed by TIME, never by interval id: a
 /// correction recomputes every interval and ids are recompute-unstable by design.
-///
-/// ABSENT IN THE BENCH WORLD. `foldArm.mts` installs no corrections provider and never calls
-/// `setCorrections`, so every slice's list is empty and rules 2/`userLocked`/`userOverruled` are
-/// unexercised by the corpus. Ported anyway because they are STRUCTURE rather than a guess: leaving
-/// them out would make the first world that carries a correction diverge silently.
 #[derive(Debug, Clone)]
 pub struct ComboCorrection {
     pub start_ts: i64,
@@ -63,7 +54,7 @@ pub struct ComboCorrection {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComboInterval {
-    /// `ci<n>` in time order. NOT stable across a recompute.
+    /// `ci<n>` in time order. Not stable across a recompute.
     pub id: String,
     /// Best estimate of the start; always inside `[startLo, startHi]`.
     pub start_ts: i64,
@@ -73,9 +64,9 @@ pub struct ComboInterval {
     pub start_hi: i64,
     pub end_lo: Option<i64>,
     pub end_hi: Option<i64>,
-    /// The detector that produced the NARROWEST window for this boundary.
+    /// The detector that produced the narrowest window for this boundary.
     pub start_reason: &'static str,
-    /// Other detectors that fired for the SAME swap. Absent unless there were any.
+    /// Other detectors that fired for the same swap. Absent unless there were any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_also: Option<Vec<&'static str>>,
     /// 2 before the tertiary unlock, 3 after — a PRIOR, overridden by a `/who` row's own arity.
@@ -87,16 +78,15 @@ pub struct ComboInterval {
     pub level_hi: Option<i64>,
     /// How much evidence stands behind this interval, for the UI's "do we actually know" cue.
     pub evidence_count: usize,
-    /// Set ONLY by a user correction; suppresses re-inference of these slots.
+    /// Set only by a user correction; suppresses re-inference of these slots.
     pub user_locked: bool,
-    /// A manual override applies here and the GAME contradicted it. Absent unless it happened —
-    /// JOS-87's acceptance criterion is that autodetection never SILENTLY overwrites an override,
-    /// and `/who` is the one path by which an override can still lose, so the loss is carried in
-    /// the model rather than swallowed.
+    /// A manual override applies here and the GAME contradicted it. Autodetection must never
+    /// silently overwrite an override, and `/who` is the one path by which one can lose, so the
+    /// loss is carried in the model rather than swallowed. Absent unless it happened.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_overruled: Option<bool>,
-    /// Same serialization rule for the same reason (JOS-239): absent unless the span really did see
-    /// the level go backwards, so no interval's JSON moves for a flag that does not apply to it.
+    /// Same serialization rule for the same reason: absent unless the span really did see the level
+    /// go backwards, so no interval's JSON moves for a flag that does not apply to it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level_regressed: Option<bool>,
 }
@@ -121,16 +111,14 @@ pub struct IntervalInput<'a> {
     pub corrections: &'a [ComboCorrection],
 }
 
-// ─────────────────────────────────────────────────────────────────── detectors
-
-/// Consecutive `/who` rows that disagree, MINUS the swaps something sharper already dated.
+/// Consecutive `/who` rows that disagree, minus the swaps something sharper already dated.
 ///
-/// A `/who` pair only bounds the swap by "somewhere between these two rows", which in this log runs
-/// to three hours and to 33 hours elsewhere. So: the disagreement is PROOF that a swap happened,
-/// but if any already-detected boundary falls inside `(prev, row]` then that boundary IS this swap,
-/// dated better, and adding a second one here would split the same event twice.
+/// A `/who` pair only bounds the swap by "somewhere between these two rows", which runs to hours.
+/// The disagreement is PROOF that a swap happened, but if an already-detected boundary falls inside
+/// `(prev, row]` then that boundary IS this swap, dated better, and a second one would split the
+/// same event twice.
 ///
-/// The FIRST row never opens one: with no earlier statement there is nothing to disagree with, and
+/// The first row never opens one: with no earlier statement there is nothing to disagree with, and
 /// splitting there would manufacture an empty interval in front of every anchored span.
 pub fn who_boundaries(rows: &[WhoRow], dated: &[Boundary]) -> Vec<Boundary> {
     let mut out = Vec::new();
@@ -154,22 +142,17 @@ pub fn who_boundaries(rows: &[WhoRow], dated: &[Boundary]) -> Vec<Boundary> {
     out
 }
 
-/// A `/who` ROW THAT CONTRADICTS THE EVIDENCE BEHIND IT — the swap cut nothing else can see
-/// (JOS-192).
+/// A `/who` row that contradicts the evidence behind it — the swap cut nothing else can see.
 ///
-/// THE DEFECT THIS EXISTS FOR. `who_boundaries` needs TWO rows to disagree, and the log has eleven
-/// rows in 1.1M lines. Inside a slice nothing else cut, `slots_for` rule 1 takes the LAST `/who`
-/// row and states the WHOLE slice with it — so a player who swaps, sees the app naming the trio
-/// they left, and types `/who` to correct it has their correction applied BACKWARDS over every hour
-/// the slice already covered.
+/// The rule: a `/who` row states the loadout AT ITS OWN TIMESTAMP and nowhere else. When the
+/// evidence in front of it inside its own segment sustains a class the row does not name, the game
+/// and the log disagree about one span, which can only mean a swap happened between them. Without
+/// this cut, `slots_for` rule 1 would state the whole slice with the row and apply a player's
+/// correction backwards over every hour the slice covers.
 ///
-/// THE RULE. A `/who` row states the loadout AT ITS OWN TIMESTAMP and nowhere else. When the
-/// evidence in front of it inside its own segment SUSTAINS a class the row does not name, the game
-/// and the log disagree about the same span, which can only mean a swap happened between them.
-///
-/// WHY DEPARTURE ALONE, when `reinstated_drops` demands departure AND arrival: that rule compares
-/// evidence to evidence across a ding, where "everything looks departed" right after the cut simply
-/// because no time has passed. This one compares evidence to a STATEMENT.
+/// Departure alone is enough here, where `reinstated_drops` demands departure AND arrival: that
+/// rule compares evidence to evidence across a ding, where everything looks departed right after
+/// the cut because no time has passed. This one compares evidence to a STATEMENT.
 pub fn who_shift_boundaries(
     observations: &[ClassObservation],
     rows: &[WhoRow],
@@ -177,7 +160,7 @@ pub fn who_shift_boundaries(
     first_ts: i64,
 ) -> Vec<Boundary> {
     let mut out: Vec<Boundary> = Vec::new();
-    // A row is a statement, never a score (§ 4.4) — a single-class row would otherwise draw an
+    // A row is a statement, never a score (§ 4.4): a single-class row would otherwise draw an
     // exclusive span for itself.
     let evidence: Vec<&ClassObservation> =
         observations.iter().filter(|o| o.source != "who").collect();
@@ -221,8 +204,8 @@ pub fn who_shift_boundaries(
     out
 }
 
-/// A non-increasing level ding. The window is honestly WIDE — the Aug 2 swap's is 33.9 h — and the
-/// UI is expected to draw it as a range.
+/// A non-increasing level ding. The window is honestly wide — tens of hours — and the UI is
+/// expected to draw it as a range.
 pub fn level_drop_boundaries(levels: &[LevelPoint]) -> Vec<Boundary> {
     let mut out = Vec::new();
     for i in 1..levels.len() {
@@ -253,10 +236,10 @@ struct Span {
 /// Classes carrying SUSTAINED EXCLUSIVE evidence — ≥2 distinct hourly buckets of observations that
 /// name that class and nothing else.
 ///
-/// A STRICTER bar than admission on purpose. Admission's `sustain` counts every bucket holding ANY
-/// evidence for the class, twelve-class invocations included; that is the right question for "is
-/// this class in the loadout" and the WRONG one for "when was this class present", where a shared
-/// invocation would smear a class across the whole log and MANUFACTURE boundaries.
+/// A stricter bar than admission on purpose. Admission's `sustain` counts every bucket holding ANY
+/// evidence for the class, which is the right question for "is this class in the loadout" and the
+/// wrong one for "when was this class present", where a shared invocation would smear a class
+/// across the whole log and manufacture boundaries.
 ///
 /// Insertion-ordered, because `cut_once`'s two reductions keep the FIRST element on a tie.
 fn exclusive_spans(observations: &[ClassObservation]) -> Vec<Span> {
@@ -297,13 +280,13 @@ fn exclusive_spans(observations: &[ClassObservation]) -> Vec<Span> {
         .collect()
 }
 
-/// ONE cut inside a window, or `None`.
+/// One cut inside a window, or `None`.
 ///
-/// The window is OVER-DETERMINED when more classes carry sustained exclusive evidence than a
-/// loadout can hold. The swap is then bounded below by the EARLIEST departure (the first class to
-/// fall silent) and above by the EARLIEST arrival after it. Earliest on both ends is what makes the
-/// window narrow AND honest: anything before the departure is still the old loadout, anything from
-/// the first arrival on is provably the new one.
+/// The window is over-determined when more classes carry sustained exclusive evidence than a
+/// loadout can hold. The swap is then bounded below by the EARLIEST departure and above by the
+/// EARLIEST arrival after it. Earliest on both ends is what makes the window narrow and honest:
+/// anything before the departure is still the old loadout, and anything from the first arrival on
+/// is provably the new one.
 fn cut_once(observations: &[ClassObservation], expected_slots: usize) -> Option<Boundary> {
     let spans = exclusive_spans(observations);
     if spans.len() <= expected_slots {
@@ -330,10 +313,10 @@ fn cut_once(observations: &[ClassObservation], expected_slots: usize) -> Option<
     })
 }
 
-/// Evidence-shift boundaries inside one hard segment, found by BISECTING until every sub-window
-/// holds at most `expected_slots` sustained classes. On hitting the 15-minute floor while still
-/// over-determined we DO NOT split — an honest "we can't tell" beats a fabricated boundary; the
-/// interval keeps its candidates wide and `startAlso` records `overDetermined`.
+/// Evidence-shift boundaries inside one hard segment, found by bisecting until every sub-window
+/// holds at most `expected_slots` sustained classes. On hitting the window floor while still
+/// over-determined it does NOT split — an honest "we can't tell" beats a fabricated boundary, so
+/// the interval keeps its candidates wide and `startAlso` records `overDetermined`.
 pub fn evidence_shift_boundaries(
     observations: &[ClassObservation],
     expected_slots: usize,
@@ -365,15 +348,12 @@ pub fn evidence_shift_boundaries(
     out
 }
 
-// ─────────────────────────────────────────────────────────────────── assembly
-
-/// Windows that OVERLAP describe the same swap, and the NARROWEST of them is the answer. The Aug 2
-/// level ding says "somewhere in these 33.9 hours" and the evidence shift says "somewhere in these
-/// 60 minutes", about the same event — so the shift wins the window and the ding is recorded in
+/// Windows that OVERLAP describe the same swap, and the narrowest of them is the answer — so an
+/// evidence shift beats the level ding whose window swallowed it, and the ding is recorded in
 /// `also` rather than thrown away.
 ///
-/// The CUT itself is the EARLIEST `at` any detector in the group offers (clamped into the winning
-/// window). `at` is where the new interval OPENS, so taking the earliest keeps a `/who` row on the
+/// The cut itself is the EARLIEST `at` any detector in the group offers, clamped into the winning
+/// window. `at` is where the new interval OPENS, so taking the earliest keeps a `/who` row on the
 /// far side of a narrower inferred boundary inside the interval it describes.
 fn pick_boundary(group: &[Boundary]) -> Boundary {
     // `reduce((a, b) => b.hi - b.lo < a.hi - a.lo ? b : a)` — first narrowest wins.
@@ -385,8 +365,8 @@ fn pick_boundary(group: &[Boundary]) -> Boundary {
     }
     let earliest = group.iter().map(|b| b.at).min().unwrap_or(group[best].at);
     let at = earliest.max(group[best].lo).min(group[best].hi);
-    // `{...best, at}` carries `best.also` through; the overwrite below only happens when this
-    // group had something else in it.
+    // `best.also` carries through; the overwrite below happens only if the group held anything
+    // else.
     let mut merged = group[best].clone();
     merged.at = at;
     let mut also: Vec<&'static str> = Vec::new();
@@ -418,28 +398,23 @@ fn absorbed_window(drop: &Boundary, dated: &[Boundary], end: i64) -> Option<(i64
     Some((from, to))
 }
 
-/// LEVEL DINGS THE MERGE SWALLOWED, PUT BACK WHEN THE EVIDENCE SAYS THEY WERE A SECOND SWAP.
+/// Level dings the merge swallowed, put back when the evidence says they were a second swap.
 ///
 /// `level_drop_boundaries` dates a ding's swap as "somewhere between the previous ding and this
-/// one" — and after a swap that previous ding is by construction in the PREVIOUS era, so the window
-/// routinely reaches back across an earlier swap. `merge_boundaries` then reads that overlap as
-/// "these two detectors describe the same event", keeps the narrower one, and the ding's CUT is
-/// gone. MEASURED on the live log: the swap into a wizard loadout dinged at Aug 06 19:31:23 and its
-/// window opened at the previous ding on Aug 04 20:57:35 — 46.6 h earlier, swallowing the Aug 04
-/// 23:38:01 evidence shift that was itself a real swap.
+/// one", and after a swap that previous ding is by construction in the PREVIOUS era, so the window
+/// routinely reaches back across an earlier swap. `merge_boundaries` then reads the overlap as one
+/// event, keeps the narrower window, and the ding's cut is gone.
 ///
-/// THE DISCRIMINATOR IS THE EVIDENCE, NEVER THE CLOCK, and it is the same test an evidence shift
-/// already has to pass: a class with sustained exclusive evidence GOES SILENT and a different one
-/// STARTS. Requiring BOTH directions is what keeps it conservative — right after a ding everything
-/// looks "departed" simply because no time has passed.
+/// The discriminator is the evidence, never the clock, and it is the test an evidence shift already
+/// has to pass: a class with sustained exclusive evidence goes SILENT and a different one STARTS.
+/// Requiring both directions keeps it conservative — right after a ding everything looks departed
+/// simply because no time has passed.
 ///
-/// THE SECOND ARM (JOS-239) needs no clock constant. The question a merge answers is "are these two
-/// detectors describing ONE event?", and the honest disqualifier is that the stretch between them
-/// is an ERA IN ITS OWN RIGHT: it sustains a FULL LOADOUT's worth of exclusive evidence, by the
-/// same ≥2-bucket bar everything else uses, inside a span the model has already declared
-/// over-determined. The departure test silently un-fixed itself as the log grew — `absorbed_window`
-/// runs to the END of the observations, so "MNK left" was a question asked over all of recorded
-/// history, and the owner swapped BACK into PAL/MNK/ENC 40.1 h later.
+/// The second arm needs no clock constant either. A merge answers "are these two detectors
+/// describing ONE event?", and the honest disqualifier is that the stretch between them is an era
+/// in its own right: it sustains a full loadout's worth of exclusive evidence, by the same
+/// ≥2-bucket bar, inside a span already declared over-determined. The departure test alone decays
+/// as a log grows, because `absorbed_window` runs to the END of the observations.
 pub fn reinstated_drops(
     observations: &[ClassObservation],
     drops: &[Boundary],
@@ -493,24 +468,17 @@ pub fn reinstated_drops(
     out
 }
 
-/// ONE GROUP OF OVERLAPPING WINDOWS, RESOLVED — and a `/who` cut is never what gets resolved away
-/// (JOS-287).
+/// One group of overlapping windows, resolved — and a `/who` cut is never what gets resolved away.
 ///
-/// THE DEFECT THIS EXISTS FOR. `pick_boundary` answers "these detectors describe one swap" by
-/// keeping the NARROWEST window and cutting at the EARLIEST `at`. Applied to a group that contains
-/// `/who` cuts that is a LIE about the log, and the live log proved it: the Aug 12 re-roll dinged
-/// non-increasing (50 → 10), so the level-drop window opened at the previous ding SIX DAYS earlier
-/// and overlapped all four `/who` cuts inside it. One boundary came out where there were four, and
-/// the slice in front of it held two rows that contradict each other — so `slots_for` rule 1 took
-/// the LAST of them and stated a loadout the owner had typed on Aug 10 BACKWARDS across a swap.
-///
-/// THE RULE. A `/who` row is ground truth AT ITS TIMESTAMP. Two rows are two statements, never one
-/// event, and no window drawn by inference may move, merge or delete the cut a row makes.
+/// A `/who` row is ground truth AT ITS TIMESTAMP. Two rows are two statements, never one event, and
+/// no window drawn by inference may move, merge or delete the cut a row makes. `pick_boundary`
+/// alone would collapse a wide level-drop window and every `/who` cut inside it into one boundary,
+/// leaving a slice holding two rows that contradict each other.
 fn resolve_group(group: &[Boundary]) -> Vec<Boundary> {
     if !group.iter().any(|b| b.reason == "who") {
         return vec![pick_boundary(group)];
     }
-    // Rows landing on the SAME instant are one statement and keep the narrowest window between
+    // Rows landing on the same instant are one statement and keep the narrowest window between
     // them. Insertion-ordered, so the surviving cuts come out in first-seen order before the sort.
     let mut by_instant: JsMap<Vec<Boundary>> = JsMap::new();
     for b in group.iter().filter(|b| b.reason == "who") {
@@ -531,7 +499,7 @@ fn resolve_group(group: &[Boundary]) -> Vec<Boundary> {
         if b.reason == "who" {
             continue;
         }
-        // Corroboration goes on the row cut NEAREST the detector's own date — the one it was
+        // Corroboration goes on the row cut nearest the detector's own date — the one it was
         // describing — so `startAlso` still says which detectors agreed about that swap.
         let mut host: Option<usize> = None;
         for (i, k) in kept.iter().enumerate() {
@@ -563,7 +531,7 @@ fn resolve_group(group: &[Boundary]) -> Vec<Boundary> {
     kept
 }
 
-/// Collapse overlapping candidates into one boundary each, in time order. Windows that merely TOUCH
+/// Collapse overlapping candidates into one boundary each, in time order. Windows that merely touch
 /// (one ends exactly where the next begins) are separate swaps, not one. A `/who` cut is never
 /// collapsed away — see `resolve_group`.
 pub fn merge_boundaries(candidates: &[Boundary]) -> Vec<Boundary> {
@@ -659,17 +627,15 @@ fn overlap_ms(c: &ComboCorrection, start: i64, end: Option<i64>) -> i64 {
     hi.saturating_sub(c.start_ts.max(start))
 }
 
-/// The correction that governs a SLICE, or `None`. TWO RULES, in order.
+/// The correction that governs a slice, or `None`. Two rules, in order:
 ///
-///   1. A correction COVERING the slice's start wins — the original rule, unchanged.
-///   2. Otherwise the correction OVERLAPPING the slice most wins.
+///   1. A correction COVERING the slice's start wins.
+///   2. Otherwise the correction OVERLAPPING the slice most wins; ties go to the latest `set_at`.
 ///
 /// Rule 2 exists because boundaries MOVE under a standing override: a correction is written against
-/// the interval the user was looking at and intervals are rebuilt from scratch on every fold, so a
-/// cut that existed when the user pressed Save can be gone one event later. When that happens the
-/// slice covering *now* begins BEFORE the correction, rule 1 misses, and under the old code the
-/// override vanished with no UI event. Greatest-overlap is the conservative repair; ties fall back
-/// to latest `set_at`.
+/// the interval the user was looking at, and intervals are rebuilt from scratch on every fold, so a
+/// cut that existed when they pressed Save can be gone one event later. The slice covering now then
+/// begins BEFORE the correction, rule 1 misses, and the override would vanish silently.
 pub fn correction_for_slice<'a>(
     corrections: &'a [ComboCorrection],
     start: i64,
@@ -719,18 +685,16 @@ struct SlotDecision {
 
 /// Slots for one slice, in authority order (§ 4.4):
 ///   1. the LAST `/who` row inside it — the game named the loadout for this very span, so it wins
-///      even over a user correction (a correction on an anchored span is the user being wrong, and
-///      it is the GAME that just spoke),
+///      even over a user correction,
 ///   2. a user override governing it,
 ///   3. inference.
 ///
 /// A `/who` row also sets `expectedSlots` from its own arity, which is ground truth about
-/// CARDINALITY, not just membership. Rule 1 is the only way an explicit override loses, so when it
-/// fires against a live override the interval carries `userOverruled` and the surface says so —
-/// silence there is what JOS-87 forbids, not the precedence itself.
+/// CARDINALITY as well as membership. Rule 1 is the only way an explicit override loses, so when it
+/// fires against a live override the interval carries `userOverruled` and the surface says so.
 fn slots_for(slice: &Slice, input: &IntervalInput, prior: usize) -> SlotDecision {
     let at = slice.start.at;
-    // `rows[rows.length - 1]` — the LAST row inside the slice, which is rule 1.
+    // The LAST row inside the slice, which is rule 1.
     let row = input
         .who_rows
         .iter()
@@ -779,8 +743,8 @@ fn to_interval(slice: &Slice, input: &IntervalInput, index: usize) -> ComboInter
         end_ts: slice.end,
         start_lo: slice.start.lo,
         start_hi: slice.start.hi,
-        // An OPEN interval has not ended, so `endHi` stays null — but `endLo` is honest and useful:
-        // it is the last moment we HAVE evidence for. A closed interval's end is the next cut.
+        // An open interval has not ended, so `endHi` stays null, but `endLo` is the last moment we
+        // HAVE evidence for. A closed interval's end is the next cut.
         end_lo: slice.end.or(last_ts),
         end_hi: slice.end,
         start_reason: slice.start.reason,
@@ -796,8 +760,8 @@ fn to_interval(slice: &Slice, input: &IntervalInput, index: usize) -> ComboInter
             .then_some(true),
     };
     let mut also = slice.start.also.clone().unwrap_or_default();
-    // The window could not be split further and still names more classes than a loadout holds: say
-    // so rather than silently dropping the surplus (§ 4.5's floor rule).
+    // The window could not be split further and still names more classes than a loadout holds, so
+    // say so rather than silently dropping the surplus (§ 4.5's floor rule).
     if exclusive_spans(&slice.observations).len() > interval.expected_slots {
         also.push("overDetermined");
     }
@@ -813,12 +777,12 @@ fn to_interval(slice: &Slice, input: &IntervalInput, index: usize) -> ComboInter
     interval
 }
 
-/// Two intervals that resolve to the SAME classes across a SOFT boundary were never two.
+/// Two intervals that resolve to the same classes across a SOFT boundary were never two.
 fn mergeable(a: &ComboInterval, b: &ComboInterval) -> bool {
     if matches!(b.start_reason, "who" | "levelDrop" | "user") {
         return false;
     }
-    // A locked span is the user's statement and an overruled one carries a notice they have to see;
+    // A locked span is the user's statement and an overruled one carries a notice they must see;
     // collapsing either into a neighbour would delete the thing the row exists to say.
     if a.user_locked || b.user_locked {
         return false;
@@ -844,9 +808,8 @@ fn collapse(intervals: Vec<ComboInterval>) -> Vec<ComboInterval> {
                 prev.end_lo = interval.end_lo;
                 prev.end_hi = interval.end_hi;
                 prev.evidence_count += interval.evidence_count;
-                // `Math.max(prev.levelHi ?? -Infinity, interval.levelHi ?? -Infinity)`, with the
-                // `-Infinity` result folded back to null: two intervals that both state nothing
-                // still state nothing.
+                // A max with the `-Infinity` result folded back to null: two intervals that both
+                // state nothing still state nothing.
                 prev.level_hi = match (prev.level_hi, interval.level_hi) {
                     (Some(a), Some(b)) => Some(a.max(b)),
                     (Some(a), None) => Some(a),
@@ -863,9 +826,9 @@ fn collapse(intervals: Vec<ComboInterval>) -> Vec<ComboInterval> {
     out
 }
 
-/// THE WHOLE PASS. Observations MUST arrive in seq order (the module keeps them that way).
+/// The whole pass. Observations must arrive in seq order (the module keeps them that way).
 ///
-/// It recomputes FROM SCRATCH every time, deliberately (§ 4.5): a `/who` typed an hour from now, or
+/// It recomputes from scratch every time, deliberately (§ 4.5): a `/who` typed an hour from now, or
 /// a user correction, retroactively re-labels the past, and patching intervals in place would leave
 /// a stale id pointing at a span that no longer exists. Ids are therefore snapshot-scoped.
 pub fn build_intervals(input: &IntervalInput) -> Vec<ComboInterval> {
@@ -880,9 +843,9 @@ pub fn build_intervals(input: &IntervalInput) -> Vec<ComboInterval> {
         levels: input.levels,
         corrections: input.corrections,
     };
-    // Level dings FIRST (the log SAYS a swap happened), then the evidence shift inside each segment
+    // Level dings first (the log SAYS a swap happened), then the evidence shift inside each segment
     // they cut — a shift is only meaningful within one announced era. `/who` disagreements come
-    // LAST because they only fire where nothing sharper already cut.
+    // last, because they only fire where nothing sharper already cut.
     let drops = level_drop_boundaries(input.levels);
     let mut shifts: Vec<Boundary> = Vec::new();
     for segment in hard_segments(&observations, &merge_boundaries(&drops)) {
@@ -892,16 +855,16 @@ pub fn build_intervals(input: &IntervalInput) -> Vec<ComboInterval> {
     let mut all = drops.clone();
     all.extend(shifts);
     let merged = merge_boundaries(&all);
-    // …and put back any ding the merge swallowed that the evidence says was its OWN swap. After the
-    // merge rather than inside it because the test needs the observations, and because it may only
-    // ever ADD a cut the merge deleted.
+    // …and put back any ding the merge swallowed that the evidence says was its own swap. After
+    // the merge rather than inside it, because the test needs the observations and because it may
+    // only ever ADD a cut the merge deleted.
     let mut with_reinstated = merged.clone();
     with_reinstated.extend(reinstated_drops(&observations, &drops, &merged, 3));
     let dated = merge_boundaries(&with_reinstated);
-    // …then the two `/who` rules, NARROW FIRST. `who_shift_boundaries` cuts at a row the evidence
-    // behind it contradicts — a swap the log otherwise never dates. Its cuts are handed to
-    // `who_boundaries` as already-dated, so a disagreement between two rows that the row-level rule
-    // has just placed does not open a second, three-hours-wide boundary for the same swap.
+    // …then the two `/who` rules, narrow first. `who_shift_boundaries` cuts at a row the evidence
+    // behind it contradicts. Its cuts are handed to `who_boundaries` as already-dated, so a
+    // disagreement the row-level rule has just placed does not open a second, wider boundary for
+    // the same swap.
     let shifted = who_shift_boundaries(&observations, input.who_rows, &dated, observations[0].ts);
     let mut candidates = dated.clone();
     candidates.extend(shifted.clone());
@@ -909,12 +872,11 @@ pub fn build_intervals(input: &IntervalInput) -> Vec<ComboInterval> {
     dated_and_shifted.extend(shifted);
     candidates.extend(who_boundaries(input.who_rows, &dated_and_shifted));
     let placed = merge_boundaries(&candidates);
-    // THE TRIPWIRE LAW, MADE STRUCTURAL (JOS-287). `who_boundaries` stands down when something
-    // already-dated cuts between two disagreeing rows — but it is handed the CANDIDATES, and an
-    // inferred candidate can still be absorbed by the merge that follows (a `/who` cut cannot).
-    // Asking the same question again of the boundaries that actually SURVIVED closes that: every
-    // adjacent pair of rows that disagree ends up with a cut between them, so no slice can hold two
-    // contradictory rows. Nothing merges these — a row is ground truth at its timestamp, full stop.
+    // Asked a second time, now of the boundaries that actually SURVIVED. `who_boundaries` stands
+    // down when something already-dated cuts between two disagreeing rows, but it is handed the
+    // CANDIDATES, and an inferred candidate can still be absorbed by the merge that follows. This
+    // pass guarantees every disagreeing adjacent pair ends up with a cut between them, so no slice
+    // can hold two contradictory rows.
     let mut boundaries = placed.clone();
     boundaries.extend(who_boundaries(input.who_rows, &placed));
     boundaries.sort_by_key(|b| b.at);

@@ -1,20 +1,15 @@
 //! The Rust half of `npm run gen:protocol`.
 //!
-//! THE SOURCE OF TRUTH IS `protocol/schema/*.schema.json` (owner ruling 1a, JOS-464): neutral
-//! JSON Schema draft 2020-12, privileging neither language. This crate turns it into
-//! `engine/crates/protocol/src/generated.rs` with typify; the TypeScript twin comes from the same
-//! files via json-schema-to-typescript. Both artifacts are committed, and both are pinned by a
-//! test that regenerates and diffs — `tests/staleness.rs` here, `tests/protocolSchema.test.mts`
-//! on the other side.
+//! The source of truth is `protocol/schema/*.schema.json` — neutral JSON Schema draft 2020-12,
+//! privileging neither language. This crate turns it into `protocol/src/generated.rs` with typify;
+//! the TypeScript twin comes from the same files. Both artifacts are committed and pinned by a test
+//! that regenerates and diffs.
 //!
-//! THE BUNDLE STEP IS MIRRORED, NOT SHARED, and that is the one place the two generators could
-//! drift. typify refuses cross-FILE `$ref`s outright (`external references are not supported` is
-//! a panic), so both sides merge the topic files' `$defs` into a single document in which every
-//! `#/$defs/Name` pointer resolves. The merge is deliberately trivial — union the maps, reject a
-//! duplicate name, bolt on a fixed root — and the drift is caught where it would actually show:
-//! `tests/protocolSchema.test.mts` asserts that every definition in the schema appears as a type
-//! in BOTH generated files, so a definition dropped by either merge is a red suite, not a quiet
-//! hole in one language's types.
+//! The bundle step is mirrored, not shared, which is the one place the two generators could drift:
+//! typify panics on cross-file `$ref`s, so both sides merge the topic files' `$defs` into one
+//! document where every `#/$defs/Name` pointer resolves. The merge is deliberately trivial — union
+//! the maps, reject a duplicate name, bolt on a fixed root — and `tests/protocolSchema.test.mts`
+//! catches drift by asserting every definition appears as a type in both generated files.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -97,9 +92,9 @@ pub struct SchemaSource {
 
 /// Every `*.schema.json` in `dir`, name-sorted so the digest is order-independent.
 ///
-/// THE TEXT IS LF-NORMALIZED before anything measures it. This repo checks out with
-/// `core.autocrlf=true`, so the same commit has different on-disk bytes on the dev box and the CI
-/// runner; JOS-458 already paid for that lesson once, with a build reddened by a line ending.
+/// The text is LF-normalized before anything measures it: this repo checks out with
+/// `core.autocrlf=true`, so the same commit has different on-disk bytes on a dev box and a CI
+/// runner.
 pub fn read_schema_files(dir: &Path) -> Result<Vec<SchemaSource>> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .map_err(|e| CodegenError::Schema(format!("{}: {e}", dir.display())))?
@@ -190,9 +185,8 @@ pub fn bundle(files: &[SchemaSource]) -> Result<serde_json::Value> {
     }))
 }
 
-/// THE WIRE VERSION: a single integer, bumped on any breaking change, fatal on mismatch at hello.
-/// Exactly one schema file may declare it, so there is one place to edit and no way for two files
-/// to disagree.
+/// The wire version: one integer, bumped on any breaking change, fatal on mismatch at hello.
+/// Exactly one schema file may declare it, so two files cannot disagree.
 pub fn protocol_version(files: &[SchemaSource]) -> Result<i64> {
     let declaring: Vec<&SchemaSource> = files
         .iter()
@@ -234,7 +228,7 @@ fn banner(digest: &str) -> String {
     .join("\n")
 }
 
-/// The trailer: the one constant that is a FACT about the schema rather than a type in it.
+/// The trailer: the one constant that is a fact about the schema rather than a type in it.
 fn trailer(version: i64) -> String {
     [
         "/// THE WIRE VERSION. A single integer, bumped on any breaking change. A client presents it",
@@ -253,24 +247,21 @@ pub fn render_types(bundle: &serde_json::Value) -> Result<String> {
         .map_err(|e| CodegenError::Schema(format!("bundle is not a JSON Schema document: {e}")))?;
     let mut settings = typify::TypeSpaceSettings::default();
     settings.with_struct_builder(false);
-    // ORDERED MAPS. `Cells` and `ViewFilter` are open objects; a std `HashMap` would re-serialize
-    // them in an order that changes from process to process, which makes a wire capture
-    // unreproducible and a golden test a coin flip. A BTreeMap costs nothing at these sizes.
+    // Ordered maps: `Cells` and `ViewFilter` are open objects, and a `HashMap` would re-serialize
+    // them in a per-process order, making a wire capture unreproducible and a golden a coin flip.
     settings.with_map_type("::std::collections::BTreeMap");
-    // THE TWO REPLACEMENTS, and they are the same defect twice. typify lowers a MULTI-TYPE schema
-    // to an untagged enum whose number arm is `f64`, which turns `184220` into `184220.0` on the
-    // way back out — and both of these types carry counts.
+    // The two replacements are the same defect twice: typify lowers a multi-type schema to an
+    // untagged enum whose number arm is `f64`, turning `184220` into `184220.0` on the way back out,
+    // and both of these types carry counts.
     //
-    //   * `Cell` — see `protocol::cell` for the whole argument. Hand-written because it is also a
-    //     CLOSED type: it must refuse an object and an array.
-    //   * `ModuleState` (JOS-478) — a module's published state, whose shape is the MODULE's
-    //     contract and not the protocol's. There is nothing to hand-write: the definition says
-    //     "any JSON", and `serde_json::Value` is that sentence in Rust. It also keeps a state's
-    //     integers integral through a deserialize/serialize round trip, which the generated enum
-    //     would not.
+    //   * `Cell` — hand-written because it is also a closed type: it must refuse an object and an
+    //     array.
+    //   * `ModuleState` — a module's published state, whose shape is the module's contract and not
+    //     the protocol's. The definition says "any JSON", and `serde_json::Value` is that sentence
+    //     in Rust.
     //
-    // Every other type in the contract is generated. `tests/protocolSchema.test.mts` knows both
-    // names by exception, so a third replacement cannot be added without saying so out loud.
+    // Every other type is generated, and `tests/protocolSchema.test.mts` knows both names by
+    // exception, so a third replacement cannot be added silently.
     settings.with_replacement("Cell", "crate::cell::Cell", std::iter::empty());
     settings.with_replacement("ModuleState", "::serde_json::Value", std::iter::empty());
     let mut space = typify::TypeSpace::new(&settings);
@@ -288,10 +279,8 @@ pub fn render(dir: &Path) -> Result<String> {
     let digest = schema_digest(&files);
     let version = protocol_version(&files)?;
     let types = render_types(&bundle(&files)?)?;
-    // `#[allow(...)]` on the module contents rather than on the crate: generated code is not
-    // reviewable debt, so clippy's opinions about it are noise, but the hand-written modules
-    // beside it must still answer for themselves. `missing_docs` is allowed for the same reason —
-    // typify documents what the schema documents and nothing more.
+    // `#[allow(...)]` on the module contents rather than on the crate, so the hand-written modules
+    // beside it still answer for themselves.
     let body = format!(
         "{}\n#![allow(missing_docs, clippy::all, clippy::pedantic)]\n\n{}\n{}\n",
         banner(&digest),
@@ -303,11 +292,10 @@ pub fn render(dir: &Path) -> Result<String> {
 
 /// Format through the pinned toolchain's rustfmt, over stdin.
 ///
-/// It is a DIRECT exec of the rustfmt binary — never a shell, and above all never powershell.exe,
-/// which is the antivirus trigger this app spent a release eliminating and which nothing under
-/// `engine/` may reintroduce. A missing rustfmt is an error rather than a silent fallback: the
-/// committed artifact has to be byte-identical to what `cargo fmt` would produce, or its staleness
-/// test fails on formatting for a schema nobody touched.
+/// A direct exec of the rustfmt binary — never a shell, and never powershell.exe, which is an
+/// antivirus trigger nothing under `engine/` may reintroduce. A missing rustfmt is an error rather
+/// than a silent fallback: the committed artifact must be byte-identical to what `cargo fmt` would
+/// produce, or the staleness test fails on formatting for a schema nobody touched.
 fn rustfmt(source: &str) -> Result<String> {
     let mut child = Command::new("rustfmt")
         .args(["--edition", "2021", "--emit", "stdout", "--quiet"])

@@ -348,9 +348,14 @@ export type TelemetryErrorView = (typeof TELEMETRY_ERROR_VIEWS)[number]
  * kept — reports from every build before the deletion are in the error store and on the backend,
  * and a vocabulary that could not represent them would misread its own history.
  *
- * The `engine:*` four are the live ones (JOS-501), and they are what a BOOT-WINDOW crash has
- * instead of nothing. `breadcrumbs.ts noteEngineEdge` types its parameter as the same four
+ * The `engine:*` five are the live ones (JOS-501, JOS-519), and they are what a BOOT-WINDOW crash
+ * has instead of nothing. `breadcrumbs.ts noteEngineEdge` types its parameter as the same five
  * literals, so the closed-vocabulary property is enforced at both ends rather than only here.
+ *
+ * ADDING ONE IS A DEPLOY ORDER, not a free edit: `telemetryValidateError.ts` refuses a report
+ * carrying a kind this list does not hold, and the ingest lambda runs this same file. The server
+ * must be redeployed with a new member before a client that emits it ships, or the whole report is
+ * rejected rather than the crumb dropped. (`engine:cycled` is the JOS-519 addition.)
  */
 export const TELEMETRY_BREADCRUMB_KINDS = [
   'zone', 'loot', 'offer', 'trade', 'level', 'aaGain', 'aaSpend', 'aaPotion', 'aaActivate',
@@ -360,7 +365,7 @@ export const TELEMETRY_BREADCRUMB_KINDS = [
   'stanceChange', 'invocationChange', 'spellMemorize', 'spellForget', 'spellSet',
   'consider', 'poisonProc', 'poisonCoat', 'poisonDry',
   'epoch', 'unknown',
-  'engine:spawned', 'engine:ready', 'engine:live', 'engine:gone'
+  'engine:spawned', 'engine:ready', 'engine:live', 'engine:gone', 'engine:cycled'
 ] as const
 export type TelemetryBreadcrumbKind = (typeof TELEMETRY_BREADCRUMB_KINDS)[number]
 

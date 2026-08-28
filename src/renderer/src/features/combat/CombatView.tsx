@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, CircularProgress, Paper, Skeleton, Stack, Typography } from '@mui/material'
 import { useCombat } from './useCombat'
 import { CombatTimeline } from './CombatTimeline'
@@ -317,6 +317,11 @@ export default function CombatView({
   // WHERE YOU HAD DRILLED TO — persisted, so a tab switch (which unmounts this whole view) no
   // longer throws it away, and neither does a restart (JOS-116).
   const { drill, setDrill, isOpen, setOpen } = useDashboardDrill(view)
+  // THE CONTEXT VALUE IS MEMOIZED (JOS-510 item 3). Both members are already `useCallback`s from
+  // `useDrillMemory`, so the only thing that churned was the object literal wrapping them — and a
+  // context value with a fresh identity re-renders every consumer below it on EVERY render of this
+  // view, which under a live meter is 10 Hz through four levels of the meter tree.
+  const abilityExpand = useMemo(() => ({ isOpen, setOpen }), [isOpen, setOpen])
   // …and the ONE navigation that makes a drill meaningless — the direction — goes to level 1
   // first. Picking another fight no longer does (JOS-240): see `undrilling`.
   const { setSelection, setScope, setMode, focusFight } = undrilling(
@@ -396,7 +401,7 @@ export default function CombatView({
       {/* The expanded per-ability stats are remembered beside the drill they sit inside (JOS-116),
           and reach `combatShared.SkillBar` four levels down through this provider rather than
           through four components' props (abilityExpand.tsx says why). */}
-      <AbilityExpandProvider value={{ isOpen, setOpen }}>
+      <AbilityExpandProvider value={abilityExpand}>
         <CombatBody
           hydrating={hydrating}
           view={view}

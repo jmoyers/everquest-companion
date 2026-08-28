@@ -1,60 +1,35 @@
-//! `src/main/data/messageOverlay.ts` — the OBSERVED-MESSAGE OVERLAY, mined as the log folds.
+//! `src/main/data/messageOverlay.ts` — the observed-message overlay, mined as the log folds.
 //!
-//! The owner's directive: *augment the spell database with our own method of verifying variations
-//! of the cast messages for everything we encounter.* This is that method. As the buffs model folds
-//! the log (replay AND live), it feeds every player cast (`observe_cast`) and every candidate
-//! message line (`observe_message`) here; the overlay mines the association between a message and
-//! the spell the player was casting when it appeared, keyed by (messageText, spellKey), and counts
-//! how often each pairing recurs. From those counts it derives a per-message VERDICT:
+//! As the buffs model folds the log, every player cast (`observe_cast`) and every candidate message
+//! line (`observe_message`) is fed here. The overlay counts the association between a message and
+//! the spell being cast when it appeared, keyed by (messageText, spellKey), and derives a
+//! per-message verdict:
 //!
-//!   VERIFIED         — the message consistently follows exactly ONE spell (n ≥ 2). Seeing it proves
-//!                      that spell landed.
-//!   SHARED           — the message follows MULTIPLE spells ("You feel different." for every
-//!                      illusion, "You feel much faster." for four hastes). It can NOT name a spell
-//!                      on its own; resolution needs cast history.
-//!   CONTRADICTS-WIKI — the observed pairing differs from spells.json's `msg_*` for that spell. The
-//!                      wiki is known-wrong in places — Symbol of Pinzarn's real landing route is a
-//!                      heal line, not its listed message.
-//!   UNKNOWN          — too few observations to judge (a single spell, n < 2).
+//!   verified         — the message consistently follows exactly one spell (n >= 2), so seeing it
+//!                      proves that spell landed.
+//!   shared           — the message follows several spells ("You feel different." for every
+//!                      illusion), so it cannot name one on its own; resolution needs cast history.
+//!   contradicts-wiki — the observed pairing differs from spells.json's `msg_*`. The wiki is
+//!                      known-wrong in places: Symbol of Pinzarn's real landing route is a heal
+//!                      line, not its listed message.
+//!   unknown          — too few observations to judge.
 //!
-//! ── THE UNAMBIGUOUS-ANCHOR RULE IS WHAT MAKES A VERDICT WORTH ANYTHING ─────────────────────────
+//! A message is associated with a cast only when exactly one distinct spell was cast in the window.
+//! During a buff burst or heavy combat several casts share it and no message can honestly be
+//! attributed to any of them, so the observation is skipped.
 //!
-//! A message is associated with the recent cast ONLY when exactly one distinct spell was cast in
-//! the 6 s window. During a Quick Buff burst or heavy combat several casts share the window and no
-//! message can honestly be attributed to any one of them, so the observation is SKIPPED. A message
-//! that consistently follows a single-cast window really is that spell's message; a coincidental
-//! pairing never accumulates.
+//! Every count is filed under the source that produced it, one bucket per origin: `merge` files an
+//! import under its key, `begin_source(key)` discards that key's bucket and points subsequent
+//! observations at it, and `build` sums the buckets. That is what makes a re-fold replace a log's
+//! contribution instead of adding to it — a flat pile doubles the counts on every cold launch.
 //!
-//! ── EVERY COUNT IS FILED UNDER THE SOURCE THAT PRODUCED IT (JOS-231) ──────────────────────────
+//! Which bucket this fold writes into is unobservable in the snapshot: `build()` aggregates every
+//! bucket, and only `register()` — the persistence view, which no snapshot carries — tells them
+//! apart.
 //!
-//! The mining is a FOLD: it runs over the whole log at every launch and produces exactly the same
-//! counts from the same bytes. What it used to be SEEDED with was a single flat pile — the committed
-//! baseline plus the userData file the last session's identical fold had already written — so each
-//! cold launch added the log's observations to a snapshot that already contained them. MEASURED
-//! 22 → 44 → 88 across three launches, doubling forever, with every `n ≥ 2 ⇒ VERIFIED` verdict
-//! resting on counts that described how many times the app had STARTED.
-//!
-//! The fix is bookkeeping, not a filter: one bucket per origin. `merge` files an import under its
-//! key, `begin_source(key)` DISCARDS that key's bucket and points subsequent observations at it, and
-//! `build` SUMS the buckets. A re-fold replaces that log's contribution instead of adding to it.
-//!
-//! WHICH BUCKET THIS FOLD WRITES INTO IS UNOBSERVABLE IN THE SNAPSHOT, and that is worth saying
-//! plainly. `build()` aggregates every bucket, so the published overlay is the same whether the log
-//! is filed under `log` or under `Primitive@freeport`; only `register()` — the persistence view,
-//! which no snapshot carries — can tell them apart. `tests/bench/foldArm.mts` names no source, so
-//! this fold does not either, and the default bucket is the one the generator script and the unit
-//! tests use.
-//!
-//! ── THE TIE-BREAK IS CODEPOINT ORDER, AND IT WAS WRITTEN FOR THIS PORT (JOS-465) ───────────────
-//!
-//! `build()`'s sort decides the ARRAY order of `messages`, and an array's order is a claim the
-//! comparator checks. `String.prototype.localeCompare` answers from ICU: its order is a function of
-//! the host's locale and of the ICU data the Node build shipped with, so two machines can disagree
-//! and one machine can disagree with itself across a Node upgrade. The TS was moved to CODEPOINT
-//! order — "because the engine this ordering will one day be checked against compares Rust `str`s —
-//! UTF-8 bytewise, which is exactly codepoint order". So Rust's natural `Ord` on `&str` IS the
-//! comparator and no port of `byCodepoint` is needed. That claim is now checked rather than
-//! promised.
+//! Sorting is by codepoint order everywhere, never `localeCompare`, whose ICU answer varies with
+//! host locale and Node build. Rust's natural `Ord` on `&str` is UTF-8 bytewise, which is exactly
+//! codepoint order, so the comparator is the language's.
 
 use crate::jsmap::JsMap;
 use crate::spell_facts::{message_matches_other_suffix, SpellFacts};
@@ -65,23 +40,21 @@ use serde_json::{json, Value};
 /// Overlay schema version — bump to invalidate a stale on-disk snapshot.
 pub const OVERLAY_VERSION: i64 = 1;
 
-/// `OverlayCounts` — what a SEED carries: a message's text, its role, and per-spell counts.
-///
-/// It is the `merge` argument's shape written down, and the only thing a miner ever absorbs counts
-/// from. A VERDICT is never imported: it is derived, every time, from the summed buckets.
+/// `OverlayCounts` — what a seed carries: a message's text, its role, and per-spell counts. A
+/// verdict is never imported; it is derived, every time, from the summed buckets.
 pub type SeedMessage = (String, &'static str, Vec<(String, i64)>);
 
 /// The bucket observations land in when nobody named a source.
 pub const DEFAULT_SOURCE: &str = "log";
 
-/// The bucket the COMMITTED baseline's counts are filed under. Never a character id — a real one is
+/// The bucket the committed baseline's counts are filed under. Never a character id — a real one is
 /// `<Name>@<server>`.
 pub const BASELINE_SOURCE: &str = "baseline";
 
 /// How long after a cast a message line is attributed to it. Mirrors the landing window.
 const ASSOCIATION_WINDOW_MS: i64 = 6_000;
 
-/// Minimum observations before a message earns a non-UNKNOWN verdict.
+/// Minimum observations before a message earns a verdict other than unknown.
 const MIN_OBSERVATIONS: i64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -113,9 +86,9 @@ struct RecentCast {
     ts: i64,
 }
 
-/// Accumulated per-message association counts. `by_spell` is a JS `Map` keyed by canonical spell
-/// key, and its INSERTION order is read twice — `verdictFor` takes `spells[0]` off it unsorted (the
-/// one-spell branch is the only one that reaches that read) and `aggregate` walks it.
+/// Accumulated per-message association counts. `by_spell` is keyed by canonical spell key, and its
+/// insertion order is load-bearing: `verdict_for` reads the first entry unsorted and `aggregate`
+/// walks it.
 #[derive(Clone)]
 struct MessageRecord {
     text: String,
@@ -129,8 +102,8 @@ struct SpellCount {
     count: i64,
 }
 
-/// One message as `build()` publishes it. `wikiConflict` is absent for all but the contradictions —
-/// the golden was recorded through `JSON.stringify`, which drops an `undefined`.
+/// One message as `build()` publishes it. `wikiConflict` is omitted rather than null for all but
+/// the contradictions.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OverlayMessage {
@@ -157,32 +130,26 @@ struct WikiConflict {
     wiki_text: String,
 }
 
-// ── THE PERSISTENCE VIEW (JOS-496 item 3) ──────────────────────────────────────────────────────
-//
-// `register()` and the three shapes it answers in. It is the OTHER view of this miner and the two
-// are deliberately different animals: `build()` publishes the SERVED overlay — every bucket summed,
-// every verdict derived, no source key anywhere — and `register()` publishes the RAW COUNTS, filed
-// under the source that produced them, with no verdict at all. Which bucket a count came from is
-// unobservable in a snapshot and load-bearing in a register, because the key is the only thing that
-// lets `begin_source` replace a bucket instead of adding to it (JOS-231).
-//
-// A stored verdict would be a second opinion waiting to disagree with the derived one, and every one
-// of them would have to be recomputed when the catalog moved. So the register carries counts, the
-// file carries the register, and `build()` derives.
+// The persistence view: `register()` and the shapes it answers in. `build()` publishes the served
+// overlay — every bucket summed, every verdict derived, no source key — while `register()`
+// publishes raw counts filed under the source that produced them, with no verdict. The key is the
+// only thing that lets `begin_source` replace a bucket instead of adding to it. A stored verdict
+// would be a second opinion waiting to disagree with the derived one, and would need recomputing
+// whenever the catalog moved.
 
 /// One message's raw counts, as the register files them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlayMessageCounts {
     pub text: String,
     /// `'landing' | 'wearsOff'`. A `String` rather than the `&'static str` the miner holds because
-    /// this shape is also a READER of the app's file, and a borrowed lifetime cannot come off one.
+    /// this shape also reads the app's file, and a borrowed lifetime cannot come off one.
     pub role: String,
     pub spells: Vec<OverlaySpellCount>,
 }
 
-/// One spell's count under a message. The DISPLAY name, never the canon key: the key is derivable
-/// from the name and the name is not derivable from the key, so the file keeps the one that carries
-/// more (`add_counts` re-canonicalizes on the way back in).
+/// One spell's count under a message. The display name, never the canon key: the key is derivable
+/// from the name and not the reverse, so the file keeps the one that carries more (`add_counts`
+/// re-canonicalizes on the way back in).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlaySpellCount {
     pub spell: String,
@@ -215,16 +182,12 @@ pub struct MessageOverlayMiner {
     current: String,
     /// The most-recent cast(s) still inside the association window (newest last).
     recent_casts: Vec<RecentCast>,
-    /// THE NEWEST LOG INSTANT THIS MINER HAS OBSERVED, and the overlay's `updatedAt`.
-    ///
-    /// It used to be `new Date().toISOString()` — a WALL-CLOCK read inside a PUBLISHED fold
-    /// snapshot, found by folding identical bytes twice and diffing the results (JOS-208): the two
-    /// runs built their overlay milliseconds apart and disagreed on every fixture, over a field
-    /// describing nothing about either fold. "Current as of this instant in the log" is a statement
-    /// about the observations the overlay is made of. Zero before the first observation — a merged
-    /// baseline does NOT move it, because a merge carries counts and no instants.
+    /// The newest log instant this miner has observed, and the overlay's `updatedAt`. Never a wall
+    /// clock: it is a statement about the observations the overlay is made of, so two folds of the
+    /// same bytes agree. Zero before the first observation — a merged baseline carries counts and
+    /// no instants, so it does not move this.
     last_observed_ts: i64,
-    /// The catalog, for contradiction detection ONLY. An empty one is the TS's absent `db?.byKey`.
+    /// The catalog, for contradiction detection only. An empty one is the TS's absent `db?.byKey`.
     facts: SpellFacts,
 }
 
@@ -246,20 +209,19 @@ impl MessageOverlayMiner {
         self.sources.get_mut(key).expect("just inserted")
     }
 
-    /// START FOLDING `key`'s LOG — the whole of it, from the first byte (JOS-231). Whatever this
-    /// source contributed before is DISCARDED, because the fold that follows is about to state it
-    /// again. `Map.set` keeps an existing key's insertion position, so re-folding a seeded source
-    /// does not reorder the register; the open cast anchor is dropped too.
+    /// Start folding `key`'s log from the first byte. Whatever this source contributed before is
+    /// discarded, because the fold that follows is about to state it again. Re-inserting keeps the
+    /// existing key's position, so re-folding a seeded source does not reorder the register.
     pub fn begin_source(&mut self, key: &str) {
         self.sources.insert(key.to_string(), JsMap::new());
         self.current = key.to_string();
         self.recent_casts.clear();
     }
 
-    /// Merge imported counts INTO one bucket (additive WITHIN that bucket). `source_key` is what
+    /// Merge imported counts into one bucket, additive within that bucket. `source_key` is what
     /// `begin_source` needs in order to replace them when that origin is folded again — merging the
     /// baseline and a persisted character under one key would put the fold's own output back in the
-    /// pile it is seeded from, which is the JOS-231 defect.
+    /// pile it is seeded from, and the counts would double.
     pub fn merge(&mut self, counts: &[SeedMessage], source_key: &str) {
         let into = self.bucket(source_key);
         for (text, role, spells) in counts {
@@ -291,9 +253,9 @@ impl MessageOverlayMiner {
         });
     }
 
-    /// Record a candidate message line and associate it with the recent cast — but ONLY when the
-    /// anchor is UNAMBIGUOUS: exactly one distinct spell cast in the window (a recast counts as
-    /// one). See the header for why.
+    /// Record a candidate message line and associate it with the recent cast, but only when the
+    /// anchor is unambiguous: exactly one distinct spell cast in the window (a recast counts as
+    /// one).
     pub fn observe_message(&mut self, text: &str, ts: i64, role: &'static str) {
         self.expire(ts);
         if ts > self.last_observed_ts {
@@ -342,15 +304,12 @@ impl MessageOverlayMiner {
             .retain(|c| now - c.ts <= ASSOCIATION_WINDOW_MS);
     }
 
-    /// EVERY BUCKET'S COUNTS, SORTED — `register()`, what persistence writes and re-seeds from.
+    /// Every bucket's counts, sorted — what persistence writes and re-seeds from.
     ///
-    /// Three ordering claims, and they are not the same claim (`overlay_file.rs`'s header carries
-    /// the argument): `sources` in INSERTION order and deliberately unsorted, `messages` by
-    /// codepoint on `text`, `spells` by codepoint on `spell`. Rust's natural `&str` `Ord` is UTF-8
-    /// bytewise, which is exactly codepoint order, so the comparator is the language's — see this
-    /// module's header for why the TypeScript was moved off `localeCompare` to meet it.
+    /// Three separate ordering claims: `sources` in insertion order and deliberately unsorted,
+    /// `messages` by codepoint on `text`, `spells` by codepoint on `spell`.
     ///
-    /// `updatedAt` IS THE LOG'S CLOCK. See [`MessageOverlayMiner::last_observed_ts`].
+    /// `updatedAt` is the log's clock — see [`MessageOverlayMiner::last_observed_ts`].
     #[must_use]
     pub fn register(&self) -> OverlayRegister {
         let mut sources = Vec::with_capacity(self.sources.len());
@@ -421,7 +380,7 @@ impl MessageOverlayMiner {
         if total < MIN_OBSERVATIONS {
             return (Verdict::Unknown, None);
         }
-        // Exactly one spell, seen >= 2x: VERIFIED — unless it contradicts the wiki's `msg_*`.
+        // Exactly one spell, seen >= 2x: verified, unless it contradicts the wiki's `msg_*`.
         let Some(only) = rec.by_spell.values().next() else {
             return (Verdict::Verified, None);
         };
@@ -429,10 +388,10 @@ impl MessageOverlayMiner {
             return (Verdict::Verified, None);
         };
         if rec.role == "landing" {
-            // `landingVerdict`. A landing line can be the SELF form (msg_cast_on_you) OR the
-            // on-OTHER form (the wiki's "Someone <suffix>", the log naming the target). Matching
-            // EITHER is CONSISTENT with the wiki. Only a line matching neither — while the spell was
-            // unambiguously the anchor — is a genuine wiki inaccuracy (Symbol of Pinzarn).
+            // A landing line can be the self form (`msg_cast_on_you`) or the on-other form (the
+            // wiki's "Someone <suffix>", the log naming the target). Matching either is consistent
+            // with the wiki; only a line matching neither, while the spell was unambiguously the
+            // anchor, is a genuine wiki inaccuracy.
             if db_spell.msg_cast_on_you.as_deref() == Some(rec.text.as_str()) {
                 return (Verdict::Verified, None);
             }
@@ -441,9 +400,9 @@ impl MessageOverlayMiner {
                     return (Verdict::Verified, None);
                 }
             }
-            // The DB has a self message and we observed a DIFFERENT self-shaped line ⇒ a
-            // contradiction. NO self message at all ⇒ a newly VERIFIED landing message, a variation
-            // the wiki simply omits.
+            // The DB has a self message and a different self-shaped line was observed: a
+            // contradiction. No self message at all: a newly verified landing message, a variation
+            // the wiki omits.
             return match &db_spell.msg_cast_on_you {
                 Some(you) => (
                     Verdict::Contradicts,
@@ -515,9 +474,8 @@ impl MessageOverlayMiner {
         });
         json!({
             "version": OVERLAY_VERSION,
-            // THE LOG'S CLOCK, NOT THE MACHINE'S — see `last_observed_ts`. The parity harness
-            // strips this field from BOTH sides on `normalizeJson`'s precedent (it is a statement
-            // about the reader), so it is carried for the phase-3 consumer rather than for the bar.
+            // The log's clock, not the machine's — see `last_observed_ts`. The parity harness
+            // strips this field from both sides, so it exists for the consumer, not for the bar.
             "updatedAt": iso_utc(self.last_observed_ts),
             "messages": messages,
             "stats": { "verified": verified, "shared": shared, "contradictions": contradictions, "unknown": unknown },
@@ -525,7 +483,7 @@ impl MessageOverlayMiner {
     }
 }
 
-/// Add per-spell counts into a record, keyed canonically. THE ONE PLACE counts are combined —
+/// Add per-spell counts into a record, keyed canonically. The one place counts are combined:
 /// imports (`merge`) and the cross-bucket sum (`aggregate`) share it so they cannot drift.
 fn add_counts(rec: &mut MessageRecord, spells: &[(String, i64)]) {
     for (spell, count) in spells {
@@ -545,15 +503,11 @@ fn add_counts(rec: &mut MessageRecord, spells: &[(String, i64)]) {
 
 /// `new Date(ms).toISOString()` — UTC, always three fractional digits, always the `Z` suffix.
 ///
-/// WRITTEN OUT RATHER THAN PULLED IN. `eqlog` owns the calendar because the PARSER needs a zone
-/// database to read a `[Wed Aug 19 16:21:54 2026]` stamp; this is the other direction — a UTC
-/// instant back into the one format `Date.prototype.toISOString` produces — and it needs no zone
-/// and no table. Adding a date crate to this manifest to write twenty-four characters would be a
-/// dependency (and a lockfile edit, with three workers in this crate) bought for nothing.
+/// Written out rather than pulling in a date crate: this direction needs no zone database and no
+/// table, so twenty-four characters would not be worth a dependency.
 ///
-/// The civil-from-days algorithm is Howard Hinnant's, the same one every date library uses. Days
-/// are floored rather than truncated so a pre-epoch instant is still correct; the miner's own value
-/// is 0 until the first observation, which is the case the fold actually exercises.
+/// The civil-from-days algorithm is Howard Hinnant's. Days are floored rather than truncated so a
+/// pre-epoch instant is still correct.
 fn iso_utc(ms: i64) -> String {
     let days = ms.div_euclid(86_400_000);
     let rem = ms.rem_euclid(86_400_000);
@@ -581,11 +535,10 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// THE COMMITTED BASELINE, `include_str!`d exactly as `eqlog` does with `spells.json`: one copy of
-/// the file in the repo, two readers of it, and a re-generation reaches both at once. This is the
-/// same seed `tests/bench/foldArm.mts` passes — `overlays: [BASELINE]`, the baseline alone, because
-/// the user's own mined overlay lives in Electron's userData and a golden recorded against a
-/// machine-local file would not be a fact about the log.
+/// The committed baseline, `include_str!`d: one copy of the file in the repo, two readers, and a
+/// re-generation reaches both at once. The baseline alone is what the parity harness seeds, because
+/// the user's own mined overlay lives in userData and a golden recorded against a machine-local
+/// file would not be a fact about the log.
 const BASELINE_JSON: &str = include_str!("../../../../src/main/data/messageOverlay.baseline.json");
 
 /// Parse the committed baseline into `merge`'s argument shape.
@@ -620,10 +573,8 @@ pub fn baseline_counts() -> Vec<SeedMessage> {
 }
 
 /// The role vocabulary is closed at two values; anything else in the file would be a shape the
-/// serializer could not round-trip, so it is named rather than passed through.
-///
-/// `pub(crate)` since JOS-496: the USER register is read through it too, and a second mapping of
-/// two strings is a second place for the two to disagree about what an unknown role means.
+/// serializer could not round-trip, so it is named rather than passed through. The user register
+/// reads through this too, so there is one answer to what an unknown role means.
 pub(crate) fn role_of(role: &str) -> &'static str {
     match role {
         "wearsOff" => "wearsOff",

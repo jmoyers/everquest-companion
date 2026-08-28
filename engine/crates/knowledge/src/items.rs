@@ -1,53 +1,41 @@
-//! `main/itemLookup.ts` — "what's this lore/quest item for", minus the network.
+//! "What's this lore/quest item for", minus the network.
 //!
-//! ── THE THREE SOURCES, AND WHICH ONE IS PRIMARY ────────────────────────────────────────────────
+//! Three sources, in order:
 //!
-//! 0. THE COMMITTED ITEM DATABASE IS PRIMARY (`src/main/data/items.json`, 11,288 pages, 8.75 MB).
-//!    A DB hit short-circuits everything after it — no overlay read, no miss, no announcement.
-//! 1. LOCAL-FIRST CROSS-REFS, merged into whatever answers: the scraped Plane of Sky dataset
-//!    (posky.json), which carries per-item island/giver detail no item page states, and the scraped
-//!    wiki QUEST CATALOG (quests.json), which is built from the quest pages rather than the item
-//!    pages and is therefore the answer for every classic turn-in item whose own page never listed a
-//!    quest.
-//! 2. THE RUNTIME OVERLAY takes the place of the userData cache AND the wiki fallback: a name the
-//!    corpus lacks is a MISS, the app fetches it (boundary verdict 5 — the wiki fetch stays app-side
-//!    in v1 and the engine ships without a network stack), and `knowledge.define` pushes the answer
-//!    back here. See `lib.rs`.
+//! 0. THE COMMITTED ITEM DATABASE is primary. A DB hit short-circuits everything after it — no
+//!    overlay read, no miss, no announcement.
+//! 1. LOCAL CROSS-REFS, merged into whatever answers: the scraped Plane of Sky dataset, which
+//!    carries per-item island/giver detail no item page states, and the scraped wiki quest catalog,
+//!    which is built from the QUEST pages and is therefore the answer for every turn-in item whose
+//!    own page never listed a quest.
+//! 2. THE RUNTIME OVERLAY, where a `knowledge.define` lands after the app has fetched a miss.
 //!
-//! ── THE JSON IS READ, NOT COPIED, AND IT IS READ ONCE ──────────────────────────────────────────
+//! The JSON is `include_str!`d out of the app's own data directories — one copy of each file in the
+//! tree, so a re-scrape reaches every reader at once — and parsed behind a `OnceLock`, because an
+//! attach must not pay for a corpus no client has queried (the item corpus alone measured ~42 ms of
+//! parse and a ~20 MB retained graph).
 //!
-//! `include_str!` straight out of `src/main/data/`, exactly as `eqlog` reads `spells.json` and
-//! `fold` reads `mobs.json` — one copy of each file in the tree, so a re-scrape reaches every reader
-//! at once. The parse is behind a `OnceLock` for the same reason the three TypeScript indexes are
-//! built on first use (JOS-371, measured there at 41.8 ms of parse for a graph nothing had asked
-//! anything of yet): an attach must not pay for a corpus no client has queried.
-//!
-//! ── THE RECORD IS THE `ItemKnowledge` FIELDS AND IS NOT RE-TYPED ───────────────────────────────
-//!
-//! `itemsDb.ts` says it in as many words: "A record is *literally* the `ItemKnowledge` fields
-//! `parseItemWikitext` produces — no projection, no renaming, so the lookup path needs no
-//! translation layer." Mirroring twenty-odd fields (including a nested stat block, recipe lists and
-//! craft trees) into Rust structs would be a translation layer whose only job is to lose a field
-//! the day the scraper grows one. The entry is carried as `serde_json::Value` and the only thing
-//! this file does to it is `knowledgeFromDb`'s defaults — which is the one place the compact form
-//! is expanded over there too.
+//! A record is LITERALLY the scraper's own fields: no projection, no renaming, no translation layer.
+//! Mirroring twenty-odd fields into Rust structs would only lose one the day the scraper grows it,
+//! so the entry stays a `serde_json::Value` and the sole thing done to it is restoring the compact
+//! form's omitted defaults.
 
 use serde_json::{json, Map, Value};
 
 use crate::names::{item_key, normalize_item_name, quest_item_key};
 
-/// The COMMITTED wiki item database — the PRIMARY source.
+/// The committed wiki item database — the primary source.
 const ITEMS_JSON: &str = include_str!("../../../../src/main/data/items.json");
-/// The scraped Plane of Sky dataset — LOCAL 1 for an item's quest uses.
+/// The scraped Plane of Sky dataset — local source 1 for an item's quest uses.
 const POSKY_JSON: &str = include_str!("../../../../src/renderer/src/data/eqlegends/posky.json");
-/// The scraped wiki quest catalog — LOCAL 2, and the item→quest index below is built from it.
+/// The scraped wiki quest catalog — local source 2; the item→quest index below is built from it.
 const QUESTS_JSON: &str = include_str!("../../../../src/renderer/src/data/eqlegends/quests.json");
 
-/// How many reward names a `required` use carries — `MAX_ATTACHED_REWARDS`.
+/// How many reward names a `required` use carries.
 const MAX_ATTACHED_REWARDS: usize = 4;
 
-/// The committed corpus, keyed by [`item_key`] — the file's `items` map is ALREADY that index
-/// (`itemsDb.ts` writes those keys), so there is nothing to build.
+/// The committed corpus, keyed by [`item_key`]. The file's `items` map is already that index, so
+/// there is nothing to build.
 pub type ItemDb = Map<String, Value>;
 
 /// Parse `items.json` and hand back its `items` map.
@@ -63,12 +51,11 @@ pub fn load_item_db() -> ItemDb {
     }
 }
 
-/// item key → the quests that use it, from BOTH local catalogs, in the order `localKnowledge`
-/// consults them: posky FIRST (it carries the island/giver detail), then the quest catalog, deduped
-/// by quest identity.
+/// item key → the quests that use it, from both local catalogs: posky FIRST (it carries the
+/// island/giver detail), then the quest catalog, deduped by quest identity.
 pub type QuestUseIndex = std::collections::HashMap<String, Vec<Value>>;
 
-/// `poskyByItem()` — index the Plane of Sky dataset by item key → the quests that require it.
+/// Index the Plane of Sky dataset by item key → the quests that require it.
 #[must_use]
 fn posky_by_item() -> QuestUseIndex {
     let file: Value = serde_json::from_str(POSKY_JSON).expect("posky.json is not readable");
@@ -76,7 +63,7 @@ fn posky_by_item() -> QuestUseIndex {
     for q in file["quests"].as_array().unwrap_or(&Vec::new()) {
         let class_name = q["className"].as_str().unwrap_or_default();
         let name = q["name"].as_str().unwrap_or_default();
-        // De-dupe by quest IDENTITY (className + name) — the same item appears under many quests.
+        // De-dupe by quest identity (className + name): the same item appears under many quests.
         let quest = format!("{class_name} · {name}");
         for it in q["items"].as_array().unwrap_or(&Vec::new()) {
             let Some(item) = it["name"].as_str() else {
@@ -96,13 +83,12 @@ fn posky_by_item() -> QuestUseIndex {
     built
 }
 
-/// `questItemIndex.ts buildQuestItemIndex` — the quest catalog, indexed item-first, from BOTH sides
-/// of a quest: its turn-in/collectible items (`required`) and the items it hands out (`reward`).
+/// The quest catalog, indexed item-first, from both sides of a quest: its turn-in/collectible items
+/// (`required`) and the items it hands out (`reward`).
 ///
-/// A `required` use also carries the quest's REWARD names, which closes the one-hop gap the card
-/// needs — "you looted a Guard Bracelet; it's a turn-in for Corrupt Guards, which pays a Bunker
-/// Battle Blade" — without a second lookup. Only a TURN-IN has an outcome to name: a reward-role use
-/// IS the outcome, and listing the quest's rewards there would repeat the item back to itself.
+/// A `required` use also carries the quest's REWARD names, so the card can say what a turn-in pays
+/// without a second lookup. Only a turn-in has an outcome to name: a reward-role use IS the outcome,
+/// and listing the quest's rewards there would repeat the item back to itself.
 #[must_use]
 fn quests_by_item(quests: &[Value]) -> QuestUseIndex {
     let mut by_item: QuestUseIndex = QuestUseIndex::new();
@@ -153,8 +139,8 @@ fn quests_by_item(quests: &[Value]) -> QuestUseIndex {
     by_item
 }
 
-/// The scraped quest catalog's `quests` array. Read once and handed to both index builders — the
-/// mob side (`relatedNpcs`) and the item side — because it is one 596 KB parse.
+/// The scraped quest catalog's `quests` array. Read once and handed to both index builders, the mob
+/// side and the item side, because it is one parse.
 #[must_use]
 pub fn load_quests() -> Vec<Value> {
     let file: Value = serde_json::from_str(QUESTS_JSON).expect("quests.json is not readable");
@@ -176,8 +162,8 @@ impl LocalQuests {
         }
     }
 
-    /// `localKnowledge(name)` — the Plane of Sky dataset FIRST, then the wiki quest catalog, deduped
-    /// by quest identity. Empty when neither local source knows this item (never an empty claim).
+    /// The Plane of Sky dataset FIRST, then the wiki quest catalog, deduped by quest identity.
+    /// Empty when neither local source knows this item — never an empty claim.
     #[must_use]
     pub fn for_item(&self, name: &str) -> Vec<Value> {
         let key = item_key(name);
@@ -200,10 +186,10 @@ impl LocalQuests {
     }
 }
 
-/// `questIdentity` — quest identity for de-duping across sources: drop a `Class · ` prefix, fold the
-/// pipes and whitespace runs, lowercase.
+/// Quest identity for de-duping across sources: drop a `Class · ` prefix, fold the pipes and
+/// whitespace runs, lowercase.
 fn quest_identity(s: &str) -> String {
-    // `/^[^·]*·\s*/` — everything up to and including the FIRST `·`, when there is one.
+    // Everything up to and including the FIRST `·`, when there is one.
     let after = match s.find('·') {
         Some(at) => &s[at + '·'.len_utf8()..],
         None => s,
@@ -216,13 +202,12 @@ fn quest_identity(s: &str) -> String {
         .to_lowercase()
 }
 
-/// `knowledgeFromDb(entry)` with `name` overridden by what the CALLER asked for.
+/// A DB entry expanded into a knowledge record, with `name` overridden by what the CALLER asked for.
 ///
-/// The compact form omits `lore: false`, `quest: false` and `questUses: []` (pure weight for 11k
-/// records) and stores `name` only when the page's `|itemname` differs from its title. All three
-/// defaults are restored HERE, in one place, so no caller ever sees the compact form. `name` is the
-/// requested DISPLAY name because every other path returns what the caller asked for, and a DB hit
-/// must not be the one answer that renames the player's item.
+/// The committed form omits `lore: false`, `quest: false` and `questUses: []` as pure weight across
+/// thousands of records. All three defaults are restored here, in one place, so no caller sees the
+/// compact form. `name` is the requested display name, because a DB hit must not be the one answer
+/// that renames the player's item.
 #[must_use]
 pub fn knowledge_from_db(entry: &Value, display: &str) -> Value {
     let mut out = entry.clone();
@@ -236,13 +221,12 @@ pub fn knowledge_from_db(entry: &Value, display: &str) -> Value {
     out
 }
 
-/// `mergeLocal(base, local)` — merge the LOCAL associations into a knowledge record. Local wins on
-/// identity, so an item page's own `|relatedquests` links only ADD quests we did not know.
+/// Merge the LOCAL associations into a knowledge record. Local wins on identity, so an item page's
+/// own related-quest links only ADD quests we did not know.
 ///
-/// The de-dupe compares with the class prefix stripped and matches when one normalized name
-/// CONTAINS the other: posky labels a quest `Class · Quest Name` where the name often already
-/// carries the class ("Paladin · Paladin Test of Love") while a wiki link label is the bare
-/// "Paladin Test of Love".
+/// The de-dupe strips the class prefix and matches when one normalized name CONTAINS the other:
+/// posky labels a quest `Class · Quest Name` where the name often already carries the class
+/// ("Paladin · Paladin Test of Love"), while a wiki link label is the bare "Paladin Test of Love".
 #[must_use]
 pub fn merge_local(base: Value, local: &[Value]) -> Value {
     if local.is_empty() {
@@ -268,13 +252,11 @@ pub fn merge_local(base: Value, local: &[Value]) -> Value {
 
 /// The record for a name no committed source and no overlay entry carries.
 ///
-/// `offline: true` RATHER THAN `notFound: true`, and the difference is law 1 at this seam. Over
-/// there `notFound` means "the wiki lookup RAN and found no page" — a real negative, cached for
-/// seven days. This engine has no network stack at all (boundary verdict 5), so it has not run any
-/// lookup and cannot make that claim; `offline` is the app's own word for "the wiki could not be
-/// consulted — local sources may still have answered", which is exactly true here and is the state
-/// the renderer already treats as retryable. The retry is the `knowledgeMiss` frame: the app fetches
-/// and pushes the answer back, and the next lookup is a hit.
+/// `offline: true` rather than `notFound: true` (law 1). `notFound` means "the wiki lookup RAN and
+/// found no page", a real negative; this engine has no network stack, so it ran no lookup and cannot
+/// claim one. `offline` means "the wiki could not be consulted, local sources may still have
+/// answered", which is exactly true and is the state the renderer treats as retryable — and the
+/// retry is the `knowledgeMiss` frame.
 #[must_use]
 pub fn unanswered(display: &str, local: &[Value]) -> Value {
     merge_local(

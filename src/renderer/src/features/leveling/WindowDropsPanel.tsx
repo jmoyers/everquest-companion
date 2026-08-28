@@ -21,10 +21,11 @@
 // tab on the navigation stack — so the drill's Back says "Back to Leveling" and returns here
 // (JOS-43: one mechanism, never a per-view `cameFrom` prop).
 
-import { type JSX, useMemo } from 'react'
+import { type JSX, memo, useMemo, useRef } from 'react'
 import { Box, Link, Paper, Stack, Typography } from '@mui/material'
 import { windowItemRows, type WindowItemRow } from '@shared/lootRates'
 import { formatDropRate } from '../../lib/formatRate'
+import { useWindowedRows } from '../../lib/useWindowedRows'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
 import { useLootHistory } from '../loot/useLootHistory'
 import { basisRead, pickRate, type BasisRead } from '@shared/rateBasis'
@@ -70,7 +71,16 @@ function useScopedDrops(scope: ScopedStats): WindowItemRow[] {
   )
 }
 
-function DropRow({
+/**
+ * ONE ROW's height in px — FIXED since JOS-511 item 5, which is what lets the list be windowed.
+ *
+ * It is what the row already measured (a 13px name line inside `py: 0.35`), written down rather
+ * than inferred: `useWindowedRows` reserves the un-mounted rows' height with two spacers, and a
+ * spacer can only be right if every row really is this tall.
+ */
+const DROP_ROW_H = 26
+
+const DropRow = memo(function DropRow({
   row,
   read,
   onOpenItem
@@ -82,7 +92,13 @@ function DropRow({
   const perHour = pickRate(read, row.dropsPerHourActive, row.dropsPerHourWall)
   const rate = perHour == null ? NONE : formatDropRate(perHour)
   return (
-    <Stack direction="row" spacing={1} alignItems="baseline" sx={{ py: 0.35 }} data-testid="leveling-drop-row">
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{ height: DROP_ROW_H }}
+      data-testid="leveling-drop-row"
+    >
       <Box sx={{ flexGrow: 1, minWidth: 0 }}>
         {onOpenItem ? (
           <Link
@@ -122,7 +138,7 @@ function DropRow({
       </Typography>
     </Stack>
   )
-}
+})
 
 /**
  * The panel's ceiling in px — about eighteen rows, which is the "generous, not a porthole" the
@@ -135,9 +151,18 @@ const DROPS_MAX_H = 520
 export function WindowDropsPanel({ scope, onOpenItem }: WindowDropsPanelProps): JSX.Element {
   const rows = useScopedDrops(scope)
   // ONE basis read for the panel (JOS-288): the caption's span and every row's denominator are the
-  // same number, and the just-arrived gate fires once for all of them.
+  // same number, and the just-arrived gate fires once for all of them. MEMOIZED since JOS-511 item
+  // 3: it is a fresh object, it is a prop on every row, and it decides nothing per render.
   const { basis } = useRateBasis()
-  const read = basisRead(basis, scope.stats)
+  const read = useMemo(() => basisRead(basis, scope.stats), [basis, scope])
+  // THE LIST IS WINDOWED (JOS-511 item 5), and this is the one panel on the tab where that is the
+  // right answer rather than the forbidden one: it ALREADY owns a scroller by an owner-sanctioned
+  // exception (`DROPS_MAX_H` below states the argument), so windowing adds no porthole — it only
+  // stops mounting the rows the porthole was already hiding. 641 distinct looted item names in the
+  // owner's log, all of which the `All` slice legitimately asks for, were 641 mounted Stacks with a
+  // Link each; what is mounted now is the slice in view plus the hook's overscan.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const win = useWindowedRows({ count: rows.length, rowHeight: DROP_ROW_H, scrollRef })
   return (
     <Paper
       variant="outlined"
@@ -176,10 +201,14 @@ export function WindowDropsPanel({ scope, onOpenItem }: WindowDropsPanelProps): 
       )}
       {/* The list owns the scroll, and only once it has outgrown the ceiling above — a long
           window really can hold hundreds of distinct items (641 measured). */}
-      <Box sx={{ minHeight: 0, overflowY: 'auto', pr: 0.75 }} data-testid="leveling-drops-list">
-        {rows.map((r) => (
+      <Box ref={scrollRef} sx={{ minHeight: 0, overflowY: 'auto', pr: 0.75 }} data-testid="leveling-drops-list">
+        {/* The two spacers reserve the un-mounted rows' height, so the scrollbar describes the whole
+            list and not just the slice — see `useWindowedRows`. */}
+        <Box sx={{ height: win.topPad }} />
+        {rows.slice(win.start, win.end).map((r) => (
           <DropRow key={r.key} row={r} read={read} onOpenItem={onOpenItem} />
         ))}
+        <Box sx={{ height: win.bottomPad }} />
       </Box>
     </Paper>
   )

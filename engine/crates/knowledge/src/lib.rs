@@ -1,61 +1,24 @@
-//! ============================================================================
-//! knowledge — THE COMMITTED CORPORA, ENGINE-SIDE (JOS-459 surface 5; JOS-486).
-//! ============================================================================
+//! The committed corpora, engine-side: the item, mob, quest and Plane of Sky datasets the app ships,
+//! indexed once and queried on demand behind `knowledge.item/mob/spell/search`.
 //!
-//! The app has shipped four scraped, committed datasets in its MAIN bundle since long before the
-//! engine existed — `items.json` (8.75 MB, 11,288 item pages), `mobs.json` (3.2 MB, 7,866 mob
-//! pages), `quests.json` (905 quests) and `posky.json` — plus a fifth, `spells.json`, which the
-//! engine's parser has always held. Owner ruling 2 makes the corpora the engine's problem and the
-//! design's surface 5 is what that looks like on the wire: `knowledge.item/mob/spell/search`,
-//! indexed once, queried on demand.
+//! THE WIKI FETCH IS NOT HERE. The engine ships without a network stack, so resolution is:
 //!
-//! ── WHAT THIS CRATE IS, IN ONE SENTENCE ────────────────────────────────────────────────────────
+//!   1. the committed corpus, which answers the overwhelming majority and short-circuits the rest;
+//!   2. the runtime overlay — answers the app has already fetched and pushed back with
+//!      `knowledge.define`;
+//!   3. a MISS, recorded here, drained at a boundary and announced as a `knowledgeMiss` frame. The
+//!      app fetches under its own scrape throttle and cooldown, and pushes the answer in.
 //!
-//! `main/itemLookup.ts` + `main/mobLookup.ts` and the six pure files they are built out of
-//! (`itemsDb`, `questItemIndex`, `mobLookupLocal`, `mobAliases`, `mobDropEra`, and the own-loot half
-//! of `mobLookupParse`), ported, with the NETWORK REMOVED and a stream frame in its place.
+//! Each name is announced AT MOST ONCE per process: a stacked loot burst probes one name many times
+//! and the app must not be asked to fetch it many times.
 //!
-//! ── THE ONE ARCHITECTURAL CHANGE: THE WIKI FETCH BECOMES A MISS ────────────────────────────────
+//! Every index is built on first use. `include_str!` puts the bytes in the binary and nothing is
+//! parsed until something asks, because an attach must not pay for a corpus no client has queried.
 //!
-//! Boundary verdict 5: "Item/mob knowledge caches + the ownLoot index: engine-owned… The wiki FETCH
-//! stays app-side in v1 — app fetches on an engine miss-event and pushes the result in — so the
-//! engine ships without a network stack. Scrape throttles preserved."
-//!
-//! So the three-step resolution over there (committed DB → userData cache → politely-throttled wiki
-//! call) becomes three steps here with the third one inverted:
-//!
-//!   1. THE COMMITTED CORPUS, which answers the overwhelming majority and short-circuits the rest.
-//!   2. THE RUNTIME OVERLAY, which is what the userData cache was: answers the app has already
-//!      fetched and pushed back with `knowledge.define`.
-//!   3. A MISS — recorded here, drained by whoever owns a boundary (the ingest at its fold
-//!      boundary, the world after an op), and announced connection-wide as a `knowledgeMiss` frame.
-//!      The app fetches, obeys its own 150 ms spacing and its own `Retry-After` cooldown (AGENTS.md
-//!      "Scraper etiquette" is a LAW and it stays where the socket is), and pushes the answer in.
-//!
-//! EACH NAME IS ANNOUNCED AT MOST ONCE PER PROCESS. A stacked loot burst probes one name many times
-//! and the app must not be asked to fetch it many times; this is the engine's half of the etiquette
-//! and it is the same job `probing` does over there.
-//!
-//! ── EVERY INDEX IS BUILT ON FIRST USE ──────────────────────────────────────────────────────────
-//!
-//! `include_str!` puts the bytes in the binary; nothing is PARSED until something asks. That is the
-//! same call `itemLookup.ts` made and measured (JOS-371: the corpus is 41.8 ms of parse and a
-//! ~20.4 MB retained graph, and its three derived indexes were being charged to `DATA_READY_MS` for
-//! a service nothing had asked anything of yet). Here it matters for a different reason with the
-//! same shape: an ATTACH must not pay for a corpus no client has queried, because an attach is on
-//! the path of the one thing this whole program exists to make fast.
-//!
-//! ── WHAT IS NOT HERE, BY NAME ──────────────────────────────────────────────────────────────────
-//!
-//! `knowledge.spell` answers off `eqlog`'s effective spell DB — the committed scrape with removals,
-//! derived durations and corrections applied — and states exactly the fields that DB carries. It
-//! does NOT carry the JOIN half of `spellDetail.ts`: the derived effect classes, the rank lineage,
-//! and the metrics read through `spellMetricsAt` at a gain level, at a mote rank and with worn
-//! focus. Those need three inputs this engine does not have yet — the parsed `spells_us.txt` client
-//! table (boundary verdict 7, unbuilt), the observed-rank module's join, and the planner's worn-focus
-//! reading — and half a card is a wrong answer wearing a right one's clothes. It is a NAMED GAP for
-//! the spell-surface ticket, stated in the schema beside the op, exactly as `earlyWarnSec` is named
-//! in the alert evaluator.
+//! `knowledge.spell` answers off `eqlog`'s effective spell DB and states exactly the fields that DB
+//! carries. It deliberately does NOT carry the derived effect classes, the rank lineage or the
+//! focus/level-dependent metrics: those need inputs this engine does not have, and half a card is a
+//! wrong answer wearing a right one's clothes. A named gap, stated in the schema beside the op.
 
 pub mod items;
 pub mod mobs;
@@ -77,32 +40,24 @@ use names::item_key;
 
 /// The two corpora a `knowledge.define` may push into, and the two a miss may name.
 ///
-/// SPELLS ARE NOT ONE OF THEM, and the asymmetry is honest rather than an omission: the item and mob
-/// corpora have an app-side FETCHER behind them (`itemLookup`/`mobLookup` resolve a wiki page on
-/// demand), so a name they lack is a question somebody can answer. The spell catalog has no live
-/// fallback anywhere in this app — it is regenerated by `npm run scrape:spells` and committed — so a
-/// spell the DB lacks is not a miss, it is a spell that does not exist as far as this build is
-/// concerned. Announcing it would ask the app to do something it has no code for.
+/// Spells are not one of them. The item and mob corpora have an app-side FETCHER behind them, so a
+/// name they lack is a question somebody can answer; the spell catalog is committed with no live
+/// fallback anywhere in the app, so announcing a missing spell would ask the app to do something it
+/// has no code for.
 pub const FETCHABLE_DOMAINS: &[&str] = &["item", "mob"];
 
-/// How many hits `knowledge.search` will return when the caller names no limit, and the most it will
-/// return however large a limit it names.
+/// How many hits `knowledge.search` returns when the caller names no limit, and the most it returns
+/// however large a limit it names.
 ///
-/// A CAP RATHER THAN A PAGE. Search is a type-ahead: the answer is read by a human scanning a short
-/// list, and a client that wanted the 4,000 items matching "of" would be asking the wrong question.
-/// The window/offset machinery belongs to `view.subscribe`, where a list is the product.
+/// A cap rather than a page: search is a type-ahead read by a human scanning a short list. The
+/// window/offset machinery belongs to `view.subscribe`, where a list is the product.
 pub const SEARCH_DEFAULT_LIMIT: usize = 20;
 /// See [`SEARCH_DEFAULT_LIMIT`].
 pub const SEARCH_MAX_LIMIT: usize = 100;
 
-/// THE PROCESS'S ONE CORPUS.
-///
-/// One instance, shared by the ingest thread (the fold's own probes, through
-/// `fold::knowledge::Knowledge`) and by every connection thread (the `knowledge.*` ops). That is
-/// boundary verdict 5's "the mutual dependency dissolves in-process", literally: over there the
-/// consider module and `mobLookup` had to be wired to each other through an injected singleton
-/// because one owned the loot index and the other owned the catalog. Here there is one corpus, one
-/// overlay and one miss ledger, and the loot index is read through a seam rather than shared.
+/// The process's one corpus: one instance shared by the ingest thread (the fold's own probes) and by
+/// every connection thread (the `knowledge.*` ops). One overlay, one miss ledger, and the loot index
+/// read through a seam rather than shared.
 #[derive(Default)]
 pub struct Corpus {
     items: OnceLock<Map<String, Value>>,
@@ -114,7 +69,7 @@ pub struct Corpus {
     overlay: RwLock<HashMap<&'static str, HashMap<String, Value>>>,
     /// Names this process could not answer, waiting to be announced.
     pending: Mutex<Vec<Miss>>,
-    /// Names already announced — the at-most-once law. See the crate header.
+    /// Names already announced — the at-most-once law.
     announced: Mutex<HashSet<(String, String)>>,
 }
 
@@ -127,8 +82,8 @@ pub fn shared() -> Arc<Corpus> {
 }
 
 impl Corpus {
-    /// A fresh, unshared corpus. For tests that want their own overlay and miss ledger; the indexes
-    /// themselves are still parsed per instance, which is why production uses [`shared`].
+    /// A fresh, unshared corpus, for tests that want their own overlay and miss ledger. The indexes
+    /// are parsed per instance, which is why production uses [`shared`].
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -155,29 +110,18 @@ impl Corpus {
         self.mob_quests.get_or_init(|| quests_by_mob(self.quests()))
     }
 
-    /// TAKE ONE PUSHED ANSWER — `knowledge.define`.
+    /// Take one pushed answer — `knowledge.define`.
     ///
-    /// ── WHY THIS COMMAND IS NOT A FULL-SET REPLACE, STATED RATHER THAN SLIPPED IN ──────────────
+    /// Every other `*.define` carries the WHOLE set; this one cannot, because the set is the wiki:
+    /// unbounded, not owned by the app, and learned one entry at a time in answer to one miss.
     ///
-    /// The cutover ledger's command law is that a `*.define` carries the WHOLE set: replayable,
-    /// order-collapsing, hash-friendly for ruling 18's cache key. The five families that obey it are
-    /// user PREFERENCES — a rule list, a watch list — which are small, bounded, and owned by a store
-    /// that can restate them.
+    /// It keeps the part of that law the law is for: idempotent and order-independent per key, so a
+    /// crash-respawn stays trivial (the overlay is empty, every name misses again, the app answers
+    /// again) and the input is still hash-friendly as a set of (key, entry) pairs. What it gives up
+    /// is DELETE, which nothing asks for.
     ///
-    /// This one cannot be that shape and saying so is cheaper than pretending. The set is the WIKI:
-    /// unbounded, not owned by the app, and learned one entry at a time in answer to one miss at a
-    /// time. A full-set replace would mean the app restating every item it has ever fetched on every
-    /// push, or the engine forgetting the other 11,287 because one arrived.
-    ///
-    /// WHAT IT KEEPS OF THE LAW, which is the part the law is FOR: it is IDEMPOTENT and
-    /// ORDER-INDEPENDENT per key — pushing the same (domain, name, entry) twice leaves exactly what
-    /// pushing it once leaves, and two entries for two names commute. So a crash-respawn is still
-    /// trivial (the overlay is empty, every name misses again, the app answers again) and the input
-    /// is still hash-friendly, as the set of (key, entry) pairs. What it gives up is the ability to
-    /// DELETE, which nothing asks for.
-    ///
-    /// IT SURVIVES AN ATTACH, exactly as the world's `defines` do: this is what the APP has told the
-    /// process about committed data, not what a generation folded.
+    /// It survives an attach: this is what the APP has told the process about committed data, not
+    /// what a generation folded.
     pub fn define(&self, domain: &str, name: &str, entry: &Value) -> bool {
         let Some(domain) = fetchable(domain) else {
             return false;
@@ -230,20 +174,14 @@ impl Corpus {
         }
     }
 
-    /// ONE SPELL, from the effective catalog — `knowledge.spell`.
+    /// One spell, from the effective catalog — `knowledge.spell`.
     ///
-    /// The row is `eqlog`'s, which is the app's `loadSpellDb()` chain: the committed scrape with the
-    /// removals applied, the derived durations filled, the corrections applied and the placeholder
-    /// messages blanked. Every field below is COPIED ACROSS ONLY IF THE DB STATES IT — law 1 as a
-    /// table rather than as eight conditional spreads — so an absent wiki field stays absent and the
-    /// card's selection never has to decide what a missing duration looks like.
+    /// Every field is copied across ONLY IF THE DB STATES IT (law 1), so an absent wiki field stays
+    /// absent and the card never has to decide what a missing duration looks like.
     ///
-    /// EXACT NAME MATCH ONLY, and that is a stated limit rather than a bug: `dbRowFor` over there
-    /// falls back to the LINE's row through `spellLineKey`, so `Rune III` is answered by `Rune`'s
-    /// facts with the card saying so out loud. That fallback needs `shared/spellLines.ts` and the
-    /// lineage block that explains it, which is the same ticket as the metrics half — see the crate
-    /// header. Answering `Rune III` with `Rune`'s numbers and NO note that they are the line's would
-    /// be the wrong answer, so this build answers `found: false` instead.
+    /// EXACT NAME MATCH ONLY, a stated limit rather than a bug: answering `Rune III` with `Rune`'s
+    /// numbers needs the lineage block that would say out loud they are the line's, which is the
+    /// named gap in the crate header. Without it, `found: false` is the honest answer.
     #[must_use]
     pub fn spell(&self, name: &str) -> Answer {
         let queried = name.trim();
@@ -285,15 +223,14 @@ impl Corpus {
         }
     }
 
-    /// NAME SEARCH ACROSS EVERY CORPUS THIS ENGINE HOLDS — `knowledge.search`.
+    /// Name search across every corpus this engine holds — `knowledge.search`.
     ///
-    /// It answers the question the four `knowledge.<domain>` ops cannot: "what is this thing called".
-    /// A lookup needs the exact name; a person types three letters. Hits are ranked EXACT, then
-    /// PREFIX, then CONTAINS, and within a rank by name length and then alphabetically — so the
-    /// thing you typed the name of is first and the answer is the same answer twice.
+    /// A lookup needs the exact name; a person types three letters. Hits rank EXACT, then PREFIX,
+    /// then CONTAINS, and within a rank by name length then alphabetically, so the ranking is total
+    /// and the same query twice is the same answer twice.
     ///
-    /// THE RANKING IS THE ENGINE'S, NOT THE CLIENT'S (ruling 4): the renderer never sorts or filters
-    /// domain data, so a search that handed back an unordered bag would be handing back the work.
+    /// The ranking is the ENGINE'S, not the client's: the renderer never sorts or filters domain
+    /// data, so handing back an unordered bag would be handing back the work.
     #[must_use]
     pub fn search(&self, query: &str, domain: Option<&str>, limit: Option<usize>) -> Value {
         let needle = query.trim().to_lowercase();
@@ -369,8 +306,8 @@ impl Corpus {
                 hit
             })
             .collect();
-        // `total` IS THE MATCH COUNT, NOT THE HIT COUNT — the `1-20 of 143` a type-ahead prints, and
-        // the one number a caller cannot compute from what it was handed.
+        // `total` is the MATCH count, not the hit count: the one number a caller cannot compute from
+        // what it was handed.
         json!({ "query": query.trim(), "total": total, "hits": hits })
     }
 }
@@ -407,22 +344,22 @@ fn key_for(domain: &str, name: &str) -> String {
     }
 }
 
-/// Did a pushed record claim a real negative? A `knowledge.define` carrying `notFound` is the app
-/// saying "I looked and the wiki has no page" — which is an ANSWER, and a good one: it stops the
-/// engine announcing that name again. It is simply not a `found`.
+/// Did a pushed record claim a real negative? A `notFound` push is the app saying "I looked and the
+/// wiki has no page" — an ANSWER, which stops the engine announcing that name again, but not a
+/// `found`.
 fn overlay_found(entry: &Value) -> bool {
     !entry["notFound"].as_bool().unwrap_or(false)
 }
 
 impl Knowledge for Corpus {
-    /// `lookupItem` — the committed DB, then the overlay, then a miss. Local sources are merged into
-    /// whichever answers, because they say something about the item's USES that no item page states.
+    /// The committed DB, then the overlay, then a miss. Local sources are merged into whichever
+    /// answers, because they say something about the item's USES that no item page states.
     fn item(&self, name: &str) -> Answer {
         let display = display_of(name);
         let local = self.local_quests().for_item(name);
         let key = item_key(name);
-        // PRIMARY: the committed database. Answered here, an item costs no overlay read and no
-        // announcement — a miss now describes ONLY names the corpus lacks.
+        // Primary: the committed database. Answered here, an item costs no overlay read and no
+        // announcement, so a miss describes only names the corpus lacks.
         if let Some(entry) = self.items().get(&key) {
             let mut record = merge_local(knowledge_from_db(entry, &display), &local);
             // `cached: true` because this is knowledge we already had, not a fresh lookup.
@@ -438,8 +375,8 @@ impl Knowledge for Corpus {
             record["cached"] = json!(true);
             return Answer { record, found };
         }
-        // ASKED WITH THE DISPLAY NAME, because that is what `resolvePage(display)` is called with
-        // over there and what the app's fetch will search the wiki for. A folded key is not a name.
+        // Asked with the DISPLAY name: that is what the app's fetch will search the wiki for, and a
+        // folded key is not a name.
         self.note_miss("item", &display);
         Answer {
             record: items::unanswered(&display, &local),
@@ -451,14 +388,13 @@ impl Knowledge for Corpus {
         self.mob_index().identity(mob.trim()).keys
     }
 
-    /// `lookupMob` — the catalog, then the overlay, then a miss; the local half merged on top of
-    /// whichever answered, and the era evidence attached at the one confluence all four exits pass
-    /// through.
+    /// The catalog, then the overlay, then a miss; the local half merged on top of whichever
+    /// answered, and the era evidence attached at the one confluence all exits pass through.
     fn mob(&self, name: &str, loot: &dyn OwnLoot) -> Answer {
         let display = name.trim();
         let id = self.mob_index().identity(display);
-        // What the CATALOG and the OVERLAY are asked. Identical to `display` for every mob the
-        // roster does not spell two ways, which is all of them but two.
+        // What the catalog and the overlay are asked. Identical to `display` for every mob the
+        // roster does not spell two ways, which is nearly all of them.
         let ask = id.canonical.clone();
         let (base, found) = if let Some(entry) = self.mob_index().entry(&ask) {
             (knowledge_from_catalog(display, entry), true)
@@ -469,8 +405,8 @@ impl Knowledge for Corpus {
             record["cached"] = json!(true);
             (record, found)
         } else {
-            // ASKED WITH THE CANONICAL NAME: the roster's spelling is the one the wiki and the
-            // catalog use, and it is what `resolvePage(id)` searches for over there.
+            // Asked with the CANONICAL name: the roster's spelling is the one the wiki and the
+            // catalog use.
             self.note_miss("mob", &ask);
             (mobs::unanswered(display), false)
         };
@@ -481,9 +417,7 @@ impl Knowledge for Corpus {
         }
     }
 
-    /// `localMobEntry(name) !== null` — the committed catalog, and NOTHING ELSE. No overlay read
-    /// (a pushed answer is a wiki page the app fetched, which is a statement about a name this
-    /// process already failed to know), no alias resolution (`localMobEntry` does none), and — the
+    /// The committed catalog, and NOTHING ELSE: no overlay read, no alias resolution, and — the
     /// load-bearing half — no miss. See [`Knowledge::known_mob`].
     fn known_mob(&self, name: &str) -> bool {
         self.mob_index().entry(name.trim()).is_some()
@@ -512,8 +446,8 @@ mod tests {
 
     #[test]
     fn the_committed_item_corpus_answers_a_real_item_with_no_miss() {
-        // AGAINST THE COMMITTED BYTES, not a fixture: this crate's whole claim is that the shipped
-        // corpus is readable from Rust and keys the way `itemsDb.ts` keys it.
+        // Against the committed bytes, not a fixture: the claim under test is that the shipped
+        // corpus is readable from Rust and keys the way the app keys it.
         let corpus = Corpus::new();
         let answer = corpus.item("Cloak of Flames");
         assert!(answer.found, "the corpus holds Cloak of Flames");
@@ -551,7 +485,7 @@ mod tests {
         assert_eq!(misses[0].domain, "item");
         assert_eq!(misses[0].name, "A Thing That Does Not Exist");
 
-        // …and asking again announces nothing: the app is asked to fetch a name ONCE.
+        // …and asking again announces nothing: the app is asked to fetch a name once.
         let _ = corpus.item("A Thing That Does Not Exist");
         assert!(corpus.take_misses().is_empty());
     }
@@ -643,8 +577,8 @@ mod tests {
 
     #[test]
     fn the_roster_is_what_says_two_spellings_are_one_creature() {
-        // THE JOS-142 DEFECT, as a pin: the log spells the god with a HYPHEN and the catalog with a
-        // SPACE, and `bosses.json` is the only committed statement that they are one creature.
+        // The log spells this god with a HYPHEN and the catalog with a SPACE; `bosses.json` is the
+        // only committed statement that they are one creature.
         let corpus = Corpus::new();
         let keys = corpus.identity_keys("Cazic-Thule");
         assert!(
@@ -657,7 +591,7 @@ mod tests {
             answer.record["name"], "Cazic-Thule",
             "and it reads back what the log said"
         );
-        // An unaliased mob is one key — the byte-identical path for the other 7.9k.
+        // An unaliased mob is one key — the unchanged path for the rest of the catalog.
         assert_eq!(
             corpus.identity_keys("a sand giant"),
             vec!["a sand giant".to_owned()]
@@ -684,7 +618,7 @@ mod tests {
         assert_eq!(answer.record["name"], "Complete Heal");
         assert_eq!(answer.record["queried"], "Complete Heal");
         assert!(answer.record["illusion"] == false);
-        // The NAMED GAP, pinned so it cannot appear by accident and go unexplained.
+        // The named gap, pinned so it cannot appear by accident and go unexplained.
         assert_eq!(answer.record.get("metrics"), None);
         assert_eq!(answer.record.get("effectClasses"), None);
         assert_eq!(answer.record.get("lineage"), None);

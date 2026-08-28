@@ -1,6 +1,6 @@
-//! `src/main/log/parseCasts.ts` — the cast lifecycle, charm + crowd control, buff fades, pet
-//! ownership, stances, gems, the illusion click-off, rogue poisons, the DB-gated buff events and —
-//! matched LAST of all — spell-landing emotes.
+//! The cast lifecycle, charm and crowd control, buff fades, pet ownership, stances, gems, the
+//! illusion click-off, rogue poisons, the DB-gated buff events, and — matched last of all —
+//! spell-landing emotes.
 
 use crate::event::{Ev, Key, Kind};
 use crate::names::{id_key, norm};
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use super::data::{POISON_BY_COAT_MSG, POISON_DRY_MSG, POISON_PROCS};
 use super::Ctx;
 
-/// The six exact sentences a pet speaks out loud — `PET_SAY_LINES` in shared/logScrub.ts, in order.
+/// The six exact sentences a pet speaks out loud, in order.
 const PET_SAY_LINES: [(&str, &str); 6] = [
     ("follow", "Following you, Master."),
     ("regroup", "Now regrouping, master."),
@@ -57,12 +57,11 @@ pub struct CastRes {
     coat_other_generic: Regex,
     article: Regex,
     single_word_name: Regex,
-    /// Last WORD of every proc emote → the emotes that end with it.
+    /// Last word of every proc emote to the emotes that end with it.
     proc_by_last_word: HashMap<&'static str, Vec<usize>>,
     say_kind_by_text: HashMap<&'static str, &'static str>,
 }
 
-/// See `AcquireRes`'s note: `Default` is `new`.
 impl Default for CastRes {
     fn default() -> Self {
         Self::new()
@@ -126,7 +125,7 @@ impl CastRes {
     }
 }
 
-/// `You begin casting|singing <Spell>.` — the player's own cast, with the VERB kept.
+/// `You begin casting|singing <Spell>.` — the player's own cast, with the verb kept.
 fn own_cast_begin(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.cast_begin.captures(c.text) else {
         return false;
@@ -237,7 +236,7 @@ fn classify_non_enchanter_charm(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> 
     true
 }
 
-/// "worn off" — uncharm / CC refresh / named-target fade, else the TARGETLESS self+pet fade.
+/// "worn off" — uncharm, CC refresh or named-target fade, else the targetless self/pet fade.
 pub fn classify_worn_off(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text.contains("worn off of") {
@@ -246,8 +245,7 @@ pub fn classify_worn_off(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut E
         };
         let is_charm = match db {
             Some(db) => db.is_charm_spell(&m[1]),
-            // With no DB installed `charmSpell` is `CHARM_STEMS` itself (installSpellDb's own
-            // purity contract).
+            // With no DB installed, the charm test is the stem roster itself.
             None => crate::stems::charm_stems_test(&m[1]),
         };
         if is_charm {
@@ -359,7 +357,7 @@ pub fn classify_pet_say(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     true
 }
 
-/// `<Name> says, 'My leader is <You>.'` — the `/pet who leader` answer, which BINDS.
+/// `<Name> says, 'My leader is <You>.'` — the `/pet who leader` answer, which binds.
 pub fn classify_pet_leader(r: &CastRes, character: Option<&str>, c: &Ctx, out: &mut Ev) -> bool {
     let Some(self_name) = character.filter(|s| !s.is_empty()) else {
         return false;
@@ -380,7 +378,7 @@ pub fn classify_pet_leader(r: &CastRes, character: Option<&str>, c: &Ctx, out: &
     true
 }
 
-/// The same answer about SOMEBODY ELSE — it must run after `classify_pet_leader`.
+/// The same answer about somebody else; must run after `classify_pet_leader`.
 pub fn classify_ally_pet_leader(
     r: &CastRes,
     character: Option<&str>,
@@ -410,8 +408,7 @@ pub fn classify_ally_pet_leader(
     true
 }
 
-/// `isPlayerShapedName` — shared/playerShape.ts. A leading article is the mob marker; a player is
-/// one capitalized word.
+/// A leading article is the mob marker; a player is one capitalized word.
 fn is_player_shaped_name(r: &CastRes, name: &str) -> bool {
     let n = crate::jsstr::js_trim(name);
     if n.is_empty() {
@@ -459,7 +456,7 @@ pub fn classify_stance(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// The memorize / forget / spell-set family. Each of the four prefixes RETURNS, match or not.
+/// The memorize / forget / spell-set family. Each of the four prefixes returns, match or not.
 pub fn classify_spell_gems(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text.starts_with("You forget ") {
@@ -612,7 +609,7 @@ pub fn classify_poison_proc(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// `buffApplyEvent` — `spell`/`illusion`/`durationMs` come from the FIRST candidate.
+/// `spell`, `illusion` and `durationMs` come from the first candidate.
 fn buff_apply_event(db: &SpellDb, c: &Ctx, out: &mut Ev, target: &str, cands: &[usize]) {
     let first = db.entry(cands[0]);
     out.begin(Kind::BuffApply);
@@ -664,7 +661,7 @@ pub fn classify_db_buff(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// Spell-landing emotes — matched LAST so they never shadow a real family.
+/// Spell-landing emotes — matched last so they never shadow a real family.
 pub fn classify_spell_emote(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You ") {
         if r.emote_self.is_match(c.text) {

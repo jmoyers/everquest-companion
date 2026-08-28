@@ -1,31 +1,23 @@
-//! THE PER-FIGHT TIMELINE VIEW (`segmentViews.ts buildTimeline`).
+//! The per-fight timeline view (`segmentViews.ts buildTimeline`).
 //!
 //! Converts the encounter's absolute-ts event ring into ms-since-start, downsamples with a uniform
 //! stride when over budget, and derives the Y-axis lanes plus the pinned stance/invocation spans.
+//! Read-only over the encounter, so asking for a timeline cannot move a point of damage.
 //!
-//! READ-ONLY over the encounter: it copies out of the ring and never mutates the ring, the aggregate or
-//! any counter — asking for a timeline cannot move a point of damage. In Rust that is structural.
+//! Truncation is declared, never silent. The ring holds only the most recent instants of a longer
+//! fight, so `raw_count` is the ring occupancy — the population the stride samples — while
+//! `total_count` carries the fight's true instant count. The two are never folded together: scaling
+//! by `total/kept` would extrapolate the discarded prefix from the retained tail.
 //!
-//! ── TRUNCATION IS DECLARED, NEVER SILENT ─────────────────────────────────────────────────────
-//!
-//! The ring holds only the most recent `TIMELINE_CAP` instants of a longer fight. `raw_count` stays the
-//! ring OCCUPANCY — it is the population the stride samples, so it is the honest sampling denominator —
-//! while `total_count` carries the fight's TRUE instant count so the renderer can say "N of M" without
-//! understating M. Deliberately NOT folded into the sampling factor: scaling by `total/kept` would
-//! extrapolate the discarded prefix from the retained tail, which is exactly the silent guess law 1
-//! forbids.
-//!
-//! ── MARKERS ARE NOT DOWNSAMPLED ──────────────────────────────────────────────────────────────
-//!
-//! Every one is carried, deliberately, whatever the stride does to the damage instants. They are sparse
-//! by construction and drawing one in five of them would be worse than drawing none.
+//! Markers are never downsampled. They are sparse by construction, and drawing one in five would be
+//! worse than drawing none.
 
 use crate::combat::encounter::{encounter_name, TimelineRaw, TIMELINE_BUDGET};
 use crate::combat::state::EngineState;
 use crate::jsmap::JsMap;
 use serde::Serialize;
 
-/// `shared/combat.ts CATEGORY_ORDER`.
+/// The stable UI ordering of the damage taxonomy.
 const CATEGORY_ORDER: [&str; 5] = ["melee", "slay", "spell", "dot", "ds"];
 
 fn category_rank(c: &str) -> usize {
@@ -43,7 +35,7 @@ pub struct TimelineEvent {
     category: String,
     amount: i64,
     crit: bool,
-    /// ABSENT when the line carried none, so a plain landed hit keeps its exact prior shape.
+    /// Absent when the line carried none, so a plain landed hit keeps its exact prior shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     modifiers: Option<Vec<String>>,
     kind: &'static str,
@@ -110,16 +102,16 @@ fn timeline_event(r: &TimelineRaw, start: i64) -> TimelineEvent {
         crit: r.crit,
         modifiers: (!r.modifiers.is_empty()).then(|| r.modifiers.clone()),
         kind: r.kind,
-        // `outcome !== 'hit'` — the ring never writes `hit`, but the condition is kept because it is
-        // the shape's own rule and not this fold's observation about the corpus.
+        // A plain `hit` outcome is never serialized. The ring does not write one today; the filter
+        // is the shape's rule, not an observation about the corpus.
         outcome: r.outcome.filter(|&o| o != "hit"),
         detail: r.detail.clone().filter(|d| !d.is_empty()),
         target: r.target.clone().filter(|t| !t.is_empty()),
     }
 }
 
-/// Walk the ring ONCE: aggregate EVERY event into its lane (so lane totals and ordering are accurate
-/// even when the plotted instants are downsampled) while emitting only the stride-sampled ones.
+/// Walk the ring once, aggregating every event into its lane while emitting only the stride-sampled
+/// ones — so lane totals and ordering stay accurate under downsampling.
 fn collect_timeline(
     raw: &[TimelineRaw],
     start: i64,
@@ -154,10 +146,9 @@ fn collect_timeline(
     (events, lanes)
 }
 
-/// Build the selected encounter's timeline view. `None` for the zone selection (no single-fight
-/// timeline), for an id that resolves to nothing, and for an encounter whose event ring was EVICTED by
-/// the history cap — the honest answer there is "no timeline available", never an empty one that reads
-/// as "this fight had no instants".
+/// Build the selected encounter's timeline view. `None` for the zone selection, for an id that
+/// resolves to nothing, and for an encounter whose event ring the history cap evicted — there the
+/// answer is "no timeline available", never an empty one reading as "this fight had no instants".
 pub fn build_timeline(st: &EngineState, id: &str, now: i64) -> Option<TimelineView> {
     if id == "zone" {
         return None;
@@ -180,8 +171,7 @@ pub fn build_timeline(st: &EngineState, id: &str, now: i64) -> Option<TimelineVi
     let raw_count = e.events.len();
     let total_count = (raw_count as i64).max(e.events_total);
     let truncated = total_count > raw_count as i64;
-    // Uniform-stride downsample when over budget (it keeps the temporal shape; a dense charm-grind
-    // fight is capped so the payload and the render stay cheap).
+    // Uniform stride keeps the temporal shape while capping the payload on a dense fight.
     let stride = if raw_count > TIMELINE_BUDGET {
         raw_count.div_ceil(TIMELINE_BUDGET)
     } else {

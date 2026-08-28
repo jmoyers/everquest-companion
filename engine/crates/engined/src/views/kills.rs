@@ -1,28 +1,15 @@
-//! `kills.recent` — THE RECENT-KILLS FEED (JOS-487).
+//! `kills.recent` — the rows the Overview's recent-kills card draws: what you killed, when, where,
+//! and what the experience line beside it said.
 //!
-//! The rows the Overview's `RecentKillsCard` draws: what you killed, when, where, and what the
-//! experience line beside it said.
+//! Named for the surface rather than for the module, which is this registry's one exception. It
+//! reads `progression`, not `kills`: the `kills` module is a lifetime tally keyed by mob with no
+//! recent list at all, while the recent-kills ring lives beside `progression`'s columns because a
+//! kill and the experience line that follows it are joined at fold time and only that module sees
+//! both.
 //!
-//! ── THE NAME SAYS THE SURFACE, NOT THE MODULE, AND THAT IS DELIBERATE ──────────────────────────
-//!
-//! Every other source in this registry is named for the module it reads (`loot.ledger` over `loot`).
-//! This one reads **`progression`**, and the exception is the honest answer rather than a slip. The
-//! `kills` MODULE is a lifetime tally keyed by mob — `{count, bestTier, firstTs, lastTs, credited}`
-//! per name, which the boss and mob surfaces look things up in — and it has no recent list at all;
-//! the recent-kills FEED is a fifty-entry ring the `progression` module keeps beside its columns,
-//! because a kill and the experience line that follows it are one fact joined at fold time
-//! (`KILL_EXP_JOIN_MS`) and only that module sees both. So `kills.recent` is named for what a
-//! client asking for it wants, and the alternative — calling it `progression.kills` — would have
-//! made the honest name unfindable to keep a naming rule that exists to prevent exactly one
-//! confusion (a view is not its module's whole state) which this name does not cause.
-//!
-//! ── THE EXPERIENCE BITFIELD IS DECOMPOSED HERE, WHICH IS THE POINT OF THE LAYER ────────────────
-//!
-//! `ProgressionKill.expFlag` is a bitfield: `1` the line stated no percentage, `2` it was party
-//! experience — and ABSENT means there was no experience line at all, which is a third state and a
-//! different sentence from either. A cell carrying `3` would make the renderer run `flag & 2` to
-//! draw a chip, which is the client re-deriving domain data. So the row carries three booleans and
-//! one number, each of which is a thing the card can draw without arithmetic.
+//! `ProgressionKill.expFlag` is a bitfield (`1` no percentage stated, `2` party experience) and
+//! absent is a third state — no experience line at all. The row decomposes it into three booleans
+//! and a number so the card draws without arithmetic.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -40,22 +27,20 @@ const EXP_PARTY: i64 = 2;
 pub const RECENT: SourceDef = SourceDef {
     id: "kills.recent",
     fields: &["at", "seq", "name", "zone", "pet", "expPct"],
-    // NEWEST FIRST, which is what the card draws: `recentKills.slice(-25).reverse()`.
+    // Newest first, which is what the card draws.
     default_sort: &[("at", Order::Desc), ("seq", Order::Desc)],
     tiebreak: ("seq", Order::Asc),
-    // TWENTY-FIVE, and the number is the card's own (`KILL_FEED_CAP`) rather than the house
-    // default. The ring holds fifty; the card has never drawn more than half of it, and a default
-    // window that served twice what any surface shows would be payload nobody asked for.
+    // The card's own cap rather than the house default: the ring holds fifty and the card draws
+    // twenty-five, so the house default would be payload nobody asked for.
     default_limit: 25,
 };
 
 /// Build every row of the ring, in the module's own append order.
 ///
-/// THE KEY IS THE RING POSITION — `kill:<n>` — for `loot.ledger`'s reason and with one difference
-/// worth stating: this ring DROPS FROM THE FRONT at fifty, so a position names a different kill
-/// after the fifty-first. That is exactly what the module's revision counter is for — the view is
-/// re-cut and the diff between the two windows says what the client has to do — and it is why the
-/// key is not the kill's own `ts`, which is second-resolution and routinely repeats.
+/// The key is the ring position (`kill:<n>`). The ring drops from the front at fifty, so a position
+/// names a different kill after the fifty-first — the module's revision counter is what handles
+/// that, by re-cutting the view and diffing. The kill's `ts` cannot be the key: it is
+/// second-resolution and routinely repeats.
 #[must_use]
 pub fn rows(module: &ProgressionModule) -> Vec<SourceRow> {
     module
@@ -71,9 +56,9 @@ pub fn rows(module: &ProgressionModule) -> Vec<SourceRow> {
                     ("at", Field::Int(kill.ts)),
                     ("seq", Field::Int(seq)),
                     ("name", Field::Text(kill.name.clone())),
-                    // A ZONE THE FOLD NEVER LEARNED IS MISSING, not an empty string: the module
-                    // writes `''` before the first zone line, and "unknown" has to be a place in
-                    // the order rather than a name that sorts before every real zone.
+                    // A zone the fold never learned is `Missing`, not an empty string: the module
+                    // writes `''` before the first zone line, and unknown has to be a place in the
+                    // order rather than a name that sorts before every real zone.
                     (
                         "zone",
                         if kill.zone.is_empty() {
@@ -90,9 +75,8 @@ pub fn rows(module: &ProgressionModule) -> Vec<SourceRow> {
         .collect()
 }
 
-/// A percentage as a comparable value. MILLI-PERCENT, because [`Field`] compares integers and a
-/// truncation to whole percent would make `0.9` and `0.1` the same place in the order — which for
-/// a column whose whole content is fractions is not a rounding, it is a collapse.
+/// A percentage as a comparable value, in milli-percent: [`Field`] compares integers, and rounding
+/// to whole percent would put `0.9` and `0.1` in the same place in a column that is all fractions.
 fn exp_field(pct: f64) -> Field {
     #[expect(
         clippy::cast_possible_truncation,
@@ -105,8 +89,8 @@ fn cells(kill: &ProgressionKill) -> Cells {
     let mut cells = std::collections::BTreeMap::new();
     cells.insert("at".to_owned(), Cell::int(kill.ts));
     cells.insert("name".to_owned(), Cell::text(&kill.name));
-    // AN UNKNOWN ZONE IS NULL, never `''`. The module writes an empty string because that is what
-    // its TS twin writes into a column of strings; on the wire an absent value has a spelling.
+    // An unknown zone is null, never `''`: the module writes an empty string into its column, but
+    // on the wire an absent value has a spelling.
     cells.insert(
         "zone".to_owned(),
         if kill.zone.is_empty() {
@@ -115,12 +99,11 @@ fn cells(kill: &ProgressionKill) -> Cells {
             Cell::text(&kill.zone)
         },
     );
-    // `credit` IS `0` FOR YOUR KILLING BLOW AND `1` FOR A BOUND PET'S, and the card draws a pet
-    // chip off it. The boolean is the question it is asking.
+    // `credit` is `0` for your killing blow and `1` for a bound pet's; the boolean is the question
+    // the card's pet chip asks.
     cells.insert("pet".to_owned(), Cell::flag(kill.credit == 1));
-    // THE THREE STATES OF THE EXPERIENCE LINE, kept apart. `expLine` false means there was none at
-    // all — a kill somebody else got the experience for, or a grey con — which is a different
-    // sentence from a line that stated no number.
+    // The three states of the experience line, kept apart: `expLine` false means there was none at
+    // all, which is a different sentence from a line that stated no number.
     let flag = kill.exp_flag;
     cells.insert("expLine".to_owned(), Cell::flag(flag.is_some()));
     cells.insert(
@@ -180,8 +163,7 @@ mod tests {
         assert_eq!(cells["expStated"], Cell::flag(true));
         assert_eq!(cells["expParty"], Cell::flag(false));
         assert_eq!(cells["expPct"], Cell::float(1.5));
-        // THE BITFIELD ITSELF IS NOT ON THE WIRE. A client that had it would be one `&` away from
-        // re-deriving what the three flags already say.
+        // The bitfield itself is not on the wire; the three flags already say what it says.
         assert!(!cells.0.contains_key("expFlag"));
     }
 
@@ -195,8 +177,8 @@ mod tests {
             .expect("the second kill");
         assert_eq!(bare.cells["expLine"], Cell::flag(false));
         assert_eq!(bare.cells["expPct"], Cell::null());
-        // …and `expStated` is false too, which is the honest reading: nothing stated a percentage
-        // because nothing stated anything.
+        // …and `expStated` is false too: nothing stated a percentage because nothing stated
+        // anything.
         assert_eq!(bare.cells["expStated"], Cell::flag(false));
     }
 

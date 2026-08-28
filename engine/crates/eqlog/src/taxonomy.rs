@@ -1,15 +1,14 @@
-//! `src/main/combat/taxonomy.ts` — the paren-modifier splitter and the damage category, ported.
+//! The paren-modifier splitter and the damage category.
 
 use crate::jsstr::{is_js_space, js_trim};
 
-/// The three two-word procs, recombined before the remainder is split on whitespace. Order is the
-/// TS array's order and is load-bearing: the pull is greedy and runs first.
+/// The three two-word procs, pulled out before the remainder is split on whitespace. The order is
+/// load-bearing: the pull is greedy and runs first.
 const TWO_WORD: [&str; 3] = ["Slay Undead", "Finishing Blow", "Crippling Blow"];
 
-/// `parseModifiers("Riposte Critical")` → `["Riposte", "Critical"]`.
+/// `"Riposte Critical"` → `["Riposte", "Critical"]`.
 pub fn parse_modifiers(modifier: Option<&str>) -> Vec<String> {
-    // `if (!modifier) return []` — undefined AND the empty string, which is why this is not a
-    // plain `is_none`.
+    // The app's falsy test covers undefined and the empty string, hence two checks rather than one.
     let Some(modifier) = modifier else {
         return Vec::new();
     };
@@ -25,7 +24,7 @@ pub fn parse_modifiers(modifier: Option<&str>) -> Vec<String> {
     for tw in TWO_WORD {
         if rest.contains(tw) {
             mods.push(tw.to_string());
-            // `String.prototype.replace` with a STRING replaces the FIRST occurrence only.
+            // The app's string `replace` cuts the first occurrence only.
             let replaced = match rest.find(tw) {
                 Some(at) => {
                     let mut s = String::with_capacity(rest.len());
@@ -51,8 +50,8 @@ pub fn has_critical(mods: &[String]) -> bool {
     mods.iter().any(|m| m.eq_ignore_ascii_case("critical"))
 }
 
-/// ELEMENT-GENERIC (JOS-506) so the parser's owned token list and the fold's borrowed one can both
-/// ask this without either allocating a list in the other's spelling.
+/// Element-generic so the parser's owned token list and the fold's borrowed one can both ask
+/// without either allocating a list in the other's spelling.
 pub fn has_slay_undead<S: AsRef<str>>(mods: &[S]) -> bool {
     mods.iter()
         .any(|m| m.as_ref().eq_ignore_ascii_case("slay undead"))

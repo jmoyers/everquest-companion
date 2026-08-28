@@ -13,7 +13,7 @@
 // The band is the DB's (1..63) with a ceiling that leaves room to grow, and clamping is done in one
 // place so a deep link, a keypress and a stepper click cannot disagree about what level 0 means.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 export const LEVEL_MIN = 1
 export const LEVEL_MAX = 65
@@ -34,8 +34,15 @@ export interface ViewedLevel {
 /**
  * The tab's viewed level. `currentLevel` is the character's own (JOS-192's stated level), which is
  * where the tab sits until somebody steps it.
+ *
+ * IT HANDS BACK ONE OBJECT PER ANSWER (JOS-511 item 2), not one per render. The three fields only
+ * mean anything together, which is why they travel as an object — and that object is a PROP on both
+ * panels that read the level, so a fresh literal per render changed both of their inputs whatever
+ * moved on the tab. `setPicked` is React's own setter and never changes identity, so this memo
+ * moves exactly when the level or the pick does.
  */
 export function useViewedLevel(currentLevel: number | null): ViewedLevel {
   const [picked, setPicked] = useState<number | null>(null)
-  return { level: clampLevel(picked ?? currentLevel ?? LEVEL_MIN), picked, pick: setPicked }
+  const level = clampLevel(picked ?? currentLevel ?? LEVEL_MIN)
+  return useMemo(() => ({ level, picked, pick: setPicked }), [level, picked])
 }

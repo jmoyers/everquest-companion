@@ -1,52 +1,34 @@
-//! `src/main/modules/roster.ts` plus the pure detector it drives (`modules/buffFanOut.ts`) and the
-//! provenance ladder they share (`shared/roster.ts`) — WHO YOU ARE GROUPED WITH.
+//! `src/main/modules/roster.ts` plus its fan-out detector and the provenance ladder they share —
+//! WHO YOU ARE GROUPED WITH.
 //!
-//! IT IS REGISTERED SECOND, and that is load-bearing rather than tidy: the combat engine pulls the
-//! roster through a seam installed before it folds a line, so within ONE bus delivery the roster
-//! must already be advanced. A `<Name> has joined the group.` line and the very next damage line by
-//! that name then behave correctly in one pass, in replay and live alike.
+//! REGISTERED SECOND, and that is load-bearing: the combat engine pulls the roster through a seam
+//! installed before it folds a line, so within one bus delivery the roster must already be advanced.
+//! A join line and the very next damage line by that name then behave correctly in one pass.
 //!
-//! THE ROSTER NEVER TOUCHES THE PARSER. It reads events, writes nothing back onto the bus, and
-//! cannot change how a line is parsed. What it does is widen the engine's ADMISSION gate and narrow
-//! the meter's VIEW — a wrong roster can HIDE a row, it can never corrupt a number.
+//! It never touches the parser — it reads events and writes nothing back onto the bus. What it does
+//! is widen the engine's ADMISSION gate and narrow the meter's VIEW, so a wrong roster can HIDE a
+//! row and can never corrupt a number.
 //!
-//! WHAT CLEARS IT, and what deliberately does not:
+//! WHAT CLEARS IT: `epoch` (a rebirth means the group belonged to somebody else) and `selfLeave`
+//! (the one line that says the group itself is over). `offlineGap` does NOT — EQ drops groups
+//! silently on camp, so members are marked STALE rather than emptied, hiding a real member being the
+//! worse error. `zone` does not either: a group survives zoning and the game says nothing when it
+//! doesn't.
 //!
-//! * `epoch` clears everything, user edits included — a rebirth means the group belonged to
-//!   somebody else.
-//! * `selfLeave` — `You have been removed from the group.` is EQ's disband/leave line and the one
-//!   signal that says the group itself is over.
-//! * `offlineGap` does NOT clear. EQ drops groups SILENTLY on camp, so the post-login roster is
-//!   marked STALE rather than emptied — hiding a real member is the worse error and is literally
-//!   the bug this feature exists to fix. The party-experience GATE does end here, and the asymmetry
-//!   is deliberate: a stale member is a name the log already gave us, while the gate is a licence to
-//!   believe a FUTURE burst.
-//! * `zone` does NOT clear. A group survives zoning; the game says nothing when it doesn't.
+//! THE RECOVERY RUNGS. EQ prints a join line ONCE, so a group formed before the app opened has none
+//! left to replay. `confirmed` needs somebody to talk, which a quiet group never does. `buffed` is
+//! a CONJUNCTION of two facts the log states outright: one Quick Buff burst naming recipients in a
+//! single instant, and `You gain party experience!` earlier in the session (a group exists, naming
+//! nobody). Measured against join lines on a 900k-line log, the burst alone admits two townside
+//! hand-outs the party-exp requirement removes: 2 admissions, 2 correct, 0 false positives, stable
+//! at every backward window from 2 minutes to 6 hours. So the gate is STICKY rather than windowed,
+//! and BACKWARD-ONLY: a fact in hand beats a prediction.
 //!
-//! THE TWO RECOVERY RUNGS. EQ prints a join line ONCE, so a group formed before the app opened has
-//! none left to replay. `confirmed` (`<Name> tells the group, '…'`) needs somebody to TALK, which a
-//! quiet group never does. `buffed` is the second path and is a CONJUNCTION of two facts the log
-//! states outright: one Quick Buff burst enumerating names in a single instant (RECIPIENTS), and
-//! `You gain party experience!` earlier in the session (a GROUP EXISTS, naming nobody). Measured on
-//! the owner's 900,562-line log against join lines as ground truth: the fan-out alone names three
-//! players, of whom one is inside a join-proven window on all 11 appearances and two (a townside
-//! hand-out) are not; requiring the party-exp line removes exactly those two — 2 admissions, 2
-//! correct, 0 false positives, stable at every backward window from 2 minutes to 6 hours. The gate
-//! is therefore STICKY rather than windowed, and BACKWARD-ONLY: a fact in hand beats a prediction.
-//!
-//! NEVER-A-MEMBER. A burst also lands on YOUR OWN PETS, and a pet in the roster would put a
-//! friendly on the Group meter as a person and make the engine refuse a charmed mob for the rest of
-//! its life. So the weakest rung is refused for the tailed character, every CHARMED mob and every
-//! summoned pet that has claimed itself with the `… Master.'` tell — RETROACTIVELY for that rung
-//! only, because the claim tell routinely lands after you finished buffing. `joined` / `stated` /
-//! `user` are never touched by it: those are statements the game or the user made outright.
-//!
-//! TWO INPUTS ARE ABSENT IN THE BENCH WORLD AND THE ABSENCE IS THE RECORDED TRUTH, not a shortcut.
-//! `foldArm.mts construct` installs NO edits provider (so `liveEdits()` is empty and `effective()`
-//! is the log's map verbatim) and never calls `setSelfName` — that is `session.ts`'s line, and the
-//! bench does not run it. `self_name` is therefore a construction parameter that the parity runner
-//! passes as `None`; the `'you'` canonical form still refuses the player, which is what the burst
-//! actually names them as.
+//! NEVER-A-MEMBER. A burst also lands on your own pets, and a pet in the roster would put a friendly
+//! on the Group meter as a person and make the engine refuse a charmed mob for the rest of its life.
+//! So the weakest rung is refused for the tailed character, every charmed mob and every claimed pet
+//! — RETROACTIVELY for that rung only, because the claim tell routinely lands after you finished
+//! buffing. `joined` / `stated` / `user` are never touched: those the game or the user said outright.
 
 use crate::event::Event;
 use crate::jsmap::JsMap;
@@ -56,8 +38,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-/// `shared/roster.ts SOURCE_RANK` — strongest first. Rank, not just a label: a weaker signal never
-/// overwrites a stronger one's provenance.
+/// Strongest first. A rank, not just a label: a weaker signal never overwrites a stronger one's
+/// provenance.
 fn source_rank(source: &str) -> i32 {
     match source {
         "user" => 4,
@@ -68,12 +50,12 @@ fn source_rank(source: &str) -> i32 {
     }
 }
 
-/// `outranks(next, cur)` — at least as authoritative.
+/// At least as authoritative as what is already there.
 fn outranks(next: &str, cur: &str) -> bool {
     source_rank(next) >= source_rank(cur)
 }
 
-/// `CHANGE_SOURCE` — which provenance rung each membership-bearing `change` writes.
+/// Which provenance rung each membership-bearing `change` writes.
 fn change_source(change: &str) -> Option<&'static str> {
     match change {
         "join" => Some("joined"),
@@ -86,9 +68,9 @@ fn change_source(change: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterMember {
-    /// Canonical (lowercased) identity key — `idKey(name)`.
+    /// Canonical (lowercased) identity key.
     key: String,
-    /// Display name, spelled the way the log spelled it (world-model law 2).
+    /// Display name, spelled the way the log spelled it.
     name: String,
     source: &'static str,
     since_ts: i64,
@@ -98,17 +80,17 @@ pub struct RosterMember {
     stale: bool,
 }
 
-/// `modules/buffFanOut.ts` — the one action that makes EQ Legends enumerate, by name and in a
-/// single instant, the people your buffs reach.
+/// The one action that makes EQ Legends enumerate, by name and in a single instant, the people your
+/// buffs reach.
 ///
-/// MEASURED (owner's log, 900,562 lines): 83 casts print two or more `You healed <X> … by <Spell>.`
-/// lines in the SAME second for the SAME spell, and ALL 83 fall within 15 s of a
-/// `You activate Quick Buff.` line — not one exception. The wiki DB would have LIED here: it calls
-/// three of those spells "Single Friendly (or Self)". The log is the authority.
+/// MEASURED on a 900k-line log: 83 casts print two or more `You healed <X> … by <Spell>.` lines in
+/// the same second for the same spell, and all 83 fall within 15 s of a `You activate Quick Buff.`
+/// line, without exception. The wiki DB would have lied here — it calls three of those spells
+/// "Single Friendly (or Self)".
 ///
-/// The bucket is keyed on the log's SECOND rather than on a tolerance window: every line of a burst
+/// The bucket is keyed on the log's SECOND rather than a tolerance window: every line of a burst
 /// carries the identical timestamp, so a wider window could only merge casts the game kept apart.
-/// HoT TICKS are excluded — a tick is cast-DETACHED, so two unrelated single-target HoTs could tick
+/// HoT ticks are excluded — a tick is cast-detached, so two unrelated single-target HoTs could tick
 /// in the same second and look exactly like one cast reaching both.
 #[derive(Default)]
 struct BuffFanOut {
@@ -132,14 +114,14 @@ impl BuffFanOut {
         self.bucket = None;
     }
 
-    /// The DISPLAY NAMES this line newly proves were reached by one cast of yours, or `None`.
+    /// The display names this line newly proves were reached by one cast of yours, or `None`.
     fn on_heal(&mut self, ev: &Event) -> Option<Vec<String>> {
         if ev.bool("overTime") {
             return None;
         }
         let spell = ev.str("spell")?;
         let healer = ev.str("healer")?;
-        // Only YOUR OWN casts. Another player's group buff enumerates THEIR group, and
+        // Only your OWN casts: another player's group buff enumerates THEIR group, and
         // `<X> healed <Y>` lines are printed for everyone in earshot.
         if healer.to_lowercase() != "you" {
             return None;
@@ -177,27 +159,37 @@ impl BuffFanOut {
 
 #[derive(Default)]
 pub struct RosterModule {
-    /// The log-derived roster, keyed canonically. INSERTION ORDER IS JOIN ORDER, and it is what
-    /// the published `members` array carries — `JsMap`, never a hash.
+    /// The log-derived roster, keyed canonically. INSERTION ORDER IS JOIN ORDER, which is what the
+    /// published `members` array carries — a `JsMap`, never a hash.
     log: JsMap<RosterMember>,
-    /// Every key admitted since the last epoch/self-leave. Wider than the roster on purpose and a
+    /// Every key admitted since the last epoch/self-leave. Wider than the roster on purpose, and a
     /// user REMOVE must never shrink it; not published, so its order is free.
     admitted_keys: JsMap<String>,
     /// Any group signal at all this epoch — the "no roster yet" vs "solo" distinction.
     seen: bool,
     last_signal_ts: i64,
     seq: i64,
+    /// The announce cursor — see [`crate::announce`].
+    ///
+    /// Only `members`, `seen` and `lastSignalTs` are published; `admitted_keys`, `party_exp`,
+    /// `never_member`, `fan_out` and `self_key` are how a name earns its way onto the roster and
+    /// appear nowhere a client can read. So the party-experience line, which puts no name on the
+    /// roster and never sets `seen`, mutates real state and publishes nothing.
+    ///
+    /// `roster.define` replaces the edit list that `effective()` folds into `members` and advances
+    /// no log seq, so the cursor has to land strictly above the fold position to carry a change no
+    /// event caused.
+    announce: crate::announce::Announce,
     fan_out: BuffFanOut,
-    /// THE PARTY-EXPERIENCE GATE. Sticky rather than windowed; it gates the `buffed` rung and
+    /// The party-experience gate. Sticky rather than windowed; it gates the `buffed` rung and
     /// nothing else, never puts a name on the roster and never sets `seen` — a fact that names
     /// nobody must not flip the Group scope out of its show-everyone fallback.
     party_exp: bool,
     /// Canonical keys the weakest rung refuses: the tailed character, charmed mobs, claimed pets.
     never_member: HashSet<String>,
-    /// The tailed character's own key — `session.ts` installs it, the bench does not (header).
+    /// The tailed character's own key, installed at construction when the session knows it.
     self_key: String,
-    /// THE USER'S OWN EDITS (JOS-482) — `roster.define`. Empty in every world constructed without a
-    /// push, which is what the bench recorded and what all six goldens carry.
+    /// The user's own edits, via `roster.define`. Empty in every world constructed without a push.
     edits: Vec<RosterEdit>,
     /// The ts of the last epoch boundary, and of the last `You have been removed from the group.`
     /// An edit older than either described a character or a group that no longer exists — see
@@ -207,7 +199,7 @@ pub struct RosterModule {
     left_ts: i64,
 }
 
-/// One persisted user edit — `shared/progressState.ts RosterEdit`.
+/// One persisted user edit.
 #[derive(Debug, Clone)]
 pub struct RosterEdit {
     key: String,
@@ -218,8 +210,8 @@ pub struct RosterEdit {
 }
 
 impl RosterEdit {
-    /// Read one pushed edit. `None` for anything that is not the shape the store writes — refused
-    /// whole, never silently repaired, which is `ipc/roster.ts`'s own rule at its own door.
+    /// Read one pushed edit. `None` for anything that is not the shape the store writes: refused
+    /// whole, never silently repaired.
     fn read(v: &Value) -> Option<RosterEdit> {
         let action = v.get("action")?.as_str()?;
         let key = v.get("key")?.as_str()?;
@@ -256,9 +248,12 @@ impl RosterModule {
             return;
         }
         self.never_member.insert(key.clone());
+        // The refusal is knowledge about a NAME and is not published. Only evicting a member the
+        // weakest rung had already admitted changes the roster anybody can read.
         if self.log.get(&key).map(|m| m.source) == Some("buffed") {
             self.log.remove(&key);
             self.admitted_keys.remove(&key);
+            self.announce.changed(self.seq);
         }
     }
 
@@ -276,18 +271,21 @@ impl RosterModule {
             if key == self.self_key || key == "you" || self.never_member.contains(&key) {
                 continue;
             }
-            // A burst comes WITH NAMES, unlike the party-exp line, and a roster with names in it
-            // is exactly what `seen` is for.
+            // A burst comes WITH NAMES, unlike the party-exp line, and a roster with names in it is
+            // what `seen` is for.
             self.seen = true;
             self.last_signal_ts = self.last_signal_ts.max(ev.ts());
             self.add(&key, &name, "buffed", ev.ts());
+            self.announce.changed(self.seq);
         }
     }
 
     fn fold_group(&mut self, ev: &Event) {
-        // An INVITE is not a membership fact — it may be (and in this log usually is) declined. It
-        // still proves a group is in play, so it counts as a SIGNAL: with an invite on the board,
-        // "no roster yet" is the honest chip rather than a silent Everyone.
+        // Every group line is a published change, the usually-declined invite and the `selfJoin`
+        // that names nobody included: both set `seen` and `lastSignalTs`, which are in the snapshot.
+        self.announce.changed(self.seq);
+        // An INVITE is not a membership fact — it may be declined — but it proves a group is in
+        // play, so it counts as a signal: "no roster yet" is more honest than a silent Everyone.
         self.seen = true;
         self.last_signal_ts = self.last_signal_ts.max(ev.ts());
         let change = ev.str("change").unwrap_or_default();
@@ -311,7 +309,7 @@ impl RosterModule {
         let key = id_key(&name);
         if change == "leave" {
             self.log.remove(&key);
-            // NOT removed from `admitted_keys`: their recorded damage stays real and the Everyone
+            // Not removed from `admitted_keys`: their recorded damage stays real and the Everyone
             // scope must keep showing it. Only a self-leave or an epoch resets admission.
             return;
         }
@@ -344,8 +342,8 @@ impl RosterModule {
         if outranks(source, cur.source) {
             cur.source = source;
         }
-        // The log's own spelling wins on a re-assert — a name typed lowercase into an invite is
-        // not how the game spells it in the join line (world-model law 2).
+        // The log's own spelling wins on a re-assert: a name typed lowercase into an invite is not
+        // how the game spells it in the join line.
         if name != key {
             cur.name = name.to_string();
         }
@@ -360,16 +358,14 @@ impl RosterModule {
             .filter(move |e| e.set_at >= epoch_ts && e.set_at > left_ts)
     }
 
-    /// THE EFFECTIVE ROSTER = the log's roster, PLUS your adds, MINUS your removes.
+    /// The effective roster: the log's roster, PLUS your adds, MINUS your removes.
     ///
-    /// User edits are a LAYER over the log rather than a mutation of it, and that is what makes
-    /// them stick the way the user means: the next `<Name> has joined the group.` cannot undo a
-    /// remove, and the next `<Name> has left the group.` cannot undo an add. Undoing an edit is the
-    /// user's own job, and the only thing that should be able to.
+    /// User edits are a LAYER over the log rather than a mutation of it, which is what makes them
+    /// stick the way the user means: a later join line cannot undo a remove, and a later leave line
+    /// cannot undo an add. Undoing an edit is the user's own job.
     ///
-    /// An add for somebody the LOG already named keeps their real join time and gains the top
-    /// provenance rung — the user's statement is a stronger claim about the same person, not a
-    /// different person.
+    /// An add for somebody the log already named keeps their real join time and gains the top
+    /// provenance rung — a stronger claim about the same person, not a different person.
     fn effective(&self) -> Vec<RosterMember> {
         if self.live_edits().next().is_none() {
             return self.log.values().cloned().collect();
@@ -414,6 +410,7 @@ impl EqModule for RosterModule {
         self.seen = false;
         self.last_signal_ts = 0;
         self.seq = 0;
+        self.announce.reset();
         self.party_exp = false;
         self.fan_out.reset();
         // The never-a-member set is NOT cleared with the roster: it is knowledge about which names
@@ -427,27 +424,39 @@ impl EqModule for RosterModule {
             "epoch" => {
                 // Character rebirth: this group belonged to the wiped character. Everything goes,
                 // the persisted edits included — and they go by DATE rather than by deletion,
-                // because the list belongs to the app and the fold does not get to edit it:
-                // `live_edits` drops every edit older than this boundary.
+                // because the list belongs to the app and the fold does not get to edit it.
                 self.reset();
                 self.epoch_ts = ev.ts();
+                // Off `ev.seq()`, not `self.seq`, which the reset just zeroed: a cursor bumped off
+                // the zeroed field would land BELOW the seq a client still holds from the wiped
+                // character's snapshot, and the group would be cleared here and left on screen
+                // there.
+                self.announce.changed(ev.seq());
             }
             "offlineGap" => {
                 // The world stopped being observable. Nothing SAID the group broke — EQ never does
                 // — so every member is marked stale rather than removed, and stays in the
                 // allowlist.
                 let from_ts = ev.int("fromTs").unwrap_or(0);
+                // `stale` is a published field, so a member flipping it is a change a client draws.
+                // Counted rather than assumed: a gap with an empty roster, or one every member was
+                // already stale through, publishes nothing.
+                let mut flipped = false;
                 for m in self.log.values_mut() {
-                    if m.last_confirmed_ts <= from_ts {
+                    if m.last_confirmed_ts <= from_ts && !m.stale {
                         m.stale = true;
+                        flipped = true;
                     }
+                }
+                if flipped {
+                    self.announce.changed(self.seq);
                 }
                 self.party_exp = false;
                 self.fan_out.reset();
             }
+            // `You gain party experience!` — the game's own statement that you are in a group right
+            // now. IT NAMES NOBODY, so it opens the gate and touches nothing else.
             "expGain" => {
-                // `You gain party experience!` — the game's own statement that you are in a group
-                // right now. It names nobody, so it opens the gate and touches nothing else.
                 if ev.bool("party") {
                     self.party_exp = true;
                 }
@@ -460,16 +469,14 @@ impl EqModule for RosterModule {
         }
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// The dirty bit: a group line, a heal burst that reached a name, a pet evicted from the weakest
+    /// rung, a gap that staled somebody, or a rebirth. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {
-        // THE EFFECTIVE ROSTER = the log's roster, plus your adds, minus your removes. With no
-        // edits pushed this is the log's map in join order, verbatim — which is the world the
-        // goldens were recorded under.
+        // With no edits pushed this is the log's map in join order, verbatim.
         let members = self.effective();
         json!({
             "seq": self.seq,
@@ -481,8 +488,7 @@ impl EqModule for RosterModule {
         })
     }
 
-    /// THE PULL SEAM JOS-477 left open, answered by this module and by no other — one method, no
-    /// downcast, and `None` everywhere else.
+    /// The pull seam, answered by this module and by no other — one method, no downcast.
     fn as_roster(&self) -> Option<&dyn crate::combat::RosterSource> {
         Some(self)
     }
@@ -497,32 +503,31 @@ impl crate::Defines for RosterModule {
         "roster"
     }
 
-    /// `rosterModule.setEdits(list)` — the whole edit list, replaced.
+    /// The whole edit list, replaced.
     ///
-    /// A PUSH RATHER THAN THE TS'S PULL, and the difference is the process boundary rather than a
-    /// design change. Over there `setEditsProvider(() => getRosterEdits(activeCharId()))` re-asks
-    /// the store on every read, so a character switch needs no notification: the provider simply
-    /// answers for whoever is active. The engine has no store to ask, so the app pushes on connect
-    /// and on every write — and because a define is a FULL-SET REPLACE, a switch is one push and
-    /// not a reconciliation.
+    /// A PUSH rather than the TS's pull, because of the process boundary: over there a provider
+    /// re-asks the store on every read, so a character switch needs no notification. The engine has
+    /// no store to ask, so the app pushes on connect and on every write — and because a define is a
+    /// full-set replace, a switch is one push and not a reconciliation.
     fn define(&mut self, payload: &Value) {
         let Some(list) = payload.as_array() else {
             return;
         };
         self.edits = list.iter().filter_map(RosterEdit::read).collect();
+        // `effective()` folds these into the published `members`, so a pushed edit list is a
+        // published change with no event behind it.
+        self.announce.changed(self.seq);
     }
 }
 
-/// `combat.setRoster(modules.roster)` — the engine does not FOLD a roster, it ASKS this module for
-/// one, during the same delivery and after this module has already advanced for the line. That is
-/// the reason `roster` is registered SECOND (header) and the reason there is exactly ONE membership
-/// ladder in this crate: two spellings of "who is in your group" are two answers.
+/// The combat engine does not FOLD a roster, it ASKS this module for one, during the same delivery
+/// and after this module has advanced for the line. That is why `roster` is registered second, and
+/// why there is exactly one membership ladder in this crate: two spellings of "who is in your group"
+/// are two answers.
 ///
-/// `combat::RosterMember` is a NARROWER shape than the one this module publishes — key, name,
-/// source, sinceTs — because it rides the COMBAT snapshot, which is a different artifact with a
-/// different consumer. `lastConfirmedTs` and `stale` are the module transport's; the meter does not
-/// draw them. Both are built from the same `log` map in the same order, so the two readings can
-/// disagree about nothing.
+/// `combat::RosterMember` is a NARROWER shape than the one this module publishes, because it rides
+/// the combat snapshot and the meter does not draw `lastConfirmedTs` or `stale`. Both are built from
+/// the same map in the same order, so the two readings can disagree about nothing.
 impl crate::combat::RosterSource for RosterModule {
     fn snap(&self) -> crate::combat::RosterSnap {
         crate::combat::RosterSnap {
@@ -545,7 +550,7 @@ impl crate::combat::RosterSource for RosterModule {
         self.effective().into_iter().map(|m| m.key).collect()
     }
 
-    /// WIDER THAN `members`, and it never shrinks within an epoch: a member who left an hour ago is
+    /// Wider than `members`, and it never shrinks within an epoch: a member who left an hour ago is
     /// still the person whose row carries that fight's damage, which is what lets a recorded row's
     /// kind upgrade from `'other'` to `'member'` MONOTONICALLY.
     ///

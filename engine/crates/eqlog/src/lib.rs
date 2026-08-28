@@ -1,40 +1,29 @@
-//! ============================================================================
-//! eqlog — THE EVERQUEST LEGENDS LOG PARSER, IN RUST (JOS-459 phase 1, JOS-469).
-//! ============================================================================
+//! The EverQuest Legends log parser: bytes in, canonical events out.
 //!
-//! Bytes in, canonical events out. Two ways in and ONE line law between them: `scan.rs` folds a
-//! complete file, `tail.rs` (JOS-472) follows one EverQuest is still appending to, byte-exactly, and
-//! the acceptance for the second is that its line sequence equals the first's over any chunking at
-//! all. Wiring the tail into `engined`'s session is a later ticket.
+//! Two ways in and one line law between them: `scan.rs` folds a complete file, `tail.rs` follows one
+//! EverQuest is still appending to, and the tail's line sequence must equal the scan's over any
+//! chunking at all.
 //!
-//! THE BAR IS BYTE IDENTITY, not equivalence (owner ruling 12, docs/plans/data-server.md). The TS
-//! pipeline's event stream over six slices of the owner's real log is recorded as NDJSON — one
-//! `JSON.stringify(ev)` per line — and this crate's serialized stream must equal it byte for byte
-//! over all six. That bar is why several things here look stranger than they would if the goal were
-//! merely "a correct parser":
+//! The bar is byte identity with the TypeScript parser's NDJSON event stream, not equivalence. That
+//! is why several things here look stranger than a merely correct parser would:
 //!
 //!   * events are written key by key rather than derived (`event.rs`), because `JSON.stringify`
-//!     writes INSERTION order and the insertion order is a property of the CODE PATH;
-//!   * `\d`, `\w`, `\s`, `.trim()` and `JSON.stringify`'s escape set are all spelled out
-//!     (`jsstr.rs`), because JavaScript's are ASCII-or-ECMA where Rust's are Unicode;
+//!     writes insertion order and the insertion order is a property of the code path;
+//!   * `\d`, `\w`, `\s`, `.trim()` and `JSON.stringify`'s escape set are spelled out (`jsstr.rs`),
+//!     because JavaScript's are ASCII-or-ECMA where Rust's are Unicode;
 //!   * timestamps resolve through an IANA zone with historical DST (`timestamp.rs`), because the TS
-//!     hands a zone-less string to `Date.parse` and gets HOST LOCAL TIME;
+//!     hands a zone-less string to `Date.parse` and gets host local time;
 //!   * the whole spell-DB load path is reproduced (`spelldb/`), because the `candidates` list a
-//!     `buffApply` carries IS that database.
+//!     `buffApply` carries is that database.
 //!
-//! AND SINCE JOS-505 A PARSE PRODUCES TWO THINGS AT ONCE. The NDJSON line above is still built
-//! eagerly and is still the bar; beside it, in the same calls, `event.rs` records the event as a
-//! TYPED `Payload` — the kind as a discriminant, each field as a `(Key, Slot)` pair in the order it
-//! was written, every string in one reused arena. That is what the FOLD reads: it used to parse the
-//! line back into a `serde_json::Value`, which JOS-504 measured at 9.6% of a whole fold before any
-//! module had looked at a field. `scan_bytes` and the ingest seam hand over both halves together
-//! because they are one event written twice and the writer's buffers are reused — a caller that
-//! took one of them could not ask for the other afterwards.
+//! A parse produces two things at once: the NDJSON line, and a typed `Payload` recording the kind as
+//! a discriminant with each field as a `(Key, Slot)` pair in write order, strings in one reused
+//! arena. The fold reads the payload; re-parsing the line into a `serde_json::Value` cost 9.6% of a
+//! whole fold. Both halves are handed over together because the writer's buffers are reused — a
+//! caller that took one could not ask for the other afterwards.
 //!
-//! CACHE TRANSPARENCY (ruling 18): a parse is a pure function of (bytes, spell-DB version,
-//! character name). Everything stateful lives on `Parser`, nothing outlives it, and no state is
-//! addressed by anything but a byte offset. The one memo the TS keeps — `spellCanonKey`'s cache — is
-//! deliberately not ported; its own header says the behaviour is identical either way.
+//! A parse is a pure function of (bytes, spell-DB version, character name). Everything stateful
+//! lives on `Parser` and nothing outlives it.
 
 pub mod event;
 pub mod jsstr;
@@ -53,15 +42,12 @@ pub use chrono_tz::Tz;
 pub use parse::Parser;
 pub use timestamp::{host_timezone, Civil, Clock};
 
-/// Build the parser the app builds: the effective spell DB (spells.json + every load-time overlay +
-/// the committed message-overlay corrections) installed, and the tailed character's name known.
+/// Build the parser the app builds: the effective spell DB installed, and the tailed character's
+/// name known.
 ///
-/// THE CHARACTER NAME IS LOAD-BEARING and must be installed BEFORE the fold: the self-`/who` rule
-/// and the pet-leader carve-out both decline every line until it is set, exactly as `session.ts`
-/// (and `foldArm.mts`) arrange.
-/// THE CATALOG IS THE PROCESS'S ONE COPY (JOS-478, `spelldb::shared`). It was `spelldb::load()`
-/// here, which meant a second parser in one process paid the whole 386 ms build again for bytes
-/// compiled into the binary — the knot `engined`'s README measured and named for the integrator.
+/// The character name must be installed before the fold — the self-`/who` rule and the pet-leader
+/// carve-out both decline every line until it is set. The catalog is the process's one copy
+/// (`spelldb::shared`), so a second parser does not pay the 386 ms build again.
 pub fn parser_for(character: &str, tz: chrono_tz::Tz) -> Parser {
     Parser::new(
         Clock::new(tz),
@@ -70,9 +56,8 @@ pub fn parser_for(character: &str, tz: chrono_tz::Tz) -> Parser {
     )
 }
 
-/// `tests/bench/goldenOracle.mts characterOf`'s pattern, spelled ONCE — `eqlog_<Name>_<server>.
-/// <slice>.txt`. Two readers take two groups off it (below); a second copy of the pattern would be
-/// a way for them to disagree about what a log file is called.
+/// The log filename shape, `eqlog_<Name>_<server>.<slice>.txt`, spelled once: two readers take two
+/// groups off it, and a second copy would let them disagree about what a log file is called.
 fn log_file_re() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"(?i)^eqlog_(.+?)_([^_]+?)\.[^.]+\.txt$").unwrap())
@@ -84,9 +69,8 @@ pub fn character_of(file_name: &str) -> Option<String> {
     log_file_re().captures(file_name).map(|m| m[1].to_string())
 }
 
-/// The SERVER out of the same filename. It exists because the character module (JOS-475) publishes
-/// the whole `CharacterRef` — `{ name, server, logPath }` — and the golden recorder derives every
-/// field of it from the filename.
+/// The server out of the same filename: the character module publishes a whole `CharacterRef`, and
+/// the golden recorder derives every field of it from the filename.
 pub fn server_of(file_name: &str) -> Option<String> {
     log_file_re().captures(file_name).map(|m| m[2].to_string())
 }
@@ -138,8 +122,8 @@ mod tests {
         assert!(!p.parse_event("no bracket here", 0, &mut ev));
     }
 
-    /// A chat line carrying bare CARRIAGE RETURNS is not a log line at all — see `jsstr::JS_DOT`
-    /// for the sky-era divergence this pins. It must produce NO event, so `seq` does not advance.
+    /// A chat line carrying bare carriage returns is not a log line at all: it must produce no
+    /// event, so `seq` does not advance. See `jsstr::JS_DOT`.
     #[test]
     fn a_line_with_an_embedded_carriage_return_is_no_event_at_all() {
         let p = bare();
@@ -149,14 +133,48 @@ mod tests {
             0,
             &mut ev
         ));
-        // …but a CR sitting where the ONE optional space goes is consumed by `\s?` and the line
-        // parses, because that is what the TS pattern does too.
+        // …but a CR sitting where the one optional space goes is consumed by `\s?` and the line
+        // parses.
         assert!(p.parse_event(
             "[Sun Aug 16 20:09:40 2026]\rWelcome to EverQuest Legends!",
             0,
             &mut ev
         ));
         assert!(ev.finish().starts_with(r#"{"kind":"sessionStart""#));
+    }
+
+    /// The instance-creation notice. Synthetic sentence, real shape: the player name is invented
+    /// because the line this was learned from is a reporter's own log.
+    #[test]
+    fn the_instance_notice_names_the_creator_the_zone_and_the_id() {
+        let p = bare();
+        let raw =
+            "[Thu Aug 27 00:24:09 2026] Player Wanderling creating instance The Plane of Sky 6038.";
+        assert_eq!(
+            parse_one(&p, raw),
+            format!(
+                r#"{{"kind":"instanceCreate","seq":0,"ts":1787815449000,"raw":{},"player":"Wanderling","zone":"The Plane of Sky","instance":6038}}"#,
+                serde_json::to_string(raw).unwrap()
+            )
+        );
+    }
+
+    /// The id is the last number, so a zone whose own name ends in an ordinal keeps it; a notice
+    /// with no id is not this line family and claims nothing.
+    #[test]
+    fn the_instance_id_never_eats_the_end_of_the_zone_name() {
+        let p = bare();
+        let out = parse_one(
+            &p,
+            "[Thu Aug 27 00:24:09 2026] Player Wanderling creating instance Befallen 2 6038.",
+        );
+        assert!(out.contains(r#""zone":"Befallen 2""#), "{out}");
+        assert!(out.contains(r#""instance":6038"#), "{out}");
+        let out = parse_one(
+            &p,
+            "[Thu Aug 27 00:24:09 2026] Player Wanderling creating instance The Plane of Sky.",
+        );
+        assert!(out.starts_with(r#"{"kind":"unknown""#), "{out}");
     }
 
     #[test]

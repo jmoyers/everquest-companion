@@ -33,6 +33,13 @@
 // carried across except the FAILURE trail, which is about this supervisor's patience and not about
 // the world. Resume is always requery, which is a client's problem (JOS-468), not this file's.
 //
+// AND SINCE JOS-519 A SECOND TRAIL RIDES BESIDE IT, counting the opposite thing. The failure trail
+// resets on every READY edge, which is correct for a launch loop and is exactly why an engine that
+// reaches READY, serves, and dies ten minutes later — over and over, always coming back — never
+// produced a single error-store entry. `servedTrail` counts those, once per session, because a user
+// sees each of them as another "Catching up on your log". It is an INSTRUMENT: nothing about
+// respawn, backoff or the fault card reads it.
+//
 // IT IS A CLASS, and that is a factoring decision rather than a style one: every one of these
 // methods is a callback somebody else holds, and a single factory closure holding them all is one
 // function of three hundred lines. A class gives each verb its own name, its own budget and its own
@@ -60,9 +67,11 @@ import {
   ENGINE_HEALTH_TIMEOUT_MS,
   ENGINE_STOP_GRACE_MS,
   NEW_ENGINE_EXIT_TRAIL,
+  NEW_ENGINE_SERVED_TRAIL,
   boundedDetail,
   engineExitStep,
   engineRestartDelayMs,
+  engineServedCycleStep,
   engineShutdownExitLog,
   parseAnnounce,
   redactToken,
@@ -71,6 +80,7 @@ import {
   type EngineExitLog,
   type EngineExitTrail,
   type EngineFailure,
+  type EngineServedTrail,
   type EngineTimer
 } from './engineProtocol'
 
@@ -177,6 +187,16 @@ export interface EngineSupervisorDeps {
    * reaching `fold`.
    */
   onFault?(fault: EngineFaultCause | null): void
+  /**
+   * A SERVING ENGINE JUST DIED AND A RESPAWN FOLLOWS (JOS-519) — the breadcrumb edge, and the only
+   * thing this supervisor says about the cycling that is not an error-store entry.
+   *
+   * It fires on EVERY such death rather than once, because a ring is a sequence and the whole point
+   * is that a crash report shows the shape: ready, gone, cycled, ready, gone, cycled. It takes no
+   * parameter for `noteEngineEdge`'s reason — there is nothing a name, a port or a pid could travel
+   * in — and the count lives in the entry the deps' `report` gets.
+   */
+  onServedExit?(): void
   /** TEST SEAMS — every clock, and the wire version. */
   protocolVersion?: number
   announceTimeoutMs?: number
@@ -191,6 +211,9 @@ interface Launch {
   readonly startedAt: number
   readonly token: string
   announce: EngineAnnounce | null
+  /** Did this launch ever reach READY? The one bit that separates "the engine will not start" from
+   *  "the engine started, served, and then died" — the second is JOS-519's whole subject. */
+  served: boolean
   /** The engine's last stderr line, kept as the `detail` a failure report carries. */
   lastStderr: string | null
   /** Has this launch already been folded? The idempotence latch — see `endLaunch`. */
@@ -216,6 +239,9 @@ export class EngineSupervisor {
   private status: EngineStatus = 'stopped'
   private launch: Launch | null = null
   private trail: EngineExitTrail = NEW_ENGINE_EXIT_TRAIL
+  /** THE OTHER TRAIL (JOS-519), and it is deliberately NOT reset anywhere in this file: it counts
+   *  engines that WORKED and then died, so a launch reaching READY is what feeds it. */
+  private servedTrail: EngineServedTrail = NEW_ENGINE_SERVED_TRAIL
   private failures = 0
   private cancelRestart: (() => void) | null = null
   /** Set by `stop()`. A stop must survive a launch that is mid-handshake, so it is a latch rather
@@ -385,6 +411,7 @@ export class EngineSupervisor {
       token,
       startedAt: this.deps.now(),
       announce: null,
+      served: false,
       lastStderr: null,
       finished: false,
       killed: false,
@@ -536,6 +563,11 @@ export class EngineSupervisor {
     this.status = 'ready'
     this.failures = 0
     this.trail = NEW_ENGINE_EXIT_TRAIL
+    // …AND `servedTrail` IS NOT TOUCHED HERE (JOS-519). Resetting it would erase the only record of
+    // the failure it exists for: an engine that reaches READY, serves, dies, and is replaced by
+    // another that does the same. That trail is about launches that never worked; this one counts
+    // the ones that did.
+    l.served = true
     // WHATEVER CARD IS ON SCREEN IS ABOUT A WORLD THAT NOW WORKS (JOS-503). Cleared on the same
     // proven round trip that resets the trail, because they are the same fact: this supervisor has
     // stopped having a diagnosis.
@@ -574,13 +606,14 @@ export class EngineSupervisor {
     clearLaunchTimers(l)
     this.deps.onPid?.(null)
     this.deps.onReady?.(null)
-    this.fold({
+    const cause = {
       failure,
       exitCode: info.exitCode ?? null,
       signal: info.signal ?? null,
       lifetimeMs: Math.max(0, this.deps.now() - l.startedAt),
       detail: boundedDetail(info.detail) ?? l.lastStderr
-    })
+    }
+    this.fold(cause)
     // The child may still be running (a timeout, a bad announce, a failed health probe). Retiring it
     // is not optional — see `retire`. On the exit path it costs one `end()` on a closed pipe.
     if (info.alive !== false) this.retire(l)
@@ -589,7 +622,28 @@ export class EngineSupervisor {
       this.status = 'stopped'
       return
     }
+    if (l.served) this.noteServedExit(cause)
     this.scheduleRestart()
+  }
+
+  /**
+   * A LAUNCH THAT HAD SERVED IS BEING REPLACED (JOS-519). Below the `stopping` return above on
+   * purpose: what this counts is a RESPAWN after serving, and a supervisor that is stopping is not
+   * going to respawn anything — the quit path and `stop()` are not failures, whatever the exit code
+   * says, and this counter must not turn an orderly shutdown into a symptom.
+   *
+   * A wedge counts as a death. `unhealthy` ends a launch whose process may still be running, but
+   * the consequence is identical — the engine is retired, a fresh one launches, and the whole log is
+   * folded again — and it is that consequence the user is reporting.
+   */
+  private noteServedExit(cause: Omit<EngineExitCause, 'attempt'>): void {
+    const step = engineServedCycleStep(this.servedTrail, cause)
+    this.servedTrail = step.trail
+    this.deps.onServedExit?.()
+    this.deps.debug(
+      `data-server engine: a serving engine died (${String(step.trail.cycles)} this session)`
+    )
+    if (step.log) this.deps.report(step.log)
   }
 
   /** Count the failure, fold it into the trail, report what the fold says to report. */

@@ -18,7 +18,7 @@
 // are labeled as re-purchases (the sole refund signal the log carries — there is no refund line),
 // never as a respec count.
 
-import { type JSX, useMemo, useState } from 'react'
+import { type JSX, memo, useCallback, useMemo, useState } from 'react'
 import { Box, Chip, Paper, Stack, Typography, type SxProps, type Theme } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
@@ -125,7 +125,7 @@ function RankRungs({ row }: { row: AaAbilityRow }): JSX.Element {
  * One ability. The bar behind the name is this ability's share of the LARGEST ability's spend —
  * a relative read only, which is why it carries no number of its own; the points are printed.
  */
-function AbilityRow({
+const AbilityRow = memo(function AbilityRow({
   row,
   max,
   open,
@@ -134,7 +134,10 @@ function AbilityRow({
   row: AaAbilityRow
   max: number
   open: boolean
-  onToggle: () => void
+  /** Takes the ability's NAME (JOS-511 item 3): a per-row `() => toggle(r.name)` closure is a fresh
+   *  prop on every row on every render, which is a memo that can never hit. One callback, fifty
+   *  rows, and the row hands back the name it already knows. */
+  onToggle: (name: string) => void
 }): JSX.Element {
   const share = max > 0 ? (row.invested / max) * 100 : 0
   const paid = row.invested > 0
@@ -144,7 +147,9 @@ function AbilityRow({
         direction="row"
         spacing={1}
         alignItems="center"
-        onClick={onToggle}
+        onClick={() => {
+          onToggle(row.name)
+        }}
         sx={{
           py: 0.3,
           px: 0.5,
@@ -197,6 +202,80 @@ function AbilityRow({
       {open && <RankRungs row={row} />}
     </Box>
   )
+})
+
+/**
+ * HOW MANY LADDERS ARE MOUNTED BEFORE THE DISCLOSURE (JOS-511 item 5).
+ *
+ * The panel is ALWAYS mounted — it is the first thing in the right column in the charted state — and
+ * it drew one `AbilityRow` per ability with no ceiling at all: 50 on the owner's own log, each one a
+ * Stack, three chips, an icon pair and a share bar. That is an unbounded mount on a tab whose whole
+ * complaint is wasted render.
+ *
+ * A DISCLOSURE RATHER THAN A WINDOW, and JOS-289 is the reason: `useWindowedRows` needs a scrolling
+ * container with a height, which is precisely the porthole the owner had removed from THIS panel
+ * ("the ladder is as tall as the account - you read it down"). A `+N more` hides nothing the page
+ * was showing without a click and adds no scroller; it is also the shape the two panels either side
+ * of it already use (`best-spells-more`, `unlock-era-toggle`), so a reader has met it.
+ *
+ * 25 rather than the readout's 10: this is a LEDGER read downward, and the rows are sorted by points
+ * invested, so the top 25 is where "where did my points go" is answered on a real account while the
+ * tail is one-point abilities and auto-grants. THE TOTALS ARE UNAFFECTED, which is the load-bearing
+ * part: the count in the heading and every figure in the footer are computed over ALL rows, so the
+ * footer's equality with the AA-points-spent hero card holds whether or not the disclosure is open.
+ */
+const LADDER_TOP_N = 25
+
+/** A one-click disclosure over the ladders below the ceiling — `RowDisclosure`'s shape next door. */
+function MoreLadders({
+  rows,
+  max,
+  open,
+  onToggle
+}: {
+  rows: readonly AaAbilityRow[]
+  max: number
+  open: ReadonlySet<string>
+  onToggle: (name: string) => void
+}): JSX.Element | null {
+  const [shown, setShown] = useState(false)
+  if (rows.length === 0) return null
+  return (
+    <>
+      <Stack
+        direction="row"
+        alignItems="center"
+        role="button"
+        tabIndex={0}
+        aria-expanded={shown}
+        onClick={() => {
+          setShown(!shown)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') setShown(!shown)
+        }}
+        data-testid="aa-ledger-more"
+        sx={{
+          display: 'inline-flex',
+          cursor: 'pointer',
+          color: 'text.secondary',
+          '&:hover': { color: 'primary.main' }
+        }}
+      >
+        <Typography variant="caption" sx={{ fontSize: 10.5 }}>
+          +{rows.length} more
+        </Typography>
+        <ExpandMoreIcon
+          fontSize="inherit"
+          sx={{ transition: 'transform 120ms', transform: shown ? 'rotate(180deg)' : undefined }}
+        />
+      </Stack>
+      {shown &&
+        rows.map((r) => (
+          <AbilityRow key={r.name} row={r} max={max} open={open.has(r.name)} onToggle={onToggle} />
+        ))}
+    </>
+  )
 }
 
 /**
@@ -214,15 +293,21 @@ export function AaLedgerPanel({
   const rows = useMemo(() => aaLedger(spends), [spends])
   const summary = useMemo(() => aaLedgerSummary(rows), [rows])
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set<string>())
-  if (rows.length === 0) return null
-  const max = rows[0].invested
-  const toggle = (name: string): void => {
+  // ONE callback for every row (JOS-511 item 3). It closes over nothing from the render — `setOpen`
+  // takes the updater form — so it is stable for the life of the panel and the row memo can hit.
+  const toggle = useCallback((name: string): void => {
     setOpen((prev) => {
       const next = new Set(prev)
       if (!next.delete(name)) next.add(name)
       return next
     })
-  }
+  }, [])
+  // The two slices, memoized so the arrays feeding the rows are stable across a render that did not
+  // change the ledger.
+  const top = useMemo(() => rows.slice(0, LADDER_TOP_N), [rows])
+  const rest = useMemo(() => rows.slice(LADDER_TOP_N), [rows])
+  if (rows.length === 0) return null
+  const max = rows[0].invested
   return (
     <Paper variant="outlined" sx={{ p: 2 }} data-testid="aa-ledger">
       <Typography variant="subtitle2">
@@ -241,9 +326,10 @@ export function AaLedgerPanel({
           The panel is a LEDGER — you read it down — so it takes its honest height, the footer sits
           under the last row where a total belongs, and the page carries the whole thing. */}
       <Box>
-        {rows.map((r) => (
-          <AbilityRow key={r.name} row={r} max={max} open={open.has(r.name)} onToggle={() => { toggle(r.name) }} />
+        {top.map((r) => (
+          <AbilityRow key={r.name} row={r} max={max} open={open.has(r.name)} onToggle={toggle} />
         ))}
+        <MoreLadders rows={rest} max={max} open={open} onToggle={toggle} />
       </Box>
       <Typography
         variant="caption"

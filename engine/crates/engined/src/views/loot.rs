@@ -1,42 +1,24 @@
-//! `loot.ledger` — THE FIRST PRODUCT VIEW SOURCE (JOS-480).
+//! `loot.ledger` — the chronological loot ledger, newest first, as the flat table draws it. Rows
+//! come through the `loot` module's pull seam (`fold::EqModule::as_loot`), never through
+//! `snapshot()`.
 //!
-//! The chronological loot ledger, newest first: the flat table `LootTables.tsx FlatLootTable`
-//! draws, served render-ready. It reads the `loot` module's rows through the pull seam
-//! (`fold::EqModule::as_loot`) and never through `snapshot()` — see that seam for why.
+//! The cells are `at`, `item`, `count`, `from`, `zone`, `disposition`, `created` — one per thing the
+//! reader can see.
 //!
-//! ── WHAT A CELL IS HERE, read off the renderer that draws it ───────────────────────────────────
+//! The count is its own cell rather than composed into `item`. `2 × Bone Chips` is what the pixel
+//! says, but the composed string is lossy: every other reader of this row wants the name and the
+//! stack size separately, and splitting it back apart client-side is the munging the layer exists to
+//! prevent.
 //!
-//! `FlatLootTable`'s header row is `Time · Item · From · Zone`, and `FlatRow` draws, in order: the
-//! timestamp through `fmtTime`; the item name, prefixed `N × ` when the line stated a stack size;
-//! a disposition chip; a `→ created` caption on a `combined` row; the source; the zone. So the
-//! cells are `at`, `item`, `count`, `from`, `zone`, `disposition`, `created` — seven, and each one
-//! is a thing the reader can actually see.
+//! An absent value is `null`, never `"-"`. The renderer's dash is a display decision about absence;
+//! a cell of `"-"` could not be told apart from an item genuinely called `-`, and it would cost this
+//! source the diff protocol's explicit-null clear.
 //!
-//! **THE COUNT IS ITS OWN CELL rather than being composed into `item`, and that is the judgment
-//! call worth stating.** `2 × Bone Chips` is literally what the pixel says, so composing it here
-//! would be defensible on ruling 4's own words. It is not done because the composed string is
-//! LOSSY: every other reader of this row — the drill-down, the grouped table, a future
-//! `loot.byItem` source — wants the item's NAME and the stack size as a number, and a client that
-//! had to split `"2 × Bone Chips"` back apart would be doing exactly the munging the ruling
-//! forbids. Two cells is the honest decomposition; joining them with `×` is a format, in the same
-//! class as rounding a percentage for the bar it is drawn in.
-//!
-//! **AN ABSENT VALUE IS `null`, never `"-"`.** The renderer draws a dash for a loot row that names
-//! no source, and a dash is what the pixel says — but a cell of `"-"` cannot be told apart from an
-//! item genuinely called `-`, and it would take the diff protocol's explicit-null clear away from
-//! this source entirely (an absent cell is UNCHANGED and a null cell is CLEARED; there is no third
-//! spelling). The dash stays a display decision about absence, which is what it always was.
-//!
-//! ── THE TIMESTAMP IS A FIXED PATTERN, not a locale call ────────────────────────────────────────
-//!
-//! `fmtTime` is `formatDateTime(ts, { month: 'short', day: '2-digit', hour: '2-digit', minute:
-//! '2-digit' })` — `toLocaleString` with the runtime's own locale. This engine renders the en-US
-//! form of exactly those options (`Aug 19, 04:21 PM`) as a FIXED pattern, and the divergence is
-//! deliberate rather than overlooked: a host collation or a host locale anywhere in the serve path
-//! makes the engine's answer a property of the machine, and determinism is cacheability (ruling 18
-//! law 1) — the same rule that forbids `localeCompare` in the sort. The ZONE is not a locale and
-//! is honoured: the instant is resolved through the parser's own clock, which is the zone the log's
-//! timestamps were read in, so the string says the wall clock the player's machine would show.
+//! The timestamp is a fixed en-US pattern (`Aug 19, 04:21 PM`) rather than a locale call: a host
+//! locale anywhere in the serve path makes the answer a property of the machine, and determinism is
+//! cacheability — the same rule that forbids `localeCompare` in the sort. The time ZONE is not a
+//! locale and is honoured, through the parser's own clock, so the string says the wall clock the
+//! player's machine would show.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -46,14 +28,12 @@ use super::{Field, Order, SourceDef, SourceRow};
 /// The registry entry. See [`super::SourceDef`].
 pub const LEDGER: SourceDef = SourceDef {
     id: "loot.ledger",
-    // `seq` is a FIELD WITH NO CELL: the row's position in the append-only ledger, which is what
-    // makes the order total (see the module header of `views`). `at` is the opposite of a cell
-    // with the same name — the instant, in millis, not the string drawn from it.
+    // `seq` is a field with no cell: the row's position in the append-only ledger, which is what
+    // makes the order total. The `at` field is the instant in millis, not the string drawn from it.
     fields: &["at", "seq", "item", "count", "from", "zone", "disposition"],
-    // NEWEST FIRST, which is what the flat ledger shows: `filterLootEvents` ends in `.reverse()`.
-    // The second term is what makes that exact — EQ stamps to the second, so a corpse yielding
-    // three items writes three rows at one instant, and reversing the ledger puts the LAST-folded
-    // of them first.
+    // Newest first, which is what the flat ledger shows. The second term is what makes that exact:
+    // EQ stamps to the second, so a corpse yielding three items writes three rows at one instant,
+    // and reversing the ledger puts the last-folded of them first.
     default_sort: &[("at", Order::Desc), ("seq", Order::Desc)],
     tiebreak: ("seq", Order::Asc),
     default_limit: super::DEFAULT_LIMIT,
@@ -61,11 +41,10 @@ pub const LEDGER: SourceDef = SourceDef {
 
 /// Build every row of the ledger, in the module's own append order.
 ///
-/// THE KEY IS THE ROW'S POSITION — `loot:<n>` — because that is the only identity this ledger has:
-/// the module appends and never edits, so a position names one loot for as long as the ledger
-/// holds it. A rebirth boundary clears the ledger and positions start again, which is exactly why
-/// the module's REVISION counter exists rather than its length: the view is re-cut, and the diff
-/// between the old window and the new one says what the client has to do about it.
+/// The key is the row's position (`loot:<n>`), the only identity this ledger has: the module appends
+/// and never edits, so a position names one loot for as long as the ledger holds it. A rebirth
+/// boundary clears the ledger and positions start again — the module's revision counter is what
+/// handles that, by re-cutting the view and diffing.
 #[must_use]
 pub fn rows(module: &fold::modules::loot::LootModule, clock: &eqlog::Clock) -> Vec<SourceRow> {
     module
@@ -111,16 +90,15 @@ fn text_or_missing(value: Option<&str>) -> Field {
     value.map_or(Field::Missing, |v| Field::Text(v.to_owned()))
 }
 
-/// The three-letter month names the en-US short form uses. ASCII and fixed — see the module header.
+/// The three-letter month names the en-US short form uses. ASCII and fixed, never a locale call.
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 /// `Aug 19, 04:21 PM` — the en-US rendering of `fmtTime`'s options, through the parser's zone.
 ///
-/// A ts of 0 renders EMPTY, which is `formatDate.ts`'s own rule stated in its header: "a falsy/0 ts
-/// renders as empty (unknown timestamp)". A stamp the parser could not read is 0, so this is the
-/// one place the two languages have to agree about an unknown instant, and they do.
+/// A ts of 0 renders empty, matching `formatDate.ts`: a falsy ts is an unknown timestamp, and a
+/// stamp the parser could not read is 0.
 pub(super) fn display_time(clock: &eqlog::Clock, ms: i64) -> String {
     if ms == 0 {
         return String::new();
@@ -132,8 +110,8 @@ pub(super) fn display_time(clock: &eqlog::Clock, ms: i64) -> String {
         .get(usize::try_from(t.month).unwrap_or(0).saturating_sub(1))
         .copied()
         .unwrap_or("???");
-    // 12-hour with a leading zero, exactly as `hour: '2-digit'` renders under `hour12` defaulted
-    // for en-US: midnight and noon are 12, not 00.
+    // 12-hour with a leading zero, as `hour: '2-digit'` renders for en-US: midnight and noon are
+    // 12, not 00.
     let meridiem = if t.hour < 12 { "AM" } else { "PM" };
     let hour12 = match t.hour % 12 {
         0 => 12,
@@ -158,9 +136,8 @@ mod tests {
         eqlog::Clock::new(eqlog::Tz::America__Los_Angeles)
     }
 
-    /// A fold with the twenty modules registered, fed hand-written events. `launch_ms` is
-    /// `i64::MAX` so the rebirth boundary never fires and the ledger keeps what it is given — the
-    /// same trick `fold`'s own unit tests use.
+    /// A fold fed hand-written events. `launch_ms` is `i64::MAX` so the rebirth boundary never
+    /// fires and the ledger keeps what it is given.
     fn folded(lines: &[&str]) -> Fold {
         let mut fold = Fold::new(fold::registered(ClusterDeps::default()), i64::MAX);
         for line in lines {
@@ -186,8 +163,8 @@ mod tests {
         assert_eq!(cells["item"], protocol::Cell::text("Cloak of Flames"));
         assert_eq!(cells["from"], protocol::Cell::text("a fire giant warlord"));
         assert_eq!(cells["zone"], protocol::Cell::text("Nagafen's Lair"));
-        // ABSENCE IS NULL, not a dash and not a missing key: the diff protocol needs a cell to be
-        // able to become null, and the renderer's dash is a display decision about absence.
+        // Absence is null, not a dash and not a missing key: the diff protocol needs a cell to be
+        // able to become null.
         assert_eq!(cells["count"], protocol::Cell::null());
         assert_eq!(cells["disposition"], protocol::Cell::null());
         assert_eq!(cells["created"], protocol::Cell::null());
@@ -199,8 +176,8 @@ mod tests {
         let built = rows(fold.registry.loot().expect("the loot module"), &clock());
         assert_eq!(built[1].cells["item"], protocol::Cell::text("Bone Chips"));
         assert_eq!(built[1].cells["count"], protocol::Cell::int(2));
-        // The FIELD and the CELL of the same name are different values, which is the distinction
-        // the whole view layer turns on: `at` renders as text and sorts as an instant.
+        // The field and the cell of the same name are different values: `at` renders as text and
+        // sorts as an instant.
         assert_eq!(
             built[1]
                 .fields
@@ -237,12 +214,12 @@ mod tests {
             display_time(&clock(), 1_787_181_707_000),
             "Aug 19, 04:21 PM"
         );
-        // Midnight and noon are 12, never 00 — the one place a 12-hour clock is easy to get wrong.
+        // Midnight and noon are 12, never 00.
         let midnight = clock().parse_eq_timestamp("Wed Aug 19 00:05:00 2026");
         assert_eq!(display_time(&clock(), midnight), "Aug 19, 12:05 AM");
         let noon = clock().parse_eq_timestamp("Wed Aug 19 12:05:00 2026");
         assert_eq!(display_time(&clock(), noon), "Aug 19, 12:05 PM");
-        // An unknown instant renders empty, which is `formatDate.ts`'s own falsy-ts rule.
+        // An unknown instant renders empty, matching `formatDate.ts`'s falsy-ts rule.
         assert_eq!(display_time(&clock(), 0), "");
     }
 }

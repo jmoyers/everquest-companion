@@ -1,12 +1,10 @@
-//! The SHARED helpers the ported modules call, each one a verbatim port of the TS function named
-//! in its doc comment. They live together rather than beside their callers because most of them
-//! have two callers over there too (`itemBaseName` / `itemTierKey` are one rule split in two;
-//! `zoneTier` is read by the parser and by the kills fold), and a second spelling of any of them
-//! would be a second answer to a question the app has already decided.
+//! The shared helpers the ported modules call, each a verbatim port of the TS function named in its
+//! doc comment. They live together rather than beside their callers because most have two callers,
+//! and a second spelling of any of them would be a second answer to a settled question.
 //!
-//! EVERY JS-vs-RUST DIVERGENCE HERE GOES THROUGH `eqlog::jsstr`, never re-derived (house rule):
-//! `\s` is `JS_S`, `.` is `JS_DOT`, `\b` is `(?-u:\b)` — JavaScript's word boundary is ASCII where
-//! the `regex` crate's is Unicode — and `\d` is spelled `[0-9]` because JS's is ASCII-only.
+//! Every JS-vs-Rust regex divergence goes through `eqlog::jsstr` rather than being re-derived: `\s`
+//! is `JS_S`, `.` is `JS_DOT`, `\b` is `(?-u:\b)` because JavaScript's word boundary is ASCII where
+//! the `regex` crate's is Unicode, and `\d` is spelled `[0-9]` because JS's is ASCII-only.
 
 use eqlog::jsstr::{js_trim, JS_DOT, JS_S};
 use regex::Regex;
@@ -55,15 +53,14 @@ fn zone_res() -> &'static ZoneRes {
     })
 }
 
-/// `main/log/parseWorld.ts zoneTier` — the whole of it, because the LAST branch reads `base`.
+/// `main/log/parseWorld.ts zoneTier` — the whole of it, because the last branch reads `base`.
 ///
-/// Four answers, not five (that file's header carries the ruling): a named difficulty d1..d4, d0
-/// for an instance with no adjective, `TIER_OPEN_WORLD` for a bare zone name, and `TIER_UNKNOWN`
-/// both for the empty string (the kills module's state before the scan reaches any zone line) and
-/// for a parenthetical the table does not know.
+/// A named difficulty d1..d4; d0 for an instance with no adjective; `TIER_OPEN_WORLD` for a bare
+/// zone name; `TIER_UNKNOWN` both for the empty string (the kills module's state before the scan
+/// reaches any zone line) and for a parenthetical the table does not know.
 pub fn zone_tier(zone: &str) -> (String, i64) {
     let res = zone_res();
-    // Three SINGLE replacements, in order: `String.prototype.replace` with a non-global regex
+    // Three single replacements, in order: `String.prototype.replace` with a non-global regex
     // touches the first match only, and all three are `$`-anchored so there is only ever one.
     let a = res.strip_suffix.replace(zone, "");
     let b = res.strip_numbered_paren.replace(&a, "");
@@ -83,11 +80,18 @@ pub fn zone_tier(zone: &str) -> (String, i64) {
     (base, tier)
 }
 
+/// `shared/zoneScope.ts zoneIdKey` — trim + lowercase, keeping every other byte of the name.
+///
+/// This is the row identity, not the place: `befallen 2 (adaptive)` and `befallen` are different
+/// keys. (`zoneKey`, not ported, is the one that strips the tier and instance selector.)
+pub fn zone_id_key(zone: &str) -> String {
+    js_trim(zone).to_lowercase()
+}
+
 /// `main/log/reducers.ts isCountedKill`'s one test, `/^you\b/i.test(killer)`, spelled out.
 ///
-/// Written by hand rather than as a regex for two reasons: it runs on every death line in the log,
-/// and JS's `\b` is ASCII where the crate's is Unicode — so the hand-written form is both the
-/// faster and the more exactly faithful of the two.
+/// Hand-written rather than a regex: it runs on every death line, and JS's `\b` is ASCII where the
+/// crate's is Unicode, so this form is both faster and more faithful.
 pub fn starts_with_you_word(killer: &str) -> bool {
     let mut it = killer.chars();
     for want in ['y', 'o', 'u'] {
@@ -102,10 +106,10 @@ pub fn starts_with_you_word(killer: &str) -> bool {
     }
 }
 
-/// `shared/itemStats.ts itemTierFromName` — `/ \+(\d+)$/` over the TRIMMED name.
+/// `shared/itemStats.ts itemTierFromName` — `/ \+(\d+)$/` over the trimmed name.
 ///
-/// A digit run too long for an `i64` answers `None` where JS would answer a lossy float; that
-/// takes 19 digits of item level and no line in any log has printed one.
+/// A digit run too long for an `i64` answers `None` where JS would answer a lossy float; that takes
+/// 19 digits of item level, which no log line has printed.
 pub fn item_tier_from_name(name: &str) -> Option<i64> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r" \+([0-9]+)$").unwrap());
@@ -113,10 +117,10 @@ pub fn item_tier_from_name(name: &str) -> Option<i64> {
     m[1].parse::<i64>().ok()
 }
 
-/// `shared/itemStats.ts itemBaseName` — strip ` +N`, THEN trim.
+/// `shared/itemStats.ts itemBaseName` — strip ` +N`, then trim.
 ///
-/// The order matters and is not the same as `itemTierFromName`'s (which trims first): a name with
-/// a trailing space keeps its suffix here and loses it there. Both are ported exactly as written.
+/// The order is the reverse of `itemTierFromName`'s, which trims first: a name with a trailing
+/// space keeps its suffix here and loses it there. Both are ported exactly as written.
 pub fn item_base_name(name: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r" \+[0-9]+$").unwrap());
@@ -153,9 +157,8 @@ pub struct SpellRank {
 
 /// `shared/spellLines.ts parseSpellRank` — split a display name into base + rank ordinal.
 ///
-/// `RANK_TAIL_RE` is ` (I|II|…|X)$`, case-INSENSITIVE — deliberately NOT the same regex as
-/// `eqlog::names::spell_canon_key`'s, which is the case-SENSITIVE one `parseCommon.ts` spells. The
-/// two are separate over there too, and `tests/spellLines.test.mts` pins where they must agree.
+/// The rank tail is ` (I|II|…|X)$`, case-insensitive — deliberately not the same regex as
+/// `eqlog::names::spell_canon_key`'s, which is case-sensitive. The two are separate over there too.
 pub fn parse_spell_rank(name: &str) -> SpellRank {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"(?i) (I|II|III|IV|V|VI|VII|VIII|IX|X)$").unwrap());
@@ -175,8 +178,8 @@ pub fn parse_spell_rank(name: &str) -> SpellRank {
     }
 }
 
-/// `shared/spellLines.ts RANK_VALUE` — the closed I–X ladder EQ Legends prints. Anything else is
-/// the TS's `?? 1`, which is unreachable behind a regex that only accepts those ten.
+/// `shared/spellLines.ts RANK_VALUE` — the closed I–X ladder EQ Legends prints. The fallback is
+/// unreachable behind a regex that accepts only those ten.
 fn rank_value(numeral: &str) -> i64 {
     match numeral.to_lowercase().as_str() {
         "i" => 1,
@@ -208,11 +211,25 @@ mod tests {
         assert_eq!(zone_tier("Innothule Swamp").1, TIER_OPEN_WORLD);
         // The kills module's state before the scan reaches any zone line.
         assert_eq!(zone_tier("").1, TIER_UNKNOWN);
-        // A parenthetical the table does not know is still unmistakably an INSTANCE.
+        // A parenthetical the table does not know is still unmistakably an instance.
         assert_eq!(zone_tier("Najena 5 (Sublime)").1, TIER_UNKNOWN);
         assert_eq!(
             zone_tier("The Plane of Hate - Solo 4 (Refined)").0,
             "The Plane of Hate"
+        );
+    }
+
+    /// The row fold keeps every byte the name has; only case and the edges move.
+    #[test]
+    fn the_zone_row_key_is_trim_and_lowercase_and_nothing_else() {
+        assert_eq!(zone_id_key("  The Plane of Sky "), "the plane of sky");
+        assert_eq!(
+            zone_id_key("Befallen 2 (Adaptive)"),
+            "befallen 2 (adaptive)"
+        );
+        assert_ne!(
+            zone_id_key("Befallen 2 (Adaptive)"),
+            zone_id_key("Befallen")
         );
     }
 
@@ -222,8 +239,8 @@ mod tests {
         assert!(starts_with_you_word("you"));
         assert!(starts_with_you_word("You`s"));
         assert!(starts_with_you_word("You and Dranix"));
-        // `\b` fails where the next character is a word character, so a killer named `Your pet`
-        // is NOT the `slain by You` twin the filter drops — the kill stays counted. Faithful.
+        // `\b` fails where the next character is a word character, so a killer named `Your pet` is
+        // not the `slain by You` twin the filter drops and the kill stays counted.
         assert!(!starts_with_you_word("Your pet"));
         assert!(!starts_with_you_word("Younger kobold"));
         assert!(!starts_with_you_word("a youth"));
@@ -255,7 +272,7 @@ mod tests {
             (r.base.as_str(), r.rank, r.suffixed),
             ("Lay on Hands", 9, true)
         );
-        // An UNSUFFIXED name is rank 1 and is not evidence of anything (observedSpellRanks).
+        // An unsuffixed name is rank 1 and is not evidence of anything.
         let r = parse_spell_rank("Clarity");
         assert_eq!((r.base.as_str(), r.rank, r.suffixed), ("Clarity", 1, false));
         // A ` +N` item merge falls out here rather than needing a second test at the call site.

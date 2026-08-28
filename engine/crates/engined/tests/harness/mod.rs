@@ -1,17 +1,13 @@
-//! THE SUITE DRIVES THE REAL BINARY. Every test in this crate's `tests/` spawns
+//! The suite drives the real binary: every test in this crate's `tests/` spawns
 //! `CARGO_BIN_EXE_engined` as a child process, hands it a token on stdin, parses the announce line
 //! off its stdout and talks to it over a real loopback socket.
 //!
-//! WHY NOT TEST THE FUNCTIONS DIRECTLY. Because the thing this ticket delivers is a CONTRACT
-//! BETWEEN TWO PROCESSES written in two languages, and every interesting way it can break lives in
-//! the seams a unit test does not have: a token that never arrives, a line that is not flushed, a
-//! socket that hands over half a frame, a stdin that closes while three connections are open. The
-//! op table has its own unit tests beside the code; this suite exists to prove the process.
+//! The contract under test lives between two processes in two languages, so the seams a unit test
+//! does not have are the point: a token that never arrives, a line that is not flushed, a socket
+//! that hands over half a frame, a stdin that closes while three connections are open.
 //!
-//! `dead_code` is allowed because this module is compiled into EVERY test binary in `tests/`, and
-//! no single one of them uses all of it. That is the standard shape for a shared test harness and
-//! the alternative — splitting the harness per consumer — would duplicate the part most worth
-//! having one copy of.
+//! `dead_code` is allowed because this module compiles into every test binary in `tests/` and no
+//! single one uses all of it.
 #![allow(dead_code)]
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -39,14 +35,10 @@ pub const WRONG_TOKEN: &str = "0f7d2c9a4b1e6538aa03d7c5e9124f86b0d3a7c1e2f408596
 
 /// How long any read in this suite may block before the test is called hung.
 ///
-/// It is a FAILURE MECHANISM, not a synchronization one: nothing here waits for the clock, every
-/// assertion waits for a condition, and this is only what turns a deadlock into a red test instead
-/// of a cargo run that never returns.
-///
-/// THIRTY SECONDS BECAUSE A FOLD IS A REAL PIECE OF WORK NOW (JOS-474). `tests/ingest.rs` waits for
-/// a debug-build engine to build the whole committed spell DB and scan ~900 KB of log before its
-/// first frame can exist — measured in seconds, not milliseconds — and a patience shorter than the
-/// work is a timeout pretending to be an assertion. It costs nothing on a passing run.
+/// A failure mechanism, not a synchronization one: every assertion waits for a condition, and this
+/// only turns a deadlock into a red test. Thirty seconds because a debug-build engine builds the
+/// whole committed spell DB and scans ~900 KB of log before its first frame can exist — seconds,
+/// not milliseconds — and a patience shorter than the work is a timeout pretending to be a claim.
 pub const PATIENCE: Duration = Duration::from_secs(30);
 
 /// A spawned engine process, with its stdin, its stdout and the port it announced.
@@ -71,13 +63,10 @@ impl Engine {
         Self::start_with(TOKEN)
     }
 
-    /// Spawn an engine whose STDERR IS READ, so a test can assert on a diagnostic.
+    /// Spawn an engine whose stderr is read, so a test can assert on a diagnostic.
     ///
-    /// The suite's default is `Stdio::null()` for the reason `spawn` states — most of these tests
-    /// refuse connections on purpose and the noise would bury the runner. A test that is ABOUT a
-    /// diagnostic needs the other arrangement, and it needs the pipe DRAINED on a thread rather
-    /// than read on demand: an undrained pipe eventually blocks the child inside `eprintln!`, which
-    /// would turn an assertion about a log line into a hung fold.
+    /// The pipe is drained on a thread rather than read on demand: an undrained pipe eventually
+    /// blocks the child inside `eprintln!`, turning an assertion about a log line into a hung fold.
     ///
     /// # Panics
     /// If the binary will not run, or does not announce a port in the agreed shape.
@@ -128,9 +117,8 @@ impl Engine {
     }
 
     fn start_from((mut child, mut stdin): (Child, ChildStdin), token: &str) -> Self {
-        // THE TERMINATOR IS AN EXPLICIT LF. `writeln!` would be the same bytes today, but the
-        // contract says LF and this file is one half of a cross-language agreement — the other half
-        // is a Node `child.stdin.write()`, which has no opinion about platform line endings either.
+        // The terminator is an explicit LF: the contract says LF, and the other half of this
+        // agreement is a Node `child.stdin.write()` with no opinion about platform line endings.
         stdin
             .write_all(format!("{token}\n").as_bytes())
             .and_then(|()| stdin.flush())
@@ -220,9 +208,8 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        // A FAILING TEST MUST NOT LEAK A PROCESS. Closing stdin is the polite ending and the one
-        // the contract names; the kill is for the case where the assertion that failed was
-        // precisely "it exits when stdin closes".
+        // A failing test must not leak a process. Closing stdin is the ending the contract names;
+        // the kill covers the case where the failed assertion was that it exits when stdin closes.
         self.stdin = None;
         if let Some(mut child) = self.child.take() {
             let deadline = Instant::now() + Duration::from_secs(2);
@@ -240,10 +227,8 @@ impl Drop for Engine {
 
 /// Spawn the binary under test with its three streams arranged.
 ///
-/// STDERR GOES NOWHERE ON PURPOSE. The engine writes a diagnostic for every refused connection and
-/// this suite refuses a great many on purpose; inheriting it would bury the runner's own output in
-/// expected noise, and piping it without draining it would eventually block the child on a full
-/// pipe. When a test needs to see a diagnostic, run the binary by hand — the crate README says how.
+/// Stderr goes nowhere: the engine writes a diagnostic for every refused connection and this suite
+/// refuses many on purpose, and piping it without draining would block the child on a full pipe.
 fn spawn() -> (Child, ChildStdin) {
     spawn_with(Stdio::null())
 }
@@ -260,8 +245,8 @@ fn spawn_with(stderr: Stdio) -> (Child, ChildStdin) {
     (child, stdin)
 }
 
-/// Spawn the binary and give the caller the raw child, for the tests that are about STARTUP rather
-/// than about a running engine.
+/// Spawn the binary and give the caller the raw child, for the tests about startup rather than
+/// about a running engine.
 ///
 /// # Panics
 /// If the binary will not run.
@@ -272,8 +257,8 @@ pub fn spawn_raw() -> (Child, ChildStdin) {
 
 /// Read the announce line the contract states, strictly.
 ///
-/// STRICT ON PURPOSE. This is the one line a supervisor written in another language has to parse,
-/// so the test that reads it must not be more forgiving than the parser on the other side will be.
+/// This is the one line a supervisor written in another language has to parse, so it must not be
+/// read more forgivingly here than that parser will read it.
 ///
 /// # Panics
 /// If the line is not exactly `EQC-ENGINE PORT=<port> PROTOCOL=<version>` with an LF terminator.
@@ -307,10 +292,9 @@ pub fn parse_announce(line: &str) -> (u16, i64) {
 
 /// The client end of one connection.
 ///
-/// ITS OUTBOUND TYPE IS `serde_json::Value` SO THE SUITE CAN BE RUDE. Well-formed requests are
-/// built from the generated types and converted — the shapes are never hand-written — but a suite
-/// that could only send legal messages could not test `unknownOp`, `badParams`, or a malformed
-/// frame, and those are three of the paths most worth pinning.
+/// Its outbound type is `serde_json::Value` so the suite can send illegal messages: `unknownOp`,
+/// `badParams` and a malformed frame are three of the paths most worth pinning. Well-formed requests
+/// are still built from the generated types and converted.
 pub struct Client {
     transport: NdjsonTransport<BufReader<TcpStream>, TcpStream, serde_json::Value, EngineMessage>,
     raw: TcpStream,
@@ -350,13 +334,10 @@ impl Client {
         self.raw.flush().expect("the socket flushes");
     }
 
-    /// Send bytes ONE AT A TIME, flushing after each.
+    /// Send bytes one at a time, flushing after each.
     ///
-    /// THE ADVERSARIAL CASE, and the reason it is here: `OneByteAtATime` in
-    /// `engine/crates/protocol/tests/transport.rs` proves the codec survives a read boundary in any
-    /// position, but it proves it over a `Cursor`. This proves it over the thing the engine will
-    /// actually be handed — a socket, with the kernel deciding where the boundaries fall — by
-    /// making every boundary fall in the worst place there is.
+    /// The codec's own tests prove read boundaries over a `Cursor`; this proves them over a real
+    /// socket by putting every boundary in the worst place there is.
     ///
     /// # Panics
     /// If the socket will not take them.
@@ -389,11 +370,9 @@ impl Client {
 
     /// Assert the engine has closed this connection.
     ///
-    /// A CLEAN FIN AND A RESET ARE THE SAME OUTCOME. Windows will report a socket closed with
-    /// unread data in its buffer as a reset rather than an orderly end, and which one a test sees
-    /// depends on timing the engine does not control. A READ TIMEOUT IS NOT ACCEPTED, because a
-    /// timeout means the connection is still open — which is the failure this assertion exists to
-    /// catch.
+    /// A clean FIN and a reset are the same outcome: Windows reports a socket closed with unread
+    /// data in its buffer as a reset rather than an orderly end, and which one a test sees is timing
+    /// the engine does not control. A read timeout is not accepted — that means still open.
     ///
     /// # Panics
     /// If a message arrives, or if the read times out with the connection still open.
@@ -466,14 +445,14 @@ pub fn health(id: i64) -> ClientMessage {
     })
 }
 
-/// One `session.attach` request, with no `stateDir` — the file-free attach every suite but
-/// `tests/state.rs` wants (JOS-496 item 3): nothing read, nothing seeded, nothing written.
+/// One `session.attach` request with no `stateDir` — the file-free attach every suite but
+/// `tests/state.rs` wants: nothing read, nothing seeded, nothing written.
 #[must_use]
 pub fn attach(id: i64, log_path: &str) -> ClientMessage {
     attach_with_state(id, log_path, None)
 }
 
-/// …and the attach the APP makes, carrying Electron's `userData`. The engine reads its two
+/// …and the attach the app makes, carrying Electron's `userData`. The engine reads its two
 /// persisted artifacts out of it at attach and writes them back on its own cadence.
 #[must_use]
 pub fn attach_with_state(id: i64, log_path: &str, state_dir: Option<&str>) -> ClientMessage {
@@ -509,7 +488,7 @@ pub fn module_snapshot(id: i64, module: &str) -> ClientMessage {
     })
 }
 
-/// One `perf.snapshot` request — what the engine is doing and what it has cost (JOS-483).
+/// One `perf.snapshot` request — what the engine is doing and what it has cost.
 #[must_use]
 pub fn perf_snapshot(id: i64) -> ClientMessage {
     ClientMessage::PerfSnapshotRequest(PerfSnapshotRequest {
@@ -519,7 +498,7 @@ pub fn perf_snapshot(id: i64) -> ClientMessage {
     })
 }
 
-/// One `perf.budgets` request — the budgets this build enforces, judged live (JOS-502).
+/// One `perf.budgets` request — the budgets this build enforces, judged live.
 #[must_use]
 pub fn perf_budgets(id: i64) -> ClientMessage {
     ClientMessage::PerfBudgetsRequest(protocol::generated::PerfBudgetsRequest {
@@ -529,7 +508,7 @@ pub fn perf_budgets(id: i64) -> ClientMessage {
     })
 }
 
-/// One `perf.timeline` request — the bounded recent history behind the snapshot (JOS-502).
+/// One `perf.timeline` request — the bounded recent history behind the snapshot.
 #[must_use]
 pub fn perf_timeline(id: i64) -> ClientMessage {
     ClientMessage::PerfTimelineRequest(protocol::generated::PerfTimelineRequest {
@@ -539,8 +518,8 @@ pub fn perf_timeline(id: i64) -> ClientMessage {
     })
 }
 
-/// One `sessionMarks.add` request, stamped with the instant the caller says the press happened
-/// (JOS-487, boundary verdict 6). The clock is the CALLER's on purpose — see the schema.
+/// One `sessionMarks.add` request, stamped with the instant the caller says the press happened.
+/// The clock is the caller's on purpose — see the schema.
 #[must_use]
 pub fn session_mark(id: i64, at: i64) -> ClientMessage {
     ClientMessage::SessionMarkAddRequest(protocol::generated::SessionMarkAddRequest {
@@ -550,10 +529,10 @@ pub fn session_mark(id: i64, at: i64) -> ClientMessage {
     })
 }
 
-/// One `respawn.confirmSighting` request, naming the ROW the person pressed (JOS-494).
+/// One `respawn.confirmSighting` request, naming the row the person pressed.
 ///
-/// NO INSTANT, unlike [`session_mark`] — the clock it re-bases onto is the row's own `seenTs`,
-/// which the fold already holds, so a caller has nothing to stamp.
+/// No instant, unlike [`session_mark`]: the clock it re-bases onto is the row's own `seenTs`, which
+/// the fold already holds.
 #[must_use]
 pub fn respawn_confirm(id: i64, row_id: &str) -> ClientMessage {
     ClientMessage::RespawnConfirmSightingRequest(
@@ -567,8 +546,8 @@ pub fn respawn_confirm(id: i64, row_id: &str) -> ClientMessage {
     )
 }
 
-/// One `resist.levels` request (JOS-497 item 1). The names are as the LOG spells them — the engine
-/// folds the key, which is the schema's rule and the reason this helper takes no key.
+/// One `resist.levels` request. The names are as the log spells them — the engine folds the key,
+/// which is why this helper takes none.
 #[must_use]
 pub fn resist_levels(id: i64, mobs: &[&str]) -> ClientMessage {
     ClientMessage::ResistLevelsRequest(protocol::generated::ResistLevelsRequest {
@@ -580,8 +559,8 @@ pub fn resist_levels(id: i64, mobs: &[&str]) -> ClientMessage {
     })
 }
 
-/// One `resist.spell` request (JOS-497 item 3). The name is as the ASKER spells it; the engine
-/// folds the key, so a rank suffix and a case difference are one question.
+/// One `resist.spell` request. The name is as the asker spells it; the engine folds the key, so a
+/// rank suffix and a case difference are one question.
 #[must_use]
 pub fn resist_spell(id: i64, name: &str) -> ClientMessage {
     ClientMessage::ResistSpellRequest(protocol::generated::ResistSpellRequest {
@@ -593,8 +572,8 @@ pub fn resist_spell(id: i64, name: &str) -> ClientMessage {
     })
 }
 
-/// One `combat.snapshot` request (JOS-485). `opts` absent is the ordinary call — the app's own
-/// `combat.snapshot(Date.now(), opts ?? {})`, with the instant left to the engine.
+/// One `combat.snapshot` request. `opts` absent is the ordinary call, with the instant left to the
+/// engine.
 #[must_use]
 pub fn combat_snapshot(
     id: i64,
@@ -661,12 +640,8 @@ pub fn ledger(sort: &[(&str, &str)], offset: i64, limit: i64) -> ViewDescriptor 
     }
 }
 
-// ---- the five `*.define` commands (JOS-482) ---------------------------------------------------
-//
-// Built from the generated types like every other request in this file. The PAYLOADS are read out
-// of `serde_json::Value`s the tests write, because that is what a store holds and what the app
-// pushes — an alert def in particular is an open object whose extra fields the engine must ride
-// past rather than refuse.
+// The `*.define` payloads are read out of `serde_json::Value`s the tests write, because that is what
+// a store holds: an alert def is an open object whose extra fields the engine rides past.
 
 /// One `alerts.define` request carrying the whole rule set.
 ///
@@ -768,8 +743,8 @@ pub fn roster_define(id: i64, edits: &[(&str, &str, &str, i64)]) -> ClientMessag
     })
 }
 
-/// One `logs.setDir` request — the app naming the folder its own settings resolved (JOS-498, owner
-/// ruling 21 / decision sheet 1a). The engine never discovers a path of its own.
+/// One `logs.setDir` request — the app naming the folder its own settings resolved. The engine
+/// never discovers a path of its own.
 #[must_use]
 pub fn logs_set_dir(id: i64, dir: &str) -> ClientMessage {
     ClientMessage::LogsSetDirRequest(protocol::generated::LogsSetDirRequest {
@@ -781,7 +756,7 @@ pub fn logs_set_dir(id: i64, dir: &str) -> ClientMessage {
     })
 }
 
-/// One `logs.list` request. It names NOTHING: the directory is pushed, never sent, so two callers
+/// One `logs.list` request. It names nothing: the directory is pushed, never sent, so two callers
 /// cannot disagree about which install this app is looking at.
 #[must_use]
 pub fn logs_list(id: i64) -> ClientMessage {

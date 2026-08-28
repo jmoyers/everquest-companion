@@ -1,47 +1,20 @@
 //! `Event` — one canonical `LogEvent`, as the fold reads it.
 //!
-//! IT IS THE PARSER'S OWN TYPED PAYLOAD NOW (JOS-505), AND THE FILE HEADER THIS ONE REPLACES
-//! PREDICTED THE EDIT. Through phase 2 it was a parsed `serde_json::Value`: `eqlog` wrote the
-//! event's NDJSON line, this crate parsed that line back, and every module walked the resulting map
-//! by string key. The reason was good at the time — the phase-1 bar is byte identity with
-//! `JSON.stringify(ev)`, what that writes is the object's INSERTION order, and a typed struct per
-//! kind beside the writer would have been a second declaration of the same shapes, free to drift.
-//! The cost was measured in JOS-504 on the owner's 209 MB log: 9.6% of a whole fold on the re-parse
-//! alone, and 69% in consumers walking the dynamic map it produced.
+//! A primary event borrows the parser's typed payload ([`Body::Typed`]); every shape is declared
+//! once, by the classifier that writes it, because `eqlog::event::Payload` records the same writes
+//! that build the JSON string. A derived event — `epoch`, `offlineGap`, `buffExpired`, and the
+//! early-warning break probes — is synthesized from a `json!` literal and keeps the
+//! `serde_json::Value` path ([`Body::Json`]). The lifetime the two bodies cost is paid in three
+//! declarations that hold `Event<'static>`, because a derived event borrows nothing.
 //!
-//! THE RESOLUTION KEEPS THE ARGUMENT AND DROPS THE COST. There is still exactly ONE declaration of
-//! every shape — the classifier that writes it — because `eqlog::event::Payload` is not a parallel
-//! type but a RECORDING of the same writes: `out.s(Key::Attacker, x)` appends to the JSON string
-//! and pushes `(Key::Attacker, Slot::Str)` in the same call. The string is still built eagerly and
-//! still byte-identical, so the phase-1 oracle is untouched and nothing drifted; the fold simply
-//! stopped reading it.
+//! Absent is not null and neither is zero: `str`/`int` answer `None` for a key the writer omitted
+//! and for one written as `null`, since the TS modules read both as `undefined`. The distinction
+//! survives underneath for [`Event::has`] — `buffFade.target` absent means self, which is a
+//! different claim from a target of nothing.
 //!
-//! ── TWO BODIES, AND WHY ────────────────────────────────────────────────────────────────────────
-//!
-//! A PRIMARY event borrows the parser's payload ([`Body::Typed`]). A DERIVED event — `epoch`,
-//! `offlineGap`, `buffExpired`, and the early-warning break probes — is synthesized by the fold out
-//! of a `json!` literal and keeps the `serde_json::Value` path ([`Body::Json`]). That is deliberate
-//! rather than unfinished: the derived shapes are five, they are hand-written where they are
-//! emitted, and the accessors answer them with the code this file has always used, so the
-//! behaviour of the path is identical by construction rather than by re-derivation. The lifetime
-//! is what the two bodies cost, and it is paid in three declarations: the fold's derived queue, the
-//! buffs module's, and the break probe — all of which hold `Event<'static>` because a derived event
-//! borrows nothing.
-//!
-//! ── ABSENT IS NOT NULL AND NEITHER IS ZERO ─────────────────────────────────────────────────────
-//!
-//! `str`/`int` answer `None` for a key the writer omitted AND for one it wrote as `null` — the TS
-//! modules read both as `undefined` in every place any of them looks, and collapsing the two here
-//! keeps the reading sites from each having to say so. The DISTINCTION still exists underneath
-//! (`Slot::Null` versus no entry) because [`Event::has`] needs it: `buffFade.target` absent means
-//! SELF, which is a different claim from a target of nothing.
-//!
-//! ── KEYS ───────────────────────────────────────────────────────────────────────────────────────
-//!
-//! Every accessor takes an [`EvKey`]: either a [`Key`] discriminant (the migrated, hot call sites)
-//! or a `&str` (everything else, and the user-authored alert definitions, whose field names are not
-//! known until runtime). A `&str` naming a field no event carries resolves to `None` and therefore
-//! reads as ABSENT — exactly what a map lookup for a key nobody wrote answered before.
+//! Every accessor takes an [`EvKey`]: a [`Key`] discriminant on hot call sites, or a `&str`
+//! elsewhere and for user-authored alert definitions, whose field names are not known until
+//! runtime. A `&str` naming a field no event carries reads as absent.
 
 use eqlog::event::{Payload, Slot};
 use serde_json::Value;
@@ -52,10 +25,8 @@ pub use eqlog::event::{Key, Kind};
 
 /// What an accessor may be handed as a key.
 ///
-/// The `&str` impl exists so that a call site the perf work has not visited still compiles and
-/// still means the same thing; `Key::parse` over a string LITERAL folds to a constant in release,
-/// so the two forms usually cost the same. The `Key` form is what a hot site is migrated to,
-/// because it cannot be wrong and cannot be slow.
+/// `Key::parse` over a string literal folds to a constant in release, so the two forms usually cost
+/// the same. The `Key` form is what a hot site is migrated to: it cannot be wrong or slow.
 pub trait EvKey: Copy {
     fn key(self) -> Option<Key>;
 }
@@ -81,7 +52,7 @@ enum Body<'a> {
     Json(Value),
 }
 
-/// One event on the bus: a primary event from the parser, or a DERIVED one the fold synthesized.
+/// One event on the bus: a primary event from the parser, or a derived one the fold synthesized.
 #[derive(Debug, Clone)]
 pub struct Event<'a> {
     kind: Kind,
@@ -89,9 +60,8 @@ pub struct Event<'a> {
 }
 
 impl<'a> Event<'a> {
-    /// A PRIMARY event, straight off the parser — the production path, and the one this ticket
-    /// exists for. Borrowed: the payload lives in the parser's reused buffers and is valid for
-    /// exactly this event.
+    /// A primary event, straight off the parser — the production path. Borrowed: the payload lives
+    /// in the parser's reused buffers and is valid for exactly this event.
     #[must_use]
     pub fn typed(p: &'a Payload) -> Event<'a> {
         Event {
@@ -105,9 +75,8 @@ impl Event<'static> {
     /// Parse one NDJSON line from `eqlog::scan`. `None` when the line is not a JSON object, which
     /// the scanner cannot produce and which therefore only a corrupt input can reach.
     ///
-    /// IT IS NO LONGER ON THE PRODUCTION PATH (JOS-505) and is kept for the modes that genuinely
-    /// START from NDJSON text: the golden-driven view tests, the module-snapshot harness, and every
-    /// unit test in this crate that states an event as the line the game would have produced.
+    /// Not on the production path: it serves the modes that genuinely start from NDJSON text — the
+    /// golden-driven view tests, the module-snapshot harness, and this crate's unit tests.
     #[must_use]
     pub fn from_json(line: &str) -> Option<Event<'static>> {
         let v: Value = serde_json::from_str(line).ok()?;
@@ -138,16 +107,15 @@ impl Event<'_> {
         }
     }
 
-    /// THE KIND AS A DISCRIMINANT — an integer compare instead of a map lookup and a string
-    /// compare. JOS-504 measured twenty-one consumers asking this question of every event at
-    /// ~940 ms of a 2.5M-event fold; this is the answer that costs nothing.
+    /// The kind as a discriminant — an integer compare instead of a map lookup and a string
+    /// compare. Twenty-one consumers ask this of every event, so it must cost nothing.
     #[must_use]
     pub fn kind_of(&self) -> Kind {
         self.kind
     }
 
-    /// The sequence number of the event. Every module writes it to its own `seq` field on EVERY
-    /// event it is handed, derived ones included — that is the TS's first statement in `onEvent`.
+    /// The sequence number of the event. Every module writes it to its own `seq` field on every
+    /// event it is handed, derived ones included.
     #[must_use]
     pub fn seq(&self) -> i64 {
         match &self.body {
@@ -198,9 +166,8 @@ impl Event<'_> {
         }
     }
 
-    /// The one genuinely fractional field in the stream — `expGain.pct` (jsstr.rs's header names it
-    /// as such). It widens an integral number too, which is what a log printing `(3%)` produces and
-    /// what the TS reads as the same `number` either way.
+    /// The one genuinely fractional field in the stream — `expGain.pct`. It widens an integral
+    /// number too, which is what a log printing `(3%)` produces.
     #[must_use]
     pub fn f64(&self, key: impl EvKey) -> Option<f64> {
         let k = key.key()?;
@@ -221,9 +188,8 @@ impl Event<'_> {
         }
     }
 
-    /// A string ARRAY field — `selfWho.classes`, `damage.modifiers` and the `buffWearOff` candidate
-    /// shape. A missing key, a non-array and a non-string element all read as absent, which is what
-    /// `ev.classes.filter(isClassAbbr)` does with them on the other side.
+    /// A string array field — `selfWho.classes`, `damage.modifiers` and the `buffWearOff` candidate
+    /// shape. A missing key, a non-array and a non-string element all read as absent.
     #[must_use]
     pub fn arr_str(&self, key: impl EvKey) -> Vec<&str> {
         let Some(k) = key.key() else {
@@ -238,9 +204,8 @@ impl Event<'_> {
         }
     }
 
-    /// HOW MANY ELEMENTS AN ARRAY FIELD HOLDS, without building the list — `ev.modifiers.length`.
-    /// `0` for an absent field and for one that is not an array, which is what `map_or(0, len)`
-    /// over the `Value` answered.
+    /// How many elements an array field holds, without building the list. `0` for an absent field
+    /// and for one that is not an array.
     #[must_use]
     pub fn arr_len(&self, key: impl EvKey) -> usize {
         let Some(k) = key.key() else {
@@ -258,9 +223,8 @@ impl Event<'_> {
         }
     }
 
-    /// The `name` of every entry in an OBJECT array — the `candidates` list a `buffApply`, a `charm`
-    /// and a `cc` carry. That list IS the spell DB's own cast-on-other suffix table, and the only
-    /// thing most readers want from it is the names (`ev.candidates.map((c) => c.name)`).
+    /// The `name` of every entry in an object array — the `candidates` list a `buffApply`, a `charm`
+    /// and a `cc` carry, which is the spell DB's own cast-on-other suffix table.
     #[must_use]
     pub fn candidate_names(&self, key: impl EvKey) -> Vec<String> {
         let Some(k) = key.key() else {
@@ -281,10 +245,10 @@ impl Event<'_> {
         }
     }
 
-    /// EVERY NAME THE LIST CAN ANSWER TO, whichever shape it is in (JOS-84's reader).
+    /// Every name the list can answer to, whichever shape it is in.
     ///
     /// `buffWearOff.candidates` is a plain `string[]` where `buffApply`/`cc`/`charm` carry objects,
-    /// and the alerts matcher is written against BOTH because a def does not know which sentence
+    /// and the alerts matcher is written against both because a def does not know which sentence
     /// the game will print. One accessor rather than a caller-side union: the shapes are a fact
     /// about the writer and belong beside it.
     #[must_use]
@@ -349,10 +313,10 @@ impl Event<'_> {
         }
     }
 
-    /// `ev.<key> != null` in the TS sense — the key is present AND not null. A 2c module branches
-    /// on the DIFFERENCE between an absent optional and a present one whose value is falsy
-    /// (`buffFade.target` absent means SELF; `''` would mean an unnamed entity), so the question
-    /// has to be askable without reading the value.
+    /// `ev.<key> != null` in the TS sense — present and not null. The buffs module branches on the
+    /// difference between an absent optional and a present falsy one (`buffFade.target` absent
+    /// means self; `''` would mean an unnamed entity), so the question must be askable without
+    /// reading the value.
     #[must_use]
     pub fn has(&self, key: impl EvKey) -> bool {
         let Some(k) = key.key() else {
@@ -367,15 +331,14 @@ impl Event<'_> {
         }
     }
 
-    /// STRINGIFY ONE FIELD THE WAY JAVASCRIPT'S `String()` DOES — the alerts matcher's only reader,
-    /// and the reason it lives here rather than there: the coercion is a fact about the VALUE
-    /// SHAPES, and after JOS-505 there are two representations of those shapes to keep honest.
+    /// Stringify one field the way JavaScript's `String()` does. It lives here rather than in the
+    /// alerts matcher because the coercion is a fact about the value shapes, and there are two
+    /// representations of those shapes to keep honest.
     ///
-    /// Reproduced rather than improved on, because the coerced text is exactly what every existing
-    /// alert def is matched against: an array joins with ',' (a nullish element contributing ''),
-    /// and an object element renders as the literal '[object Object]'. `None` for an absent field
-    /// AND for an explicit null — a top-level null is refused by the matcher, exactly as `raw ==
-    /// null` refuses it.
+    /// Reproduced rather than improved on, because the coerced text is what every existing alert
+    /// def is matched against: an array joins with ',' (a nullish element contributing ''), and an
+    /// object element renders as the literal '[object Object]'. `None` for an absent field and for
+    /// an explicit null, both of which the matcher refuses.
     #[must_use]
     pub fn field_text(&self, key: impl EvKey) -> Option<String> {
         let k = key.key()?;
@@ -421,14 +384,13 @@ impl Event<'_> {
     }
 }
 
-/// `String(v)` over a `serde_json::Value` — the `Body::Json` half of [`Event::field_text`], and the
-/// function that half of this file used to be written entirely in terms of.
+/// `String(v)` over a `serde_json::Value` — the `Body::Json` half of [`Event::field_text`].
 fn json_field_text(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => js_number_text(n.as_f64().unwrap_or_default()),
-        // Only reachable as an array ELEMENT — `join` renders nullish as ''.
+        // Only reachable as an array element — `join` renders nullish as ''.
         Value::Null => String::new(),
         Value::Array(a) => a.iter().map(json_field_text).collect::<Vec<_>>().join(","),
         Value::Object(_) => "[object Object]".to_owned(),
@@ -462,9 +424,8 @@ mod tests {
         assert!(!ev.has("item"));
     }
 
-    /// THE TWO BODIES MUST BE INDISTINGUISHABLE THROUGH THE ACCESSORS. This is the whole
-    /// correctness claim of the ticket in one test: the same event, written by the parser's writer
-    /// and parsed from that writer's own output, answers every question identically.
+    /// The two bodies must be indistinguishable through the accessors: the same event, written by
+    /// the parser's writer and parsed back from its output, answers every question identically.
     #[test]
     fn the_typed_body_and_the_json_body_answer_alike() {
         let mut w = Ev::new();
@@ -550,8 +511,8 @@ mod tests {
         let (json, payload) = w.done();
         let line = json.to_owned();
         for ev in [Event::typed(payload), Event::from_json(&line).expect("obj")] {
-            // The OBJECT reader sees nothing in a string list — the same `None` a `c.name` lookup
-            // over a string element produced.
+            // The object reader sees nothing in a string list, which is what a `c.name` lookup over
+            // a string element answers.
             assert!(ev.candidate_names("candidates").is_empty());
             assert_eq!(
                 ev.any_candidate_names("candidates"),

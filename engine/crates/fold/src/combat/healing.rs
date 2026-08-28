@@ -1,53 +1,38 @@
-//! HEALING + ABSORPTION — the meter-grade ledger and its view (`src/main/combat/healing.ts`).
+//! Healing + absorption: the meter-grade ledger (per healer, per spell, with crit / min / max /
+//! overheal) and the serializable view over it.
 //!
-//! The engine already ROUTED heals (`enemy_heal` / `inc_heal` in `aggregate.rs`). This holds the full
-//! accumulation behind that routing — per healer, per spell, with crit / min / max / overheal — plus
-//! the absorption lanes, and turns it into the serializable healing view.
-//!
-//! It lives on the SAME `Agg` the damage bars use, so a healing meter inherits fight / zone-session
+//! It lives on the same `Agg` the damage bars use, so a healing meter inherits fight / zone-session
 //! selection, the finalized-zone-session freeze and the encounter history for free.
 //!
-//! ── THE HONESTY RULES, BAKED IN (world-model law 6 — say what the log cannot say) ──────────────
+//! The honesty rules (world-model law 6 — never say what the log cannot say):
 //!
-//!   * OVERHEAL is DERIVED from the `for N (M) hit points` form only. EQ writes the parens exactly
-//!     when raw > effective, so a plain line contributes 0 and the sum is a FLOOR, never a rate
-//!     projected over ticks nobody saw.
-//!   * The two `magical skin absorbs` families carry NO amount. They are COUNTED, never valued —
-//!     they enter no sum anywhere, because there is nothing to sum.
-//!   * A heal the log ANNOUNCES but never VALUES (the monk's Mend, whose whole sentence is `You mend
-//!     your wounds and heal some damage.`) gets a lane of its own classified `unstated`, carrying a
-//!     COUNT and a total of 0. That 0 is the ABSENCE of a measurement, not a measurement of zero, so
-//!     it enters no sum and touches none of the row's headline stats.
-//!   * A RUNE's amount is absorption GRANTED, not damage consumed. It counts toward the healing total
-//!     (a shield is sustain) but is carried as a `absorbed` LANE for its whole life so the assumption
-//!     is never laundered into "hit points restored", and a rune has no overheal — none is invented.
-//!   * RUNE SOURCES ARE NOT SPLIT, and that is a VERIFIED refusal rather than a gap. Full-log sweep
-//!     (1,019,355 lines): `You gain a rune for N points of absorption.` is the ONLY rune-gain shape
-//!     and it names no spell and no caster; the enchanter Rune line NEVER LANDED on this character
-//!     (`shimmer of runes` occurs once in the whole log, on somebody else); and the `You hurt yourself
-//!     for N points.` correlate is 42%, not a rule. So there is ONE absorption lane. If a split is
-//!     ever wanted the honest handle is the MESSAGE, never the self-damage.
+//!   * Overheal comes from the `for N (M) hit points` form only. EQ prints the parens exactly when
+//!     raw > effective, so a plain line contributes 0 and the sum is a FLOOR.
+//!   * The two `magical skin absorbs` families carry no amount. Counted, never valued.
+//!   * A heal the log announces but never values (the monk's Mend) gets an `unstated` lane carrying
+//!     a count and a total of 0. That 0 is the absence of a measurement, so it enters no sum.
+//!   * A rune's amount is absorption GRANTED, not damage consumed. It ranks in the healing total but
+//!     rides an `absorbed` lane for its whole life, and a rune has no overheal — none is invented.
+//!   * Rune sources are not split. `You gain a rune for N points of absorption.` is the only
+//!     rune-gain shape in the full log and it names no spell and no caster, so there is ONE
+//!     absorption lane; the honest handle for a future split is the MESSAGE, never self-damage.
 //!
-//! ── `min` IS ABSENT, NEVER ZERO ───────────────────────────────────────────────────────────────
-//!
-//! `Option<i64>` with `skip_serializing_if`, because a lane with no landed line simply has no `min`
-//! property over there and the bar is deep equality. NOTE the asymmetry with the DAMAGE model's
-//! per-lane minimum, which uses 0 as its sentinel: a 0-effective (fully overhealed) tick still LANDED
-//! a line, so it participates here — unlike a whiff, which the damage model must never see.
+//! `min` is ABSENT, never zero — a lane with no landed line has no `min` at all. Note the asymmetry
+//! with the damage model's per-lane minimum: a 0-effective (fully overhealed) tick still LANDED a
+//! line, so it participates here, unlike a whiff.
 
 use crate::combat::collate::compare_names;
 use crate::jsmap::JsMap;
 use serde::Serialize;
 
-/// Spell-less heal lines (482 in the real log) get one honest shared lane.
+/// Spell-less heal lines get one shared lane.
 pub const UNSPECIFIED_SPELL: &str = "Unspecified";
 /// Display name of the absorption lane.
 pub const RUNE_LANE: &str = "Rune";
-/// Row id of the SELF row — the row the absorption and unstated lanes attach to.
+/// Row id of the self row — the row the absorption and unstated lanes attach to.
 pub const SELF_ROW_ID: &str = "you";
-/// Cap on serialized spell lanes per healer — same spirit as the damage model's 12-skill cap. It
-/// applies to the HEAL lanes only; the absorption and unstated lanes are appended AFTER the cap so a
-/// long tail of small heals can never squeeze either out of the flat drill.
+/// Cap on serialized spell lanes per healer. It applies to the HEAL lanes only: absorption and
+/// unstated lanes are appended after the cap, so a long tail of small heals cannot squeeze them out.
 const SPELL_CAP: usize = 14;
 
 /// One heal line, already attributed by the engine.
@@ -61,7 +46,6 @@ pub struct HealInput {
     pub crit: bool,
 }
 
-/// `shared/combat.ts HealSourceKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealSourceKind {
     You,
@@ -135,8 +119,8 @@ fn new_source(name: &str, kind: HealSourceKind) -> HealSourceStat {
     }
 }
 
-/// The absorption counters. Amounts exist for RUNES only — the rest are counts by construction, which
-/// is exactly why only the rune lane can become a ledger row.
+/// The absorption counters. Amounts exist for runes only — the rest are counts by construction,
+/// which is why only the rune lane can become a ledger row.
 #[derive(Debug, Clone, Default)]
 struct MitAccum {
     rune_total: i64,
@@ -147,19 +131,17 @@ struct MitAccum {
     absorbed_damage_shields: i64,
 }
 
-/// The healing half of an aggregate. Two independent ledgers, mirroring the damage model's
-/// out/incoming split: `friendly` is heals that landed on YOU, your pets or the player by name ("who
-/// kept me alive"), `hostile` is heals that landed on an ENGAGED hostile (counter-healing that undid
-/// your damage), ranked by HEALER. Heals between third parties are deliberately NOT collected: the log
-/// gives no faction for an arbitrary name, and guessing one would invent a world model.
+/// The healing half of an aggregate. Two independent ledgers mirroring the damage model's
+/// out/incoming split: `friendly` is heals that landed on you, your pets or the player by name;
+/// `hostile` is heals that landed on an engaged hostile, ranked by healer. Heals between third
+/// parties are not collected — the log gives no faction for an arbitrary name.
 #[derive(Debug, Clone, Default)]
 pub struct HealAccum {
     friendly: JsMap<HealSourceStat>,
     hostile: JsMap<HealSourceStat>,
     mit: MitAccum,
-    /// Amount-less heals BY SKILL NAME → how many landed. A map rather than a single Mend counter
-    /// because the ledger should not have to change shape the day a second amount-less family
-    /// graduates — but nothing invents one: today the log prints exactly one.
+    /// Amount-less heals by skill name → how many landed. A map rather than a single Mend counter so
+    /// the ledger need not change shape if a second amount-less family appears.
     unstated: JsMap<i64>,
 }
 
@@ -176,7 +158,7 @@ impl HealAccum {
         add(&mut self.hostile, key, name, HealSourceKind::Enemy, h);
     }
 
-    /// One `You mend your wounds…` line. A count, and deliberately nothing else.
+    /// One amount-less heal line. A count, and deliberately nothing else.
     pub fn add_unstated(&mut self, skill: &str) {
         let n = self.unstated.get(skill).copied().unwrap_or(0);
         self.unstated.insert(skill.to_string(), n + 1);
@@ -203,7 +185,7 @@ impl HealAccum {
 }
 
 /// Track the smallest LANDED heal. A 0-effective (fully overhealed) tick still landed a line, so it
-/// participates — unlike the damage model's min, which must never see a miss.
+/// participates, unlike the damage model's min, which must never see a miss.
 fn accrue_min(cur: Option<i64>, amount: i64) -> Option<i64> {
     Some(match cur {
         Some(prev) => prev.min(amount),
@@ -219,8 +201,8 @@ fn add(m: &mut JsMap<HealSourceStat>, key: &str, name: &str, kind: HealSourceKin
     if s.name != name {
         s.name = name.to_string();
     }
-    // A healer first seen healing a hostile can later be reclassified (a charmed mob becomes your
-    // pet); the LATEST attribution wins, matching how the damage model relabels a source.
+    // A healer can later be reclassified (a charmed mob becomes your pet); the latest attribution
+    // wins, matching how the damage model relabels a source.
     s.kind = kind;
     // EQ omits the parens whenever nothing was wasted, so a plain line's raw == effective.
     let raw = h.raw_amount.unwrap_or(h.amount);
@@ -236,8 +218,8 @@ fn add(m: &mut JsMap<HealSourceStat>, key: &str, name: &str, kind: HealSourceKin
     if h.amount == 0 {
         s.full_overheal += 1;
     }
-    // An absent, blank or whitespace-only spell name all fall to the one shared lane — never a
-    // nullish check, which would let `''` through as a lane of its own.
+    // Absent, blank and whitespace-only spell names all fall to the one shared lane; a nullish check
+    // would let `''` through as a lane of its own.
     let trimmed = h.spell.as_deref().map(str::trim).unwrap_or("");
     let spell_name = if trimmed.is_empty() {
         UNSPECIFIED_SPELL
@@ -261,8 +243,6 @@ fn add(m: &mut JsMap<HealSourceStat>, key: &str, name: &str, kind: HealSourceKin
         sp.full_overheal += 1;
     }
 }
-
-// ── THE VIEW ──────────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -354,9 +334,8 @@ fn heal_lanes(s: &HealSourceStat) -> Vec<HealSpellView> {
         .collect()
 }
 
-/// The rune grants as ONE drill lane. Nothing that would be a guess is filled in: no crits, and no
-/// overheal — the log never says a shield expired unused, so "wasted absorption" would be an
-/// invention.
+/// The rune grants as one drill lane. No crits and no overheal: the log never says a shield expired
+/// unused, so "wasted absorption" would be an invention.
 fn rune_lane(m: &MitAccum) -> Option<HealSpellView> {
     if m.rune_count == 0 {
         return None;
@@ -375,9 +354,8 @@ fn rune_lane(m: &MitAccum) -> Option<HealSpellView> {
     })
 }
 
-/// The amount-less heal lanes. Every field that would be a claim about SIZE is 0 and stays 0: no max,
-/// no min (ABSENT, not zero — `min: 0` would read as "the smallest Mend healed nothing"), no crits,
-/// no overheal. `count` is the entire content of the lane, which is the entire content of the line.
+/// The amount-less heal lanes. Every field that would be a claim about SIZE stays 0, and `min` is
+/// absent rather than zero. `count` is the entire content of the lane, as of the line.
 fn unstated_lanes(m: &JsMap<i64>) -> Vec<HealSpellView> {
     let mut rows: Vec<(&str, i64)> = m.iter().map(|(k, v)| (k, *v)).collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| compare_names(a.0, b.0)));
@@ -397,9 +375,8 @@ fn unstated_lanes(m: &JsMap<i64>) -> Vec<HealSpellView> {
         .collect()
 }
 
-/// ONE flat ranked list — heals and absorption together, biggest first, each lane keeping its
-/// classification so the two are never confused. Deliberately NOT grouped into sections: a grouping
-/// level is exactly what hid the flat breakdown in the damage drill-down.
+/// One flat ranked list — heals and absorption together, biggest first, each lane keeping its
+/// classification so the two are never confused. Deliberately not grouped into sections.
 fn rank_lanes(mut lanes: Vec<HealSpellView>) -> Vec<HealSpellView> {
     lanes.sort_by(|a, b| {
         b.total
@@ -418,17 +395,15 @@ fn rank_lanes(mut lanes: Vec<HealSpellView>) -> Vec<HealSpellView> {
 /// `rank_rows` fills them in last.
 ///
 /// `extra_lanes` carries the absorption and unstated lanes onto the row they belong to. The row's
-/// HEADLINE stats stay about RESTORED healing only — mixing a rune grant into "6 heals, max 428"
-/// would be an aggregate that lies (law 5). `total` is the combined ranking figure and
-/// `absorbedTotal` says how much of it is absorption.
+/// HEADLINE stats stay about restored healing only (law 5): `total` is the combined ranking figure
+/// and `absorbedTotal` says how much of it is absorption.
 fn to_view(key: &str, s: &HealSourceStat, extra_lanes: Vec<HealSpellView>) -> HealSourceView {
     let absorbed_total: i64 = extra_lanes
         .iter()
         .filter(|l| l.classification == "absorbed")
         .map(|l| l.total)
         .sum();
-    // Summed off the LANES rather than tracked a second time on the row, so the two can never
-    // disagree. It joins no total: an unstated lane's `total` is 0 by construction.
+    // Summed off the lanes rather than tracked a second time on the row, so the two cannot disagree.
     let unstated_count: i64 = extra_lanes
         .iter()
         .filter(|l| l.classification == "unstated")
@@ -455,8 +430,8 @@ fn to_view(key: &str, s: &HealSourceStat, extra_lanes: Vec<HealSpellView>) -> He
         max: s.max,
         min: s.min,
         overheal: s.overheal,
-        // Relative to RESTORED healing, never to the combined total — absorption in the denominator
-        // would silently deflate a healer's overheal rate.
+        // Relative to restored healing, never to the combined total: absorption in the denominator
+        // would deflate a healer's overheal rate.
         overheal_pct: if s.total + s.overheal > 0 {
             (s.overheal as f64 / (s.total + s.overheal) as f64) * 100.0
         } else {
@@ -504,17 +479,15 @@ fn mitigation_view(m: &MitAccum) -> MitigationView {
 
 /// Serialize an accumulator into the snapshot's healing view.
 ///
-/// The rune lane attaches to the SELF row so a drill-down is ONE flat ranked list of everything that
-/// kept you up — `Lay on Hands VI · Healing · Rune` — instead of hiding absorption behind a section
-/// of its own. The self row is SYNTHESIZED when it does not exist: absorption with no heals is a real
-/// segment, and so is a Mend with no valued heal beside it.
+/// The rune lane attaches to the self row so a drill-down is one flat ranked list of everything that
+/// kept you up. The self row is SYNTHESIZED when it does not exist: absorption with no heals is a
+/// real segment, and so is an unstated heal with no valued heal beside it.
 ///
-/// ATTRIBUTION, stated plainly: `You gain a rune for N points of absorption.` names no caster, so
-/// "you granted it" is NOT something the log says. It is credited to your own sustain row because the
-/// line is addressed to you and this meter's question is "what kept me alive" — and it is LABELED as
-/// absorption everywhere it appears rather than silently merged (law 1).
+/// `You gain a rune for N points of absorption.` names no caster, so "you granted it" is not
+/// something the log says. It rides your own sustain row because the line is addressed to you, and
+/// it is labeled as absorption everywhere it appears rather than merged (law 1).
 ///
-/// The ENEMY ledger gets no absorption: runes are yours, and a mob's own shield is a miss.
+/// The enemy ledger gets no absorption: runes are yours, and a mob's own shield is a miss.
 pub fn build_healing_view(acc: &HealAccum, duration_sec: f64) -> HealingView {
     let mut extras: Vec<HealSpellView> = Vec::new();
     if let Some(rune) = rune_lane(&acc.mit) {
@@ -569,7 +542,7 @@ mod tests {
         }
     }
 
-    /// OVERHEAL IS A FLOOR: only the parenthesised form contributes, and a plain line contributes 0.
+    /// Overheal is a floor: only the parenthesised form contributes, a plain line contributes 0.
     #[test]
     fn overheal_comes_only_from_the_parenthesised_form() {
         let mut a = HealAccum::new();
@@ -591,7 +564,7 @@ mod tests {
         assert_eq!(v.overheal, 80);
     }
 
-    /// A RUNE IS ABSORPTION, NOT RESTORATION: it ranks in the total, rides an `absorbed` lane, and
+    /// A rune is absorption, not restoration: it ranks in the total, rides an `absorbed` lane, and
     /// never touches the row's heal stats.
     #[test]
     fn a_rune_lane_rides_the_self_row_without_moving_its_heal_stats() {
@@ -610,7 +583,7 @@ mod tests {
         assert!(row.min.is_none());
     }
 
-    /// AN UNSTATED HEAL IS A COUNT AND NOTHING ELSE — total 0, no min, and it enters no sum.
+    /// An unstated heal is a count and nothing else: total 0, no min, and it enters no sum.
     #[test]
     fn an_unstated_lane_carries_a_count_and_no_measurement() {
         let mut a = HealAccum::new();
@@ -626,7 +599,7 @@ mod tests {
         assert!(lane.min.is_none());
     }
 
-    /// A SPELL-LESS LINE falls to one shared lane, and so does a whitespace-only name.
+    /// A spell-less line falls to one shared lane, and so does a whitespace-only name.
     #[test]
     fn a_nameless_heal_falls_to_the_one_shared_lane() {
         let mut a = HealAccum::new();
@@ -655,7 +628,7 @@ mod tests {
         assert_eq!(v.healers[0].spells[0].count, 2);
     }
 
-    /// A FULLY OVERHEALED tick still LANDED, so it moves `min` to 0 — the opposite of the damage
+    /// A fully overhealed tick still LANDED, so it moves `min` to 0 — the opposite of the damage
     /// model's rule, and deliberately so.
     #[test]
     fn a_zero_effective_heal_still_counts_as_a_landed_line() {

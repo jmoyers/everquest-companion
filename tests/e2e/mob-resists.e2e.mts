@@ -47,6 +47,14 @@ const GRID = '[data-testid="overview-grid"]'
 const NAV_MOBS = '[data-testid="nav-mobs"]'
 const SEARCH = '[data-testid="mobs-search"]'
 const RESULT_ROW = '[data-testid="mobs-result-row"]'
+/**
+ * The BROWSE view's zone roster — "the mobs in the zone you are standing in".
+ *
+ * It draws `mobs-result-row` too, exactly as the search results do, so "a result row exists" does
+ * NOT mean "the search has been applied". Waiting for this to go is what tells the two modes apart.
+ * `mob-drops-era.e2e.mts` carries the full argument; this spec had the identical race.
+ */
+const ZONE_ROSTER = '[data-testid="mobs-zone-roster"]'
 const CARD = '[data-testid="resist-card"]'
 const ROWS = '[data-testid="resist-rows"]'
 
@@ -84,6 +92,10 @@ async function openMobPage(page: Page): Promise<boolean> {
   await page.click(NAV_MOBS, { timeout: 15_000 })
   if (!(await appears(page, SEARCH))) return check('the Mobs tab offers its catalog search', false)
   await page.fill(SEARCH, MOB, { timeout: 15_000 })
+  // WAIT FOR THE MODE, NOT FOR "A ROW" — the browse view's zone roster is already on screen and
+  // draws the same testid, so a bare "a row appeared" is answered by the current zone's first mob.
+  // See ZONE_ROSTER above and mob-drops-era.e2e.mts for the whole story.
+  await settle(() => countOf(page, ZONE_ROSTER), (n) => n === 0, { timeoutMs: 10_000 })
   if (!(await appears(page, RESULT_ROW))) return check(`the catalog finds ${MOB}`, false)
   const first = await textOf(page, RESULT_ROW)
   if (!check(`the top hit is ${MOB}`, first.toLowerCase().startsWith(MOB), first)) return false

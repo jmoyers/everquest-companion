@@ -1,40 +1,18 @@
-//! THE ENGINE MEASURES ITS OWN SERVE PATH (owner ruling 19, foundations).
+//! The engine measures its own serve path. Two things are counted:
 //!
-//! > "the performance chip should incl perf of the server in end state."
+//! * Fold-to-frame latency, per source — from the instant the ingest folded the event that moved
+//!   the source to the instant the frame describing it reached the connection's outbox. A frame
+//!   with no fold behind it (the fresh reset a just-opened subscription is owed) carries no
+//!   latency; a number invented there would be the age of the session.
+//! * Diff size, per subscription — ops per frame and bytes on the wire, from the frame's own
+//!   serialization. That costs one extra `serde_json::to_string` per frame actually sent, over a
+//!   payload bounded by `views::MAX_LIMIT` rows, at most ten times a second.
 //!
-//! Surface 8 (`perf.budgets` / `perf.timeline`) is a later ticket. What must exist NOW is the
-//! measurement DISCIPLINE, so that the surface has real numbers to serve rather than a place to put
-//! numbers nobody took — and so that the first time the serve path is slow, the engine says so
-//! instead of the owner noticing. Two things are counted, and they are the two the ruling names:
-//!
-//! * **Fold-to-frame latency, per source.** From the instant the ingest folded the event that moved
-//!   the source, to the instant the frame describing it was handed to the connection's outbox. It
-//!   is the whole engine-side path — drain, cadence, build, filter, sort, cut, diff, serialize —
-//!   and it is measured rather than modelled. A frame that reports no new event (the fresh reset a
-//!   just-opened subscription is owed) carries no latency, because there is no fold instant behind
-//!   it and a number invented there would be the age of the session.
-//! * **Diff size, per subscription.** How many ops a frame carried and how many BYTES it was on
-//!   the wire, counted from the frame's own serialization. That is the payload-budget instrument
-//!   ruling 4 asks for: the renderer never munges because the engine sends what the pixel needs,
-//!   and "what the pixel needs" is only a discipline if somebody is weighing it.
-//!
-//! WHAT IT COSTS. One `serde_json::to_string` per frame that is actually sent — the frame is
-//! serialized again by the transport, so this is a second pass over a payload bounded by
-//! `views::MAX_LIMIT` rows, on the ingest thread, at most ten times a second. That is the honest
-//! price of knowing the number, and it is paid only when something was sent.
-//!
-//! WHERE IT GOES. A stderr line, tagged like every other diagnostic, at most one per source per
-//! [`REPORT_EVERY`] and only when there is something to report — plus one forced line when the
-//! fold lands, because the first frame after a fold is the measurement anybody debugging a slow
-//! Views tab wants first.
-//!
-//! …AND, SINCE JOS-483, ON THE WIRE — through [`Meter::peek`], which is the surface this file was
-//! always the foundation of. The two readers are deliberately different verbs and the difference is
-//! the whole reason there are two: [`Meter::take_report`] DRAINS (its cadence flag, so a line is
-//! not printed twice), and [`Meter::peek`] does not touch a thing. A `perf.snapshot` that reset
-//! these counters would make the numbers depend on who asked last and how recently — two panels
-//! open at once would each see half a session — and it would silently rob the stderr line of the
-//! interval it was about to print.
+//! The numbers leave by three readers with deliberately different verbs: [`Meter::take_report`]
+//! drains its cadence flag so a stderr line is not printed twice, [`Meter::take_window`] drains only
+//! the windowed extreme, and [`Meter::peek`] touches nothing. A reader that reset the counters would
+//! make the numbers depend on who asked last — two panels open at once would each see half a
+//! session — and would rob the stderr line of the interval it was about to print.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -45,20 +23,15 @@ pub const REPORT_EVERY: Duration = Duration::from_secs(10);
 
 /// The nominal interval between two [`Timeline`] samples.
 ///
-/// It is [`REPORT_EVERY`] today and that is deliberate rather than shared: the same beat means a
-/// stderr line and a timeline moment describe the same window, which is what makes a dev log and a
-/// bug report readable side by side. They are two constants because they answer to two different
-/// readers — a person watching a terminal, and a ring with a fixed horizon — and either could
-/// change without the other.
+/// Equal to [`REPORT_EVERY`] so a stderr line and a timeline moment describe the same window, but a
+/// separate constant: they answer to two different readers and either could change alone.
 pub const TIMELINE_CADENCE: Duration = Duration::from_secs(10);
 
-/// How many moments the ring holds before it starts overwriting — the HORIZON, and the reason this
-/// is a ring at all.
+/// How many moments the ring holds before it overwrites — its horizon.
 ///
-/// Thirty samples at [`TIMELINE_CADENCE`] is five minutes, which is the window a person can
-/// actually remember doing something in ("it went slow when I zoned"). The bound is the whole
-/// design constraint: an engine up for a week must cost exactly what one up for a minute costs, so
-/// history that ages out is DROPPED rather than summarised into a second, subtler accumulator.
+/// Thirty samples at [`TIMELINE_CADENCE`] is five minutes, the window a person can remember doing
+/// something in. The bound is the design: an engine up for a week must cost what one up for a minute
+/// costs, so history that ages out is dropped rather than summarised into a subtler accumulator.
 pub const TIMELINE_CAPACITY: usize = 30;
 
 /// Which kind of frame was served.
@@ -83,30 +56,22 @@ struct SourceStats {
     timed: u64,
     latency_total: Duration,
     latency_worst: Duration,
-    /// The worst timed frame SINCE THE LAST TIMELINE SAMPLE, drained by [`Meter::take_window`].
+    /// The worst timed frame since the last timeline sample, drained by [`Meter::take_window`].
     ///
-    /// IT IS THE ONE FIELD THE RING CANNOT DERIVE, and that is the whole reason it exists. Frames
-    /// and bytes are cumulative counters, so a window's figure is one subtraction the ring can do
-    /// against its own previous reading, costing the serve path nothing. A MAXIMUM IS NOT
-    /// INVERTIBLE — a cumulative worst of 56 ms says nothing about whether this window's worst was
-    /// 56 ms or 200 µs — so the windowed extreme has to be accumulated where the frames are
-    /// counted. `Option` rather than a zero on the same terms as `latency_worst`: a window whose
-    /// every frame was an owed reset has no latency to report, and a `0` there would claim the
-    /// serve path was instantaneous.
+    /// The one field the ring cannot derive: frames and bytes are cumulative, so a window's figure
+    /// is one subtraction, but a maximum is not invertible — a cumulative worst says nothing about
+    /// which window set it. `Option` rather than zero: a window whose every frame was an owed reset
+    /// has no latency, and a `0` would claim the serve path was instantaneous.
     win_worst: Option<Duration>,
 }
 
-/// ONE SOURCE'S COUNTERS, READ RATHER THAN DRAINED — what [`Meter::peek`] answers with, and what
-/// the `perf.snapshot` op turns into a `PerfServeSource` row.
+/// One source's counters, read rather than drained — what [`Meter::peek`] answers with.
 ///
-/// IT IS NOT THE GENERATED TYPE, on purpose. `views/` knows nothing about the protocol and must not:
-/// the meter counts, the op table serializes, and a `protocol::generated` import here would make
-/// this module's tests depend on the wire. The mapping is nine field assignments in `world.rs`.
+/// Not the generated type, on purpose: `views/` knows nothing about the protocol, so the meter
+/// counts and the op table serializes. The mapping lives in `world.rs`.
 ///
-/// THE TWO LATENCIES ARE OPTIONS AND THAT IS THE DISCIPLINE, not a convenience: a frame with no
-/// fold instant behind it is counted but not timed (see the module header), so a source whose every
-/// frame was an owed reset has no latency to report. `None` says so; a zero would claim the serve
-/// path is instantaneous, which is the one lie this instrument exists to prevent.
+/// The two latencies are `Option`s because a frame with no fold instant behind it is counted but not
+/// timed; a zero would claim the serve path is instantaneous.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceMeter {
     /// The source's name, as the registry spells it.
@@ -161,7 +126,7 @@ impl Meter {
     /// Count one frame that was actually sent.
     ///
     /// `since` is the instant the fold produced what this frame reports, or `None` when the frame
-    /// is not reporting a fold at all (see the module header).
+    /// is not reporting a fold at all.
     pub fn frame(
         &mut self,
         source: &'static str,
@@ -190,19 +155,15 @@ impl Meter {
         self.fresh = true;
     }
 
-    /// THE RING'S READING: cumulative totals, and the windowed extreme DRAINED (JOS-502).
+    /// The ring's reading: cumulative totals, and the windowed extreme drained.
     ///
-    /// The mixed posture is deliberate and is the cheapest honest thing. `frames` and `bytes` are
-    /// handed over cumulative because [`Timeline`] can subtract its own previous reading and the
-    /// serve path therefore pays nothing for them; `worst_us` is drained because a maximum cannot
-    /// be recovered by subtraction (see [`SourceStats::win_worst`]). `&mut self` is the type saying
-    /// which half is destructive, and the method is called by exactly one caller on the thread that
-    /// owns the meter — a second reader would silently take the first one's window.
+    /// `frames` and `bytes` stay cumulative because [`Timeline`] subtracts its own previous reading,
+    /// so the serve path pays nothing for them; `worst_us` is drained because a maximum cannot be
+    /// recovered by subtraction. One caller only, on the thread that owns the meter — a second
+    /// reader would silently take the first one's window.
     ///
-    /// IT DOES NOT TOUCH THE CADENCE FLAG. [`Meter::take_report`]'s stderr line and this are
-    /// independent drains of independent state, so a timeline sample can never steal the interval
-    /// a summary line was about to print — the property [`Meter::peek`] holds by being `&self` and
-    /// this one holds by touching nothing but `win_worst`.
+    /// It does not touch the cadence flag, so a timeline sample can never steal the interval a
+    /// summary line was about to print.
     pub fn take_window(&mut self) -> MeterWindow {
         let mut window = MeterWindow::default();
         for stats in self.sources.values_mut() {
@@ -236,16 +197,13 @@ impl Meter {
             .collect()
     }
 
-    /// EVERY SOURCE'S COUNTERS, AND NOTHING IS RESET — the `perf.snapshot` reader (JOS-483).
+    /// Every source's counters, and nothing is reset — the `perf.snapshot` reader.
     ///
-    /// `&self`, which is the type stating the property: this cannot drain the cadence flag, cannot
-    /// zero a total, and cannot change what the next stderr line says. Ordered by source name
-    /// because the map is a `BTreeMap` and a panel redrawing every two seconds must not have its
-    /// rows jump around.
+    /// `&self` is the type stating the property: it cannot drain the cadence flag, zero a total, or
+    /// change what the next stderr line says. Ordered by source name so a redrawing panel's rows
+    /// hold still.
     ///
-    /// A SOURCE THAT HAS NEVER SERVED A FRAME IS SIMPLY ABSENT here, because nothing ever created
-    /// an entry for it — the same rule the panel applies to a process type with no process behind
-    /// it, arriving for free from where the counters live.
+    /// A source that has never served a frame is absent rather than a row of zeros.
     #[must_use]
     pub fn peek(&self) -> Vec<SourceMeter> {
         self.sources
@@ -267,32 +225,29 @@ impl Meter {
     }
 }
 
-/// WHAT [`Meter::take_window`] HANDS THE RING — two cumulative counters and one drained extreme.
-///
-/// Read the field docs before using it: the mixed posture is the point, not an oversight.
+/// What [`Meter::take_window`] hands the ring: two cumulative counters and one drained extreme. The
+/// mixed posture is the point — read the field docs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MeterWindow {
-    /// Frames sent across every source since this generation began — CUMULATIVE.
+    /// Frames sent across every source since this generation began — cumulative.
     pub frames: u64,
-    /// Payload bytes sent across every source since this generation began — CUMULATIVE.
+    /// Payload bytes sent across every source since this generation began — cumulative.
     pub bytes: u64,
-    /// The worst fold-to-frame latency, in microseconds, SINCE THE LAST CALL — drained, and `None`
+    /// The worst fold-to-frame latency in microseconds since the last call — drained, and `None`
     /// when no frame in that span had a fold behind it.
     pub worst_us: Option<u64>,
 }
 
-/// ONE SAMPLED WINDOW OF THE SERVE PATH — the ring's element, and the `PerfMoment` on the wire.
+/// One sampled window of the serve path — the ring's element.
 ///
-/// EVERY FIGURE IS AN INTERVAL. `perf.snapshot` already answers the cumulative question and answers
-/// it better; a history exists to say that this ten seconds cost four times what the last ten did,
-/// and a list of ever-growing totals makes a reader do that subtraction himself against a baseline
-/// he cannot see.
+/// Every figure is an interval, never a running total: `perf.snapshot` answers the cumulative
+/// question better, and a history exists to say that this ten seconds cost four times what the last
+/// ten did.
 ///
-/// IT IS NOT THE GENERATED TYPE, for the reason [`SourceMeter`] is not: `views/` knows nothing
-/// about the protocol and must not. The mapping is five field assignments in `world.rs`.
+/// Not the generated type, for the reason [`SourceMeter`] is not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moment {
-    /// Process uptime in milliseconds when this window CLOSED.
+    /// Process uptime in milliseconds when this window closed.
     pub at_ms: u64,
     /// How long the window actually covered — measured, never assumed to be the cadence.
     pub span_ms: u64,
@@ -304,28 +259,17 @@ pub struct Moment {
     pub worst_us: Option<u64>,
 }
 
-/// THE BOUNDED HISTORY BEHIND `perf.timeline` (JOS-502) — a fixed-capacity ring, oldest first.
+/// The bounded history behind `perf.timeline` — a fixed-capacity ring, oldest first.
 ///
-/// ## THE BOUND IS THE FEATURE
+/// The bound is the feature: [`TIMELINE_CAPACITY`] moments, and the oldest is dropped rather than
+/// folded into a summary, so an engine up for a week costs what one up for a minute costs.
 ///
-/// [`TIMELINE_CAPACITY`] moments, and the oldest is DROPPED rather than folded into a summary. An
-/// engine up for a week costs what one up for a minute costs, which is the property that lets this
-/// exist at all in a process the app never restarts — ruling 19 asked for a history, and an
-/// unbounded one would be a leak wearing a diagnostic's clothes.
+/// It reads a clock it is given, never one it takes. Every method takes process uptime in
+/// milliseconds from its caller: the engine does not read a wall clock to answer a performance
+/// question, and a process-relative stamp says nothing about when or where a person plays.
 ///
-/// ## IT READS A CLOCK IT IS GIVEN, NEVER ONE IT TAKES
-///
-/// Every method takes the process uptime in milliseconds from its caller. There is no `Instant`
-/// here and no wall clock anywhere near it: the engine does not read a wall clock to answer a
-/// performance question (`PerfSnapshotResult.lastEventTs` makes the same point from the other
-/// side), a process-relative stamp carries nothing about when or where a person plays, and every
-/// test below is arithmetic with no sleeping in it.
-///
-/// ## A QUIET WINDOW IS RECORDED AS A QUIET WINDOW
-///
-/// Nothing here skips an empty sample. A ring that dropped its silent moments would compress a
-/// two-minute lull into no space at all and make the busy ones look adjacent, which is the one
-/// reading error a timeline exists to prevent.
+/// A quiet window is recorded as a quiet window. Skipping empty samples would compress a lull into
+/// no space and make the busy moments either side of it look adjacent.
 #[derive(Debug, Default)]
 pub struct Timeline {
     moments: VecDeque<Moment>,
@@ -347,17 +291,16 @@ impl Timeline {
 
     /// Offer the ring a tick. It samples only when a whole [`TIMELINE_CADENCE`] has passed.
     ///
-    /// CALLED ON THE SERVE BEAT (~10 Hz), which is a hundred times more often than it samples — the
-    /// cadence check is two integer operations and lives here rather than at the call site so the
-    /// ring's horizon cannot be changed by accident from the ingest loop.
+    /// Called on the serve beat, far more often than it samples; the cadence check lives here rather
+    /// than at the call site so the ring's horizon cannot be changed from the ingest loop.
     ///
-    /// `at_ms` MUST BE MONOTONIC (it is process uptime). A tick that went backwards would produce a
-    /// negative span; it is treated as a zero-length window rather than trusted, because an
-    /// instrument that can print a negative duration is one nobody believes afterwards.
+    /// `at_ms` must be monotonic (it is process uptime). A backwards tick is treated as a
+    /// zero-length window rather than trusted, because an instrument that can print a negative
+    /// duration is one nobody believes afterwards.
     pub fn tick(&mut self, at_ms: u64, meter: &mut Meter) {
         let Some(since) = self.since_ms else {
             // The first tick opens the window and takes the baseline. `take_window` is called for
-            // its DRAIN — anything timed before the ring existed belongs to no window.
+            // its drain: anything timed before the ring existed belongs to no window.
             let opening = meter.take_window();
             self.since_ms = Some(at_ms);
             self.frames = opening.frames;
@@ -389,11 +332,10 @@ impl Timeline {
         self.moments.push_back(moment);
     }
 
-    /// THE RING AS IT STANDS, OLDEST FIRST, AND NOTHING IS RESET — `perf.timeline`'s reader.
+    /// The ring as it stands, oldest first, and nothing is reset — `perf.timeline`'s reader.
     ///
-    /// `&self`, which is the type stating the property, exactly as [`Meter::peek`] does: two panels
-    /// open at once must see the same history, and a read that consumed the ring would make what
-    /// the second one saw depend on how recently the first one asked.
+    /// `&self` states the property, as [`Meter::peek`] does: two panels open at once must see the
+    /// same history.
     #[must_use]
     pub fn peek(&self) -> Vec<Moment> {
         self.moments.iter().copied().collect()
@@ -407,10 +349,8 @@ fn millis(d: Duration) -> u64 {
 
 /// The mean of the timed frames, in microseconds, or `None` when none were timed.
 ///
-/// THE DIVISION IS THE ONE `line` ALREADY DOES, and it divides the TOTAL DURATION rather than a sum
-/// of rounded microseconds — so a hundred 400 ns frames report 0 µs each way but their mean is not
-/// a hundred zeros averaged, it is the real 0 µs. Rounding once, at the end, is the only order that
-/// keeps a sub-microsecond serve path from accumulating into a lie either direction.
+/// Divides the total duration rather than a sum of rounded microseconds: rounding once, at the end,
+/// is the only order that keeps a sub-microsecond serve path from accumulating into a lie.
 fn mean_us(stats: &SourceStats) -> Option<u64> {
     if stats.timed == 0 {
         return None;
@@ -419,8 +359,8 @@ fn mean_us(stats: &SourceStats) -> Option<u64> {
     Some(micros(stats.latency_total / divisor))
 }
 
-/// A duration as whole microseconds, saturating rather than wrapping. A serve path does not take
-/// 584,000 years, but `as` casts that could silently say it did have no place in an instrument.
+/// A duration as whole microseconds, saturating rather than wrapping: an `as` cast that could
+/// silently report an absurd figure has no place in an instrument.
 fn micros(d: Duration) -> u64 {
     u64::try_from(d.as_micros()).unwrap_or(u64::MAX)
 }
@@ -450,8 +390,7 @@ fn line(source: &str, stats: &SourceStats) -> String {
 
 /// A duration a person reads, at a precision that does not throw the measurement away.
 ///
-/// MICROSECONDS UNDER A MILLISECOND, and that is the whole reason this is not one format string:
-/// cutting a fifty-row window off a fold takes tens of microseconds, and a serve path that reports
+/// Microseconds under a millisecond: cutting a fifty-row window takes tens of microseconds, and
 /// `0.0 ms` reads as a measurement nobody took rather than as the good news it is.
 fn took(d: Duration) -> String {
     let ms = d.as_secs_f64() * 1000.0;
@@ -484,8 +423,7 @@ mod tests {
 
     #[test]
     fn the_first_tick_opens_a_window_rather_than_reporting_the_boot_as_one() {
-        // A first moment measured from process start would report however long the app took to
-        // launch as a serve window — the one figure in a timeline nobody could act on.
+        // A first moment measured from process start would report launch time as a serve window.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         served(&mut meter, 400, true);
@@ -501,8 +439,7 @@ mod tests {
 
     #[test]
     fn a_moment_reports_the_interval_and_not_a_running_total() {
-        // THE ONE DESIGN DECISION IN THIS SHAPE. Two busy windows in a row must read as two equal
-        // windows, not as one and then two.
+        // Two busy windows in a row must read as two equal windows, not as one and then two.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         ring.tick(0, &mut meter);
@@ -526,8 +463,6 @@ mod tests {
 
     #[test]
     fn a_quiet_window_is_recorded_as_a_quiet_window() {
-        // Skipping empty samples would compress a lull into no space at all and make the busy
-        // moments either side of it look adjacent.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         ring.tick(0, &mut meter);
@@ -540,8 +475,7 @@ mod tests {
 
     #[test]
     fn the_windowed_worst_is_this_windows_worst_and_not_the_generations() {
-        // The field the ring cannot derive: a cumulative maximum says nothing about which window
-        // set it. A busy window followed by an untimed one must not inherit the first one's peak.
+        // A busy window followed by an untimed one must not inherit the first one's peak.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         ring.tick(0, &mut meter);
@@ -566,8 +500,8 @@ mod tests {
         ring.tick(0, &mut meter);
         ring.tick(CADENCE_MS - 1, &mut meter);
         assert!(ring.peek().is_empty(), "one millisecond short is not due");
-        // A busy thread takes its sample late, and the moment says so instead of claiming the
-        // nominal cadence — which would quietly turn a stall into a shorter-looking window.
+        // A busy thread takes its sample late, and the moment says so rather than claiming the
+        // nominal cadence, which would turn a stall into a shorter-looking window.
         ring.tick(CADENCE_MS * 3, &mut meter);
         let [moment] = ring.peek().try_into().expect("one moment");
         assert_eq!(moment.span_ms, CADENCE_MS * 3);
@@ -575,8 +509,7 @@ mod tests {
 
     #[test]
     fn the_ring_is_bounded_and_drops_the_oldest() {
-        // THE PROPERTY THE WHOLE SHAPE EXISTS FOR. An engine up for a week costs what one up for a
-        // minute costs.
+        // An engine up for a week costs what one up for a minute costs.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         ring.tick(0, &mut meter);
@@ -609,8 +542,8 @@ mod tests {
 
     #[test]
     fn a_clock_that_went_backwards_is_a_zero_window_rather_than_a_negative_one() {
-        // Uptime is monotonic, so this cannot happen — and an instrument that could print a
-        // negative duration is one nobody believes afterwards, so it is pinned rather than assumed.
+        // Uptime is monotonic, so this cannot happen; it is pinned rather than assumed because an
+        // instrument that could print a negative duration is one nobody believes afterwards.
         let mut meter = Meter::new();
         let mut ring = Timeline::new();
         ring.tick(CADENCE_MS * 5, &mut meter);
@@ -620,8 +553,8 @@ mod tests {
 
     #[test]
     fn draining_the_window_leaves_the_stderr_line_and_the_cumulative_counters_alone() {
-        // The three drains in this file are independent: the cadence flag, the windowed extreme,
-        // and nothing else. A timeline sample must not steal the interval a summary was owed.
+        // The drains are independent: a timeline sample must not steal the interval a summary was
+        // owed.
         let mut meter = Meter::new();
         served(&mut meter, 100, true);
         let window = meter.take_window();
@@ -674,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_frame_with_no_fold_behind_it_is_counted_but_not_timed() {
-        // The fresh reset a just-opened subscription is owed on an idle session. Timing it against
+        // The fresh reset a just-opened subscription is owed on an idle session: timing it against
         // the last event would report the age of the session as a serve latency.
         let mut meter = Meter::new();
         meter.frame("loot.ledger", FrameKind::Reset, 3, 0, 200, None);
@@ -704,8 +637,7 @@ mod tests {
 
     #[test]
     fn a_meter_that_counted_nothing_peeks_at_nothing() {
-        // NOT a row of zeros. A source nobody subscribed to has no serve path to report, and the
-        // panel's rule ("omit rather than show zeros") is inherited from here.
+        // Not a row of zeros: a source nobody subscribed to has no serve path to report.
         assert!(Meter::new().peek().is_empty());
     }
 
@@ -745,8 +677,8 @@ mod tests {
 
     #[test]
     fn a_source_whose_frames_had_no_fold_behind_them_reports_no_latency_rather_than_zero() {
-        // The wire half of `a_frame_with_no_fold_behind_it_is_counted_but_not_timed`: the stderr
-        // line says `mean n/a` and the op must say ABSENT, never 0.
+        // The wire half of `a_frame_with_no_fold_behind_it_is_counted_but_not_timed`: the op must
+        // say absent, never 0.
         let mut meter = Meter::new();
         meter.frame("loot.ledger", FrameKind::Reset, 3, 0, 200, None);
         let [row] = meter.peek().try_into().expect("one source");
@@ -758,9 +690,8 @@ mod tests {
 
     #[test]
     fn peeking_resets_nothing_and_steals_no_line() {
-        // THE LOAD-BEARING PROPERTY of this reader. A panel polling every two seconds must not
-        // zero the counters under the stderr report, and must not make the next poll's numbers
-        // depend on how recently the last one happened.
+        // A polling panel must not zero the counters under the stderr report, nor make the next
+        // poll's numbers depend on how recently the last one happened.
         let mut meter = Meter::new();
         meter.frame("loot.ledger", FrameKind::Diff, 0, 1, 100, None);
         let first = meter.peek();
@@ -769,8 +700,8 @@ mod tests {
         assert_eq!(first[0].frames, 1);
         // …and the line the meter owed is still owed.
         assert_eq!(meter.take_report(true).len(), 1);
-        // …and the peek AFTER a drained report still carries the whole generation, because the
-        // counters are cumulative and only the cadence flag was drained.
+        // …and the peek after a drained report still carries the whole generation, because only the
+        // cadence flag was drained.
         assert_eq!(meter.peek()[0].frames, 1);
     }
 

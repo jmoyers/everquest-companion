@@ -1,24 +1,15 @@
-//! `buffs.active` — THE BUFFS TAB'S LIST (JOS-487).
+//! `buffs.active` — the buffs tab's list.
 //!
-//! The other reader of the buff model, and deliberately a SECOND source rather than a filter over
-//! [`super::timers`]: the tab and the bars draw different things from the same instances. The bars
-//! draw a clock; the tab draws what the MODEL KNOWS about a buff — the estimator's number, the
-//! quartiles behind it, how many observations there are and where the number came from — which is
-//! why `ActiveBuff` carries `estimatedMs`/`durationSource` beside `overlayDurationMs`, and why
-//! `BuffTimerRow` deliberately carries no `source` at all (JOS-379). Folding them into one source
-//! would mean serving every reader the union.
+//! A second source rather than a filter over [`super::timers`]: the bars draw a clock, the tab
+//! draws what the model knows about a buff (estimate, quartiles, observation count, provenance).
+//! One source would serve every reader the union.
 //!
-//! ── WHAT A CELL IS HERE ────────────────────────────────────────────────────────────────────────
+//! Cells are the row's own numbers and the model's enum words, never the sentences a buff row
+//! prints (`~4m 30s`, `n=12`, `at least`) — those are built by derivations the tab, the bars and
+//! the hover card share, and a wire carrying them would be a second copy of that vocabulary.
 //!
-//! The row's own fields, as numbers and as the enum words the model spells them with. It is the
-//! `ConCardChip` decision applied one surface over, and for its reason: the sentences a buff row
-//! prints (`~4m 30s`, `n=12`, `at least`) are built by derivations the tab, the bars and the
-//! hover card all read, so a wire carrying finished strings would be a second copy of a vocabulary
-//! that must not drift. What the engine owes — and what it does above this line — is which rows,
-//! in which order, windowed.
-//!
-//! `candidates` is not a cell for the reason [`super::timers`] gives at length: a `Cell` is a
-//! scalar. `ambiguous` is the flag the `~` chip reads and `spell` is already the joined family.
+//! `candidates` is not a cell because a `Cell` is a scalar; `ambiguous` is the flag the `~` chip
+//! reads and `spell` is already the joined family.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -42,8 +33,7 @@ pub const ACTIVE: SourceDef = SourceDef {
         "permanent",
         "caster",
     ],
-    // OLDEST FIRST, which is the order the module publishes them in and the order the tab lists
-    // them: a buff you have had running all night sits above the one you just cast.
+    // Oldest first: the order the module publishes and the order the tab lists.
     default_sort: &[("startedTs", Order::Asc)],
     tiebreak: ("key", Order::Asc),
     default_limit: 100,
@@ -51,8 +41,8 @@ pub const ACTIVE: SourceDef = SourceDef {
 
 /// Build a row per live instance.
 ///
-/// THE KEY IS THE MODEL'S OWN INSTANCE KEY — `<spellKey>|<entityKey>` — handed over by
-/// `BuffsModule::active_instances` rather than rebuilt from the projected fields. See that method.
+/// The key is the model's own instance key (`<spellKey>|<entityKey>`), handed over by
+/// `BuffsModule::active_instances` rather than rebuilt from the projected fields.
 #[must_use]
 pub fn rows(module: &BuffsModule) -> Vec<SourceRow> {
     module
@@ -64,9 +54,8 @@ pub fn rows(module: &BuffsModule) -> Vec<SourceRow> {
                 ("key", Field::Text(key.clone())),
                 ("spell", Field::Text(b.spell.clone())),
                 ("cls", Field::Text(word(&b.cls))),
-                // A BOOLEAN IS NOT A `Field`, so `self` is filtered as the word the cell carries.
-                // The alternative — a numeric 0/1 — would make `{"self":true}` a refusal and
-                // `{"self":1}` a query nobody would guess.
+                // A boolean is not a `Field`, so `self` is filtered as a word: a numeric 0/1 would
+                // make `{"self":true}` a refusal and `{"self":1}` a query nobody would guess.
                 ("self", Field::Text(yes_no(b.is_self))),
                 ("target", text_or_missing(b.target.as_deref())),
                 ("startedTs", Field::Int(b.started_ts)),
@@ -132,11 +121,10 @@ fn cells(b: &ActiveBuff) -> Cells {
     Cells(cells)
 }
 
-/// One of the model's own enum words, read through the SAME serde spelling the module publishes.
+/// One of the model's enum words, read through the same serde spelling the module publishes.
 ///
-/// Not a hand-written match: the wire word for `deathBound` is decided by a `rename_all` attribute
-/// in `buffs_shapes.rs`, and a second spelling here would be a place for the two to part company
-/// the next time a variant is added.
+/// Not a hand-written match: the wire words are decided by `rename_all` in `buffs_shapes.rs`, and a
+/// second spelling here would part company the next time a variant is added.
 pub(super) fn word<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .ok()

@@ -216,6 +216,12 @@ jobs:
   #     docs/plans/data-server.md through the generated Rust types. The same
   #     bytes are round-tripped through the TypeScript types in `npm test`, so
   #     a shape only one language can express fails on the side that cannot.
+  #   * …and the FACTORING RATCHET (JOS-523), which is why this job now installs
+  #     Node as well as Rust. It is the engine's half of the discipline the
+  #     TypeScript has had since 2026-08-03 — complexity 12, 400 code lines per
+  #     file, 100 per function — and it lives here rather than in `build`
+  #     because this is the lane that owns the engine and the only one with no
+  #     `if:` guard, so a tag is measured exactly as a push is.
   #
   # The toolchain version is NOT chosen here: engine/rust-toolchain.toml pins
   # it, and rustup honours that file automatically. That pin is load-bearing —
@@ -231,6 +237,30 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (v4.4.0)
         with:
           persist-credentials: false
+
+      # NODE, IN THE RUST JOB. The factoring ratchet below is a .mts script run
+      # through tsx, so it needs node_modules. No `npm run deps:electron` here,
+      # unlike the two installer jobs: nothing in this lane imports electron, so
+      # the ~190 MB download would be a minute spent on a binary nobody opens.
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 (v4.4.0)
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # THE FACTORING RATCHET (JOS-523). Complexity 12 / 400 code lines per file
+      # / 100 per function over engine/crates, frozen at today's debt by
+      # engine/factoring-baseline.json. Green today because that register lists
+      # the current violations; RED means new debt, or an old one that grew.
+      # It runs BEFORE the toolchain work because it is the cheapest opinion in
+      # the job and there is no reason to compile Rust to find out a file got
+      # longer. See scripts/checkRustFactoring.mts for the ratchet's contract
+      # and scripts/rustFactoring.mts for how the three numbers are counted.
+      - name: Factoring ratchet
+        run: npm run check:rust-factoring
 
       # rustup ships on the GitHub Windows image; this installs whatever
       # engine/rust-toolchain.toml names, with the components it lists.

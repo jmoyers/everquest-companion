@@ -6,7 +6,7 @@
 // navigation MODEL — pure state and openers, no JSX, no MUI. Splitting them changed no
 // behaviour: every rule below is the one that was written next to the component, verbatim.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VIEW_LABELS, type View } from './appViews'
 import { afterBack, afterLink, originTop, type NavOrigin } from './navOrigin'
 import type { CombatFocus } from './features/combat/combatFocus'
@@ -53,6 +53,12 @@ interface NavSeam {
  * would be torn down and re-registered every time the user clicked a nav row. The ref is written
  * in an effect (after paint) and read in click handlers (later still), so it is never stale where
  * it is read.
+ *
+ * THE RETURN IS MEMOIZED (JOS-510 item 3), and so is the `nav` object inside it. Every MEMBER was
+ * already a `useCallback`, which made the individual openers stable and the CONTAINERS new objects
+ * on every render — so `routing` and `routing.nav` defeated any `React.memo` placed downstream
+ * before it could compare anything. `origin` is `originTop(origins)`, an ELEMENT of the state array
+ * rather than a derived object, so it only moves when the stack does.
  */
 function useNavSeam(view: View, setView: (v: View) => void): NavSeam {
   const [origins, setOrigins] = useState<NavOrigin[]>([])
@@ -85,7 +91,8 @@ function useNavSeam(view: View, setView: (v: View) => void): NavSeam {
     return true
   }, [origin, setView])
 
-  return { linkTo, selectView, nav: { origin, back, clear } }
+  const nav = useMemo<NavBack>(() => ({ origin, back, clear }), [origin, back, clear])
+  return useMemo(() => ({ linkTo, selectView, nav }), [linkTo, selectView, nav])
 }
 
 /**
@@ -176,130 +183,120 @@ export interface AppRouting {
   clearSpellFocus: () => void
 }
 
+/**
+ * ONE DEEP-LINK DESTINATION'S STATE: the payload it was asked for, the nonce that makes the same
+ * ask twice arrive twice, the opener, and the way to retire a payload once applied.
+ *
+ * SIX COPIES OF THIS EXISTED INLINE until JOS-510 item 3, and the copies are why memoizing the
+ * router's return would otherwise have pushed `useAppRouting` past the measured
+ * `max-lines-per-function` ceiling: the six `clear*` members were bare arrows (a new identity per
+ * render, which is exactly what pre-defeats a downstream `React.memo`), and giving each one a
+ * `useCallback` plus listing twenty-four members in a dependency array is pure mass. Extracting the
+ * shape they already shared pays for the memoization instead of ratcheting around it. NOTHING
+ * ABOUT THE ROUTER'S CONTRACT MOVED — `AppRouting` below is byte-for-byte the interface it was.
+ *
+ * `open` takes an OPTIONAL payload so one signature serves both idioms: the three destinations that
+ * are real places on their own (`openLoot()`, `openQuest()`, `openLeveling()` bare) and the three
+ * that are nothing without their subject (`openMob`, `openCombat`, `openSpell`, whose declared
+ * parameter is required and so can never reach the bare branch). `anchored` then falls out of the
+ * payload rather than being spelled per opener — the same rule the six copies each wrote by hand:
+ * did this link carry an anchor, i.e. is the user landing in a DRILL that will show a Back button?
+ */
+interface FocusSlot<T> {
+  value: T | null
+  nonce: number
+  open: (v?: T | null) => void
+  clear: () => void
+}
+
+/**
+ * The openers are memoized because one of them is a DEPENDENCY of the mount-only effect that
+ * installs the cross-window `app:focusView` listener — a fresh identity each render would tear
+ * down and re-register that subscription on every render.
+ *
+ * They navigate through `linkTo`, never through the raw `setView`: that is the ONE seam where a
+ * cross-view jump parks the view it is leaving (JOS-43).
+ *
+ * A SPELL → SPELL HOP PARKS NOTHING, BY THE MODEL'S OWN RULE, and it is worth saying here because
+ * the spell drilldown is the first link whose destination is routinely the view it was fired from.
+ * `afterLink` returns the stack untouched when `from.view === to` ("you did not travel, so the
+ * trail behind you is still the trail behind you"), so walking a ladder from one rung to the next
+ * does NOT grow the trail: the whole excursion keeps ONE origin — the surface the first spell name
+ * was clicked on — and one Back leaves it. That is a deliberate semantics rather than a gap, the
+ * button says out loud where it goes, and the return trip up the ladder is the ladder itself,
+ * which every rung's page draws. Retracing hop by hop would mean changing `afterLink` for the five
+ * links that already depend on it.
+ */
+function useFocusSlot<T>(to: View, linkTo: NavSeam['linkTo']): FocusSlot<T> {
+  const [value, setValue] = useState<T | null>(null)
+  const [nonce, setNonce] = useState(0)
+  const open = useCallback(
+    (v?: T | null) => {
+      setValue(v ?? null)
+      setNonce((n) => n + 1)
+      linkTo(to, v != null)
+    },
+    [linkTo, to]
+  )
+  const clear = useCallback(() => setValue(null), [])
+  return useMemo(() => ({ value, nonce, open, clear }), [value, nonce, open, clear])
+}
+
 export function useAppRouting(view: View, setView: (v: View) => void): AppRouting {
   const { linkTo, selectView, nav } = useNavSeam(view, setView)
-  const [mobTarget, setMobTarget] = useState<MobTarget | null>(null)
-  const [mobNonce, setMobNonce] = useState(0)
-  const [combatFocus, setCombatFocus] = useState<CombatFocus | null>(null)
-  const [combatNonce, setCombatNonce] = useState(0)
-  const [lootItem, setLootItem] = useState<string | null>(null)
-  const [lootNonce, setLootNonce] = useState(0)
-  const [questKey, setQuestKey] = useState<string | null>(null)
-  const [questNonce, setQuestNonce] = useState(0)
-  const [levelFocus, setLevelFocus] = useState<number | null>(null)
-  const [levelNonce, setLevelNonce] = useState(0)
-  const [spellName, setSpellName] = useState<string | null>(null)
-  const [spellNonce, setSpellNonce] = useState(0)
-  // The openers are memoized because one of them is a DEPENDENCY of the mount-only effect that
-  // installs the cross-window `app:focusView` listener — a fresh identity each render would
-  // tear down and re-register that subscription on every render.
-  //
-  // They navigate through `linkTo`, never through the raw `setView`: that is the ONE seam where a
-  // cross-view jump parks the view it is leaving (JOS-43). The boolean is the whole rule — did
-  // this link carry an anchor, i.e. is the user landing in a DRILL that will show a Back button?
-  // `openLoot()` bare is the drops card's "All loot", a plain tab switch; `openLoot(item)` is the
-  // deep link this ticket exists for.
-  const openMob = useCallback(
-    (t: MobTarget) => {
-      setMobTarget(t)
-      setMobNonce((n) => n + 1)
-      linkTo('mobs', true)
-    },
-    [linkTo]
-  )
-  const openCombat = useCallback(
-    (f: CombatFocus) => {
-      setCombatFocus(f)
-      setCombatNonce((n) => n + 1)
-      linkTo('combat', true)
-    },
-    [linkTo]
-  )
-  const openLoot = useCallback(
-    (item?: string) => {
-      setLootItem(item ?? null)
-      setLootNonce((n) => n + 1)
-      linkTo('loot', item != null)
-    },
-    [linkTo]
-  )
-  // Both cross-window deep links (a toast card's click) memoize for the same reason `openMob`
-  // does: `applyDeepLink` runs inside the mount-only `app:focusView` subscription effect.
-  const openQuest = useCallback(
-    (quest?: string) => {
-      setQuestKey(quest ?? null)
-      setQuestNonce((n) => n + 1)
-      linkTo('posky', quest != null)
-    },
-    [linkTo]
-  )
-  const openLeveling = useCallback(
-    (level?: number) => {
-      setLevelFocus(level ?? null)
-      setLevelNonce((n) => n + 1)
-      linkTo('leveling', level != null)
-    },
-    [linkTo]
-  )
+  const mob = useFocusSlot<MobTarget>('mobs', linkTo)
+  const combat = useFocusSlot<CombatFocus>('combat', linkTo)
+  const loot = useFocusSlot<string>('loot', linkTo)
+  const quest = useFocusSlot<string>('posky', linkTo)
+  const level = useFocusSlot<number>('leveling', linkTo)
+  // The spell opener is load-bearing twice over: it is also the value `SpellLinkProvider` publishes
+  // to every spell name in the window, so a fresh identity per render would re-render every list
+  // that draws one.
+  const spell = useFocusSlot<string>('spell', linkTo)
+  // Not a FocusSlot: the Maps tab's zone is persisted pin state, so the pick is written first and
+  // the remount reads it back. Unanchored — Maps has no drill and no Back button.
   const openMapZone = useCallback(
     (zone: ZoneShort) => {
-      // Persist first, then navigate: App mounts one view at a time, so the Maps remount's
-      // `loadZoneSelection` is what reads this back — the ordering is the whole mechanism.
       saveZoneSelection(onPick(zone))
       linkTo('maps', false)
     },
     [linkTo]
   )
-  // MEMOIZED LIKE THE REST, and here it is load-bearing twice over: this opener is the value
-  // `SpellLinkProvider` publishes to every spell name in the window, so a fresh identity per render
-  // would re-render every list that draws one.
-  //
-  // A SPELL → SPELL HOP PARKS NOTHING, BY THE MODEL'S OWN RULE, and it is worth saying here because
-  // this is the first link whose destination is routinely the view it was fired from. `afterLink`
-  // returns the stack untouched when `from.view === to` ("you did not travel, so the trail behind
-  // you is still the trail behind you"), so walking a ladder from one rung to the next does NOT
-  // grow the trail: the whole excursion keeps ONE origin — the surface the first spell name was
-  // clicked on — and one Back leaves it. That is a deliberate semantics rather than a gap, the
-  // button says out loud where it goes, and the return trip up the ladder is the ladder itself,
-  // which every rung's page draws. Retracing hop by hop would mean changing `afterLink` for the
-  // five links that already depend on it.
-  const openSpell = useCallback(
-    (name: string) => {
-      setSpellName(name)
-      setSpellNonce((n) => n + 1)
-      linkTo('spell', true)
-    },
-    [linkTo]
+  // THE WHOLE ROUTER IS ONE MEMOIZED OBJECT (JOS-510 item 3). It is handed down as `routing` to
+  // `ViewContent`, which is a `React.memo` boundary now — a fresh object here would make that
+  // boundary compare unequal on every App render and buy nothing.
+  return useMemo(
+    () => ({
+      selectView,
+      nav,
+      spellName: spell.value,
+      spellNonce: spell.nonce,
+      openSpell: spell.open,
+      clearSpellFocus: spell.clear,
+      mobTarget: mob.value,
+      mobNonce: mob.nonce,
+      openMob: mob.open,
+      clearMob: mob.clear,
+      questKey: quest.value,
+      questNonce: quest.nonce,
+      openQuest: quest.open,
+      clearQuestFocus: quest.clear,
+      levelFocus: level.value,
+      levelNonce: level.nonce,
+      openLeveling: level.open,
+      clearLevelFocus: level.clear,
+      combatFocus: combat.value,
+      combatNonce: combat.nonce,
+      openCombat: combat.open,
+      clearCombatFocus: combat.clear,
+      lootItem: loot.value,
+      lootNonce: loot.nonce,
+      openLoot: loot.open,
+      clearLootFocus: loot.clear,
+      openMapZone
+    }),
+    [selectView, nav, spell, mob, quest, level, combat, loot, openMapZone]
   )
-  return {
-    selectView,
-    nav,
-    spellName,
-    spellNonce,
-    openSpell,
-    clearSpellFocus: () => setSpellName(null),
-    mobTarget,
-    mobNonce,
-    openMob,
-    clearMob: () => setMobTarget(null),
-    questKey,
-    questNonce,
-    openQuest,
-    clearQuestFocus: () => setQuestKey(null),
-    levelFocus,
-    levelNonce,
-    openLeveling,
-    clearLevelFocus: () => setLevelFocus(null),
-    combatFocus,
-    combatNonce,
-    openCombat,
-    clearCombatFocus: () => setCombatFocus(null),
-    lootItem,
-    lootNonce,
-    openLoot,
-    clearLootFocus: () => setLootItem(null),
-    openMapZone
-  }
 }
 
 /**
@@ -332,5 +329,7 @@ export function usePrefsRouting(view: View, setView: (v: View) => void): PrefsRo
     },
     [setView]
   )
-  return { section, openSection }
+  // Memoized for the same reason `useAppRouting`'s return is (JOS-510 item 3): this object travels
+  // to `ViewContent` and to `BottomStrips` as a prop, and `ViewContent` is a `React.memo` boundary.
+  return useMemo(() => ({ section, openSection }), [section, openSection])
 }

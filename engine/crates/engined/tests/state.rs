@@ -1,23 +1,15 @@
-//! THE APP'S `userData` REACHES THE FOLD OVER A REAL SOCKET (JOS-496 item 3).
+//! The app's `userData` reaches the fold over a real socket.
 //!
-//! `src/state.rs` owns what a durable write IS and `src/foldsink.rs`'s tests own what a seeded sink
-//! holds; this suite owns the one claim neither of them can make — that `session.attach`'s optional
-//! `stateDir`, a field added to the schema and regenerated into two languages, actually travels
-//! from a client's message through the op table, the world, the ingest thread and into the fold
-//! that answers `module.snapshot`.
+//! `src/state.rs` owns what a durable write is and `src/foldsink.rs`'s tests own what a seeded sink
+//! holds; this suite owns the claim neither can make — that `session.attach`'s optional `stateDir`
+//! travels from a client's message through the op table, the world and the ingest thread into the
+//! fold that answers `module.snapshot`.
 //!
-//! IT IS PROVEN THROUGH `resist`, and that module is the right instrument rather than a convenient
-//! one: its whole published surface is two integers — how many pooled rows the ledger holds and how
-//! many creatures they are about — so a seeded bucket is VISIBLE in the served state and an
-//! unseeded one is unmistakably absent. There is nothing to interpret.
+//! Proven through `resist` because its whole published surface is two integers, so a seeded bucket
+//! is visible in the served state and an unseeded one is unmistakably absent.
 //!
-//! **THE WRITE HALF IS NOT HERE, and that is a scope statement.** The cadence is sixty beats of a
-//! 1 Hz heartbeat, so a cross-process test of it would sit for a minute per assertion; the write is
-//! driven directly in `foldsink.rs`'s own tests, where sixty ticks cost microseconds. What only a
-//! real process can prove is the WIRE, and that is what this file proves.
-//!
-//! THE LOG IS A COPY OF A COMMITTED FIXTURE, staged under the product's own file-name shape, beside
-//! a scratch profile directory. Nothing here touches a real game log or a real userData.
+//! The write half is out of scope: its cadence is sixty beats of a 1 Hz heartbeat, so it is driven
+//! directly in `foldsink.rs`'s own tests. Only a real process can prove the wire.
 
 mod harness;
 
@@ -34,9 +26,9 @@ const FIXTURE: &str = "cw2-loadout-swap-aug2.log";
 /// A failure mechanism, never a synchronization one — every assertion waits on a condition.
 const PATIENCE: Duration = Duration::from_secs(120);
 
-/// ONE PERSISTED BUCKET, in the app's exact bytes, for a character whose log is NOT the one being
-/// folded. That is the case the whole per-source register exists for: this bucket is knowledge
-/// nothing can re-derive, so it must survive the attach untouched.
+/// One persisted bucket, in the app's exact bytes, for a character whose log is not the one being
+/// folded — the case the per-source register exists for. It is knowledge nothing can re-derive, so
+/// it must survive the attach untouched.
 const OTHER_CHARACTERS_LEDGER: &str = r#"{"version":3,"sources":[{"key":"someone_bertox","rows":[{"mobKey":"a bat","spellKey":"malosi","family":"cast","casterKind":"self","casterLevel":51,"mobLevel":20,"debuffs":"","rank":0,"overchannel":false,"week":"2026-W34","resist":4,"land":7,"dmg":{"9":2},"firstTs":1000,"lastTs":2000}]}]}"#;
 
 fn repo_root() -> PathBuf {
@@ -153,8 +145,8 @@ fn an_attach_carrying_a_state_dir_seeds_the_served_fold_and_one_without_it_does_
     let log = scratch.stage_log();
     let profile = scratch.stage_profile();
 
-    // THE APP'S ATTACH: log path AND profile directory. `a bat` appears nowhere in the fixture; it
-    // is in the seeded ledger and nowhere else, so the mob count carries the seed's own evidence.
+    // The app's attach: log path and profile directory. `a bat` appears nowhere in the fixture, only
+    // in the seeded ledger, so the mob count carries the seed's own evidence.
     let with_state = Engine::start();
     let mut client = with_state.connected();
     client.send(&attach_with_state(
@@ -167,8 +159,7 @@ fn an_attach_carrying_a_state_dir_seeds_the_served_fold_and_one_without_it_does_
     id += 1;
     let seeded = resist_mobs(&mut client, id);
 
-    // …and the SAME log, the same fixture, with no `stateDir` at all: the file-free attach every
-    // other client makes and the one the equivalence oracle describes.
+    // …and the same log with no `stateDir` at all: the file-free attach every other client makes.
     let bare = Engine::start();
     let mut plain = bare.connected();
     plain.send(&attach(1, &log.to_string_lossy()));
@@ -183,8 +174,7 @@ fn an_attach_carrying_a_state_dir_seeds_the_served_fold_and_one_without_it_does_
         "the seeded bucket contributes exactly the one creature the log never mentions"
     );
 
-    // THE FILE IS NOT MOVED, RENAMED OR REWRITTEN by an attach. The write is on the sixtieth beat
-    // and this test does not wait for one; what it pins is that reading a profile is a READ.
+    // The file is not moved, renamed or rewritten by an attach: reading a profile is a read.
     assert_eq!(
         std::fs::read_to_string(profile.join("resist-ledger.json")).expect("readable"),
         OTHER_CHARACTERS_LEDGER
@@ -193,9 +183,9 @@ fn an_attach_carrying_a_state_dir_seeds_the_served_fold_and_one_without_it_does_
 
 #[test]
 fn a_state_dir_that_does_not_exist_is_an_ordinary_attach() {
-    // A PROFILE DIRECTORY THE APP NAMED BEFORE ELECTRON CREATED IT, or one on a volume that is not
-    // mounted: every read failure is an EMPTY seed and the fold goes live regardless. A persisted
-    // nicety may never be the reason a log does not get folded.
+    // A profile directory the app named before Electron created it, or one on an unmounted volume:
+    // every read failure is an empty seed and the fold goes live regardless. A persisted nicety may
+    // never be the reason a log does not get folded.
     let scratch = Scratch::new("missing");
     let log = scratch.stage_log();
 
