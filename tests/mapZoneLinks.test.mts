@@ -62,3 +62,11 @@ test('the installed-pack gate: a known stem with no map stays inert; an empty se
   assert.equal(connectionTarget('to East Commonlands', installed), null)
   assert.equal(connectionTarget('to East Commonlands', NONE), 'ecommons')
 })
+
+test('brewall spellings resolve too: the game’s backtick, and its Desert of Ro names', () => {
+  // Unrest's one exit is `to Dagnor`s Cauldron` — inert until the backtick folds (fork, 2026-08-27).
+  assert.equal(connectionTarget('to Dagnor`s Cauldron', NONE), 'cauldron')
+  assert.equal(connectionTarget('to Nagafen`s Lair', NONE), 'soldungb')
+  assert.equal(connectionTarget('to North Desert of Ro', NONE), 'nro')
+  assert.equal(connectionTarget('to South Desert of Ro', NONE), 'sro')
+})

@@ -22,6 +22,8 @@ import { labelKind } from './labelLayout'
 const TO_PREFIX_RE = /^to\s+/i
 /** Trailing prose for the traveller (`(click rubble)`, `(Sol B)`), never part of a zone name. */
 const TRAILING_PAREN_RE = /\s*\([^)]*\)\s*$/
+/** brewall writes the game's backtick (`Dagnor\`s Cauldron`); the zone table spells apostrophes. */
+const BACKTICK_RE = /`/g
 
 /**
  * The map stem a connection label names, or null when the label must stay inert.
@@ -34,7 +36,7 @@ export function connectionTarget(
   installed: ReadonlySet<ZoneShort>
 ): ZoneShort | null {
   if (labelKind(display) !== 'connection') return null
-  let name = display.replace(TO_PREFIX_RE, '')
+  let name = display.replace(TO_PREFIX_RE, '').replace(BACKTICK_RE, "'")
   while (TRAILING_PAREN_RE.test(name)) name = name.replace(TRAILING_PAREN_RE, '')
   const stem = zoneShortName(name)
   if (stem == null) return null
