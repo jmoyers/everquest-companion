@@ -199,9 +199,39 @@ const NO_EXTRA: readonly number[] = []
  *
  * `initialId` is what THIS surface opens on before anyone has pressed the control (see the header).
  * It defaults to `all`, so a caller that says nothing gets the behaviour every caller had.
+ *
+ * IT SUBSCRIBES FOR THE CALLER THAT HAS NOTHING (the Loot ledger). A caller that ALREADY holds the
+ * progression snapshot calls `useTimesliceOn` below and hands it over — see that function.
  */
 export function useTimeslice(extraTs: readonly number[] = NO_EXTRA, initialId: SliceId = 'all'): TimesliceState {
   const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
+  return useTimesliceOn(prog, extraTs, initialId)
+}
+
+/**
+ * THE SAME SLICE, OVER A SNAPSHOT THE CALLER ALREADY HAS (JOS-511 item 1).
+ *
+ * `useModule` holds its state and its subscription PER COMPONENT — two calls for one module id are
+ * two hydrations over IPC and two `setState`s per delta, not one shared read. The Leveling view
+ * subscribes to `progression` itself (every chart, band and range read on that tab is a query over
+ * it) and then called `useTimeslice`, which subscribed a second time to resolve the slice against
+ * the very same snapshot. So the tab paid two hydrations at mount and re-rendered twice per
+ * progression push forever after, and the two copies could sit one delta apart while doing it.
+ *
+ * The fix is the ordinary one: the snapshot travels as a PARAMETER, and the subscribing wrapper
+ * above stays for the caller (the Loot ledger) whose surface holds no snapshot of its own. It is a
+ * separate function rather than an optional argument because a hook may not be called
+ * conditionally — an optional `prog` would still have to run `useModule` to stay legal, which is
+ * the cost this removes.
+ *
+ * `TimesliceState.prog` is still handed back, unchanged: a caller that passed its own gets its own
+ * back, so nothing downstream has to know which door it came through.
+ */
+export function useTimesliceOn(
+  prog: ProgressionSnap,
+  extraTs: readonly number[] = NO_EXTRA,
+  initialId: SliceId = 'all'
+): TimesliceState {
   useSyncExternalStore(subscribe, getVersion, getVersion)
   // THE MEMBERSHIP IS READ, NEVER KEPT (JOS-332). One value per app, held in main, so the tab and
   // the floating window cannot be on different tiers while both say `this tier`.

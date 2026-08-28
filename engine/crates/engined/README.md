@@ -632,9 +632,9 @@ engine at all (`Fold::with_combat` is the combat surface's own ticket). What exi
 command, the law and the reply: the half that decides WHETHER, without the half that DOES.
 
 **`moduleChanged` — the dirty bit, and the end of the poll.** Every module answers
-`EqModule::published_seq`: the same cursor `snapshot` puts in its answer, read WITHOUT building the
-state — because the serve loop asks all twenty once per beat, and asking through `snapshot()` would
-serialize twenty modules' whole state ten times a second to compare twenty integers. The frame
+`EqModule::published_seq`, read WITHOUT building the state — because the serve loop asks all twenty
+once per beat, and asking through `snapshot()` would serialize twenty modules' whole state ten times
+a second to compare twenty integers. The frame
 carries a name and a cursor and no state at all, so a client not showing that module pays one small
 frame and ignores it, and a client that is re-fetches through `module.snapshot` — the op that already
 exists and the only place a module's shape is stated. A frame that carried the state would be
@@ -649,6 +649,29 @@ Nothing is sent for a module that did not move, so an idle session pays twenty i
 drop-everything-and-take-the-reset, and a `moduleChanged` inside one generation means only *there is
 something newer to fetch*. The app-side `useModule` → refetch shim is a later ticket; this is the
 seam it rides.
+
+**AND SINCE JOS-509 THE CURSOR IS HONEST — the coalescing had nothing to coalesce.** The transcript
+below was recorded before that ticket and shows the defect in one screenful: sixteen of the twenty
+modules report the SAME number (`139862`) because for each of them `published_seq` was
+`self.seq = ev.seq()`, stamped at the top of `on_event` before the match on kind. That is a global
+log-line counter wearing twenty per-module names, so `changed_modules` found twenty numbers that had
+all changed on every beat and every subscribed renderer re-fetched a whole snapshot ten times a
+second. Measured on the owner's machine: identical push counts for `roster`, `loot` and `turnins`
+during a live tail, 11.9 renderer commits per beat out of ONE log line, at 271–288 ms a push on his
+real tree. Those sixteen now carry a `fold::announce::Announce` bumped only from the arms that
+mutate published state — a melee round leaves fourteen of them silent
+(`tests/live_surfaces.rs a_melee_round_leaves_the_modules_it_has_nothing_to_do_with_silent`).
+
+**The invariant a reader must not "tidy": the announce cursor is no longer EQUAL to the `seq` inside
+that module's snapshot, and it is not meant to be.** The goldens pin every migrated snapshot's `seq`
+byte-for-byte, so the two numbers had to come apart; what is preserved is the only property the
+clients need. `useModule.ts`, `useOverlayModule.ts`, `BuffsOverlay.tsx` and main's `serveMirrors.ts`
+all take `knownSeq` off a held SNAPSHOT and drop any frame at or below it — so the cursor stays in
+the snapshot's own number space and lands strictly ABOVE the fold position each change happened at
+(`max(cursor, seq) + 1`). It is therefore above any snapshot a client could hold from before the
+change, and below only one taken after it, which already carries the change and is right to drop the
+frame. A cursor restarting at 1 would have sat permanently below the log-line seq and frozen every
+one of those panels after its first hydrate. `fold::announce`'s header is the full argument.
 ## The knowledge surface
 
 **The corpora move into the engine (JOS-486, design surface 5).** `items.json` (8.75 MB, 11,288 item
@@ -1709,6 +1732,20 @@ Nine things in that transcript are this ticket:
 $ cd engine
 $ cargo test -p engined
 ```
+
+**`cargo test` LEAVES A DEBUG BINARY BEHIND, AND THE APP NO LONGER PICKS IT UP** (JOS-520). It used
+to: the Electron resolver probed `engine/target/debug/` before `engine/target/release/`, so the
+first `cargo test` in a checkout silently switched that machine's dev app to the unoptimized engine
+on its next restart — spell DB 4050 ms instead of 469 ms, parse ~10× slower. The dev app now
+resolves `target/release` and probes `target/debug` **only** when a launch opts in:
+
+```console
+$ EQC_ENGINE_PROFILE=debug npm run dev     # this launch, and no other, runs the debug engine
+```
+
+The opt-in is read per launch and never written down, so the next ordinary `npm run dev` is back on
+release; and whenever a non-release binary wins, the dev log carries one unmissable warning naming
+the profile and the opt-in that selected it. Full argument: `src/main/dataServer/README.md`.
 
 The integration suites spawn the built binary (`CARGO_BIN_EXE_engined`) and drive the whole contract
 through a real socket: the announce line, every op, a wrong token, a skewed `protocolVersion`, an

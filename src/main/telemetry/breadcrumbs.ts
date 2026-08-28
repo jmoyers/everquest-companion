@@ -26,10 +26,11 @@
 // telemetry e2e asserted the ring was non-empty and was red for exactly this reason: it throws
 // its injected error moments after the window comes up, long before a cursor could move.
 //
-// So the ENGINE'S OWN LIFECYCLE EDGES feed it too: spawned, ready, live, gone. They are what
-// happened, they are the only things that happen in that window, and four of them per launch
-// cannot crowd out a busy tail (a live session spends all ten slots on cursors within a beat,
-// which is correct — boot crumbs only matter for boot crashes).
+// So the ENGINE'S OWN LIFECYCLE EDGES feed it too: spawned, ready, live, gone — and since JOS-519
+// `cycled`, which is a gone that had first been ready. They are what happened, they are the only
+// things that happen in that window, and a handful of them per launch cannot crowd out a busy tail
+// (a live session spends all ten slots on cursors within a beat, which is correct — boot crumbs
+// only matter for boot crashes).
 //
 // THE BRIGHT LINE HOLDS. An edge is a member of a closed set spelled out in this file; it names
 // no log content, no path, no character, no port and no pid. `noteEngineEdge` takes no parameter
@@ -135,6 +136,14 @@ export type EngineEdge =
   | 'engine:live'
   /** The launch ended — a crash, a respawn's teardown, or quit. */
   | 'engine:gone'
+  /**
+   * A launch that had REACHED READY died and is being replaced (JOS-519). It always follows an
+   * `engine:gone`, and the pair is the whole point: `spawned`/`gone` with no `ready` between them
+   * is an engine that never started, while `ready`/`gone`/`cycled` repeating is an engine that
+   * works and keeps dying — the shape behind "the log keeps catching up while I am in game", and a
+   * completely different bug. A deliberate stop never emits it.
+   */
+  | 'engine:cycled'
 
 export function noteEngineEdge(edge: EngineEdge): void {
   noteEventKind(edge, Date.now())

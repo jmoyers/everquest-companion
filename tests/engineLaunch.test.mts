@@ -18,11 +18,15 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ROOT } from '../scripts/protocolSchema.mjs'
 import {
   FOLD_RATE_SAMPLES,
   NEW_FOLD_RING,
   NO_ENGINE_CONSEQUENCE,
   failureWords,
+  foldFrameCounts,
   foldRate,
   foldReadout,
   humanBytes,
@@ -31,6 +35,7 @@ import {
   reportPrefill,
   type EngineFaultKind,
   type EngineFaultSay,
+  type EngineLaunchPhase,
   type FoldRing,
   type FoldSay
 } from '../src/shared/engineLaunch'
@@ -217,4 +222,45 @@ test('THE REPORT PREFILL CARRIES THE CLASS AND NOTHING ELSE', () => {
   }
   assert.doesNotMatch(reportPrefill(withPaths), /somebody/)
   assert.doesNotMatch(reportPrefill(withPaths), /engined\.exe/)
+})
+
+// ---- 3. which frames the banner is allowed to count (JOS-518) --------------------------------
+//
+// THE DEFECT THIS IS THE MEMORY OF. The engine's LIVE TAIL emits the same progress shape as its
+// historical scan, and until this ticket the only thing separating them was this process's own
+// PHASE. That was a single defence over a genuine ambiguity, and it failed the way single defences
+// do: the fold wait expired at its 120-second budget, nothing ever moved the phase off `folding`,
+// and the tail's frames then held the bar at 100% with the count climbing for the rest of the
+// session — "9,087,066 and rising", in the reporter's words.
+
+test('A FRAME THE TAIL FLAGGED IS NEVER COUNTED, WHATEVER THE PHASE', () => {
+  const phases: EngineLaunchPhase[] = ['starting', 'folding', 'live', 'absent', 'failed']
+  for (const phase of phases) {
+    assert.equal(foldFrameCounts(phase, true), false, `a live-tail frame was counted in ${phase}`)
+  }
+})
+
+test('a scan frame counts in the one phase the bar is on screen for, and nowhere else', () => {
+  // Absent IS the scan's answer on this wire — the field is present only when true — so both
+  // spellings of "not the tail" are read here.
+  for (const live of [undefined, false]) {
+    assert.equal(foldFrameCounts('folding', live), true)
+    for (const phase of ['starting', 'live', 'absent', 'failed'] as EngineLaunchPhase[]) {
+      assert.equal(foldFrameCounts(phase, live), false, `counted in phase ${phase}`)
+    }
+  }
+})
+
+test('`noteFoldProgress` ASKS THAT QUESTION rather than spelling its own', () => {
+  // The predicate is only worth testing if the one caller in the product goes through it — and that
+  // caller cannot be imported here at all (`engineLaunchState.ts` reaches `windows.ts`, which
+  // imports Electron), so the seam is asserted over the source. Same instrument
+  // `serveDeltaArm.test.mts` uses on `engineClientHost.ts`, for the same reason.
+  const state = readFileSync(join(ROOT, 'src', 'main', 'dataServer', 'engineLaunchState.ts'), 'utf8')
+  assert.match(state, /if \(!foldFrameCounts\(say\.phase, progress\.live\)\) return/)
+  assert.doesNotMatch(
+    state,
+    /if \(say\.phase !== 'folding'\) return[\s\S]{0,40}const fold: FoldSay/,
+    'the phase-only test came back — it is the defence that failed'
+  )
 })

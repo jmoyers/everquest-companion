@@ -1,34 +1,17 @@
-//! SEGMENT SERIALIZATION — turning a selected fight or zone session into the segment view the renderer
-//! draws (`segmentViews.ts` + `sourceViews.ts` + `defenseViews.ts` + `roundViews.ts`).
+//! Segment serialization: a selected fight or zone session, turned into the view the renderer draws
+//! (`segmentViews.ts` + `sourceViews.ts` + `defenseViews.ts` + `roundViews.ts`).
 //!
-//! READ-ONLY OVER THE ENGINE, by design: selecting a fight or asking for a timeline must never be able
-//! to finalize an encounter or move a point of damage. In Rust that is structural — `build_selected`
-//! takes `&EngineState` — where over there it is a pinned invariant.
+//! Read-only over the engine — `build_selected` takes `&EngineState` — so selecting a fight can never
+//! finalize an encounter or move a point of damage. Anything that reshapes a row copies first: the
+//! maps handed to `source_views` are the engine's live accumulators, and a write into one would
+//! corrupt the fight, the zone session and every later snapshot permanently.
 //!
-//! ── A VIEW BUILD MAY NOT TOUCH THE AGGREGATE, AND THAT IS A SCAR ──────────────────────────────
+//! Layout belongs to the renderer. This module emits exactly the engine's own attribution — you and
+//! each pet as their own authoritative row — and never a second presentation of the same numbers.
 //!
-//! The values in the map handed to `source_views` are the engine's LIVE accumulators, so anything that
-//! wrote into one of them would corrupt the fight, the zone session and every later snapshot,
-//! permanently. That is not hypothetical: a deleted combine-pets fold did exactly this before it was
-//! made to copy first. `with_landings` is the second thing that reshapes a row and it COPIES for the
-//! same reason.
-//!
-//! ── THE COMBINE-PETS FOLD USED TO LIVE HERE AND IS GONE (owner ruling) ────────────────────────
-//!
-//! It merged each pet's lanes into a synthetic "You +pets" source with namespaced skill names and no
-//! pet row at all — a SECOND presentation of the same numbers, alongside the renderer's own pet-row
-//! layout, and the two disagreed on screen. "They should be using the same underlying api and
-//! abstraction — if not, collapse." So: one abstraction, in the renderer, where a LAYOUT belongs; this
-//! module emits exactly the engine's own attribution — you and each pet as their own authoritative
-//! row. The fold's parameter is gone from every signature too: a flag no caller can pass is not a seam
-//! a second fold can grow back in.
-//!
-//! ── `lands` IS A VIEW-TIME GRAFT, NEVER AN INGEST COUNTER ─────────────────────────────────────
-//!
-//! "Does this Strike have damage rows" is only answerable once every line of the segment is in, so the
-//! effect-landing count is joined onto the `you` row HERE. The accumulator's own lane has no such
-//! field — nothing on the ingest path could write it — which is why this file carries its own row
-//! shape rather than reusing `SkillStat`.
+//! `lands` is a view-time graft, never an ingest counter: "does this Strike have damage rows" is only
+//! answerable once every line of the segment is in. That is why this file carries its own row shape
+//! rather than reusing `SkillStat`.
 
 use crate::combat::aggregate::{
     finalize_rounds, Agg, CategoryStat, SkillStat, SourceStat, MISS_KEYS,
@@ -44,7 +27,7 @@ use crate::combat::state::EngineState;
 use crate::jsmap::JsMap;
 use serde::Serialize;
 
-/// `shared/combat.ts CATEGORY_ORDER` — the stable UI ordering of the damage taxonomy.
+/// The stable UI ordering of the damage taxonomy.
 const CATEGORY_ORDER: [&str; 5] = ["melee", "slay", "spell", "dot", "ds"];
 
 fn category_rank(c: &str) -> usize {
@@ -57,13 +40,11 @@ fn category_rank(c: &str) -> usize {
 /// Per-skill cap in the drill, top level and per category alike — a small payload.
 const SKILL_CAP: usize = 12;
 
-/// The generic lane name the parser gives every weapon verb — a label to REPLACE, not to show four
-/// times in one table (`slash`, `pierce`, `crush` and `hit` all answer "Melee").
+/// The generic lane name the parser gives every weapon verb (`slash`, `pierce`, `crush` and `hit`
+/// all answer "Melee") — a label to replace, not to show four times in one table.
 const GENERIC_LANE: &str = "Melee";
 
-// ── The view-local row shapes ─────────────────────────────────────────────────────────────────
-
-/// A per-skill lane as the VIEW sees it: the accumulator's counters plus the effect-landing graft.
+/// A per-skill lane as the view sees it: the accumulator's counters plus the effect-landing graft.
 #[derive(Clone)]
 struct SkillRow {
     name: String,
@@ -71,11 +52,11 @@ struct SkillRow {
     hits: i64,
     crits: i64,
     max: i64,
-    /// Smallest LANDED amount; 0 = "no landed hit yet" (the accumulator's own sentinel).
+    /// Smallest landed amount; 0 = "no landed hit yet" (the accumulator's own sentinel).
     min: i64,
     misses: i64,
     resists: i64,
-    /// Landings this lane recorded with NO damage line of its own — grafted here, never accumulated.
+    /// Landings this lane recorded with no damage line of its own — grafted here, never accumulated.
     lands: i64,
 }
 
@@ -150,7 +131,7 @@ impl CatRow {
     }
 }
 
-/// One source, projected into the view's own row shape. A COPY, always: see the header.
+/// One source, projected into the view's own row shape. Always a copy — the source is live state.
 struct SourceRows {
     by_skill: JsMap<SkillRow>,
     by_category: JsMap<CatRow>,
@@ -171,15 +152,14 @@ fn project(s: &SourceStat) -> SourceRows {
     }
 }
 
-/// Return a COPY of `s`'s lanes carrying the effect landings.
+/// A copy of `s`'s lanes carrying the effect landings.
 ///
-/// A lane the RESISTS already created (Weakening Strike, 0 hits / 34 resists) simply gains its
-/// `lands`; a lane with landings and no resists at all is CREATED, in the `spell` category — the same
-/// category a resist lands in, and the one that means "a detrimental spell of yours". Its total is 0,
-/// so it sorts to the bottom of the ranked list, which is where a row with no damage belongs.
+/// A lane the resists already created simply gains its `lands`; a lane with landings and no resists
+/// is created in the `spell` category, the same one a resist lands in. Its total is 0, so it sorts
+/// to the bottom of the ranked list.
 ///
-/// `lane_canon_key`, not `spell_canon_key`: a cast-less lane carries the origin marker in its name, and
-/// a landing belongs to the SPELL either half of a split is about.
+/// `lane_canon_key`, not `spell_canon_key`: a cast-less lane carries the origin marker in its name,
+/// and a landing belongs to the spell either half of a split is about.
 fn with_landings(s: &SourceStat, lands: &JsMap<(String, i64)>) -> SourceRows {
     let mut rows = project(s);
     let mut spell = match rows.by_category.get("spell") {
@@ -203,8 +183,6 @@ fn with_landings(s: &SourceStat, lands: &JsMap<(String, i64)>) -> SourceRows {
     rows
 }
 
-// ── Serialized shapes ─────────────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillView {
@@ -214,16 +192,16 @@ pub struct SkillView {
     hits: i64,
     crits: i64,
     max: i64,
-    /// Meaningful only over LANDED hits: a lane that only ever missed or resisted has no smallest hit
-    /// to report, and emitting 0 would read as "landed a 0-damage hit".
+    /// Meaningful only over landed hits: a lane that only missed or resisted has no smallest hit to
+    /// report, and emitting 0 would read as "landed a 0-damage hit".
     #[serde(skip_serializing_if = "Option::is_none")]
     min: Option<i64>,
     misses: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     resists: Option<i64>,
-    /// ABSENT, never 0: absent means "no landing evidence exists for this lane", which is the truth for
-    /// a hand-cast stun that prints nothing when it lands, and is why the UI must decline to state a
-    /// resist rate for one rather than print 100%.
+    /// Absent, never 0: absent means no landing evidence exists for this lane, which is the truth for
+    /// a hand-cast stun that prints nothing when it lands, so the UI declines to state a resist rate
+    /// rather than print 100%.
     #[serde(skip_serializing_if = "Option::is_none")]
     lands: Option<i64>,
 }
@@ -421,8 +399,6 @@ pub struct SegmentView {
     procs: ProcsView,
 }
 
-// ── sourceViews.ts ────────────────────────────────────────────────────────────────────────────
-
 fn skill_view(k: &SkillRow, sk_max: i64) -> SkillView {
     SkillView {
         name: k.name.clone(),
@@ -438,10 +414,8 @@ fn skill_view(k: &SkillRow, sk_max: i64) -> SkillView {
     }
 }
 
-/// Rank per-skill lanes for the drill. Damage first, exactly as shipped; the tiebreak only ever
-/// reorders rows that carry NO damage at all — among a source's zero-damage lanes (effect procs,
-/// resist-only spells) the one with the most observations is the one worth the scarce slot under the
-/// 12-row cap. It cannot move a row that has damage.
+/// Rank per-skill lanes for the drill: damage first. The tiebreak only reorders rows with no damage
+/// at all, where the lane with the most observations is the one worth a slot under the row cap.
 fn rank_skills(rows: &JsMap<SkillRow>) -> Vec<&SkillRow> {
     let mut v: Vec<&SkillRow> = rows.values().collect();
     v.sort_by(|a, b| {
@@ -456,8 +430,8 @@ fn max_total(rows: &JsMap<SkillRow>) -> i64 {
     rows.values().map(|k| k.total).max().unwrap_or(0).max(1)
 }
 
-/// Build the per-category drill-down views. Ordered by `CATEGORY_ORDER` (the stable UI ordering); each
-/// carries its own per-skill breakdown capped at the same 12 rows.
+/// Build the per-category drill-down views, ordered by `CATEGORY_ORDER`, each with its own per-skill
+/// breakdown under the same row cap.
 fn category_views(by_cat: &JsMap<CatRow>) -> Vec<CategoryView> {
     let cat_max = by_cat.values().map(|c| c.total).max().unwrap_or(0).max(1) as f64;
     let mut cats: Vec<&CatRow> = by_cat.values().collect();
@@ -494,10 +468,9 @@ fn category_views(by_cat: &JsMap<CatRow>) -> Vec<CategoryView> {
         .collect()
 }
 
-/// Build the melee-rounds heuristic view. Collapses the (skill, second) buckets into a
-/// hits-per-round histogram and summary. HONEST framing: the log never records double or triple
-/// attack, so this counts hits landed in the same second — a cluster proxy, exposed as a distribution,
-/// never a fabricated multi-attack certainty.
+/// The melee-rounds heuristic view: the (skill, second) buckets collapsed into a hits-per-round
+/// histogram. The log never records double or triple attack, so this counts hits landed in the same
+/// second — a cluster proxy exposed as a distribution, never a multi-attack certainty.
 fn rounds_view(s: &SourceStat) -> Option<RoundsView> {
     let hist = finalize_rounds(&s.rounds);
     let total_rounds: i64 = hist.iter().sum();
@@ -527,9 +500,8 @@ fn title_verb(verb: &str) -> String {
     }
 }
 
-/// The row label for a verb lane. A special-attack lane the log NAMED wins ("Flying Kick"); a weapon
-/// verb falls back to the verb itself, because the parser's answer for all of them is the same word and
-/// a table of four "Melee" rows would be unreadable.
+/// The row label for a verb lane. A special-attack lane the log named wins ("Flying Kick"); a weapon
+/// verb falls back to the verb itself, since the parser answers "Melee" for all of them.
 fn round_lane_label(verb: &str, skill: &str) -> String {
     if skill.is_empty() || skill == GENERIC_LANE {
         title_verb(verb)
@@ -544,15 +516,14 @@ fn tally_of(mods: &[ModifierTallyView], name: &str) -> i64 {
         .map_or(0, |m| m.count)
 }
 
-/// Build one source's Rounds payload, or `None` when the source has nothing to say — no rounds AND no
-/// annotations. `None` rather than an empty shell so a spell-only source (or a mob that only ever cast)
-/// shows no panel instead of a row of zeroes.
+/// Build one source's Rounds payload, or `None` when it has no rounds and no annotations, so a
+/// spell-only source shows no panel instead of a row of zeroes.
 ///
-/// `taken` is the segment-level INCOMING annotation count, resolved by the caller because it is NOT a
-/// property of this source's own rows: a `(Riposte)` counter aimed at you is booked on the MOB that
+/// `taken` is the segment-level incoming annotation count, resolved by the caller because it is not
+/// a property of this source's rows: a `(Riposte)` counter aimed at you is booked on the mob that
 /// swung it.
 fn round_stats_view(s: &SourceStat, taken: (i64, i64)) -> Option<SourceRoundsView> {
-    // One base modifier's tally, ranked by count desc then name (stable across snapshots).
+    // Ranked by count desc then name, so the order is stable across snapshots.
     let mut modifiers: Vec<ModifierTallyView> = s
         .mods
         .values()
@@ -595,10 +566,9 @@ fn round_stats_view(s: &SourceStat, taken: (i64, i64)) -> Option<SourceRoundsVie
     });
     let primary_rounds: i64 = lanes.iter().map(|l| l.rounds).sum();
     let flurries = tally_of(&modifiers, "flurry");
-    // THE RIPOSTE COUNTER-SWING, read off the accumulator rather than off `modifiers`: the view shape
-    // is counts-only on the wire and stays that way, so the landed count and the damage come from the
-    // raw tally. The key is the log's own spelling (`Riposte`) because that is what the parser emits —
-    // the lowercase lookup above is a display-side convenience and not the storage key.
+    // The riposte counter-swing comes off the accumulator, not `modifiers`, because the view shape
+    // is counts-only on the wire. The key is the log's own spelling; the lowercase lookup above is a
+    // display convenience, not the storage key.
     let (riposte_landed, riposte_damage) = s
         .mods
         .get("Riposte")
@@ -627,10 +597,9 @@ fn round_stats_view(s: &SourceStat, taken: (i64, i64)) -> Option<SourceRoundsVie
     })
 }
 
-/// The segment's INCOMING annotation totals — what was done TO you. Summed over every incoming row
-/// because the engine books an annotation on the source that SWUNG it, and "taken" is the same fact
-/// read from the other end. Incoming means the defender is You by construction of `classify`, so this
-/// needs no further gating.
+/// The segment's incoming annotation totals — what was done to you. Summed over every incoming row
+/// because the engine books an annotation on the source that swung it. Incoming means the defender
+/// is you by construction of `classify`, so this needs no further gating.
 fn taken_annotations(inc: &JsMap<SourceStat>) -> (i64, i64) {
     let mut riposte = 0;
     let mut rampage = 0;
@@ -643,7 +612,7 @@ fn taken_annotations(inc: &JsMap<SourceStat>) -> (i64, i64) {
 
 /// Serialize a frozen source map into the snapshot's source views.
 ///
-/// `lands` is grafted onto the `you` row ONLY — an INCOMING view has no proc ledger behind it, and a
+/// `lands` is grafted onto the `you` row only — an incoming view has no proc ledger behind it, and a
 /// mob's slow landing on you is not a lane of yours. `taken` likewise reaches only the `you` row.
 fn source_views(
     map: &JsMap<SourceStat>,
@@ -662,9 +631,8 @@ fn source_views(
             };
             let sk_max = max_total(&rows.by_skill);
             let swings = s.hits + s.misses;
-            // Resist rate is over CAST attempts of detrimental spells: landed spell/dot hits plus
-            // resists. Melee, slay and damage-shield hits cannot be resisted, so they are excluded from
-            // the base.
+            // Resist rate is over cast attempts of detrimental spells: landed spell/dot hits plus
+            // resists. Melee, slay and damage-shield hits cannot be resisted.
             let spell_hits = rows.by_category.get("spell").map_or(0, |c| c.hits)
                 + rows.by_category.get("dot").map_or(0, |c| c.hits);
             let casts = spell_hits + s.resists;
@@ -715,15 +683,13 @@ fn source_views(
             }
         })
         .collect();
-    // `sort((a, b) => b.total - a.total)` — total DESC, and STABLE, so two rows with the same total
-    // keep the order the aggregate recorded them in.
+    // Total desc, and stable, so two rows with the same total keep the order the aggregate recorded
+    // them in.
     out.sort_by_key(|s| std::cmp::Reverse(s.total));
     out
 }
 
-// ── defenseViews.ts ───────────────────────────────────────────────────────────────────────────
-
-/// The two categories a weapon SWING lands in (a Slay Undead proc rides an ordinary swing).
+/// The two categories a weapon swing lands in (a Slay Undead proc rides an ordinary swing).
 const SWING_CATEGORIES: [&str; 2] = ["melee", "slay"];
 
 /// Landed weapon-swing hits in one row — melee + slay, never the spell/dot/ds lanes.
@@ -734,7 +700,7 @@ fn swing_hits(s: &SourceStat) -> i64 {
         .sum()
 }
 
-/// Landed weapon-swing DAMAGE in one row — the denominator riposte damage is a share of.
+/// Landed weapon-swing damage in one row — the denominator riposte damage is a share of.
 fn swing_damage(s: &SourceStat) -> i64 {
     SWING_CATEGORIES
         .iter()
@@ -742,22 +708,16 @@ fn swing_damage(s: &SourceStat) -> i64 {
         .sum()
 }
 
-/// Build the segment's DEFENSIVE view.
+/// Build the segment's defensive view. Every figure is a re-reading of counters ingest already
+/// folded — the miss breakdown on the incoming rows, and the `(Riposte)` tally on your own row — so
+/// nothing here moves a damage total.
 ///
-/// NOTHING IS PARSED OR COUNTED HERE THAT WAS NOT ALREADY COUNTED. Every figure is a re-reading of
-/// counters the ingest path has folded for a long time: the miss breakdown on the INCOMING rows (an
-/// avoided swing is booked on the mob that swung it — the defender is You by construction of
-/// `classify`, so summing the incoming rows IS your defence) and the `(Riposte)` tally on your OWN row.
-/// That is why this whole block moves no damage total: the one amount it reads is an INDEX over damage
-/// the melee lanes already booked.
+/// The denominator is swings at you and only swings: melee + slay hits, the two categories a weapon
+/// swing lands in. A mob's nuke, DoT tick or damage shield cannot be blocked, and counting it would
+/// deflate every rate in exactly the fights with a caster in them.
 ///
-/// THE DENOMINATOR IS SWINGS AT YOU, AND ONLY SWINGS (law 5 — a rate whose denominator is wrong is a
-/// lie, not an approximation). Melee + slay hits, because those are the two categories a weapon swing
-/// lands in; a mob's nuke, DoT tick or damage shield is not a swing and cannot be blocked, so including
-/// it would silently deflate every rate here in exactly the fights with a caster in them.
-///
-/// THE FOUR ACTIVE DEFENCES. A mob's own `misses!` and your rune's `absorb` are deliberately NOT among
-/// them: neither is a skill of yours, and folding either in would flatter every rate.
+/// `defended` is the four ACTIVE defences. A mob's own `misses!` and your rune's `absorb` are
+/// excluded: neither is a skill of yours, and folding either in would flatter the rate.
 fn build_defense_view(
     inc: &JsMap<SourceStat>,
     you: Option<&SourceStat>,
@@ -781,10 +741,9 @@ fn build_defense_view(
             0.0
         }
     };
-    // YOUR RIPOSTE, both halves. `events` comes from the incoming avoidance breakdown; everything else
-    // comes from the `(Riposte)` annotation on your own swings, which is a DIFFERENT fact — Double
-    // Riposte fires more counters than events, so the two are reported side by side and never
-    // reconciled into one number.
+    // Both halves of your riposte. `events` comes from the incoming avoidance breakdown; the rest
+    // comes from the `(Riposte)` annotation on your own swings, a different fact — Double Riposte
+    // fires more counters than events — so the two are reported side by side, never reconciled.
     let t = you.and_then(|y| y.mods.get("Riposte"));
     let r_swings = t.map_or(0, |t| t.count);
     let r_avoided = t.map_or(0, |t| t.avoided);
@@ -821,8 +780,6 @@ fn build_defense_view(
     }
 }
 
-// ── segmentViews.ts ───────────────────────────────────────────────────────────────────────────
-
 /// Everything a segment view needs about the segment it describes. Bundled because a fight, the live
 /// zone aggregate and a frozen zone session differ only in these fields.
 struct ViewSpec<'a> {
@@ -835,24 +792,20 @@ struct ViewSpec<'a> {
     active_sec: f64,
     active: bool,
     st: &'a EngineState,
-    /// Segment span in absolute ms (first/last attributed damage). The proc view clips the state spans
-    /// to it; a segment that saw no damage carries 0/0 and reports no spans.
+    /// Segment span in absolute ms (first/last attributed damage). The proc view clips the state
+    /// spans to it; a segment that saw no damage carries 0/0 and reports no spans.
     start_ts: i64,
     end_ts: i64,
-    /// Present only for a FIGHT.
+    /// Present only for a fight.
     enc: Option<&'a Encounter>,
 }
 
 fn build_view(spec: ViewSpec) -> SegmentView {
     let agg = spec.agg;
     let duration_sec = spec.duration_sec;
-    // THE EFFECT-LANDING GRAFT. The proc ledger's own count of landings that no damage row represents,
-    // handed to the OUTGOING view — which is what lets a Weakening Strike row say
-    // `0 dmg · 562 landed · 34 resisted` instead of `0 landed`. The INCOMING view gets nothing: a mob
-    // slowing you is not a lane of yours.
-    //
-    // RIPOSTE/RAMPAGE TAKEN are booked on the MOB that swung the annotated counter and read here from
-    // the other end. They can only be resolved where both maps are in scope, which is exactly here.
+    // The effect-landing graft goes to the outgoing view only — a mob slowing you is not a lane of
+    // yours. Riposte/rampage taken are booked on the mob that swung the annotated counter and read
+    // here from the other end, which is only possible where both maps are in scope.
     let taken = taken_annotations(&agg.inc);
     let lands = effect_landings(agg);
     let entities = source_views(&agg.out, duration_sec, Some(&lands), Some(taken));
@@ -873,9 +826,8 @@ fn build_view(spec: ViewSpec) -> SegmentView {
         out_dps: out_total as f64 / duration_sec,
         active_dps: out_total as f64 / f64::max(1.0, spec.active_sec),
         in_dps: in_total as f64 / duration_sec,
-        // YOUR DEFENCE — the incoming rows read from the other end, plus your own `(Riposte)`
-        // counter-swings. Built from the SAME frozen aggregate as the bars above it, so a finalized
-        // zone session (which keeps no event ring at all) reports it exactly.
+        // Built from the same frozen aggregate as the bars above it, so a finalized zone session,
+        // which keeps no event ring at all, reports defence exactly.
         defense: build_defense_view(&agg.inc, agg.out.get("you"), taken.0),
         enemy_heal_total: Agg::sum_heal(&agg.enemy_heal),
         incoming_heal_total: incoming_healers.iter().map(|h| h.total).sum(),
@@ -906,10 +858,10 @@ fn build_view(spec: ViewSpec) -> SegmentView {
     }
 }
 
-/// THE ONE WORD A ZONE SESSION IS CALLED BY. A stay the WORLD ended is that zone's `overall`; a stay
-/// the USER ended with the app-wide "New session" mark is that zone's `session`, which is the word loot
-/// and leveling already print for the very same click. One concept, one vocabulary, decided FROM THE
-/// RECORD so the picker, the overlay header and the panel crumb can never disagree about it.
+/// The one word a zone session is called by, decided from the record so the picker, the overlay
+/// header and the panel crumb cannot disagree. A stay the world ended is that zone's `overall`; a
+/// stay the user ended with the "New session" mark is its `session`, the word loot and leveling
+/// already print for that click.
 fn zone_session_word(closed_by: crate::combat::encounter::ZoneSessionClose) -> &'static str {
     match closed_by {
         crate::combat::encounter::ZoneSessionClose::Mark => "session",
@@ -937,7 +889,7 @@ pub fn build_selected(st: &EngineState, id: &str, now: i64) -> Option<SegmentVie
             enc: None,
         }));
     }
-    // A finalized zone SESSION: rebuild its full breakdown from the frozen aggregate.
+    // A finalized zone session: rebuild its full breakdown from the frozen aggregate.
     if let Some(zs) = st.zone_history.iter().find(|z| z.id == id) {
         let z_dur = f64::max(1.0, zs.finalized_ms as f64 / 1000.0);
         return Some(build_view(ViewSpec {

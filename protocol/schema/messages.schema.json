@@ -290,7 +290,7 @@
     },
     "ErrorCode": {
       "title": "ErrorCode",
-      "description": "A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of.",
+      "description": "A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of. NOT EVERY MEMBER IS SENT BY AN ENGINE: `timeout` is minted by a CLIENT that stopped waiting, and it lives here rather than in a second vocabulary because the type a caller branches on is this one — a client-only code union beside it would be two spellings of the same question.",
       "type": "string",
       "enum": [
         "protocolMismatch",
@@ -299,7 +299,8 @@
         "badParams",
         "notFound",
         "unavailable",
-        "internal"
+        "internal",
+        "timeout"
       ]
     },
     "EchoRequest": {

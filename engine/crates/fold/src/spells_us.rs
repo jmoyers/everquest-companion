@@ -1,51 +1,34 @@
-//! `src/main/resist/spellsUsParse.ts` — the CLIENT's spell table, parsed (boundary verdict 7,
-//! JOS-497 item 3).
+//! `src/main/resist/spellsUsParse.ts` — the client's spell table, parsed.
 //!
-//! PURE OVER A STRING, exactly as the TypeScript is: no file, no thread, no state. `overlay_file.rs`
-//! and `modules/resist/ledger_file.rs` are the same shape and are here for the same reason — the
-//! FORMAT is fold vocabulary and the IO belongs to whoever owns a directory (`engined::spells`).
+//! Pure over a string, exactly as the TypeScript is: no file, no thread, no state. The format is
+//! fold vocabulary and the IO belongs to whoever owns a directory (`engined::spells`).
 //!
-//! ── WHERE THE DATA COMES FROM, AND WHY NOTHING DERIVED FROM IT IS EVER COMMITTED ───────────────
+//! The wiki-scraped `spells.json` this repo ships knows a spell's messages and nothing about how it
+//! is resisted. `<eqRoot>/spells_us.txt` has both: 38 MB, caret delimited, ~74k rows including the
+//! Legends-only 74xxx ids no wiki has. It is Daybreak's file — the player's own copy is read at
+//! runtime and neither it nor anything derived from it is redistributed, which is also why the
+//! resist ledger stores observations rather than conclusions, and why every test below is driven by
+//! hand-authored rows.
 //!
-//! The wiki-scraped `spells.json` this repo ships knows what a spell's MESSAGES are and nothing
-//! about how it is RESISTED — no resist type, no resist adjust. The client install has both:
-//! `<eqRoot>/spells_us.txt`, 38 MB, caret delimited, ~74k rows including the Legends-only 74xxx ids
-//! no wiki has. It is Daybreak's file. The player's own copy is read at runtime and neither it nor
-//! anything derived from it is redistributed — which is also why the resist ledger stores
-//! OBSERVATIONS rather than conclusions. Every test below is driven by hand-authored rows.
+//! The table is never served in bulk: a parsed table measures ~48k entries and 6.13 MiB of JSON
+//! against an 8 MiB frame ceiling, and it grows with every client patch. This process parses the
+//! file internally for its own joins, and consumers ask per-spell questions.
 //!
-//! ── THE RULING THAT SHAPES THIS FILE: NO BULK FRAME, EVER ──────────────────────────────────────
+//! The field map is transcribed from an app-side verification rather than re-derived, including the
+//! two traps: field 10 is the recast and field 9 is not (9 is the recovery time and disagrees with
+//! 10 on 14,535 of 33,952 castable rows), and an effect slot is
+//! `slot | effectId | base | limit | calc | max` rather than `… | max | calc`.
 //!
-//! The tempting reading of verdict 7 — the engine parses the table and SERVES it — is closed, and
-//! it was closed by MEASUREMENT (integrator, 2026-08-25): the owner's own parsed table is 48,252
-//! entries and 6.13 MiB of JSON against an 8 MiB frame ceiling, on one machine, against a table
-//! that grows with every client patch. A single reply at 77% of a hard limit is a design with a
-//! date on it. So this process parses the file INTERNALLY, for its own joins, and consumers ask
-//! per-spell questions.
-//!
-//! ── THE FIELD MAP, transcribed rather than re-derived ──────────────────────────────────────────
-//!
-//! Every index below was verified app-side against the owner's install and the measurements are
-//! written into `spellsUsParse.ts`'s header — including the two traps: FIELD 10 IS THE RECAST AND
-//! FIELD 9 IS NOT (9 is the recovery time and disagrees with 10 on 14,535 of 33,952 castable rows),
-//! and an effect slot is `slot | effectId | base | limit | CALC | MAX` rather than `… | max | calc`
-//! (Tashani's `2|50|-10|0|101|23`: calc 101 is "base + level/2, capped" and 23 is the cap; read the
-//! other way the formula code would be 23, which is not a formula). Re-deriving those here would be
-//! a second opinion about a file neither implementation may ship a copy of.
-//!
-//! ── AND THE JAVASCRIPT SEMANTICS ARE THE HARD PART, NOT THE FIELD MAP ──────────────────────────
-//!
-//! This is a port of a parser whose every scalar goes through `Number(x)` and `Number(x) || 0`, and
-//! whose row filter is `f.length < 172` — NOT 173, so a row with exactly 172 fields passes and then
-//! reads `undefined` for its slots. Those are not bugs to fix on the way across; they are the
-//! behaviour the app has shipped, and a port that "corrected" them would disagree with the app on
-//! real rows. [`js_number`] is where the arithmetic half lives and it carries its own argument.
+//! The JavaScript semantics are the hard part. Every scalar goes through `Number(x)` or
+//! `Number(x) || 0`, and the row filter is `f.length < 172` — not 173, so a row with exactly 172
+//! fields passes and then reads `undefined` for its slots. Those are the behaviour the app ships,
+//! and a port that corrected them would disagree with the app on real rows. See [`js_number`].
 
 use eqlog::jsstr::js_trim;
 use eqlog::names::spell_canon_key;
 use std::collections::HashMap;
 
-// ── the field map (`spellsUsParse.ts`, index for index) ────────────────────────────────────────
+// The field map, `spellsUsParse.ts` index for index.
 
 const F_ID: usize = 0;
 const F_NAME: usize = 1;
@@ -60,26 +43,18 @@ const F_CLASS_FIRST: usize = 36;
 const F_CLASS_COUNT: usize = 16;
 /// The bard's index among the sixteen class-level fields (WAR CLR PAL RNG SHD DRU MNK BRD …).
 const CLASS_BARD: usize = 7;
-/// The spell's CATEGORY id — `Taps`, `Direct Damage`, `Heals` — as the in-game Actions/Spells
+/// The spell's category id — `Taps`, `Direct Damage`, `Heals` — as the in-game Actions/Spells
 /// window's Category column prints it. The word lives in `dbstr_us.txt` (see [`crate::dbstr`]);
 /// this column is only ever the number.
 ///
-/// MEASURED AGAINST THE OWNER'S INSTALL (JOS-507, 2026-08-26) rather than transcribed from a
-/// third-party field map, because the owner's screenshot gave a ground truth to aim at: `Lifetap`
-/// reads `86 = 114`, which type 5 of the string table names `Taps`, and `87 = 43`, which it names
-/// `Health` — the exact two words the screenshot shows in those two columns for that spell. Across
-/// the whole file column 86 carries 64 distinct ids and column 87 carries 162, and every one of
-/// them is a name the string table has.
+/// Measured against a real install: `Lifetap` reads `86 = 114`, which the string table names
+/// `Taps`, and `87 = 43`, which it names `Health` — the two words the game prints for that spell.
 const F_CATEGORY: usize = 86;
-/// The spell's SUBCATEGORY id — `Health`, `Duration Tap`, `Power Tap` under `Taps`. See
-/// [`F_CATEGORY`] for the measurement that settled both indices.
+/// The spell's subcategory id — `Health`, `Duration Tap`, `Power Tap` under `Taps`.
 ///
-/// IT IS INDEPENDENT OF THE CATEGORY AND NOT NESTED UNDER IT: nine rows on the owner's install carry
-/// a subcategory with NO category (a handful of rogue poisons filed under `Misc`), so a reader that
-/// only looked at 87 when 86 was set would silently lose them. Column 88 is a THIRD such column —
-/// 37 distinct names, and only three rows in the whole `Taps` family use it — and it is deliberately
-/// not read: the game's own window prints two columns, and a third would be this parser claiming a
-/// surface the client does not have.
+/// Independent of the category rather than nested under it: some rows carry a subcategory with no
+/// category, so a reader that only looked at 87 when 86 was set would lose them. Column 88 is a
+/// third such column and is deliberately not read — the game's own window prints two.
 const F_SUBCATEGORY: usize = 87;
 const F_RESIST_ADJ: usize = 78;
 const F_AE_MAX_TARGETS: usize = 143;
@@ -90,18 +65,17 @@ const EFFECT_CHARM: f64 = 22.0;
 const EFFECT_MEZ: f64 = 31.0;
 const EFFECT_ALL_RESISTS: f64 = 111.0;
 
-/// A resist-debuff slot has to be worth something to count. Solon's Bewitching Bravura carries a
-/// one-point magic-resist rider on slot 2 and is a CHARM, not a malo; opening an 11-minute debuff
-/// window for one point of resist would file every charmed mob's later observations under a
-/// condition that never mattered. Five is comfortably below the weakest real member of the family
-/// (Tashani, 23) and comfortably above every rider seen in the file.
+/// A resist-debuff slot has to be worth something to count: opening an 11-minute debuff window for
+/// a one-point rider would file every later observation under a condition that never mattered. Five
+/// sits below the weakest real member of the family (Tashani, 23) and above every rider in the
+/// file.
 const MIN_DEBUFF_MAGNITUDE: f64 = 5.0;
 
-// ── the shapes (`shared/resistTypes.ts`) ───────────────────────────────────────────────────────
+// The shapes, `shared/resistTypes.ts`.
 
-/// The five axes the game prints. `shared/resistTypes.ts ResistAxis`, plus the `all` a tash/malo
-/// debuff slot carries — which is a SLOT's axis and never a spell's, so the two are one enum here
-/// with the extra member rather than two types that would have to be converted at every join.
+/// The five axes the game prints, plus the `all` a tash/malo debuff slot carries — which is a
+/// slot's axis and never a spell's, so the two are one enum with an extra member rather than two
+/// types converted at every join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
     Magic,
@@ -109,13 +83,13 @@ pub enum Axis {
     Cold,
     Poison,
     Disease,
-    /// Only a debuff SLOT is ever this — the tash and malo family, effect 111.
+    /// Only a debuff slot is ever this — the tash and malo family, effect 111.
     All,
 }
 
 impl Axis {
-    /// The word every surface prints. NO ACRONYMS, EVER (owner ruling 2026-08-16): `MR`/`FR`/`CR`
-    /// appear nowhere, so the word is the only spelling this enum offers.
+    /// The word every surface prints. No acronyms anywhere, so the word is the only spelling this
+    /// enum offers.
     #[must_use]
     pub fn word(self) -> &'static str {
         match self {
@@ -131,8 +105,8 @@ impl Axis {
 
 /// `axisFromResistType`. Everything unlisted — 0 unresistable, 6 chromatic, 7 prismatic, 8
 /// physical, 9 corruption — is `None` rather than guessed at, and the estimator skips a spell with
-/// no axis. A chromatic spell resists against the LOWEST of the five and a prismatic against an
-/// average; neither is a column the ledger can pool under (world-model law 1).
+/// no axis. A chromatic spell resists against the lowest of the five and a prismatic against an
+/// average; neither is a column the ledger can pool under.
 #[must_use]
 pub fn axis_from_resist_type(resist_type: f64) -> Option<Axis> {
     match resist_type as i64 {
@@ -160,16 +134,15 @@ pub struct HpSlot {
     pub base: f64,
     pub max: f64,
     pub calc: f64,
-    /// A question of the ROW rather than of the slot — does this spell have a duration at all. It
+    /// A question of the row rather than of the slot — does this spell have a duration at all. It
     /// is written onto each slot because that is where the reader needs it: a hitpoint slot on a
     /// duration spell is a DoT/HoT/regen line landing every tick, and on an instant spell it is the
     /// whole hit.
     pub per_tick: bool,
 }
 
-/// The `hpSlot` the resist estimator reads — effect 0 ALONE, deliberately. It answers one question
-/// (is this spell's damage a fixed number) and widening it would change what the ledger, the fold
-/// and the con card read, for no gain: neither a heal-over-time nor a bard pulse is a spell the
+/// The `hpSlot` the resist estimator reads — effect 0 alone. It answers one question, is this
+/// spell's damage a fixed number, and neither a heal-over-time nor a bard pulse is a spell the
 /// estimator fits a resist from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DamageSlot {
@@ -187,40 +160,32 @@ pub struct HpDuration {
 
 /// `SpellResistInfo` — one row of the parsed table.
 ///
-/// THE OPTIONALS ARE ABSENT-MEANS-NOTHING, each for a measured reason written at its producer: a 0
-/// recast is the file saying there is no re-use timer, a 0 `aemaxtargets` is what 71,864 of ~74k
-/// rows read, and a 0 mana is what every bard song says.
+/// The optionals are absent-means-nothing: a 0 recast is the file saying there is no re-use timer,
+/// a 0 `aemaxtargets` is what nearly every row reads, and a 0 mana is what every bard song says.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpellInfo {
-    /// The row's OWN spelling of the name, kept because the table is keyed by
-    /// [`eqlog::names::spell_canon_key`] and a folded key is not something a surface may print.
-    ///
-    /// THE CLIENT'S SPELLING OUTRANKS THE WIKI'S, always — the repo already says so where the two
-    /// disagree (`spellCorrectionsList.ts`'s fifth drift class, restoring `Invisibility vs. Undead`
-    /// against a retitled wiki page). This is that same authority at its source.
+    /// The row's own spelling of the name, kept because the table is keyed by
+    /// [`eqlog::names::spell_canon_key`] and a folded key is not something a surface may print. The
+    /// client's spelling outranks the wiki's wherever the two disagree.
     pub name: String,
     /// The category id, or `None` when the row files itself under none. See [`F_CATEGORY`].
     ///
-    /// ABSENT-MEANS-NOTHING, like every other optional here: 34,462 of the file's ~74k rows carry a
-    /// zero in this column, and a zero is the file saying "uncategorised" rather than naming
-    /// category zero — there is no category zero, the string table's ids start at 1.
+    /// A zero is the file saying "uncategorised" rather than naming category zero: there is no
+    /// category zero, because the string table's ids start at 1.
     pub category: Option<u32>,
     /// The subcategory id, or `None`. See [`F_SUBCATEGORY`] — independent of [`SpellInfo::category`]
     /// rather than nested under it.
     pub subcategory: Option<u32>,
     /// The level each of the sixteen classes learns this at, `0` meaning the class cannot use it.
     ///
-    /// WHY THE WHOLE ROW IS KEPT AND NOT JUST A FLAG: the level is what the in-game window SORTS BY
-    /// and prints, and a spell list scoped to a class combo has to answer "at what level" per class
-    /// in that combo. The two booleans this file already derived ([`SpellInfo::song`] and the
-    /// playability that decides a key contest) are now read off this array rather than computed
-    /// beside it, so there is one traversal of the class columns and one definition of what a valid
-    /// level is.
+    /// The whole row is kept rather than a flag because the level is what the in-game window sorts
+    /// by and prints, and a spell list scoped to a class combo answers "at what level" per class.
+    /// [`SpellInfo::song`] and the playability that decides a key contest are read off this array,
+    /// so there is one traversal of the class columns and one definition of a valid level.
     ///
-    /// `u8` IS EXACT HERE AND NOT A TRUNCATION, measured: every one of the ~1.18M class-level cells
-    /// on the owner's install is an integer in `0..=255`, so nothing is lost narrowing them. The
-    /// valid window is `1..=254` — `255` is the file's "cannot use" and `0` is nothing — which the
-    /// `u8` holds exactly.
+    /// `u8` is exact and not a truncation: every class-level cell in the file is an integer in
+    /// `0..=255`, and the valid window is `1..=254` — `255` is the file's "cannot use", `0` is
+    /// nothing.
     pub class_levels: ClassLevels,
     pub axis: Option<Axis>,
     pub resist_adj: f64,
@@ -240,23 +205,16 @@ pub struct SpellInfo {
 /// The whole parsed table, keyed by `spellCanonKey(name)`.
 pub type SpellTable = HashMap<String, SpellInfo>;
 
-/// One row's sixteen class levels, in the file's own column order — WAR CLR PAL RNG SHD DRU MNK BRD
-/// ROG SHM NEC WIZ MAG ENC BST BER. `0` means the class cannot use the spell at all.
-///
-/// THE ORDER IS THE FILE'S AND IS NOT RE-DECLARED ANYWHERE ELSE IN THIS CRATE. It is confirmed from
-/// two directions: [`CLASS_BARD`] at index 7 has always been what makes a row a song, and the rows
-/// this module's own suite pins (Tashani at index 13 is an enchanter spell, Chaos Flux at 11 a
-/// wizard's, Malaisement at 10 a necromancer's) all read correctly under it.
+/// One row's sixteen class levels, in the file's own column order. `0` means the class cannot use
+/// the spell at all.
 pub type ClassLevels = [u8; F_CLASS_COUNT];
 
-/// The sixteen class columns, in the file's order, spelled the way the APP spells a class
-/// (`src/shared/classCombo.ts CLASS_ABBRS`).
+/// The sixteen class columns, in the file's order, spelled the way the app spells a class.
 ///
-/// IT LIVES HERE BECAUSE THE ORDER IS A FACT ABOUT THE FILE, and this module is the only one that
-/// reads the file. A consumer scoping a spell list to a class combo needs to turn `SHD` into column
-/// 4, and the alternative — every consumer keeping its own copy of the order — is exactly the
-/// duplicated-join-key mistake `mapFromLoc` exists to prevent. NOTE the app's own list is sorted
-/// ALPHABETICALLY and this one is not: this is the client's column order and nothing may re-sort it.
+/// It lives here because the order is a fact about the file and this module is the only reader of
+/// it: a consumer scoping a spell list to a class combo turns `SHD` into column 4 through this
+/// rather than keeping its own copy of the order. The app's own list is sorted alphabetically and
+/// this one is not — this is the client's column order and nothing may re-sort it.
 pub const CLASS_ORDER: [&str; F_CLASS_COUNT] = [
     "WAR", "CLR", "PAL", "RNG", "SHD", "DRU", "MNK", "BRD", "ROG", "SHM", "NEC", "WIZ", "MAG",
     "ENC", "BST", "BER",
@@ -268,28 +226,23 @@ pub fn class_column(abbr: &str) -> Option<usize> {
     CLASS_ORDER.iter().position(|&c| c == abbr)
 }
 
-// ── the JavaScript arithmetic this parser is written in ────────────────────────────────────────
+// The JavaScript arithmetic this parser is written in.
 
-/// `Number(x)` FOR A STRING, and it is not `str::parse` with a different name.
+/// `Number(x)` for a string, which is not `str::parse` with a different name. Every scalar in
+/// `spellsUsParse.ts` goes through it, so a port using Rust's parser would disagree with the app
+/// silently, both sides producing a number. The four differences that matter:
 ///
-/// Every scalar in `spellsUsParse.ts` goes through this, so a port that used Rust's parser would
-/// disagree with the app on inputs the file really contains — and disagree SILENTLY, because both
-/// sides would produce a number. The four differences that matter, each of which the app's own
-/// behaviour depends on:
+///   * The empty string is `0`, not an error — so a row with an empty id passes `Number.isFinite`
+///     and is kept, where `"".parse::<f64>()` would have dropped it.
+///   * Whitespace is trimmed first, using the ECMA set (`js_trim`) rather than Unicode
+///     `White_Space`; the two disagree in both directions.
+///   * `Infinity` is a literal, spelled exactly, and a leading `+` is allowed. `f64::from_str`
+///     accepts a different set of spellings, so the arm is written out.
+///   * Radix prefixes are numbers: `Number('0x1f')` is 31, and no sign is allowed on a prefixed
+///     literal (`Number('-0x10')` is `NaN`).
 ///
-///   * **The empty string is `0`, not an error.** `Number('')` is 0, so a row with an empty id
-///     field passes `Number.isFinite` and is KEPT. Rust's `"".parse::<f64>()` is an error, which
-///     would have silently dropped those rows.
-///   * **Whitespace is trimmed first**, using the ECMA set (`js_trim`) rather than Unicode
-///     `White_Space` — the two disagree in both directions and `jsstr.rs` names the cases.
-///   * **`Infinity` is a literal** and a leading `+` is allowed. `f64::from_str` accepts `inf` and
-///     `infinity` case-insensitively and rejects `Infinity`… it does not, in fact, agree on either
-///     spelling's set, so the arm is written out.
-///   * **Radix prefixes are numbers.** `Number('0x1f')` is 31; `"0x1f".parse::<f64>()` is an error.
-///     No sign is allowed on a prefixed literal — `Number('-0x10')` is `NaN`.
-///
-/// Anything else is `NaN`, which is what `Number` answers and what every caller here is written
-/// against: `Number.isFinite` rejects it, and `|| 0` turns it into zero.
+/// Anything else is `NaN`, which every caller here is written against: `Number.isFinite` rejects
+/// it, and `|| 0` turns it into zero.
 #[must_use]
 pub fn js_number(text: &str) -> f64 {
     let t = js_trim(text);
@@ -306,7 +259,7 @@ pub fn js_number(text: &str) -> f64 {
     if let Some(rest) = t.strip_prefix("0b").or_else(|| t.strip_prefix("0B")) {
         return radix(rest, 2);
     }
-    // `Infinity`, with an optional sign. Spelled exactly — JS does not accept `inf` or `INFINITY`.
+    // `Infinity`, with an optional sign. Spelled exactly: JS accepts no `inf` or `INFINITY`.
     let (sign, body) = match t.strip_prefix('-') {
         Some(rest) => (-1.0, rest),
         None => (1.0, t.strip_prefix('+').unwrap_or(t)),
@@ -314,11 +267,10 @@ pub fn js_number(text: &str) -> f64 {
     if body == "Infinity" {
         return sign * f64::INFINITY;
     }
-    // THE DECIMAL ARM, GUARDED RATHER THAN DELEGATED. Rust's `f64::from_str` accepts spellings JS
-    // does not (`inf`, `NaN`, `1_0` is rejected by both but `infinity` is not), so the body is
-    // required to look like a JS decimal literal before it is handed over. What both accept in the
-    // middle — digits, one dot, an `e` exponent — is identical, which is why delegating the
-    // ARITHMETIC is safe once the SPELLING has been checked.
+    // The decimal arm is guarded rather than delegated: `f64::from_str` accepts spellings JS does
+    // not (`inf`, `NaN`, `infinity`), so the body must look like a JS decimal literal first. What
+    // both accept in the middle — digits, one dot, an `e` exponent — is identical, which is why
+    // delegating the arithmetic is safe once the spelling has been checked.
     if !is_js_decimal(body) {
         return f64::NAN;
     }
@@ -378,9 +330,8 @@ fn radix(digits: &str, base: u32) -> f64 {
 
 /// `Number(x) || 0` — the idiom `rowInfo` uses for every scalar it stores.
 ///
-/// It is NOT `unwrap_or(0.0)`: JS `||` is falsiness, so `NaN`, `0` and `-0` all become `0`, and the
-/// last of those is the one a naive port drops. `-0.0` and `0.0` compare equal in Rust so the
-/// branch below catches it, and the returned zero is a positive one exactly as JS's is.
+/// Not `unwrap_or(0.0)`: JS `||` is falsiness, so `NaN`, `0` and `-0` all become `0`, and the last
+/// is the one a naive port drops. The returned zero is a positive one, exactly as JS's is.
 #[must_use]
 fn js_number_or_zero(text: Option<&str>) -> f64 {
     let v = js_number(text.unwrap_or(""));
@@ -391,8 +342,6 @@ fn js_number_or_zero(text: Option<&str>) -> f64 {
     }
 }
 
-// ── the parse ──────────────────────────────────────────────────────────────────────────────────
-
 /// One effect slot, as the row spells it.
 #[derive(Debug, Clone, Copy)]
 struct Slot {
@@ -402,13 +351,12 @@ struct Slot {
     max: f64,
 }
 
-/// `parseSlots`. NOTE THE MISSING `|| 0`: the TypeScript reads a slot's numbers with a bare
-/// `Number(...)`, so a malformed slot field yields `NaN` and the NaN flows into the comparisons
-/// below. That is the shipped behaviour and it is reproduced rather than tidied — `NaN >= 0` is
-/// false and `NaN < 5` is false, which between them decide whether a slot becomes a debuff window.
+/// `parseSlots`. Note the missing `|| 0`: a slot's numbers are read with a bare `Number(...)`, so a
+/// malformed slot field yields `NaN` and that NaN flows into the comparisons below — `NaN >= 0` and
+/// `NaN < 5` are both false, and between them they decide whether a slot becomes a debuff window.
 fn parse_slots(field: Option<&str>) -> Vec<Slot> {
-    // `if (!field) return []` — an ABSENT field, which a 172-field row really has (see
-    // [`parse_spells_us`]), and also an empty one, because `''` is falsy over there.
+    // An absent field, which a 172-field row really has (see [`parse_spells_us`]), and also an
+    // empty one, because `''` is falsy over there.
     let Some(field) = field else {
         return Vec::new();
     };
@@ -416,8 +364,8 @@ fn parse_slots(field: Option<&str>) -> Vec<Slot> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    // `.trim()` before the split is what absorbs a CRLF file's trailing `\r`: nothing else in this
-    // parser strips one, and on a CRLF row the `\r` lands on the LAST field, which is this one.
+    // The trim before the split absorbs a CRLF file's trailing `\r`: nothing else in this parser
+    // strips one, and on a CRLF row the `\r` lands on the last field, which is this one.
     for chunk in js_trim(field).split('$') {
         if chunk.is_empty() {
             continue;
@@ -459,7 +407,7 @@ fn debuff_slots(slots: &[Slot]) -> Vec<DebuffSlot> {
         let Some(axis) = slot_axis(s.effect) else {
             continue;
         };
-        // Only DECREASES; a spell that RAISES a resist is a buff and never opens a window here.
+        // Only decreases; a spell that raises a resist is a buff and never opens a window here.
         if s.base >= 0.0 {
             continue;
         }
@@ -477,11 +425,10 @@ fn debuff_slots(slots: &[Slot]) -> Vec<DebuffSlot> {
     out
 }
 
-/// `levelCapOf` — the cap the game enforces regardless of rc, and ONLY from the PRIMARY slot.
+/// `levelCapOf` — the cap the game enforces regardless of rc, and only from the primary slot.
 ///
-/// Chaos Flux carries a stun rider capped at 55; being above it costs the STUN, not the nuke, so a
-/// rider's cap must never make a whole spell "always resisted" (world-model law 6 — say what the
-/// log cannot say, and this one it does not say at all).
+/// A rider's cap must never make a whole spell "always resisted": Chaos Flux carries a stun rider
+/// capped at 55, and being above it costs the stun, not the nuke.
 fn level_cap_of(slots: &[Slot]) -> Option<f64> {
     let first = slots.first()?;
     if first.effect != EFFECT_CHARM && first.effect != EFFECT_MEZ {
@@ -490,7 +437,7 @@ fn level_cap_of(slots: &[Slot]) -> Option<f64> {
     (first.max > 0.0).then_some(first.max)
 }
 
-/// `hpSlotOf` — the FIRST effect-0 slot. See [`DamageSlot`] for why it is effect 0 alone.
+/// `hpSlotOf` — the first effect-0 slot. See [`DamageSlot`] for why it is effect 0 alone.
 fn damage_slot_of(slots: &[Slot]) -> Option<DamageSlot> {
     slots
         .iter()
@@ -502,13 +449,11 @@ fn damage_slot_of(slots: &[Slot]) -> Option<DamageSlot> {
         })
 }
 
-/// `hpSlotsOf` — EVERY hitpoint slot in file order.
+/// `hpSlotsOf` — every hitpoint slot in file order.
 ///
-/// The effect set is `HP_EFFECTS`: 0 (the damage slot), 100 (heal over time — Ethereal Cleansing's
-/// `1|100|10|0|103|100` against a page reading `Increase Hitpoints by 10 per tick`) and 334 (the
-/// bard's pulsing hitpoint effect — Chords of Dissonance's `334|-2|109|0` against a page reading
-/// `Decrease Hitpoints by 2 per tick`). Five wiki pages name a 334 slot's magnitude as a hitpoint
-/// change and nothing else on those rows states one.
+/// The effect set is 0 (the damage slot), 100 (heal over time) and 334 (the bard's pulsing hitpoint
+/// effect). The last two were confirmed against wiki pages naming those slots' magnitudes as
+/// hitpoint changes per tick.
 fn hp_slots_of(slots: &[Slot], per_tick: bool) -> Vec<HpSlot> {
     slots
         .iter()
@@ -524,14 +469,11 @@ fn hp_slots_of(slots: &[Slot], per_tick: bool) -> Vec<HpSlot> {
 
 /// `classLevels` — the level each of the sixteen classes learns this at, `0` for "cannot use".
 ///
-/// A valid level is `1..=254`: `>= 255` is the file's "cannot use" and `<= 0` is nothing. Note the
-/// bound is on the NUMBER rather than on an integer, exactly as the TypeScript's is — a
-/// non-integral value in that column would pass, which no real row has and both sides agree on.
+/// A valid level is `1..=254`: `>= 255` is the file's "cannot use" and `<= 0` is nothing. The bound
+/// is on the number rather than on an integer, exactly as the TypeScript's is.
 ///
-/// THIS USED TO ANSWER TWO BOOLEANS and now answers the row those booleans are read off
-/// ([`any_class`], [`bard_only`]). The widening is what JOS-507's surface needs — a spell list scoped
-/// to a combo prints a level per class — and it collapses what were two traversals of the same
-/// sixteen columns into one definition of a valid level.
+/// [`any_class`] and [`bard_only`] are read off this row, so there is one traversal of the sixteen
+/// columns and one definition of a valid level.
 fn class_levels(f: &[&str]) -> ClassLevels {
     let mut levels: ClassLevels = [0; F_CLASS_COUNT];
     for (i, level) in levels.iter_mut().enumerate() {
@@ -539,9 +481,9 @@ fn class_levels(f: &[&str]) -> ClassLevels {
         if !v.is_finite() || v >= 255.0 || v <= 0.0 {
             continue;
         }
-        // EXACT, NOT LOSSY: the guard above bounds `v` to `0 < v < 255`, and every class-level cell
-        // on the owner's install is an integer — so the narrowing drops nothing a real row carries.
-        // A hypothetical fractional level would floor, which is the reading a player would give it.
+        // Exact, not lossy: the guard bounds `v` to `0 < v < 255` and every class-level cell in the
+        // file is an integer, so the narrowing drops nothing a real row carries. A fractional level
+        // would floor, which is the reading a player would give it.
         #[allow(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -554,13 +496,13 @@ fn class_levels(f: &[&str]) -> ClassLevels {
     levels
 }
 
-/// Can ANY class cast this? A row nobody can learn is a mob's or an item's copy, which is the one
+/// Can any class cast this? A row nobody can learn is a mob's or an item's copy, which is the one
 /// override on the table's first-wins dedupe.
 fn any_class(levels: &ClassLevels) -> bool {
     levels.iter().any(|&l| l > 0)
 }
 
-/// Can ONLY the bard cast this? That is what makes a row a SONG rather than a cast.
+/// Can only the bard cast this? That is what makes a row a song rather than a cast.
 fn bard_only(levels: &ClassLevels) -> bool {
     levels[CLASS_BARD] > 0
         && levels
@@ -577,10 +519,9 @@ fn field<'a>(f: &[&'a str], i: usize) -> Option<&'a str> {
 
 /// A category or subcategory id — `Number(x) || 0`, then absent-means-nothing.
 ///
-/// A ZERO IS AN ABSENCE AND NOT AN ID: the string table's spell-category namespace starts at 1, so
-/// nothing names zero, and 34,462 of the file's rows carry one in the category column. The cast
-/// saturates rather than wrapping for an absurd value, which is harmless — an id no string table
-/// entry claims resolves to no word and the row simply reports no category.
+/// A zero is an absence and not an id: the string table's spell-category namespace starts at 1, so
+/// nothing names zero. The cast saturates rather than wrapping for an absurd value, which resolves
+/// to no word and reads as no category.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -593,9 +534,9 @@ fn category_id(f: &[&str], i: usize) -> Option<u32> {
 
 /// `rowInfo` — one row's whole answer.
 ///
-/// The NAME and the CLASS LEVELS arrive from the caller rather than being re-read here: both are
-/// needed by [`parse_spells_us`] before it decides whether this row wins its key at all, and reading
-/// them twice would be two chances to disagree about what a valid level is.
+/// The name and the class levels arrive from the caller rather than being re-read: both are needed
+/// by [`parse_spells_us`] before it decides whether this row wins its key, and reading them twice
+/// would be two chances to disagree about what a valid level is.
 fn row_info(f: &[&str], name: &str, class_levels: ClassLevels) -> SpellInfo {
     let slots = parse_slots(field(f, F_SLOTS));
     let bard_only = bard_only(&class_levels);
@@ -610,9 +551,9 @@ fn row_info(f: &[&str], name: &str, class_levels: ClassLevels) -> SpellInfo {
         category: category_id(f, F_CATEGORY),
         subcategory: category_id(f, F_SUBCATEGORY),
         class_levels,
-        // NOT `|| 0`: the resist type goes into `axisFromResistType` as `Number(...)` alone, and an
+        // Not `|| 0`: the resist type goes into `axisFromResistType` as `Number(...)` alone, and an
         // unparseable one is NaN, which matches no arm and is therefore `None` — the same answer a
-        // chromatic spell gets, and the right one.
+        // chromatic spell gets.
         axis: axis_from_resist_type(js_number(field(f, F_RESIST_TYPE).unwrap_or(""))),
         resist_adj: js_number_or_zero(field(f, F_RESIST_ADJ)),
         cast_ms: js_number_or_zero(field(f, F_CAST_MS)),
@@ -621,10 +562,9 @@ fn row_info(f: &[&str], name: &str, class_levels: ClassLevels) -> SpellInfo {
         mana: (mana > 0.0).then_some(mana),
         target_type: js_number_or_zero(field(f, F_TARGET_TYPE)),
         damage_slot: damage_slot_of(&slots),
-        // `hpDuration` IS WRITTEN ONLY WHEN BOTH HOLD — there is at least one hitpoint slot AND the
-        // row has a duration formula. The TypeScript nests the second test inside the first, so a
-        // formula on a row with no hitpoint slot writes nothing, and this reproduces that shape
-        // rather than the shorter one that would also write it.
+        // `hpDuration` is written only when both hold: at least one hitpoint slot, and a duration
+        // formula. The TypeScript nests the second test inside the first, so a formula on a row
+        // with no hitpoint slot writes nothing.
         hp_duration: (!hp.is_empty() && formula != 0.0).then(|| HpDuration {
             formula,
             value: js_number_or_zero(field(f, F_DURATION)),
@@ -638,23 +578,19 @@ fn row_info(f: &[&str], name: &str, class_levels: ClassLevels) -> SpellInfo {
 
 /// Parse the whole file.
 ///
-/// ── THE FOUR FILTERS, IN ORDER, AND WHY EACH IS SPELLED THE WAY IT IS ──────────────────────────
+/// The four filters, in order:
 ///
-///   * `if (!line) continue` — an EMPTY line only. A blank-looking line of spaces is not skipped
-///     here and falls out at the field-count test instead.
-///   * `f.length < F_SLOTS` — **172, NOT 173.** A row with exactly 172 fields PASSES and then reads
-///     `undefined` for its slots, which [`parse_slots`] answers with no slots at all. Tightening
-///     this to 173 would drop rows the app keeps.
-///   * `!name` — the empty string only. A whitespace-only name survives here and is caught by the
-///     next test, because `spellCanonKey` trims it to nothing.
-///   * `Number.isFinite(Number(f[0]))` — an id that is not a number. Note `''` is `0`, which is
-///     finite, so a row with an EMPTY id is kept.
+///   * an empty line only — a blank-looking line of spaces falls out at the field-count test.
+///   * `f.length < 172`, not 173: a row with exactly 172 fields passes and then reads `undefined`
+///     for its slots, which [`parse_slots`] answers with none. Tightening this drops rows the app
+///     keeps.
+///   * an empty name only — a whitespace-only name survives here and dies at the key test, because
+///     `spellCanonKey` trims it to nothing.
+///   * an id that is not a number. `''` is `0`, which is finite, so an empty id is kept.
 ///
-/// ── AND THE DEDUPE, WHICH IS THE ONE PIECE OF JUDGEMENT IN THE FILE ────────────────────────────
-///
-/// Ranked spells (`Scorching Arrow` I..IV) and NPC copies of a player spell all fold onto one key
-/// via `spellCanonKey`, so FILE ORDER decides — with one override: a row NO class can cast is a
-/// mob's or an item's copy and loses to a row a player can actually learn. First-wins otherwise.
+/// Ranked spells and NPC copies of a player spell fold onto one key, so file order decides, with
+/// one override: a row no class can cast is a mob's or an item's copy and loses to a row a player
+/// can learn. First-wins otherwise.
 #[must_use]
 pub fn parse_spells_us(text: &str) -> SpellTable {
     let mut table: SpellTable = HashMap::new();
@@ -685,8 +621,7 @@ pub fn parse_spells_us(text: &str) -> SpellTable {
         let levels = class_levels(&f);
         let playable = any_class(&levels);
         if let Some(&held) = playable_by_key.get(&key) {
-            // `prefer(existing, playable)` — replace only when the incumbent is unplayable and the
-            // newcomer is not.
+            // Replace only when the incumbent is unplayable and the newcomer is not.
             if held || !playable {
                 continue;
             }
@@ -701,13 +636,12 @@ pub fn parse_spells_us(text: &str) -> SpellTable {
 mod tests {
     use super::*;
 
-    /// A row of 173 caret-delimited fields, with the class columns defaulted to `255` (cannot use)
-    /// exactly as `tests/spellsUsParse.test.mts`'s own `row()` helper defaults them.
+    /// A row of 173 caret-delimited fields, with the class columns defaulted to `255` (cannot use),
+    /// as the app-side suite's own `row()` helper defaults them.
     ///
-    /// THE ROWS BELOW ARE HAND-AUTHORED, and that is a rule rather than a convenience: the client
-    /// table is Daybreak's file and neither it nor any slice of it may enter this repo. The numbers
-    /// are the ones the app-side suite transcribed from the owner's install and pinned there, so
-    /// this suite and that one are making the same claim about the same bytes.
+    /// The rows below are hand-authored, and that is a rule: the client table is Daybreak's file
+    /// and no slice of it may enter this repo. The numbers are the ones the app-side suite
+    /// transcribed from a real install, so both suites claim the same thing about the same bytes.
     fn row(fields: &[(usize, &str)]) -> String {
         let mut f = vec!["0".to_string(); 173];
         for i in 0..F_CLASS_COUNT {
@@ -725,11 +659,9 @@ mod tests {
         table.into_values().next().expect("the one entry")
     }
 
-    // ── the JavaScript arithmetic ─────────────────────────────────────────────────────────────
-
     #[test]
     fn js_number_is_javascripts_number_and_not_rusts_parser() {
-        // THE FOUR DIFFERENCES THAT MATTER, each of which the app's shipped behaviour depends on.
+        // The four differences the app's shipped behaviour depends on.
         assert_eq!(
             js_number(""),
             0.0,
@@ -748,7 +680,7 @@ mod tests {
         assert_eq!(js_number("-1.5"), -1.5);
         assert_eq!(js_number("Infinity"), f64::INFINITY);
         assert_eq!(js_number("-Infinity"), f64::NEG_INFINITY);
-        // …AND THE SPELLINGS RUST ACCEPTS AND JAVASCRIPT DOES NOT. Delegating to `f64::from_str`
+        // …and the spellings Rust accepts and JavaScript does not: delegating to `f64::from_str`
         // without the spelling guard would make every one of these a number.
         for spelled in [
             "inf", "infinity", "INFINITY", "NaN", "nan", "abc", "1.2.3", "1e", ".",
@@ -777,10 +709,8 @@ mod tests {
         assert_eq!(js_number_or_zero(Some("1500")), 1500.0);
     }
 
-    // ── the field map ─────────────────────────────────────────────────────────────────────────
-
-    /// Tashani (id 677) — the row that settled the slot layout. `2|50|-10|0|101|23`: calc 101 is
-    /// "base + level/2, capped" and 23 is the cap. Read the other way round the formula code would
+    /// Tashani (id 677) — the row that settled the slot layout. In `2|50|-10|0|101|23`, calc 101 is
+    /// "base + level/2, capped" and 23 is the cap; read the other way round the formula code would
     /// be 23, which is not a formula.
     #[test]
     fn tashani_is_a_magic_debuff_with_a_cap_of_twenty_three() {
@@ -799,7 +729,7 @@ mod tests {
         assert!(!info.song, "an enchanter row is not a song");
     }
 
-    /// Malaisement — the `all resists` family, effect 111, which is a SLOT axis and never a
+    /// Malaisement — the `all resists` family, effect 111, which is a slot axis and never a
     /// spell's.
     #[test]
     fn the_tash_and_malo_family_carries_the_all_axis() {
@@ -814,7 +744,7 @@ mod tests {
         assert_eq!(info.debuff_slots[0].max, 40.0);
     }
 
-    /// A one-point rider is NOT a debuff window — Solon's Bewitching Bravura's whole argument.
+    /// A one-point rider is not a debuff window — a charm carrying a magic-resist rider.
     #[test]
     fn a_rider_below_the_magnitude_floor_opens_no_window() {
         let info = one(&[
@@ -825,7 +755,7 @@ mod tests {
         assert!(info.debuff_slots.is_empty());
     }
 
-    /// …and a slot that RAISES a resist is a buff, whatever its magnitude.
+    /// …and a slot that raises a resist is a buff, whatever its magnitude.
     #[test]
     fn a_resist_buff_is_never_a_debuff_window() {
         let info = one(&[
@@ -836,10 +766,9 @@ mod tests {
         assert!(info.debuff_slots.is_empty());
     }
 
-    /// The class order is the FILE's, and these four rows are the cross-check: this module's own
-    /// suite has always pinned Tashani as an enchanter spell (column 13), Chaos Flux as a wizard's
-    /// (11) and Malaisement as a necromancer's (10), and the bard has been column 7 since the song
-    /// rule was written. If the order were wrong, every one of those would name the wrong class.
+    /// The class order is the file's, cross-checked against rows this suite pins elsewhere: Tashani
+    /// is an enchanter spell (column 13), Chaos Flux a wizard's (11), Malaisement a necromancer's
+    /// (10), and the bard is column 7. A wrong order would name the wrong class in every one.
     #[test]
     fn the_class_order_is_the_files_and_names_the_classes_the_suite_already_pinned() {
         assert_eq!(class_column("ENC"), Some(13));
@@ -848,7 +777,7 @@ mod tests {
         assert_eq!(class_column("BRD"), Some(CLASS_BARD));
         assert_eq!(class_column("SHD"), Some(4));
         assert_eq!(class_column("NOT A CLASS"), None);
-        // The app's own list is the same SET, alphabetically ordered — this one is the client's
+        // The app's own list is the same set, alphabetically ordered — this one is the client's
         // column order and is deliberately not sorted.
         let mut sorted = CLASS_ORDER;
         sorted.sort_unstable();
@@ -862,7 +791,7 @@ mod tests {
         );
     }
 
-    /// Mesmerization (`1|31|2|0|100|55`) — the level cap, from the PRIMARY slot.
+    /// Mesmerization (`1|31|2|0|100|55`) — the level cap, from the primary slot.
     #[test]
     fn a_mez_carries_its_level_cap_off_the_first_slot() {
         let info = one(&[
@@ -873,7 +802,7 @@ mod tests {
         assert_eq!(info.level_cap, Some(55.0));
     }
 
-    /// Chaos Flux — a STUN rider capped at 55 on a later slot. Being above it costs the stun, not
+    /// Chaos Flux — a stun rider capped at 55 on a later slot. Being above it costs the stun, not
     /// the nuke, so the cap must not reach the whole spell.
     #[test]
     fn a_riders_cap_never_becomes_the_spells_cap() {
@@ -890,8 +819,7 @@ mod tests {
         );
     }
 
-    /// FIELD 10 IS THE RECAST AND FIELD 9 IS NOT. Field 9 is settable here for exactly the reason
-    /// the app-side suite makes it settable: to prove the parser does not read it.
+    /// Field 10 is the recast and field 9 is not. Field 9 is set here to prove it is not read.
     #[test]
     fn the_recast_is_field_ten_and_field_nine_is_ignored() {
         let info = one(&[
@@ -903,7 +831,7 @@ mod tests {
         assert_eq!(info.recast_ms, Some(6000.0));
     }
 
-    /// A ZERO RECAST IS AN ABSENCE, not a zero — Complete Heal reads `9 = 1500, 10 = 0`.
+    /// A zero recast is an absence, not a zero — Complete Heal reads `9 = 1500, 10 = 0`.
     #[test]
     fn a_zero_in_an_absent_means_nothing_column_is_an_absence() {
         let info = one(&[
@@ -964,7 +892,7 @@ mod tests {
         assert_eq!(info.hp_duration, None);
     }
 
-    /// A FORMULA WITH NO HITPOINT SLOT WRITES NO DURATION — the nesting in `rowInfo`, which a
+    /// A formula with no hitpoint slot writes no duration — the nesting in `rowInfo`, which a
     /// flattened port would get wrong.
     #[test]
     fn a_duration_on_a_row_with_no_hitpoint_slot_writes_nothing() {
@@ -980,7 +908,7 @@ mod tests {
     }
 
     /// Ethereal Cleansing (effect 100) and Chords of Dissonance (effect 334) — the two hitpoint
-    /// effects that are NOT effect 0, so they reach `hp` and never `damage_slot`.
+    /// effects that are not effect 0, so they reach `hp` and never `damage_slot`.
     #[test]
     fn the_two_other_hitpoint_effects_reach_hp_but_not_the_damage_slot() {
         let hot = one(&[
@@ -1009,7 +937,7 @@ mod tests {
         assert!(song.song, "a bard-only row is a song");
     }
 
-    /// A row castable by the bard AND somebody else is not a song.
+    /// A row castable by the bard and somebody else is not a song.
     #[test]
     fn bard_only_means_only_the_bard() {
         let info = one(&[
@@ -1031,17 +959,14 @@ mod tests {
                 (F_CLASS_FIRST + 5, level),
             ]));
             assert_eq!(table.len(), 1);
-            // Unplayable rows still parse — they simply LOSE a key contest to a playable row.
+            // Unplayable rows still parse — they simply lose a key contest to a playable row.
             assert!(!table.values().next().expect("one").song);
         }
     }
 
-    // ── the category columns (JOS-507) ────────────────────────────────────────────────────────
-
-    /// Lifetap — THE ROW THE OWNER'S SCREENSHOT SETTLED. `86 = 114` and `87 = 43` are what the
-    /// install really carries, and `dbstr_us.txt` type 5 names them `Taps` and `Health`, which is
-    /// exactly what the in-game window prints in those two columns for that spell. The words are
-    /// [`crate::dbstr`]'s business; the numbers are this file's.
+    /// Lifetap — the row that settled the category columns. `86 = 114` and `87 = 43` are what the
+    /// install carries, and `dbstr_us.txt` type 5 names them `Taps` and `Health`, which is what the
+    /// in-game window prints for that spell. The words are [`crate::dbstr`]'s business.
     #[test]
     fn lifetap_carries_the_category_and_subcategory_the_screenshot_shows() {
         let info = one(&[
@@ -1063,8 +988,7 @@ mod tests {
         assert_eq!(info.class_levels[7], 0, "the bard learns no lifetap");
     }
 
-    /// A ZERO IS AN ABSENCE, not category zero — the string table's ids start at 1, and 34,462 of
-    /// the file's rows read zero here.
+    /// A zero is an absence, not category zero — the string table's ids start at 1.
     #[test]
     fn an_uncategorised_row_reports_no_category_rather_than_zero() {
         let info = one(&[(F_ID, "1"), (F_NAME, "Uncategorised")]);
@@ -1072,9 +996,9 @@ mod tests {
         assert_eq!(info.subcategory, None);
     }
 
-    /// A SUBCATEGORY IS NOT NESTED UNDER A CATEGORY. Nine rows on the owner's install carry one with
-    /// no category at all — rogue poisons filed under `Misc` — and a reader that only looked at 87
-    /// when 86 was set would lose them silently.
+    /// A subcategory is not nested under a category: some rows carry one with no category at all
+    /// (rogue poisons filed under `Misc`), and a reader that only looked at 87 when 86 was set
+    /// would lose them silently.
     #[test]
     fn a_subcategory_with_no_category_is_still_read() {
         let info = one(&[
@@ -1086,8 +1010,8 @@ mod tests {
         assert_eq!(info.subcategory, Some(83));
     }
 
-    /// The class-level row is the whole row, and `255`/`0` are both "cannot use" in it — the same
-    /// window [`SpellInfo::song`] and the dedupe's playability have always used, now read once.
+    /// The class-level row is the whole row, and `255`/`0` are both "cannot use" in it — the window
+    /// [`SpellInfo::song`] and the dedupe's playability both read.
     #[test]
     fn the_class_levels_row_holds_a_level_per_class_and_zero_for_the_rest() {
         let info = one(&[
@@ -1104,13 +1028,11 @@ mod tests {
         assert!(info.song);
     }
 
-    // ── the row filters ───────────────────────────────────────────────────────────────────────
-
     #[test]
     fn a_row_with_exactly_one_hundred_and_seventy_two_fields_is_kept() {
-        // `f.length < 172`, NOT `< 173`. The row passes and then reads `undefined` for its slots,
-        // which is no slots at all rather than a panic. Tightening the bound would drop rows the
-        // app keeps, which is why this is pinned rather than commented.
+        // `f.length < 172`, not `< 173`. The row passes and then reads `undefined` for its slots,
+        // which is no slots rather than a panic. Tightening the bound would drop rows the app
+        // keeps.
         let mut f = vec!["0".to_string(); 172];
         f[F_NAME] = "Short Row".to_string();
         for i in 0..F_CLASS_COUNT {
@@ -1142,15 +1064,15 @@ mod tests {
     fn a_non_numeric_id_is_dropped_and_an_empty_name_is_too() {
         assert!(parse_spells_us(&row(&[(F_ID, "abc"), (F_NAME, "Bad Id")])).is_empty());
         assert!(parse_spells_us(&row(&[(F_ID, "1"), (F_NAME, "")])).is_empty());
-        // A WHITESPACE-ONLY NAME survives the `!name` test and dies at the key test, because
-        // `spellCanonKey` trims it to nothing. Two different filters, one outcome.
+        // A whitespace-only name survives the empty-name test and dies at the key test, because
+        // `spellCanonKey` trims it to nothing. Two filters, one outcome.
         assert!(parse_spells_us(&row(&[(F_ID, "1"), (F_NAME, "   ")])).is_empty());
     }
 
     #[test]
     fn empty_lines_are_skipped_and_a_crlf_file_still_parses_its_slots() {
-        // NOTHING STRIPS `\r`. On a CRLF file the carriage return lands on the LAST field, which is
-        // the slots, and `parse_slots`'s own trim is what absorbs it — so the slot survives.
+        // Nothing strips `\r`. On a CRLF file it lands on the last field, which is the slots, and
+        // `parse_slots`'s own trim absorbs it, so the slot survives.
         let text = format!(
             "\n{}\r\n\n",
             row(&[
@@ -1163,8 +1085,6 @@ mod tests {
         assert_eq!(table.len(), 1);
         assert_eq!(table.values().next().expect("one").level_cap, Some(55.0));
     }
-
-    // ── the dedupe ────────────────────────────────────────────────────────────────────────────
 
     #[test]
     fn ranks_fold_onto_one_key_and_the_first_row_wins() {
@@ -1193,8 +1113,8 @@ mod tests {
 
     #[test]
     fn an_npc_copy_loses_to_the_row_a_player_can_learn() {
-        // THE ONE OVERRIDE on first-wins: a row NO class can cast is a mob's or an item's copy.
-        // Chaos Flux (350) and its NPC copy (6850) are the measured pair.
+        // The one override on first-wins: a row no class can cast is a mob's or an item's copy.
+        // Chaos Flux (350) and its NPC copy (6850) are the real pair.
         let text = format!(
             "{}\n{}",
             row(&[(F_ID, "6850"), (F_NAME, "Chaos Flux"), (F_RESIST_ADJ, "99")]),
@@ -1245,8 +1165,6 @@ mod tests {
         assert_eq!(parse_spells_us(&two_playable)["twice"].resist_adj, 1.0);
     }
 
-    // ── the axis map ──────────────────────────────────────────────────────────────────────────
-
     #[test]
     fn the_five_axes_map_and_everything_else_is_refused() {
         assert_eq!(axis_from_resist_type(1.0), Some(Axis::Magic));
@@ -1254,7 +1172,7 @@ mod tests {
         assert_eq!(axis_from_resist_type(3.0), Some(Axis::Cold));
         assert_eq!(axis_from_resist_type(4.0), Some(Axis::Poison));
         assert_eq!(axis_from_resist_type(5.0), Some(Axis::Disease));
-        // 0 unresistable, 6 chromatic, 7 prismatic, 8 physical, 9 corruption — REFUSED rather than
+        // 0 unresistable, 6 chromatic, 7 prismatic, 8 physical, 9 corruption — refused rather than
         // guessed at, because none of them is a column the ledger can pool under.
         for t in [0.0, 6.0, 7.0, 8.0, 9.0, -1.0] {
             assert_eq!(axis_from_resist_type(t), None, "resist type {t}");

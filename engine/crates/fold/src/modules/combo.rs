@@ -1,37 +1,20 @@
-//! `src/main/modules/combo.ts` — WHICH THREE CLASSES WAS THIS CHARACTER RUNNING, AND WHEN DID THAT
-//! CHANGE? The `EqModule` shell only; the thinking lives in four PURE siblings that mirror the TS's
-//! own four files one for one — `evidence` (intake + the two committed class tables),
-//! `score` (presence · exclusivity · sustain), `levels` (reconciling dings against `/who` rows) and
-//! `intervals` (the boundary detectors and the assembly).
+//! `src/main/modules/combo.ts` — which classes was this character running, and when did that
+//! change? The `EqModule` shell only; the thinking lives in four pure siblings mirroring the TS's
+//! own files: `evidence` (intake + the committed class tables), `score` (presence · exclusivity ·
+//! sustain), `levels` (dings against `/who` rows) and `intervals` (detectors and assembly).
 //!
-//! ONE MODULE, FIVE FILES, and that is the TS's factoring rather than a new one: `comboIntervals.ts`
-//! sits at the repo's measured 400-code-line ceiling and `comboLevels.ts` exists because of it. A
-//! single 900-line Rust file would be a different program to audit than the one it is a port of.
+//! EQ Legends runs up to three classes at once, the displayed level is the MINIMUM of their levels,
+//! and a loadout swap is never logged. So the app either infers the combo and labels it inferred,
+//! or it says nothing at all.
 //!
-//! WHY THE FEATURE EXISTS AT ALL. EQ Legends runs up to three classes at once, the displayed level
-//! is the MINIMUM of their levels, and a loadout swap is NEVER logged — verified twice on full-log
-//! sweeps. The character's own `/who` row states the loadout outright and there are ELEVEN of them
-//! in 1.1M lines, none within 33 hours of the swap this log actually contains. So the app either
-//! infers the combo and LABELS it inferred, or it says nothing at all.
+//! Registered first, so within one bus delivery every later module (and the combat engine) sees an
+//! already-advanced combo state. It consumes and emits no derived events.
 //!
-//! REGISTERED FIRST: within one bus delivery every later module (and the combat engine) then sees
-//! an already-advanced combo state for the same event. It consumes no derived events and emits
-//! none, so the position is purely additive.
+//! Intervals are recomputed from scratch whenever anything changes — a `/who` row or a user
+//! correction re-labels an arbitrary span — so interval ids are snapshot-scoped.
 //!
-//! RECOMPUTE-FROM-SCRATCH, NOT PATCH-IN-PLACE. A `/who` row typed now re-labels the past hour and a
-//! user correction re-labels an arbitrary span, so intervals are rebuilt from the retained
-//! observations whenever anything changes. Interval ids are therefore snapshot-scoped.
-//!
-//! AND ITS `seq` IS ITS OWN REVISION — JOS-87, measured in the real app before it was fixed.
-//! `useModule` dedupes deltas with `d.seq <= knownSeq`; every other module's state moves only when
-//! an event moves it, so "the last event's seq" is a fine revision counter for them. THIS one has a
-//! second input — a user correction, which changes every interval and advances no log seq — so a
-//! correction written while the log is idle (exactly when a user is sitting in Preferences fixing a
-//! wrong loadout) produced a delta the renderer dropped as a duplicate. The store had it, the model
-//! had it, and the screen kept showing the detection that was wrong.
-//!
-//! THE CORRECTIONS PROVIDER IS ABSENT in the bench world, so `corrections` is empty on all six
-//! slices; `intervals.rs` says what that leaves unexercised.
+//! `seq` is this module's own revision: a correction changes every interval and advances no log
+//! seq, and `useModule` dedupes deltas with `d.seq <= knownSeq`.
 
 pub mod evidence;
 pub mod intervals;
@@ -49,8 +32,8 @@ use serde_json::{json, Value};
 /// the class both "Shadow Knight" and "Shadowknight" and both canonicalize here.
 pub type ClassAbbr = &'static str;
 
-/// Every class code, SORTED — the closed set behind `as_class_abbr` and the candidate list of an
-/// UNKNOWN slot.
+/// Every class code, sorted — the closed set behind `as_class_abbr` and an unknown slot's
+/// candidate list.
 pub const CLASS_ABBRS: &[ClassAbbr] = &[
     "BER", "BRD", "BST", "CLR", "DRU", "ENC", "MAG", "MNK", "NEC", "PAL", "RNG", "ROG", "SHD",
     "SHM", "WAR", "WIZ",
@@ -59,9 +42,8 @@ pub const CLASS_ABBRS: &[ClassAbbr] = &[
 /// `shared/classCombo.ts MAX_COMBO_SLOTS` — EQ Legends runs up to three classes at once.
 pub const MAX_COMBO_SLOTS: usize = 3;
 
-/// `isClassAbbr` as a NARROWING rather than a predicate: an unknown code is dropped, never
-/// coerced. Answering the `'static` spelling is what lets every candidate list downstream be a
-/// plain `&str` compare instead of an owned string.
+/// `isClassAbbr` as a narrowing rather than a predicate: an unknown code is dropped, never coerced.
+/// Answering the `'static` spelling keeps every candidate list downstream a plain `&str` compare.
 pub fn as_class_abbr(v: &str) -> Option<ClassAbbr> {
     CLASS_ABBRS.iter().copied().find(|c| *c == v)
 }
@@ -71,13 +53,12 @@ pub struct ComboModule {
     who_rows: Vec<WhoRow>,
     levels: Vec<LevelPoint>,
     corrections: Vec<ComboCorrection>,
-    /// `epochDetector.ts LAUNCH_MS` — a correction older than the launch describes the BETA
-    /// character that was wiped and shares this log file, and a correction is the one piece of
-    /// combo state that outlives a replay.
+    /// `epochDetector.ts LAUNCH_MS` — a correction older than the launch describes the wiped beta
+    /// character that shares this log file. A correction is the one combo state outliving a replay.
     launch_ms: i64,
     /// The spell → class table, built once from the parser's own DB (see `evidence.rs`).
     spell_classes: SpellClassIndex,
-    /// THE REVISION — see the header. Never a LogEvent seq.
+    /// The revision — see the header. Never a LogEvent seq.
     rev: i64,
 }
 
@@ -94,15 +75,12 @@ impl ComboModule {
         }
     }
 
-    /// Anything that can change what the intervals will be goes through here: a new observation, a
-    /// level ding, a character reset, a correction written or withdrawn. It advances the revision
-    /// the transport dedupes on, so a state change the renderer is not told about — the defect this
-    /// path was fixed for — cannot happen.
+    /// Anything that can change what the intervals will be goes through here: an observation, a
+    /// level ding, a reset, a correction written or withdrawn. It advances the revision the
+    /// transport dedupes on, so no state change can go untold.
     ///
-    /// The TS additionally sets a `stale` flag over a memo of the built intervals. THE MEMO IS NOT
-    /// PORTED: `snapshot()` takes `&self` on this trait, `build_intervals` is a pure total function
-    /// of the four inputs, and a historical fold asks for the snapshot ONCE. A cache that can only
-    /// ever return what the recompute would return is a second place for the answer to live.
+    /// The TS's memo of the built intervals is deliberately not ported: `build_intervals` is a pure
+    /// total function of the four inputs, so a cache would be a second place for the answer to live.
     fn mark_stale(&mut self) {
         self.rev += 1;
     }
@@ -122,10 +100,9 @@ impl EqModule for ComboModule {
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
         if ev.kind() == "epoch" {
-            // Character rebirth: every observation before the boundary belongs to a dead character
-            // whose loadout has nothing to do with this one. NOTE what is deliberately NOT here — a
-            // level-regression epoch trigger. A level drop is a LOADOUT SWAP, which is the entire
-            // point of this module (epochDetector.ts says the same thing from the other side).
+            // Character rebirth: observations before the boundary belong to a dead character. Note
+            // what is deliberately absent — a level-regression epoch trigger. A level drop is a
+            // loadout swap, which is the whole point of this module.
             let launch_ms = self.launch_ms;
             self.reset();
             self.corrections.retain(|c| c.start_ts >= launch_ms);
@@ -157,8 +134,7 @@ impl EqModule for ComboModule {
         self.mark_stale();
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// The same cursor `snapshot` publishes, without building the state to read it.
     fn published_seq(&self) -> Option<i64> {
         Some(self.rev)
     }
@@ -170,8 +146,7 @@ impl EqModule for ComboModule {
             levels: &self.levels,
             corrections: &self.corrections,
         });
-        // `current` — convenience: the last interval, or null. The same object, not a copy of a
-        // different reading of it.
+        // `current` is the last interval, or null — the same object, never a second reading.
         let current = intervals.last().cloned();
         json!({
             "seq": self.rev,
@@ -179,8 +154,7 @@ impl EqModule for ComboModule {
                 "intervals": intervals,
                 "current": current,
                 // Data availability, not health: an empty stance table would silently turn every
-                // inference into an unknown slot, and the UI shows "not ready" instead of a wall of
-                // dashes.
+                // inference into an unknown slot, so the UI says "not ready" instead.
                 "ready": tables_ready(),
             }
         })
@@ -196,19 +170,14 @@ impl crate::Defines for ComboModule {
         "combo"
     }
 
-    /// `comboModule.setCorrectionsProvider(…)`'s answer, PUSHED (JOS-482).
+    /// `comboModule.setCorrectionsProvider(…)`'s answer, pushed.
     ///
-    /// AND IT MARKS STALE, which is the half `ipc/combo.ts republish()` exists for and the half a
-    /// define could quietly skip: a correction re-labels an arbitrary span and advances no log seq,
-    /// so `useModule`'s `d.seq <= knownSeq` dedupe would drop the very push that carries it
-    /// (JOS-87, measured in the running app before it was fixed). The revision IS this module's
-    /// published `seq`, so bumping it here is what makes a correction written on an idle log
-    /// visible at all.
+    /// It must mark stale: a correction re-labels an arbitrary span and advances no log seq, so a
+    /// reader deduping on `seq` would drop the very push that carries it.
     ///
-    /// A CORRECTION IS REFUSED WHOLE, never filtered: one to three DISTINCT class codes out of the
-    /// closed set, a start at or after the launch epoch (an older one describes the wiped beta
-    /// character), and an end that is either absent or not before the start. That is `ipc/combo.ts`
-    /// validating at its door, and the engine is a second door onto the same state.
+    /// A correction is refused whole, never filtered: one to three distinct class codes out of the
+    /// closed set, a start at or after the launch epoch, and an end that is either absent or not
+    /// before the start. The engine is a second door onto state `ipc/combo.ts` validates too.
     fn define(&mut self, payload: &Value) {
         let Some(list) = payload.as_array() else {
             return;
@@ -245,8 +214,8 @@ fn read_correction(v: &Value, launch_ms: i64) -> Option<ComboCorrection> {
     let mut classes: Vec<ClassAbbr> = Vec::new();
     for c in raw {
         let abbr = as_class_abbr(c.as_str()?)?;
-        // Deduped by REFUSAL rather than by filtering — `[ENC, ENC]` is not a one-class loadout,
-        // it is a payload the app's own validator would have rejected.
+        // Deduped by refusal, not by filtering: `[ENC, ENC]` is not a one-class loadout, it is a
+        // payload the app's own validator would have rejected.
         if classes.contains(&abbr) {
             return None;
         }

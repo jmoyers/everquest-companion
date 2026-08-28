@@ -10,6 +10,7 @@
 // A level nothing has stated is `level: null` with two empty strings, which is exactly what the
 // surfaces already do with it: omit the chip, print no cue, hang no tooltip.
 
+import { useMemo } from 'react'
 import type { CharacterSnap, ProgressionSnap } from '@shared/types'
 import { currentLevelRead } from '@shared/currentLevel'
 import { useModule } from '../../lib/useModule'
@@ -29,9 +30,18 @@ export interface StatedLevel {
  * is measured against (never the wall clock, which would call a freshly-loaded log three weeks
  * stale) and the ding-tail fallback for the frame before the character module hydrates.
  */
+/**
+ * MEMOIZED ON ITS TWO INPUTS (JOS-511 item 2). `currentLevelRead` walks the ding tail to date the
+ * statement, and it ran on EVERY render of the tab — including every pointer-driven one — because
+ * an unmemoized call has no way not to. Both the read and the flattened object are kept: the object
+ * is what the hero cards take, so a fresh one per render is three changed props on them as well.
+ */
 export function useStatedLevel(prog: ProgressionSnap): StatedLevel {
   const who = useModule<CharacterSnap>('character')
-  const read = currentLevelRead(who?.level, prog)
-  if (!read) return { level: null, cue: '', title: '' }
-  return { level: read.level, cue: read.cue, title: read.title }
+  const level = who?.level
+  return useMemo(() => {
+    const read = currentLevelRead(level, prog)
+    if (!read) return { level: null, cue: '', title: '' }
+    return { level: read.level, cue: read.cue, title: read.title }
+  }, [level, prog])
 }

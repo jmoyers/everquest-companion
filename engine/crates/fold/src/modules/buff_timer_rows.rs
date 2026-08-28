@@ -1,38 +1,18 @@
-//! `src/shared/buffTimers.ts` — THE TIMER-ROW PROJECTION, ported (JOS-487).
+//! The timer-row projection: one fold over `buffs.active` and `buffTimers.holds`/`.ends`, producing
+//! the rows the two floating timer windows draw. Pure — no Electron, no React, no clock.
 //!
-//! One fold over two modules' published state — `buffs.active` and `buffTimers.holds`/`.ends` —
-//! producing the rows the two floating timer windows draw. Over there it is a SHARED file the
-//! renderer imports, which is exactly why it can move: it is pure, it holds no Electron and no
-//! React, and both surfaces are folded from its one output rather than from two models.
+//! It lives in `fold` because two callers need it and only one of them is a view: the serve layer
+//! cuts windows out of it, and the alerts evaluator needs the same rows to know when a running timer
+//! ENDS — the early-warning offset is `started_ts + duration_ms - sec * 1000`.
 //!
-//! ── WHY IT LIVES IN `fold` AND NOT IN THE VIEW LAYER ───────────────────────────────────────────
+//! The rows carry no clock. Each carries its own `started_ts` and its own mode, and what a row reads
+//! at an instant is a separate pure function ([`timer_reading`]), which is what lets a renderer tick
+//! at 1 Hz without another round trip.
 //!
-//! Because two callers need it and only one of them is a view. `engined`'s `timers.rows` source
-//! cuts windows out of it, and the ALERTS evaluator needs the same rows to answer the JOS-216
-//! early-warning offset: `earlyWarnFireAt(row, sec)` is `row.startedTs + row.durationMs - sec*1000`,
-//! so a def with an `earlyWarnSec` cannot fire at the right instant until something engine-side can
-//! say when a running timer ENDS. That is the named gap JOS-482 left behind (`earlyWarnSec` defs are
-//! compiled OUT rather than fired wrong), and this is the half of it that was missing. Putting the
-//! projection in the serve layer would have put it on the wrong side of the fold from its second
-//! caller.
-//!
-//! ── THE ROWS CARRY NO CLOCK, AND THAT IS THE DESIGN OVER THERE TOO ─────────────────────────────
-//!
-//! `buildTimerRows` takes no `now`. Every row carries its own `startedTs` and its own MODE, and
-//! what a row READS at an instant is a separate pure function ([`timer_reading`]). That split is
-//! what lets a renderer tick at 1 Hz without another round trip, and it is why this file has no
-//! wall clock in it — which is also ruling 18 law 1 (determinism is cacheability) getting the answer
-//! it wants for free.
-//!
-//! ── ONE DIVERGENCE, STATED ─────────────────────────────────────────────────────────────────────
-//!
-//! `compareRows` ends in `a.name.localeCompare(b.name)`. This crate cannot: a host collation in the
-//! fold or the serve path makes the answer a property of the machine, which is the same rule that
-//! forbids `localeCompare` in `views::Field::Text` and the same reason `loot.ledger` sorts by code
-//! point. The tiebreak here is therefore a CODE POINT comparison, and the consequence is stated
-//! rather than hidden: two rows whose modes and end instants are identical and whose names differ
-//! only by an accent order differently here than the current renderer orders them. Every other term
-//! of the comparison is exact.
+//! One divergence, stated: the final tiebreak is a CODE POINT comparison, because a host collation
+//! in the fold would make the answer a property of the machine. Two rows whose modes and end
+//! instants are identical and whose names differ only by an accent therefore order differently here
+//! than in the renderer. Every other term of the comparison is exact.
 
 use eqlog::jsstr::js_trim;
 use regex::Regex;
@@ -44,21 +24,18 @@ use crate::modules::buffs_view::ActiveBuff;
 
 /// How a row's time is read.
 ///
-///   * `Countdown` — the estimator STATES a duration: a receding bar, `duration_ms` present.
-///   * `Elapsed` — nobody states one: time counts UP from the landing, `duration_ms` absent.
-///   * `Permanent` — a self-cast illusion under the Permanent Illusion AA: no timer at all.
+///   * `Countdown` — the estimator states a duration: a receding bar, `duration_ms` present.
+///   * `Elapsed` — nobody states one: time counts up from the landing, `duration_ms` absent.
+///   * `Permanent` — a spell that never expires: no timer at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerMode {
-    /// `'countdown'`.
     Countdown,
-    /// `'elapsed'`.
     Elapsed,
-    /// `'permanent'`.
     Permanent,
 }
 
 impl TimerMode {
-    /// The wire spelling — what the renderer's `TimerMode` union calls it.
+    /// The wire spelling the renderer's union expects.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -72,9 +49,7 @@ impl TimerMode {
 /// Which of the two timer windows a row belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerSurface {
-    /// The BUFFS window.
     Buffs,
-    /// The DEBUFFS window.
     Debuffs,
 }
 
@@ -97,7 +72,6 @@ pub enum RowKind {
     Buff,
     /// A detrimental spell you put on something else.
     Debuff,
-    /// A crowd-control hold.
     Cc,
 }
 
@@ -113,7 +87,7 @@ impl RowKind {
     }
 }
 
-/// Self rows render first, then one block per target. PRESENTATION ONLY (world-model law 4).
+/// Self rows render first, then one block per target. Presentation only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowGroup {
     /// On you.
@@ -133,54 +107,48 @@ impl RowGroup {
     }
 }
 
-/// ONE TIMER ROW — `shared/buffTimers.ts BuffTimerRow`, field for field.
+/// One timer row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuffTimerRow {
     /// Stable across ticks so keys and selectors do not churn.
     pub id: String,
-    /// What kind of thing this is.
     pub kind: RowKind,
     /// The resolved spell name, or the candidate names joined when the landing sentence is shared.
     ///
-    /// For a buff/debuff row this is `ActiveBuff.spell` — the DB's own name (JOS-238). A CC hold's
-    /// is still the RANKED name off its cast line, and the difference is deliberate: nothing
-    /// downstream of a hold matches on the string, and JOS-126 asked for the rank to be visible on
-    /// exactly those rows.
+    /// For a buff/debuff row this is the DB's own name; a CC hold's is the RANKED name off its cast
+    /// line. The difference is deliberate — nothing downstream of a hold matches on the string, and
+    /// the rank is wanted on exactly those rows.
     pub name: String,
-    /// DISPLAY ONLY: the ranked text the cast line spelled, when it differs from `name`.
+    /// Display only: the ranked text the cast line spelled, when it differs from `name`.
     pub cast_name: Option<String>,
-    /// Present only when the row is a FAMILY: every spell the line could be (JOS-84).
+    /// Present only when the row is a FAMILY: every spell the line could be.
     pub candidates: Option<Vec<String>>,
     /// True when `name` is a family rather than a spell — drives the `~` chip.
     pub ambiguous: bool,
-    /// Which block it renders in.
     pub group: RowGroup,
     /// Who it is on. Absent for a self row.
     pub target: Option<String>,
-    /// That target's canonical key.
     pub target_key: Option<String>,
-    /// True when `target` is the model's INFERENCE, never a name a sentence stated.
+    /// True when `target` is the model's inference, never a name a sentence stated.
     pub inferred_target: bool,
-    /// The event ts the instance landed. NOT A WALL CLOCK: a BUFF's is shifted forward by an
-    /// offline absence (EQ pauses buff timers while you are camped) and a DEBUFF's is not, so
-    /// elapsed and remaining are the only honest readings and this must never be printed as a
-    /// time of day.
+    /// The event ts the instance landed. Not a wall clock: a BUFF's is shifted forward by an offline
+    /// absence (EQ pauses buff timers while you are camped) and a DEBUFF's is not, so elapsed and
+    /// remaining are the only honest readings and this must never be printed as a time of day.
     pub started_ts: i64,
-    /// True when the spell CALMS its target (JOS-213) — the one reason a `buff` row belongs to the
-    /// debuffs window.
+    /// True when the spell CALMS its target — the one reason a `buff` row belongs to the debuffs
+    /// window.
     pub calms_target: bool,
-    /// How its time is read.
     pub mode: TimerMode,
-    /// ONLY on `Countdown`, and only a number the shared estimator stated.
+    /// Only on `Countdown`, and only a number the shared estimator stated.
     pub duration_ms: Option<i64>,
-    /// How many entities of this row's display name are holding it (JOS-140 ruling 7). `None` for
-    /// the ordinary one; 2+ draws the count chip, and `started_ts` is then the OLDEST of them.
+    /// How many entities of this row's display name are holding it. `None` for the ordinary one;
+    /// 2+ draws the count chip, and `started_ts` is then the OLDEST of them.
     pub count: Option<i64>,
     /// The allowlisted external who cast it; `None` for your own.
     pub caster: Option<String>,
 }
 
-/// WHAT A ROW READS RIGHT NOW. `fraction` is 1 at the landing and 0 at or after the stated end.
+/// What a row reads right now. `fraction` is 1 at the landing and 0 at or after the stated end.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimerReading {
     /// How long since the landing, never negative.
@@ -193,9 +161,7 @@ pub struct TimerReading {
     pub overdue: bool,
 }
 
-/// Read one row against an instant — `timerReading`, verbatim.
-///
-/// THE CLOCK IS THE CALLER'S, always. Nothing in this file reads one.
+/// Read one row against an instant. The clock is always the caller's; nothing here reads one.
 #[must_use]
 pub fn timer_reading(row: &BuffTimerRow, now_ms: i64) -> TimerReading {
     let elapsed_ms = (now_ms - row.started_ts).max(0);
@@ -229,12 +195,10 @@ pub fn timer_reading(row: &BuffTimerRow, now_ms: i64) -> TimerReading {
     }
 }
 
-/// WHEN A RUNNING COUNTDOWN ENDS, on the log's own clock — or `None` for a row that states no
-/// duration.
+/// When a running countdown ends, on the log's own clock — or `None` for a row stating no duration.
 ///
-/// THE HALF THE EARLY-WARNING OFFSET WAS MISSING (JOS-216 / the JOS-482 gap). `earlyWarnFireAt` is
-/// this minus the user's offset, and it is spelled here rather than in the evaluator so that the
-/// instant a row ends has one definition on this side of the boundary.
+/// The early-warning fire instant is this minus the user's offset. It is spelled here rather than in
+/// the alerts evaluator so the instant a row ends has one definition on this side of the boundary.
 #[must_use]
 pub fn timer_ends_at(row: &BuffTimerRow) -> Option<i64> {
     if row.mode != TimerMode::Countdown {
@@ -243,36 +207,33 @@ pub fn timer_ends_at(row: &BuffTimerRow) -> Option<i64> {
     row.duration_ms.map(|d| row.started_ts + d)
 }
 
-/// The rank tail a spell name may carry. `parser.spellCanonKey`'s own pattern, kept local for the
-/// reason the TS keeps it local: `shared/` never reaches into main.
+/// The rank tail a spell name may carry.
 fn rank_tail() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?i) (?:I|II|III|IV|V|VI|VII|VIII|IX|X)$").unwrap())
 }
 
-/// A row's spell name folded to its FAMILY, case kept — `timerNameBase`.
+/// A row's spell name folded to its FAMILY, case kept.
 ///
-/// The name a WEAR-OFF LINE prints: a row's name comes from the ranked cast line
-/// (`Mesmerization VII`) and every `Your <X> spell has worn off of <mob>.` is rank-LESS (measured
-/// over the owner's whole log: 3,382 of 3,383), so this is the spelling a break-family def is
-/// compared against — and it keeps its display casing because the firing SPEAKS it.
+/// This is the spelling a wear-off line prints: a row's name comes from the ranked cast line, and
+/// `Your <X> spell has worn off of <mob>.` is rank-less (measured: 3,382 of 3,383 over the owner's
+/// whole log). Casing is kept because a firing alert speaks the name.
 #[must_use]
 pub fn timer_name_base(name: &str) -> String {
     js_trim(&rank_tail().replace(js_trim(name), "")).to_owned()
 }
 
-/// The same fold, case-folded — `timerNameKey`. What row ids are built from.
+/// The same fold, case-folded. What row ids are built from.
 #[must_use]
 pub fn timer_name_key(name: &str) -> String {
     timer_name_base(name).to_lowercase()
 }
 
-/// THE RANK A ROW MAY PRINT — the numeral off the cast line, or nothing (JOS-238).
+/// The rank a row may print — the numeral off the cast line, or nothing.
 ///
-/// Two refusals, both deliberate. The two strings must fold to the SAME line under
-/// [`timer_name_key`], or the chip would be a rank belonging to some other spell; and a `cast_name`
-/// with no rank tail yields nothing, because "the cast line spelled it differently" is not by
-/// itself a rank.
+/// Two refusals. The two strings must fold to the SAME line, or the chip would be a rank belonging
+/// to another spell; and a `cast_name` with no rank tail yields nothing, because "the cast line
+/// spelled it differently" is not by itself a rank.
 #[must_use]
 pub fn row_rank_label(name: &str, cast_name: Option<&str>) -> Option<String> {
     let cast = cast_name?;
@@ -285,21 +246,19 @@ pub fn row_rank_label(name: &str, cast_name: Option<&str>) -> Option<String> {
         .map(|m| js_trim(m.as_str()).to_uppercase())
 }
 
-/// Canonical entity key — `parseCommon.idKey`, mirrored for the reason above.
+/// Canonical entity key.
 fn entity_key_of(name: &str) -> String {
     js_trim(name).to_lowercase()
 }
 
-/// WHICH WINDOW A ROW BELONGS TO (JOS-119/JOS-213/JOS-413) — the whole split, as one function.
+/// Which window a row belongs to — the whole split, as one function.
 ///
-/// `buff` goes to the BUFFS window and `debuff`/`cc` to the DEBUFFS window, and `group` is NOT the
+/// `buff` goes to the buffs window and `debuff`/`cc` to the debuffs window. `group` is NOT the
 /// discriminator: a Symbol on your pet and a Valor on the cleric you buffed are `group: target` and
-/// are still BUFFS. The ONE exception is a spell that CALMS its target — a Pacify is `Beneficial`
-/// in the committed catalog, so its `cls` is `buff`, and the aggro clock the player is watching
-/// belongs on the surface that shows every other mob-state timer. Nothing here reads `group`,
-/// `target` or `disposition`, which is the lesson of the first cut: an ally is a named target and
-/// so is a mob, and a friendly buff on somebody the model has lost track of must never become a
-/// debuff.
+/// are still buffs. The one exception is a spell that CALMS its target — a Pacify is beneficial in
+/// the committed catalog, so its class is `buff`, but the aggro clock belongs beside the other
+/// mob-state timers. Nothing here may read `group`, `target` or `disposition`: an ally is a named
+/// target and so is a mob, and a friendly buff on somebody the model lost track of is not a debuff.
 #[must_use]
 pub fn timer_row_surface(row: &BuffTimerRow) -> TimerSurface {
     if row.kind == RowKind::Buff && !row.calms_target {
@@ -309,7 +268,7 @@ pub fn timer_row_surface(row: &BuffTimerRow) -> TimerSurface {
     }
 }
 
-/// The row a CC hold projects to — `ccRow`.
+/// The row a CC hold projects to.
 fn cc_row(h: &CcHold) -> BuffTimerRow {
     let family = if h.candidates.is_empty() {
         "Crowd control".to_owned()
@@ -349,12 +308,9 @@ fn cc_row(h: &CcHold) -> BuffTimerRow {
     }
 }
 
-/// THE LAW, as one decision (JOS-117): the estimator's duration — max(DB floor, recent observed
-/// max) — earns a receding countdown; nothing else does.
-///
-/// `overlay_duration_ms` is the whole discriminator. A permanent buff never counts down. A buff the
-/// model can put no honest number on counts UP instead and carries no duration at all, so nothing
-/// downstream can draw a bar from it.
+/// Only the estimator's duration — max(DB floor, recent observed max) — earns a receding countdown.
+/// A permanent buff never counts down, and a buff the model can put no honest number on counts UP
+/// carrying no duration at all, so nothing downstream can draw a bar from it.
 fn timer_mode_of(b: &ActiveBuff) -> (TimerMode, Option<i64>) {
     if b.permanent == Some(true) {
         return (TimerMode::Permanent, None);
@@ -365,7 +321,7 @@ fn timer_mode_of(b: &ActiveBuff) -> (TimerMode, Option<i64>) {
     }
 }
 
-/// The row an `ActiveBuff` projects to — `buffRow` plus `buffRowExtras`.
+/// The row an `ActiveBuff` projects to.
 fn buff_row(b: &ActiveBuff) -> BuffTimerRow {
     let target_key = if b.is_self {
         None
@@ -389,8 +345,7 @@ fn buff_row(b: &ActiveBuff) -> BuffTimerRow {
             BuffClass::Debuff => RowKind::Debuff,
         },
         name: b.spell.clone(),
-        // `castName != spell` is the whole test over there, and it is a raw string comparison
-        // rather than a folded one: the chip exists to show a DIFFERENCE.
+        // A raw string comparison rather than a folded one: the chip exists to show a DIFFERENCE.
         cast_name: b.cast_name.clone().filter(|c| *c != b.spell),
         candidates: b.candidates.clone(),
         ambiguous: b.candidates.is_some(),
@@ -417,11 +372,10 @@ fn buff_row(b: &ActiveBuff) -> BuffTimerRow {
 
 /// True when the CC ledger has recorded an END for this active instance at or after it landed.
 ///
-/// The §3.3 correction: `Your <mez> spell has worn off of <mob>.` routes to `cc {refresh:true}`
-/// rather than `buffFade`, so the buffs model never clears the instance and it lingers to the
-/// 90-minute hygiene cap. Correcting it in the instance store would also mint a land→fade DURATION
-/// SAMPLE and move mined statistics across the whole golden suite, so the correction lives in the
-/// projection and is exactly one rule wide.
+/// `Your <mez> spell has worn off of <mob>.` routes to the CC half rather than to `buffFade`, so the
+/// buffs model never clears the instance and it would linger to the 90-minute hygiene cap.
+/// Correcting it in the instance store would also mint a land→fade duration sample, so the
+/// correction lives in the projection and is exactly one rule wide.
 fn ended_by_cc(b: &ActiveBuff, ends: &[CcEnd]) -> bool {
     if b.is_self {
         return false;
@@ -442,11 +396,10 @@ fn ended_by_cc(b: &ActiveBuff, ends: &[CcEnd]) -> bool {
 
 /// Soonest-to-expire first; countdowns ahead of count-ups; then oldest first, then by name.
 ///
-/// THE RANK IS THE ANSWER TO "where do the rows with no number go" (JOS-140): AFTER the timed ones.
-/// A row that states no duration is counting UP and cannot be placed on a soonest-to-expire axis at
-/// all, so putting it above a bar that is about to break would be sorting by a number it does not
-/// have. Permanent rows come last for the same reason, one step further: they are never going to
-/// expire. The final term is a CODE POINT comparison — see the module header for the divergence.
+/// Rows with no number go AFTER the timed ones: a row counting up cannot be placed on a
+/// soonest-to-expire axis at all, so putting it above a bar about to break would be sorting by a
+/// number it does not have. Permanent rows come last, one step further. The final term is a code
+/// point comparison — see the module header for the divergence.
 #[must_use]
 pub fn compare_rows(a: &BuffTimerRow, b: &BuffTimerRow) -> std::cmp::Ordering {
     let rank = |r: &BuffTimerRow| match r.mode {
@@ -470,15 +423,12 @@ pub fn compare_rows(a: &BuffTimerRow, b: &BuffTimerRow) -> std::cmp::Ordering {
     a.name.cmp(&b.name)
 }
 
-/// THE PROJECTION — `buildTimerRows`.
+/// The projection: self rows first, then one block per target with that target's rows together,
+/// targets ordered by their soonest row.
 ///
-/// Self rows first (law 4's presentation order), then one block per target with that target's rows
-/// together, targets ordered by their soonest row.
-///
-/// A CC HOLD AND AN `ActiveBuff` CAN DESCRIBE THE SAME MEZ: a spell whose landing sentence the
-/// catalog matcher DID see becomes an `ActiveBuff`, and its `<mob> has been …` siblings become
-/// holds. Where both exist for one (mob, spell), the HOLD WINS — it is the half that knows about
-/// break lines.
+/// A CC hold and an `ActiveBuff` can describe the same mez — a landing sentence the catalog matcher
+/// saw becomes an `ActiveBuff` while its `<mob> has been …` siblings become holds. Where both exist
+/// for one (mob, spell) the HOLD WINS: it is the half that knows about break lines.
 #[must_use]
 pub fn build_timer_rows(
     active: &[ActiveBuff],
@@ -516,9 +466,8 @@ pub fn build_timer_rows(
     }
 
     let mut self_rows: Vec<BuffTimerRow> = Vec::new();
-    // INSERTION-ORDERED GROUPS, because the TS builds them in a `Map` and a `Map` iterates in
-    // insertion order. The group ORDER is re-sorted below, but two groups whose first rows compare
-    // equal keep the order they were first seen in — which a `BTreeMap` keyed by target would
+    // Insertion-ordered groups. The group order is re-sorted below, but two groups whose first rows
+    // compare equal keep the order they were first seen in — which a map keyed by target would
     // silently change to alphabetical.
     let mut order: Vec<String> = Vec::new();
     let mut by_target: std::collections::HashMap<String, Vec<BuffTimerRow>> =
@@ -547,8 +496,7 @@ pub fn build_timer_rows(
             g
         })
         .collect();
-    // A STABLE SORT over the groups, exactly as `Array.prototype.sort` is in V8 — which is what
-    // makes the insertion order above load-bearing rather than decorative.
+    // A STABLE sort over the groups, which is what makes the insertion order above load-bearing.
     groups.sort_by(|a, b| compare_rows(&a[0], &b[0]));
 
     let mut out = self_rows;
@@ -558,13 +506,10 @@ pub fn build_timer_rows(
     out
 }
 
-/// THE ROW ORDER ONE WINDOW DRAWS (JOS-140) — `orderTimerRows`.
-///
-/// [`build_timer_rows`] is the MODEL's order (self first, then per-target blocks) and stays exactly
-/// that, because both windows are folded from it. This is the presentation choice on top, per
-/// window: `target` hands the projection back untouched, `none` re-sorts the same rows into ONE
-/// flat list, soonest to expire first — which is what the debuffs window opens on, because a player
-/// chain-mezzing reads the next thing to break rather than the roster of mobs.
+/// The row order one window draws — the presentation choice on top of [`build_timer_rows`], which
+/// stays the model's order because both windows are folded from it. Grouping by target hands the
+/// projection back untouched; otherwise the same rows are re-sorted into one flat soonest-first
+/// list, which is what the debuffs window opens on.
 #[must_use]
 pub fn order_timer_rows(rows: &[BuffTimerRow], group_by_target: bool) -> Vec<BuffTimerRow> {
     let mut out = rows.to_vec();
@@ -635,10 +580,9 @@ mod tests {
             row_rank_label("Mesmerization", Some("Mesmerization vii")).as_deref(),
             Some("VII")
         );
-        // …a cast name that folds to a DIFFERENT spell yields nothing, or the chip would be some
-        // other spell's rank.
+        // A cast name folding to a different spell yields nothing.
         assert_eq!(row_rank_label("Mesmerization", Some("Enthrall II")), None);
-        // …and a cast name with no rank tail is not a rank.
+        // A cast name with no rank tail is not a rank.
         assert_eq!(row_rank_label("Clarity", Some("clarity")), None);
         // A name that IS a numeral keeps it: the pattern needs a space before the tail.
         assert_eq!(timer_name_base("V"), "V");
@@ -662,7 +606,7 @@ mod tests {
         assert_eq!(rows[1].mode, TimerMode::Elapsed);
         assert_eq!(rows[1].duration_ms, None, "a count-up carries no number");
 
-        // AND THE END INSTANT IS THE HALF EARLY WARNING NEEDS.
+        // The end instant is the half early warning needs.
         assert_eq!(timer_ends_at(&rows[0]), Some(61_000));
         assert_eq!(timer_ends_at(&rows[1]), None);
     }
@@ -685,18 +629,18 @@ mod tests {
         assert_eq!(half.remaining_ms, Some(30_000));
         assert!((half.fraction - 0.5).abs() < 1e-9);
         assert!(!half.overdue);
-        // A countdown never reads negative; it reads OVERDUE, which is a different sentence.
+        // A countdown never reads negative; it reads overdue.
         let past = timer_reading(&rows[0], 200_000);
         assert_eq!(past.remaining_ms, Some(0));
         assert!(past.overdue);
-        // …and a clock behind the landing is clamped rather than negative.
+        // A clock behind the landing is clamped rather than negative.
         assert_eq!(timer_reading(&rows[0], 0).elapsed_ms, 0);
     }
 
     #[test]
     fn a_hold_wins_over_the_active_instance_describing_the_same_mez() {
-        // THE DEDUPE `buildTimerRows` OPENS WITH. One mez, seen twice: the catalog matcher made an
-        // ActiveBuff of the landing sentence and the CC ledger made a hold of its sibling.
+        // One mez seen twice: the catalog matcher made an ActiveBuff of the landing sentence and
+        // the CC ledger made a hold of its sibling.
         let mut mez = buff("Mesmerization", 1_000, Some(96_000));
         mez.is_self = false;
         mez.cls = BuffClass::Debuff;
@@ -728,7 +672,7 @@ mod tests {
             spell: Some("Mesmerization VII".to_owned()),
         }];
         assert!(build_timer_rows(&[mez.clone()], &[], &ends).is_empty());
-        // …but an end BEFORE the landing is a different hold and clears nothing.
+        // An end BEFORE the landing is a different hold and clears nothing.
         let earlier = [CcEnd {
             key: "a sand giant".to_owned(),
             ts: 500,
@@ -756,13 +700,13 @@ mod tests {
         assert_eq!(rows[1].target_key.as_deref(), Some("rowel"));
         assert_eq!(rows[2].target_key.as_deref(), Some("gybartik"));
 
-        // …and the flat order is the same rows sorted soonest-first, blocks ignored.
+        // The flat order is the same rows sorted soonest-first, blocks ignored.
         let flat = order_timer_rows(&rows, false);
         assert_eq!(
             flat.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
             ["Valor", "Symbol of Ryltan", "Clarity"]
         );
-        // …and grouping by target hands the projection back untouched.
+        // Grouping by target hands the projection back untouched.
         assert_eq!(order_timer_rows(&rows, true), rows);
     }
 
@@ -775,8 +719,8 @@ mod tests {
         let rows = build_timer_rows(&[pacify], &[], &[]);
         assert_eq!(rows[0].kind, RowKind::Buff);
         assert_eq!(timer_row_surface(&rows[0]), TimerSurface::Debuffs);
-        // …and an ordinary buff on the very same kind of target is still a BUFF row. Nothing here
-        // reads `group`, `target` or `disposition` — that was the first cut's measured mistake.
+        // An ordinary buff on the very same kind of target is still a BUFF row: nothing here reads
+        // `group`, `target` or `disposition`.
         let mut valor = buff("Valor", 1_000, Some(60_000));
         valor.is_self = false;
         valor.target = Some("an icy terror".to_owned());
@@ -795,7 +739,7 @@ mod tests {
         assert_eq!(rows[0].mode, TimerMode::Elapsed);
         assert_eq!(rows[0].id, "cc|a sand giant|mesmerize+mesmerization");
 
-        // A hold with no candidates at all still draws SOMETHING readable.
+        // A hold with no candidates at all still draws something readable.
         let mut bare = hold("a sand giant", "a sand giant", None, 1_000);
         bare.candidates = Vec::new();
         let rows = build_timer_rows(&[], &[bare], &[]);

@@ -1,28 +1,35 @@
 //! `src/main/modules/kills.ts` plus the pure core it reuses from `src/main/log/reducers.ts`
 //! (`isCountedKill`, `recordKill`) and `src/shared/kills.ts` (`killTotals`).
 //!
-//! THE FOUR SCALARS ARE DERIVED, NEVER INCREMENTED. `tiers` is the record; `kill_totals` folds it
-//! after every write. That is what keeps `bestTier` and `lastTs` from describing two different
-//! kills — the misattribution the per-tier shape replaced (shared/kills.ts's header carries it).
+//! The four scalars are derived, never incremented: `tiers` is the record and `kill_totals` folds
+//! it after every write, so `bestTier` and `lastTs` cannot describe two different kills.
 //!
-//! THE CREDIT JOIN, with `progression.ts`'s exact semantics: an experience line claims BACKWARD
-//! inside `KILL_EXP_JOIN_MS`, a claim CONSUMES the line so it can never credit two kills, and
-//! EVERY death line consumes — including the ones this module does not count. An unclaimed older
-//! line is replaced rather than kept, because handing a stale line to a later kill would be a
-//! fabricated attribution.
+//! The credit join carries `progression.ts`'s exact semantics: an experience line claims BACKWARD
+//! inside `KILL_EXP_JOIN_MS`, a claim CONSUMES the line, and every death line consumes — including
+//! the ones this module does not count. An unclaimed older line is replaced rather than kept: a
+//! stale line handed to a later kill is a fabricated attribution.
 //!
-//! THE TIER IS THE ZONE YOU WERE STANDING IN, and `zoneTier` answers with four kinds of thing
-//! (JOS-166). `zone.unwrap_or("")` is a REAL ANSWER rather than a fallback: a kill folded before
-//! the first `You have entered` states nothing about where it happened and is not permitted to
-//! claim d0 — `zone_tier("")` is `TIER_UNKNOWN` for exactly that.
+//! The tier is the zone you were standing in. `zone.unwrap_or("")` is a real answer rather than a
+//! fallback: a kill folded before the first `You have entered` may not claim d0, and
+//! `zone_tier("")` is `TIER_UNKNOWN` for exactly that.
+//!
+//! A bare zone name is not always the open world — a base-difficulty raid or personal instance
+//! prints the same bare `You have entered <zone>.` line the open world does. So this module
+//! remembers the creating-instance notice, and it lives here rather than in `zone_tier`, which is a
+//! pure fold of a NAME shared with other readers. Four properties keep the memory honest: it is
+//! EVIDENCE, not proximity (a later bare re-entry with no fresh notice still stamps d0); it
+//! overrides `TIER_OPEN_WORLD` and nothing else (d1-d4 and the suffixed d0 already state an
+//! instance, and `TIER_UNKNOWN` stays unknown — law 1); it expires, checked at use so nothing has
+//! to sweep; and it is character-scoped, cleared by the epoch alongside the KillMap.
 
 use crate::event::Event;
-use crate::jsfn::{starts_with_you_word, zone_tier, TIER_UNKNOWN};
+use crate::jsfn::{starts_with_you_word, zone_id_key, zone_tier, TIER_OPEN_WORLD, TIER_UNKNOWN};
 use crate::jsmap::JsMap;
 use crate::EqModule;
 use eqlog::names::id_key;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 /// `shared/kills.ts KILLS_SHAPE_VERSION`.
 const KILLS_SHAPE_VERSION: i64 = 5;
@@ -30,6 +37,14 @@ const KILLS_SHAPE_VERSION: i64 = 5;
 /// `shared/kills.ts KILL_EXP_JOIN_MS` — how far back a kill line may reach for the exp line that
 /// credits it. Measured at 0–1 s; 2.5 s is slack over the observed spread, not a hunt.
 const KILL_EXP_JOIN_MS: i64 = 2500;
+
+/// How long a remembered creating-instance notice keeps answering for its zone.
+///
+/// Seven days is the weekly lockout period — the longest span over which the answer could still
+/// matter. It is a bound on a memory, not a measurement: the game states nothing about when an
+/// instance dies. Generous in the direction that costs least, since an expired notice just returns
+/// the kill to the open world.
+const INSTANCE_NOTICE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +75,15 @@ pub struct KillsModule {
     seq: i64,
     /// The experience line the next kill line may claim — the timestamp is all this module needs.
     pending_exp_ts: Option<i64>,
+    /// The instance memory — `zoneIdKey` of a zone seen to have an instance created, against the
+    /// timestamp of the most recent such notice.
+    ///
+    /// A plain `HashMap` rather than a [`JsMap`]: nothing publishes it, so no iteration order of it
+    /// is observable. The ordered map is only right where a `values()` walk reaches a snapshot.
+    instances: HashMap<String, i64>,
+    /// The announce cursor — see [`crate::announce`]. Only a recorded kill and a rebirth change the
+    /// KillMap, which is the whole of `snapshot()`; the other four arms mutate state nobody reads.
+    announce: crate::announce::Announce,
 }
 
 impl KillsModule {
@@ -74,13 +98,25 @@ impl KillsModule {
             None => false,
         }
     }
+
+    /// Is there a live creating-instance notice for this zone at `ts`?
+    ///
+    /// Reading rather than consuming, unlike [`Self::take_exp`] beside it: an experience line
+    /// credits exactly one kill, while one instance holds a whole evening's clear. The window has
+    /// the same shape as the credit join's, so a notice can never reach a kill that preceded it.
+    fn inside_a_remembered_instance(&self, zone: &str, ts: i64) -> bool {
+        match self.instances.get(&zone_id_key(zone)) {
+            Some(&at) => ts >= at && ts - at <= INSTANCE_NOTICE_TTL_MS,
+            None => false,
+        }
+    }
 }
 
 /// `shared/kills.ts killTotals` — the five scalars, folded from the per-tier runs.
 ///
-/// `bestTier` seeds at the FLOOR of the key ordering, not at 0: a record whose only runs are
-/// open-world has no difficulty to report, and seeding 0 would have it claim a base-instance clear
-/// it never made. Iteration order cannot move any of these (a max, a min, two sums).
+/// `bestTier` seeds at the floor of the key ordering, not at 0: a record whose only runs are
+/// open-world has no difficulty to report, and seeding 0 would claim a base-instance clear it never
+/// made. Iteration order cannot move any of these (a max, a min, two sums).
 fn kill_totals(tiers: &JsMap<KillTierRun>) -> (i64, i64, i64, i64, i64) {
     let mut count = 0;
     let mut best_tier = TIER_UNKNOWN;
@@ -168,19 +204,33 @@ impl EqModule for KillsModule {
         self.zone = None;
         self.seq = 0;
         self.pending_exp_ts = None;
+        self.instances.clear();
+        self.announce.reset();
     }
 
     fn on_event(&mut self, ev: &Event, _live: bool) {
         self.seq = ev.seq();
         match ev.kind() {
             "epoch" => {
-                // Character rebirth (Task #49): the KillMap belongs to the dead beta character.
+                // Character rebirth: the KillMap belongs to the dead character, and so do the
+                // instances it stood in — a notice names a player, and that player is gone.
                 self.kills.clear();
                 self.pending_exp_ts = None;
+                self.instances.clear();
+                self.announce.changed(self.seq);
                 return;
             }
             "zone" => {
                 self.zone = ev.str("zone").map(str::to_string);
+                return;
+            }
+            "instanceCreate" => {
+                if let Some(zone) = ev.str("zone") {
+                    // A max, not an assignment: a replay is chronological, but a fold must not
+                    // depend on it, and a late older notice must not un-refresh the entry.
+                    let at = self.instances.entry(zone_id_key(zone)).or_insert(ev.ts());
+                    *at = (*at).max(ev.ts());
+                }
                 return;
             }
             "expGain" => {
@@ -190,16 +240,21 @@ impl EqModule for KillsModule {
             "death" => {}
             _ => return,
         }
-        // Consumed BEFORE the counted filter, exactly as progression.ts does it: the line belongs
-        // to the kill it precedes whoever landed the blow, and letting a dropped `slain by You`
-        // twin leave it pending would hand your experience to the next mob that dies near you.
+        // Consumed BEFORE the counted filter, as progression.ts does: the line belongs to the kill
+        // it precedes whoever landed the blow, and leaving it pending would hand your experience to
+        // the next mob that dies near you.
         let credited = self.take_exp(ev.ts());
         if !is_counted_kill(ev) {
             return;
         }
-        let tier = zone_tier(self.zone.as_deref().unwrap_or("")).1;
-        // Key by the canonical lowercase name so the two casings EQ emits for the same mob fold
-        // into one entry; keep the raw name for display.
+        let zone = self.zone.as_deref().unwrap_or("");
+        let mut tier = zone_tier(zone).1;
+        // The narrow override — see the header. Only this one answer moves.
+        if tier == TIER_OPEN_WORLD && self.inside_a_remembered_instance(zone, ev.ts()) {
+            tier = 0;
+        }
+        // Key by the canonical lowercase name so the two casings EQ emits for one mob fold into a
+        // single entry; keep the raw name for display.
         let name = ev.str("name").unwrap_or_default();
         record_kill(
             &mut self.kills,
@@ -209,12 +264,12 @@ impl EqModule for KillsModule {
             ev.ts(),
             credited,
         );
+        self.announce.changed(self.seq);
     }
 
-    /// THE DIRTY BIT (JOS-487) — the same cursor `snapshot` publishes, without building the
-    /// state to read it. See `EqModule::published_seq`.
+    /// Moves on a counted kill, or a rebirth. See the `announce` field.
     fn published_seq(&self) -> Option<i64> {
-        Some(self.seq)
+        Some(self.announce.cursor())
     }
 
     fn snapshot(&self) -> Value {
@@ -232,7 +287,7 @@ fn is_counted_kill(ev: &Event) -> bool {
         return true;
     }
     match ev.str("killer") {
-        // `ev.killer &&` — an EMPTY killer string is falsy in the TS and does not disqualify.
+        // An empty killer string is falsy in the TS and does not disqualify.
         Some(killer) if !killer.is_empty() => !starts_with_you_word(killer),
         _ => true,
     }

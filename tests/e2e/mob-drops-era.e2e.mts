@@ -51,6 +51,14 @@ const CARD_ERA_TOGGLE = '[data-testid="overview-mob-era-toggle"]'
 const NAV_MOBS = '[data-testid="nav-mobs"]'
 const SEARCH = '[data-testid="mobs-search"]'
 const RESULT_ROW = '[data-testid="mobs-result-row"]'
+/**
+ * The BROWSE view's zone roster — "the mobs in the zone you are standing in".
+ *
+ * It is here because it draws `mobs-result-row` too, exactly as the search results do, so "a result
+ * row exists" does NOT mean "the search has been applied". Waiting for this to go is what tells the
+ * two modes apart. See `openMobPage`.
+ */
+const ZONE_ROSTER = '[data-testid="mobs-zone-roster"]'
 const DROP_ROW = '[data-testid="mob-drop-row"]'
 const PAGE_ERA_TOGGLE = '[data-testid="mob-drops-era-toggle"]'
 /** The planner's chip, on a mob page's rows — the identity IS the point (one chip, one verdict). */
@@ -141,6 +149,21 @@ async function openMobPage(page: Page): Promise<boolean> {
   await page.click(NAV_MOBS, { timeout: 15_000 })
   if (!(await appears(page, SEARCH))) return check('the Mobs tab offers its catalog search', false)
   await page.fill(SEARCH, MOB, { timeout: 15_000 })
+  // WAIT FOR THE MODE, NOT FOR "A ROW" (JOS-510). The Mobs tab draws `mobs-result-row` in BOTH of
+  // its modes — the browse view's zone roster and the search results — so a bare "a row appeared"
+  // can be satisfied by the roster that was already on screen before a key was pressed, and the
+  // read below then takes the first mob of the CURRENT ZONE instead of the top search hit.
+  //
+  // It is a real race and it was always here; what exposed it was the served-data store landing the
+  // `character` module (and so the zone) on the tab's FIRST render instead of a round trip later,
+  // which is the improvement that ticket is for. Before it, the roster was still empty at this
+  // instant and waiting for "a row" accidentally meant the right thing. The ranking is separately
+  // low-priority work (`useDeferredValue`), so the browse view legitimately survives a frame or two
+  // past the keystroke either way.
+  //
+  // The roster's disappearance is the honest signal — it is the mode switching, and it says nothing
+  // about WHICH mob ranks first, so the assertion below still has something to prove.
+  await settle(() => countOf(page, ZONE_ROSTER), (n) => n === 0, { timeoutMs: 10_000 })
   if (!(await appears(page, RESULT_ROW))) return check(`the catalog finds ${MOB}`, false)
   // The catalog's own ranking puts the God page first (score ties break on drop count, and 18 is
   // the most of any Cazic-Thule row) — asserted rather than assumed, because the whole spec is

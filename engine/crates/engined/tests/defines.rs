@@ -1,23 +1,14 @@
-//! APP KNOWLEDGE IN, ALERT FIRES OUT — the two directions JOS-482 opens, over a real socket.
+//! App knowledge in, alert fires out, over a real socket.
 //!
-//! Every test here spawns the built binary, stages a log under the product's own file-name shape,
-//! pushes one or more `*.define` commands, and reads what a client would read. What it proves is
-//! the half the fold's own unit tests cannot: that a push made on a CONNECTION THREAD reaches a
-//! fold living on the INGEST thread, at a boundary that fold already reaches, and that the module
-//! state a client can then ask for is the state the push made.
+//! Every test spawns the built binary, stages a log, pushes `*.define` commands and reads what a
+//! client would read — proving what the fold's own unit tests cannot: a push made on a connection
+//! thread reaches the fold living on the ingest thread, and the module state a client can then ask
+//! for is the state the push made.
 //!
-//! IT IS A SELF-CONSISTENCY CLAIM AND DELIBERATELY NOT A SEMANTICS ONE — the same distinction
-//! `tests/module_snapshot.rs` draws. Each family gets ONE WORKED EXAMPLE whose observable effect is
-//! compared against what the TypeScript seam does with the same push (`ipc/alerts.ts setDefs`,
-//! `ipc/respawn.ts setPrefs`, `ipc/combo.ts setCorrection`, `ipc/roster.ts setEdit`,
-//! `ipc/buffTrust.ts setTrust`), read off the module's own published state. Proving the FOLD's
-//! semantics is `npm run oracle:rust-fold`'s job over six slices of the owner's real log, and the
-//! oracle's world pushes nothing at all — which is exactly why these pushes cannot disturb it.
-//!
-//! THE LOG IS WRITTEN HERE, LINE BY LINE, for `tests/views.rs`'s reason: a claim about what one
-//! push changed needs a log whose every event is known. The lines are real EQ shapes and they are
-//! dated after the launch anchor, so the rebirth boundary fires on the zone line before there is
-//! anything to lose.
+//! A self-consistency claim and deliberately not a semantics one: each family gets one worked
+//! example read off the module's own published state. The log is written here line by line, because
+//! a claim about what one push changed needs a log whose every event is known, dated after the
+//! launch anchor so the rebirth boundary fires on the zone line before there is anything to lose.
 
 mod harness;
 
@@ -31,8 +22,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
-
-// ---- the log these tests fold ------------------------------------------------------------------
 
 /// The zone line every scratch log opens with. It fires the rebirth boundary while the world is
 /// still empty, so nothing a test wrote is cleared out from under it.
@@ -54,9 +43,8 @@ const AN_EXTERNAL_CAST: &str = "[Wed Aug 19 16:06:00 2026] Dranix begins casting
 /// A group line, so the roster has a log-derived member for an edit to sit beside.
 const A_JOIN: &str = "[Wed Aug 19 16:07:00 2026] Dranix has joined the group.\n";
 
-/// A cast of YOUR OWN, so the combo model has one class observation to build an interval out of.
-/// A correction RE-LABELS an interval; it does not conjure one, so the log has to say something
-/// about the loadout before there is anything for the user to disagree with.
+/// A cast of your own, so the combo model has one class observation to build an interval out of. A
+/// correction re-labels an interval and does not conjure one.
 const A_SELF_CAST: &str = "[Wed Aug 19 16:08:00 2026] You begin casting Mesmerization.\n";
 
 /// A scratch directory holding one log named the way the product names one.
@@ -102,13 +90,10 @@ impl Drop for Staged {
     }
 }
 
-// ---- reading the stream ------------------------------------------------------------------------
-
 /// One connection, read once, with the fires kept.
 ///
-/// EPOCH FRAMES ARE DROPPED and FIRES ARE KEPT, which is the whole shape of this suite: progress is
-/// connection-wide and arrives whether anybody asked for it, while a fire is the thing under test.
-/// Replies are handed back to the caller that asked for them.
+/// Epoch frames are dropped and fires are kept: progress is connection-wide and arrives whether
+/// anybody asked for it, while a fire is the thing under test.
 struct Conn {
     client: Client,
     fires: Vec<protocol::generated::FireMessage>,
@@ -198,10 +183,8 @@ fn ack_count(result: &ReplyResult) -> Option<i64> {
 
 /// One alert definition, as the store holds one — extra fields and all.
 ///
-/// THE EXTRAS ARE THE POINT of carrying them here: `volume`, `audio` and `note` are fields the
-/// engine's evaluator does not read, and an `AlertDefinition` that refused them would turn every
-/// real store's push into `badParams`. That is the open-object ruling, exercised rather than
-/// asserted.
+/// `volume`, `audio` and `note` are fields the evaluator does not read; a definition type that
+/// refused them would turn every real store's push into `badParams`.
 fn a_def(id: &str, name: &str, trigger: Value) -> Value {
     json!({
         "id": id,
@@ -215,14 +198,11 @@ fn a_def(id: &str, name: &str, trigger: Value) -> Value {
     })
 }
 
-// ---- the tests ---------------------------------------------------------------------------------
-
 #[test]
 fn a_define_pushed_before_an_attach_is_held_and_applied_at_construction() {
-    // THE ORDINARY LAUNCH SHAPE. The app connects, pushes all five, and attaches afterwards — so
-    // the common case is a define made at a world with no fold at all. It is recorded by the world
-    // and applied by the next attach BEFORE the first byte is folded, which is the only timing that
-    // makes a fold reproducible: app knowledge changes what a fold produces.
+    // The ordinary launch shape: the app pushes all five, then attaches. The world records the
+    // define and the next attach applies it before the first byte is folded, which is the only
+    // timing that makes a fold reproducible, since app knowledge changes what a fold produces.
     let staged = Staged::new("held", A_LOOT);
     let engine = Engine::start();
     let mut conn = Conn::new(engine.connected());
@@ -245,9 +225,8 @@ fn a_define_pushed_before_an_attach_is_held_and_applied_at_construction() {
 
 #[test]
 fn a_define_is_a_full_set_replace_and_pushing_twice_is_pushing_once() {
-    // THE COMMAND LAW: push A then push B leaves exactly what pushing B alone would have left. That
-    // is what makes a crash-respawn a replay of the latest push rather than a reconciliation, and
-    // what makes the input hash-friendly for ruling 18's cache key.
+    // The command law: push A then push B leaves exactly what pushing B alone would have left, which
+    // makes a crash-respawn a replay of the latest push rather than a reconciliation.
     let staged = Staged::new("replace", A_LOOT);
     let engine = Engine::start();
     let mut conn = Conn::new(engine.connected());
@@ -282,8 +261,7 @@ fn a_define_is_a_full_set_replace_and_pushing_twice_is_pushing_once() {
 
 #[test]
 fn each_family_changes_the_module_the_typescript_seam_changes() {
-    // ONE WORKED EXAMPLE PER FAMILY, each read off the module's own published state — the same
-    // state `module.snapshot` serves and the same state the TS module publishes over `module:delta`.
+    // One worked example per family, each read off the module's own published state.
     let staged = Staged::new(
         "families",
         &format!("{A_DEATH}{A_JOIN}{AN_EXTERNAL_CAST}{A_SELF_CAST}"),
@@ -291,7 +269,7 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
     let engine = Engine::start();
     let mut conn = Conn::new(engine.connected());
 
-    // ── the pushes, all five, BEFORE the attach — which is what the app does on connect ─────────
+    // The five pushes before the attach, which is what the app does on connect.
     let defs = vec![a_def("a1", "Slain", json!({"type":"raw","regex":"slain"}))];
     conn.send(&alerts_define(1, &defs));
     assert_eq!(ack_count(&conn.reply(1)), Some(1));
@@ -305,18 +283,16 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
     ));
     assert_eq!(ack_count(&conn.reply(3)), None);
 
-    // A correction over the whole session, naming an enchanter loadout. `startTs` is after the
-    // launch anchor, exactly as `ipc/combo.ts` insists.
+    // A correction over the whole session, naming an enchanter loadout. `startTs` must be after the
+    // launch anchor.
     conn.send(&combo_define(
         4,
         &[(1_787_000_000_000, None, &["ENC", "ROG"], 1_787_100_000_000)],
     ));
     assert_eq!(ack_count(&conn.reply(4)), Some(1));
 
-    // THE EDIT IS DATED AFTER THE ZONE LINE, and that is not decoration: the zone line fires the
-    // rebirth boundary, and an edit older than the last boundary described a group that belonged to
-    // a character who no longer exists. The fold drops such an edit by DATE (`live_edits`), which is
-    // the same rule `applyEdits` applies over there.
+    // The edit is dated after the zone line: that line fires the rebirth boundary, and `live_edits`
+    // drops by date any edit older than the last boundary.
     conn.send(&roster_define(
         5,
         &[("rowel", "Rowel", "add", 1_787_200_000_000)],
@@ -327,10 +303,10 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
     let _accepted = conn.reply(6);
     conn.wait_for_live(100);
 
-    // ── alerts: `setDefs` — the store's list, published verbatim ────────────────────────────────
+    // alerts: the store's list, published verbatim.
     assert_eq!(conn.state(10, "alerts")["defs"], json!(defs));
 
-    // ── respawn: `setPrefs` — the watch list is published, and the mob the log killed is WATCHED ─
+    // respawn: the watch list is published, and the mob the log killed is watched.
     let respawn = conn.state(11, "respawn");
     assert_eq!(
         respawn["prefs"]["watches"][0]["key"], "a fire giant warlord",
@@ -344,7 +320,7 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
         "the watch admits the mob the log already killed: {respawn}"
     );
 
-    // ── roster: `setEdit` — a name the log never named is a member, at the top provenance rung ──
+    // roster: a name the log never named is a member, at the top provenance rung.
     let roster = conn.state(12, "roster");
     let members = roster["members"].as_array().expect("members");
     assert!(
@@ -358,7 +334,7 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
         "and the log's own member is untouched: {roster}"
     );
 
-    // ── combo: `setCorrection` — the correction re-labels the span it names ─────────────────────
+    // combo: the correction re-labels the span it names.
     let combo = conn.state(13, "combo");
     let current = &combo["current"];
     assert_eq!(
@@ -372,17 +348,10 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
         "and it says so: an inference the user overruled is labelled `user`, never `inferred`"
     );
 
-    // ── buffTrust: `setTrust` — acknowledged here, PROVEN in the fold ───────────────────────────
-    //
-    // The allowlist is the one family whose effect is not published anywhere: it widens the buffs
-    // model's ANCHOR rule, and what a client can see of that is a row that either opened or did
-    // not. Making that assertion over a socket would mean writing a landing sentence whose
-    // candidate resolution runs through the committed spell catalog — so the claim would rest on
-    // which spells share an emote in `data/`, which is a fact about the corpus rather than about
-    // this push. `fold`'s own `a_pushed_buff_trust_admits_an_external_casters_anchor` hands the
-    // module the exact `cc` event instead, with its candidates written out, and asserts the hold
-    // both ways. What this connection proves is the half that IS about the wire: the push was
-    // taken, in the same batch as the other four, before any attach.
+    // buffTrust: acknowledged here, proven in the fold. The allowlist publishes nothing — it widens
+    // the buffs model's anchor rule — and asserting it over a socket would rest on which spells
+    // share an emote in the committed catalog. What this proves is the wire half: the push was taken
+    // in the same batch as the other four, before any attach.
     assert_eq!(
         conn.state(14, "buffTimers")["holds"],
         json!([]),
@@ -392,9 +361,8 @@ fn each_family_changes_the_module_the_typescript_seam_changes() {
 
 #[test]
 fn an_alert_fires_on_a_live_line_and_never_on_the_historical_scan() {
-    // THE BOUNDARY LAW, over the socket: replay must never make a sound. The staged log ALREADY
-    // CONTAINS a line this def matches — so a fold that fired on history would fire before the tail
-    // ever ran, and the assertion below would catch it.
+    // The boundary law over the socket: replay must never make a sound. The staged log already
+    // contains a line this def matches, so a fold that fired on history is caught below.
     let staged = Staged::new("fires", A_LOOT);
     let engine = Engine::start();
     let mut conn = Conn::new(engine.connected());
@@ -419,7 +387,7 @@ fn an_alert_fires_on_a_live_line_and_never_on_the_historical_scan() {
     // …and the module's own ring is empty for the same reason: a fire is what writes it.
     assert_eq!(conn.state(3, "alerts")["history"], json!({}));
 
-    // THE GAME WRITES A LINE.
+    // The game writes a line.
     staged.append(A_LATER_LOOT);
     let fire = conn.next_fire();
 
@@ -446,8 +414,8 @@ fn an_alert_fires_on_a_live_line_and_never_on_the_historical_scan() {
 
 #[test]
 fn a_define_made_while_the_tail_is_live_reaches_the_fold_that_is_running() {
-    // The mid-session edit: a user saving an alert while the app is up. The ack is not a receipt
-    // for a queue — it says the LIVE fold has this set — so the very next matching line sounds.
+    // The mid-session edit: a user saving an alert while the app is up. The ack is not a receipt for
+    // a queue — it says the live fold has this set — so the very next matching line sounds.
     let staged = Staged::new("mid", A_LOOT);
     let engine = Engine::start();
     let mut conn = Conn::new(engine.connected());

@@ -59,12 +59,23 @@ const code = (rel: string): string =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
-/** The two folding hooks. They are separate files by an old decision (`useOverlayModule.ts`'s
- *  header) and they hydrate through the SAME ipc handler, so every rule below binds both. */
-const HOOKS = [
-  '../src/renderer/src/lib/useModule.ts',
-  '../src/renderer/src/overlay/useOverlayModule.ts'
-] as const
+// THE TWO ARMS THAT FOLD A MODULE. They were two HOOKS — separate files by an old decision
+// (`useOverlayModule.ts`'s header), hydrating through the SAME ipc handler, so every rule below
+// bound both files identically.
+//
+// JOS-510 MOVED THE MAIN WINDOW'S ARM WITHOUT CHANGING ONE OF THESE RULES. `useModule` used to do
+// this bookkeeping per hook INSTANCE — its own listener, its own fetch, its own copy — which cost
+// one round trip per reader (7 for `character`, 6 for `progression`) and made reference equality
+// useless downstream. It is now a thin subscriber over `lib/moduleStore.ts`, which holds ONE
+// snapshot, ONE in-flight fetch and ONE listener for the whole window. So each claim below is
+// asked TWICE, of two different addresses and in the two shapes those addresses are written in —
+// the claims are identical, and the second column is the point: the store had to inherit every one
+// of them, and a rewrite that quietly dropped the racing-cursor buffer would compile and ship.
+
+/** The OVERLAY's folding hook, still doing its own per-instance bookkeeping. Untouched. */
+const OVERLAY_HOOK = '../src/renderer/src/overlay/useOverlayModule.ts'
+/** The MAIN window's arm, since JOS-510: one store behind a four-line hook. */
+const APP_STORE = '../src/renderer/src/lib/moduleStore.ts'
 
 // ── 1. the two channels ────────────────────────────────────────────────────────────────
 
@@ -110,31 +121,54 @@ test('a cursor that raced the hydrate is remembered, not dropped', () => {
   // dropped — the reply it raced may have been taken from the engine BEFORE that cursor moved,
   // and no later frame restates a cursor already reported. It terminates because a re-fetch
   // answers at or past the cursor that provoked it.
-  for (const rel of ['../src/renderer/src/lib/useModule.ts', '../src/renderer/src/overlay/useOverlayModule.ts']) {
-    const hook = code(rel)
-    assert.match(hook, /pendingSeq/)
-    assert.match(hook, /if \(pendingSeq > knownSeq\) hydrate\(\)/)
-  }
+  const overlay = code(OVERLAY_HOOK)
+  assert.match(overlay, /pendingSeq/)
+  assert.match(overlay, /if \(pendingSeq > knownSeq\) hydrate\(\)/)
+
+  // The same buffer, per ENTRY rather than per hook instance, and the re-ask arms the frame flush
+  // instead of fetching inline — which is a batching change, not a change to this rule.
+  const store = code(APP_STORE)
+  assert.match(store, /pendingSeq/)
+  assert.match(
+    store,
+    /if \(entry\.pendingSeq > entry\.seq\) markDirty\(/,
+    'the store stopped re-asking after a reply that landed behind the cursor'
+  )
 })
 
 test('a world change re-hydrates unconditionally — it is the one frame with no cursor to compare', () => {
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    assert.match(
-      mod,
-      /if \(c\.moduleId === MODULE_WORLD_CHANGED\) \{\s*hydrate\(\)/,
-      `${hook}: a world change is filtered by moduleId like an ordinary cursor`
-    )
-  }
+  assert.match(
+    code(OVERLAY_HOOK),
+    /if \(c\.moduleId === MODULE_WORLD_CHANGED\) \{\s*hydrate\(\)/,
+    `${OVERLAY_HOOK}: a world change is filtered by moduleId like an ordinary cursor`
+  )
+  // The store answers the same frame for EVERY module it is holding rather than for the one it is
+  // bound to, because it is bound to all of them — but the shape of the claim is unchanged: this
+  // branch is taken BEFORE any moduleId comparison, and it re-asks rather than comparing a cursor.
+  const store = code(APP_STORE)
+  const branch = /if \(c\.moduleId === MODULE_WORLD_CHANGED\) \{([\s\S]*?)\n {4}\}/.exec(store)
+  assert.ok(branch, `${APP_STORE}: a world change is filtered by moduleId like an ordinary cursor`)
+  assert.match(branch[1], /markDirty\(id\)/, 'a world change stopped re-asking for what is watched')
+  assert.doesNotMatch(branch[1], /c\.seq/, 'a world change started comparing a cursor it has not got')
 })
 
 
-test('every subscription is unsubscribed — a hook that leaked one would fold a dead module', () => {
-  for (const hook of HOOKS) {
-    const mod = code(hook)
-    assert.match(mod, /const offChanged = window\.eq(Overlay)?\.onModuleChanged\(/, hook)
-    assert.match(mod, /offChanged\(\)/, `${hook}: the cursor subscription is never released`)
-  }
+test('every subscription is unsubscribed — an arm that leaked one would fold a dead module', () => {
+  const overlay = code(OVERLAY_HOOK)
+  assert.match(overlay, /const offChanged = window\.eqOverlay\.onModuleChanged\(/, OVERLAY_HOOK)
+  assert.match(overlay, /offChanged\(\)/, `${OVERLAY_HOOK}: the cursor subscription is never released`)
+
+  const store = code(APP_STORE)
+  assert.match(store, /const offChanged = bridge\.onModuleChanged\(/, APP_STORE)
+  assert.match(store, /offChanged\(\)/, `${APP_STORE}: the cursor subscription is never released`)
+  // …AND IT IS ONE LISTENER FOR THE WINDOW, NOT ONE PER READER (JOS-510). This is the claim the
+  // move exists for, and the cheapest way for it to regress is for someone to reach for the bridge
+  // from the hook again "just for this one case" — 33 call sites, 33 listeners.
+  assert.doesNotMatch(
+    code('../src/renderer/src/lib/useModule.ts'),
+    /onModuleChanged|onCharacter/,
+    'the hook subscribed to the bridge itself again — that is one listener per call site'
+  )
 })
 
 // ── the wire half: who is told, and under what gate ────────────────────────────────────

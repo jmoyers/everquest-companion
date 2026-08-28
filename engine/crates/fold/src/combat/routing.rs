@@ -1,41 +1,25 @@
-//! ATTRIBUTION + ROUTING — where a parsed combat line lands (`src/main/combat/routing.ts`, plus
-//! `otherRouting.ts` and `allyRouting.ts`, which are the two doors it offers a line it drops).
+//! Attribution + routing — where a parsed combat line lands (`src/main/combat/routing.ts`, plus
+//! `otherRouting.ts` and `allyRouting.ts`, the two doors it offers a line it drops).
 //!
 //! `classify()` is the pure attribution decision (you / your pet / a group-mate / incoming / not our
 //! fight); the `route_*` functions fold the line into the current encounter and the zone aggregate
-//! under that decision, refresh the presence axis, and engage what needs engaging. Nothing here
-//! decides when a fight OPENS or CLOSES — that is `lifecycle.rs`.
+//! under that verdict, refresh the presence axis, and engage what needs engaging. Nothing here
+//! decides when a fight opens or closes — that is `lifecycle.rs`.
 //!
-//! ── THE LADDER IS PORTED WHOLE, AND THAT IS THE ONE PLACE A PARTIAL PORT WOULD BE HARMFUL ──────
+//! The three doors are asked in a fixed order and each sees only what the one before it declined:
+//! `classify` decides YOUR rows, `route_other_*` records every other combatant the log names, and
+//! `route_ally_pet_*` credits somebody else's charm pet. Half a ladder mis-files a pet's damage,
+//! which mis-fills `engaged`, which mis-segments the fight.
 //!
-//! Half a ladder mis-files a pet's damage, which mis-fills `engaged`, which mis-segments the fight.
-//! So the three doors are all here: `classify` decides YOUR rows, `route_other_*` records every
-//! other combatant the log names, and `route_ally_pet_*` credits somebody else's charm pet. The
-//! order is stated and load-bearing — `classify` first, then the record-everything ladder, then the
-//! ally model — because each one only ever sees what the one before it declined.
+//! `classify` is pure and is asked three times per line (the damage, miss and resist probes), so it
+//! never also asks "…and if not, whose is it?" — an `Ignore` verdict is an OFFER to the two models
+//! below, not a disposal. That leaves the roster with the engagement licence and the Group scope,
+//! neither of which can move a number, which is what makes "a wrong roster can hide a row but never
+//! corrupt a number" true rather than aspirational.
 //!
-//! ── `classify()` IS NO LONGER THE ADMISSION GATE ───────────────────────────────────────────────
-//!
-//! Recording used to END here: the last rule was "attacker not you/pet, target not you → ignore", so
-//! a name the roster had not admitted fell through it, an empty roster snapshot recorded nobody, and
-//! no scope could show what nothing had recorded (2,224 parsed events fell through it in one slice
-//! while the reporter's group-mate appeared in ZERO fights). The `Ignore` verdict is now an OFFER
-//! rather than a disposal.
-//!
-//! AND `classify` ITSELF IS UNTOUCHED BY EITHER WIDENING. It is pure, it is called three times per
-//! line (the damage, miss and resist probes), and its four membership sets are the ones that decide
-//! YOUR rows; a fold that also asked "…and if not, whose is it?" would be paying for the answer
-//! three times and mixing two questions in one place. So the roster's remaining jobs are the
-//! ENGAGEMENT LICENCE and the Group scope, neither of which can move a number — which is what makes
-//! "a wrong roster can hide a row but never corrupt a number" true rather than aspirational.
-//!
-//! ── WHAT AN `'other'` OR ALLY-PET ROW MAY NOT DO ───────────────────────────────────────────────
-//!
-//! Both are AGGREGATE-ONLY. Neither opens an encounter, extends one, engages a hostile, refreshes
-//! presence, resolves a target into a world instance or bumps the target ledger a fight is NAMED
-//! after. Every one of those omissions is the same cautionary tale refusing to come back through a
-//! wider door: one friendly in `engaged` merged three of the owner's pulls into a single 214-second
-//! segment.
+//! An `other` or ally-pet row is AGGREGATE-ONLY: it opens no encounter, extends none, engages no
+//! hostile, refreshes no presence, resolves no world instance and bumps no target ledger. One
+//! friendly in `engaged` is enough to merge three pulls into a single segment.
 
 use crate::combat::aggregate::{Agg, DamageEvent, MissFold, MissType, SourceKind, SourceRef};
 use crate::combat::ally::AllyBind;
@@ -80,27 +64,22 @@ impl Attribution {
     }
 }
 
-/// THE ATTRIBUTION DECISION. Everything the combat model books passes through here.
+/// The attribution decision. Everything the combat model books passes through here.
 ///
-/// The rules, decided with the owner:
-///   You → pet-name : ALWAYS outgoing to a hostile twin (never dropped as friendly fire).
-///   pet-name → You : ALWAYS incoming.
+///   You → pet-name : always outgoing to a hostile twin, never dropped as friendly fire.
+///   pet-name → You : always incoming.
 ///   pet-name → same-name (A == B) : pet outgoing, but AMBIGUOUS — it could be your pet hitting a
-///     hostile twin, or a hostile twin hitting your pet. Attribute to the pet and flag it.
-///   pet-name → a KNOWN PLAYER or a group-mate : IGNORE. A pet swinging at a player is not our
-///     fight: either the "pet" was never ours, or this is a duel. Booking it would credit us the
-///     damage AND enter that player into `engaged` as a hostile, which is exactly how a stranger
-///     became the owner's enemy and kept three of his pulls from ever closing.
-///   member → other : OUTGOING, as that member's own row.
-///   MEMBER → You is IGNORED, not incoming — the incoming meter answers "what is hitting me", which
-///     in this game means hostiles, and filing a group-mate's stray damage-shield tick there would
-///     put an ally in the enemy list.
-///   ANY mob → member is IGNORED, unchanged: incoming-on-members is a real feature and explicitly
-///     out of scope — sources first, one wave at a time.
+///     hostile twin or a hostile twin hitting your pet. Attribute to the pet and flag it.
+///   pet-name → a known player or a group-mate : IGNORE. Either the "pet" was never ours or this is
+///     a duel; booking it would credit us the damage and enter that player into `engaged` as a
+///     hostile, which keeps pulls from ever closing.
+///   member → other : outgoing, as that member's own row.
+///   member → You : IGNORED, not incoming — the incoming meter answers "what is hitting me", which
+///     in this game means hostiles.
+///   any mob → member : IGNORED. Incoming-on-members is a real feature and out of scope.
 pub fn classify(st: &EngineState, attacker: &str, target: &str) -> Attribution {
-    // BORROWED (JOS-506). This function is the busiest identity question in the fold — the damage,
-    // miss and resist probes each ask it of every line — and every answer but the `OutPet` one is
-    // dropped after a comparison or a set lookup. Only the branch that RETAINS the key pays for it.
+    // Borrowed: this is the busiest identity question in the fold, and every answer but `OutPet` is
+    // dropped after a comparison or a set lookup. Only the branch that retains the key pays for it.
     let a_key = id_key_ref(attacker);
     let b_key = id_key_ref(target);
     if a_key == "you" {
@@ -127,8 +106,8 @@ pub fn classify(st: &EngineState, attacker: &str, target: &str) -> Attribution {
             ambiguous,
         };
     }
-    // A GROUP MEMBER is the attacker. Checked BEFORE the incoming rule so a member's hit ON you is
-    // dropped rather than filed as an enemy's; checked AFTER the pet rules so a charmed mob that
+    // A group member is the attacker. Checked before the incoming rule so a member's hit on you is
+    // dropped rather than filed as an enemy's; checked after the pet rules so a charmed mob that
     // shares a member's name still attributes as your pet.
     if st.roster.admitted.contains(a_key.as_ref()) {
         if b_you || st.pet_names.contains(b_key.as_ref()) {
@@ -143,24 +122,22 @@ pub fn classify(st: &EngineState, attacker: &str, target: &str) -> Attribution {
     if b_you {
         return Attribution::Incoming;
     }
-    // Attacker not one of ours, target not you. THIS IS THE LINE THE METER USED TO DROP ON THE
-    // FLOOR, and `Ignore` is no longer where it ends.
+    // Attacker not one of ours, target not you — offered to the two models below, not disposed of.
     Attribution::Ignore
 }
 
-/// THE METER ROW for a combatant other than you — a group member or anyone else the log named.
+/// The meter row for a combatant other than you — a group member or anyone else the log named.
 ///
-/// ONE ID NAMESPACE FOR BOTH, and that is the point rather than an economy: the person you fought
-/// beside for ten minutes and then invited into your group must be ONE bar, not one per provenance.
-/// `Agg::reid` upgrades the stored kind when the roster catches up; the id never moves, so no total
-/// splits.
+/// One id namespace for both: the person you fought beside for ten minutes and then invited into
+/// your group must be ONE bar, not one per provenance. `Agg::reid` upgrades the stored kind when the
+/// roster catches up; the id never moves, so no total splits.
 ///
-/// KEYED BY NAME, NOT BY INSTANCE — the pet rule deliberately inverted: resolving MINTS a world
+/// Keyed by NAME, not by instance — the pet rule deliberately inverted: resolving mints a world
 /// instance, and a player-shaped instance can be engaged, retired, aged out and counted as hostile
 /// presence. The canonical name gives one stable row and touches the world model not at all.
 ///
-/// The NAME prefers the roster's spelling (the one a user has seen in the popover), falls back to the
-/// recorded spelling, then to the line's own — world-model law 2 in ladder form.
+/// The name prefers the roster's spelling (the one a user has seen in the popover), then the
+/// recorded spelling, then the line's own — world-model law 2 in ladder form.
 fn other_source(st: &EngineState, attacker: &str, key: &str, member: bool) -> SourceRef {
     let name = st
         .roster
@@ -181,8 +158,8 @@ fn other_source(st: &EngineState, attacker: &str, key: &str, member: bool) -> So
     }
 }
 
-/// The outgoing meter ROW for an attributed you/pet/member action — the triple the damage, miss and
-/// resist paths all need and all resolve identically. A pet is resolved to its pet INSTANCE so twin
+/// The outgoing meter row for an attributed you/pet/member action — the triple the damage, miss and
+/// resist paths all need and all resolve identically. A pet resolves to its pet INSTANCE so twin
 /// pets stay distinct.
 fn out_source(st: &mut EngineState, attacker: &str, kind: OutKind, ts: i64) -> SourceRef {
     match kind {
@@ -206,17 +183,13 @@ fn out_source(st: &mut EngineState, attacker: &str, kind: OutKind, ts: i64) -> S
     }
 }
 
-/// Engage an instance as a HOSTILE of this encounter — THE ONE DOOR into `engaged`, and therefore
+/// Engage an instance as a hostile of this encounter — the one door into `engaged`, and therefore
 /// the one thing that can veto closure.
 ///
-/// A KNOWN PLAYER never walks through it: `engaged` membership is what closure polls for "is
-/// anything still alive in this fight", so a player — who does not die on our schedule and whose
-/// every heal used to refresh his own presence — could hold a pull open indefinitely.
-///
-/// A GROUP MEMBER IS REFUSED FOR EXACTLY THAT REASON, and the rule is load-bearing in a way the
-/// known-player one was not: admitting members means the engine now routes damage whose TARGET can
-/// be another friendly, and `You → <member>` reaches this function on the ordinary outgoing path. A
-/// member's target engages; the member never does.
+/// Neither a known player nor a group member walks through it. `engaged` membership is what closure
+/// polls for "is anything still alive in this fight", so a friendly — who does not die on our
+/// schedule — would hold a pull open indefinitely. Members reach this function on the ordinary
+/// outgoing path via `You → <member>`: a member's TARGET engages, the member never does.
 fn engage_hostile(st: &mut EngineState, inst: &Resolved, ts: i64) {
     if st.is_known_player(&inst.name_key) || st.is_member(&inst.name_key) {
         return;
@@ -228,15 +201,12 @@ fn engage_hostile(st: &mut EngineState, inst: &Resolved, ts: i64) {
     enc.engaged_seen.insert(inst.instance_id.clone(), ts);
 }
 
-/// RESOLVE THE DEFENDER'S LABEL, AND NOTE THAT THE CALL IS NOT A PURE READ. Every damage-free path
-/// over there ends with `const tgtName = enc ? st.defenderLabel(enc, target, ts) : target`, and the
-/// label feeds the timeline instant and the processing line. The CALL would not be optional even if
-/// nothing read the result: `defenderLabel` resolves through the world model, which retires the name's
-/// stale instances and ADOPTS the sighting's casing as the instance display, and that display is what
-/// the NEXT `bump_target` freezes into a fight's name. `state.rs` carries the measurement.
+/// Resolve the defender's label. The CALL is not optional even where nothing reads the result:
+/// `defender_label` resolves through the world model, which retires stale instances and adopts the
+/// sighting's casing as the instance display — and that display is what the next `bump_target`
+/// freezes into a fight's name.
 ///
-/// The freshness gate is the caller's `enc ?`, reproduced here as the one condition — WITHOUT a fresh
-/// encounter the raw name stands and the world model is not touched at all.
+/// Without a fresh encounter the raw name stands and the world model is not touched at all.
 fn note_defender(st: &mut EngineState, target: &str, ts: i64) -> String {
     if st.fresh_encounter_id(ts) {
         st.defender_label(target, ts)
@@ -266,37 +236,31 @@ fn both(st: &mut EngineState, ts: i64, fresh_only: bool, f: impl Fn(&mut Agg)) {
     f(&mut st.zone_agg);
 }
 
-// ── DAMAGE ────────────────────────────────────────────────────────────────────────────────────
-
-/// Fold one landed damage line, and REPORT THE VERDICT IT REACHED. `None` means the line was
-/// ignored before any verdict was needed, which is exactly the case the analytics fold returns early
-/// on over there.
+/// Fold one landed damage line and report the verdict it reached. `None` means the line was ignored
+/// before any verdict was needed, which is where the analytics fold returns early.
 pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> {
     if ev.amount <= 0 {
         return None;
     }
     let at = classify(st, ev.attacker, ev.target);
-    // "YOU HIT IT", FILED ONCE, off the verdict `classify` just reached. Here rather than inside
-    // `classify` because that function is PURE and must stay so — it is called by the miss and
-    // resist probes as well, and a pure decision that also mutated state would count one swing three
-    // times.
+    // "You hit it", filed once, off the verdict `classify` just reached — here rather than inside
+    // `classify`, which is pure and asked by the miss and resist probes too, so a decision that also
+    // mutated state would count one swing three times.
     if at == Attribution::OutYou {
         st.note_struck(&id_key_ref(ev.target));
     }
-    // BEFORE the ignore gate, and before the outgoing/incoming split: a bound ally pet swinging at
-    // YOU classifies as `Incoming` rather than `Ignore`, and that line is the strongest soft-hostile
-    // proof there is. Reading the evidence off every line is what keeps the two cases from needing
-    // two rules.
+    // Before the ignore gate and the outgoing/incoming split: a bound ally pet swinging at YOU
+    // classifies as `Incoming` rather than `Ignore`, and that line is the strongest soft-hostile
+    // proof there is.
     note_ally_pet_evidence(st, ev.attacker, ev.target, ev.ts);
-    // …and the same line, read for the other model: something that LANDED DAMAGE ON YOU is a
-    // hostile, whatever its name looks like.
+    // …and the same line for the other model: something that landed damage on you is a hostile,
+    // whatever its name looks like.
     if at == Attribution::Incoming {
         note_other_hostile(st, ev.attacker);
     }
     if at == Attribution::Ignore {
-        // THE LINE THE METER USED TO DROP, offered to the two models that read it — the
-        // record-everything ladder first, then a THIRD PARTY's charm pet. Both book aggregate-only.
-        // Everything neither claims stays dropped exactly as it was.
+        // Offered to the two models that read it — the record-everything ladder first, then a third
+        // party's charm pet. Both book aggregate-only; what neither claims stays dropped.
         if !route_other_damage(st, ev) {
             route_ally_pet_damage(st, ev);
         }
@@ -323,9 +287,8 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
     ensure_encounter(st, ev.ts);
     {
         let enc = st.current.as_mut().expect("just ensured");
-        // Active-time accrual: add the gap since the previous attributed hit, capped at `ACTIVE_MS`
-        // (the standard meter convention — a long lull counts as at most one "active" tick, not the
-        // whole idle stretch). The first hit adds 0.
+        // Active-time accrual: the gap since the previous attributed hit, capped at `ACTIVE_MS`, so
+        // a long lull counts as at most one active tick. The first hit adds 0.
         if let Some(prev) = enc.prev_damage_ts {
             enc.active_ms += (ev.ts - prev).clamp(0, ACTIVE_MS);
         }
@@ -333,7 +296,7 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
         enc.last_ts = ev.ts;
     }
     st.last_activity_ts = ev.ts;
-    // Zone-session timing: first/last attributed damage in this stay, for the summary's timing.
+    // Zone-session timing: first/last attributed damage in this stay.
     if st.zone_start_ts == 0 {
         st.zone_start_ts = ev.ts;
     }
@@ -354,7 +317,7 @@ fn route_incoming_damage(st: &mut EngineState, ev: &DamageEvent<'_>) {
     let (id, name) = (att.instance_id.clone(), att.label.clone());
     both(st, ev.ts, false, |agg| agg.add_inc(&id, &name, ev));
     engage_hostile(st, &att, ev.ts);
-    // Timeline: an incoming instant lanes under the ATTACKER's skill (its own row).
+    // An incoming instant lanes under the attacker's skill, so it gets its own row.
     if let Some(enc) = st.current.as_mut() {
         EngineState::push_timeline(
             enc,
@@ -402,26 +365,23 @@ fn route_outgoing_damage(st: &mut EngineState, ev: &DamageEvent<'_>, at: &Attrib
         // A pet LANDING a hit is pet-shaped evidence (see the miss and resist twins).
         st.charm.note_pet_evidence(pet_key);
     }
-    // NOTE WHAT A MEMBER'S HIT DELIBERATELY DOES NOT DO: it records no pet engagement (a member is
-    // not a pet and their kills are not ours to disambiguate) and no charm evidence. The one thing
-    // it does beyond its own row is ENGAGE ITS TARGET — which is the whole point, because the mob
-    // your group-mate is fighting is the mob you are fighting.
+    // A member's hit records no pet engagement and no charm evidence: a member is not a pet. The one
+    // thing it does beyond its own row is engage its TARGET, because the mob your group-mate is
+    // fighting is the mob you are fighting.
 
-    // POISON-TYPED DAMAGE: the game states the damage TYPE on every typed spell line ("… for 53 points
-    // of POISON damage by Asp Venom Strike."), so a poison lane is a fact the log PRINTED, not a
-    // name-matched guess. Outgoing only — a mob's poison DoT on you is not a proc of ours — and
-    // additive, a second index over damage already counted, so no total moves.
+    // The game states the damage type on every typed spell line ("… for 53 points of POISON damage
+    // by Asp Venom Strike."), so a poison lane is a fact the log printed, not a name-matched guess.
+    // Outgoing only, and additive — a second index over damage already counted, so no total moves.
     if ev.dclass == Some("poison") {
-        // `base_lane_name`: the LEDGER is about the venom, not the meter row. A cast-less firing's
-        // meter lane carries the origin marker and this counter must not inherit it — every other proc
-        // counter is keyed on the spell for the same reason.
+        // The ledger is about the venom, not the meter row: a cast-less firing's meter lane carries
+        // the origin marker and this counter must not inherit it.
         let venom = base_lane_name(&ev.skill).to_string();
         both(st, ev.ts, false, |agg| {
             agg.procs.add_poison_damage(&venom, ev.amount)
         });
     }
-    // Resolve the target to an instance. For a same-name ambiguous pet hit the target is the HOSTILE
-    // twin (`prefer_charmed = false` picks the hostile instance).
+    // Resolve the target to an instance. For a same-name ambiguous pet hit the target is the hostile
+    // twin (`prefer_charmed = false` picks it).
     let tgt = st.resolve(ev.target, ev.ts, false);
     let (tid, tname) = (tgt.instance_id.clone(), tgt.label.clone());
     both(st, ev.ts, false, |agg| {
@@ -429,14 +389,13 @@ fn route_outgoing_damage(st: &mut EngineState, ev: &DamageEvent<'_>, at: &Attrib
         agg.bump_target(&tid, &tname, ev.amount);
     });
     engage_hostile(st, &tgt, ev.ts);
-    // LIVE-name tracking: the current fight is named after whatever you are presently swinging at.
-    // Finalize switches to the largest target; until then this drives the live label.
+    // The live fight is named after whatever you are presently swinging at; finalize switches to the
+    // largest target.
     if let Some(enc) = st.current.as_mut() {
         enc.last_out_target = Some(tname.clone());
-        // Timeline: an outgoing instant lanes under the skill/spell name. `target` carries the
-        // INSTANCE-RESOLVED defender label — the same value `bump_target` aggregates under, so twins
-        // stay distinct — because it drives the tooltip AND the per-mob breakdown, which needs
-        // per-event defenders to answer "what did I land on THIS mob".
+        // An outgoing instant lanes under the skill/spell name, and `target` carries the
+        // instance-resolved defender label — the same value `bump_target` aggregates under, so the
+        // per-mob breakdown can answer "what did I land on THIS mob".
         EngineState::push_timeline(
             enc,
             TimelineRaw {
@@ -453,8 +412,8 @@ fn route_outgoing_damage(st: &mut EngineState, ev: &DamageEvent<'_>, at: &Attrib
             },
         );
     }
-    // THE AMBIGUOUS MARK IS `~` AND IT REPLACES THE CRIT STAR rather than joining it: an ambiguous
-    // hit is one the engine could not attribute cleanly, and saying so outranks saying it crit.
+    // The ambiguous mark `~` replaces the crit star rather than joining it: "could not attribute
+    // cleanly" outranks "it crit".
     let cat = if ambiguous { "ambiguous" } else { ev.dtype };
     let mark = if ambiguous {
         "~"
@@ -471,14 +430,11 @@ fn route_outgoing_damage(st: &mut EngineState, ev: &DamageEvent<'_>, at: &Attrib
     );
 }
 
-// ── MISS ──────────────────────────────────────────────────────────────────────────────────────
-
-/// THE AVOIDED SWING as the aggregates fold it. `skill` stays `Melee` for every miss — that is the
-/// shipped accuracy lane and it does not move — while `verb`/`lane_skill`/`modifiers`/`target` are
-/// the additive, amount-free inputs to the round grouper and the modifier tallies. The lane label
-/// goes through the SAME two steps a landed swing does: the parser's melee-skill answer, then the
-/// log's own statement of which special is live in that verb lane — gated on the attacker being You,
-/// because the state line is first-person-only.
+/// The avoided swing as the aggregates fold it. `skill` stays `Melee` for every miss — that is the
+/// accuracy lane — while `verb`/`lane_skill`/`modifiers`/`target` are the amount-free inputs to the
+/// round grouper and the modifier tallies. The lane label goes through the same two steps a landed
+/// swing does: the parser's melee-skill answer, then the log's statement of which special is live in
+/// that verb lane, gated on the attacker being You because the state line is first-person-only.
 pub struct MissLine {
     pub ts: i64,
     pub attacker: String,
@@ -518,13 +474,12 @@ fn miss_fold(st: &EngineState, ev: &MissLine, is_you: bool) -> MissFold {
 /// twin; a melee skill name is not in the miss line, so avoided swings bucket under `Melee`.
 pub fn route_miss(st: &mut EngineState, ev: &MissLine) {
     let at = classify(st, &ev.attacker, &ev.target);
-    // The same two judgements the damage path reads, off the same lines, for the same reason: an
-    // ally pet's swing at a friendly proves the break whether or not it connected.
+    // An ally pet's swing at a friendly proves the break whether or not it connected.
     note_ally_pet_evidence(st, &ev.attacker, &ev.target, ev.ts);
     if at == Attribution::Ignore {
-        // The same two offers the damage path makes, in the same order. NO hostile-evidence read on
-        // the incoming side here: the "it hit YOU" rung was measured on LANDED damage, and a swing
-        // that connected with nothing is not what was measured.
+        // The same two offers the damage path makes, in the same order. No hostile-evidence read on
+        // the incoming side: that rung was measured on landed damage, and a swing that connected
+        // with nothing is not what was measured.
         let fold = miss_fold(st, ev, false);
         if !route_other_miss(st, ev, &fold) {
             route_ally_pet_miss(st, ev, &fold);
@@ -532,9 +487,8 @@ pub fn route_miss(st: &mut EngineState, ev: &MissLine) {
         return;
     }
     let fold = miss_fold(st, ev, at == Attribution::OutYou);
-    // PRESENCE: a swing exchanged with an already-engaged mob proves it is still in the fight even
-    // though nothing landed — the mob on an incoming miss, the mob we whiffed at on an outgoing one.
-    // Liveness only; no damage timing moves.
+    // Presence: a swing exchanged with an already-engaged mob proves it is still in the fight even
+    // though nothing landed. Liveness only; no damage timing moves.
     let who = if at == Attribution::Incoming {
         ev.attacker.clone()
     } else {
@@ -546,12 +500,10 @@ pub fn route_miss(st: &mut EngineState, ev: &MissLine) {
         let att = st.resolve(&ev.attacker, ev.ts, false);
         let (id, name) = (att.instance_id, att.label);
         both(st, ev.ts, true, |agg| agg.add_inc_miss(&id, &name, &fold));
-        // ABSORPTION: an incoming swing absorbed by YOUR rune is also a mitigation instant, and it
-        // belongs to the healing ledger. `Incoming` means the defender is YOU (a swing at your pet
-        // classifies as `Ignore`), so this can never pick up a pet's or a mob's own rune. It is the
-        // SECOND source for the same line family the parser's `absorbSwing` mitigation event covers:
-        // whichever regex claims the line, exactly ONE event is emitted, so the two paths can never
-        // double-count.
+        // An incoming swing absorbed by YOUR rune is a mitigation instant and belongs to the healing
+        // ledger. `Incoming` means the defender is you (a swing at your pet classifies as `Ignore`),
+        // so this can never pick up a pet's or a mob's own rune. The parser emits exactly one event
+        // per line whichever regex claims it, so this and `absorbSwing` cannot double-count.
         if ev.mtype == MissType::Absorb {
             both(st, ev.ts, true, |agg| agg.heal.add_absorbed_swing());
         }
@@ -569,15 +521,14 @@ pub fn route_miss(st: &mut EngineState, ev: &MissLine) {
 /// A miss YOU, your pet or a group member swung.
 fn route_outgoing_miss(st: &mut EngineState, ev: &MissLine, fold: &MissFold, kind: OutKind) {
     let src = out_source(st, &ev.attacker, kind, ev.ts);
-    // A pet WHIFFING is every bit as much proof it is fighting for us as a landed hit. A MEMBER's
-    // whiff proves nothing about charm — they are a player, bound by a group line, not by evidence.
+    // A pet whiffing is as much proof it is fighting for us as a landed hit. A member's whiff proves
+    // nothing about charm: they are bound by a group line, not by evidence.
     if kind == OutKind::Pet {
         st.charm.note_pet_evidence(&id_key_ref(&ev.attacker));
     }
     both(st, ev.ts, true, |agg| agg.add_out_miss(&src, fold));
-    // Timeline: a miss tick lanes under `Melee` (a hollow mark in the renderer). The defender goes
-    // through `defender_label` so it matches the INSTANCE label the damage path writes — a raw name
-    // made every whiff at a twin pile onto a phantom bare row.
+    // A miss tick lanes under `Melee`. The defender goes through `defender_label` so it matches the
+    // instance label the damage path writes; a raw name piles every whiff at a twin onto a bare row.
     let tgt_name = note_defender(st, &ev.target, ev.ts);
     push_fresh_timeline(
         st,
@@ -603,8 +554,6 @@ fn route_outgoing_miss(st: &mut EngineState, ev: &MissLine, fold: &MissFold, kin
     );
 }
 
-// ── RESIST ────────────────────────────────────────────────────────────────────────────────────
-
 pub struct ResistLine {
     pub ts: i64,
     pub caster: String,
@@ -613,9 +562,8 @@ pub struct ResistLine {
     pub incoming: bool,
 }
 
-/// Whose resisted cast this was, or `None` when it is nobody's business of ours. Separated out
-/// because this path never calls `classify` — a resist names a CASTER and a TARGET, not an attacker
-/// and a defender — so the same three-way widening has to be stated by hand.
+/// Whose resisted cast this was, or `None` when it is none of ours. Separate from `classify`
+/// because a resist names a CASTER and a TARGET, not an attacker and a defender.
 fn resist_caster(st: &EngineState, caster_key: &str) -> Option<OutKind> {
     if caster_key == "you" {
         return Some(OutKind::You);
@@ -628,17 +576,14 @@ fn resist_caster(st: &EngineState, caster_key: &str) -> Option<OutKind> {
 
 /// Consume a spell RESIST — the caster-side analogue of a miss.
 ///
-/// Resisted detrimental spells are direct spells in the taxonomy, so ALL resists categorize as
-/// `spell` (the detrimental axis) and sort into the spell lanes. They carry no amount, so category
-/// totals are unaffected; the LANE is the display spell name, so a resist tick lands in the same
-/// lane as landed casts of that spell.
+/// Resisted detrimental spells are direct spells in the taxonomy, so every resist categorizes as
+/// `spell` and sorts into the spell lanes. They carry no amount, so category totals are unaffected;
+/// the lane is the display spell name, so a resist tick lands beside landed casts of that spell.
 pub fn route_resist(st: &mut EngineState, ev: &ResistLine) {
     const CATEGORY: &str = "spell";
-    // PRESENCE: a resist names a live caster and a live resister. Refresh whichever side is a
-    // HOSTILE we are already engaged with — the caster on an incoming resist (the mob just cast at
-    // us), the target on our own resisted cast (the mob is standing there shrugging it off).
-    // `note_presence` ignores anything not engaged, so the you/pet side is a no-op, as is the
-    // mob-vs-mob shape below UNLESS the resisting mob happens to be one of ours.
+    // Presence: refresh whichever side is a hostile we are already engaged with — the caster on an
+    // incoming resist, the target on our own resisted cast. `note_presence` ignores anything not
+    // engaged, so the you/pet side is a no-op.
     let who = if ev.incoming {
         ev.caster.clone()
     } else {
@@ -680,13 +625,13 @@ pub fn route_resist(st: &mut EngineState, ev: &ResistLine) {
     }
 
     let Some(kind) = resist_caster(st, &id_key_ref(&ev.caster)) else {
-        // A resisted cast by a combatant the log named — the same widening the damage path got,
-        // asked of the CASTER because a resist has no attacker/defender pair to classify.
+        // A resisted cast by a combatant the log named — the record-everything ladder, asked of the
+        // CASTER because a resist has no attacker/defender pair to classify.
         if route_other_resist(st, ev, CATEGORY) {
             return;
         }
-        // A hostile mob's spell resisted by another mob — out of scope for the meter, and SAID SO:
-        // a line the engine deliberately refused is exactly what the `dropped` role is for.
+        // A hostile mob's spell resisted by another mob is out of scope, and said so: a line the
+        // engine deliberately refused is what the `dropped` role is for.
         st.log(
             ev.ts,
             "resist",
@@ -696,8 +641,8 @@ pub fn route_resist(st: &mut EngineState, ev: &ResistLine) {
         return;
     };
     let src = out_source(st, &ev.caster, kind, ev.ts);
-    // Same corroboration as the damage/miss twins: a pet whose spell got resisted was casting for
-    // us. A member's resisted cast is not charm evidence.
+    // A pet whose spell got resisted was casting for us. A member's resisted cast is not charm
+    // evidence.
     if kind == OutKind::Pet {
         st.charm.note_pet_evidence(&id_key_ref(&ev.caster));
     }
@@ -705,8 +650,8 @@ pub fn route_resist(st: &mut EngineState, ev: &ResistLine) {
     both(st, ev.ts, true, |agg| {
         agg.add_out_resist(&src, &spell, CATEGORY)
     });
-    // Same instance resolution as the miss and damage paths — a resisted cast at a twin must land on
-    // that twin's per-mob row, not a bare-named ghost.
+    // Same instance resolution as the miss and damage paths: a resisted cast at a twin lands on that
+    // twin's per-mob row, not on a bare-named ghost.
     let tgt_name = note_defender(st, &ev.target, ev.ts);
     push_fresh_timeline(
         st,
@@ -732,8 +677,6 @@ pub fn route_resist(st: &mut EngineState, ev: &ResistLine) {
     );
 }
 
-// ── HEAL ──────────────────────────────────────────────────────────────────────────────────────
-
 pub struct HealLine {
     pub ts: i64,
     pub target: String,
@@ -756,15 +699,12 @@ impl HealLine {
     }
 }
 
-/// Consume a heal. Three things matter for combat stats: a heal on an engaged HOSTILE is "enemy
-/// healing" (it undoes our damage); a heal on You or one of your pets is incoming healing; and
-/// either also folds into the meter-grade HEALING ledger — which is unported, so only the first two
-/// are written here. Other heals (party members healing each other, unrelated NPCs) are ignored for
-/// aggregation: the log gives no faction for an arbitrary name.
+/// Consume a heal. A heal on an engaged HOSTILE is enemy healing (it undoes our damage); a heal on
+/// You or one of your pets is incoming healing; both also fold into the healing ledger. Other heals
+/// are ignored for aggregation: the log gives no faction for an arbitrary name.
 ///
-/// ZERO-EFFECTIVE heals (`… for 0 (2) hit points …`) are the overheal evidence and belong to that
-/// ledger; the `enemy_heal` / `inc_heal` maps keep their original `amount <= 0` gate so their totals
-/// AND their healer lists stay byte-identical.
+/// Zero-effective heals (`… for 0 (2) hit points …`) are the overheal evidence and belong to the
+/// ledger; the `enemy_heal` / `inc_heal` maps keep their `amount <= 0` gate.
 pub fn route_heal(st: &mut EngineState, ev: &HealLine) {
     if ev.amount < 0 {
         return;
@@ -777,20 +717,14 @@ pub fn route_heal(st: &mut EngineState, ev: &HealLine) {
     st.learn_player_key(healer_key.as_deref(), &t_key, is_you_tgt, is_pet_tgt);
     let is_player_tgt = st.player_key.as_deref() == Some(t_key.as_ref());
 
-    // WHAT ONE HEAL LINE PROVES ABOUT WHO IS WHO, read off the same line the meter is about to
-    // aggregate. KNOWN-PLAYER evidence, ONE direction only: a heal LANDING ON THE OWNER names its
-    // healer as a friendly player, because `<H> healed Primitive for N` cannot come from a mob.
-    //
-    // THE OTHER DIRECTION WAS TRIED AND MEASURED WRONG. "`You healed <X>` ⇒ X is a player" reads as
-    // obvious and is false in this log: the owner keeps his PETS alive by name, so a full replay
-    // filed 33 entities as players — `a sprited harpie`, `a fire giant warrior`, and every summoned
-    // pet he had ever healed before its first tell. Because a "player" is never a hostile and never
-    // a pet's target, that silently deleted 50k+ points of real pet damage, 14,464 of it from one
-    // pet hitting another. The honest fix is not to make the claim at all.
+    // Known-player evidence, ONE direction only: a heal landing on the owner names its healer as a
+    // friendly player. The other direction — "`You healed <X>` ⇒ X is a player" — is false in this
+    // log, because a player heals their own PETS by name, and a "player" is never a hostile and
+    // never a pet's target, so the claim silently deletes real pet damage.
     if (is_you_tgt || is_player_tgt) && healer_key.is_some() {
         st.note_player(healer_key.as_deref());
     }
-    // PET evidence, the other way round: the owner healing something he is already treating as a pet
+    // Pet evidence, the other way round: the owner healing something already treated as a pet
     // corroborates a charm bind that is still provisional.
     if healer_key.as_deref() == Some("you") && is_pet_tgt {
         st.charm.note_pet_evidence(&t_key);
@@ -803,11 +737,9 @@ pub fn route_heal(st: &mut EngineState, ev: &HealLine) {
     add_hostile_heal(st, ev, healer_key.as_deref());
 }
 
-/// Incoming heal to You (or the player by name) / your pet.
-///
-/// The `inc_heal` map keeps its original `amount <= 0` gate so its totals AND its healer lists stay
-/// byte-identical; the LEDGER takes the zero-effective lines too, because `… for 0 (2) hit points …`
-/// is the overheal evidence and belongs to the ledger that reports overheal.
+/// Incoming heal to You (or the player by name) / your pet. The `inc_heal` map keeps its
+/// `amount <= 0` gate; the ledger takes the zero-effective lines too, because they are the overheal
+/// evidence.
 fn add_friendly_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&str>) {
     let hk = healer_key.unwrap_or("unknown").to_string();
     let healer_name = ev.healer.clone().unwrap_or_else(|| "Unknown".to_string());
@@ -816,8 +748,8 @@ fn add_friendly_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&st
             agg.add_inc_heal(&hk, &healer_name, ev.amount)
         });
     }
-    // Healing ledger: ranked by HEALER. Row id `you` for self-heals keeps the healing meter's primary
-    // row keyed the same way the damage meter's is.
+    // Healing ledger: ranked by HEALER. Row id `you` for self-heals keys the healing meter's primary
+    // row the same way the damage meter's is.
     let kind = if hk == "you" {
         HealSourceKind::You
     } else if st.pet_names.contains(&hk) {
@@ -836,16 +768,14 @@ fn add_friendly_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&st
     });
 }
 
-/// Consume an ANNOUNCED-BUT-UNVALUED heal — `You mend your wounds and heal some damage.`
+/// Consume an announced-but-unvalued heal — `You mend your wounds and heal some damage.`
 ///
 /// It reaches the healing ledger as a COUNT on its own lane and nothing else. Everything the valued
-/// path does with an amount is SKIPPED rather than done with a zero: no `inc_heal` (the top-healers
-/// list ranks by hit points and this line has none), no proc analytics (a 0-amount "Mend proc" is a
-/// fabricated observation), no min/max/overheal.
+/// path does with an amount is skipped rather than done with a zero: no `inc_heal`, no proc
+/// analytics (a 0-amount "Mend proc" is a fabricated observation), no min/max/overheal.
 ///
-/// NO WORLD-MODEL EVIDENCE IS READ OFF IT EITHER, unlike every other heal line: a heal names two
-/// parties and one of them can be filed, but this sentence names NOBODY — not even you, grammatically
-/// — so there is nothing to learn and nothing to get wrong.
+/// No world-model evidence is read off it either, unlike every other heal line: the sentence names
+/// nobody, so there is nothing to learn and nothing to get wrong.
 pub fn route_heal_unstated(st: &mut EngineState, ts: i64, skill: &str) {
     let skill = skill.to_string();
     both(st, ts, true, |agg| agg.heal.add_unstated(&skill));
@@ -859,18 +789,15 @@ pub struct MitigationLine<'a> {
     pub amount: Option<i64>,
 }
 
-/// Consume an ABSORPTION / MITIGATION line — damage PREVENTED, not hit points restored, so it never
-/// touches a DAMAGE total. It does reach the HEALING total: the rune counters are folded in as a row
-/// classified `absorbed`, while the two count-only families carry no amount and so reach no total at
-/// all.
+/// Consume an absorption / mitigation line — damage PREVENTED, not hit points restored, so it never
+/// touches a damage total. It does reach the healing total: rune counters fold in as a row
+/// classified `absorbed`, while the two count-only families carry no amount and reach no total.
 ///
-/// These lines NEVER open, join or extend an encounter and never move the damage timeline — the same
-/// rule miss and resist follow (law 8). A rune ticking while you stand around out of combat belongs to
-/// the zone lane and nowhere else.
+/// These lines never open, join or extend an encounter and never move the damage timeline, the same
+/// rule miss and resist follow (law 8). A rune ticking out of combat belongs to the zone lane only.
 pub fn route_mitigation(st: &mut EngineState, ev: &MitigationLine) {
     let mtype = ev.mtype.to_string();
-    // Defensive: the amount is required by the regex, but keep the ledger clean if a future shape ever
-    // omits it — a rune with no amount is a count we cannot value.
+    // The amount is required by the regex; a rune with no amount is a count we cannot value.
     let amount = ev.amount.unwrap_or(0);
     both(st, ev.ts, true, |agg| match mtype.as_str() {
         "rune" => {
@@ -886,16 +813,14 @@ pub fn route_mitigation(st: &mut EngineState, ev: &MitigationLine) {
 /// Heal on a hostile instance we are currently engaged with → enemy healing.
 fn add_hostile_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&str>) {
     let t_key = id_key_ref(&ev.target);
-    // A KNOWN PLAYER is never a hostile, so their heals are never "enemy healing". `engage_hostile`
-    // already keeps them out of `engaged`, which makes this unreachable for a player the heal stream
-    // identified; it is stated anyway because the two rules answer the same question and must not be
-    // able to disagree.
+    // A known player is never a hostile, so their heals are never enemy healing. Stated here as well
+    // as in `engage_hostile` so the two rules cannot disagree.
     if st.is_known_player(&t_key) {
         return;
     }
-    // …and neither is a GROUP MEMBER. Stated here rather than left to `engage_hostile`'s refusal
-    // because the very next line RESOLVES the target, and resolving MINTS a world instance — a
-    // friendly must not acquire one just because somebody healed them.
+    // …and neither is a group member. Stated here rather than left to `engage_hostile`'s refusal
+    // because the next line RESOLVES the target, and resolving mints a world instance — a friendly
+    // must not acquire one just because somebody healed them.
     if st.is_member(&t_key) {
         return;
     }
@@ -913,8 +838,8 @@ fn add_hostile_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&str
             agg.add_enemy_heal(&id, &name, ev.amount)
         });
     }
-    // Counter-healing ledger, ranked by the HEALER (a mob healing itself is its own row). It takes the
-    // zero-effective lines the map above refuses, for the reason the friendly side does.
+    // Counter-healing ledger, ranked by the HEALER (a mob healing itself is its own row). It takes
+    // the zero-effective lines the map above refuses, for the reason the friendly side does.
     let hk = healer_key.unwrap_or("unknown").to_string();
     let healer_name = ev.healer.clone().unwrap_or_else(|| "Unknown".to_string());
     let input = ev.input();
@@ -922,27 +847,22 @@ fn add_hostile_heal(st: &mut EngineState, ev: &HealLine, healer_key: Option<&str
         agg.heal
             .add_hostile(&format!("heal:{hk}"), &healer_name, &input)
     });
-    // PRESENCE: a heal on an engaged hostile proves BOTH ends are still in the fight — the mob
-    // receiving it, and (when a second mob cast it) the healer. The real case this came from:
-    // `Baron Telyx V`Zher healed Soldier of V`Zher for 175` — the Baron had landed nothing for
-    // seconds while healing his friend, and the old damage-only liveness rule had already written
-    // him off. Liveness only; enemy healing is an annotation, never damage.
+    // A heal on an engaged hostile proves BOTH ends are still in the fight — the mob receiving it,
+    // and (when a second mob cast it) the healer, who may have landed nothing for seconds while
+    // healing. Liveness only; enemy healing is an annotation, never damage.
     st.note_presence_id(&inst.instance_id, ev.ts);
     if let Some(name) = ev.healer.clone() {
         st.note_presence(&name, ev.ts);
     }
 }
 
-// ── THE RECORD-EVERYTHING LADDER (otherRouting.ts) ────────────────────────────────────────────
-
-/// MAY THIS NAME BE RECORDED AS A COMBATANT OF ITS OWN? — the only place the refusal ladder is
-/// spelled out in evaluation order. Cheapest and most authoritative first, so a busy raid log's
-/// mob-vs-mob traffic leaves after one or two lookups.
+/// May this name be recorded as a combatant of its own? The refusal ladder in evaluation order,
+/// cheapest and most authoritative first, so a busy raid log's mob-vs-mob traffic leaves after one
+/// or two lookups.
 ///
-/// `target` matters for exactly one thing: A === B. EQ prints self-damage (`Vektik hit Vektik for 6
-/// points of magic damage by Lifespike.` — a lifetap resolving on its own caster, 60+ of them in one
-/// slice), and a same-name line is the pet model's twin-ambiguity case, not a fight. Booking it would
-/// credit somebody for hitting themselves.
+/// `target` matters for exactly one thing: A == B. EQ prints self-damage (`Vektik hit Vektik for 6
+/// points of magic damage by Lifespike.` — a lifetap resolving on its own caster), and a same-name
+/// line is the pet model's twin-ambiguity case, not a fight.
 fn records_other<'a>(
     st: &mut EngineState,
     attacker: &'a str,
@@ -956,10 +876,9 @@ fn records_other<'a>(
     if !recordable_attacker(st, attacker, &key) {
         return None;
     }
-    // AND THE OTHER HALF, asked of the DEFENDER. A recorded combatant swinging at you, at your pet,
-    // at a group-mate, at anyone the heal stream proved a player, or at another recorded combatant is
-    // not a fight this meter models — exactly the rule a group-mate's stray damage-shield tick has
-    // always got. Dropped rather than booked, and dropped rather than filed as incoming.
+    // The other half, asked of the DEFENDER. A recorded combatant swinging at you, at your pet, at a
+    // group-mate, at anyone the heal stream proved a player, or at another recorded combatant is not
+    // a fight this meter models. Dropped rather than booked, and never filed as incoming.
     if st.ally_friendly(&target_key) || st.others.is_recorded(&target_key) {
         return None;
     }
@@ -979,7 +898,7 @@ fn recordable_attacker(st: &mut EngineState, attacker: &str, key: &str) -> bool 
     if st.ever_struck.contains(key) || st.charm.ever_charmed(key) {
         return false;
     }
-    // Somebody else's charm pet already HAS a row, under the person who charmed it. Two rows for one
+    // Somebody else's charm pet already has a row, under the person who charmed it. Two rows for one
     // entity is the "aggregates lie" failure with two names on it.
     if st.ally.bind_of(key).is_some() {
         return false;
@@ -987,8 +906,8 @@ fn recordable_attacker(st: &mut EngineState, attacker: &str, key: &str) -> bool 
     st.others.shaped(attacker, key)
 }
 
-/// WHAT ONE INCOMING LINE PROVES ABOUT THE THING THAT THREW IT — read off damage already attributed
-/// to `Incoming`, i.e. a line whose target is YOU. It writes to its OWN set and never touches
+/// What one incoming line proves about the thing that threw it — read off damage already attributed
+/// to `Incoming`, i.e. a line whose target is YOU. It writes its own set and never touches
 /// `known_players`, so nothing here can un-file a player and hand a real person back to `engaged`.
 /// The worst it can do is hide a row.
 fn note_other_hostile(st: &mut EngineState, attacker: &str) {
@@ -1083,11 +1002,8 @@ fn route_other_resist(st: &mut EngineState, ev: &ResistLine, category: &str) -> 
     true
 }
 
-/// THE RETENTION POINT for a damage line's modifier tokens, named once (JOS-506).
-///
-/// The record itself borrows the parser's bytes; a timeline instant OUTLIVES the event, so it is
-/// here — and only here — that the tokens have to be copied. Three call sites, all of them behind an
-/// open-encounter gate, which is why the copy was never the cost the record's own construction was.
+/// The retention point for a damage line's modifier tokens. The record borrows the parser's bytes; a
+/// timeline instant outlives the event, so this is the only place the tokens are copied.
 fn own_mods(mods: &[&str]) -> Vec<String> {
     mods.iter().map(|s| (*s).to_string()).collect()
 }
@@ -1124,34 +1040,30 @@ fn miss_instant(ev: &MissLine, kind: &'static str, target: String) -> TimelineRa
     }
 }
 
-// ── SOMEBODY ELSE'S CHARM PET (allyRouting.ts) ────────────────────────────────────────────────
-
-/// THE ALLY PET'S OWN METER ROW. THE ROW ID CARRIES THE CHARMER — `allypet:<charmer>:<pet>` rather
-/// than `allypet:<pet>` — because the same mob re-charmed by a different enchanter is a different
-/// person's contribution, and one row summing both would be the "aggregates lie" failure with two
-/// names on it.
+/// The ally pet's own meter row. The row id carries the CHARMER — `allypet:<charmer>:<pet>` — because
+/// the same mob re-charmed by a different enchanter is a different person's contribution, and one
+/// row summing both would be the "aggregates lie" failure with two names on it.
 fn ally_pet_source(bind: &AllyBind) -> SourceRef {
     SourceRef {
         id: format!("allypet:{}:{}", bind.charmer_key, bind.name_key),
-        // The BROADCAST's spelling, not the damage line's: EQ sentence-cases a leading article, and a
-        // row flickering between `a rock golem` and `A rock golem` is world-model law 2's complaint.
+        // The broadcast's spelling, not the damage line's: EQ sentence-cases a leading article, and
+        // a row flickering between `a rock golem` and `A rock golem` is world-model law 2's
+        // complaint.
         name: format!("Pet ({}) - {}", bind.display, bind.charmer),
         kind: SourceKind::AllyPet,
     }
 }
 
-/// WHAT ONE SWING BY A THIRD PARTY'S CHARM PET PROVES — read off every attributed AND every ignored
+/// What one swing by a third party's charm pet proves — read off every attributed and every ignored
 /// line, before the meter decides what to do with it.
 ///
-/// TWO JUDGEMENTS, both ENDINGS rather than admissions: the SOFT-HOSTILE PROOF (the bound pet swung
-/// at a friendly, so the charm is over at this instant — landed or avoided, because the intent is
-/// the proof) and TWIN AMBIGUITY (attacker and target share the pet's name, so a second instance is
-/// acting and the name's lines cannot be told apart; the bind survives and credits nothing).
+/// Two judgements, both ENDINGS rather than admissions: the soft-hostile proof (the bound pet swung
+/// at a friendly, landed or avoided, because the intent is the proof) and twin ambiguity (attacker
+/// and target share the pet's name, so the bind survives and credits nothing).
 ///
-/// AND A THIRD, WHICH IS NOT A JUDGEMENT: THE PET IS STILL HERE. Every line this sees is the bound
-/// name ACTING, which slides its hold. It is done HERE rather than in the two routing paths because
-/// this is the one seam that sees a line whatever the meter goes on to do with it: the twin-ambiguous
-/// bind books nothing and must still not be reaped for silence.
+/// And a third that is not a judgement: the pet is still here, so its hold slides. Done here rather
+/// than in the two routing paths because this is the one seam that sees a line whatever the meter
+/// does with it — a twin-ambiguous bind books nothing and must still not be reaped for silence.
 fn note_ally_pet_evidence(st: &mut EngineState, attacker: &str, target: &str, ts: i64) {
     if st.ally.idle() {
         return;
@@ -1161,7 +1073,7 @@ fn note_ally_pet_evidence(st: &mut EngineState, attacker: &str, target: &str, ts
         return;
     }
     st.ally.note_activity(&a_key, ts);
-    // The bind is read again for its DISPLAY name and charmer at each of the two endings, because
+    // The bind is read again for its display name and charmer at each ending, because
     // `mark_ambiguous`/`soft_hostile` take `&mut st.ally` and a borrow of the bind cannot span one.
     if a_key == id_key_ref(target) {
         let said = st.ally.mark_ambiguous(&a_key);
@@ -1181,8 +1093,8 @@ fn note_ally_pet_evidence(st: &mut EngineState, attacker: &str, target: &str, ts
     if !st.ally_friendly(&id_key_ref(target)) {
         return;
     }
-    // `soft_hostile` HANDS BACK THE BIND IT RETIRED, which is exactly what the line needs to name —
-    // after the call there is nothing left to look up.
+    // `soft_hostile` hands back the bind it retired, which is what the line needs to name: after the
+    // call there is nothing left to look up.
     if let Some(gone) = st.ally.soft_hostile(&a_key) {
         st.log(
             ts,
@@ -1224,7 +1136,7 @@ fn route_ally_pet_damage(st: &mut EngineState, ev: &DamageEvent<'_>) {
     );
 }
 
-/// The avoided-swing twin, on the same aggregate-only terms. A miss carries no amount, so this can
+/// The avoided-swing twin, on the same aggregate-only terms. A miss carries no amount, so it can
 /// move no total anywhere (law 8).
 fn route_ally_pet_miss(st: &mut EngineState, ev: &MissLine, fold: &MissFold) {
     if st.ally.idle() {
@@ -1273,7 +1185,7 @@ mod tests {
         st
     }
 
-    /// You → a pet NAME is outgoing to a hostile twin, never dropped as friendly fire.
+    /// You → a pet name is outgoing to a hostile twin, never dropped as friendly fire.
     #[test]
     fn you_hitting_a_pet_name_is_outgoing() {
         let st = st_with_pet("a fire giant warrior");
@@ -1283,7 +1195,7 @@ mod tests {
         );
     }
 
-    /// A pet hitting a SAME-NAMED target is the pet's, and AMBIGUOUS.
+    /// A pet hitting a same-named target is the pet's, and ambiguous.
     #[test]
     fn a_same_named_pet_hit_is_the_pets_and_flagged() {
         let st = st_with_pet("a fire giant warrior");
@@ -1297,7 +1209,7 @@ mod tests {
         );
     }
 
-    /// A pet swinging at a KNOWN PLAYER is not our fight — booking it would credit us the damage AND
+    /// A pet swinging at a known player is not our fight — booking it would credit us the damage and
     /// enter that player into `engaged` as a hostile.
     #[test]
     fn a_pet_swinging_at_a_player_is_ignored() {
@@ -1328,11 +1240,11 @@ mod tests {
         assert_eq!(Agg::sum(&enc.agg.out), 42);
         assert_eq!(Agg::sum(&st.zone_agg.out), 42);
         assert_eq!(st.zone_start_ts, 1_000);
-        // …and YOUR OWN SWING is the one signal that files a mob.
+        // …and your own swing is the one signal that files a mob.
         assert!(st.ever_struck.contains("a spite golem"));
     }
 
-    /// ACTIVE TIME IS THE CAPPED GAP: the first hit adds nothing and a long lull adds at most one
+    /// Active time is the capped gap: the first hit adds nothing and a long lull adds at most one
     /// tick.
     #[test]
     fn active_time_caps_the_gap_between_hits() {
@@ -1349,7 +1261,7 @@ mod tests {
         );
     }
 
-    /// A GROUP MEMBER NEVER ENGAGES, but their TARGET does — the mob your group-mate is fighting is
+    /// A group member never engages, but their target does — the mob your group-mate is fighting is
     /// the mob you are fighting.
     #[test]
     fn a_members_target_engages_and_the_member_never_does() {
@@ -1361,26 +1273,26 @@ mod tests {
         let enc = st.current.as_ref().expect("open");
         assert!(enc.engaged.contains("a spite golem#1"));
         assert!(!enc.engaged.iter().any(|id| id.starts_with("dranix")));
-        // …and the row is the member's own, keyed by NAME.
+        // …and the row is the member's own, keyed by name.
         assert!(enc.agg.out.contains_key("member:dranix"));
     }
 
-    /// A mob-vs-mob line NEITHER of your models claims is RECORDED under its own row — and that row
+    /// A mob-vs-mob line neither of your models claims is recorded under its own row — and that row
     /// engages nothing and opens nothing.
     #[test]
     fn a_stranger_fighting_a_mob_gets_a_row_and_nothing_else() {
         let mut st = EngineState::new();
         st.set_player_name("Primitive");
-        // No fight is open, so the line books to the ZONE lane and nowhere else.
+        // No fight is open, so the line books to the zone lane and nowhere else.
         route(&mut st, &dmg("Scooba", "a spite golem", 25, 1_000));
         assert!(st.current.is_none(), "an 'other' row may not open a fight");
         assert!(st.zone_agg.out.contains_key("member:scooba"));
         assert_eq!(Agg::sum(&st.zone_agg.out), 25);
-        // …and the target ledger is untouched, so a fight's NAME stays a fact about what you fought.
+        // …and the target ledger is untouched, so a fight's name stays a fact about what you fought.
         assert!(st.zone_agg.targets.is_empty());
     }
 
-    /// AN ARTICLE-NAMED MOB IS NEVER RECORDED as a combatant of its own — the shape gate.
+    /// An article-named mob is never recorded as a combatant of its own — the shape gate.
     #[test]
     fn mob_versus_mob_between_two_article_names_stays_dropped() {
         let mut st = EngineState::new();
@@ -1392,7 +1304,7 @@ mod tests {
         assert!(st.zone_agg.out.is_empty());
     }
 
-    /// SOMETHING YOU HAVE BEEN KILLING IS NEVER RECORDED as a person either, even when its name is
+    /// Something you have been killing is never recorded as a person either, even when its name is
     /// player-shaped — the `ever_struck` rung.
     #[test]
     fn a_proper_named_mob_you_have_struck_never_earns_its_own_row() {
@@ -1403,8 +1315,8 @@ mod tests {
         assert!(!st.zone_agg.out.contains_key("member:drelzna"));
     }
 
-    /// A heal on an ENGAGED hostile is enemy healing and refreshes its presence; one on a mob we have
-    /// never touched is neither.
+    /// A heal on an engaged hostile is enemy healing and refreshes its presence; one on a mob we
+    /// have never touched is neither.
     #[test]
     fn enemy_healing_needs_the_target_to_be_engaged() {
         let mut st = EngineState::new();
@@ -1447,7 +1359,7 @@ mod tests {
         );
     }
 
-    /// A MISS neither opens nor extends a fight, and it still counts toward the zone lane.
+    /// A miss neither opens nor extends a fight, and it still counts toward the zone lane.
     #[test]
     fn a_miss_never_opens_a_fight() {
         let mut st = EngineState::new();
@@ -1468,8 +1380,8 @@ mod tests {
         assert_eq!(st.zone_agg.out.get("you").expect("row").misses, 1);
     }
 
-    /// The SPECIAL-ATTACK lane renames a miss's ROUND lane and never its aggregation lane, and only
-    /// for YOUR swings — the state line is first-person-only.
+    /// The special-attack lane renames a miss's ROUND lane and never its aggregation lane, and only
+    /// for your swings — the state line is first-person-only.
     #[test]
     fn the_special_lane_renames_only_your_round_lane() {
         let mut st = EngineState::new();

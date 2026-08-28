@@ -1,26 +1,17 @@
-//! VIEWS, OVER A REAL SOCKET, OFF A REAL FOLD (JOS-480).
+//! Views, over a real socket, off a real fold.
 //!
-//! Every test here spawns the built binary, stages a log the product's own file name shape, attaches
-//! it, and reads what a client would read. What it is proving is the half `src/views/` cannot prove
-//! by itself: that the rows a client receives came off the fold on the ingest thread, that they
-//! arrive in the order and at the moments the diff protocol names, and that the frames are the
-//! shapes `src/shared/dataServer/viewWindow.ts` can apply.
+//! Every test spawns the built binary, stages a log under the product's own file-name shape,
+//! attaches it, and reads what a client would read — proving what `src/views/` cannot prove alone:
+//! that the rows came off the fold on the ingest thread, that they arrive in the order and at the
+//! moments the diff protocol names, and that the frames are shapes the client applier can apply.
 //!
-//! THE LOG IS WRITTEN HERE, LINE BY LINE, and that is deliberate rather than lazy. The committed
-//! fixtures are dense traffic with no loot in them at all; this suite needs a ledger whose every
-//! row is known so that an ORDER can be asserted rather than merely counted. The lines are real EQ
-//! shapes (`eqlog::parse::world`'s own patterns) and they are dated after the launch anchor, so the
-//! rebirth boundary fires on the zone line — before there is any loot to lose — exactly as it does
-//! on a real log opened today.
+//! The log is written here line by line because the committed fixtures carry no loot at all, and
+//! this suite needs a ledger whose every row is known so an order can be asserted rather than
+//! merely counted. The lines are real EQ shapes dated after the launch anchor, so the rebirth
+//! boundary fires on the zone line before there is any loot to lose.
 //!
-//! WHAT IS NOT HERE, and why. **`update` ops.** `loot.ledger` is append-only: a row's cells are
-//! settled the moment it is folded, so a live window over it produces inserts and drops and never
-//! an update. Writing a test that manufactured one over the socket would be testing a shape this
-//! source cannot make; the op is proven exhaustively — changed cells only, an explicit null for a
-//! cell that went away, newest-wins within a batch — in `views::diff`'s own unit tests, against the
-//! ported client applier. **`subscribe` before any attach** is `tests/ops.rs`'s
-//! `a_subscription_acknowledges_then_opens_with_an_empty_reset`: an ack, then a reset naming
-//! generation 1 with nothing in it.
+//! `update` ops are not here: `loot.ledger` is append-only, so a live window over it produces
+//! inserts and drops and never an update. They are proven in `views::diff`'s own unit tests.
 
 mod harness;
 
@@ -33,15 +24,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
-// ---- the log this suite folds --------------------------------------------------------------
-
 /// The zone every row below is tagged with, and the line that fires the rebirth boundary on an
 /// empty ledger.
 const ZONE: &str = "[Wed Aug 19 16:00:00 2026] You have entered Nagafen's Lair.\n";
 
-/// FOUR LOOTS, in append order — `loot:0` through `loot:3`. The instants and the item names are
-/// deliberately in DIFFERENT orders, so a sort by `at` and a sort by `item` cannot agree by
-/// accident and an assertion about one is not silently an assertion about the other.
+/// Four loots in append order, `loot:0` through `loot:3`. The instants and the item names are in
+/// deliberately different orders, so a sort by `at` and a sort by `item` cannot agree by accident.
 const LEDGER_LINES: &str = concat!(
     "[Wed Aug 19 16:11:19 2026] You have looted 2 Giant Warlord Bracer from a fire giant warlord corpse.\n",
     "[Wed Aug 19 16:12:00 2026] You have looted an Aged Bone Rod from a fire giant warlord corpse.\n",
@@ -75,9 +63,9 @@ impl Staged {
         self.0.join("eqlog_Primitive_freeport.txt")
     }
 
-    /// Append the way EverQuest appends: an open, a write, a flush. ONE WRITE for whatever is
-    /// handed over, which is what makes the coalescing test a claim rather than a race — several
-    /// lines that land in one write land in one tail poll.
+    /// Append the way EverQuest appends: an open, a write, a flush. One write for whatever is handed
+    /// over, which is what makes the coalescing test a claim rather than a race — several lines that
+    /// land in one write land in one tail poll.
     fn append(&self, text: &str) {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -95,20 +83,15 @@ impl Drop for Staged {
     }
 }
 
-// ---- reading the stream ----------------------------------------------------------------------
-
-/// ONE CONNECTION, READ ONCE AND SORTED BY SUBSCRIPTION.
+/// One connection, read once and sorted by subscription.
 ///
 /// A test holding two subscriptions must not be forced to read them in whatever order the engine
-/// happened to interleave them — a reader that discarded the frames it was not looking for would
-/// lose the other subscription's opening reset and then assert about the wrong one, which is a test
-/// that fails for a reason that is not the code's. So every frame is buffered under the id it
-/// names, and the two streams are read independently.
+/// interleaved them, so every frame is buffered under the id it names and the two streams are read
+/// independently.
 ///
-/// EPOCH FRAMES AND REPLIES ARE DROPPED HERE, and that is correct rather than lossy: progress is
-/// connection-wide and arrives whether anybody asked for it, and the attach's own reply lands in
-/// the middle of it. Their ordering is `tests/ingest.rs`'s claim; this suite is about what a
-/// SUBSCRIPTION is told.
+/// Epoch frames and replies are dropped: progress is connection-wide and arrives whether anybody
+/// asked for it, and its ordering is `tests/ingest.rs`'s claim. This suite is about what a
+/// subscription is told.
 struct Stream {
     client: harness::Client,
     resets: std::collections::VecDeque<ResetMessage>,
@@ -156,12 +139,12 @@ impl Stream {
         }
     }
 
-    /// A subscription's FIRST full window: the empty opening reset, then the one the landed fold
+    /// A subscription's first full window: the empty opening reset, then the one the landed fold
     /// sends.
     ///
     /// Both are resets and a client cannot tell them apart, which is the point of reset-then-diffs
-    /// holding for an empty window — but a TEST has to, so it names the two by their epochs. The
-    /// opening one names generation 1 (nothing has attached), the fold's names generation 2.
+    /// holding for an empty window; a test names the two by their epochs. The opening one names
+    /// generation 1 (nothing has attached), the fold's names generation 2.
     fn window_when_the_fold_lands(&mut self, id: i64) -> ResetMessage {
         let opening = self.reset(id);
         assert_eq!(*opening.epoch, 1, "the opening reset names the first world");
@@ -184,7 +167,7 @@ fn cell<'a>(row: &'a Row, name: &str) -> &'a protocol::Cell {
 }
 
 /// Open a subscription and take the window the landed fold sends it. The log is attached here, so
-/// every caller is a subscribe-BEFORE-attach — the mid-fold case, which is what a renderer does.
+/// every caller is a subscribe-before-attach — the mid-fold case, which is what a renderer does.
 fn attached(
     engine: &Engine,
     staged: &Staged,
@@ -198,19 +181,14 @@ fn attached(
     (stream, window)
 }
 
-// ---- the registry ------------------------------------------------------------------------------
-
 #[test]
 fn a_source_this_engine_does_not_serve_is_not_found() {
-    // PHASE 0 ACCEPTED EVERY DESCRIPTOR because there was no registry to be absent from. There is
-    // one now, so the views schema's own rule holds: "an unknown one is a `notFound` error, never
-    // an empty result".
+    // The views schema's own rule: an unknown source is a `notFound` error, never an empty result.
     let engine = Engine::start();
     let mut client = engine.connected();
 
-    // THE STAND-IN KEEPS MOVING, WHICH IS THE REGISTRY WORKING. `combat.live` stood here until
-    // JOS-485 served it and `eventFeed.recent` until JOS-487 did; what is left is
-    // `combat.encounters`, which the cutover ledger names and the drill-down ticket will serve.
+    // The stand-in is a source the cutover ledger names but the registry does not yet serve; it
+    // moves as sources land.
     client.send(&subscribe(7, "combat.encounters"));
     let EngineMessage::ErrorReply(refusal) = client.recv() else {
         panic!("a refusal");
@@ -261,19 +239,17 @@ fn a_descriptor_this_source_cannot_answer_is_bad_params_rather_than_a_quiet_lie(
     assert!(matches!(refusal.error.code, ErrorCode::BadParams));
 }
 
-// ---- the fold lands ----------------------------------------------------------------------------
-
 #[test]
 fn a_subscription_opened_before_the_attach_takes_its_rows_when_the_fold_lands() {
     let staged = Staged::new("land");
     let engine = Engine::start();
     let (_client, window) = attached(&engine, &staged, 7, ledger(&[], 0, 50));
 
-    // NEWEST FIRST, which is what the flat ledger draws, and the whole view is four rows.
+    // Newest first, which is what the flat ledger draws, and the whole view is four rows.
     assert_eq!(window.total, 4);
     assert_eq!(keys(&window.rows), ["loot:3", "loot:2", "loot:1", "loot:0"]);
 
-    // RENDER-READY: the cells are what `FlatRow` puts on screen, off the fold, through the log's
+    // Render-ready: the cells are what the client puts on screen, off the fold, through the log's
     // own clock. Nothing here is a number the renderer would have to format.
     let head = &window.rows[0];
     assert_eq!(*cell(head, "at"), protocol::Cell::text("Aug 19, 04:14 PM"));
@@ -289,7 +265,7 @@ fn a_subscription_opened_before_the_attach_takes_its_rows_when_the_fold_lands() 
     );
     assert_eq!(*cell(head, "count"), protocol::Cell::null());
 
-    // …and the stacked loot keeps its magnitude as a NUMBER beside the name rather than inside it.
+    // …and the stacked loot keeps its magnitude as a number beside the name rather than inside it.
     let stacked = &window.rows[3];
     assert_eq!(
         *cell(stacked, "item"),
@@ -323,9 +299,8 @@ fn a_stated_sort_is_the_one_the_window_arrives_in() {
         ["loot:3", "loot:2", "loot:1", "loot:0"]
     );
 
-    // AND ONE EXPLICIT ONE. `item` ascending is not the reverse of `at` — the staged instants and
-    // the staged item names are deliberately in different orders — so this cannot pass by
-    // coincidence. It opens on a SECOND connection, over a fold that is already live: the empty
+    // And one explicit sort. `item` ascending is not the reverse of `at`, so this cannot pass by
+    // coincidence. It opens on a second connection over a fold that is already live: the empty
     // opening reset, then the full one the fold answers with at its next boundary.
     let mut second = Stream::new(engine.connected());
     second.send(&subscribe_to(9, ledger(&[("item", "asc")], 0, 50)));
@@ -341,8 +316,6 @@ fn a_stated_sort_is_the_one_the_window_arrives_in() {
         "Aged Bone Rod, Cloak of Flames, Flowing Black Silk Sash, Giant Warlord Bracer"
     );
 }
-
-// ---- live -------------------------------------------------------------------------------------
 
 #[test]
 fn a_line_the_game_writes_arrives_as_an_insert_at_the_head() {
@@ -363,8 +336,8 @@ fn a_line_the_game_writes_arrives_as_an_insert_at_the_head() {
     let [DiffOp::InsertOp(insert)] = diff.ops.as_slice() else {
         panic!("one insert, got {:?}", diff.ops);
     };
-    // NEWEST FIRST MEANS AT THE HEAD, and the head is named rather than implied: the client applies
-    // ops positionally and an insert that named no anchor would mean "the window was empty".
+    // Newest first means at the head, and the head is named rather than implied: the client applies
+    // ops positionally, and an insert that named no anchor would mean the window was empty.
     assert_eq!(insert.before.as_deref().map(String::as_str), Some("loot:3"));
     assert!(insert.after.is_none(), "exactly one anchor");
     assert_eq!(*insert.row.key, "loot:4");
@@ -380,7 +353,7 @@ fn a_line_the_game_writes_arrives_as_an_insert_at_the_head() {
 
 #[test]
 fn a_full_window_pushes_its_oldest_row_out_in_the_same_batch() {
-    // Fixture moment 02 exactly: a kill drops loot into a FULL newest-first window, so one row
+    // Fixture moment 02 exactly: a kill drops loot into a full newest-first window, so one row
     // enters and one leaves — and the one that left still exists in the view, which is why `total`
     // goes up while the window's size does not.
     let staged = Staged::new("overflow");
@@ -393,7 +366,7 @@ fn a_full_window_pushes_its_oldest_row_out_in_the_same_batch() {
     let diff = client.diff(7);
     assert_eq!(diff.total, Some(5));
     assert_eq!(diff.ops.len(), 2, "{:?}", diff.ops);
-    // THE DROP GOES FIRST so every anchor the batch names is a row the client still holds.
+    // The drop goes first, so every anchor the batch names is a row the client still holds.
     let [DiffOp::DropOp(dropped), DiffOp::InsertOp(insert)] = diff.ops.as_slice() else {
         panic!("a drop then an insert, got {:?}", diff.ops);
     };
@@ -407,9 +380,9 @@ fn a_full_window_pushes_its_oldest_row_out_in_the_same_batch() {
 
 #[test]
 fn everything_written_between_two_services_arrives_as_one_frame() {
-    // RULE 2, COALESCING: the cadence is ~10 Hz and the tail polls at 400 ms, so three lines the
-    // game wrote in one breath are one frame and not three. They are written in ONE append for the
-    // same reason the test can assert it — one write is one poll.
+    // Coalescing: the cadence is ~10 Hz and the tail polls at 400 ms, so three lines the game wrote
+    // in one breath are one frame and not three. They are written in one append because one write is
+    // one poll.
     let staged = Staged::new("coalesce");
     let engine = Engine::start();
     let (mut client, _window) = attached(&engine, &staged, 7, ledger(&[], 0, 50));
@@ -428,7 +401,7 @@ fn everything_written_between_two_services_arrives_as_one_frame() {
         "three loots, one frame, three ops: {:?}",
         diff.ops
     );
-    // …and they are inserted in the order the window holds them — newest first, so the LAST line
+    // …and they are inserted in the order the window holds them — newest first, so the last line
     // written is the head, and each of the others anchors on what the one before it put there.
     let inserted: Vec<&str> = diff
         .ops
@@ -443,8 +416,8 @@ fn everything_written_between_two_services_arrives_as_one_frame() {
 
 #[test]
 fn two_subscriptions_over_one_source_hold_their_own_windows() {
-    // The renderer case: one list and one strip, over the same ledger, at different widths. They
-    // are two windows and one source — the source is built ONCE per serve pass and cut twice.
+    // The renderer case: one list and one strip, over the same ledger, at different widths. They are
+    // two windows and one source — the source is built once per serve pass and cut twice.
     let staged = Staged::new("two");
     let engine = Engine::start();
     let mut client = Stream::new(engine.connected());
@@ -478,15 +451,11 @@ fn two_subscriptions_over_one_source_hold_their_own_windows() {
     );
 }
 
-// ---- the fixtures, replayed --------------------------------------------------------------------
-
 #[test]
 fn the_committed_moments_are_the_shapes_the_engine_actually_sends() {
-    // `protocol/fixtures/01` and `02` are the verbatim truth over any prose (owner ruling 17). What
-    // is checkable against a REAL source is their SHAPE — which keys a reset carries, which keys a
-    // row carries, which keys an insert and a drop carry — because the fixtures' own contents are a
-    // worked example over a log nobody has. So the fixture is read, its key sets are taken, and the
-    // engine's own frames are held against them.
+    // The committed fixtures are the verbatim truth over any prose. What is checkable against a real
+    // source is their shape — which keys a reset, a row, an insert and a drop carry — because their
+    // contents are a worked example over a log nobody has.
     let staged = Staged::new("fixtures");
     let engine = Engine::start();
     let (mut client, window) = attached(&engine, &staged, 7, ledger(&[], 0, 4));
@@ -513,10 +482,9 @@ fn the_committed_moments_are_the_shapes_the_engine_actually_sends() {
         object_keys(fixture_diff),
         "a diff that moved `total` carries all four fields"
     );
-    // The fixture's ops are an insert-before and a drop, in that order; the engine's are a drop and
-    // an insert-before. The ORDER inside a batch is the engine's to choose — the client applies in
-    // order and both orderings produce the same window — so what is held against the fixture is
-    // which OPS and which FIELDS, not which came first.
+    // The order inside a batch is the engine's to choose — the client applies in order and both
+    // orderings produce the same window — so what is held against the fixture is which ops and which
+    // fields, not which came first.
     let mut fixture_ops: Vec<Vec<String>> = fixture_diff["ops"]
         .as_array()
         .expect("ops")
@@ -549,7 +517,7 @@ fn moment(name: &str) -> serde_json::Value {
     serde_json::from_str(&text).expect("a fixture is JSON")
 }
 
-/// The nth message of a fixture, insisting it is one the ENGINE sends.
+/// The nth message of a fixture, insisting it is one the engine sends.
 fn engine_message(fixture: &serde_json::Value, at: usize) -> &serde_json::Value {
     let message = &fixture["messages"][at];
     assert_eq!(message["dir"], "engine", "{message}");
@@ -568,14 +536,10 @@ fn object_keys(value: &serde_json::Value) -> Vec<String> {
     keys
 }
 
-// ---- the engine measures itself ------------------------------------------------------------
-
 #[test]
 fn the_engine_reports_what_its_own_serve_path_cost() {
-    // OWNER RULING 19, FOUNDATIONS. The `perf.budgets` surface is a later ticket; what must exist
-    // now is the measurement, so that the surface has numbers to serve rather than a place to put
-    // numbers nobody took. A stderr line is the honest minimal shape, and this is the pin that it
-    // is real: a fold lands, a frame goes out, and the engine says what it cost.
+    // The pin that the serve measurement is real: a fold lands, a frame goes out, and the engine
+    // says on stderr what it cost.
     let staged = Staged::new("meter");
     let engine = Engine::watched();
     let (mut client, _window) = attached(&engine, &staged, 7, ledger(&[], 0, 50));

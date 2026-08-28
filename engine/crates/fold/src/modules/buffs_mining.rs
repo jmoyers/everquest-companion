@@ -1,16 +1,11 @@
-//! `src/main/modules/buffsMining.ts` — WHICH LOG LINES ARE OFFERED TO THE MESSAGE-OVERLAY MINER,
-//! and the cache that stops the served overlay from being rebuilt on every snapshot.
+//! Which log lines are offered to the message-overlay miner.
 //!
-//! IT MINES THE SAME WAY IN REPLAY AND LIVE, which is what makes the overlay a FOLD rather than a
-//! session artifact — and therefore what makes it reproducible here at all.
+//! It mines the same way in replay and live, which is what makes the overlay a FOLD rather than a
+//! session artifact, and therefore reproducible.
 //!
-//! THE DIRTY-CACHE IS DELIBERATELY ABSENT, and it is a scope statement rather than an omission. Over
-//! there `build()` is memoized behind a `dirty` flag because the LIVE app asks for a snapshot
-//! repeatedly and the aggregate is a walk over every bucket and every message. A `Fold` takes
-//! exactly one snapshot, at the end, so the cache would save nothing and would cost this file the
-//! interior mutability that `EqModule::snapshot(&self)` otherwise never needs. A cached answer and a
-//! rebuilt one are the same value by construction — the flag is set by an OBSERVATION and by nothing
-//! else — so dropping it changes no output. Phase 3's live tail is where it comes back.
+//! There is deliberately no dirty-cache around `build()`: a `Fold` takes exactly one snapshot, so
+//! memoizing would save nothing and would cost this file the interior mutability that
+//! `EqModule::snapshot(&self)` otherwise never needs.
 
 use crate::event::{Event, Key, Kind};
 use crate::message_overlay::{message_text_of, MessageOverlayMiner, SeedMessage};
@@ -22,10 +17,9 @@ pub struct OverlayMining {
 }
 
 impl OverlayMining {
-    /// Seeded warm with the committed baseline, so a fresh install benefits from the shipped
-    /// counts. EACH SEED CARRIES ITS SOURCE KEY (JOS-231): the bucket a log is filed under is what
-    /// lets `begin_source` replace it when that log is folded again, instead of the fold
-    /// accumulating on top of its own previous output.
+    /// Seeded warm with the committed baseline, so a fresh install benefits from the shipped counts.
+    /// Each seed carries its SOURCE KEY: the bucket a log is filed under is what lets `begin_source`
+    /// replace it when that log is folded again, rather than accumulating on its own output.
     pub fn new(facts: SpellFacts, seeds: &[(&str, Vec<SeedMessage>)]) -> Self {
         let mut miner = MessageOverlayMiner::new(facts);
         for (key, counts) in seeds {
@@ -40,34 +34,43 @@ impl OverlayMining {
         self.miner.begin_source(key);
     }
 
-    /// Offer one event to the miner. A `castBegin` is the association ANCHOR; the message-bearing
-    /// events (buffApply / spellEmote = landing, buffWearOff / illusionFade / buffFade = wears-off)
+    /// Offer one event to the miner. A cast is the association ANCHOR; the message-bearing events
     /// are candidate messages associated to the nearest anchor within the window.
-    pub fn observe(&mut self, ev: &Event) {
+    ///
+    /// Returns whether it fed the miner. The mined overlay is published, so a line that reaches the
+    /// miner may move it. The answer is deliberately the CALL and not the miner's own verdict:
+    /// "unsure whether this mutated" is the case the announce law says to bump on.
+    pub fn observe(&mut self, ev: &Event) -> bool {
         match ev.kind_of() {
             Kind::CastBegin => {
                 let spell = ev.str(Key::Spell).unwrap_or_default().to_string();
                 self.miner.observe_cast(&spell, ev.ts());
+                true
             }
-            Kind::BuffApply | Kind::SpellEmote => self.note(ev, "landing"),
-            Kind::BuffWearOff | Kind::IllusionFade | Kind::BuffFade => self.note(ev, "wearsOff"),
-            // The AA potion quaff is a LANDING message the leveling analytics now claim as their own
-            // kind. It fell through here as `unknown` before that rule existed and the overlay
-            // learned it as a verified Bottle of Alternate Adventure landing (it is absent from
-            // spells.json, so the DB table never had it) — so it keeps the same miner path, and the
-            // learned overlay is byte-identical to what it was.
+            Kind::BuffApply | Kind::SpellEmote => {
+                self.note(ev, "landing");
+                true
+            }
+            Kind::BuffWearOff | Kind::IllusionFade | Kind::BuffFade => {
+                self.note(ev, "wearsOff");
+                true
+            }
+            // The AA potion quaff is a landing message the leveling analytics claim as their own
+            // kind, but it is absent from spells.json so the overlay learned it here. It keeps the
+            // same miner path so the learned overlay stays what it was.
             Kind::AaPotion | Kind::Unknown => {
-                // A line the parser classified as NOTHING but that could be an un-catalogued landing
-                // message — Symbol of Pinzarn's real "The symbol of Pinzarn flashes before your
-                // eyes.", whose wiki `msg_cast_on_you` is WRONG, so the DB table never matched it.
-                // Only flavor-SHAPED lines are fed; the unambiguous-anchor and count rules in the
-                // miner discard coincidental pairings, so a wrong candidate never verifies.
+                // A line the parser classified as nothing but that could be an un-catalogued landing
+                // message, where the wiki's own cast-on-you text is wrong and the DB never matched
+                // it. Only flavor-SHAPED lines are fed; the miner's unambiguous-anchor and count
+                // rules discard coincidental pairings, so a wrong candidate never verifies.
                 let t = message_text_of(ev.raw()).to_string();
                 if looks_landing_message(&t) {
                     self.miner.observe_message(&t, ev.ts(), "landing");
+                    return true;
                 }
+                false
             }
-            _ => {}
+            _ => false,
         }
     }
 
@@ -76,14 +79,12 @@ impl OverlayMining {
         self.miner.observe_message(&text, ev.ts(), role);
     }
 
-    /// SEED ONE PERSISTED BUCKET (JOS-496 item 3) — `overlayPersistence.loadUserSources()`'s
-    /// output, one source at a time, through the same `merge` the committed baseline arrives by.
+    /// Seed one persisted bucket, through the same `merge` the committed baseline arrives by.
     ///
-    /// SEPARATE FROM `new` ON PURPOSE. The baseline is a fact about COMMITTED DATA and is compiled
-    /// in; the user register is a file, and a construction that could reach one would be a
-    /// construction the six-slice oracle could not reproduce. So the constructor keeps the seed it
-    /// has always had and this is the extra act, made by the one caller that has been handed a
-    /// state directory.
+    /// Separate from `new` on purpose: the baseline is a fact about committed data and is compiled
+    /// in, while the user register is a file, and a constructor that could reach a file would not be
+    /// reproducible by the goldens. This is the extra act, made by the one caller that has been
+    /// handed a state directory.
     pub fn seed(&mut self, key: &str, counts: &[SeedMessage]) {
         self.miner.merge(counts, key);
     }

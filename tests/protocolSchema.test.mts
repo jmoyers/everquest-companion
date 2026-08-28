@@ -403,6 +403,51 @@ test('THE FOLD PERCENT IS FRACTIONAL, and comes back as the same text in both la
   assert.match(JSON.stringify(progress), /"pct":62\.4/)
 })
 
+test('A PROGRESS FRAME SAYS WHICH LOOP EMITTED IT, and says it by being absent (JOS-518)', () => {
+  // The engine has two loops that emit this same shape — the historical scan and the live tail —
+  // and their NUMBERS do not distinguish them: a caught-up tail sits at 100% with the event count
+  // climbing, which is what a scan that has just finished looks like. `live` is the engine saying
+  // which one it is in, and it is OPTIONAL because a scan frame says nothing rather than saying
+  // false (the `song`/`rare` idiom already on this wire).
+  const fold = (bundle.$defs as Record<string, {
+    properties: Record<string, { type?: string }>
+    required: string[]
+  }>).FoldProgress
+  assert.equal(fold.properties.live.type, 'boolean')
+  assert.equal(fold.required.includes('live'), false, '`live` is present only when true')
+
+  const framed = (live?: boolean): unknown => ({
+    kind: 'epoch',
+    epoch: 2,
+    reason: 'progress',
+    progress: { pct: 62.4, events: 9087066, offset: 128, logSize: 205, ...(live === undefined ? {} : { live }) }
+  })
+  assert.ok(isEngineMessage(framed()), 'a scan frame carries no flag')
+  assert.ok(isEngineMessage(framed(true)), 'a tail frame carries it')
+  // …and it is a BOOLEAN, not a loop name: `additionalProperties: false` plus a typed member is
+  // what stops a future engine inventing a third value nobody branched on.
+  assert.equal(
+    isEngineMessage({
+      kind: 'epoch',
+      epoch: 2,
+      reason: 'progress',
+      progress: { pct: 62.4, events: 1, offset: 1, logSize: 1, live: 'tail' }
+    }),
+    false
+  )
+})
+
+test('`timeout` IS AN ERROR CODE A CLIENT MINTS, and it is in the one closed set (JOS-518)', () => {
+  // A per-request deadline needs a code its caller can branch on, and the type a caller branches on
+  // is `ErrorCode`. A second, client-only union beside it would be two spellings of one question —
+  // so the member lives here, and the schema's own description says which side sends it.
+  const codes = (bundle.$defs as Record<string, { enum: string[] }>).ErrorCode.enum
+  assert.ok(codes.includes('timeout'))
+  assert.ok(
+    isEngineMessage({ kind: 'error', id: 1, ok: false, error: { code: 'timeout', message: 'x' } })
+  )
+})
+
 test('the fixture token is the shape the app mints, and is nobody’s secret', () => {
   const handshake = fixtures.find((f) => f.name === '05-handshake.json')
   assert.ok(handshake)

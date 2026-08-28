@@ -24,6 +24,9 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
   const readies: (ReadyEngine | null)[] = []
   /** THE PERSON'S EDGE (JOS-503) — every `onFault`, in order, `null`s included. */
   const faults: (EngineFaultCause | null)[] = []
+  /** THE CYCLING EDGE (JOS-519) — one entry per launch that had SERVED and then died, stamped with
+   *  the fake clock so a suite can assert both how many there were and when. */
+  const servedExits: number[] = []
   const tokens: string[] = []
   let mintCount = 0
   // MUTABLE, because a health WATCHDOG is only a watchdog if the answer can change under it: the
@@ -50,7 +53,8 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
     report: (log) => reports.push(log),
     onPid: (pid) => pids.push(pid),
     onReady: (engine) => readies.push(engine),
-    onFault: (fault) => faults.push(fault)
+    onFault: (fault) => faults.push(fault),
+    onServedExit: () => servedExits.push(clock.now())
   }
   return {
     clock,
@@ -60,6 +64,7 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
     pids,
     readies,
     faults,
+    servedExits,
     tokens,
     supervisor: createEngineSupervisor(deps),
     setBehaviour: (next: ChannelBehaviour) => (behaviour = next)

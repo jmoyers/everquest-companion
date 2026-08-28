@@ -1,35 +1,24 @@
-//! THE ACTIVE-STATE TIMELINE — "what was on at time T", as an interval model with EVIDENCE on both
+//! The active-state timeline — "what was on at time T", as an interval model with evidence on both
 //! edges (`src/main/combat/stateTimeline.ts`).
 //!
-//! WHY IT LIVES IN THE COMBAT ENGINE. Three of the four kinds already have exactly one owner here:
-//! `EngineState` owns the stance/invocation pair and the two-slot coat state, and the encounter's
-//! stance spans are already a span list. A parallel service would fork state that has one owner
-//! today, and forked state drifts.
+//! It lives in the combat engine because `EngineState` already owns the stance/invocation pair and
+//! the coat slots; a parallel service would fork state that has one owner today. It is deliberately
+//! not merged with the encounter's own `stance_spans`, which feeds the shipped timeline view: two
+//! lists, one shared writer (`procrouting::apply_stance`), this one session-level and additive.
 //!
-//! DELIBERATELY NOT MERGED with the encounter's own `stance_spans`: that list is consumed by the
-//! shipped timeline view and sits inside the byte-identical regression surface. Two lists, one shared
-//! writer (`procrouting::apply_stance`). This ring is SESSION-level and purely additive.
+//! Every edge is labeled, because the game prints a state's start (a stance commit, a coat line, a
+//! buff landing) and almost never its end. Only a printed line earns `observed`; a replacing sibling
+//! is `inferred`; a severed boundary is `censored` and never renders as an end time.
 //!
-//! LAW 1 IS THE SHAPE OF THIS FILE. The game prints a state's START (a stance commit, a coat line, a
-//! buff landing). It almost never prints the END — the real log carries 97 `Instrument of Nife`
-//! landings against ONE observed fade. So every edge is LABELED: only a line the game printed earns
-//! `observed`; a replacing sibling is `inferred`; a severed boundary is `censored` and NEVER renders
-//! as an end time.
-//!
-//! ── `active` IS A HASH SET AND THAT IS SAFE ───────────────────────────────────────────────────
-//!
-//! Over there it is a JS `Set`, whose iteration order is insertion order — and this crate's rule is
-//! that a published array's order is a claim. This one is not published: every consumer either looks
-//! a key UP (`swings_by_state`, `active_ms_by_state`, `by_state`) or folds the keys into another set
-//! that is SORTED before it reaches a string (`co_state_confounds`). Checked rather than assumed, and
-//! written down so nobody has to check it twice.
+//! `active` is a `HashSet` and its order is never published: every consumer either looks a key up or
+//! folds the keys into a set that is sorted before it reaches a string.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-/// Memory bound only — the whole 1.1M-line log produces ~700 stance and invocation commits, 6 coats
-/// and 97 buff applies, so this is never reached in practice. Drop-oldest, like every other ring.
+/// Memory bound only — a full log produces a few hundred commits — and drop-oldest, like every other
+/// ring here.
 pub const STATE_SPAN_CAP: usize = 2_000;
 
 /// `shared/procAnalytics.ts StateKind`.
@@ -76,27 +65,25 @@ pub struct StateSpan {
     pub key: String,
     pub name: String,
     pub start_ts: i64,
-    /// ABSENT — never null — while the span is still open.
+    /// Absent — never null — while the span is still open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_ts: Option<i64>,
     pub start_evidence: EdgeEvidence,
     pub end_evidence: EdgeEvidence,
 }
 
-/// The engine-internal span record: the shared shape plus the EXCLUSIVITY GROUP, which is the whole
-/// mechanism by which an unprinted end becomes an inferred one.
+/// The engine-internal span record: the shared shape plus the exclusivity group, which is how an
+/// unprinted end becomes an inferred one.
 ///
-/// Groups, and why each is what it is:
-///   `stance` / `invocation` — nine members each, mutually exclusive, so a new commit ENDS the
-///                             previous span. The game prints no "your stance ends" line.
+///   `stance` / `invocation` — mutually exclusive, so a new commit ends the previous span; the game
+///                             prints no "your stance ends" line.
 ///   `coat:utility`          — one slot; a new utility coat replaces the old one.
-///   `coat:combat:<line>`    — combat venoms STACK (wiki, Rogue page; proved by the real log), so each
-///                             venom LINE is its own group and only a re-coat of the same line
-///                             supersedes.
+///   `coat:combat:<line>`    — combat venoms stack, so each venom line is its own group and only a
+///                             re-coat of the same line supersedes.
 ///   `buff:<key>`            — a re-apply supersedes its own span; unrelated buffs coexist.
 ///
-/// `group` is engine-internal on purpose: `spans_overlapping` projects plain `StateSpan`s, so the
-/// shared payload type never grows a field the renderer has no use for.
+/// `group` stays engine-internal: `spans_overlapping` projects plain `StateSpan`s, so the shared
+/// payload type never grows a field the renderer has no use for.
 #[derive(Debug, Clone)]
 struct SpanRecord {
     span: StateSpan,
@@ -106,7 +93,7 @@ struct SpanRecord {
 /// Everything needed to open a span.
 pub struct OpenState<'a> {
     pub kind: StateKind,
-    /// Canonical join key — lowercased (law 2: canonicalize at boundaries).
+    /// Canonical join key, lowercased.
     pub key: &'a str,
     /// Display name, raw casing.
     pub name: &'a str,
@@ -116,13 +103,13 @@ pub struct OpenState<'a> {
     pub group: Option<String>,
 }
 
-/// The session-level span ring plus its LIVE open index.
+/// The session-level span ring plus its live open index.
 #[derive(Debug, Default)]
 pub struct StateTimeline {
     spans: Vec<SpanRecord>,
     /// `<kind>:<key>` of every open span. Read-only to callers; mutated here only.
     pub active: HashSet<String>,
-    /// group → INDEX of the one OPEN span in that group. The exclusivity index.
+    /// group → index of the one open span in that group; the exclusivity index.
     open: HashMap<String, usize>,
 }
 
@@ -138,9 +125,8 @@ impl StateTimeline {
     }
 
     /// Open a span, closing whatever open span shares its exclusivity group as `inferred` — the only
-    /// honest verdict when the game never printed an end. Callers that can be re-asserted with no
-    /// state change already drop the no-op before reaching here, so this never accrues zero-width
-    /// spans from re-commits.
+    /// honest verdict when the game printed no end. Callers drop a no-op re-assert before reaching
+    /// here, so this never accrues a zero-width span.
     pub fn note_state(&mut self, a: &OpenState) {
         let group = a
             .group
@@ -182,8 +168,8 @@ impl StateTimeline {
         }
     }
 
-    /// Close EVERY open span in a group (the combat-coat dry line: it names the family, and the log
-    /// CANNOT say which venom of a stack expired — law 6).
+    /// Close every open span in a group — the combat-coat dry line names the family, and the log
+    /// cannot say which venom of a stack expired.
     pub fn close_group_prefix(&mut self, prefix: &str, ts: i64, evidence: EdgeEvidence) {
         let hits: Vec<usize> = self
             .open
@@ -196,10 +182,9 @@ impl StateTimeline {
         }
     }
 
-    /// A boundary severed every span: epoch, engine reset, player death. The end is UNKNOWABLE, so it
-    /// is `censored` — never `observed`, and never a fabricated expiry. The spans stay in the ring
-    /// (they describe real, observed intervals up to the cut); only their end evidence says the cut is
-    /// where our knowledge stops.
+    /// A boundary severed every span: epoch, engine reset, player death. The end is unknowable, so it
+    /// is `censored` and never a fabricated expiry. The spans stay in the ring — they describe real
+    /// intervals up to the cut — and only their end evidence says where our knowledge stops.
     pub fn censor_all(&mut self, ts: i64) {
         let hits: Vec<usize> = self.open.values().copied().collect();
         for i in hits {
@@ -207,7 +192,7 @@ impl StateTimeline {
         }
     }
 
-    /// Spans that overlap `[from_ts, to_ts]`, projected to the shared payload shape. An OPEN span
+    /// Spans that overlap `[from_ts, to_ts]`, projected to the shared payload shape. An open span
     /// overlaps any window that ends after it started.
     pub fn spans_overlapping(&self, from_ts: i64, to_ts: i64) -> Vec<StateSpan> {
         self.spans
@@ -230,9 +215,9 @@ impl StateTimeline {
         self.active.remove(&key);
     }
 
-    /// Drop-oldest under the cap. A dropped span may still be the OPEN one for its group (a permanent
-    /// buff outliving 2,000 later commits), so the open index is REPAIRED rather than left pointing at
-    /// a record no longer in the ring.
+    /// Drop-oldest under the cap. A dropped span may still be the open one for its group — a
+    /// permanent buff can outlive every later commit — so the open index is repaired rather than left
+    /// pointing at a record no longer in the ring.
     fn drop_oldest(&mut self) {
         if self.spans.is_empty() {
             return;
@@ -263,7 +248,7 @@ mod tests {
         }
     }
 
-    /// A REPLACING SIBLING ends the previous span as `inferred` — the game never prints a stance end.
+    /// A replacing sibling ends the previous span as `inferred` — the game prints no stance end.
     #[test]
     fn a_new_commit_infers_the_end_of_the_one_it_replaced() {
         let mut t = StateTimeline::new();
@@ -278,7 +263,7 @@ mod tests {
         assert!(t.active.contains("stance:defensive"));
     }
 
-    /// VENOMS ON DIFFERENT LINES STACK — different groups coexist, and a family close reaches both.
+    /// Venoms on different lines stack — the groups coexist, and a family close reaches both.
     #[test]
     fn coat_lines_stack_and_a_family_dry_closes_the_whole_stack() {
         let mut t = StateTimeline::new();
@@ -302,7 +287,7 @@ mod tests {
         }
     }
 
-    /// A CLOSE WITH NOTHING OPEN IS A NO-OP — never a fabricated zero-width span.
+    /// A close with nothing open is a no-op, never a fabricated zero-width span.
     #[test]
     fn closing_a_state_that_was_never_opened_invents_nothing() {
         let mut t = StateTimeline::new();
@@ -315,7 +300,7 @@ mod tests {
         assert!(t.spans_overlapping(0, 9_999).is_empty());
     }
 
-    /// AN OPEN SPAN OVERLAPS ANY WINDOW THAT ENDS AFTER IT STARTED, and a closed one only its own span.
+    /// An open span overlaps any window that ends after it started; a closed one only its own span.
     #[test]
     fn overlap_treats_an_open_span_as_unbounded() {
         let mut t = StateTimeline::new();

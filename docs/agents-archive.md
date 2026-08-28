@@ -3646,3 +3646,76 @@ via `scripts/sandbox/sandbox-lifecycle.ps1`.
   version-stamped store migration (`migrateAlertSounds`), so an upgrading
   user's alerts never go silently mute. Every picker pre-selects
   alan-rickman (`fallbackPack`), never `packs[0]`.
+
+## The brief-sizing law's measured incident, at full length (JOS-343)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+MEASURED, and why this is a law: the owner asked to swap a heart icon for a
+labeled toggle (JOS-343) and the integrator's brief tripled it (both
+surfaces, semantics change, six e2e claims revised, two full spec suites
+re-run repeatedly) — 55 minutes and 225k tokens for what the owner correctly
+called a pretty cosmetic change. The diagnosis found no stuck loop: every
+token was "legitimate" under the brief as written, which is exactly the
+problem — uniform maximal verification makes small changes cost like
+features, and the e2e wall-clock (3-6 minutes per spec, run 2-4 times)
+dominates everything on a small ticket. The one counterweight, stated so it
+is not forgotten: that oversized verification did catch a real
+wrong-direction-click bug (an ungated toggle on an unready store). The law is
+calibration, not laxity — a targeted step would have caught the same bug on
+the surface that had it.
+
+## The dispatch-comment incidents, at full length (2026-08-13)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+A dispatch comment written first turns into a standing lie the moment the
+launch is skipped (it happened three times on 2026-08-13: JOS-287 and
+JOS-297 caught in-session, JOS-296 caught by the OWNER after status reports
+repeated "building" off nothing but the comment).
+
+## The deleted audio-diagnostics tooling, at full length (JOS-442/JOS-443)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+JOS-442 shipped one — `audioSessionNative.ts` reading the app's own WASAPI
+session over a hand-walked COM vtable, an `audio:session` IPC channel, and a
+Preferences Sound check card that printed the verdict. All of it is DELETED,
+together with the shared verdict/readout module and the e2e spec that drove
+it. The mechanism stays written down because it is how the owner will
+recognise the failure himself; the app's answer to it is the Windows volume
+mixer, not a card. The e2e-mute half, reported live: runs were audibly
+playing alert tones on the owner's desktop; `--mute-audio` is a harness
+argument rather than an `EQ_E2E` branch on purpose — the test mode must keep
+changing as little about the product as possible.
+
+## The pet-buff derived-claim seam's buying incident, at full length (JOS-454)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+It was a state transition inside the engine — the arm is per-stream, so
+`parseEvent` cannot emit it — and the AGENTS.md entry used to name the two
+ways out and rule for the first: a derived-event seam feeding both models,
+never a second arm. WHAT BOUGHT IT: the owner's summoned necro pet Vibartik,
+bound in the engine at 13:42:43 by `Augment Death` and not by the
+progression fold until his first tell at 14:37:53, whose four kills in that
+gap read as `4 kills by others seen` on a Leveling panel sitting under a
+meter that had him.
+
+## The F2 live-verification detail, at full length (2026-08-04)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+Live-verified: submit 201 + ULID, idempotent replay 200 same id, oversize
+413; kill switch OPEN; the three constants filled in net.ts (api
+pcy0z3xjp9… · bucket eqcompanion-logs-6c58f5cc · us-east-1).
+
+## Wave-choreography commit specifics, at full length (2026-08-05)
+
+<!-- Moved verbatim from AGENTS.md (2026-08-27 distillation). -->
+
+A file carrying TWO waves' hunks lands with the LATER wave's commit + a
+"completes <sha>" note (App.tsx with toasts+deep-links; windowControls with
+fightSelection+levelUp). `git status --porcelain | grep '^[MADR] '` BEFORE
+every commit — the index is shared and a sibling's staged deletion WILL ride
+your commit (6db8790 swept one; its wave's later commit completed it).

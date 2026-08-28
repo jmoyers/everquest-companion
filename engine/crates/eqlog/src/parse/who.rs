@@ -1,6 +1,5 @@
-//! `src/main/log/parseWho.ts` — the four STATEMENTS ABOUT THE CHARACTER: its own `/who` row, a
-//! skill tick, the active special attack, and a primary-class unlock. Plus the item-activation line,
-//! which is evidence about evidence.
+//! The four statements about the character — its own `/who` row, a skill tick, the active special
+//! attack, and a primary-class unlock — plus the item-activation line.
 
 use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
@@ -19,7 +18,6 @@ pub struct WhoRes {
     item_activate: Regex,
 }
 
-/// See `AcquireRes`'s note: `Default` is `new`.
 impl Default for WhoRes {
     fn default() -> Self {
         Self::new()
@@ -49,7 +47,7 @@ impl WhoRes {
     }
 }
 
-/// The character's OWN `/who` row. The self-name check is the WHOLE guard.
+/// The character's own `/who` row. The self-name check is the whole guard.
 pub fn classify_self_who(r: &WhoRes, character: Option<&str>, c: &Ctx, out: &mut Ev) -> bool {
     let Some(self_name) = character.filter(|s| !s.is_empty()) else {
         return false;
@@ -84,7 +82,7 @@ pub fn classify_self_who(r: &WhoRes, character: Option<&str>, c: &Ctx, out: &mut
     true
 }
 
-/// Skill ticks. The skill string is kept EXACTLY as the client prints it.
+/// Skill ticks. The skill string is kept exactly as the client prints it.
 pub fn classify_skill_up(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     if !c.text.starts_with("You have become better at ") {
         return false;
@@ -101,7 +99,7 @@ pub fn classify_skill_up(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     true
 }
 
-/// THE ACTIVE SPECIAL ATTACK. A blank skill is refused rather than emitted.
+/// The active special attack. A blank skill is refused rather than emitted.
 pub fn classify_special_attack(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     if !c.text.starts_with("You will now use ") {
         return false;
@@ -124,7 +122,7 @@ pub fn classify_special_attack(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     true
 }
 
-/// A CLASS UNLOCKED. SELF ONLY and ANCHORED AT THE START of the message.
+/// A class unlocked: self only, and anchored at the start of the message.
 pub fn classify_class_unlock(c: &Ctx, out: &mut Ev) -> bool {
     if c.text.as_bytes().first() != Some(&b'Y') || !c.text.starts_with(CLASS_UNLOCK_PREFIX) {
         return false;
@@ -139,7 +137,7 @@ pub fn classify_class_unlock(c: &Ctx, out: &mut Ev) -> bool {
     true
 }
 
-/// An ITEM cast something — `Your <item> shimmers briefly.` / `… feels alive with power.`
+/// An item cast something: `Your <item> shimmers briefly.` / `… feels alive with power.`
 pub fn classify_item_activate(r: &WhoRes, c: &Ctx, out: &mut Ev) -> bool {
     if !c.text.starts_with("Your ") {
         return false;

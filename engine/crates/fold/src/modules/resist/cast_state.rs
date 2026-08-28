@@ -1,34 +1,15 @@
-//! WHAT THE TAILED CHARACTER WAS DOING WHEN A CAST WENT OFF (`src/main/resist/castState.ts`,
-//! JOS-387).
+//! What the tailed character was doing when a cast went off.
 //!
 //! Two EQ Legends mechanics move a cast's resist adjust and neither is a property of the spell: the
-//! upgrade RANK the log prints on the cast line, and the INVOCATION the character is currently
-//! reciting. Every row records both.
+//! upgrade rank printed on the cast line, and the invocation being recited. Every row records both.
 //!
-//! ── THE INVOCATION IS A STATE, AND IT IS NEVER ASSUMED ──────────────────────────────────────────
+//! The invocation is one of nine mutually exclusive states, tri-valued and never assumed: `None`
+//! means no line has stated one, which is where a character who logged in already overchannelling
+//! stays. Nothing resets it on a zone or session boundary — it survives a relog and the log will
+//! not restate it; only a new source resets it.
 //!
-//! Nine mutually-exclusive invocations, one line when you commit to one, and the state holds until
-//! another is recited. So the answer has THREE values, not two:
-//!
-//!   `None`         NOTHING HAS STATED IT. Before the log's first invocation line there is no honest
-//!                  answer, and a character who logged in already overchannelling prints nothing at
-//!                  all — an app that guessed `false` would model a -150 offset as absent on every
-//!                  cast of the session. The estimator counts those observations and refuses to
-//!                  weigh them.
-//!   `Some(true)`   the last one recited was overchannel.
-//!   `Some(false)`  it was one of the other eight.
-//!
-//! A RELOG CARRIES IT AND WE CANNOT SEE THAT, which is why nothing resets this on a zone line or a
-//! session boundary: the character keeps the invocation across a camp, and forgetting it would throw
-//! away a fact the log DID state in favour of one it never will. Only starting a new SOURCE resets
-//! it, because that is a different log being folded from its own beginning.
-//!
-//! ── AND A PROC IS NOT A CAST SPELL ──────────────────────────────────────────────────────────────
-//!
-//! The wiki's -150 is on CAST spells, and the log has no field that says "this was a proc". What it
-//! has is the CAST LINE: a proc prints none. MEASURED on the owner's log — 19,874 Smiting Strike
-//! hits against 0 `You begin casting Smiting Strike` — so joining an armed cast IS the test for "a
-//! cast spell", and an observation that joins none answers `false`.
+//! A proc is not a cast spell and the log has no field that says so, so joining an armed cast is
+//! the test. Measured on the owner's log: 19,874 Smiting Strike hits against 0 cast lines.
 
 use super::catalog::caster_class_count;
 use super::ledger::CasterKind;
@@ -38,16 +19,14 @@ use std::collections::{HashMap, HashSet};
 /// The invocation name (lowercased by the parser) that carries the -150 resist adjust.
 pub const OVERCHANNEL_INVOCATION: &str = "overchannel";
 
-/// How long after a `You begin casting` a landing sentence may still be claimed by it. The JOS-382
-/// brief says `castMs + 2.5 s`, which needs the client table; this is the repo's own measured
-/// substitute — `buffAnchors.ts OWN_CAST_WINDOW_MS`, the constant the buffs model already uses for
-/// exactly this join, and comfortably above the longest cast plus its slack.
+/// How long after a `You begin casting` a landing sentence may still be claimed by it. Comfortably
+/// above the longest cast plus its slack; the buffs model uses the same window for the same join.
 pub const CAST_JOIN_MS: i64 = 10_000;
 
 /// How many casts can be in flight at once before the oldest stop being reachable.
 const MAX_ARMED: usize = 16;
 
-/// ONE CAST IN FLIGHT, and everything an outcome line may read off it.
+/// One cast in flight, and everything an outcome line may read off it.
 #[derive(Debug, Clone)]
 pub struct Armed {
     pub spell_key: String,
@@ -57,16 +36,14 @@ pub struct Armed {
     pub level: Option<i64>,
     /// The upgrade rank the cast line printed, 0 when it printed none.
     pub rank: i64,
-    /// The invocation state AT THE MOMENT OF THE CAST, which is the moment that decides the roll.
+    /// The invocation state at the moment of the cast, which is the moment that decides the roll.
     pub overchannel: Option<bool>,
-    /// Mobs this cast has already printed a DAMAGE line for. ONE CAST IS ONE ROLL, and a spell that
-    /// both damages and emotes prints both for it — so the emote must not also be counted.
+    /// Mobs this cast has already printed a damage line for. One cast is one roll, so a spell that
+    /// both damages and emotes must not have the emote counted too.
     ///
-    /// MEASURED, and the reason this is a set on the CAST rather than a cancel on the emote: the
-    /// game prints the damage FIRST, every time. A cancel-forward rule (an emote's landing,
-    /// withdrawn when damage follows) therefore never fires, and the fixture that caught it had
-    /// seven casts, seven damage lines and seven spurious landings on top. Both directions are
-    /// covered now, because a DoT's first tick can land either side of its emote.
+    /// A set on the cast rather than a cancel on the emote because the game prints the damage
+    /// first, every time — a cancel-forward rule would never fire. A DoT's first tick can land
+    /// either side of its emote, so both directions are covered.
     pub damaged: HashSet<String>,
 }
 
@@ -93,7 +70,7 @@ impl ArmedCasts {
         self.casts.retain(|a| a.spell_key != spell_key);
     }
 
-    /// The index of the most recent armed cast this line can belong to, WITHOUT consuming it.
+    /// The index of the most recent armed cast this line can belong to, without consuming it.
     pub fn peek_at(&self, spell_key: &str, ts: i64) -> Option<usize> {
         for i in (0..self.casts.len()).rev() {
             let cast = &self.casts[i];
@@ -112,15 +89,15 @@ impl ArmedCasts {
         self.casts[i].damaged.insert(mob_key);
     }
 
-    /// The armed cast an outcome may read its rank and invocation off — THIS CASTER's, never
-    /// another's. `peek_at` matches on the spell alone (its own reader only wants to mark a mob as
-    /// damaged), and a charmed pet throwing the same spell as you must not inherit your rank.
+    /// The armed cast an outcome may read its rank and invocation off — this caster's, never
+    /// another's: a charmed pet throwing the same spell as you must not inherit your rank.
+    /// `peek_at` matches on the spell alone, because its own reader only marks a mob as damaged.
     pub fn owned_by(&self, kind: CasterKind, spell_key: &str, ts: i64) -> Option<&Armed> {
         let cast = &self.casts[self.peek_at(spell_key, ts)?];
         (cast.kind == kind).then_some(cast)
     }
 
-    /// The most recent armed cast this landing sentence can belong to, CONSUMED.
+    /// The most recent armed cast this landing sentence can belong to, consumed.
     pub fn take(&mut self, ts: i64, candidates: Option<&[String]>) -> Option<Armed> {
         let keys: Option<HashSet<String>> = candidates.map(|c| {
             c.iter()
@@ -143,14 +120,13 @@ impl ArmedCasts {
     }
 }
 
-/// `castState.ts CastState`.
 #[derive(Debug, Default)]
 pub struct CastState {
     overchannel_on: Option<bool>,
     classes: i64,
-    /// SONG SPELL KEY -> the last upgrade rank seen for it. Songs are the one family whose
-    /// observations do not come through an armed cast (under the Symphonic Aura there is no cast
-    /// line at all), so a pulse's rank has to be remembered from whichever line last printed one.
+    /// Song spell key to the last upgrade rank seen for it. Songs are the one family whose
+    /// observations do not come through an armed cast — under the Symphonic Aura there is no cast
+    /// line at all — so a pulse's rank is remembered from whichever line last printed one.
     song_ranks: HashMap<String, i64>,
 }
 
@@ -188,12 +164,12 @@ impl CastState {
 
     /// How many non-hybrid caster classes the character runs: the -15-each half of the overchannel
     /// adjust. Zero until a `/who` row is seen, which is the honest floor — the -150 is certain and
-    /// the rest is not, and the surfaces say so.
+    /// the rest is not.
     pub fn caster_classes(&self) -> i64 {
         self.classes
     }
 
-    /// THE INVOCATION AS ONE OBSERVATION SAW IT. `armed` is the cast it joined, or `None` when it
+    /// The invocation as one observation saw it. `armed` is the cast it joined, or `None` when it
     /// joined none: another caster's invocation is unknowable, and an observation with no cast
     /// behind it is a proc.
     pub fn invocation_for(&self, kind: CasterKind, armed: Option<Option<bool>>) -> Option<bool> {
@@ -253,7 +229,7 @@ mod tests {
         let names = vec!["Clarity II".to_string()];
         let took = casts.take(2, Some(&names)).expect("the clarity");
         assert_eq!(took.spell_key, "clarity");
-        // …and it is GONE, so the same sentence cannot claim it twice.
+        // …and it is gone, so the same sentence cannot claim it twice.
         assert!(casts.take(2, Some(&names)).is_none());
         // With no candidate list at all the newest in-window cast is taken.
         assert_eq!(casts.take(2, None).expect("the malosi").spell_key, "malosi");

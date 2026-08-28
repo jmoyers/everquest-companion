@@ -147,8 +147,8 @@ export function stepErrorReport(userData: string, log: FixtureLog): void {
   // boot-window crash report, which is where the interesting crashes are.
   //
   // The engine's own lifecycle edges feed the ring now (`telemetry/breadcrumbs.ts noteEngineEdge`),
-  // and they are the only things that HAPPEN in that window. A closed four-member set carrying no
-  // log content, no path, no pid — the bright line is unchanged.
+  // and they are the only things that HAPPEN in that window. A closed set — four, and `engine:cycled`
+  // since JOS-519 — carrying no log content, no path, no pid; the bright line is unchanged.
   const crumbs = ev.breadcrumbs as { kind: string }[] | undefined
   check(
     '…with breadcrumbs — the engine lifecycle edges that are all a boot-window crash can have',

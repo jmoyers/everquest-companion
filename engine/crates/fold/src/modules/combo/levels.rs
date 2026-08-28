@@ -1,20 +1,17 @@
-//! `src/main/modules/comboLevels.ts` — READING THE CHARACTER'S LEVEL, for the interval builder.
+//! `src/main/modules/comboLevels.ts` — reading the character's level, for the interval builder.
 //!
-//! EQ Legends states your level in exactly TWO places: a `Welcome to level N!` ding and your own
-//! `/who` row's bracket. Everything here is about reconciling them.
+//! EQ Legends states your level in exactly two places: a `Welcome to level N!` ding and your own
+//! `/who` row's bracket. Everything here reconciles them.
 //!
-//! THE ONE FACT IT ALL RESTS ON: the displayed level is the MINIMUM over the loadout's class
-//! levels. Two consequences, pulling in opposite directions — inside ONE loadout the number only
-//! ever RISES (classes gain levels and never lose them), so a level that goes backwards is proof of
-//! a swap; ACROSS a swap it can fall by forty, which is why `level_drop_boundaries` treats a
-//! non-increasing ding as the loudest swap signal in the log.
+//! The fact it all rests on: the displayed level is the MINIMUM over the loadout's class levels.
+//! Two consequences pull in opposite directions — inside one loadout the number only ever RISES, so
+//! a level that goes backwards proves a swap; across a swap it can fall by forty, which is why
+//! `level_drop_boundaries` treats a non-increasing ding as the loudest swap signal in the log.
 //!
-//! `level_at`'s TWO LOOPS SHARE ONE `at`, and that is the JOS-239 fix. They used to run one after
-//! the other with the `/who` pass writing unconditionally, so a row's level won over every ding
-//! after it however old the row was: a level 50 from a Jul 31 row landed on top of the Aug 06 ding
-//! to level 11 and reported the wizard interval as `levels 11-50` — an impossible span under
-//! min-of-loadout, manufactured by the READER rather than observed. A row at the SAME instant as a
-//! ding still wins: it states the bracket outright.
+//! `level_at`'s two loops share one `at`, so the latest statement wins whichever source it came
+//! from. Running them in sequence would let an old `/who` row's level beat every ding after it and
+//! report a span min-of-loadout makes impossible. A row at the SAME instant as a ding still wins:
+//! it states the bracket outright.
 
 use super::ClassAbbr;
 
@@ -60,8 +57,8 @@ pub fn level_at(input: &LevelStatements, ts: i64) -> Option<i64> {
     level
 }
 
-/// Every level STATED inside `[from, end)`. `from` is INCLUSIVE for the range (a ding that opens an
-/// interval is that interval's level) and the regression test asks for the half-open form instead,
+/// Every level stated inside `[from, end)`. `from` is inclusive for the range — a ding that opens
+/// an interval is that interval's level — while the regression test asks for the exclusive form,
 /// which is why it is a parameter rather than a convention.
 fn stated_in(input: &LevelStatements, from: i64, end: Option<i64>, inclusive: bool) -> Vec<i64> {
     let inside = |ts: i64| -> bool {
@@ -99,13 +96,13 @@ pub fn level_range(
     (inside.iter().copied().min(), inside.iter().copied().max())
 }
 
-/// A LEVEL SPAN ONE LOADOUT CANNOT PRODUCE (JOS-239). Inside a fixed loadout the minimum only ever
-/// goes UP, so a level observed inside the interval that is BELOW the level in force when it opened
-/// is proof a swap happened in there that no detector cut.
+/// A level span one loadout cannot produce. Inside a fixed loadout the minimum only ever goes UP,
+/// so a level observed inside the interval that is BELOW the level in force when it opened proves a
+/// swap in there that no detector cut.
 ///
-/// Stated as a REGRESSION rather than as a width, because a width is not evidence of anything:
-/// `levels 24-50` is a legitimate month of grinding, and `levels 11-50` is impossible ONLY because
-/// the 11 came after the 50. The interval keeps carrying the honest hull; this is the fact the hull
+/// Stated as a regression rather than as a width, because a width is not evidence of anything:
+/// `levels 24-50` is a legitimate month of grinding, and `levels 11-50` is impossible only because
+/// the 11 came after the 50. The interval still carries the honest hull; this is what the hull
 /// cannot express.
 pub fn level_regressed_inside(input: &LevelStatements, start_at: i64, end: Option<i64>) -> bool {
     let Some(in_force) = level_at(input, start_at) else {

@@ -1,83 +1,36 @@
-//! ============================================================================
-//! THE APP'S `userData`, READ AND WRITTEN BY THE ENGINE (JOS-496 item 3).
-//! ============================================================================
+//! The app's `userData`, read and written by the engine. `fold` owns the two file SHAPES; this file
+//! owns the directory, the disk, the cadence and the diagnostics. Nothing here parses a format and
+//! nothing there opens a file.
 //!
-//! Boundary verdict 4, cutover ledger item 6: two persisted artifacts the APP owns today move their
-//! IO into the engine. `fold` owns the SHAPES (`fold::modules::resist::ledger_file` and
-//! `fold::overlay_file`, each mirroring the app module it inherits its format from); this file owns
-//! the DIRECTORY, the disk, the cadence and the diagnostics. Nothing here parses a format and
-//! nothing there opens a file, which is the same split `ledgerFile.ts` / `store.ts` already draws
-//! app-side and for the same reason.
+//! The directory is pushed as `session.attach`'s optional `stateDir`, never discovered — the engine
+//! cannot derive Electron's `userData` and must not guess. Absent means no persistence at all:
+//! nothing read, nothing written, and the fold is the file-free one the equivalence oracle records.
+//! Every non-app client gets that by saying nothing.
 //!
-//! ── THE DIRECTORY IS PUSHED, NEVER DISCOVERED ──────────────────────────────────────────────────
+//! Both formats are the app's existing ones, verbatim, because both implementations have to be able
+//! to hold the same file — a user who turns the engine off must not lose their ledger.
 //!
-//! `session.attach`'s optional `stateDir` — Electron's `app.getPath('userData')`, which the engine
-//! cannot derive and must not guess. **ABSENT MEANS NO PERSISTENCE AT ALL**: nothing is read,
-//! nothing is written, and the fold is exactly the file-free one the six-slice equivalence oracle
-//! records. Every non-app client — `parity`, every test in `engine/`, any future tool — gets that
-//! by saying nothing, which is what keeps the oracle's world reachable without a state dir as a
-//! matter of structure rather than of discipline.
+//! Every write is temp + fsync + rename, in that order: a plain write onto the live path truncates
+//! it first, so a process killed mid-write leaves a half-written file the reader treats as empty.
+//! The fsync is a step of its own — renaming a file whose bytes are only in the page cache is how an
+//! "atomic" write ends up truncated anyway. On failure the scratch file is taken back, because a
+//! whole user ledger left in `.tmp` also fills the volume that just said it had no room.
 //!
-//! ── THE FORMATS ARE INHERITED, NOT NEGOTIATED ──────────────────────────────────────────────────
+//! A failed write is a line on stderr and nothing more. The ledger's truth is in memory, every
+//! reader comes through the fold, and the folded character re-derives its whole bucket from the log
+//! on the next attach; a snapshot is the whole cost.
 //!
-//! Both files are read and written in the app's EXISTING shape, verbatim, because both
-//! implementations have to be able to hold the same file: the app writes them today, the engine
-//! writes them under the flag, and a user who turns the flag off must not lose their ledger.
+//! The cadence is the app's: every 60th beat of the live heartbeat, and nothing during a replay —
+//! structural rather than guarded, since `EventSink::tick` is the only path here and the historical
+//! scan cannot reach it. Both writes are coalesced on a fingerprint of the serialized text, because
+//! an app left open at the character select would otherwise rewrite hundreds of kilobytes an hour to
+//! say the same thing.
 //!
-//! **WITH `EQC_ENGINE=0`, OR WITH NO ENGINE AT ALL, THE TYPESCRIPT IO PATH IS COMPLETELY
-//! UNCHANGED.** `src/main/resist/store.ts` and `src/main/data/overlayPersistence.ts` are not edited
-//! by this ticket and are not reached by anything in this file. Retiring the app-side writers when
-//! the engine is serving is a separate, app-side half — deliberately not this one. What this file
-//! delivers is an engine that is CAPABLE and PROVEN, not an app that has stopped.
-//!
-//! ── EVERY WRITE IS ATOMIC, AND NO WRITE MAY TAKE THE ENGINE DOWN ───────────────────────────────
-//!
-//! Temp + fsync + rename, in that order, onto `<path>.tmp` — the same three steps the telemetry
-//! ring (JOS-265), the settings store (JOS-272), the resist ledger (JOS-419) and the overlay
-//! register (JOS-419) all go through app-side, and for the reason `overlayPersistence.ts` states at
-//! length: a plain write onto the live path TRUNCATES IT FIRST, so a process killed mid-write left
-//! a half-written register that the reader treats as an EMPTY one. Every message this install had
-//! ever learned, silently gone, with nothing on disk to say so.
-//!
-//! THE FSYNC IS NOT OPTIONAL AND IS NOT THE SAME STEP AS THE RENAME. Renaming a file whose bytes are
-//! still only in the page cache is how an "atomic" write ends up truncated anyway after an unclean
-//! shutdown. On a failure the scratch file is TAKEN BACK, because a failed write that leaves a whole
-//! user ledger in `.tmp` is a failure that also filled the volume that had just said it had no room.
-//!
-//! And a failure is a LINE ON STDERR and nothing more (contract rule 2). Not a panic, not a refused
-//! attach, not a status change: the ledger's truth is in memory, every reader comes through the
-//! fold, and the character being folded re-derives its whole bucket from the log on the next attach
-//! regardless. A snapshot is what a failed write costs.
-//!
-//! ── THE CADENCE IS THE APP'S ────────────────────────────────────────────────────────────────────
-//!
-//! Every 60th beat of the live heartbeat — `resist/module.ts onTick`'s "every sixtieth tick, a
-//! ledger persist" at 1 Hz, and `session.ts`'s 60-second overlay save. **NOTHING DURING REPLAY**,
-//! which is structural rather than guarded: `EventSink::tick` is the only path here and the
-//! historical scan cannot reach it (`foldsink`'s header carries that argument in full). A replay is
-//! re-deriving what is already on disk; writing during one would be the engine reporting its own
-//! echo.
-//!
-//! Both writes are COALESCED on a fingerprint of the serialized text, which is `ledgerFile.ts`'s
-//! own device and its own justification: "the ledger is snapshot once a minute whether or not
-//! anything changed, so an app left open at the character select rewrote hundreds of kilobytes an
-//! hour to say the same thing". The overlay gets it too, which is one more than the app has.
-//!
-//! ── WHAT IS NOT HERE, NAMED RATHER THAN IMPLIED ────────────────────────────────────────────────
-//!
-//!   * **NO QUIT-FINAL.** `overlayPersistence.saveUserOverlaySync` writes synchronously at
-//!     `window-all-closed` so the last minute's observations survive. The engine has no equivalent:
-//!     it writes on the cadence and stops when the process does. What that costs is at most 60 s of
-//!     accretion for THE CHARACTER BEING FOLDED — whose bucket is re-derived from the log in full
-//!     on the next attach, which is the app's own argument for why a dropped write costs nothing
-//!     durable. Every OTHER character's bucket is seeded and re-written unchanged, so the
-//!     irreplaceable half is never the half at risk. It is still a real difference and it is named.
-//!   * **NO RETRY BACKOFF.** `ledgerFile.ts` pauses after a failure for a spell that doubles to
-//!     fifteen minutes, so a full disk is not re-attempted every tick. Here a failure is retried on
-//!     the next 60-second beat. The coalescing fingerprint blunts it — an unchanged ledger is not
-//!     re-attempted at all — but on a genuinely full volume with a busy fold this will re-try, and
-//!     re-print, once a minute.
-//!   * **NO SALVAGE AND NO QUARANTINE** on the resist read. See `ledger_file.rs`'s header.
+//! Three app behaviours are deliberately absent. There is no quit-final write, so up to 60 s of
+//! accretion for the folded character can be lost — the one bucket the next attach re-derives in
+//! full, while every other character's is seeded and rewritten unchanged. There is no retry backoff,
+//! so a genuinely full volume will re-try and re-print once a minute. And there is no salvage or
+//! quarantine on the resist read.
 
 use std::fs::{self, File};
 use std::io::Write;
@@ -91,24 +44,18 @@ const RESIST_LEDGER: &str = "resist-ledger.json";
 /// `<userData>/message-overlay.json`.
 const MESSAGE_OVERLAY: &str = "message-overlay.json";
 
-/// HOW MANY LIVE BEATS BETWEEN WRITES. The heartbeat is 1 Hz (`ingest::TICK_EVERY`), so sixty of
-/// them is the app's own minute — `resist/module.ts`'s `if (++this.ticks % 60 === 0)` and
-/// `session.ts`'s 60-second overlay save, which are the same interval stated twice over there.
+/// How many live beats between writes. The heartbeat is 1 Hz, so sixty of them is the app's own
+/// minute.
 pub const WRITE_EVERY_BEATS: u64 = 60;
 
-/// FNV-1a over the serialized text, paired with its length — `ledgerFile.ts fingerprint`, ported
-/// exactly, including the pairing.
+/// FNV-1a over the serialized text, paired with its length — the app's own fingerprint, ported.
 ///
 /// The pair rather than the hash alone because holding the previous JSON to compare against would
-/// double the file's footprint in memory for a question a 32-bit answer settles. A collision costs
-/// ONE snapshot of changed counts and nothing durable: memory is unaffected, the next change writes,
-/// and the folded character's bucket is re-derived from the log on the next attach regardless.
+/// double the file's footprint in memory. A collision costs one snapshot of changed counts and
+/// nothing durable.
 ///
-/// `charCodeAt` is a UTF-16 code UNIT and Rust's `chars()` yields code POINTS, so this walks
-/// `encode_utf16()`. The two differ on any astral character — an emoji in a mob's name would be one
-/// — and a fingerprint that silently disagreed with the app's would not be caught by anything,
-/// because it is only ever compared against itself. Ported to match anyway: a function that says it
-/// is `ledgerFile.ts fingerprint` should be it.
+/// The length is UTF-16 code UNITS, so this walks `encode_utf16()` rather than `chars()`: the two
+/// differ on any astral character, and the app's number is the one being matched.
 #[must_use]
 pub fn fingerprint(text: &str) -> String {
     let mut hash: u32 = 0x811c_9dc5;
@@ -121,12 +68,11 @@ pub fn fingerprint(text: &str) -> String {
     format!("{units}:{hash:x}")
 }
 
-/// THE APP'S `userData`, plus what this engine last wrote into it.
+/// The app's `userData`, plus what this engine last wrote into it.
 ///
-/// One per attach, owned by the `FoldSink`, because the coalescing fingerprint is a statement about
-/// what THIS generation has written. A new attach is a new sink and therefore a fresh pair of
-/// fingerprints, which is right: the world was rebuilt, and the first write of a generation should
-/// land rather than be declined by a memory of the last one.
+/// One per attach, because the coalescing fingerprint is a statement about what THIS generation has
+/// written: the world was rebuilt, so the first write of a generation should land rather than be
+/// declined by a memory of the last one.
 pub struct StateDir {
     dir: PathBuf,
     last_ledger: Option<String>,
@@ -143,12 +89,10 @@ impl StateDir {
         }
     }
 
-    /// READ BOTH ARTIFACTS — at attach, before the first byte is folded.
+    /// Read both artifacts, at attach, before the first byte is folded.
     ///
-    /// NEVER FAILS. A missing file, an unreadable one, a stale version, a shape from another build:
-    /// every one of them is an EMPTY seed, which is what both app readers do and what the read rules
-    /// for this ticket state. A notice goes to stderr where there is something to say; an ordinary
-    /// read says nothing.
+    /// Never fails: a missing file, an unreadable one, a stale version or a shape from another build
+    /// are all an empty seed, which is what both app readers do.
     #[must_use]
     pub fn read(&self) -> fold::PersistedState {
         let ledger = fold::modules::resist::ledger_file::read_ledger(&self.slurp(RESIST_LEDGER));
@@ -172,10 +116,9 @@ impl StateDir {
 
     /// A file's whole text, or `""` for anything that could not be read.
     ///
-    /// ENOENT AND EVERY OTHER ERROR COLLAPSE TO THE SAME ANSWER, deliberately: an empty string is
-    /// not valid JSON, so it flows into the same "reads as empty" arm the readers already have, and
-    /// the alternative would be two spellings of one outcome. A file that exists but cannot be read
-    /// is worth a line, and the reader prints one.
+    /// ENOENT and every other error collapse to the same answer: an empty string is not valid JSON,
+    /// so it flows into the "reads as empty" arm the readers already have. A file that exists but
+    /// cannot be read is worth a line, and gets one.
     fn slurp(&self, name: &str) -> String {
         match fs::read_to_string(self.dir.join(name)) {
             Ok(text) => text,
@@ -189,7 +132,7 @@ impl StateDir {
         }
     }
 
-    /// WRITE BOTH ARTIFACTS, coalesced. Called on every 60th live beat and never during a replay.
+    /// Write both artifacts, coalesced. Called on every 60th live beat and never during a replay.
     pub fn write(&mut self, registry: &fold::Registry) {
         if let Some(resist) = registry.resist() {
             let file = resist.user_ledger_file();
@@ -221,9 +164,9 @@ impl StateDir {
         match write_durable(&path, text) {
             Ok(()) => *last = Some(stamp),
             Err(e) => {
-                // NEVER FATAL (contract rule 2). The fold is untouched, the in-memory ledger is the
-                // truth every reader comes through, and the next attach re-derives this character's
-                // whole bucket from the log. A snapshot is the whole cost.
+                // Never fatal. The fold is untouched, the in-memory ledger is the truth every reader
+                // comes through, and the next attach re-derives this character's whole bucket from
+                // the log. A snapshot is the whole cost.
                 eprintln!(
                     "{DIAGNOSTIC_PREFIX} state: {} could not be written ({e}); the fold carries on",
                     path.display()
@@ -233,20 +176,17 @@ impl StateDir {
     }
 }
 
-/// TEMP + FSYNC + RENAME, in that order — `telemetry/durableWrite.ts writeFileDurable`.
+/// Temp + fsync + rename, in that order. The scratch file is `<path>.tmp`, the same spelling
+/// app-side.
 ///
-/// The scratch file is `<path>.tmp`, the same spelling app-side. ONE WRITER PER FILE is what makes
-/// a single scratch path safe: the write happens on the ingest thread, from the tick, and there is
-/// exactly one ingest thread per generation. (App-side that had to be earned with a latch, because
-/// `writeFileDurableAsync` put two writes in libuv's threadpool at once.)
+/// One writer per file is what makes a single scratch path safe: the write happens on the ingest
+/// thread, from the tick, and there is exactly one ingest thread per generation.
 ///
-/// THE DIRECTORY IS CREATED IF IT IS MISSING, because a `stateDir` the app pushed before Electron
-/// had created it is a race the engine should absorb rather than fail on, and `create_dir_all` on
-/// an existing directory is a no-op.
+/// The directory is created if missing, because a `stateDir` pushed before Electron had created it
+/// is a race the engine should absorb rather than fail on.
 ///
-/// ON ANY FAILURE THE SCRATCH FILE IS REMOVED, and the removal's own error is deliberately dropped:
-/// the caller is already being told the write failed, and a second message about the cleanup of a
-/// file nobody will read would bury the first.
+/// On any failure the scratch file is removed, and the removal's own error is dropped: the caller is
+/// already being told the write failed, and a second message would bury the first.
 fn write_durable(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -266,7 +206,7 @@ fn write_durable(path: &Path, text: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The scratch file, written and FLUSHED TO THE DEVICE. `sync_all` is the fsync — see the module
+/// The scratch file, written and flushed to the device. `sync_all` is the fsync — see the module
 /// header for why it is a step of its own and not a synonym for the rename.
 fn fill_and_flush(tmp: &Path, text: &str) -> std::io::Result<()> {
     let mut file = File::create(tmp)?;
@@ -294,8 +234,7 @@ mod tests {
     fn the_fingerprint_is_the_apps_own_function() {
         // FNV-1a offset basis, paired with a length of zero.
         assert_eq!(fingerprint(""), "0:811c9dc5");
-        // Length is UTF-16 code UNITS, so an astral character counts as two — the number
-        // `String.prototype.length` gives and therefore the number `ledgerFile.ts` pairs.
+        // Length is UTF-16 code units, so an astral character counts as two — the app's number.
         assert_eq!(fingerprint("\u{1F600}").split(':').next(), Some("2"));
         assert_ne!(fingerprint("a"), fingerprint("b"));
     }
@@ -350,13 +289,9 @@ mod tests {
 
     #[test]
     fn an_identical_write_is_declined_and_a_changed_one_is_not() {
-        // `ledgerFile.ts`'s own device: "the ledger is snapshot once a minute whether or not
-        // anything changed, so an app left open at the character select rewrote hundreds of
-        // kilobytes an hour to say the same thing."
-        //
-        // THE PROOF IS THE FILE'S ABSENCE. After a write lands, the file is DELETED out from under
-        // the writer; a second write of identical bytes must not bring it back, because the writer
-        // declined before it touched the disk. A changed one must.
+        // The proof is the file's absence: after a write lands, the file is deleted out from under
+        // the writer, and a second write of identical bytes must not bring it back because the
+        // writer declined before touching the disk. A changed one must.
         let dir = scratch("coalesce");
         let path = dir.join(RESIST_LEDGER);
         let mut state = StateDir::new(&dir);
@@ -371,7 +306,7 @@ mod tests {
         state.put(RESIST_LEDGER, r#"{"version":3,"sources":[]}"#, true);
         assert!(path.exists(), "changed bytes were declined");
 
-        // TWO FILES, TWO MEMORIES. One shared fingerprint slot would make each write cancel the
+        // Two files, two memories: one shared fingerprint slot would make each write cancel the
         // other's, and the two artifacts change at completely different rates.
         fs::remove_file(&path).expect("the file is removed");
         state.put(MESSAGE_OVERLAY, APP_OVERLAY, false);

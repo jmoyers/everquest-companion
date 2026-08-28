@@ -8,7 +8,7 @@
 //! and a schema edit that lands without regenerating turns the protocol-codegen staleness
 //! test red on this side and tests/protocolSchema.test.mts red on the other.
 //!
-//! schema-digest: sha256:b6f362f405c373d629ffc2b193a21b016358eb8c7b1a53857f89be2c02068103
+//! schema-digest: sha256:126ec50388678281ec8ad90206c724655a0c3aea31b0438493468b9587b804bb
 #![allow(missing_docs, clippy::all, clippy::pedantic)]
 
 /// Error types.
@@ -2820,14 +2820,14 @@ impl ::std::convert::TryFrom<::std::string::String> for EpochReason {
         value.parse()
     }
 }
-///A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of.
+///A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of. NOT EVERY MEMBER IS SENT BY AN ENGINE: `timeout` is minted by a CLIENT that stopped waiting, and it lives here rather than in a second vocabulary because the type a caller branches on is this one — a client-only code union beside it would be two spellings of the same question.
 ///
 /// <details><summary>JSON schema</summary>
 ///
 /// ```json
 ///{
 ///  "title": "ErrorCode",
-///  "description": "A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of.",
+///  "description": "A CLOSED set. Both sides generate from this artifact, so adding a member is a schema edit that regenerates both — there is no version of the app that can meet a code it has never heard of. NOT EVERY MEMBER IS SENT BY AN ENGINE: `timeout` is minted by a CLIENT that stopped waiting, and it lives here rather than in a second vocabulary because the type a caller branches on is this one — a client-only code union beside it would be two spellings of the same question.",
 ///  "type": "string",
 ///  "enum": [
 ///    "protocolMismatch",
@@ -2836,7 +2836,8 @@ impl ::std::convert::TryFrom<::std::string::String> for EpochReason {
 ///    "badParams",
 ///    "notFound",
 ///    "unavailable",
-///    "internal"
+///    "internal",
+///    "timeout"
 ///  ]
 ///}
 /// ```
@@ -2868,6 +2869,8 @@ pub enum ErrorCode {
     Unavailable,
     #[serde(rename = "internal")]
     Internal,
+    #[serde(rename = "timeout")]
+    Timeout,
 }
 impl ::std::fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -2879,6 +2882,7 @@ impl ::std::fmt::Display for ErrorCode {
             Self::NotFound => f.write_str("notFound"),
             Self::Unavailable => f.write_str("unavailable"),
             Self::Internal => f.write_str("internal"),
+            Self::Timeout => f.write_str("timeout"),
         }
     }
 }
@@ -2893,6 +2897,7 @@ impl ::std::str::FromStr for ErrorCode {
             "notFound" => Ok(Self::NotFound),
             "unavailable" => Ok(Self::Unavailable),
             "internal" => Ok(Self::Internal),
+            "timeout" => Ok(Self::Timeout),
             _ => Err("invalid value".into()),
         }
     }
@@ -3322,6 +3327,10 @@ impl ::std::convert::TryFrom<::std::string::String> for FireMessageKind {
 ///    "events": {
 ///      "type": "integer"
 ///    },
+///    "live": {
+///      "description": "WHICH OF THE ENGINE'S TWO LOOPS EMITTED THIS FRAME. Absent means the historical SCAN - the catch-up a loading bar is about. `true` means the LIVE TAIL, which emits the identical shape for as long as somebody is playing. Present only when true, like every other flag on this wire: a scan frame says nothing rather than saying false. IT EXISTS BECAUSE THE TWO ARE INDISTINGUISHABLE BY THEIR NUMBERS. A caught-up tail sits at `pct` 100 with `events` climbing, which is exactly what a scan that has just finished looks like, so a client deciding from frame CONTENT whether a catch-up is still running would leave a bar reading `100%` on screen with the count rising forever. The engine knows which loop it is in and this is it saying so.",
+///      "type": "boolean"
+///    },
 ///    "logSize": {
 ///      "description": "`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.",
 ///      "type": "integer"
@@ -3343,6 +3352,9 @@ impl ::std::convert::TryFrom<::std::string::String> for FireMessageKind {
 #[serde(deny_unknown_fields)]
 pub struct FoldProgress {
     pub events: i64,
+    ///WHICH OF THE ENGINE'S TWO LOOPS EMITTED THIS FRAME. Absent means the historical SCAN - the catch-up a loading bar is about. `true` means the LIVE TAIL, which emits the identical shape for as long as somebody is playing. Present only when true, like every other flag on this wire: a scan frame says nothing rather than saying false. IT EXISTS BECAUSE THE TWO ARE INDISTINGUISHABLE BY THEIR NUMBERS. A caught-up tail sits at `pct` 100 with `events` climbing, which is exactly what a scan that has just finished looks like, so a client deciding from frame CONTENT whether a catch-up is still running would leave a bar reading `100%` on screen with the count rising forever. The engine knows which loop it is in and this is it saying so.
+    #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+    pub live: ::std::option::Option<bool>,
     ///`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.
     #[serde(rename = "logSize")]
     pub log_size: i64,

@@ -1,0 +1,471 @@
+{
+  "$comment": [
+    "GENERATED debt register — engine factoring ratchet (JOS-523). IT ONLY SHRINKS.",
+    "Every entry is a file or function that breaks a bar TODAY. Fix one and the gate says so;",
+    "rerun `npm run check:rust-factoring -- --write` in the SAME commit to record the shrink.",
+    "Adding or widening an entry is the integrator call, made by hand. Never by re-running a tool."
+  ],
+  "bars": {
+    "file-lines": 400,
+    "function-lines": 100,
+    "complexity": 12
+  },
+  "entries": [
+    {
+      "file": "crates/engined/src/conn.rs",
+      "metric": "complexity",
+      "name": "Server::converse",
+      "value": 18
+    },
+    {
+      "file": "crates/engined/src/foldsink.rs",
+      "metric": "complexity",
+      "name": "FoldSink::source_revision",
+      "value": 16
+    },
+    {
+      "file": "crates/engined/src/foldsink.rs",
+      "metric": "complexity",
+      "name": "FoldSink::source_rows",
+      "value": 17
+    },
+    {
+      "file": "crates/engined/src/foldsink.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 598
+    },
+    {
+      "file": "crates/engined/src/ingest.rs",
+      "metric": "complexity",
+      "name": "run",
+      "value": 28
+    },
+    {
+      "file": "crates/engined/src/ingest.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1301
+    },
+    {
+      "file": "crates/engined/src/ingest.rs",
+      "metric": "function-lines",
+      "name": "run",
+      "value": 182
+    },
+    {
+      "file": "crates/engined/src/ops.rs",
+      "metric": "complexity",
+      "name": "client_spell",
+      "value": 13
+    },
+    {
+      "file": "crates/engined/src/ops.rs",
+      "metric": "complexity",
+      "name": "Session::dispatch",
+      "value": 63
+    },
+    {
+      "file": "crates/engined/src/ops.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1651
+    },
+    {
+      "file": "crates/engined/src/ops.rs",
+      "metric": "function-lines",
+      "name": "Session::dispatch",
+      "value": 397
+    },
+    {
+      "file": "crates/engined/src/search.rs",
+      "metric": "complexity",
+      "name": "damerau_levenshtein",
+      "value": 13
+    },
+    {
+      "file": "crates/engined/src/spell_search.rs",
+      "metric": "complexity",
+      "name": "search",
+      "value": 13
+    },
+    {
+      "file": "crates/engined/src/spell_search.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 561
+    },
+    {
+      "file": "crates/engined/src/views/diff.rs",
+      "metric": "complexity",
+      "name": "apply",
+      "value": 16
+    },
+    {
+      "file": "crates/engined/src/views/meter.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 500
+    },
+    {
+      "file": "crates/engined/src/views/mod.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 414
+    },
+    {
+      "file": "crates/engined/src/world.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1111
+    },
+    {
+      "file": "crates/eqlog/src/event.rs",
+      "metric": "complexity",
+      "name": "Key::as_str",
+      "value": 84
+    },
+    {
+      "file": "crates/eqlog/src/event.rs",
+      "metric": "complexity",
+      "name": "Key::parse",
+      "value": 84
+    },
+    {
+      "file": "crates/eqlog/src/event.rs",
+      "metric": "complexity",
+      "name": "Kind::as_str",
+      "value": 66
+    },
+    {
+      "file": "crates/eqlog/src/event.rs",
+      "metric": "complexity",
+      "name": "Kind::parse",
+      "value": 65
+    },
+    {
+      "file": "crates/eqlog/src/event.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1170
+    },
+    {
+      "file": "crates/eqlog/src/names.rs",
+      "metric": "complexity",
+      "name": "spell_rank",
+      "value": 13
+    },
+    {
+      "file": "crates/eqlog/src/parse/casts.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 634
+    },
+    {
+      "file": "crates/eqlog/src/parse/combat.rs",
+      "metric": "complexity",
+      "name": "classify_miss",
+      "value": 18
+    },
+    {
+      "file": "crates/eqlog/src/parse/combat.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 481
+    },
+    {
+      "file": "crates/eqlog/src/parse/mod.rs",
+      "metric": "complexity",
+      "name": "Parser::classify",
+      "value": 44
+    },
+    {
+      "file": "crates/eqlog/src/parse/world.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 445
+    },
+    {
+      "file": "crates/eqlog/src/spelldb/overlay.rs",
+      "metric": "complexity",
+      "name": "derive_landing_corrections",
+      "value": 14
+    },
+    {
+      "file": "crates/eqlog/src/tail.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 403
+    },
+    {
+      "file": "crates/fold/src/combat/aggregate.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 646
+    },
+    {
+      "file": "crates/fold/src/combat/ally.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 416
+    },
+    {
+      "file": "crates/fold/src/combat/healing.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 530
+    },
+    {
+      "file": "crates/fold/src/combat/ingest.rs",
+      "metric": "complexity",
+      "name": "ingest_world",
+      "value": 15
+    },
+    {
+      "file": "crates/fold/src/combat/ingest.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 776
+    },
+    {
+      "file": "crates/fold/src/combat/ingest.rs",
+      "metric": "function-lines",
+      "name": "ingest_combat",
+      "value": 122
+    },
+    {
+      "file": "crates/fold/src/combat/mod.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 726
+    },
+    {
+      "file": "crates/fold/src/combat/procdetect.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 433
+    },
+    {
+      "file": "crates/fold/src/combat/procviews.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 596
+    },
+    {
+      "file": "crates/fold/src/combat/procviews.rs",
+      "metric": "function-lines",
+      "name": "build_procs_view",
+      "value": 108
+    },
+    {
+      "file": "crates/fold/src/combat/procwindows.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 758
+    },
+    {
+      "file": "crates/fold/src/combat/routing.rs",
+      "metric": "complexity",
+      "name": "classify",
+      "value": 13
+    },
+    {
+      "file": "crates/fold/src/combat/routing.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1064
+    },
+    {
+      "file": "crates/fold/src/combat/spellfacts.rs",
+      "metric": "complexity",
+      "name": "build",
+      "value": 15
+    },
+    {
+      "file": "crates/fold/src/combat/state.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 526
+    },
+    {
+      "file": "crates/fold/src/combat/views.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 782
+    },
+    {
+      "file": "crates/fold/src/combat/world.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 574
+    },
+    {
+      "file": "crates/fold/src/event.rs",
+      "metric": "complexity",
+      "name": "Event::field_text",
+      "value": 17
+    },
+    {
+      "file": "crates/fold/src/event.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 432
+    },
+    {
+      "file": "crates/fold/src/lib.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 1512
+    },
+    {
+      "file": "crates/fold/src/message_overlay.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 427
+    },
+    {
+      "file": "crates/fold/src/modules/alerts_captures.rs",
+      "metric": "complexity",
+      "name": "strip_ansi",
+      "value": 19
+    },
+    {
+      "file": "crates/fold/src/modules/alerts_early.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 954
+    },
+    {
+      "file": "crates/fold/src/modules/alerts_rules.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 949
+    },
+    {
+      "file": "crates/fold/src/modules/buff_timer_rows.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 569
+    },
+    {
+      "file": "crates/fold/src/modules/buff_timers.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 667
+    },
+    {
+      "file": "crates/fold/src/modules/buffs_instances.rs",
+      "metric": "complexity",
+      "name": "BuffInstances::apply_message_buff",
+      "value": 16
+    },
+    {
+      "file": "crates/fold/src/modules/buffs_instances.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 716
+    },
+    {
+      "file": "crates/fold/src/modules/buffs.rs",
+      "metric": "complexity",
+      "name": "BuffsModule::on_event",
+      "value": 27
+    },
+    {
+      "file": "crates/fold/src/modules/buffs.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 536
+    },
+    {
+      "file": "crates/fold/src/modules/buffs.rs",
+      "metric": "function-lines",
+      "name": "BuffsModule::on_event",
+      "value": 135
+    },
+    {
+      "file": "crates/fold/src/modules/combo/evidence.rs",
+      "metric": "complexity",
+      "name": "abbr_by_wiki_name",
+      "value": 17
+    },
+    {
+      "file": "crates/fold/src/modules/combo/intervals.rs",
+      "metric": "complexity",
+      "name": "resolve_group",
+      "value": 14
+    },
+    {
+      "file": "crates/fold/src/modules/combo/intervals.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 659
+    },
+    {
+      "file": "crates/fold/src/modules/consider.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 455
+    },
+    {
+      "file": "crates/fold/src/modules/resist/catalog.rs",
+      "metric": "complexity",
+      "name": "abbr_by_name",
+      "value": 17
+    },
+    {
+      "file": "crates/fold/src/modules/resist/mod.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 661
+    },
+    {
+      "file": "crates/fold/src/modules/resist/songs.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 416
+    },
+    {
+      "file": "crates/fold/src/modules/respawn.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 663
+    },
+    {
+      "file": "crates/fold/src/modules/roster.rs",
+      "metric": "complexity",
+      "name": "RosterModule::on_event",
+      "value": 13
+    },
+    {
+      "file": "crates/fold/src/spells_us.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 848
+    },
+    {
+      "file": "crates/knowledge/src/lib.rs",
+      "metric": "complexity",
+      "name": "Corpus::search",
+      "value": 15
+    },
+    {
+      "file": "crates/knowledge/src/lib.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 509
+    },
+    {
+      "file": "crates/parity/src/main.rs",
+      "metric": "file-lines",
+      "name": "",
+      "value": 491
+    },
+    {
+      "file": "crates/parity/src/main.rs",
+      "metric": "function-lines",
+      "name": "stages",
+      "value": 250
+    }
+  ]
+}

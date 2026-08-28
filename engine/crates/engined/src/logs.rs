@@ -1,53 +1,32 @@
-//! ============================================================================
-//! WHICH CHARACTERS THIS INSTALL HAS (owner ruling 21, decision sheet 1a — JOS-498).
-//! ============================================================================
+//! Which characters this install has. The app names the folder and pushes it (`logs.setDir`); this
+//! file reads it.
 //!
-//! The last discovery item of the JOS-459 program. `listCharacters` in `src/main/log/config.ts` was
-//! a readdir, a filename parse and a `statSync` per file, run on Electron main; ruling 21 moves the
-//! READING of log-file facts to the process that owns log files, and decision sheet 1a settles who
-//! names the folder — THE APP DOES, and pushes it (`logs.setDir`).
+//! Everything here is a pure function of a directory path plus whatever the filesystem says, so the
+//! whole answer — including the three ways a directory can fail to be one — is exercised against a
+//! temp folder. The world holds the pushed path and the op table turns the answer into a reply;
+//! neither knows what an `eqlog_` filename is.
 //!
-//! ── THE SPLIT THIS FILE IS ON THE FORMAT SIDE OF ───────────────────────────────────────────────
+//! None of this is fold state and none of it may become any. An mtime is a served process fact: it
+//! is not addressed by (log identity, byte offset) and no replay can produce it, so nothing here is
+//! pushed into a module and this file imports neither `fold` nor `ingest`. It is answerable by a
+//! world that has attached to nothing, which is the launch it exists for.
 //!
-//! `spells.rs` states it best and this file keeps it: the FORMAT is one thing and the FILE is
-//! another. Everything below is a pure function of a directory path plus whatever the filesystem
-//! says when asked, so the whole answer — including the three ways a directory can fail to be a
-//! directory — is exercised by a unit against a temp folder this test made. The WORLD holds the
-//! pushed path (`world::State::log_dir`) and the op table turns the answer into a reply; neither of
-//! those knows what an `eqlog_` filename is.
-//!
-//! ── IT IS NOT FOLD STATE, AND IT NEVER BECOMES ANY ────────────────────────────────────────────
-//!
-//! An mtime is a served PROCESS fact (ruling 18): it is not addressed by (log identity, byte
-//! offset), no replay can produce it, and a fold that held one would be a fold whose output depended
-//! on when it ran. So nothing here is pushed into a module, nothing here moves with the epoch, and
-//! this file imports neither `fold` nor `ingest`. It is answerable by a world that has attached to
-//! nothing at all, which is exactly the launch it exists for: a fresh install has characters to
-//! choose between before there is anything to fold.
-//!
-//! ── THE APP'S OWN READ IS THE OTHER ARM, SO THE TWO MUST AGREE ────────────────────────────────
-//!
-//! `listCharacters` survived the deletion release on purpose — launch-time character choice has to
-//! work on a launch with no engine — so there are two implementations of one answer and the app
-//! degrades from this one to that one. Every rule below is therefore quoted from `config.ts` rather
-//! than chosen here: the filename shape, the leftmost split, the truncated mtime, the
-//! most-recent-first order. Where this file adds something the app's read does not have (the
-//! tiebreak below), it is because a served list is compared frame to frame and an unstable order is
-//! churn; it is stated, not silent.
+//! The app keeps its own reader for launches with no engine, so two implementations answer one
+//! question and every rule below is the app's: the filename shape, the leftmost split, the truncated
+//! mtime, the most-recent-first order. The one addition is the tiebreak, because a served list is
+//! compared frame to frame and an unstable order is churn.
 
 use protocol::generated::{LogCharacter, LogsDirReadable};
 use std::path::{Path, PathBuf};
 
 /// What one scan of a log directory found.
 ///
-/// THE VERDICT AND THE ROWS TRAVEL TOGETHER because an empty list means three different things and
-/// only the verdict separates them — see `LogsListResult` in the schema, which is this type on the
-/// wire.
+/// The verdict and the rows travel together because an empty list means three different things and
+/// only the verdict separates them.
 ///
-/// NO `PartialEq`, and the absence is the generated types' rather than a choice: `LogCharacter` is
-/// typify's output and derives `Debug`/`Clone`/serde and nothing else, so a comparison of two scans
-/// is written field by field where a test wants one. That is the right direction anyway — a scan
-/// carries an mtime, and a test that compared whole scans would be comparing the filesystem's clock.
+/// No `PartialEq`: `LogCharacter` is generated and derives none, so a comparison of two scans is
+/// written field by field. That is the right direction anyway — a scan carries an mtime, and
+/// comparing whole scans would be comparing the filesystem's clock.
 #[derive(Debug, Clone)]
 pub struct LogScan {
     /// How reading the directory went.
@@ -63,24 +42,20 @@ const PREFIX: &str = "eqlog_";
 /// The extension it gives them.
 const SUFFIX: &str = ".txt";
 
-/// SCAN ONE DIRECTORY.
+/// Scan one directory.
 ///
-/// **THE THREE OUTCOMES ARE THE APP'S THREE** (`ResolvedEqDir.readable`, and JOS-82's law that a
-/// FAILED READ IS NOT "no logs"). `NotFound` is `missing` — the ordinary state of a machine with
-/// EverQuest installed somewhere else, or none at all. Every other error is `unreadable`: a
-/// permission refusal, a disconnected network share, a path that is a file rather than a folder.
-/// They are two states rather than one because they are two sentences to a person, and because a
-/// caller may reasonably want to try its own read on one of them and not on the other.
+/// Three outcomes, and a failed read is never "no logs". `NotFound` is `missing` — a machine with
+/// EverQuest installed somewhere else. Every other error is `unreadable`: a permission refusal, a
+/// disconnected share, a path that is a file. Two states rather than one because they are two
+/// sentences to a person.
 ///
-/// **A FILE THAT VANISHES MID-SCAN IS A ROW WITH NO `lastPlayed`, NOT A MISSING ROW.** The readdir
-/// and the stat are two syscalls with a window between them, and EverQuest is writing into this
-/// folder while a person clicks. Dropping the row would make a character disappear from a picker
-/// for a reason nobody could ever see; carrying it without its sort key is the honest answer, and
-/// the ordering rule below already says where an absent key sorts.
+/// A file that vanishes mid-scan is a row with no `lastPlayed`, not a missing row: the readdir and
+/// the stat are two syscalls with a window between them, and EverQuest is writing into this folder
+/// while a person clicks. Dropping the row would make a character disappear for a reason nobody
+/// could see.
 ///
-/// **A DIRECTORY ENTRY THAT IS NOT A FILE IS SKIPPED.** A folder called `eqlog_Foo_bar.txt` is not a
-/// log, and handing one to `session.attach` would be an attach that can only fail. The check is on
-/// the metadata this scan already has to take.
+/// A directory entry that is not a file is skipped: handing a folder named `eqlog_Foo_bar.txt` to
+/// `session.attach` would be an attach that can only fail.
 #[must_use]
 pub fn scan(dir: &Path) -> LogScan {
     let entries = match std::fs::read_dir(dir) {
@@ -107,9 +82,8 @@ pub fn scan(dir: &Path) -> LogScan {
         let Some((name, server)) = split_log_name(file_name) else {
             continue;
         };
-        // The metadata is taken ONCE and answers two questions: is this a file at all, and when was
-        // it last written. A row survives a failure of the second and not of the first — see the
-        // header.
+        // The metadata is taken once and answers two questions: is this a file at all, and when was
+        // it last written. A row survives a failure of the second and not of the first.
         let meta = std::fs::metadata(&path).ok();
         if meta.as_ref().is_some_and(|m| !m.is_file()) {
             continue;
@@ -130,19 +104,15 @@ pub fn scan(dir: &Path) -> LogScan {
 
 /// `eqlog_<Character>_<server>.txt` → the two names, or `None` for a filename that is not one.
 ///
-/// **THE APP'S REGEX, STATED AS A RULE.** `/^eqlog_(.+?)_(.+?)\.txt$/i` is two LAZY groups, which
-/// means the first underscore after the prefix ends the character name and everything up to `.txt`
-/// is the server. That is not a detail: a server name containing an underscore is a thing that can
-/// exist and a character name containing one is not, so the split must be leftmost or the two
-/// implementations would disagree about a name — and a name is the join key the picker, the store's
-/// per-character progress and `characterId` are all built on.
+/// The split is LEFTMOST, matching the app's two lazy regex groups: a server name may contain an
+/// underscore and a character name may not, so a rightmost split would make the two implementations
+/// disagree about a name — and a name is the join key the picker and `characterId` are built on.
 ///
-/// **CASE-INSENSITIVE AT BOTH ENDS, LIKE THE REGEX'S `i` FLAG**, and the NAMES themselves are taken
-/// verbatim — the game's own capitalisation, never folded, because it is what the player sees.
+/// Case-insensitive at both ends, and the names themselves are verbatim: the game's own
+/// capitalisation is what the player sees.
 ///
-/// **BOTH HALVES MUST BE NON-EMPTY**, which is the `+` in each group: `eqlog__freeport.txt` names no
-/// character and `eqlog_Primitive_.txt` names no server, and a row carrying an empty string would be
-/// a picker entry with a blank label.
+/// Both halves must be non-empty — a row carrying an empty string is a picker entry with a blank
+/// label.
 fn split_log_name(file_name: &str) -> Option<(String, String)> {
     let lower = file_name.to_ascii_lowercase();
     if !lower.starts_with(PREFIX) || !lower.ends_with(SUFFIX) {
@@ -156,12 +126,11 @@ fn split_log_name(file_name: &str) -> Option<(String, String)> {
     Some((name.to_owned(), server.to_owned()))
 }
 
-/// ONE FILE'S LAST-MODIFIED TIME, in epoch milliseconds, or `None`.
+/// One file's last-modified time, in epoch milliseconds, or `None`.
 ///
-/// TRUNCATED rather than rounded, so it equals `Math.floor(statSync(log).mtimeMs)` — Node reports
-/// the same NTFS stamp as a float with sub-millisecond digits and the schema field is an integer.
-/// The rule, and the reasons every failure answers `None` rather than `0`, are `world::mtime_ms`'s;
-/// this is the same statement about a stat somebody else already took.
+/// Truncated rather than rounded, to equal the app's `Math.floor(mtimeMs)`: Node reports the same
+/// NTFS stamp as a float with sub-millisecond digits and the schema field is an integer. Every
+/// failure answers `None` rather than `0` — see `world::mtime_ms`.
 fn mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
     let since = meta
         .modified()
@@ -171,22 +140,14 @@ fn mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
     i64::try_from(since.as_millis()).ok()
 }
 
-/// MOST RECENTLY WRITTEN FIRST — `listCharacters`'s `(b.lastPlayed ?? 0) - (a.lastPlayed ?? 0)`,
-/// with the tiebreak the app's read does not need and this one does.
+/// Most recently written first, with an absent `lastPlayed` sorting as zero — the app's comparator,
+/// and the right place for a file nothing can be said about.
 ///
-/// **AN ABSENT `lastPlayed` SORTS AS ZERO, exactly as the app's comparator does** — it goes last,
-/// which is right for a file nothing can be said about and is the behaviour a launch with no engine
-/// already has.
-///
-/// **THE TIEBREAK IS THE PATH, ASCENDING, AND IT IS DELIBERATE.** The app's comparator leans on
-/// `Array.prototype.sort` being stable over whatever order `readdirSync` returned; `read_dir` makes
-/// no such promise on any platform, so two logs with the same stamp — which is what a fresh copy of
-/// an install looks like — could come back in either order on two consecutive calls. A served list
-/// that reshuffles is diff churn against a client holding a window (the views law: every sort ends
-/// in the source's own tiebreak, so order is TOTAL), and here it would also make a picker's rows
-/// swap under a cursor. The cost is that on a tie this order may differ from the engine-absent
-/// arm's; that is two equally-good answers to "which was played last", and it is stated here rather
-/// than discovered.
+/// The tiebreak is the path ascending, which the app's read does not need and this one does:
+/// `read_dir` promises no order, so two logs with the same stamp — a fresh copy of an install —
+/// could come back either way on consecutive calls, and a served list that reshuffles is diff churn
+/// against a client holding a window. On a tie this order may differ from the engine-absent arm's;
+/// both are equally good answers to "which was played last".
 fn sort_most_recent_first(characters: &mut [LogCharacter]) {
     characters.sort_by(|a, b| {
         b.last_played
@@ -198,11 +159,9 @@ fn sort_most_recent_first(characters: &mut [LogCharacter]) {
 
 /// The directory this engine has been told to enumerate, held for the life of the process.
 ///
-/// IT IS A THIRD KIND OF STATE, like `client_spells` and for the mirror-image reason. It is not fold
-/// state, so it does not move with the epoch; and unlike the spell table it is not derived from an
-/// attach either — it is something the APP TOLD this process, so it survives an attach exactly as
-/// `defines` does, and for the identical reason: a character switch is not the app withdrawing where
-/// its logs live.
+/// A third kind of state: not fold state, so it does not move with the epoch, and not derived from
+/// an attach either — the app told this process, so it survives an attach exactly as `defines` does.
+/// A character switch is not the app withdrawing where its logs live.
 #[derive(Debug, Clone, Default)]
 pub struct LogDir(Option<PathBuf>);
 
@@ -225,8 +184,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    /// A scratch Logs folder of this test's own. NEVER the owner's real logs, and nothing this
-    /// creates is ever committed — the same rule every fixture in this program is under.
+    /// A scratch Logs folder of this test's own. Never a real install's logs.
     fn scratch(tag: &str) -> PathBuf {
         static N: AtomicU32 = AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
@@ -238,7 +196,7 @@ mod tests {
         dir
     }
 
-    /// Write one character log with a stated modification time, so ORDER is asserted against a fact
+    /// Write one character log with a stated modification time, so order is asserted against a fact
     /// rather than against how fast the test ran.
     fn log(dir: &Path, file: &str, mtime_ms: u64) -> PathBuf {
         let path = dir.join(file);
@@ -267,7 +225,7 @@ mod tests {
         let found = scan(&dir);
         assert_eq!(found.readable, LogsDirReadable::Ok);
         let names: Vec<&str> = found.characters.iter().map(|c| c.name.as_str()).collect();
-        // THE SORT KEY IS THE FILE'S OWN STAMP, which is what "last played" has always meant here.
+        // The sort key is the file's own stamp, which is what "last played" means here.
         assert_eq!(names, vec!["Alt", "Third", "Primitive"]);
         assert_eq!(found.characters[0].server, "freeport");
         assert_eq!(found.characters[0].last_played, Some(1_700_000_009_000));
@@ -281,10 +239,10 @@ mod tests {
     fn only_character_logs_are_rows_and_the_split_is_leftmost() {
         let dir = scratch("names");
         log(&dir, "eqlog_Primitive_freeport.txt", 1_700_000_003_000);
-        // A SERVER NAME MAY CARRY AN UNDERSCORE and a character name may not, which is why the app's
-        // lazy regex splits leftmost and why this one does.
+        // A server name may carry an underscore and a character name may not, which is why the
+        // split is leftmost.
         log(&dir, "eqlog_Bard_test_server.txt", 1_700_000_002_000);
-        // THE `i` FLAG, both ends.
+        // Case-insensitive at both ends.
         log(&dir, "EQLOG_Shouty_FREEPORT.TXT", 1_700_000_001_000);
         // …and four things that are not character logs at all.
         log(&dir, "eqlog_.txt", 1_700_000_004_000);
@@ -311,8 +269,8 @@ mod tests {
 
     #[test]
     fn a_missing_directory_is_missing_and_not_an_empty_install() {
-        // JOS-82's law, served: a FAILED READ IS NOT "no logs", and the two are different sentences
-        // to a person. A machine with EverQuest installed somewhere else reaches this every launch.
+        // A failed read is not "no logs" — the two are different sentences to a person. A machine
+        // with EverQuest installed somewhere else reaches this every launch.
         let dir = scratch("gone").join("Logs");
         let found = scan(&dir);
         assert_eq!(found.readable, LogsDirReadable::Missing);
@@ -330,8 +288,8 @@ mod tests {
 
     #[test]
     fn an_install_with_no_character_logs_is_ok_and_empty() {
-        // THE THIRD SILENCE, and it is the one a player is told to fix: the folder is right and
-        // `/log on` has never been typed. `ok` with no rows is what says so.
+        // The third silence, and the one a player is told to fix: the folder is right and `/log on`
+        // has never been typed. `ok` with no rows is what says so.
         let dir = scratch("nologs");
         log(&dir, "dbg.txt", 1_700_000_000_000);
         let found = scan(&dir);
@@ -341,8 +299,8 @@ mod tests {
 
     #[test]
     fn ties_are_broken_by_path_so_two_scans_of_one_folder_agree() {
-        // A FRESH COPY OF AN INSTALL is a folder of files with one stamp, and `read_dir` promises no
-        // order at all — so without the tiebreak two consecutive scans could disagree and a served
+        // A fresh copy of an install is a folder of files with one stamp, and `read_dir` promises
+        // no order — so without the tiebreak two consecutive scans could disagree and a served
         // window would churn for a world that did not move.
         let dir = scratch("ties");
         log(&dir, "eqlog_Zeta_freeport.txt", 1_700_000_000_000);

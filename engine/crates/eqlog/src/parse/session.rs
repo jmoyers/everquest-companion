@@ -1,5 +1,5 @@
-//! `src/main/log/parseSession.ts` — the three lines that say whether the character is IN THE WORLD
-//! at all, plus the `/outputfile` receipt.
+//! The three lines that say whether the character is in the world at all, plus the `/outputfile`
+//! receipt.
 
 use crate::event::{Ev, Key, Kind};
 use crate::jsstr::js_trim;
@@ -39,7 +39,7 @@ pub fn classify_camp(c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// `Outputfile Complete: <file>` — a dump with an EMPTY name declines rather than emitting nothing.
+/// `Outputfile Complete: <file>` — a dump with an empty name declines rather than emitting nothing.
 pub fn classify_output_file(c: &Ctx, out: &mut Ev) -> bool {
     if c.text.as_bytes().first() != Some(&b'O') || !c.text.starts_with(OUTPUT_FILE_PREFIX) {
         return false;

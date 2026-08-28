@@ -10,14 +10,9 @@ members = [
   "crates/protocol-codegen",
 ]
 
-# THE ENGINE (JOS-459). Today this workspace holds the protocol contract (`protocol`, JOS-464), the
-# PARSER and TAILER (`eqlog`, JOS-469/JOS-472) — proven byte-identical against the TS pipeline's
-# recorded event streams by the `parity` binary beside it — the FOLD (`fold`, JOS-471/475/476: all
-# twenty modules, proven against the TS snapshots on six slices), and the process that answers the
-# protocol over loopback TCP and runs them (`engined`, JOS-466/474/478): a spawn contract, a
-# handshake, the ops, one attach that scans a log and then tails it, and — since JOS-478 — the fold
-# itself, reached through one sink trait (`engined::ingest::EventSink`, joined in
-# `engined::foldsink`) and served to clients as `module.snapshot`.
+# The engine. `protocol` is the wire contract, `eqlog` parses and tails the log, `fold` is the
+# twenty modules plus combat, and `engined` serves the protocol over loopback TCP and runs them.
+# `parity` is the oracle that compares a fold against recorded snapshots.
 #
 # TWO STANDING RULES FOR EVERYTHING UNDER engine/:
 #   * Nothing here may shell out to powershell.exe, ever, at build time or at run time.

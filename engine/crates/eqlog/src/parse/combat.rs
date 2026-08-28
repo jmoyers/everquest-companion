@@ -1,9 +1,9 @@
-//! `src/main/log/parseCombat.ts` — misses, mitigation, resists, the damage battery and heals.
+//! Misses, mitigation, resists, the damage battery and heals.
 //!
-//! Every regex below is its TS twin with three mechanical substitutions and no others: `\d` →
+//! Every regex below is its app twin with three mechanical substitutions and no others: `\d` →
 //! `[0-9]`, `\w` → `[0-9A-Za-z_]` and `\s` → the ECMA class (see jsstr.rs). Those three are
 //! ASCII-only in JavaScript and Unicode-aware in the `regex` crate, and a mob name with a
-//! non-ASCII letter in it is exactly the line that would then part company.
+//! non-ASCII letter is exactly the line that would part company.
 
 use crate::event::{Ev, Key, Kind};
 use crate::names::norm;
@@ -12,7 +12,7 @@ use regex::Regex;
 
 use super::Ctx;
 
-/// Every verb must match BOTH first-person ("You slash") and third-person ("A mob slashes").
+/// Every verb must match both first-person ("You slash") and third-person ("A mob slashes").
 const MELEE_VERBS: &str = "hit(?:s)?|slash(?:es)?|pierce(?:s)?|crush(?:es)?|bash(?:es)?|kick(?:s)?|bite(?:s)?|claw(?:s)?|gore(?:s)?|maul(?:s)?|punch(?:es)?|strike(?:s)?|slice(?:s)?|backstab(?:s)?|slam(?:s)?|sting(?:s)?|rend(?:s)?|smash(?:es)?|gnaw(?:s)?|lash(?:es)?|smite(?:s)?|cleave(?:s)?|reave(?:s)?|shoot(?:s)?|frenzies on|frenzy on|flurries|flurry";
 
 pub struct CombatRes {
@@ -41,7 +41,6 @@ pub struct CombatRes {
     ds_owner_poss: Regex,
 }
 
-/// See `AcquireRes`'s note: `Default` is `new`.
 impl Default for CombatRes {
     fn default() -> Self {
         Self::new()
@@ -115,14 +114,14 @@ impl CombatRes {
     }
 }
 
-/// The BASE (first-person) form of every verb `MELEE_VERBS` spells out.
+/// The base (first-person) form of every verb `MELEE_VERBS` spells out.
 const MELEE_VERB_BASES: [&str; 26] = [
     "hit", "slash", "pierce", "crush", "bash", "kick", "bite", "claw", "gore", "maul", "punch",
     "strike", "slice", "backstab", "slam", "sting", "rend", "smash", "gnaw", "lash", "smite",
     "cleave", "reave", "shoot", "frenzy", "flurry",
 ];
 
-/// `meleeVerbBase` — un-conjugate, longest suffix rule first, each confirmed against the base set.
+/// Un-conjugate: longest suffix rule first, each confirmed against the base set.
 pub fn melee_verb_base(verb: &str) -> String {
     let v = verb.to_lowercase();
     if v.starts_with("frenz") {
@@ -147,7 +146,7 @@ pub fn melee_verb_base(verb: &str) -> String {
     v
 }
 
-/// `meleeSkill` — a named class skill gets its own lane; a weapon-in-a-hand verb shares one.
+/// A named class skill gets its own lane; a weapon-in-a-hand verb shares one.
 pub fn melee_skill(verb: &str) -> &'static str {
     let v = verb.to_lowercase();
     if v.starts_with("backstab") {
@@ -180,8 +179,7 @@ pub fn melee_skill(verb: &str) -> &'static str {
     "Melee"
 }
 
-/// `dmg()`'s `spec` argument, kept as one value for the reason the TS keeps it as one object
-/// literal: these six fields are the damage-shield reading of a line and travel together.
+/// The damage-shield reading of a line: six fields that travel together.
 struct Dmg<'a> {
     attacker: &'a str,
     target: &'a str,
@@ -191,7 +189,7 @@ struct Dmg<'a> {
     crit: bool,
 }
 
-/// `dmg()` — the damage-shield shape, which carries no paren modifier and maps its category 1:1.
+/// The damage-shield shape, which carries no paren modifier and maps its category 1:1.
 fn dmg(c: &Ctx, out: &mut Ev, spec: Dmg<'_>) {
     out.begin(Kind::Damage);
     out.envelope(c.seq, c.ts, c.raw);
@@ -201,8 +199,7 @@ fn dmg(c: &Ctx, out: &mut Ev, spec: Dmg<'_>) {
     out.s(Key::Dtype, spec.dtype);
     out.s(Key::Skill, spec.skill);
     out.b(Key::Crit, spec.crit);
-    // The empty list needs an element type now that `damage_category` is element-generic; `&str` is
-    // the arbitrary half of a choice that has no elements to make it matter.
+    // The empty list needs an element type because `damage_category` is element-generic.
     out.s(Key::Category, damage_category(spec.dtype, &[] as &[&str]));
 }
 
@@ -215,8 +212,8 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     }
     if let Some(m) = r.miss.captures(c.text) {
         let attacker = norm(&m[1]);
-        // `missOutcome`: 3=miss|misses 4=defender 5=3rd-verb 6=YOU 7=base-verb
-        // 8=absorbs(possessive) 9=YOUR(self)
+        // Group map: 3=miss|misses 4=defender 5=3rd-verb 6=YOU 7=base-verb 8=absorbs(possessive)
+        // 9=YOUR(self)
         let (mtype, target): (&str, String) = if m.get(3).is_some() {
             ("miss", norm(&m[2]))
         } else if let Some(v) = m.get(5) {
@@ -228,7 +225,7 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
             };
             (t, norm(&m[4]))
         } else if let Some(v) = m.get(7) {
-            // parry|dodge|riposte|block — the base form IS the MissType.
+            // The base form is the miss type.
             (
                 match v.as_str() {
                     "parry" => "parry",
@@ -239,7 +236,7 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
                 "You".to_string(),
             )
         } else if m.get(9).is_some() {
-            // SELF rune absorb: the branch is the authority — YOUR skin means the swing was at You.
+            // Self rune absorb: YOUR skin means the swing was aimed at you.
             ("absorb", "You".to_string())
         } else {
             ("absorb", norm(&m[2]))
@@ -249,7 +246,7 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         out.s(Key::Attacker, &attacker);
         out.s(Key::Target, &target);
         out.s(Key::Mtype, mtype);
-        // `missAnnotations`: verb then modifiers, each spread only when present.
+        // Verb then modifiers, each written only when present.
         if let Some(v) = r.miss_verb.captures(c.text) {
             out.s(Key::Verb, &melee_verb_base(&v[1]));
         }
@@ -258,7 +255,8 @@ pub fn classify_miss(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         }
         return true;
     }
-    // MISS_RE declined: the safety net for a COMPOUND trailing modifier its single-word tail rejects.
+    // The miss pattern declined: the safety net for a compound trailing modifier its single-word
+    // tail rejects.
     if let Some(a) = r.skin_absorb_blow.captures(c.text) {
         out.begin(Kind::Mitigation);
         out.envelope(c.seq, c.ts, c.raw);
@@ -312,7 +310,7 @@ pub fn classify_resist(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
         }
         return false;
     }
-    // The possessive-YOUR form FIRST — 712 spell names contain `'s`.
+    // The possessive-YOUR form first: 712 spell names contain `'s`.
     if let Some(m) = r.resist_yours.captures(text) {
         out.begin(Kind::Resist);
         out.envelope(c.seq, c.ts, c.raw);
@@ -435,7 +433,7 @@ fn taken_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
             let at = by.get(0).expect("group 0").start();
             skill = rest[..at].to_string();
         }
-        // "from <Spell>" with no "by <caster>" and not "your" — fall through to the caster-less form.
+        // "from <Spell>" with no "by <caster>" and not "your" falls through to the caster-less form.
         if let Some(attacker) = attacker {
             let mods = parse_modifiers(modifier);
             out.begin(Kind::Damage);
@@ -512,13 +510,12 @@ pub fn classify_heal(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     out.envelope(c.seq, c.ts, c.raw);
     out.s(Key::Target, &target);
     out.i(Key::Amount, m[4].parse().unwrap_or(0));
-    // `rawAmount: m[5] ? Number(m[5]) : undefined` — the key is written and then dropped by
-    // `JSON.stringify` when the group did not participate.
+    // Absent, not zero, when the group did not participate.
     out.i_opt(
         Key::RawAmount,
         m.get(5).and_then(|g| g.as_str().parse().ok()),
     );
-    // `spell: m[6]?.trim() || undefined` — an empty trim is absent, not "".
+    // An empty trim is absent, not "".
     let spell = m.get(6).map(|g| crate::jsstr::js_trim(g.as_str()));
     out.s_opt(Key::Spell, spell.filter(|s| !s.is_empty()));
     out.s(Key::Healer, &healer);

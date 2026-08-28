@@ -1,44 +1,25 @@
-//! `timers.rows` — THE TWO FLOATING TIMER WINDOWS, served (JOS-487).
+//! `timers.rows` — one source for both floating timer windows, as there is one projection for both:
+//! two windows placed and enabled separately, not two models. Which window a row belongs to is the
+//! `surface` cell and field, so a subscription filters `{"surface":"debuffs"}` for that window's
+//! rows.
 //!
-//! One source for both of them, exactly as there is one projection for both of them over there: the
-//! owner asked for two windows he can place and enable separately, NOT for two models. Which window
-//! a row belongs to is a CELL and a FIELD (`surface`), so a subscription filters
-//! `{"surface":"debuffs"}` and gets the debuffs window's rows, filtered, sorted and windowed.
+//! The rows come from `fold::modules::buff_timer_rows`; everything here is the cell layer over it.
 //!
-//! The rows themselves come from `fold::modules::buff_timer_rows` — the port of
-//! `src/shared/buffTimers.ts` — which folds `buffs.active` together with `buffTimers.holds`/`.ends`.
-//! Everything below is the CELL layer over it.
+//! The renderer draws these rows in one of two orders and neither is a sort by a column — the
+//! grouped order blocks by target, the flat order ranks countdowns ahead of count-ups ahead of
+//! permanents before comparing any instant. So the source publishes both as integer fields (`order`,
+//! `flat`), each the row's index in that order, computed once per serve pass by the projection that
+//! owns the rule. Both are unique within the view, so either makes the sort total on its own;
+//! `order` is the tiebreak because it is the projection's.
 //!
-//! ── THE TWO ORDERS ARE BOTH FIELDS, AND THAT IS THE WHOLE TRICK ────────────────────────────────
+//! There is no `remaining` cell. A countdown reads a different number every frame, so serving it as
+//! text would mean a diff per visible row per serve beat and would still be stale between two
+//! frames. What crosses is `startedTs`, `durationMs` and `mode` — the three numbers the reading is a
+//! pure function of, and what the overlay already ticks against.
 //!
-//! The renderer draws these rows in one of two orders and NEITHER is a sort by a column. The
-//! grouped order is "self rows first, then one block per target, blocks ordered by their soonest
-//! row"; the flat order is `compareRows` over everything, which ranks countdowns ahead of count-ups
-//! ahead of permanents before it compares any instant. A view layer that sorts by named fields
-//! cannot express either — so the source PUBLISHES BOTH as integer fields (`order`, `flat`), each
-//! the row's index in that order, computed once per serve pass by the projection that owns the
-//! rule. The client names the order it wants and never re-sorts, which is ruling 4 kept rather than
-//! bent: the decision stayed engine-side, and what crossed the wire is its answer.
-//!
-//! Both are UNIQUE within the view, so either makes the sort total on its own; `order` is the
-//! tiebreak because it is the projection's own.
-//!
-//! ── THE CLOCK IS THE RENDERER'S, AND THAT IS NOT A HOLE IN RULING 4 ────────────────────────────
-//!
-//! There is no `remaining` cell and there is not going to be one. A countdown row reads a different
-//! number every frame; serving it as text would mean a diff for every visible row at the serve
-//! cadence — a frame storm for a window of eight bars — and it would STILL be stale between two
-//! frames, so the renderer would have to compute it anyway. What crosses is `startedTs`,
-//! `durationMs` and `mode`: the three numbers `timerReading` is a pure function of, which is exactly
-//! what the overlay already ticks against at 1 Hz. Reading a stored instant against the current one
-//! is not domain work — it is the same class as `FoldProgress.pct` leaving its rounding to whoever
-//! draws the bar — and the rule ruling 4 states is that the renderer never FILTERS, SORTS or
-//! AGGREGATES the world, all three of which happened above this line.
-//!
-//! `endsAt` IS SERVED THOUGH, and it is the one derived instant that belongs here: it is a fact
-//! about the row rather than about now (`startedTs + durationMs`), it is what the early-warning
-//! offset is computed from, and it is the field a client sorts by when it wants "what breaks next"
-//! without knowing this file's ranking rules.
+//! `endsAt` is served: it is a fact about the row (`startedTs + durationMs`) rather than about now,
+//! it is what the early-warning offset is computed from, and it is what a client sorts by for "what
+//! breaks next" without knowing this file's ranking rules.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -69,31 +50,27 @@ pub const ROWS: SourceDef = SourceDef {
         "endsAt",
         "caster",
     ],
-    // THE PROJECTION'S OWN ORDER — self rows, then target blocks. A descriptor that states nothing
-    // gets what the buffs window opens on.
+    // The projection's own order — self rows, then target blocks.
     default_sort: &[("order", Order::Asc)],
     tiebreak: ("order", Order::Asc),
-    // SMALLER THAN THE HOUSE DEFAULT, and the number is the surface's rather than a guess: these
-    // are floating windows over a running game and nobody has fifty buffs. A client that wants more
-    // asks for more, up to `MAX_LIMIT`.
+    // The surface's own number rather than the house default: these are floating windows over a
+    // running game and nobody has fifty buffs. A client that wants more asks, up to `MAX_LIMIT`.
     default_limit: 100,
 };
 
 /// Build every timer row, in the projection's grouped order.
 ///
-/// THE KEY IS THE PROJECTION'S OWN `id` — `self|self|clarity`, `cc|a sand giant|mesmerization` —
-/// which is already built to be stable across ticks so that keys and selectors do not churn. That
-/// is exactly what a diff needs, and inventing a second identity here would be a second thing that
-/// can disagree about whether two frames describe the same bar.
+/// The key is the projection's own `id` (`self|self|clarity`), already built to be stable across
+/// ticks. Inventing a second identity here would be a second thing that can disagree about whether
+/// two frames describe the same bar.
 #[must_use]
 pub fn rows(buffs: &BuffsModule, timers: &BuffTimersModule) -> Vec<SourceRow> {
     let active = buffs.active_buffs();
     let holds = timers.holds();
     let built = build_timer_rows(&active, &holds, timers.ends());
 
-    // The FLAT order, as a lookup from row id to position. Computed once for the whole source
-    // rather than per row: the flat order is a sort of the same rows, so it costs one more sort of
-    // a list that is already in memory.
+    // The flat order as a lookup from row id to position, computed once for the whole source: it is
+    // one more sort of a list already in memory.
     let flat: std::collections::HashMap<String, i64> = order_timer_rows(&built, false)
         .iter()
         .enumerate()
@@ -119,10 +96,8 @@ pub fn rows(buffs: &BuffsModule, timers: &BuffTimersModule) -> Vec<SourceRow> {
 fn cells(row: &BuffTimerRow, order: i64, flat: i64) -> Cells {
     let mut cells = std::collections::BTreeMap::new();
     cells.insert("name".to_owned(), Cell::text(&row.name));
-    // THE RANK CHIP, not the raw cast name. `castName` is only ever shown as the DIFFERENCE between
-    // the two spellings — `rowRankLabel`'s two refusals decide whether there is one — so serving the
-    // whole string would hand the client a decision it would then have to make with a function it
-    // does not have.
+    // The rank chip, not the raw cast name: `castName` is only ever shown as the difference between
+    // the two spellings, and `row_rank_label` is the function that decides whether there is one.
     cells.insert(
         "rank".to_owned(),
         row_rank_label(&row.name, row.cast_name.as_deref()).map_or_else(Cell::null, Cell::text),
@@ -158,12 +133,10 @@ fn cells(row: &BuffTimerRow, order: i64, flat: i64) -> Cells {
     Cells(cells)
 }
 
-/// What a descriptor may name. `candidates` IS ABSENT FROM BOTH SETS, and that is a decision rather
-/// than an omission: a `Cell` is a scalar, so a list of candidate spells cannot be one — and it does
-/// not need to be, because the row's `name` is already those names joined the way the bar draws
-/// them (`Mesmerize / Mesmerization`) and `ambiguous` is the flag the `~` chip reads. The
-/// per-candidate list is what the ALLOW-LIST filter asks about, and that filter is a window
-/// preference applied to a window's own rows rather than a query.
+/// What a descriptor may name. `candidates` is absent from both the cells and the fields by
+/// decision: a `Cell` is a scalar, and the row's `name` is already those names joined the way the
+/// bar draws them while `ambiguous` is the flag the `~` chip reads. The per-candidate list is what
+/// the allow-list filter asks about, and that is a window preference rather than a query.
 fn fields(row: &BuffTimerRow, order: i64, flat: i64) -> Vec<(&'static str, Field)> {
     vec![
         ("order", Field::Int(order)),
@@ -202,8 +175,8 @@ mod tests {
     use protocol::generated::{SortTerm, ViewDescriptor, ViewFilter};
     use protocol::Cell;
 
-    /// A fold with the twenty modules registered, fed hand-written events. `launch_ms` is
-    /// `i64::MAX` so the rebirth boundary never fires — `views::loot`'s own trick.
+    /// A fold fed hand-written events. `launch_ms` is `i64::MAX` so the rebirth boundary never
+    /// fires.
     fn folded(lines: &[&str]) -> fold::Fold {
         let mut f = fold::Fold::new(fold::registered(fold::ClusterDeps::default()), i64::MAX);
         for line in lines {
@@ -232,7 +205,7 @@ mod tests {
     }
 
     /// A landing the model can open an instance from: a `buffLanded` naming the spell and the
-    /// target, which is the ONE shape JOS-118 admits.
+    /// target, which is the one shape the model admits.
     fn landing(seq: i64, ts: i64, spell: &str, target: Option<&str>) -> String {
         match target {
             None => format!(
@@ -246,9 +219,8 @@ mod tests {
 
     #[test]
     fn the_source_serves_the_projections_order_and_names_the_flat_one_beside_it() {
-        // TWO ORDERS OVER ONE ROW SET, which is the whole reason both are fields. Whether the fold
-        // opened instances for these landings is not this test's subject — what it pins is that the
-        // source cuts windows in the order the descriptor names, and that both names resolve.
+        // Two orders over one row set: what this pins is that the source cuts windows in the order
+        // the descriptor names and that both names resolve.
         let f = folded(&[&landing(0, 1_000, "Clarity", None)]);
         let source = built(&f);
 
@@ -262,7 +234,7 @@ mod tests {
         let (b, total_b) = cut(&flat, &source);
         assert_eq!(total_a, total_b, "the same rows, two orders");
         assert_eq!(a.len(), b.len());
-        // Both orders are TOTAL — every key appears exactly once in each.
+        // Both orders are total — every key appears exactly once in each.
         let keys = |w: &[protocol::generated::Row]| {
             let mut k: Vec<String> = w.iter().map(|r| r.key.0.clone()).collect();
             k.sort();
@@ -310,8 +282,8 @@ mod tests {
 
     #[test]
     fn a_field_the_source_does_not_carry_is_refused_by_name() {
-        // `candidates` is the trap worth pinning: it is a real property of a row and deliberately
-        // neither a cell nor a field, because a `Cell` is a scalar. Saying so is the answer.
+        // `candidates` is a real property of a row and deliberately neither a cell nor a field,
+        // because a `Cell` is a scalar.
         let mut d = descriptor(Vec::new(), None);
         d.sort = vec![SortTerm(["candidates".to_owned(), "asc".to_owned()])];
         let error = validate(&d).err().expect("a refusal");

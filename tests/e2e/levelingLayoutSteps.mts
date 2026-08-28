@@ -52,7 +52,7 @@
 // 1073 is the same branch of the same breakpoint — one width proves the branch.
 
 import type { ElectronApplication, Page } from 'playwright-core'
-import { check, countOf, hoverAt, note, pageOverflow, settle, settleCount, settleGone, settleStable } from './appHarness.mjs'
+import { check, countOf, hoverAt, note, pageOverflow, settle, settleCount, settleGone, settleStable, sleep } from './appHarness.mjs'
 
 /** The app's own minimum window width (src/main/windows.ts) — the narrowest a user can get. */
 const MIN_W = 900
@@ -430,6 +430,199 @@ export async function stepSpellCard(page: Page): Promise<void> {
   // DOCUMENT's scrollHeight: the first run of this step left one behind and `stepPageScroll` read
   // `document +62px` and correctly failed the shell's own never-scrolls claim. `leaveDelay` is
   // 60ms (lib/SpellCard.tsx), so moving the mouse is not the same thing as the card being gone.
+  await page.mouse.move(2, 2)
+  await settleGone(page, SPELL_CARD, { timeoutMs: 5_000 })
+  // …AND THE CROSSING, which only means anything from HERE (see `checkHoverCrossing`): a card has
+  // just been opened and closed, so MUI's app-global enter hysteresis is running.
+  await checkHoverCrossing(page)
+}
+
+/** The visible centre of each of the first `n` spell names — `hoverAt`'s clipping maths, per row. */
+function spellNamePoints(page: Page, n: number): Promise<{ x: number; y: number }[]> {
+  return page.evaluate(
+    (a) => {
+      const out: { x: number; y: number }[] = []
+      for (const el of Array.from(document.querySelectorAll(a.sel)).slice(0, a.n)) {
+        const r = el.getBoundingClientRect()
+        let [left, top, right, bottom] = [r.left, r.top, r.right, r.bottom]
+        for (let p = el.parentElement; p; p = p.parentElement) {
+          const s = getComputedStyle(p)
+          if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
+          const pr = p.getBoundingClientRect()
+          left = Math.max(left, pr.left)
+          top = Math.max(top, pr.top)
+          right = Math.min(right, pr.right)
+          bottom = Math.min(bottom, pr.bottom)
+        }
+        left = Math.max(left, 0)
+        top = Math.max(top, 0)
+        right = Math.min(right, window.innerWidth - 1)
+        bottom = Math.min(bottom, window.innerHeight - 1)
+        if (right - left <= 0 || bottom - top <= 0) continue
+        const x = Math.round(left + (right - left) / 2)
+        const y = Math.round(top + (bottom - top) / 2)
+        const hit = document.elementFromPoint(x, y)
+        if (hit && (hit === el || el.contains(hit))) out.push({ x, y })
+      }
+      return out
+    },
+    { sel: SPELL_NAME, n }
+  )
+}
+
+/**
+ * The floor a card must clear before it is allowed to exist, in page-milliseconds from the pointer
+ * arriving on the name. THE CLOCK IS THE INSTRUMENT HERE, which is the sanctioned exception to wave
+ * E3's "wait for the condition, never for the clock" — the claim IS a claim about time.
+ *
+ * 200 against a declared 250: a floor rather than an equality, because the poll that spots the card
+ * has a 5ms grain and MUI's timer is a `setTimeout`. What it discriminates is the whole distance
+ * between the two behaviours — with `enterNextDelay` at its DEFAULT of 0 a card opens on the next
+ * tick and this gap reads single digits.
+ */
+const ENTER_FLOOR_MS = 200
+
+/** How long the pointer rests on each name as it crosses. */
+const CROSS_DWELL_MS = 90
+
+/** What the in-page watcher parks on `window`. Only the numbers ever cross the bridge. */
+interface CardWatch {
+  /** Most cards open at the same instant. */
+  __eqCardsMax?: number
+  /** For each card that OPENED: page-milliseconds from the pointer arriving on a name to it. */
+  __eqGaps?: number[]
+  __eqLastEnter?: number
+  __eqPrevCards?: number
+  __eqCardWatch?: number
+  __eqCardAbort?: AbortController
+}
+
+/**
+ * Start watching, from inside the page: how long each card made the pointer wait, and how many
+ * were ever open at once.
+ *
+ * THE MEASUREMENT IS TAKEN IN THE PAGE BECAUSE THE HARNESS IS TOO SLOW TO TAKE IT (measured, and
+ * it is why this step is shaped the way it is). A real `page.mouse.move` on this tab costs ~820ms
+ * end to end under the runner's four-way parallelism — the CDP dispatch waits on a renderer that
+ * is drawing two charts and tailing a live log — so a node-side "cross three names in 270ms" is
+ * not a thing this harness can perform at all: the first attempt clocked 2728ms for three moves
+ * and every row therefore dwelled long past ANY enter delay. Both timestamps below are the page's
+ * own, so node's latency cannot enter the number: `__eqLastEnter` is stamped by a real
+ * `pointerover` on a spell name, and the gap is measured to the first frame a card exists.
+ *
+ * A POLL AND NOT A `MutationObserver`, for a harness reason worth writing down: this file runs
+ * through tsx, and esbuild's `keepNames` wraps any function assigned to a NAMED binding in a
+ * `__name(...)` call. That helper exists in the node module, not in the page — so an `evaluate`
+ * body containing `const sample = () => …` dies on `ReferenceError: __name is not defined`
+ * (measured, on this step's second run). Every function here is passed straight to its consumer as
+ * an argument, where nothing infers a name for it, and the listener is removed with an
+ * `AbortController` rather than a stored reference for exactly the same reason.
+ *
+ * 5ms is far finer than it needs to be: a card that opens stays open for its 60ms `leaveDelay`.
+ */
+function startCardWatch(page: Page): Promise<void> {
+  return page.evaluate((a) => {
+    const w = window as unknown as CardWatch
+    w.__eqCardsMax = 0
+    w.__eqGaps = []
+    w.__eqPrevCards = document.querySelectorAll(a.card).length
+    w.__eqLastEnter = undefined
+    w.__eqCardAbort = new AbortController()
+    document.addEventListener(
+      'pointerover',
+      (e) => {
+        const t = e.target
+        if (t instanceof Element && t.closest(a.name)) w.__eqLastEnter = performance.now()
+      },
+      { capture: true, signal: w.__eqCardAbort.signal }
+    )
+    w.__eqCardWatch = window.setInterval(() => {
+      const n = document.querySelectorAll(a.card).length
+      if (n > (w.__eqCardsMax ?? 0)) w.__eqCardsMax = n
+      // A card APPEARING is the event: the gap is from the pointer arriving on a name to this.
+      if (n > (w.__eqPrevCards ?? 0) && w.__eqLastEnter !== undefined) {
+        ;(w.__eqGaps ??= []).push(Math.round(performance.now() - w.__eqLastEnter))
+      }
+      w.__eqPrevCards = n
+    }, 5)
+  }, { card: SPELL_CARD, name: SPELL_NAME })
+}
+
+/** Stop it and hand back what it saw. */
+function stopCardWatch(page: Page): Promise<{ max: number; gaps: number[] }> {
+  return page.evaluate(() => {
+    const w = window as unknown as CardWatch
+    if (w.__eqCardWatch !== undefined) window.clearInterval(w.__eqCardWatch)
+    w.__eqCardAbort?.abort()
+    return { max: w.__eqCardsMax ?? 0, gaps: w.__eqGaps ?? [] }
+  })
+}
+
+/**
+ * THE HOVER CROSSING (JOS-511 item 4) — the claim the ticket asked for, DOM-proven.
+ *
+ * THE DEFECT IT PINS. MUI's enter hysteresis is app-global: once ANY tooltip has closed, the next
+ * one's `enterDelay` is skipped for about 860ms and `enterNextDelay` applies instead — and that
+ * defaults to 0. So the 250ms `SpellTooltip` already declared bought nothing in the one situation
+ * that matters. After a reader had opened ONE card, every spell name the cursor crossed on the way
+ * down the list opened its own card instantly and fired its own uncancellable `spells:detail`
+ * (three engine round trips plus ~8 scans of the 1,900-row catalog in main, each).
+ *
+ * WHY IT IS AN E2E CLAIM. There is no unit test of this: the behaviour is MUI's timer state, shared
+ * across every tooltip in the app, driven by a real pointer. Only the running window has it.
+ *
+ * WHAT IS ASSERTED, AND WHY IT IS NOT A WALL-CLOCK COUNT. The ticket asked for "crossing three rows
+ * quickly opens at most one card". The harness cannot cross quickly — see `startCardWatch` for the
+ * measurement (~820ms per real pointer dispatch on this tab), which means every row in a node-driven
+ * crossing dwells long past any enter delay and opens its card legitimately. So the claim is made on
+ * the property that count was a proxy FOR: every card that opened made the pointer wait its full
+ * quarter second first. With `enterNextDelay` left at its default that number is single digits, and
+ * a crossing at any human speed opens a card per name; at 250 the same crossing opens none.
+ *
+ * THE CONTROL IS HALF THE CLAIM. A step that never saw a card would pass this vacuously and would
+ * also be what a BROKEN card looks like, so the gaps have to be non-empty and the step ends by
+ * resting on the last name and proving a card still opens there.
+ *
+ * AND IT WAS PROVEN TO FAIL. Deleting `enterNextDelay` from `SpellTooltip` and re-running this spec
+ * reads `enter gaps 255/4ms` — the FIRST card waits its `enterDelay` and the second opens on contact
+ * in four milliseconds, which is MUI's app-global hysteresis measured in this app rather than quoted
+ * from its docs. With the value in place the same run reads `259/259ms`. A test that cannot fail is
+ * not a claim, so that number is written down here.
+ */
+async function checkHoverCrossing(page: Page): Promise<void> {
+  const pts = await spellNamePoints(page, 3)
+  if (pts.length < 3) {
+    note(`only ${String(pts.length)} spell names are visible at this level — a crossing needs three, so this claim is not measurable here`)
+    return
+  }
+  // THE WATCHER SAMPLES IN THE PAGE, AND THAT IS THE FIX FOR A MEASUREMENT THAT ATE ITSELF. The
+  // first version of this step read `countOf` between the moves — one CDP round trip each, ~800ms
+  // apiece under the suite's load — so a "90ms" dwell was really the better part of a second and a
+  // card opened perfectly legitimately. The instrument was creating what it was there to refute.
+  // A MutationObserver plus a 10ms poll records the high-water mark from inside the page, so the
+  // crossing costs three `mouse.move`s and three node-side sleeps and nothing else.
+  await startCardWatch(page)
+  const began = Date.now()
+  for (const p of pts) {
+    await page.mouse.move(p.x, p.y)
+    await sleep(CROSS_DWELL_MS)
+  }
+  const elapsed = Date.now() - began
+  const { max, gaps } = await stopCardWatch(page)
+  // The instrument has to have seen something, or the assertion below is vacuous.
+  if (!check('crossing three spell names after one card had opened opens cards at all', gaps.length > 0, `${String(gaps.length)} card opening(s) seen in ${String(elapsed)}ms`)) {
+    return
+  }
+  const instant = gaps.filter((g) => g < ENTER_FLOOR_MS)
+  check(
+    'crossing a spell name straight after a card closed still makes it WAIT — none opens on contact',
+    instant.length === 0,
+    `enter gaps ${gaps.map(String).join('/')}ms against a ${String(ENTER_FLOOR_MS)}ms floor · ${String(max)} card(s) open at once`
+  )
+  note(`the crossing itself took ${String(elapsed)}ms of harness time for 3 real pointer moves — the gaps above are the PAGE's own clock, which is why that does not matter`)
+  // THE CONTROL: the pointer is still resting on the third name, so a card must arrive.
+  const opened = await settleCount(page, SPELL_CARD, 1, { timeoutMs: 8_000 })
+  check('…and the card still opens when the pointer STAYS on a name', opened > 0, `${String(opened)} card(s) after resting`)
   await page.mouse.move(2, 2)
   await settleGone(page, SPELL_CARD, { timeoutMs: 5_000 })
 }

@@ -1,7 +1,6 @@
-//! THE SPAWN CONTRACT'S THREE MOMENTS: taking the secret, announcing the port, and dying with the
-//! app. Everything here is deliberately tiny and pure where it can be, because the supervisor on
-//! the other side of it (JOS-467) is written in another language and the two must agree byte for
-//! byte about one line of text.
+//! The spawn contract's three moments: taking the secret, announcing the port, and dying with the
+//! app. Everything here is tiny and pure where it can be, because the supervisor on the other side
+//! is written in another language and the two must agree byte for byte about one line of text.
 
 use std::io::{BufRead, Read};
 use std::process::exit;
@@ -11,8 +10,8 @@ use protocol::token::well_formed;
 
 /// The stderr tag every diagnostic this process writes carries.
 ///
-/// It exists so the supervisor can fold the engine's stderr into the app's own `errors.log` without
-/// losing which process said what — the same job `[everquest-companion:error]` does app-side.
+/// It exists so the supervisor can fold the engine's stderr into the app's own error log without
+/// losing which process said what.
 pub const DIAGNOSTIC_PREFIX: &str = "[eqc-engine]";
 
 /// The word the announce line opens with. A supervisor reading a line that does not start with this
@@ -26,13 +25,11 @@ pub enum TokenError {
     /// forgot to write the token, or wrote it without a terminating newline and then exited.
     Absent,
     /// The line arrived but cannot be a token. Refusing here rather than at the first hello is
-    /// deliberate: an engine holding a token no client could ever present is an engine that
-    /// answers every connection with a refusal, and that failure is far harder to read from the
-    /// app side than a process that never started.
+    /// deliberate: an engine holding a token no client could present refuses every connection, which
+    /// is far harder to read from the app side than a process that never started.
     Malformed {
-        /// The length of what arrived, in bytes. THE VALUE IS NEVER REPORTED — a malformed token
-        /// is still somebody's secret, and a diagnostic is a thing that gets pasted into a bug
-        /// report.
+        /// The length of what arrived, in bytes. The value itself is never reported — a malformed
+        /// token is still somebody's secret, and a diagnostic gets pasted into bug reports.
         bytes: usize,
     },
     /// Stdin could not be read at all.
@@ -52,16 +49,14 @@ impl std::fmt::Display for TokenError {
     }
 }
 
-/// Take the token from the FIRST LINE of the given reader.
+/// Take the token from the first line of the given reader.
 ///
-/// The line's terminator is stripped, CR included, so a supervisor whose stream helpfully wrote
-/// CRLF is still understood — the same tolerance the NDJSON transport extends on decode, and for
-/// the same reason: Windows is where a text-mode stream translates one into the other.
+/// The terminator is stripped, CR included, because a Windows text-mode stream translates one into
+/// the other.
 ///
-/// The token is returned as a plain `String` rather than the generated `Token` newtype ON PURPOSE.
-/// `Token` is a WIRE type: it exists to be serialized, and the engine's copy is the one value in
-/// the process that must never appear in a message. Keeping the expectation in a type that cannot
-/// be serialized by accident is a small structural guard on a large mistake.
+/// The token is returned as a plain `String` and not the generated `Token` newtype on purpose:
+/// `Token` is a wire type that exists to be serialized, and the engine's copy is the one value in
+/// the process that must never appear in a message.
 ///
 /// # Errors
 /// [`TokenError`] — see its variants; each is a refusal to start.
@@ -73,7 +68,7 @@ pub fn read_token(reader: &mut impl BufRead) -> Result<String, TokenError> {
     if read == 0 {
         return Err(TokenError::Absent);
     }
-    // ONE terminator, stripped in the order the wire wrote it. Not `trim_end`, which would also eat
+    // One terminator, stripped in the order the wire wrote it. Not `trim_end`, which would also eat
     // meaningful trailing bytes if a token ever grew a character class this one does not have.
     let token = line.strip_suffix('\n').unwrap_or(line.as_str());
     let token = token.strip_suffix('\r').unwrap_or(token);
@@ -85,11 +80,9 @@ pub fn read_token(reader: &mut impl BufRead) -> Result<String, TokenError> {
 
 /// Render the one line this process writes to stdout, terminator included.
 ///
-/// PURE, AND TESTED AS A STRING, because it is a cross-language contract: the supervisor parses
-/// exactly this shape and a space or a case change here is a supervisor that hangs waiting for a
-/// line it will never recognise. The version travels on the announce line so a supervisor can
-/// refuse a skewed build BEFORE it opens a socket, which turns a runtime handshake failure into a
-/// spawn-time one.
+/// Pure, and tested as a string, because it is a cross-language contract: a space or a case change
+/// here is a supervisor that hangs waiting for a line it will never recognise. The version travels
+/// on this line so a supervisor can refuse a skewed build before it opens a socket.
 #[must_use]
 pub fn announce_line(port: u16, protocol_version: i64) -> String {
     format!("{ANNOUNCE_TAG} PORT={port} PROTOCOL={protocol_version}\n")
@@ -97,19 +90,16 @@ pub fn announce_line(port: u16, protocol_version: i64) -> String {
 
 /// Arm the dies-with-the-app law: a thread that reads stdin to its end and exits the process.
 ///
-/// IT NEVER CONSUMES A MESSAGE, because stdin carries no messages — the token was the whole
-/// protocol on this pipe. Everything read here is discarded, and reaching the end of it is the only
-/// event this thread is waiting for.
+/// It consumes no messages: the token was the whole protocol on this pipe, so everything read here
+/// is discarded and reaching the end is the only event this thread waits for.
 ///
-/// A READ ERROR IS ALSO AN ENDING. A broken pipe reports itself as an error on one platform and as
-/// a zero-length read on another; both mean the same thing — the parent's handle is gone — and both
-/// therefore exit 0. The alternative, treating an error as a reason to keep serving, is exactly the
-/// orphan this ruling exists to prevent.
+/// A read error is also an ending. A broken pipe reports itself as an error on one platform and as a
+/// zero-length read on another; both mean the parent's handle is gone, so both exit 0. Treating an
+/// error as a reason to keep serving is exactly the orphan this rule prevents.
 ///
-/// `process::exit` is the right instrument here and not a shortcut: connection threads are blocked
-/// in `recv` on sockets nobody will ever write to again, and there is no state in this process
-/// worth unwinding for — the engine holds no cache and no file it is midway through writing (owner
-/// ruling 10: a crash without a cache is acceptable, and this is far tidier than a crash).
+/// `process::exit` is the right instrument and not a shortcut: connection threads are blocked in
+/// `recv` on sockets nobody will write to again, and there is no state worth unwinding for — the
+/// engine holds no cache and no file it is midway through writing.
 pub fn die_with_stdin() {
     let spawned = thread::Builder::new()
         .name("engined-stdin".to_owned())
@@ -125,9 +115,8 @@ pub fn die_with_stdin() {
             exit(0);
         });
     if let Err(e) = spawned {
-        // Without this thread the engine cannot honour the ruling it exists under, so it must not
-        // pretend to. Dying now is the honest answer and the supervisor will report a spawn that
-        // never came up.
+        // Without this thread the engine cannot promise to die with the app, so it must not pretend
+        // to. The supervisor reports a spawn that never came up.
         eprintln!("{DIAGNOSTIC_PREFIX} could not watch stdin, so the engine cannot promise to die with the app: {e}");
         exit(1);
     }

@@ -1,29 +1,16 @@
-//! `progression.recent` — THE THINGS THAT ADVANCED, newest first (JOS-487).
+//! `progression.recent` — the things that advanced, newest first: the `progression` module's level
+//! dings and AA gains read as one list. Both columns are uncapped in the module because the chart
+//! needs every ding, so this is the one source whose underlying collection grows without bound.
 //!
-//! Two of the `progression` module's columns read as one list: the level dings (`levelTs` /
-//! `levelValue`) and the AA gains (`aaGainTs` / `aaGainAmount`). Both are UNCAPPED in the module,
-//! deliberately — "the chart needs every ding" — so this is the one source in the registry whose
-//! underlying collection grows without bound, which is exactly what a windowed view is for.
+//! Its cells are the only ones in this registry not read off a component: the Leveling surfaces draw
+//! these columns as charts and stat panels, and the AA ledger is a different aggregation again. The
+//! cells are argued from the module's vocabulary instead — an instant, which of the two things
+//! happened, and the number that changed — which is a weaker source of truth and is stated as such.
 //!
-//! ── THE ONE SOURCE WHOSE CELLS ARE NOT READ OFF A COMPONENT, AND IT SAYS SO ────────────────────
-//!
-//! Every other source in this registry was built by opening the file that draws it and listing what
-//! it prints. This one cannot be: the Leveling surfaces draw these two columns as CHARTS and stat
-//! panels rather than as a table, and the AA ledger beside them is a different aggregation again
-//! (`shared/aaLedger.ts`, grouped by ability). So the cells here are argued from the MODULE's own
-//! vocabulary — an instant, which of the two things happened, and the number that changed — and
-//! that is a weaker source of truth than a renderer, which is why it is named here rather than left
-//! for somebody to discover when the cutover finds a column missing. What the source is honestly
-//! FOR is the thing both surfaces are built on top of and neither exposes: a chronological feed of
-//! progress, windowed, which is what a client asking for `progression.recent` means.
-//!
-//! ── THE INSTANT IS RENDERED, UNLIKE `kills.recent`'s ───────────────────────────────────────────
-//!
-//! And the difference is what the two lists are about. A recent KILL is read against now ("three
-//! minutes ago") so its cell is the instant and the phrasing is the caller's; a level ding is a
-//! DATED event you scroll back through, so its cell is the same fixed en-US pattern `loot.ledger`
-//! renders — resolved through the parser's own clock, never a host locale (ruling 18 law 1). The
-//! comparable instant is the `at` FIELD, which is the field-versus-cell split this layer turns on.
+//! The instant is rendered here, unlike `kills.recent`'s: a kill is read against now, but a level
+//! ding is a dated event you scroll back through, so its cell is the same fixed en-US pattern
+//! `loot.ledger` renders, through the parser's own clock and never a host locale. The comparable
+//! instant is the `at` field.
 
 use protocol::cell::Cell;
 use protocol::generated::Cells;
@@ -52,10 +39,9 @@ struct Advance {
 
 /// Build every advance the fold has recorded, in `(kind, fold order)` order.
 ///
-/// THE KEY IS `<kind>:<position>` AND THE TWO COLUMNS ARE KEYED SEPARATELY, which is what keeps a
-/// key stable: the two are appended independently, so a single interleaved counter would renumber
-/// every AA gain the next time a level landed between two of them, and a diff would say every row
-/// changed when nothing did.
+/// The key is `<kind>:<position>`, keyed per column: the two columns are appended independently, so
+/// one interleaved counter would renumber every AA gain the next time a level landed between two of
+/// them, and the diff would report every row changed when nothing did.
 #[must_use]
 pub fn rows(module: &ProgressionModule, clock: &eqlog::Clock) -> Vec<SourceRow> {
     let mut out: Vec<SourceRow> = Vec::new();
@@ -89,9 +75,8 @@ fn row(advance: &Advance, index: usize, seq: i64, clock: &eqlog::Clock) -> Sourc
     );
     cells.insert("kind".to_owned(), Cell::text(advance.kind));
     cells.insert("value".to_owned(), Cell::int(advance.value));
-    // THE COMPOSED LINE, and it is composed HERE rather than left to the client for the reason the
-    // other sources' sentences are NOT: there is no shared derivation for it app-side to disagree
-    // with. `+1 AA` and `+3 AA` are the same sentence, which is why the number is beside it too.
+    // The composed line, composed here rather than left to the client because no shared app-side
+    // derivation exists for it to disagree with. The number is beside it as its own cell.
     cells.insert(
         "label".to_owned(),
         Cell::text(match advance.kind {
@@ -163,7 +148,7 @@ mod tests {
         );
         assert_eq!(window[0].cells["label"], Cell::text("+2 AA"));
         assert_eq!(window[1].cells["label"], Cell::text("Level 52"));
-        // The instant is DRAWN, and the comparable one is the field underneath it.
+        // The instant is drawn, and the comparable one is the field underneath it.
         assert_eq!(window[1].cells["at"], Cell::text("Aug 19, 04:21 PM"));
     }
 
@@ -182,8 +167,7 @@ mod tests {
 
     #[test]
     fn the_two_columns_are_keyed_separately_so_a_key_survives_an_interleaving() {
-        // A LEVEL LANDING BETWEEN TWO AA GAINS MUST NOT RENUMBER THEM. One interleaved counter
-        // would, and a diff would then report every row changed when nothing did.
+        // A level landing between two AA gains must not renumber them.
         let f = folded(&[AA, DING]);
         let rows = built(&f);
         let keys: Vec<&str> = rows.iter().map(|r| r.key.as_str()).collect();

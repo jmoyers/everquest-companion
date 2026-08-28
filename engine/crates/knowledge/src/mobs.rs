@@ -1,30 +1,24 @@
-//! `main/mobLookup.ts` + `mobLookupLocal.ts` + `mobAliases.ts` + `mobDropEra.ts` — "what does this
-//! thing drop", minus the network.
+//! "What does this thing drop", minus the network. Four sources, the first three local:
 //!
-//! FOUR SOURCES, exactly as over there, and the first three are LOCAL:
-//!   1. THE SCRAPED MOB CATALOG (`mobs.json`, 7,866 pages) — the DEFINITIVE drop table. The wiki's
-//!      drop list is what the mob CAN drop; it is static content, so it is scraped once and
-//!      committed. This is why a `/con` answers instantly and offline.
-//!   2. YOUR OWN LOOT HISTORY, read off the fold's own index through [`fold::knowledge::OwnLoot`].
-//!      It is CORROBORATION, not the drop table: it annotates a listed drop with "and you've had 3",
-//!      and contributes names of its own only for items the page does not list.
-//!   3. THE QUEST CATALOG'S `relatedNpcs`, which ties 1,121 distinct NPC names to the quests that
-//!      mention them — so a quest-relevant mob says so with no network at all.
-//!   4. THE RUNTIME OVERLAY, which is where a `knowledge.define` lands. It takes the place of both
-//!      the userData cache and the live wiki fallback (boundary verdict 5).
+//!   1. THE SCRAPED MOB CATALOG — the definitive drop table. The wiki's drop list is what the mob
+//!      CAN drop and it is static content, so it is scraped once and committed, which is why a
+//!      `/con` answers instantly and offline.
+//!   2. YOUR OWN LOOT HISTORY, read through [`fold::knowledge::OwnLoot`]. Corroboration, not the
+//!      drop table: it annotates a listed drop with a count, and contributes names of its own only
+//!      for items the page does not list.
+//!   3. THE QUEST CATALOG'S `relatedNpcs`, so a quest-relevant mob says so with no network at all.
+//!   4. THE RUNTIME OVERLAY, where a `knowledge.define` lands.
 //!
-//! THE ALIAS BOUNDARY IS AT THE LOOKUP AND NOWHERE ELSE (JOS-142). The log spells the Plane of Fear
-//! god `Cazic-Thule` with a hyphen; the wiki, the committed catalog and the raid roster spell it
-//! with a space, and `RaidTarget.match` in `bosses.json` is the one place in the tree where the two
-//! spellings are already STATED to be the same creature. So this file READS that statement and does
-//! no name arithmetic of any kind — no hyphen-folding rule applied to 7.9k catalog mobs that never
-//! asked for one. `display` is untouched throughout and is what the record reports as its `name`, so
-//! a page reached by the log spelling still reads back exactly what the log said (world-model law 2).
+//! The alias boundary is AT THE LOOKUP and nowhere else. The log and the catalog can spell one
+//! creature two ways (hyphen versus space), and the raid roster's `match` list is the one place in
+//! the tree where two spellings are already STATED to be the same creature. This file reads that
+//! statement and does no name arithmetic of its own — no folding rule applied to catalog mobs that
+//! never asked for one. `display` is untouched throughout and is what the record reports as its
+//! `name`, so a page reached by the log spelling reads back exactly what the log said (law 2).
 //!
-//! THE ERA ANNOTATION RUNS ON EVERY READ AND IS PERSISTED NOWHERE (JOS-377). It attaches EVIDENCE —
-//! the item page's era banner token and the zones that page named — and reaches NO VERDICT: there is
-//! exactly one era rule in this app (`shared/planner/era.ts`) and a second opinion computed here
-//! would be the beginning of a third.
+//! The era annotation runs on every read and is persisted nowhere. It attaches EVIDENCE — the item
+//! page's era banner token and the zones that page named — and reaches no verdict: there is exactly
+//! one era rule in this app, and a second opinion computed here would be the beginning of a third.
 
 use serde_json::{json, Map, Value};
 
@@ -32,18 +26,18 @@ use crate::names::item_key;
 use fold::knowledge::{OwnLoot, SeenDrop};
 use fold::modules::consider::mob_key;
 
-/// The scraped mob catalog — LOCAL 1, the definitive drop table.
+/// The scraped mob catalog — local source 1, the definitive drop table.
 const MOBS_JSON: &str = include_str!("../../../../src/renderer/src/data/eqlegends/mobs.json");
-/// The raid roster — the ONE place two spellings are stated to be one creature.
+/// The raid roster — the one place two spellings are stated to be one creature.
 const BOSSES_JSON: &str = include_str!("../../../../src/renderer/src/data/eqlegends/bosses.json");
 
-/// One creature, and every spelling the roster states for it — `MobIdentity`.
+/// One creature, and every spelling the roster states for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
     /// The name to ASK the catalog and the overlay with — the roster's own `name`, which is the
-    /// spelling those sources use. NEVER what the card displays.
+    /// spelling those sources use. Never what the card displays.
     pub canonical: String,
-    /// Every `mobKey` this creature answers to, canonical key FIRST.
+    /// Every `mob_key` this creature answers to, canonical key first.
     pub keys: Vec<String>,
     /// The roster stated more than one spelling for this creature.
     pub aliased: bool,
@@ -52,7 +46,7 @@ pub struct Identity {
 /// The catalog, keyed BOTH ways a mob can be named, and the alias table.
 pub struct MobIndex {
     by_name: std::collections::HashMap<String, Value>,
-    /// Every alias key of every MULTI-SPELLING roster target → its identity.
+    /// Every alias key of every multi-spelling roster target → its identity.
     identity_by_key: std::collections::HashMap<String, Identity>,
     /// Catalog display names in file order, for `knowledge.search`.
     names: Vec<String>,
@@ -61,10 +55,10 @@ pub struct MobIndex {
 impl MobIndex {
     /// Build both indexes off the committed bytes.
     ///
-    /// THE CATALOG IS KEYED TWICE: by the page's own `|name` (the IN-GAME name, which is what a
-    /// consider line prints) and then by the wiki PAGE TITLE, which for most mobs is the same string
-    /// title-cased but is occasionally the only spelling. The page-title pass runs SECOND and only
-    /// fills gaps, so a real mob's own name can never be displaced by another page's title.
+    /// The catalog is keyed TWICE: by the page's own `|name` (the in-game name a consider line
+    /// prints) and then by the wiki PAGE TITLE, which is occasionally the only spelling. The
+    /// page-title pass runs second and only fills gaps, so a real mob's own name can never be
+    /// displaced by another page's title.
     #[must_use]
     pub fn build() -> Self {
         let file: Value = serde_json::from_str(MOBS_JSON).expect("mobs.json is not readable");
@@ -96,19 +90,18 @@ impl MobIndex {
         }
     }
 
-    /// `localMobEntry(name)` — the catalog's entry for a mob, or `None` when it has none.
+    /// The catalog's entry for a mob, or `None` when it has none.
     #[must_use]
     pub fn entry(&self, name: &str) -> Option<&Value> {
         self.by_name.get(&mob_key(name))
     }
 
-    /// `resolveMobIdentity` — resolve any spelling to the one identity the roster states, or to
-    /// itself when the roster has never heard of it.
+    /// Resolve any spelling to the one identity the roster states, or to itself when the roster has
+    /// never heard of it.
     ///
-    /// TOTAL AND ALLOCATION-LIGHT: an unaliased name (7.9k catalog mobs and everything else) gets a
-    /// trivial identity whose `canonical` is the name it was handed, so every downstream read is the
-    /// read it was before aliases existed. MEASURED against the committed roster when this rule was
-    /// written: 32 targets, exactly 2 aliased, 30 untouched.
+    /// Total and allocation-light: an unaliased name — nearly every mob — gets a trivial identity
+    /// whose `canonical` is the name it was handed, so every downstream read is the read it was
+    /// before aliases existed.
     #[must_use]
     pub fn identity(&self, name: &str) -> Identity {
         let key = mob_key(name);
@@ -133,13 +126,12 @@ impl MobIndex {
     }
 }
 
-/// `mobAliases.ts` — read the roster's own statement that two spellings are one creature.
+/// Read the roster's own statement that two spellings are one creature.
 ///
-/// Targets whose spellings all collapse to ONE key are skipped entirely, which is the byte-identical
-/// guarantee: they never enter the map, so `identity` hands back the trivial identity and every
-/// caller runs the path it ran before. A key claimed by two targets keeps the first — the roster is
-/// curated and has no such collision, but silently merging two gods on a later scrape is not a thing
-/// this boundary should be able to do by accident.
+/// Targets whose spellings all collapse to ONE key are skipped entirely: they never enter the map,
+/// so `identity` hands back the trivial identity and every caller runs the path it ran before. A key
+/// claimed by two targets keeps the first — silently merging two creatures on a later scrape is not
+/// something this boundary should be able to do by accident.
 fn build_identities() -> std::collections::HashMap<String, Identity> {
     let file: Value = serde_json::from_str(BOSSES_JSON).expect("bosses.json is not readable");
     let mut by_key: std::collections::HashMap<String, Identity> = std::collections::HashMap::new();
@@ -176,7 +168,7 @@ fn build_identities() -> std::collections::HashMap<String, Identity> {
     by_key
 }
 
-/// mob key → the quests that name it under "Related NPCs" — `questsByMob`.
+/// mob key → the quests that name it under "Related NPCs".
 pub type MobQuestIndex = std::collections::HashMap<String, Vec<Value>>;
 
 /// Build the `relatedNpcs` cross-ref off the already-parsed quest catalog.
@@ -206,8 +198,8 @@ pub fn quests_by_mob(quests: &[Value]) -> MobQuestIndex {
     by_mob
 }
 
-/// `identityQuests(id)` — the quests the local catalog ties to this CREATURE, under every spelling
-/// the roster states for it. De-duped by quest name.
+/// The quests the local catalog ties to this CREATURE, under every spelling the roster states for
+/// it. De-duped by quest name.
 fn identity_quests(index: &MobQuestIndex, id: &Identity) -> Vec<Value> {
     let mut merged: Vec<Value> = Vec::new();
     for key in &id.keys {
@@ -224,10 +216,10 @@ fn identity_quests(index: &MobQuestIndex, id: &Identity) -> Vec<Value> {
     merged
 }
 
-/// `knowledgeFromCatalog` — a catalog entry → the WIKI half of a knowledge record.
+/// A catalog entry → the WIKI half of a knowledge record.
 ///
-/// The catalog is compact by design (names only), so a per-drop `rarity` is simply ABSENT here; the
-/// live fallback is where one comes from. Absent is honest; a made-up rarity would not be.
+/// The catalog is compact by design (names only), so a per-drop `rarity` is simply ABSENT here; a
+/// live fallback is where one would come from, and a made-up rarity would not be honest.
 #[must_use]
 pub fn knowledge_from_catalog(display: &str, entry: &Value) -> Value {
     let mut out = json!({ "name": display, "page": entry["page"], "cached": true });
@@ -256,16 +248,14 @@ pub fn knowledge_from_catalog(display: &str, entry: &Value) -> Value {
     out
 }
 
-/// `mergeLocalKnowledge` — attach the two LOCAL sources to a record, on EVERY read.
+/// Attach the two LOCAL sources to a record, on EVERY read.
 ///
 /// Never baked into anything persisted: your own loot history changes with every corpse, and the
 /// quest catalog ships with the app, so remembering either would immediately be stale.
 ///
-/// It reads by IDENTITY rather than by the one name the caller happened to hold: the own-loot index
-/// files a drop under the corpse's LOG name and a boss card asks with the ROSTER name, and `id.keys`
-/// is the roster's own statement that those are one creature. What comes back is still `dropsSeen` —
-/// YOUR observations — and anything the page does not list stays under that separate heading, so
-/// alias-gathered loot is never dressed up as documented drops.
+/// It reads by IDENTITY rather than by the one name the caller happened to hold — the own-loot index
+/// files a drop under the corpse's LOG name while a boss card asks with the ROSTER name. What comes
+/// back is still `dropsSeen`, so alias-gathered loot is never dressed up as documented drops.
 #[must_use]
 pub fn merge_local_knowledge(
     base: Value,
@@ -284,8 +274,8 @@ pub fn merge_local_knowledge(
     }
     let local = identity_quests(quests, id);
     if !local.is_empty() {
-        // The page's own `|related_quests` links and the catalog's `relatedNpcs` are two views of
-        // the same relation, so de-dupe by quest name; local wins (it carries the giver + zone).
+        // The page's own related-quest links and the catalog's `relatedNpcs` are two views of one
+        // relation, so de-dupe by quest name; local wins, because it carries the giver and zone.
         let mut merged = local;
         for u in out["quests"].as_array().cloned().unwrap_or_default() {
             let name = u["quest"].as_str().unwrap_or_default().to_lowercase();
@@ -301,18 +291,17 @@ pub fn merge_local_knowledge(
     out
 }
 
-/// `MobSeenDrop` on the wire.
+/// One seen drop, on the wire.
 fn seen_drop(d: &SeenDrop) -> Value {
     json!({ "item": d.item, "count": d.count, "lastTs": d.last_ts })
 }
 
-/// `annotateDropEras` — the drop list, carrying what each ITEM PAGE says about its era.
+/// The drop list, carrying what each ITEM PAGE says about its era.
 ///
-/// A drop the corpus has no page for comes back UNCHANGED, and so does a page that states neither an
-/// era banner nor a `|dropsfrom` zone: absent is the honest answer and the renderer draws it as
-/// `era?` rather than as a verdict. `dropsSeen` is deliberately untouched — those are items YOU
-/// pulled off this corpse, which is a fact about your own play and not a claim about what the server
-/// ships.
+/// A drop the corpus has no page for comes back unchanged, and so does a page that states neither an
+/// era banner nor a drop zone: absent is the honest answer and the renderer draws it as `era?`
+/// rather than as a verdict. `dropsSeen` is deliberately untouched — those are items YOU pulled off
+/// this corpse, a fact about your own play and not a claim about what the server ships.
 #[must_use]
 pub fn annotate_drop_eras(mut record: Value, items: &Map<String, Value>) -> Value {
     let Some(drops) = record["dropsWiki"].as_array() else {
@@ -329,9 +318,8 @@ pub fn annotate_drop_eras(mut record: Value, items: &Map<String, Value>) -> Valu
     record
 }
 
-/// One drop, annotated. `dropsFrom` is the page's `|dropsfrom` list; only the ZONE half is era
-/// evidence, and a zone named by three of its mobs is one zone. Order is the page's, which no fold
-/// depends on.
+/// One drop, annotated. Only the ZONE half of the page's drop-source list is era evidence, and a
+/// zone named by several of its mobs is one zone. Order is the page's, which no fold depends on.
 fn annotate_drop(drop: &Value, items: &Map<String, Value>) -> Value {
     let Some(item) = drop["item"].as_str() else {
         return drop.clone();
@@ -363,9 +351,8 @@ fn annotate_drop(drop: &Value, items: &Map<String, Value>) -> Value {
 
 /// The record for a mob no committed source and no overlay entry carries.
 ///
-/// `offline: true` for the reason `items::unanswered` argues at length: this engine has no network
-/// stack, so it has not run a lookup and cannot claim the real negative `notFound` means. The local
-/// half is merged on top by the caller, exactly as it is for every other exit.
+/// `offline: true` for the reason `items::unanswered` states: this engine ran no lookup, so it
+/// cannot claim the real negative `notFound` means. The local half is merged on top by the caller.
 #[must_use]
 pub fn unanswered(display: &str) -> Value {
     json!({ "name": display, "cached": false, "offline": true })
@@ -410,8 +397,8 @@ mod tests {
             "the catalog states no rarity"
         );
 
-        // A merchant page has no `|known_loot` at all, and comes back with no drop list rather than
-        // an empty one — reading `|items_sold` as loot would claim a vendor's stock is loot.
+        // A merchant page states no loot at all and comes back with no drop list rather than an
+        // empty one — reading a vendor's stock as loot would be a claim the page does not make.
         let merchant = json!({ "page": "Key Master", "name": "Key Master" });
         let out = knowledge_from_catalog("Key Master", &merchant);
         assert_eq!(out.get("dropsWiki"), None);

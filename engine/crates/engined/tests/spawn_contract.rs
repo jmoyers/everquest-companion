@@ -1,11 +1,10 @@
-//! THE SPAWN CONTRACT, END TO END. Five clauses, each asserted against the real binary:
-//! the token arrives on stdin and nowhere else, the port is announced in one line on stdout, the
-//! process dies with its stdin, every connection opens with a valid hello, and a refused handshake
-//! is answered once and closed.
+//! The spawn contract, end to end. Five clauses, each asserted against the real binary: the token
+//! arrives on stdin and nowhere else, the port is announced in one line on stdout, the process dies
+//! with its stdin, every connection opens with a valid hello, and a refused handshake is answered
+//! once and closed.
 //!
-//! This file is the other half of an agreement whose first half is written in TypeScript
-//! (JOS-467's supervisor). If a change here needs a change there, it is a protocol change and both
-//! sides move together.
+//! This file is the other half of an agreement whose first half is written in TypeScript. If a
+//! change here needs a change there, it is a protocol change and both sides move together.
 
 mod harness;
 

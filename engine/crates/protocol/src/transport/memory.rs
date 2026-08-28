@@ -1,15 +1,11 @@
 //! A connected transport pair with no bytes in it.
 //!
-//! WHY THIS IS NOT A TOY. The seam's claim is that protocol logic never touches framing. A claim
-//! like that is only worth something if something can run WITHOUT any framing at all — so the
-//! suite drives the same conversation over this and over [`super::ndjson`], and asserts the two
-//! produce the same messages. A conversation that survives having its wire removed is a
-//! conversation that was not depending on one, which is precisely what has to stay true for a
-//! WebSocket transport to be addable later by writing one more file.
+//! Not a toy: the seam's claim is that protocol logic never touches framing, and that claim is only
+//! worth something if a conversation can run with no framing at all. The suite drives the same
+//! conversation over this and over [`super::ndjson`] and asserts they produce the same messages.
 //!
-//! Messages still travel as `serde_json::Value` rather than as the typed structs, so the serde
-//! contract is exercised even here: a type whose `Serialize` and `Deserialize` disagree fails on
-//! this transport too. What is absent is only the FRAME.
+//! Messages still travel as `serde_json::Value` rather than as the typed structs, so a type whose
+//! `Serialize` and `Deserialize` disagree fails here too. Only the frame is absent.
 
 use std::marker::PhantomData;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -66,9 +62,8 @@ impl<Out: Serialize, In: DeserializeOwned> Transport for MemoryTransport<Out, In
             Ok(value) => serde_json::from_value(value)
                 .map(Some)
                 .map_err(TransportError::Decode),
-            // Nothing queued and nothing gone: an empty pipe reads the same as a finished one at
-            // this level, because phase 0 has no blocking read to distinguish them. The suite only
-            // ever drains a conversation it has already written in full.
+            // An empty pipe reads the same as a finished one here: there is no blocking read to
+            // distinguish them, and callers only drain a conversation already written in full.
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => Ok(None),
         }
     }

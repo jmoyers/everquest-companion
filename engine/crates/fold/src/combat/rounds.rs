@@ -1,39 +1,26 @@
-//! ATTACK-ROUND STRUCTURE — the pure grouper behind the Rounds panel (`src/main/combat/rounds.ts`).
+//! Attack-round structure: the pure grouper behind the Rounds panel.
 //!
-//! COUNTS ONLY. Nothing here ever stores or returns a damage amount as a STAT, so every damage total
-//! in the engine stays byte-identical (world-model law 8's tripwire). Amounts are read for exactly
-//! one purpose — the fan-out signature below — and discarded.
+//! COUNTS ONLY. Nothing here stores or returns a damage amount as a stat, so every damage total in
+//! the engine stays byte-identical. Amounts are read for the fan-out signature and discarded.
 //!
-//! ── WHAT A "ROUND" IS, AND WHY IT NEEDS A GROUPER ─────────────────────────────────────────────
+//! EQ annotates riposte, flurry and rampage swings and says nothing at all about double or triple
+//! attack, so a round is a proxy, and the honest one is: the swings ONE attacker made with ONE verb,
+//! at ONE target, in ONE second.
 //!
-//! EQ Legends ANNOTATES riposte, flurry and rampage swings and says NOTHING about double or triple
-//! attack (full-log sweep, 1.35M lines: zero annotations against thousands of measured multi-swing
-//! seconds). So a round is a proxy, and the honest one is:
+//! The per-target part is load-bearing, not a refinement. Reuse-timer skills make some same-second
+//! swing counts mechanically impossible (backstab's timer is ~10 s, so four in a second cannot
+//! happen), and the log's such seconds are always two defenders carrying the SAME ordered damage
+//! sequence — one round FANNED across two targets and printed twice. Collapsing equal sequences
+//! reports the one round. The signature is over AMOUNTS and never over modifiers, because a
+//! `(Critical)` can appear on only one of the two printed copies.
 //!
-//!   one round = the swings ONE attacker made with ONE verb, at ONE target, in ONE second.
+//! A round answers "how many swings did one attack get me", so families that are EXTRA swings by
+//! definition are tallied separately and never entered into one: riposte, flurry, rampage, and
+//! frenzy (multi-hit by design, so its distribution measures the skill rather than multi-attack).
 //!
-//! THE FAN-OUT HAZARD is why the per-TARGET part is not a refinement but the difference between a
-//! right answer and a wrong one. Backstab has a ~10 s reuse timer, so four backstabs in one second is
-//! mechanically impossible — and the log contains exactly five such seconds, every one of them two
-//! targets carrying the SAME ordered damage sequence: one double-attack round FANNED across two
-//! defenders and printed twice. Counting per-target alone reports two 2-swing rounds; not grouping by
-//! target at all reports one 4-swing round, which the reuse timer forbids. Collapsing equal sequences
-//! reports what happened: one 2-swing round. (One of the five carries a `(Critical)` on only ONE of
-//! the two copies, which is why the signature is over AMOUNTS and never over modifiers.)
-//!
-//! ── WHAT IS EXCLUDED, AND WHY ────────────────────────────────────────────────────────────────
-//!
-//! A round answers "how many swings did one attack get me", so three annotated families that are
-//! EXTRA swings by definition are counted separately and never entered into one: Riposte (a counter
-//! granted by the defender's attack), Flurry (extra primary swings after a triple) and Rampage.
-//! Frenzy is excluded on the same logic without needing an annotation — it is a multi-hit skill BY
-//! DESIGN, so its swings-per-round distribution measures the skill rather than multi-attack.
-//!
-//! ── WHAT THIS CANNOT SAY (law 6) ─────────────────────────────────────────────────────────────
-//!
-//! DUAL WIELD puts two weapons on ONE verb, so a same-second 2x on `slash` may be two hands rather
-//! than a double attack and no line distinguishes them. Reuse-timer skills have no such confound —
-//! one timer, one hand. That split is the whole content of `round_confidence`.
+//! What this cannot say (law 6): dual wield puts two weapons on ONE verb, so a same-second 2x on
+//! `slash` may be two hands rather than a double attack and no line distinguishes them. Reuse-timer
+//! skills have no such confound — one timer, one hand — and that split is `round_confidence`.
 
 use crate::jsmap::JsMap;
 
@@ -41,8 +28,7 @@ use crate::jsmap::JsMap;
 pub const ROUND_BUCKETS: usize = 4;
 
 /// Why a swing was kept out of round counting — reported so the denominator is never silent. The
-/// discriminant IS the serialized field order (`frenzy`, `riposte`, `flurry`, `rampage`), which is
-/// the order `excluded` is written in.
+/// discriminant IS the serialized field order, which is the order `excluded` is written in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoundExclusion {
     Frenzy,
@@ -57,14 +43,12 @@ impl RoundExclusion {
     }
 }
 
-/// Verbs driven by a REUSE TIMER rather than by a weapon in a hand. HAND-AUTHORED and
-/// evidence-verified: a matcher would happily promote a weapon verb into the confident tier.
-/// `backstab` (~10 s timer, in-log confirmed), `bash` / `kick` (shield and kick lanes, wiki-stated
-/// timers, and `kick` additionally carries the special-attack lane) and `strike` (the monk special
-/// lane — one ability, one timer, and the verb is exclusive to it). Everything else is a WEAPON verb.
+/// Verbs driven by a REUSE TIMER rather than by a weapon in a hand — one timer, one hand, so no
+/// dual-wield confound. Hand-authored and evidence-verified: a matcher would happily promote a
+/// weapon verb into the confident tier. Everything not listed is a weapon verb.
 const REUSE_TIMER_VERBS: [&str; 4] = ["backstab", "bash", "kick", "strike"];
 
-/// The confidence tier for a verb's multi-swing reading. PURE.
+/// The confidence tier for a verb's multi-swing reading.
 pub fn round_confidence(verb: &str) -> &'static str {
     let lower = verb.to_lowercase();
     if REUSE_TIMER_VERBS.contains(&lower.as_str()) {
@@ -74,9 +58,8 @@ pub fn round_confidence(verb: &str) -> &'static str {
     }
 }
 
-/// Verbs that never enter round counting: multi-hit by design. `flurry` is here as a VERB too — the
-/// parser recognizes `You flurry …` as its own melee verb, and a swing that prints under it is the
-/// same extra swing the `(Flurry)` annotation marks.
+/// Verbs that never enter round counting: multi-hit by design. `flurry` is here as a VERB as well as
+/// a modifier — `You flurry …` is its own melee verb and marks the same extra swing.
 fn excluded_verb(verb_lower: &str) -> Option<RoundExclusion> {
     match verb_lower {
         "frenzy" => Some(RoundExclusion::Frenzy),
@@ -96,11 +79,10 @@ fn extra_swing_mod(m_lower: &str) -> Option<RoundExclusion> {
     }
 }
 
-/// Why a swing is not part of an attack round, or `None` when it is one. PURE.
+/// Why a swing is not part of an attack round, or `None` when it is one.
 ///
 /// `verb_lower` is the caller's already-lowercased verb: `RoundAccum::add` needs the same string a
-/// statement later, and lowercasing it twice per swing on a 1.4M-event fold is a measurable cost for
-/// no meaning.
+/// statement later, and lowercasing twice per swing is a measurable cost on a full-log fold.
 pub fn round_exclusion<S: AsRef<str>>(verb_lower: &str, modifiers: &[S]) -> Option<RoundExclusion> {
     if let Some(why) = excluded_verb(verb_lower) {
         return Some(why);
@@ -114,22 +96,21 @@ pub fn round_exclusion<S: AsRef<str>>(verb_lower: &str, modifiers: &[S]) -> Opti
 }
 
 /// One logged swing ATTEMPT, reduced to what round structure needs. Landed and avoided swings both
-/// arrive here: a round is swings ATTEMPTED, and a double attack whose second swing missed is still a
-/// double attack.
+/// arrive here: a round is swings attempted, and a double attack whose second swing missed is still
+/// a double attack.
 ///
-/// THE MODIFIER LIST IS ELEMENT-GENERIC (JOS-506), defaulting to the `String` the miss path still
-/// carries. The damage path's modifiers are now borrowed slices of the parser's own buffers, and the
-/// miss path's are still owned — one generic parameter lets both feed this without either side
-/// allocating a list to satisfy the other's spelling.
+/// The modifier list is element-generic because the damage path borrows slices of the parser's
+/// buffers while the miss path still owns its list; one parameter lets both feed this without either
+/// side allocating to satisfy the other's spelling.
 pub struct SwingRecord<'a, S: AsRef<str> = String> {
     pub ts: i64,
-    /// Un-conjugated melee verb (`slash`, `backstab`) — the ROUND identity.
+    /// Un-conjugated melee verb (`slash`, `backstab`) — the round identity.
     pub verb: &'a str,
     /// Display lane name (special-attack renamed); labels the row only.
     pub skill: &'a str,
     /// The defender, as the line named it. Case-folded by the accumulator (law 2).
     pub target: &'a str,
-    /// Landed amount, or 0 for an avoided swing. Used ONLY for the fan-out signature.
+    /// Landed amount, or 0 for an avoided swing. Used only for the fan-out signature.
     pub amount: i64,
     pub avoided: bool,
     pub modifiers: &'a [S],
@@ -167,9 +148,8 @@ fn new_lane(verb: &str, skill: &str) -> RoundLaneTally {
 
 /// A per-target swing sequence being assembled for one (verb, second).
 ///
-/// `seq` holds NUMBERS: a landed swing contributes its amount, an avoided one contributes -1.
-/// Amounts reaching a round are always > 0 (`route()` drops anything else) so -1 can never collide
-/// with one.
+/// `seq` holds numbers: a landed swing contributes its amount, an avoided one contributes -1.
+/// Amounts reaching a round are always > 0, so -1 can never collide with one.
 #[derive(Debug, Clone)]
 struct PendingLane {
     verb: String,
@@ -194,13 +174,12 @@ fn signature_token(amount: i64, avoided: bool) -> i64 {
     }
 }
 
-/// Collapse per-target lanes whose ordered signature is identical into ONE round, carrying the number
-/// of defenders it was printed against. Order-stable: the first lane with a signature keeps its
-/// position, later duplicates only bump `targets`.
+/// Collapse per-target lanes whose ordered signature is identical into ONE round, carrying the
+/// number of defenders it was printed against. Order-stable: the first lane with a signature keeps
+/// its position, later duplicates only bump `targets`.
 ///
-/// THE SIGNATURE IS KEYED BY VERB. It has to be: `RoundAccum` holds one second's worth of EVERY verb
-/// open at once, so a signature-only key merged a 163-damage backstab with a 163-damage slash in the
-/// same second into one "fanned" round — two real rounds silently becoming one.
+/// The signature is keyed by VERB, and has to be: one second's worth of every verb is open at once,
+/// so a signature-only key would fuse an equal-damage backstab and slash into one "fanned" round.
 fn collapse_fan_out<'a>(lanes: impl Iterator<Item = &'a PendingLane>) -> Vec<CollapsedRound> {
     let mut by_sig: JsMap<usize> = JsMap::new();
     let mut out: Vec<CollapsedRound> = Vec::new();
@@ -222,12 +201,12 @@ fn collapse_fan_out<'a>(lanes: impl Iterator<Item = &'a PendingLane>) -> Vec<Col
     out
 }
 
-/// ROUND COUNTERS FOR ONE SOURCE, folded on ingest and BOUNDED: only the second currently being
+/// Round counters for one source, folded on ingest and bounded: only the second currently being
 /// assembled is held open, so memory is (verbs × targets in one second), not (seconds × targets). A
-/// swing whose second differs from the open one FLUSHES the open second into the counters first.
+/// swing whose second differs from the open one flushes the open second into the counters first.
 ///
 /// `snapshot()` is PURE — a view build may not write to an aggregate — so the still-open second is
-/// folded into a COPY and the accumulator is left exactly as it was.
+/// folded into a copy and the accumulator is left exactly as it was.
 #[derive(Debug, Clone)]
 pub struct RoundAccum {
     lanes: JsMap<RoundLaneTally>,
@@ -255,7 +234,7 @@ impl RoundAccum {
         }
     }
 
-    /// Fold one logged swing attempt. Excluded swings are TALLIED, never dropped silently.
+    /// Fold one logged swing attempt. Excluded swings are tallied, never dropped silently.
     pub fn add<S: AsRef<str>>(&mut self, rec: &SwingRecord<'_, S>) {
         let verb = rec.verb.to_lowercase();
         if let Some(why) = round_exclusion(&verb, rec.modifiers) {
@@ -289,9 +268,8 @@ impl RoundAccum {
 
     /// Close the open second into the counters. Idempotent on an empty pending map.
     ///
-    /// THE ONE-LANE FAST PATH is the case, not an edge: one attacker swinging one verb at one
-    /// defender inside one second is what a log is overwhelmingly made of, and a single lane cannot
-    /// be a fan-out of anything.
+    /// The one-lane fast path is the common case, not an edge: one attacker, one verb, one defender
+    /// in one second is what a log is overwhelmingly made of, and one lane cannot be a fan-out.
     fn flush(&mut self) {
         let n = self.pending.len();
         if n == 0 {
@@ -316,7 +294,7 @@ impl RoundAccum {
         self.pending.clear();
     }
 
-    /// The lanes as they stand, INCLUDING the still-open second — without touching the accumulator.
+    /// The lanes as they stand, including the still-open second, without touching the accumulator.
     /// A snapshot can be taken any number of times, mid-fight, with byte-identical results.
     pub fn snapshot(&self) -> Vec<RoundLaneTally> {
         if self.pending.is_empty() {
@@ -333,7 +311,7 @@ impl RoundAccum {
     }
 
     /// True when nothing has ever been folded (no lanes, no pending). `excluded` is deliberately not
-    /// consulted — it is the same question the TS asks.
+    /// consulted: an excluded swing is not a round.
     pub fn is_empty(&self) -> bool {
         self.lanes.is_empty() && self.pending.is_empty()
     }
@@ -372,7 +350,7 @@ mod tests {
         }
     }
 
-    /// THE FAN-OUT COLLAPSE: one double-attack round printed against two defenders is ONE round with
+    /// The fan-out collapse: one double-attack round printed against two defenders is one round with
     /// two targets, never two rounds and never a quadruple.
     #[test]
     fn one_round_fanned_across_two_defenders_collapses_to_one() {
@@ -388,8 +366,8 @@ mod tests {
         assert_eq!(lanes[0].buckets, [0, 1, 0, 0]);
     }
 
-    /// …and two DIFFERENT verbs with the same signature in one second stay two rounds. The signature
-    /// is keyed by verb precisely so a 163-damage backstab is never fused with a 163-damage slash.
+    /// …and two different verbs with the same signature in one second stay two rounds, which is why
+    /// the signature is keyed by verb.
     #[test]
     fn two_verbs_with_one_signature_stay_two_rounds() {
         let mut a = RoundAccum::new();
@@ -400,7 +378,7 @@ mod tests {
         assert_eq!(lanes.iter().map(|l| l.rounds).sum::<i64>(), 2);
     }
 
-    /// AN EXCLUDED SWING IS TALLIED, NEVER DROPPED SILENTLY.
+    /// An excluded swing is tallied, never dropped silently.
     #[test]
     fn an_extra_swing_is_counted_out_of_the_rounds_and_into_the_exclusions() {
         let mut a = RoundAccum::new();
@@ -415,7 +393,7 @@ mod tests {
         assert_eq!(a.excluded[RoundExclusion::Frenzy.slot()], 1);
     }
 
-    /// The SNAPSHOT INCLUDES the still-open second and does not close it — repeatable, byte-identical.
+    /// The snapshot includes the still-open second and does not close it: repeatable, identical.
     #[test]
     fn a_snapshot_sees_the_open_second_without_closing_it() {
         let mut a = RoundAccum::new();
