@@ -716,7 +716,7 @@ impl BuffTimersModule {
             let core_rc = Rc::clone(&self.core);
             let core = core_rc.borrow();
             let held = self.holds.get(key).expect("present");
-            core.stats.db_duration_for(&held.line_key)
+            core.stats.floor_for(&held.line_key, &held.caster)
         };
         // The learning-record schedule: 3x the DB floor, never shorter than the one the row actually
         // had. Same rule and same function as the buffs half's orphaned open record.

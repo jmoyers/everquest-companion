@@ -11,13 +11,14 @@
 // of them — which is what lets an assertion be about a CALLBACK SEQUENCE rather than about a spy.
 
 import { createEngineSupervisor, type EngineFaultCause, type EngineSupervisorDeps, type ReadyEngine } from '../src/main/dataServer/supervisor'
-import type { EngineExitLog } from '../src/main/dataServer/engineProtocol'
-import { FakeChild, fakeClock, scriptedChannel, type ChannelBehaviour } from './dataServerSupervisorFakes.mts'
+import type { EngineExitLog, EnginePowerHandlers } from '../src/main/dataServer/engineProtocol'
+import { FakeChild, connectError, fakeClock, scriptedChannel, type ChannelBehaviour } from './dataServerSupervisorFakes.mts'
 
 /** Everything one supervisor-under-test is wired to, and everything it said. */
 export function harness(opts: { binary?: string | null; behaviour?: ChannelBehaviour; spawnThrows?: Error } = {}) {
   const clock = fakeClock()
   const children: FakeChild[] = []
+  let power: EnginePowerHandlers | null = null
   const reports: EngineExitLog[] = []
   const logs: string[] = []
   const pids: (number | null)[] = []
@@ -32,6 +33,11 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
   // MUTABLE, because a health WATCHDOG is only a watchdog if the answer can change under it: the
   // engine that was fine a minute ago is exactly the one this has to catch.
   let behaviour: ChannelBehaviour = opts.behaviour ?? 'ok'
+  // …AND A QUEUE BESIDE IT, because a two-strike probe asks TWICE and the interesting cases are the
+  // ones where the two asks disagree. A queued entry answers the next connection and is spent; when
+  // the queue is empty every connection gets `behaviour`.
+  const queued: ChannelBehaviour[] = []
+  const connects: ChannelBehaviour[] = []
   const deps: EngineSupervisorDeps = {
     resolveBinary: () => (opts.binary === undefined ? 'C:/repo/engine/target/debug/engined.exe' : opts.binary),
     spawn: () => {
@@ -40,7 +46,14 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
       children.push(child)
       return child
     },
-    connect: (_port) => Promise.resolve(scriptedChannel(tokens[tokens.length - 1] ?? '', behaviour)),
+    connect: (_port) => {
+      const next = queued.shift() ?? behaviour
+      connects.push(next)
+      // A `ConnectRefusal` is the dep rejecting: there is no channel and the engine never heard the
+      // question, which is the whole point of the local-socket class.
+      if (typeof next === 'object') return Promise.reject(connectError(next.connectFails))
+      return Promise.resolve(scriptedChannel(tokens[tokens.length - 1] ?? '', next))
+    },
     mintToken: () => {
       mintCount += 1
       const token = `${'a'.repeat(63)}${String(mintCount)}`
@@ -54,7 +67,8 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
     onPid: (pid) => pids.push(pid),
     onReady: (engine) => readies.push(engine),
     onFault: (fault) => faults.push(fault),
-    onServedExit: () => servedExits.push(clock.now())
+    onServedExit: () => servedExits.push(clock.now()),
+    powerEvents: (handlers) => (power = handlers)
   }
   return {
     clock,
@@ -66,8 +80,15 @@ export function harness(opts: { binary?: string | null; behaviour?: ChannelBehav
     faults,
     servedExits,
     tokens,
+    /** One entry per probe connection, in order, saying which engine answered it. */
+    connects,
     supervisor: createEngineSupervisor(deps),
-    setBehaviour: (next: ChannelBehaviour) => (behaviour = next)
+    setBehaviour: (next: ChannelBehaviour) => (behaviour = next),
+    /** Script the next N connections, ahead of the standing behaviour. */
+    queueBehaviours: (...next: ChannelBehaviour[]) => queued.push(...next),
+    /** The machine, as `powerMonitor` would say it. */
+    suspend: () => power?.suspend(),
+    resume: () => power?.resume()
   }
 }
 

@@ -208,7 +208,10 @@ pub fn reap_orphaned_open(
     for ik in dead {
         let cap = {
             let o = open.get(&ik).expect("named above");
-            now - learning_record_cap_ms(stats.db_duration_for(&o.spell_key), HYGIENE_ABSOLUTE_MS)
+            now - learning_record_cap_ms(
+                stats.floor_for(&o.spell_key, &o.caster),
+                HYGIENE_ABSOLUTE_MS,
+            )
         };
         let empty = {
             let o = open.get_mut(&ik).expect("named above");

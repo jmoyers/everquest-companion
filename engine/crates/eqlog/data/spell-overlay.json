@@ -392,6 +392,14 @@
     },
     {
       "spells": [
+        "Swift Like The Wind"
+      ],
+      "field": "classes",
+      "from": "* Enchanter - Level 49",
+      "to": "* Enchanter - Level 47"
+    },
+    {
+      "spells": [
         "Celestial Echo",
         "Echo of Health",
         "Echoing Light",

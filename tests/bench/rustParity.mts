@@ -44,6 +44,17 @@
  *   across the corpus). A red CONFINED to those two shapes is the fix working, not drift; any
  *   OTHER divergence is still exactly what this net exists to catch.
  *
+ *   JOS-527 (2026-08-28) — the estimator's DB floor is now RANK-SCALED, so a spell whose cast line
+ *   named a roman numeral stands on a floor the TS fold never computed. Phase 2: the `buffs` module
+ *   reds on RAISED durations and on nothing else — 18 leaves of 155,734 across the six-slice
+ *   corpus, in exactly five classes (`.state.stats.<line>.estimateMs` ×13,
+ *   `.state.stats.<line>.estimatorSource` ×3 where a raised floor overtook a learned value,
+ *   `.state.active[].estimatedMs` ×1, `.state.active[].overlayDurationMs` ×1). Every move is
+ *   upward and every one is `base × (1 + tier × pct)` for that spell's category; `early-leveling`
+ *   is untouched, and `buffTimers` is green on all six. Phase 1 is unaffected — nothing about the
+ *   parser changed. A `buffs` red outside those five field classes, or in any other module, is
+ *   still drift.
+ *
  * ── `--ledger`: WHAT A PARTIAL PORT IS ALLOWED TO CLAIM ────────────────────────────────────────
  *
  * `firstDiff` answers "are these the same?" and it is the right instrument for a bar that is

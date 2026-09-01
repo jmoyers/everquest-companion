@@ -29,9 +29,12 @@ import type {
 import {
   engineHealthCheck,
   EngineHealthError,
+  healthFailureReason,
   HEALTH_REQUEST_ID,
+  isTransientHealthFailure,
   type EngineHealth
 } from '../src/main/dataServer/engineHealth'
+import type { HealthFailure } from '../src/main/dataServer/engineProtocol'
 import { fakeClock } from './dataServerSupervisorFakes.mts'
 
 const TOKEN = 'a'.repeat(64)
@@ -280,6 +283,56 @@ test('SKIPPING DOES NOT RESET THE CLOCK — a chatty engine that never answers s
   assert.ok(err instanceof EngineHealthError)
   assert.equal(err.reason, 'timeout')
   assert.match(err.message, /health/, 'the step it died in is the one it was actually waiting on')
+})
+
+// ---- which failures are worth a second ask (JOS-526) -----------------------------------------
+
+test('THE TRANSIENT SET IS EXACTLY THE FOUR A SERVING ENGINE CAN PRODUCE', () => {
+  // The line the two-strike rule draws. A stall, a refused connect, a hang-up and a transport error
+  // are all things an engine that is fine can do under load; the other three are statements about
+  // the credential, the build, or a peer that is not speaking this protocol, and asking again cannot
+  // change any of them. The list is spelled out here rather than imported so a widening of the set
+  // has to be written down twice.
+  const every: HealthFailure[] = [
+    'connect',
+    'timeout',
+    'closed',
+    'transport',
+    'refused',
+    'protocolMismatch',
+    'unexpected',
+    'localSocket'
+  ]
+  assert.deepEqual(every.filter(isTransientHealthFailure), [
+    'connect',
+    'timeout',
+    'closed',
+    'transport',
+    'localSocket'
+  ])
+})
+
+test('A REJECTION CARRIES ITS REASON, AND ANYTHING ELSE IS THE CONNECT', () => {
+  // `engineHealthCheck` rejects only with its own error; the one other thing a caller can catch is
+  // the connect that has to succeed before the conversation starts, which has no reason of its own.
+  assert.equal(healthFailureReason(new EngineHealthError('timeout', 'no answer')), 'timeout')
+  assert.equal(healthFailureReason(new Error('ECONNREFUSED 127.0.0.1:51413')), 'connect')
+  assert.equal(healthFailureReason('nothing throwable is off the table'), 'connect')
+})
+
+test('THE ERRNO SEPARATES OUR SOCKET FROM THE ENGINE — the field EADDRINUSE was never the listener', () => {
+  // The message says `connect … 127.0.0.1:<engine port>` either way: Node stamps the DESTINATION on
+  // every connect error, so only the code can say which endpoint failed.
+  const withCode = (code: string): Error => Object.assign(new Error(`connect ${code} 127.0.0.1:51413`), { code })
+  for (const code of ['EADDRINUSE', 'EADDRNOTAVAIL', 'EMFILE', 'ENFILE', 'ENOBUFS']) {
+    assert.equal(healthFailureReason(withCode(code)), 'localSocket', code)
+  }
+  // Anything not on the list stays evidence about the engine — the safe direction.
+  for (const code of ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT']) {
+    assert.equal(healthFailureReason(withCode(code)), 'connect', code)
+  }
+  // The connect TIMEOUT rejects with a plain Error and no code at all.
+  assert.equal(healthFailureReason(new Error('connecting to the engine on port 51413 timed out')), 'connect')
 })
 
 test('THE PROBE SAYS EXACTLY TWO THINGS, however many frames it skipped', async () => {
