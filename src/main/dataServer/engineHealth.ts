@@ -20,14 +20,14 @@
 // WebSockets, and the whole conversation is a unit test over an in-memory pipe with no port
 // anywhere. `socketChannel.ts` is the only file in this feature that knows a socket exists.
 //
-// EVERY FAILURE IS THE SAME OUTCOME — a rejected promise carrying a bounded reason — because the
-// supervisor's answer to all of them is identical: this launch did not work, kill it and back off.
-// The REASON is what makes the error-store row diagnosable, so it is specific even though the
-// branch is not.
+// EVERY FAILURE IS THE SAME SHAPE — a rejected promise carrying a bounded reason — but no longer the
+// same OUTCOME. The reason decides whether the failure is worth asking about twice
+// (`isTransientHealthFailure`): a stall a healthy engine can produce under load buys one more ask, a
+// statement about the build or the credential does not.
 
 import { createNdjsonTransport, type ByteChannel } from '../../shared/dataServer/ndjson'
 import type { ClientMessage, EngineMessage } from '../../shared/dataServer/protocol.generated'
-import type { EngineTimer } from './engineProtocol'
+import type { EngineTimer, HealthFailure } from './engineProtocol'
 
 /**
  * The request id the health probe uses.
@@ -50,17 +50,6 @@ export interface EngineHealth {
   readonly uptimeMs: number
 }
 
-/** Why a probe failed. A closed set, so the supervisor's report can name it without repeating a
- *  sentence the engine wrote. */
-export type HealthFailure =
-  | 'connect'
-  | 'timeout'
-  | 'closed'
-  | 'transport'
-  | 'refused'
-  | 'protocolMismatch'
-  | 'unexpected'
-
 export class EngineHealthError extends Error {
   constructor(
     readonly reason: HealthFailure,
@@ -69,6 +58,74 @@ export class EngineHealthError extends Error {
     super(message)
     this.name = 'EngineHealthError'
   }
+}
+
+/**
+ * WHICH REASONS ARE WORTH A SECOND ASK, as a `Record` over the closed set for `CONNECTION_WIDE`'s
+ * reason below: a new reason stops the build here rather than being silently classed either way.
+ *
+ * TRANSIENT means "a serving engine can produce this and still be serving" — a reply that missed its
+ * budget while the world lock was held, a loopback connect refused under load, a hang-up mid
+ * conversation. The other three are statements that a second ask cannot change: `refused` is the
+ * credential, `protocolMismatch` is the build, `unexpected` is a peer that is not speaking the
+ * protocol.
+ */
+const TRANSIENT_FAILURE: Readonly<Record<HealthFailure, boolean>> = {
+  connect: true,
+  timeout: true,
+  closed: true,
+  transport: true,
+  refused: false,
+  protocolMismatch: false,
+  unexpected: false,
+  // Transient by nature, and never reached through this table: the watchdog intercepts a local
+  // socket before the two-strike rule, because an immediate second ask asks the same instant.
+  localSocket: true
+}
+
+export function isTransientHealthFailure(reason: HealthFailure): boolean {
+  return TRANSIENT_FAILURE[reason]
+}
+
+/**
+ * THE ERRNOS THAT MEAN THE CONNECT NEVER LEFT THIS PROCESS — a local endpoint, not a peer.
+ *
+ * `connectToEngine` names no local address or port, so libuv binds the wildcard `0.0.0.0:0` itself
+ * and Windows commits a specific local endpoint at connect time; the bind's error comes back
+ * wearing the `connect` syscall and the DESTINATION's address, which is what made `EADDRINUSE
+ * 127.0.0.1:<engine port>` read as a statement about the engine's listener. It is not one: the
+ * engine had already bound that port and announced it.
+ *
+ * An explicit list, so a code that is not here falls through to `connect` and is treated as evidence
+ * about the engine — the safe direction, and the behaviour every reason had before.
+ */
+const LOCAL_SOCKET_CODES: readonly string[] = [
+  'EADDRINUSE',
+  'EADDRNOTAVAIL',
+  'EMFILE',
+  'ENFILE',
+  'ENOBUFS'
+]
+
+/**
+ * The reason behind whatever a probe round trip rejected with.
+ *
+ * `engineHealthCheck` rejects only with `EngineHealthError`, so the one other thing a caller can
+ * catch is the CONNECT that has to succeed before the conversation starts — an OS error, with no
+ * reason of its own. Those split in two: the codes above are about OUR socket, everything else
+ * (a refusal, a timeout, an unreachable peer) is about the engine and reads as `connect`.
+ */
+export function healthFailureReason(err: unknown): HealthFailure {
+  if (err instanceof EngineHealthError) return err.reason
+  return LOCAL_SOCKET_CODES.includes(errorCode(err)) ? 'localSocket' : 'connect'
+}
+
+/** An errno off whatever was thrown, or `''`. The house pattern (`update.ts`): a shaped read rather
+ *  than a trusted one, because this is an object from outside our types. */
+function errorCode(err: unknown): string {
+  if (typeof err !== 'object' || err === null) return ''
+  const code = (err as { code?: unknown }).code
+  return typeof code === 'string' ? code : ''
 }
 
 /** What one probe needs. An options object rather than five parameters — `max-params` is 4 here,

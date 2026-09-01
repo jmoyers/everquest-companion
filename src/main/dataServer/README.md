@@ -45,7 +45,8 @@ decision a test can watch being made rather than an absence nobody can observe.
 | `engineLaunchState.ts` | **What the SHELL is told about the launch** (JOS-503): one `EngineLaunchSay`, pushed on change — the historical fold's progress while one is running, and the reason the engine will not start when it will not. See "The launch, as a window sees it" below. |
 | `engineHost.ts` | The composition root's half: which binary, which spawn, which socket, which clock, where a line goes. The only file anyone would rewrite to run the engine some other way. |
 | `socketChannel.ts` | The only file in the feature that knows a socket exists. |
-| `engineHealth.ts` | "Is it actually serving?", asked as `hello` + `session.health` over the product's own door. |
+| `engineHealth.ts` | "Is it actually serving?", asked as `hello` + `session.health` over the product's own door — and which of the answers is worth asking twice about (`isTransientHealthFailure`). |
+| `supervisorHealth.ts` | **The watchdog over one launch** (JOS-526): the 30 s cadence, the ONE confirmation ask a transient failure buys, and the sleep gate. Split out of `supervisor.ts` at its line ceiling like `supervisorChild.ts`; it owns no child, no trail and no backoff. See "Two strikes, and a machine that sleeps" below. |
 | `engineClientHost.ts` | **The app as a CLIENT** (JOS-479): connect, attach, re-attach, and subscribe to the four connection-wide streams (fires, con cards, cursors, knowledge misses). It answers `enginePerfSnapshot()` for the performance panel and exposes the main-side request bridge, `engineServeReadiness()` + `engineRequest(op, params)`. The parity probe left with the second world (JOS-499). It still owns no channel, and no client handle escapes it. |
 | `readShim.ts` | **The compat shim's pure half** (JOS-489): whether the engine can answer a read, and what the caller gets when it cannot — the EMPTY SHAPE, never a second opinion. Readiness, a bounded round trip, a projection that says whether a reply was an ANSWER, and the coalesced unserved tally. No app imports, so the whole matrix is a unit test. |
 | `serveShim.ts` | The shim, wired: the channels' projections, the `SnapshotOpts` translation, the `lastPlayed` graft and the served mob-level op. Its gate and its parity seam left with the second world (JOS-499). |
@@ -537,6 +538,74 @@ session, not one per death. (3) A breadcrumb per death (`engine:cycled`, beside 
 carrying a kind `TELEMETRY_BREADCRUMB_KINDS` does not hold, and the ingest lambda runs that same
 shared file — so the server takes the new member before a client that emits it ships.
 
+## Two strikes, and a machine that sleeps (JOS-526, owner ruling 2026-08-28)
+
+**The evidence.** On 1.14.0 the loudest engine error in the fleet was `EngineUnhealthy` — 122 in two
+days across 2,002 installs, every one saying the engine did not answer health inside its 5 s budget,
+and **every one recovering on restart attempt 1**. The engine had answered `hello` in each case, so
+the probe was failing at the health step against a process that was there. Each false kill costs the
+player a whole re-fold.
+
+**TWO STRIKES.** A probe failure whose reason a serving engine can produce — `timeout`, `connect`,
+`closed`, `transport` — buys exactly ONE more ask, immediately, on a FRESH CONNECTION, because half
+of what a probe tests is the socket. Only a second failure reaches `endLaunch`. `protocolMismatch`
+(fatal by ruling), a spoken `refused` and an `unexpected` frame stay first-strike fatal: they are
+statements about the build, the credential or the peer, and no second ask can change one. The split
+is a `Record` over the closed reason set in `engineHealth.ts`, so a new reason stops the build rather
+than defaulting either way. The 30 s cadence and the 5 s budget are unchanged.
+
+**A SUSPEND IS NOT A SYMPTOM.** Windows freezes every `setTimeout` without crediting the sleep, so a
+probe armed before the lid closed lands on a socket that has been dead for hours and reports a wedge
+that never happened — and the supervisor had no power awareness at all. It now takes suspend/resume
+through its deps (`EnginePowerHandlers`, seamed exactly as `EngineTimer` is; `engineHost.ts` is the
+only file that says `powerMonitor`). On suspend the watchdog stands down and an in-flight answer
+stops being its business — a promise cannot be cancelled, so the mechanism is a round counter, and
+the probe's own timeout still closes its transport. On resume it waits `ENGINE_RESUME_GRACE_MS`
+(5 s) and asks fresh.
+
+**AND THE REPORT SAYS HOW IT CONCLUDED.** Every `EngineUnhealthy` entry carries both asks' reason
+enums (`healthReasons`) and `resumedAgoMs` — milliseconds since the machine last woke, `null` when it
+has not slept this session, SESSION-scoped so a respawn inside the wake window still knows. Enums and
+a number, inside the telemetry bright line, and `describeEngineExit` puts them in the MESSAGE because
+that is the field the error store keeps.
+
+## A CONNECT THAT NEVER LEFT THIS PROCESS (JOS-532)
+
+**The evidence.** `EngineLaunchLoop: 3 consecutive launches failed inside 30000 ms (last: … connect
+EADDRINUSE 127.0.0.1:<port> (alive for 24 ms …))` — 25 occurrences on 1.14.0 over three days.
+
+**Which side owned the port: ours.** The engine binds `127.0.0.1:0` (`main.rs`, contract rule 2) and
+a bind that fails makes it exit 1 with a stderr diagnostic and NO announce line — so a launch that
+announced a port is a launch whose listener is bound, by the engine, exclusively. The port in the
+message is not that fact: Node stamps every connect error with the DESTINATION
+(`exceptionWithHostPort`), whatever the local endpoint was. And `connectToEngine` names no
+`localAddress`/`localPort`, so an explicit bind failure (`syscall: 'bind'`) is impossible here — the
+error came out of `uv_tcp_connect`, which binds the wildcard `0.0.0.0:0` itself and lets Windows
+commit a specific local endpoint at connect time. `WSAEADDRINUSE` there is the dynamic port range or
+a `TIME_WAIT` tuple. **Our local endpoint, never the engine's listener.**
+
+**What the app did with it.** `healthFailureReason` read anything that was not an `EngineHealthError`
+as `connect`, which is transient, so the two-strike rule bought one immediate confirmation — the same
+instant, the same exhausted pool — and then declared the launch `unhealthy`. That retires a SERVING
+engine, respawns it, and the respawn's first probe meets the same local condition; three inside 30 s
+collapse the trail into `EngineLaunchLoop`, whose card says the engine is not going to start on this
+machine. It started fine every time.
+
+**The class.** `localSocket` is the reason for the errnos that mean the OS would not give us a local
+endpoint — `EADDRINUSE`, `EADDRNOTAVAIL`, `EMFILE`, `ENFILE`, `ENOBUFS`, an explicit list so an
+unlisted code stays evidence about the engine. It is the one reason in the set that never ends a
+launch, and that is STRUCTURAL: `local-socket` is excluded from `LaunchFailure` exactly as
+`shutdown-exit` is, so `fold` and `endLaunch` cannot be handed it. The watchdog re-asks on
+`ENGINE_LOCAL_SOCKET_GRACE_MS` (2 s) for `ENGINE_LOCAL_SOCKET_STREAK` (3) asks, then falls back to
+the ordinary 30 s cadence; any answer resets the count and the launch reaches READY on the SAME
+engine with no re-fold. At the streak it mints ONE `EngineLocalSocket` entry per launch — a drip, not
+a flood — which is the honest diagnosis the fleet was getting `EngineLaunchLoop` for.
+
+**Two candidate fixes rejected on the evidence.** `SO_REUSEADDR` on the engine's listener fixes a
+bind that never failed, and on Windows it lets an unrelated process take a bound port — widening the
+impostor surface a token-authenticated loopback listener deliberately closes. "Always take an
+OS-assigned ephemeral port" is already what the engine does.
+
 ## WHICH ENGINE: RELEASE BY DEFAULT, DEBUG BY OPT-IN (JOS-520)
 
 **The incident.** `cargo test` writes `engine/target/debug/engined.exe` as a side effect of running
@@ -600,6 +669,8 @@ proxy for.
 | --- | --- |
 | `tests/dataServerSupervisor.test.mts` | Every lifecycle failure path, plus the READY handover. No app, no Rust. Its harness is `dataServerSupervisorHarness.mts`, shared with the row below. |
 | `tests/dataServerSupervisorFault.test.mts` | The PERSON's edge (JOS-503): no fault while a fast failure could still be a hiccup, exactly one at the collapse, none after it, cleared by READY — and the retry, which forgives the trail, re-probes the disk on an absence, and leaves a live launch alone. |
+| `tests/dataServerSupervisorHealth.test.mts` | The watchdog's policy (JOS-526): a transient failure confirmed on a fresh connection before it kills, a confirmation that PASSES forgiving the strike with no report, exactly one confirmation, the two reasons that stay fatal on the first ask, and the sleep half — a suspend that cancels an in-flight probe, a resume that re-probes only after the grace, and `resumedAgoMs` on the report. |
+| `tests/dataServerEngineHealth.test.mts` | ONE probe conversation (JOS-522/526): which broadcast frames it skips, what it still refuses, that skipping never resets the 5 s bound — and which reasons are worth a second ask. |
 | `tests/dataServerSupervisorCycling.test.mts` | The INSTRUMENT (JOS-519): three READY→exit cycles are exactly one entry naming the count and the last exit's own detail, two are none, a deliberate stop cannot be the third, a launch that never served is the other bug — and the exit trail next door still files three ordinary exemplars, which is why this counter had to exist. |
 | `tests/engineLaunch.test.mts` | The banner's arithmetic and its prose: every case in which the ETA is REFUSED rather than guessed, the bounded ring, and the words for every failure class. |
 | `tests/dataServerBroker.test.mts` | Both ends of the brokered wire: splits cross unchanged, four teardown paths, and a real conversation delivered one character at a time. |

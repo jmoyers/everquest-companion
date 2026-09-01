@@ -53,23 +53,29 @@
 // The supervisor still knows nothing about what the client then says.
 
 import type { EngineFaultKind } from '../../shared/engineLaunch'
-import type { ByteChannel } from '../../shared/dataServer/ndjson'
 // THE CHILD'S OWN SHAPES AND ITS LINE READER, split out at the measured 400-code-line ceiling
 // (JOS-503) — where the house rule is to split rather than to ratchet. See `supervisorChild.ts`'s
 // header for why that is the natural seam, and note that nothing about this file's structural
 // Electron-freedom changed: that file imports the shared line codec and nothing else.
 import { describeErr, readLines, type SupervisedChild } from './supervisorChild'
 import { PROTOCOL_VERSION } from '../../shared/dataServer/protocol.generated'
-import { engineHealthCheck, type EngineHealth } from './engineHealth'
+import type { EngineHealth } from './engineHealth'
+// THE HEALTH CADENCE LIVES NEXT DOOR TOO (JOS-526), split at the same ceiling and along the same
+// house rule as `supervisorChild.ts`. This file still owns what a failed probe MEANS for a launch;
+// it no longer owns how often one is asked, or what a machine waking up does to the question.
+import {
+  createLaunchHealthWatch,
+  type HealthWatchDeps,
+  type LaunchHealthWatch
+} from './supervisorHealth'
 import {
   ENGINE_ANNOUNCE_TIMEOUT_MS,
-  ENGINE_HEALTH_INTERVAL_MS,
-  ENGINE_HEALTH_TIMEOUT_MS,
   ENGINE_STOP_GRACE_MS,
   NEW_ENGINE_EXIT_TRAIL,
   NEW_ENGINE_SERVED_TRAIL,
   boundedDetail,
   engineExitStep,
+  engineLocalSocketLog,
   engineRestartDelayMs,
   engineServedCycleStep,
   engineShutdownExitLog,
@@ -80,8 +86,10 @@ import {
   type EngineExitLog,
   type EngineExitTrail,
   type EngineFailure,
+  type EngineHealthVerdict,
+  type EnginePowerHandlers,
   type EngineServedTrail,
-  type EngineTimer
+  type HealthFailure
 } from './engineProtocol'
 
 // THE CHILD, STRUCTURALLY, LIVES NEXT DOOR NOW (JOS-503) — `supervisorChild.ts`, split out at the
@@ -94,7 +102,11 @@ export type { SupervisedChild, SupervisedStdin, SupervisedStream } from './super
 export type EngineStatus = 'stopped' | 'absent' | 'starting' | 'ready' | 'backoff' | 'stopping'
 
 /**
- * THE FAILURES A *LAUNCH* CAN HAVE — `EngineFailure` minus the one that is not about a launch.
+ * THE FAILURES A *LAUNCH* CAN HAVE — `EngineFailure` minus the two that do not end one.
+ *
+ * `local-socket` is the second exclusion and it earns the same structural treatment: a connect that
+ * failed on our own endpoint is not evidence about the engine, so `fold` and `endLaunch` cannot be
+ * handed it and a serving engine cannot be retired over it.
  *
  * `shutdown-exit` is a child that exited badly after the app closed its stdin. It is handled in
  * `onExit`'s stopping arm, which returns before `endLaunch` — so it can never fold into a restart
@@ -102,7 +114,7 @@ export type EngineStatus = 'stopped' | 'absent' | 'starting' | 'ready' | 'backof
  * `fold` and `endLaunch` cannot be handed it, which is also what lets a fault carry `cause.failure`
  * straight across to `EngineFaultKind` with no unreachable branch to prove dead (JOS-503).
  */
-export type LaunchFailure = Exclude<EngineFailure, 'shutdown-exit'>
+export type LaunchFailure = Exclude<EngineFailure, 'shutdown-exit' | 'local-socket'>
 
 /**
  * A LAUNCH THAT PROVED ITSELF, and everything a client needs to talk to it (JOS-479).
@@ -153,18 +165,20 @@ export interface EngineFaultCause {
   readonly detail: string | null
 }
 
-/** Everything the composition root hands this module. No Electron reaches past this interface. */
-export interface EngineSupervisorDeps {
+/**
+ * Everything the composition root hands this module. No Electron reaches past this interface.
+ *
+ * It EXTENDS the watchdog's own slice (`HealthWatchDeps`: the connect, the clock, the dev log and
+ * their test seams) rather than restating it, so the two files cannot drift and one wiring satisfies
+ * both.
+ */
+export interface EngineSupervisorDeps extends HealthWatchDeps {
   /** The engine binary's path, or null when this build has none — see `beginLaunch`. */
   resolveBinary(): string | null
   spawn(binPath: string): SupervisedChild
-  connect(port: number): Promise<ByteChannel>
   /** `src/main/dataServer/token.ts mintToken`. Injected so a test can pin what was written. */
   mintToken(): string
-  timer: EngineTimer
   now(): number
-  /** The dev log. */
-  debug(line: string): void
   /** The error store. Never called for an ABSENCE — see `beginLaunch`. */
   report(log: EngineExitLog): void
   /** The engine's pid as it comes and goes: the priority arm, and anything else that needs to know
@@ -197,12 +211,17 @@ export interface EngineSupervisorDeps {
    * in — and the count lives in the entry the deps' `report` gets.
    */
   onServedExit?(): void
-  /** TEST SEAMS — every clock, and the wire version. */
+  /**
+   * THE MACHINE'S OWN SLEEP, seamed like the clock (`EnginePowerHandlers`): the composition root
+   * subscribes to Electron's `powerMonitor` and calls these; this file never learns the word.
+   * Registered ONCE, from the constructor — a supervisor outlives every launch it makes, and the
+   * suspend that matters most is the one that arrives while nothing is running.
+   */
+  powerEvents?(handlers: EnginePowerHandlers): void
+  /** TEST SEAMS — every clock, and the wire version. (The health clocks are `HealthWatchDeps`'.) */
   protocolVersion?: number
   announceTimeoutMs?: number
   stopGraceMs?: number
-  healthIntervalMs?: number
-  healthTimeoutMs?: number
 }
 
 /** ONE launch's whole mutable world. A respawn builds a new one; nothing is reused. */
@@ -222,7 +241,8 @@ interface Launch {
    *  never the child's diagnosis — the shutdown-exit report reads this to stay quiet about it. */
   killed: boolean
   cancelAnnounce: (() => void) | null
-  cancelHealth: (() => void) | null
+  /** The health cadence, armed once the launch announces. It owns its own timer. */
+  health: LaunchHealthWatch | null
   cancelGrace: (() => void) | null
 }
 
@@ -233,6 +253,8 @@ interface EndInfo {
   signal?: string | null
   detail?: unknown
   alive?: boolean
+  /** Present only on the `unhealthy` path: the probe verdict, spread onto the cause. */
+  health?: EngineHealthVerdict
 }
 
 export class EngineSupervisor {
@@ -245,20 +267,20 @@ export class EngineSupervisor {
   private failures = 0
   private cancelRestart: (() => void) | null = null
   /** Set by `stop()`. A stop must survive a launch that is mid-handshake, so it is a latch rather
-   *  than a status read: an async health probe that resolves afterwards checks THIS. */
+   *  than a status read: the exit that arrives afterwards checks THIS. */
   private stopping = false
+  /** When the machine last woke, SESSION-scoped like `servedTrail` and for the same reason: a
+   *  respawn must not forget that the last minute contained a sleep. */
+  private lastResumeAt: number | null = null
   private readonly protocolVersion: number
   private readonly announceTimeoutMs: number
   private readonly stopGraceMs: number
-  private readonly healthIntervalMs: number
-  private readonly healthTimeoutMs: number
 
   constructor(private readonly deps: EngineSupervisorDeps) {
     this.protocolVersion = deps.protocolVersion ?? PROTOCOL_VERSION
     this.announceTimeoutMs = deps.announceTimeoutMs ?? ENGINE_ANNOUNCE_TIMEOUT_MS
     this.stopGraceMs = deps.stopGraceMs ?? ENGINE_STOP_GRACE_MS
-    this.healthIntervalMs = deps.healthIntervalMs ?? ENGINE_HEALTH_INTERVAL_MS
-    this.healthTimeoutMs = deps.healthTimeoutMs ?? ENGINE_HEALTH_TIMEOUT_MS
+    deps.powerEvents?.({ suspend: () => { this.onSuspend() }, resume: () => { this.onResume() } })
   }
 
   // ------------------------------------------------------------------ the public four
@@ -302,9 +324,8 @@ export class EngineSupervisor {
     }
     this.status = 'stopping'
     l.cancelAnnounce?.()
-    l.cancelHealth?.()
     l.cancelAnnounce = null
-    l.cancelHealth = null
+    l.health?.stop()
     this.deps.debug('data-server engine: closing stdin (the shutdown signal)')
     this.retire(l)
   }
@@ -416,7 +437,7 @@ export class EngineSupervisor {
       finished: false,
       killed: false,
       cancelAnnounce: null,
-      cancelHealth: null,
+      health: null,
       cancelGrace: null
     }
     // The engine must never be the reason a quitting app stays alive (`presence.ts`'s `w.unref()`,
@@ -493,7 +514,7 @@ export class EngineSupervisor {
     this.deps.debug(
       `data-server engine announced port ${String(announce.port)} protocol ${String(announce.protocolVersion)}`
     )
-    this.probeHealth(l, true)
+    this.beginHealth(l, announce)
   }
 
   private onExit(l: Launch, code: number | null, signal: string | null): void {
@@ -528,33 +549,52 @@ export class EngineSupervisor {
 
   // ------------------------------------------------------------------ health
 
-  /** One health round-trip, and the reschedule that makes it a watchdog. */
-  private probeHealth(l: Launch, first: boolean): void {
-    const announce = l.announce
-    if (!announce) return
-    void this.runProbe(l, announce)
-      .then((health) => {
-        if (l.finished || this.stopping) return
-        if (first) this.reachedReady(l, announce, health)
-        l.cancelHealth = this.deps.timer(() => this.probeHealth(l, false), this.healthIntervalMs)
-      })
-      .catch((err: unknown) => {
-        if (l.finished || this.stopping) return
-        // A wedged engine is indistinguishable from a healthy one except through an unanswered
-        // round-trip — the presence stale-watchdog's whole argument, restated for a process.
-        this.endLaunch(l, 'unhealthy', { detail: describeErr(err), alive: true })
-      })
+  /** Arm the watchdog for a launch that has announced. It reports back through exactly two edges;
+   *  the cadence, the two-strike rule and the sleep gate are `supervisorHealth.ts`'s. */
+  private beginHealth(l: Launch, announce: EngineAnnounce): void {
+    const target = { port: announce.port, token: l.token, protocolVersion: this.protocolVersion }
+    l.health = createLaunchHealthWatch(this.deps, target, {
+      onHealthy: (health, first) => { if (first) this.reachedReady(l, announce, health) },
+      onUnhealthy: (reasons, err) => { this.unhealthy(l, reasons, err) },
+      onLocalSocket: (tries, err) => { this.localSocket(l, tries, err) }
+    })
   }
 
-  private async runProbe(l: Launch, announce: EngineAnnounce): Promise<EngineHealth> {
-    const channel = await this.deps.connect(announce.port)
-    return engineHealthCheck({
-      channel,
-      token: l.token,
-      protocolVersion: this.protocolVersion,
-      timeoutMs: this.healthTimeoutMs,
-      timer: this.deps.timer
+  /** The app could not open a socket, repeatedly. One entry, and the launch is left running — the
+   *  engine is bound and serving, and a respawn cannot supply a local port. */
+  private localSocket(l: Launch, tries: number, err: unknown): void {
+    this.deps.report(
+      engineLocalSocketLog(tries, Math.max(0, this.deps.now() - l.startedAt), boundedDetail(describeErr(err)))
+    )
+  }
+
+  /**
+   * The watchdog has run out of asks. A wedged engine is indistinguishable from a healthy one except
+   * through an unanswered round-trip — the presence stale-watchdog's argument for a process — and
+   * the report carries how the verdict was REACHED: both reason enums, and how long ago the machine
+   * woke, so a fleet can separate a wedge from a sleep without a second free-text field.
+   */
+  private unhealthy(l: Launch, reasons: readonly HealthFailure[], err: unknown): void {
+    const resumedAgoMs =
+      this.lastResumeAt === null ? null : Math.max(0, this.deps.now() - this.lastResumeAt)
+    this.endLaunch(l, 'unhealthy', {
+      detail: describeErr(err),
+      alive: true,
+      health: { healthReasons: reasons, resumedAgoMs }
     })
+  }
+
+  /** The machine is going away. The watchdog stands down rather than reporting a socket that is
+   *  about to be frozen mid-question. */
+  private onSuspend(): void {
+    this.launch?.health?.suspend()
+  }
+
+  /** …and it is back. The stamp is taken here rather than in the watch because it outlives every
+   *  launch: a respawn during the wake window must still know a sleep just ended. */
+  private onResume(): void {
+    this.lastResumeAt = this.deps.now()
+    this.launch?.health?.resume()
   }
 
   /** The one place a launch becomes THE engine — and the backoff resets HERE, on a proven
@@ -611,7 +651,8 @@ export class EngineSupervisor {
       exitCode: info.exitCode ?? null,
       signal: info.signal ?? null,
       lifetimeMs: Math.max(0, this.deps.now() - l.startedAt),
-      detail: boundedDetail(info.detail) ?? l.lastStderr
+      detail: boundedDetail(info.detail) ?? l.lastStderr,
+      ...info.health
     }
     this.fold(cause)
     // The child may still be running (a timeout, a bad announce, a failed health probe). Retiring it
@@ -710,14 +751,14 @@ export function createEngineSupervisor(deps: EngineSupervisorDeps): EngineSuperv
   return new EngineSupervisor(deps)
 }
 
-/** Every timer one launch owns, cancelled. */
+/** Every timer one launch owns, cancelled — including the watchdog's, which also stops any answer
+ *  still in flight from being reported about a launch that is over. */
 function clearLaunchTimers(l: Launch): void {
   l.cancelAnnounce?.()
-  l.cancelHealth?.()
   l.cancelGrace?.()
   l.cancelAnnounce = null
-  l.cancelHealth = null
   l.cancelGrace = null
+  l.health?.stop()
 }
 
 /** A stream line on its way to the dev log: bounded and control-free, like every other outside

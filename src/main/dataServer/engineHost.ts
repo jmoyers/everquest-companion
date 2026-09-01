@@ -72,7 +72,7 @@
 import { spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { app, powerMonitor } from 'electron'
 import { logError, logInfo, logWarn } from '../errorLog'
 import { E2E } from '../e2e'
 import { setEnginePid } from '../processPriority'
@@ -433,6 +433,15 @@ export function startEngineSupervisor(): void {
       return () => clearTimeout(handle)
     },
     now: () => Date.now(),
+    // THE MACHINE'S OWN SLEEP, and this file is the only one that knows the word `powerMonitor` —
+    // the supervisor stays Electron-free the way it does for every other dependency. A suspend
+    // freezes the health probe's timer without crediting the sleep, so a laptop that wakes with a
+    // probe still armed answers for an engine that is not awake yet; the watchdog stands down and
+    // asks again after a grace instead. Never removed: a supervisor lives as long as the process.
+    powerEvents: (handlers) => {
+      powerMonitor.on('suspend', () => { handlers.suspend() })
+      powerMonitor.on('resume', () => { handlers.resume() })
+    },
     debug: (line) => logInfo(`[everquest-companion] ${line}`),
     // The name/message/code triple `engineProtocol.ts` built. `logError` reads `name`, `message`,
     // `stack` and `code` off whatever it is handed (`caughtFields`), which is the whole reason the

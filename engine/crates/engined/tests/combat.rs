@@ -327,9 +327,11 @@ fn a_live_meter_is_stamped_with_the_engines_own_clock_and_agrees_with_a_second_f
     // The self-consistency claim: fold the same bytes beside the engine, take the snapshot at the
     // instant the engine said it used, and the two are the same object. Socket, op table, channel,
     // ingest thread and combat engine hand back what the fold in that thread actually holds.
+    // Process startup is outside the fight's live window: under parallel CI it can take long enough
+    // to age a correctly-stamped fight closed before the first snapshot.
+    let engine = Engine::start();
     let staged = Staged::new("live");
     staged.stage_a_fight();
-    let engine = Engine::start();
     let mut client = live_client(&engine, &staged);
 
     let answer = snapshot(&mut client, 2, Some(full()));

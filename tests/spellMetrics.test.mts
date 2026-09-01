@@ -24,6 +24,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import spellsJson from '../src/main/data/spells.json' with { type: 'json' }
+import { loadSpellDb } from '../src/main/data/spellDb.ts'
 import type { SpellDbFile } from '../src/shared/types.ts'
 import {
   clientDurationTicks,
@@ -544,4 +545,20 @@ test('R16 a spell no source states a recast for is unchanged, figure for figure'
   assert.equal(spellMetricsAt({ ...silent, recastMs: 1500 }, 50, { recastMs: 6000 })?.dps, 66.7)
   // A STATED zero on the page is a statement, so the client never overrides it.
   assert.equal(spellMetricsAt({ ...silent, recastMs: 0 }, 50, { recastMs: 6000 })?.dps, 100)
+})
+
+test('JOS-528: Vengeance of the Wild reads as a DoT once the effects correction lands', () => {
+  // Reported 01M0V24TW8FP3WFS38AFGN1HDH (v1.9.0): "Vengeance of the Wild is not showing as a DoT
+  // and the damage listed does not match the actual DoT damage". The RAW slot line omits the
+  // `per tick` marker its own page description states ("damage every six seconds for 30s"), so the
+  // uncorrected entry files as direct damage — pinned first, because it is what the eighth drift
+  // class exists to fix. The corrected entry (the DB the app actually loads) is a 5-tick DoT:
+  // midpoint 126.5 per tick, 632.5 total, dps over the 30 s cycle.
+  const raw = entry('Vengeance of the Wild')
+  assert.equal(spellMetricsAt(raw, 49)?.dot, undefined, 'the raw scrape misfiles it — the defect')
+  const corrected = loadSpellDb().spells.find((s) => s.name === 'Vengeance of the Wild')
+  assert.ok(corrected, 'the corrected DB still carries the row')
+  const m = spellMetricsAt(corrected, 49)
+  assert.equal(m?.dot, true, 'the corrected slot line carries the rate marker')
+  assert.equal(m?.damage, 632.5, 'per-tick midpoint x 5 ticks, not a one-shot 126.5')
 })

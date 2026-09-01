@@ -18,6 +18,11 @@
 //! duration is never below its base — AA and focus only extend — so a below-base observation is an
 //! early termination and the max discards it.
 //!
+//! The baseline is RANK-SCALED: an upgrade tier grows a spell's duration by a per-category
+//! percentage, so the floor is the DB base grown by the highest tier a cast line has named for this
+//! (line, caster) — see `buffs_shapes::scaled_floor_ms`. Only that number changes; every rule the
+//! learner applies to it is untouched.
+//!
 //! The floor can lose exactly one way. Its assumption is a claim about the game the wiki describes,
 //! and this server re-tiered spells the scrape still describes the old way, so a below-floor
 //! observation may overrule it when the log CORROBORATES it (see [`corroborated_max`]). The source
@@ -38,10 +43,10 @@
 use crate::jsfn::parse_spell_rank;
 use crate::jsmap::JsMap;
 use crate::modules::buffs_shapes::{
-    corroborated_max, learn_key, percentile, BuffClass, DurationSample, EstimatorSource,
-    RECENT_SAMPLE_WINDOW, SELF_CASTER,
+    corroborated_max, learn_key, percentile, scaled_floor_ms, tier_of, BuffClass, DurationSample,
+    EstimatorSource, RECENT_SAMPLE_WINDOW, SELF_CASTER,
 };
-use crate::spell_facts::{Nature, SpellFacts, SpellRow};
+use crate::spell_facts::{DurationCategory, Nature, SpellFacts, SpellRow};
 use eqlog::jsstr::js_trim;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -148,6 +153,10 @@ pub struct SpellStats {
     wear_off_witnessed: HashSet<String>,
     /// Per-spell LAST-SEEN event ts: the newest castBegin / apply / fade involving the spell.
     last_seen: JsMap<i64>,
+    /// The highest upgrade tier a cast line has named for a (LINE, CASTER) — the roman numeral, and
+    /// nothing else. Highest wins for the same reason the display name's rank does: a spell once
+    /// upgraded never downgrades, and this store pools ranks under one line key.
+    cast_tiers: JsMap<i64>,
 }
 
 impl SpellStats {
@@ -159,6 +168,7 @@ impl SpellStats {
             ever_faded_at: HashSet::new(),
             wear_off_witnessed: HashSet::new(),
             last_seen: JsMap::new(),
+            cast_tiers: JsMap::new(),
         }
     }
 
@@ -168,6 +178,7 @@ impl SpellStats {
         self.ever_faded_at.clear();
         self.wear_off_witnessed.clear();
         self.last_seen.clear();
+        self.cast_tiers.clear();
     }
 
     /// Insertion order is what `build_stats` walks. The object it builds is keyed, so that order is
@@ -197,9 +208,41 @@ impl SpellStats {
         self.db.get(key)
     }
 
-    /// Authoritative DB duration (ms) for a spell key, or `None` when unknown.
+    /// Authoritative DB duration (ms) for a spell key, or `None` when unknown. The catalog's own
+    /// number, unscaled — what the DB STATES, as against the floor the estimator reads.
     pub fn db_duration_for(&self, key: &str) -> Option<i64> {
         self.row_of(key).and_then(|s| s.duration_ms)
+    }
+
+    /// Record the upgrade tier a cast line named for this (line, caster). An unsuffixed name states
+    /// the base tier and is not evidence, so it never lowers what a numeral already proved.
+    pub fn note_cast_tier(&mut self, key: &str, caster: &str, ranked_name: &str) {
+        let tier = tier_of(ranked_name);
+        if tier <= 0 {
+            return;
+        }
+        let lk = learn_key(key, caster);
+        if self.cast_tiers.get(&lk).is_none_or(|&prev| tier > prev) {
+            self.cast_tiers.insert(lk, tier);
+        }
+    }
+
+    /// The tier this (line, caster) has been seen cast at — 0 when no cast line ever named one.
+    pub fn cast_tier(&self, key: &str, caster: &str) -> i64 {
+        self.cast_tiers
+            .get(&learn_key(key, caster))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The FLOOR the estimator stands on: the DB base grown by the tier the log named for this
+    /// caster. A spell whose upgrade path nobody witnessed is its base duration exactly.
+    pub fn floor_for(&self, key: &str, caster: &str) -> Option<i64> {
+        let db_ms = self.db_duration_for(key)?;
+        let cat = self
+            .row_of(key)
+            .map_or(DurationCategory::Unstated, |s| s.category);
+        Some(scaled_floor_ms(db_ms, cat, self.cast_tier(key, caster)))
     }
 
     /// True when a spell KEY is illusion-flagged in the DB.
@@ -232,8 +275,11 @@ impl SpellStats {
     /// A mint is not the only moment the log states a rank, and on the crowd-control path it is the
     /// rarer one: the cast line is the only line in a mez's family carrying the numeral, while a
     /// sample is minted only from a CLEAN cycle. A row with no samples is a legal row.
+    /// The same line states the RANK when it carries a numeral: this seam is fed the ranked cast
+    /// text, which on a crowd-control line is the only spelling that ever has one.
     pub fn note_display_name(&mut self, key: &str, caster: &str, spell: &str) {
         self.row(key, caster, spell);
+        self.note_cast_tier(key, caster, spell);
     }
 
     /// The (line, caster) row, minted if new, with its display name brought up to date.
@@ -400,7 +446,7 @@ impl SpellStats {
     /// spell was still running then, and the estimate may never be drawn below a proven lower bound.
     /// And the comparison is STRICT, so an observation merely equalling the floor changes nothing.
     pub fn estimate_for(&self, key: &str, caster: &str) -> Estimate {
-        let db_ms = self.db_duration_for(key);
+        let db_ms = self.floor_for(key, caster);
         let observed = self.observed_window_max_for(key, caster);
         let learned = match observed {
             Some(o) if o.bound => EstimatorSource::DeathBound,
@@ -467,6 +513,8 @@ impl SpellStats {
                 Some(st) => st,
                 None => {
                     let db_ms = self.db_duration_for(key);
+                    // No samples, so the estimate is the floor and the floor alone.
+                    let floor_ms = self.floor_for(key, SELF_CASTER);
                     BuffStat {
                         spell: self
                             .sample_spell_name(key, SELF_CASTER)
@@ -481,8 +529,8 @@ impl SpellStats {
                         min_ms: None,
                         max_ms: None,
                         db_duration_ms: db_ms,
-                        estimate_ms: db_ms,
-                        estimator_source: db_ms.map(|_| EstimatorSource::Db),
+                        estimate_ms: floor_ms,
+                        estimator_source: floor_ms.map(|_| EstimatorSource::Db),
                         last_seen_ms: self.last_seen.get(key).copied(),
                     }
                 }

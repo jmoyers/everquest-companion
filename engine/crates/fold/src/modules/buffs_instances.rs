@@ -269,6 +269,10 @@ impl BuffInstances {
             &caster,
             disp,
         );
+        // The rank this landing's own cast line named, recorded before the row is projected so an
+        // upgraded spell draws its scaled floor on FIRST sight rather than after a sample. An absent
+        // cast name carries no numeral and the note is a no-op.
+        stats.note_cast_tier(&key, &caster, spec.cast_name.as_deref().unwrap_or_default());
         {
             let record = self.open.get_mut(&i_key).expect("just opened");
             // A family never mints — we do not know which spell it was — so its landings open
@@ -280,8 +284,7 @@ impl BuffInstances {
             self.open.remove(&i_key);
         }
         let projected = {
-            let record = self.open.get(&i_key);
-            let (started_ts, count, record_spell, record_cast) = match record {
+            let (started_ts, count, record_spell, record_cast) = match self.open.get(&i_key) {
                 Some(r) => (
                     r.group.oldest_ts(),
                     r.group.count() as i64,

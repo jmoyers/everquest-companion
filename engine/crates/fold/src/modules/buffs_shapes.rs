@@ -1,7 +1,57 @@
 //! The shared vocabulary of the buffs model: the tuning constants every part of it is calibrated
 //! against, the record shapes, and the pure helpers. Nothing here holds state.
 
+use crate::jsfn::parse_spell_rank;
+use crate::spell_facts::DurationCategory;
 use eqlog::names::spell_canon_key;
+
+/// The EQ tick — the quantum a damage- or heal-over-time duration is actually served in.
+const TICK_MS: i64 = 6_000;
+
+/// Duration growth per upgrade tier, in percent, applied ADDITIVELY.
+/// Source: <https://eqlwiki.com/Spell_Upgrade_System> — DoT/HoT +5%, buffs +10%, debuffs +10%,
+/// crowd control "+5-10%?", proc-buff duration unstated.
+///
+/// Where the wiki is unsure the conservative end is taken, because the two errors are not
+/// symmetric: an undershot floor is beaten by ONE clean sample, while an overshot one needs three
+/// corroborated below-floor cycles to come down. Same reason an `Unstated` row takes 5.
+fn rank_scale_pct(cat: DurationCategory) -> i64 {
+    match cat {
+        DurationCategory::Buff | DurationCategory::Debuff => 10,
+        DurationCategory::DotHot | DurationCategory::CrowdControl | DurationCategory::Unstated => 5,
+        DurationCategory::ProcBuff => 0,
+    }
+}
+
+/// The DB floor a cast at `tier` is entitled to: the base grown by the table above, tick-quantized
+/// DOWN for a DoT or HoT, and never below the base — scaling only ever raises. Tier 0 is the base
+/// unchanged, so an unranked cast is byte-identical to what it was.
+///
+/// An `Unstated` row quantizes too: it may well BE a DoT, and rounding down to a tick can only
+/// lower the floor, which is the side of the error that costs one clean sample instead of three.
+pub fn scaled_floor_ms(db_ms: i64, cat: DurationCategory, tier: i64) -> i64 {
+    if tier <= 0 || db_ms <= 0 {
+        return db_ms;
+    }
+    let raised = db_ms + db_ms * tier * rank_scale_pct(cat) / 100;
+    let served = if matches!(cat, DurationCategory::DotHot | DurationCategory::Unstated) {
+        raised - raised % TICK_MS
+    } else {
+        raised
+    };
+    served.max(db_ms)
+}
+
+/// The upgrade tier a name states: its roman numeral, or 0 when it carries none. Rank I is tier 1,
+/// so an unsuffixed name is the base tier and never a claim about an upgrade.
+pub fn tier_of(name: &str) -> i64 {
+    let parsed = parse_spell_rank(name);
+    if parsed.suffixed {
+        parsed.rank
+    } else {
+        0
+    }
+}
 
 /// Land a pending cast this many ms after `castBegin` if nothing cleared it first.
 pub const LAND_TIMEOUT_MS: i64 = 15_000;
@@ -26,7 +76,9 @@ pub const SESSION_GAP_MS: i64 = 30 * 60_000;
 /// because the only thing left to be late is the LINE, and a DB floor gets 60 s, long enough for a
 /// merely late line and short enough that a stale row is never a fixture of the window. A death
 /// bound takes the 60 s branch by being neither — it is a LOWER bound, so culling it on the learned
-/// schedule would retire a row we have positive evidence is still running.
+/// schedule would retire a row we have positive evidence is still running. A rank-scaled floor is
+/// still a floor and reports `Db`, so it keeps the 60 s grace: the rank raised the number, not its
+/// quality.
 ///
 /// A cull is not evidence: it mints no sample and counts as no break, because nothing was observed.
 pub fn unwitnessed_timeout_ms(source: Option<EstimatorSource>) -> i64 {
@@ -36,7 +88,10 @@ pub fn unwitnessed_timeout_ms(source: Option<EstimatorSource>) -> i64 {
     }
 }
 
-/// How long a learning record outlives the row it belonged to — 3x the DB base.
+/// How long a learning record outlives the row it belonged to — 3x the DB FLOOR, which is the
+/// rank-scaled one. Sizing an upgraded spell's memory off the unscaled base would retire the record
+/// before the late line it exists to catch can arrive; the floor is still observation-proof either
+/// way, which is the property the multiple is chosen for.
 ///
 /// Two things age on two clocks. The display grace above governs what is SHOWN; what a cull leaves
 /// behind is a LEARNING RECORD, which exists only to be measurable if the line that ends it does
@@ -304,6 +359,61 @@ mod tests {
         assert_eq!(corroborated_max(&[264_000, 101_000, 96_000]), None);
         // Two cycles are two click-offs of one habit.
         assert_eq!(corroborated_max(&[900_000, 901_000]), None);
+    }
+
+    /// Tier 0 is the base untouched, which is what keeps every unranked cast exactly where it was.
+    #[test]
+    fn an_unranked_cast_stands_on_the_base_duration() {
+        assert_eq!(scaled_floor_ms(30_000, DurationCategory::DotHot, 0), 30_000);
+        assert_eq!(scaled_floor_ms(30_000, DurationCategory::Buff, 0), 30_000);
+        assert_eq!(tier_of("Odium"), 0);
+        assert_eq!(tier_of("Odium X"), 10);
+        assert_eq!(tier_of("Mesmerization VII"), 7);
+        // A ` +N` item level is not a rank.
+        assert_eq!(tier_of("Cloak of Flames +4"), 0);
+    }
+
+    /// A DoT grows 5% a tier and is served in whole ticks: the 30 s base at tier 10 is 45 s of
+    /// entitlement and 42 s of clock.
+    #[test]
+    fn a_ranked_dot_floor_is_grown_then_quantized_down() {
+        assert_eq!(
+            scaled_floor_ms(30_000, DurationCategory::DotHot, 10),
+            42_000
+        );
+        assert_eq!(scaled_floor_ms(30_000, DurationCategory::DotHot, 4), 36_000);
+        // Quantization may never push the floor under the base it started from.
+        assert_eq!(scaled_floor_ms(10_000, DurationCategory::DotHot, 1), 10_000);
+    }
+
+    /// Buffs and debuffs grow twice as fast, hold no tick boundary, and a proc buff's duration does
+    /// not grow at all.
+    #[test]
+    fn the_other_categories_take_their_own_rate() {
+        assert_eq!(
+            scaled_floor_ms(1_620_000, DurationCategory::Buff, 10),
+            3_240_000
+        );
+        assert_eq!(scaled_floor_ms(24_000, DurationCategory::Debuff, 5), 36_000);
+        // Crowd control takes the conservative end of the wiki's "+5-10%?".
+        assert_eq!(
+            scaled_floor_ms(24_000, DurationCategory::CrowdControl, 5),
+            30_000
+        );
+        // An undescribed row takes the conservative rate AND the tick rounding, because it may be a
+        // DoT the wiki page never wrote the damage line for.
+        assert_eq!(
+            scaled_floor_ms(24_000, DurationCategory::Unstated, 5),
+            30_000
+        );
+        assert_eq!(
+            scaled_floor_ms(30_000, DurationCategory::Unstated, 10),
+            42_000
+        );
+        assert_eq!(
+            scaled_floor_ms(1_200_000, DurationCategory::ProcBuff, 10),
+            1_200_000
+        );
     }
 
     /// The instance key is a NUL join, and both halves come back out of it.
