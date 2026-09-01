@@ -268,6 +268,19 @@ test('JOS-415: a necro gets Leach at 9 and NOT at 12 — the duplicate page no l
   assert.ok(twelve.length > 0, 'level 12 should still carry the necro spells the wiki does place there')
 })
 
+test('JOS-528: an enchanter gets Swift Like The Wind at 47 and NOT at 49 — the Leach shape again', () => {
+  // Reported 01M0T4RJCRZRFTFZ6W717T2W14 (v1.9.0): "hi see the spell swift like the wind for
+  // enchanter at both 47 and 49. it's only at 47." Two wiki pages set the same `spellname`; the
+  // 49 one is live EQ's pre-re-tier copy (its duration line still carries live's level-scaled
+  // figure). The classes correction writes every row, so the fold draws one card at 47.
+  const enc = comboClassesOf(interval(0, null, [slot(['ENC']), slot(['ENC'])]))
+  const at47 = unlocksAtLevel(REAL, enc, 47).spells.map((r) => r.name)
+  const at49 = unlocksAtLevel(REAL, enc, 49).spells.map((r) => r.name)
+  assert.ok(at47.includes('Swift Like The Wind'), `level 47: ${at47.join(', ')}`)
+  assert.ok(!at49.includes('Swift Like The Wind'), `level 49 must not list it: ${at49.join(', ')}`)
+  assert.equal(at47.filter((n) => n === 'Swift Like The Wind').length, 1)
+})
+
 test('the innates the structure derived are placed: PAL Lay on Hands @1, SHD Harm Touch @1', () => {
   const pal = comboClassesOf(interval(0, null, [slot(['PAL']), slot(['SHD'])]))
   const u = unlocksAtLevel(REAL, pal, 1)

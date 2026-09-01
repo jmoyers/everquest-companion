@@ -474,6 +474,10 @@ pub fn reinstated_drops(
 /// no window drawn by inference may move, merge or delete the cut a row makes. `pick_boundary`
 /// alone would collapse a wide level-drop window and every `/who` cut inside it into one boundary,
 /// leaving a slice holding two rows that contradict each other.
+///
+/// This is the fold's only recursion and it bottoms out at depth two: `undated` never holds a `who`
+/// boundary, so the `merge_boundaries` below can only reach the base case. Anything that lets one in
+/// makes the depth a function of the log.
 fn resolve_group(group: &[Boundary]) -> Vec<Boundary> {
     if !group.iter().any(|b| b.reason == "who") {
         return vec![pick_boundary(group)];

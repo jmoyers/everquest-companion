@@ -147,6 +147,12 @@ docs/agents-archive.md.
     under concurrent launches the wait for the stdin-close exit is what loses
     a race with the runner's teardown. Report line until a second sighting;
     if it recurs, the suspect is the wait, not the contract.
+  - `engined/tests/combat.rs` live-meter current-kind · expected `current`,
+    got closed `fight` after process startup consumed the fixed 18 s freshness
+    margin · 1 sighting (2026-08-30, JOS-531 CI; green standalone and full
+    combat suite locally) · **RESOLVED in the JOS-531 CI follow-up** — start
+    the engine before stamping the live fixture, so startup is outside the
+    world-time precondition.
   - `presenceWorker.test` first-tick dedup · watches the REAL machine; fails
     while EverQuest runs with a player at the keyboard · 3 sightings
     (2026-08-10 ×2, 2026-08-12 JOS-239 worker mid-session, green on final

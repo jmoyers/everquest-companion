@@ -160,9 +160,12 @@ for (const behaviour of ['refuse', 'mute', 'mismatch', 'closed'] as const) {
     h.supervisor.start()
     h.children[0].announce()
     if (behaviour === 'mute') {
-      await settle()
-      // Only a clock can see a wedge: the socket is up and nothing is coming.
-      h.clock.advance(60_000)
+      // Only a clock can see a wedge: the socket is up and nothing is coming. TWICE, because a
+      // timeout is transient and buys one confirmation — whose own budget is a second wait.
+      for (let ask = 0; ask < 2; ask += 1) {
+        await settle()
+        h.clock.advance(60_000)
+      }
     }
     await settle()
     assert.notEqual(h.supervisor.state, 'ready')

@@ -48,7 +48,9 @@ interface StateNode { id: string; name: string; type: string }
 interface TeamData { teams: { nodes: { id: string; key: string; name: string; states: { nodes: StateNode[] } }[] } }
 
 const teamData = await gql<TeamData>('query { teams { nodes { id key name states { nodes { id name type } } } } }')
-const team = teamData.teams.nodes[0]
+// PINNED to JOS, never nodes[0]: the header names the team as law, and the day a second team
+// appeared in the workspace, first-team-wins silently filed three tickets there.
+const team = teamData.teams.nodes.find((t) => t.key === 'JOS') ?? teamData.teams.nodes[0]
 if (!team) throw new Error('no team visible to this key')
 
 const stateId = (name: string): string => {

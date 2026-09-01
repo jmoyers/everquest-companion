@@ -34,8 +34,8 @@ export { SPELL_CORRECTIONS }
 export type SpellMessageField = 'msgCastOnYou' | 'msgCastOnOther' | 'msgWearsOff'
 
 /**
- * Everything a correction can patch: the three messages, since JOS-161 the NAME, and since JOS-413
- * the POLARITY (`spellType`).
+ * Everything a correction can patch: the three messages, since JOS-161 the NAME, since JOS-413
+ * the POLARITY (`spellType`), and since JOS-528 one EFFECT LINE (`effects`).
  *
  * THE POLARITY IS THE SIXTH DRIFT CLASS and it is the only one that is not about a SENTENCE. The
  * first five all assume the wiki is describing the right spell and getting its words wrong; a
@@ -45,10 +45,19 @@ export type SpellMessageField = 'msgCastOnYou' | 'msgCastOnOther' | 'msgWearsOff
  * THE WRONG LEVEL IS THE SEVENTH (JOS-415), and it is the polarity's neighbour rather than a
  * message's: `classes` is the wiki's OTHER column, the one `shared/spellLevels.ts` reads into
  * (class, level) pairs and `buildLevelUnlocks` turns into "new at this level" cards. A correction
- * here says the wiki filed the spell at the wrong LEVEL. Its one entry and its argument live in
- * `spellCorrectionsList.ts`, beside the drift-class paragraph that governs it.
+ * here says the wiki filed the spell at the wrong LEVEL. Its entries live in
+ * `spellCorrectionsColumns.ts`; the drift-class paragraph that governs them stays in
+ * `spellCorrectionsList.ts` with the rest of the bar.
+ *
+ * THE EFFECT LINE IS THE EIGHTH (JOS-528). `effects` is the wiki's numbered slot list, kept
+ * verbatim (`SpellEntry.effects`), and `shared/spellMetrics.ts` reads its `per tick` marker to
+ * decide whether damage arrives over time. A correction here replaces ONE element of that list —
+ * `from` is the element as the scrape holds it, `to` the whole replacement element — and `from`
+ * may not be `null`: an absent slot line has no text to anchor to, and inventing one would be
+ * authoring data the wiki never printed. It writes the FIRST row of its name, like a message: each
+ * wiki page owns its own slot list.
  */
-export type SpellCorrectionField = SpellMessageField | 'name' | 'spellType' | 'classes'
+export type SpellCorrectionField = SpellMessageField | 'name' | 'spellType' | 'classes' | 'effects'
 
 /** How a correction earned its place — see THE EVIDENCE BAR in `spellCorrectionsList.ts`. */
 export type CorrectionAttribution = 'cast' | 'db' | 'sole'
@@ -194,6 +203,10 @@ function applyOne(pass: Pass, c: SpellCorrection, name: string): void {
     return
   }
   for (const at of rows) {
+    if (c.field === 'effects') {
+      applyEffectsLine(pass, c, at)
+      continue
+    }
     const current = out[at][c.field]
     if (current === c.to) {
       report.satisfied++
@@ -211,4 +224,30 @@ function applyOne(pass: Pass, c: SpellCorrection, name: string): void {
     out[at] = { ...out[at], [c.field]: c.to }
     report.applied++
   }
+}
+
+/**
+ * The effects arm of `applyOne`: `from`/`to` name one ELEMENT of the slot list, not the field.
+ *
+ * The same idempotence triangle as a sentence, read against elements: a list already carrying `to`
+ * is `satisfied` (a re-scrape fixed it upstream), a list carrying `from` is rewritten in place, and
+ * a list carrying neither — including an absent list, and the refused `from: null` — is `stale`,
+ * with the whole list as the `found` so the audit failure names what the wiki says now.
+ */
+function applyEffectsLine(pass: Pass, c: SpellCorrection, at: number): void {
+  const { out, report } = pass
+  const list = out[at].effects
+  if (list?.includes(c.to)) {
+    report.satisfied++
+    return
+  }
+  const i = c.from === null || list === undefined ? -1 : list.indexOf(c.from)
+  if (i === -1 || list === undefined) {
+    report.stale.push({ spell: out[at].name, field: c.field, found: list?.join(' | ') })
+    return
+  }
+  const next = list.slice()
+  next[i] = c.to
+  out[at] = { ...out[at], effects: next }
+  report.applied++
 }
