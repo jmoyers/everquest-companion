@@ -101,18 +101,21 @@ pub const DEATH_BOUND_MAX_DB_MULTIPLE: i64 = 3;
 /// lifts the floor toward the truth and can never lift it past, so long as the wear-off line is
 /// reliable when it does happen. On raid mobs it is the only evidence there is — they die first.
 ///
-/// Five rails, each of which refuses rather than guesses:
+/// Six rails, each of which refuses rather than guesses:
 ///
-///  1. The channel must be WITNESSED. Silence is evidence only about a spell this log has heard
+///  1. The active ROW must still LIVE. A record outlives the row it belonged to for exactly one
+///     purpose — catching a late wear-off LINE — so a cull is not evidence, and a span measured off
+///     a culled clock is not either.
+///  2. The channel must be WITNESSED. Silence is evidence only about a spell this log has heard
 ///     speak; otherwise "no wear-off printed" is a fact about the spell's messages, not its
 ///     duration.
-///  2. ONE landing only. A corpse names a mob but never which mob of that name, so with two
+///  3. ONE landing only. A corpse names a mob but never which mob of that name, so with two
 ///     landings the log does not say which died — and a wear-off may already have closed the other.
-///  3. It must BEAT the current estimate. A bound below what the app already draws is useless.
-///  4. The same-name cap: for an article-named mob the span may not exceed twice the current
+///  4. It must BEAT the current estimate. A bound below what the app already draws is useless.
+///  5. The same-name cap: for an article-named mob the span may not exceed twice the current
 ///     estimate, because a same-named mob dying long after the landing is more likely a different
 ///     one. A proper name has no twin and takes no such cap.
-///  5. The absolute cap: no bound may exceed three times what the spell database states. With no
+///  6. The absolute cap: no bound may exceed three times what the spell database states. With no
 ///     database row there is nothing to multiply and the bound is refused outright.
 ///
 /// An offline gap refuses it too: the wear-off sentence only exists while you are logged in, so
@@ -121,10 +124,11 @@ pub fn death_bound_span(
     o: &OpenCast,
     entity_key: &str,
     death_ts: i64,
+    row_lives: bool,
     stats: &SpellStats,
 ) -> Option<i64> {
     let db_ms = stats.db_duration_for(&o.spell_key);
-    if !stats.has_wear_off_channel(&o.spell_key) || o.spanned_gap {
+    if !row_lives || !stats.has_wear_off_channel(&o.spell_key) || o.spanned_gap {
         return None;
     }
     let db_ms = db_ms.filter(|&ms| ms > 0)?;

@@ -125,6 +125,41 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.15.0',
+    date: '2026-09-02',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'The endless catch-up loop is fixed. A rare pattern in a log - a wear-off or death landing in the same second as a crowd of same-named applications - crashed the engine at the same spot on every re-read, so the app re-read your log over and over while the Combat tab kept resetting mid-fight and the Leveling tab blanked.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The engine is no longer restarted for things that were never its fault: a slow answer to a routine health check now gets a second ask before any restart, waking your machine from sleep no longer counts against it, and your PC briefly running short of network connections is waited out instead of blamed. Each of those used to cost you a full catch-up read.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Timers for upgraded spells now start from your rank\'s real duration. The spell database only knows the base ranks, so an upgraded buff or debuff counted down from the wrong number until the app had watched enough casts - now the upgrade tier\'s duration growth is applied from your first cast.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Debuff timers no longer show roughly double the real duration. When a slowed mob died unseen, a later kill of a same-named mob could be misread as the debuff still running, and the timer believed the longer claim. A mob\'s death can no longer outrank the durations the log has actually watched end.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Vengeance of the Wild counts as a DoT again in Best Spells, with its damage totalled per tick instead of once.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Swift Like The Wind no longer shows up twice for enchanters - it is level 47 only, and the phantom level-49 card is gone.',
+        fromReport: true
+      }
+    ]
+  },
+  {
     version: '1.14.0',
     date: '2026-08-27',
     entries: [

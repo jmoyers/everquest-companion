@@ -32,8 +32,8 @@
  *
  * The recorder died with the TS fold it ran, so the goldens on disk are FROZEN at the moment of
  * the port and can never be re-recorded. That was the design: a safety net against UNINTENDED
- * drift, kept for one release. The first INTENDED divergence has now shipped, and a runner of
- * this oracle must know its shape to read a red honestly:
+ * drift, kept for one release. INTENDED divergences have since shipped, and a runner of this
+ * oracle must know their shapes to read a red honestly:
  *
  *   JOS-521 (2026-08-26) — the fold now reads the creating-instance notice, so a kill inside a
  *   bare-named raid/personal instance keys tier 0 where the TS fold keyed TIER_OPEN_WORLD (-1).
@@ -54,6 +54,21 @@
  *   is untouched, and `buffTimers` is green on all six. Phase 1 is unaffected — nothing about the
  *   parser changed. A `buffs` red outside those five field classes, or in any other module, is
  *   still drift.
+ *
+ *   JOS-535 (2026-09-01) — the death lower bound is now SUBORDINATE to the fades the log has
+ *   actually watched end: where the estimator's window holds any clean cycle, a bound contributes
+ *   at most the longest of them (rule 12d), and a bound mints only while its active row still
+ *   lives (rule 12e). Phase 2: the `buffs` module reds on 4 FURTHER leaves, in two spells and one
+ *   shape — an over-claiming bound replaced by the DB floor. `.state.stats.negation of life`
+ *   estimateMs 115000 → 90000 with estimatorSource `deathBound` → `db` (early-leveling, which
+ *   JOS-527 left untouched), and `.state.stats.soothe` estimateMs 190000 → 150000 with the same
+ *   source move (current). Both bounds claimed far past every clean cycle in their own window
+ *   (82 s and 29 s maxima), so the cap takes them under the floor. `.state.stats.odium` is the
+ *   ruling's own control: with no clean cycle in its window (`n` 0) its bound is untouched, and the
+ *   only thing that moves it is JOS-527's raised floor. Rule 12e moves NO leaf here — measured by
+ *   rerunning this oracle with 12d alone reverted — because no recorded slice holds a bound minted
+ *   off a culled record. Phase 1 is unaffected. A `buffs` red outside these two spells and
+ *   JOS-527's five field classes is still drift.
  *
  * ── `--ledger`: WHAT A PARTIAL PORT IS ALLOWED TO CLAIM ────────────────────────────────────────
  *
