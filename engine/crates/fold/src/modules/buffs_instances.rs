@@ -820,8 +820,9 @@ impl BuffInstances {
         }
         // Never off the `unknown-hostile` bucket `death_censors_open` also sweeps: that row's target
         // is an INFERENCE, and a span measured against a mob the log never named is not evidence.
+        // The record may have outlived its active row; only the LINE it is kept for may close it.
         let ms = if is_debuff && o.entity_key == entity_key {
-            death_bound_span(o, entity_key, ts, stats)
+            death_bound_span(o, entity_key, ts, self.active.contains_key(ik), stats)
         } else {
             None
         };

@@ -33,6 +33,11 @@
 //! there is. A bound folds into the max like any other sample and reports `DeathBound` when it wins,
 //! and it is refused the cluster rule and the n/median columns, because it is not a CYCLE.
 //!
+//! And it is SUBORDINATE to what the log has actually watched end: where the window holds any clean
+//! fade, a bound contributes at most the longest of them — a death corroborates the ceiling fades
+//! have proven, never raises it. Where the window holds none, a bound is the only evidence there is
+//! and keeps its full reach up to its own rails.
+//!
 //! The window is applied ONCE PER EVIDENCE CLASS: the most recent five uncensored samples are one
 //! window and the most recent five lower bounds are a second, with the observed candidate the max
 //! over both. So a censored sample can never push an uncensored one out of view, or vice versa —
@@ -58,19 +63,49 @@ pub struct WindowMax {
     pub bound: bool,
 }
 
-/// Fold one sample into the running window max. A tie goes to the MEASURED cycle: the bound adds
+/// Fold one sample into the running window max, with a death bound held to `fade_cap` — the ceiling
+/// the window's witnessed clean fades have proven. A tie goes to the MEASURED cycle: the bound adds
 /// nothing to an observation that agrees with it, and must not weaken the label the log earned.
-fn fold_window_max(best: Option<WindowMax>, s: &DurationSample) -> WindowMax {
+fn fold_window_max(
+    best: Option<WindowMax>,
+    s: &DurationSample,
+    fade_cap: Option<i64>,
+) -> WindowMax {
     let bound = s.death_bound;
+    let ms = match fade_cap {
+        Some(cap) if bound => s.ms.min(cap),
+        _ => s.ms,
+    };
     match best {
-        None => WindowMax { ms: s.ms, bound },
-        Some(b) if s.ms > b.ms => WindowMax { ms: s.ms, bound },
-        Some(b) if s.ms == b.ms && !bound => WindowMax {
+        None => WindowMax { ms, bound },
+        Some(b) if ms > b.ms => WindowMax { ms, bound },
+        Some(b) if ms == b.ms && !bound => WindowMax {
             ms: b.ms,
             bound: false,
         },
         Some(b) => b,
     }
+}
+
+/// The ceiling witnessed fades have proven for one sample list: the longest CLEAN cycle in the
+/// recency window, or `None` when the window holds no cycle at all.
+///
+/// It walks the same window `observed_window_max_for` does, without the allocation `clean_window_for`
+/// makes for the cluster rule, because it runs on every estimate the projector reads.
+fn clean_fade_cap(samples: &[DurationSample]) -> Option<i64> {
+    let mut best: Option<i64> = None;
+    let mut clean = 0usize;
+    for s in samples.iter().rev() {
+        if s.is_lower_bound() {
+            continue;
+        }
+        best = Some(best.map_or(s.ms, |b: i64| b.max(s.ms)));
+        clean += 1;
+        if clean >= RECENT_SAMPLE_WINDOW {
+            break;
+        }
+    }
+    best
 }
 
 /// Which spelling of a line the Buffs tab shows — the rank question, answered once.
@@ -392,8 +427,13 @@ impl SpellStats {
     /// one, so the span is a LOWER BOUND. Discarding it outright would hand the DB floor back to
     /// exactly the spells the learner exists for, and max is the one estimator that can accept a
     /// lower bound safely.
+    ///
+    /// A DEATH bound is the one class held to a ceiling here: [`clean_fade_cap`] subordinates it to
+    /// what the window's own clean fades have proven. Nothing stored changes — the sample keeps the
+    /// span the corpse measured, and only this read is capped.
     pub fn observed_window_max_for(&self, key: &str, caster: &str) -> Option<WindowMax> {
         let s = self.samples.get(&learn_key(key, caster))?;
+        let fade_cap = clean_fade_cap(&s.samples);
         let mut best: Option<WindowMax> = None;
         let mut clean = 0usize;
         let mut broken = 0usize;
@@ -409,7 +449,7 @@ impl SpellStats {
                 }
                 clean += 1;
             }
-            best = Some(fold_window_max(best, sample));
+            best = Some(fold_window_max(best, sample, fade_cap));
             if clean >= RECENT_SAMPLE_WINDOW && broken >= RECENT_SAMPLE_WINDOW {
                 break;
             }
