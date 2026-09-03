@@ -245,8 +245,11 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
     let at = classify(st, ev.attacker, ev.target);
     // "You hit it", filed once, off the verdict `classify` just reached — here rather than inside
     // `classify`, which is pure and asked by the miss and resist probes too, so a decision that also
-    // mutated state would count one swing three times.
-    if at == Attribution::OutYou {
+    // mutated state would count one swing three times. Never off a damage shield: a "ds" line is the
+    // defender's buff answering a swing, so it proves the TARGET attacked, not that you chose to.
+    // Filing it would let one thorns tick on a mob-charmed group-mate refuse that player's
+    // `My leader is …` binds for the rest of the log.
+    if at == Attribution::OutYou && ev.dtype != "ds" {
         st.note_struck(&id_key_ref(ev.target));
     }
     // Before the ignore gate and the outgoing/incoming split: a bound ally pet swinging at YOU
@@ -1183,6 +1186,22 @@ mod tests {
         st.world.claim(pet, 0);
         st.note_pet(&id_key_ref(pet));
         st
+    }
+
+    /// A damage shield answering a swing is not YOU striking the swinger: a "ds" line files nothing
+    /// in `ever_struck`, so one thorns tick on a mob-charmed group-mate cannot refuse that player's
+    /// `My leader is …` binds forever. A hit you chose still refuses.
+    #[test]
+    fn a_damage_shield_tick_does_not_file_the_target_as_struck() {
+        let mut st = EngineState::new();
+        st.set_player_name("Primitive");
+        let mut ds = dmg("You", "Malkil", 5, 1_000);
+        ds.dtype = "ds";
+        ds.skill = "thorns".into();
+        route(&mut st, &ds);
+        assert!(st.ally_caster_allowed("malkil"));
+        route(&mut st, &dmg("You", "Malkil", 12, 2_000));
+        assert!(!st.ally_caster_allowed("malkil"));
     }
 
     /// You → a pet name is outgoing to a hostile twin, never dropped as friendly fire.
