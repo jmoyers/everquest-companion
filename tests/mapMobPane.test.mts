@@ -34,8 +34,11 @@ import {
   mobPins,
   mobRows,
   paneCounts,
+  paneGestures,
   pinsForRows,
   rowTarget,
+  wishedDrops,
+  type MapPaneRow,
   type MobPaneRow
 } from '../src/renderer/src/features/maps/mobPins'
 import { MOB_CATALOG } from '../src/renderer/src/features/mobs/mobSearch'
@@ -98,16 +101,17 @@ test('mobPins invents nothing for a mob whose page stated no numbers', () => {
 
 // ---- 3. the rows -------------------------------------------------------------------------
 
+// NAMED fixtures — mobRows drops articled commons, so the pane fixtures are named mobs.
 const CATALOG: MobEntry[] = [
-  { page: 'Placed One', name: 'a placed one', level: '10', zones: ['Najena'], loc: [{ ns: 100, ew: 200 }] },
-  { page: 'Unplaced One', name: 'an unplaced one', level: '20', zones: ['Najena'] },
-  { page: 'Elsewhere', name: 'an elsewhere', level: '5', zones: ['Befallen'], loc: [{ ns: 1, ew: 1 }] }
+  { page: 'Placed One', name: 'Placed One', level: '10', zones: ['Najena'], loc: [{ ns: 100, ew: 200 }] },
+  { page: 'Unplaced One', name: 'Unplaced One', level: '20', zones: ['Najena'] },
+  { page: 'Elsewhere One', name: 'Elsewhere One', level: '5', zones: ['Befallen'], loc: [{ ns: 1, ew: 1 }] }
 ]
 
 /** A page that states a position AND names two zones — the coordinate belongs to one of them. */
 const WANDERER: MobEntry = {
   page: 'Wanderer',
-  name: 'a wanderer',
+  name: 'Wanderer',
   level: '30',
   zones: ['Najena', 'Befallen'],
   loc: [{ ns: 9, ew: 9 }]
@@ -117,12 +121,97 @@ test('mobRows lists the zone’s mobs, lowest level first, and marks which are p
   const rows = mobRows('Najena', CATALOG)
   assert.deepEqual(
     rows.map((r) => r.name),
-    ['a placed one', 'an unplaced one']
+    ['Placed One', 'Unplaced One']
   )
   assert.equal(isLocatable(rows[0]), true)
   assert.equal(isLocatable(rows[1]), false, 'a mob with no stated position is LISTED but not placeable')
   assert.deepEqual(rowTarget(rows[0]), { x: -200, y: -100 })
   assert.equal(rowTarget(rows[1]), null)
+})
+
+// The article rule itself (`isCommonMob`) is shared/mobNames.ts, pinned by tests/mobNames.test.mts
+// — one fold for the map pins and the Recommended tab. What is pinned HERE is how the map USES it.
+
+test('a common that drops a wished item is listed and pinned — a wish is an explicit statement', () => {
+  const bandit: MobEntry = {
+    page: 'A Bandit (Najena)',
+    name: 'a bandit',
+    level: '8',
+    zones: ['Najena'],
+    loc: [{ ns: 5, ew: 5 }],
+    drops: ['Rusty Dagger', 'Bandit Sash +1']
+  }
+  const wished = new Set(['bandit sash'])
+  const rows = mobRows('Najena', [...CATALOG, bandit], wished)
+  const row = rows.find((r) => r.name === 'a bandit')
+  assert.ok(row, 'the wished common is listed')
+  assert.equal(isLocatable(row), true, '…and pinnable, on the same stated position any row uses')
+  assert.deepEqual(wishedDrops(row.entry, wished), ['Bandit Sash +1'], 'the pin can name the drop')
+  // The same common, nothing wished for: the plain article rule, exactly as before.
+  assert.equal(mobRows('Najena', [...CATALOG, bandit]).some((r) => r.name === 'a bandit'), false)
+  assert.equal(
+    mobRows('Najena', [...CATALOG, bandit], new Set(['cloak of flames'])).some((r) => r.name === 'a bandit'),
+    false,
+    'a wish for something this common does not drop earns it nothing'
+  )
+})
+
+test('the two clicks that select: a pane row centres, a pin does not', () => {
+  const rows = mobRows('Najena', CATALOG)
+  const placed = rows[0]
+  const centred: [number, number][] = []
+  const selected: { id: string; x: number; y: number }[] = []
+  const { select, mark } = paneGestures(
+    (s) => {
+      selected.push(s)
+    },
+    (x, y) => {
+      centred.push([x, y])
+    }
+  )
+  // THE PIN: rings the specific point under the cursor and asks for NO centring — centring would
+  // move the pin out from under the second click of a double-click.
+  mark(placed, { x: 7, y: 9 })
+  assert.deepEqual(selected, [{ id: 'Placed One', x: 7, y: 9 }])
+  assert.deepEqual(centred, [], 'a pin click never asks the viewport to move')
+  // THE PANE ROW: the same selection write, PLUS the centring — the row is off the map.
+  select(placed)
+  assert.deepEqual(selected.at(-1), { id: 'Placed One', x: -200, y: -100 })
+  assert.deepEqual(centred, [[-200, -100]])
+  // Neither gesture can ring a position nothing stated.
+  const unplaced: MapPaneRow = rows[1]
+  mark(unplaced)
+  select(unplaced)
+  assert.equal(selected.length, 2)
+  assert.equal(centred.length, 1)
+})
+
+test('wishedDrops joins on the canonical item key and dedupes upgrade suffixes', () => {
+  const entry: MobEntry = {
+    page: 'p',
+    name: 'n',
+    drops: ['Ghoulbane', 'Ghoulbane +1', 'Rusty Sword', 'Cloak of Flames']
+  }
+  const wished = new Set(['ghoulbane', 'cloak of flames'])
+  assert.deepEqual(wishedDrops(entry, wished), ['Ghoulbane', 'Cloak of Flames'])
+  assert.deepEqual(wishedDrops(entry, new Set()), [])
+  assert.deepEqual(wishedDrops({ page: 'p', name: 'n' }, wished), [])
+})
+
+test('mobRows drops common spawns — the map pane is for the mobs worth walking to', () => {
+  const common: MobEntry = {
+    page: 'A Mummy',
+    name: 'a mummy',
+    level: '4',
+    zones: ['Najena'],
+    loc: [{ ns: 5, ew: 5 }]
+  }
+  const rows = mobRows('Najena', [...CATALOG, common])
+  assert.deepEqual(
+    rows.map((r) => r.name),
+    ['Placed One', 'Unplaced One'],
+    'a stated position does not earn a common spawn a row'
+  )
 })
 
 test('mobRows folds the instance suffix the log prints, so an instance shows the zone’s bestiary', () => {
@@ -131,7 +220,7 @@ test('mobRows folds the instance suffix the log prints, so an instance shows the
 
 test('a page that names SEVERAL zones is listed but never pinned — the position is unattributable', () => {
   const rows = mobRows('Najena', [...CATALOG, WANDERER])
-  const row = rows.find((r) => r.name === 'a wanderer')
+  const row = rows.find((r) => r.name === 'Wanderer')
   assert.ok(row, 'the mob still appears — it does live here')
   assert.deepEqual(row.pins, [], 'nothing on the page says WHICH zone the coordinate describes')
   assert.equal(row.unattributable, true, 'and the pane must say that, not "no location"')
@@ -181,14 +270,14 @@ test('filterPaneRows requires EVERY word, and preserves the list’s order', () 
   const rows = mobRows('Najena', CATALOG)
   assert.deepEqual(
     filterPaneRows(rows, 'one').map((r) => r.name),
-    ['a placed one', 'an unplaced one']
+    ['Placed One', 'Unplaced One']
   )
   assert.deepEqual(
     filterPaneRows(rows, 'placed one').map((r) => r.name),
-    ['a placed one', 'an unplaced one'],
+    ['Placed One', 'Unplaced One'],
     '"placed" is a substring of "unplaced" — substring-AND, not word-boundary matching'
   )
-  assert.deepEqual(filterPaneRows(rows, 'unplaced').map((r) => r.name), ['an unplaced one'])
+  assert.deepEqual(filterPaneRows(rows, 'unplaced').map((r) => r.name), ['Unplaced One'])
   assert.deepEqual(filterPaneRows(rows, 'nothing here'), [])
 })
 
@@ -201,7 +290,7 @@ test('filterPaneRows treats a blank query as "everything", not "nothing"', () =>
 test('filterPaneRows matches a mob by the level the page states', () => {
   assert.deepEqual(
     filterPaneRows(mobRows('Najena', CATALOG), '20').map((r) => r.name),
-    ['an unplaced one']
+    ['Unplaced One']
   )
 })
 
@@ -215,6 +304,7 @@ function pinRow(id: string, n: number): MobPaneRow {
     pins: Array.from({ length: n }, (_v, i) => ({ x: i, y: i })),
     zoneCount: 1,
     unattributable: false,
+    entry: { page: id, name: id },
     searchKey: id
   }
 }

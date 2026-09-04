@@ -47,6 +47,7 @@ import MapIcon from '@mui/icons-material/Map'
 import type { CharacterSnap } from '@shared/types'
 import type { MapBounds, MapData, MapPackPrefs, ZoneShort } from '@shared/maps'
 import { zoneShortName } from '@shared/zones'
+import type { MobTarget } from '../mobs/mobTarget'
 import { useModule } from '../../lib/useModule'
 import { trackFeature } from '../../lib/telemetry'
 import MapBody, { useSearchJump } from './MapBody'
@@ -355,7 +356,13 @@ function useMapOpenTracking(data: MapData | null): void {
   }, [loaded])
 }
 
-export default function MapsView(): JSX.Element {
+export default function MapsView({
+  onOpenMob,
+  onOpenLoot
+}: {
+  onOpenMob: (t: MobTarget) => void
+  onOpenLoot: (name: string) => void
+}): JSX.Element {
   // WHERE YOU ARE. The character module owns the raw display zone off the `zone` log event; it
   // is undefined until the log prints one, and that absence is a state this view renders.
   const raw = useModule<CharacterSnap>('character')?.zone
@@ -446,6 +453,9 @@ export default function MapsView(): JSX.Element {
         marker={marker}
         locMarker={loc.marker}
         onJump={onJump}
+        zones={zones}
+        onOpenMob={onOpenMob}
+        onOpenLoot={onOpenLoot}
       />
       {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}
       <MapCredits data={data} reserve={reserve} />

@@ -29,9 +29,16 @@ import type { JumpTarget } from './crossZone'
 import { MapCanvas } from './MapCanvas'
 import { MapPointsLayer, labelPosition } from './MapPointsLayer'
 import { MapMobPins } from './MapMobPins'
+// The respawn-timer lane (the fork's ask, kaltinril, 2026-08-17): where the mobs you are timing
+// spawn. The hook subscribes the respawn module; the layer draws a third, clearly different
+// symbol. Both headers carry the contracts.
+import { MapTimerPins, useTimerPins } from './MapTimerPins'
+import type { TimerPin } from './respawnPins'
 import { MapLocMarker } from './MapLocMarker'
 import MapMobPane from './MapMobPane'
+import type { MobTarget } from '../mobs/mobTarget'
 import { paneOverlay, type PaneOverlay, type ZonePaneState } from './useMapPane'
+import { connectionTarget } from './zoneLinks'
 import { mapFromLoc, type EqLoc, type LayerMask } from './mapGeometry'
 import { bandRange, type FloorBand } from './floorSlice'
 import type { MapViewport } from './useMapViewport'
@@ -163,7 +170,11 @@ function MapSurface({
   floor,
   marker,
   locMarker,
-  pane
+  pane,
+  timers,
+  zones,
+  onJump,
+  onOpenMob
 }: {
   data: MapData
   vp: MapViewport
@@ -176,7 +187,21 @@ function MapSurface({
   locMarker: EqLoc | null
   /** The sidebar's contribution, or null when it is closed and draws nothing. */
   pane: PaneOverlay | null
+  /** The respawn-timer lane's rows for THIS map — drawn whether or not the sidebar is open,
+   *  because a clock is live state of your own, not a pane derivation. */
+  timers: readonly TimerPin[]
+  /** Every stem an installed pack provides — gates which connection labels become links. */
+  zones: readonly ZoneShort[]
+  /** The search jump — a clicked connection label opens its zone with no position to centre on. */
+  onJump: (to: JumpTarget) => void
+  /** A double-clicked mob pin's door to its page (MapMobPins). */
+  onOpenMob?: (target: MobTarget) => void
 }): JSX.Element {
+  // A `to_…` label the zone table resolves to an INSTALLED map becomes a link (zoneLinks.ts).
+  const linkFor = useMemo(() => {
+    const installed = new Set(zones)
+    return (display: string) => connectionTarget(display, installed)
+  }, [zones])
   const at = marker == null ? null : labelPosition(vp, marker)
   // The SELECTION ring — one symbol for both kinds of pane row, so a wiki mob and a map label
   // are marked identically once clicked. Persistent, unlike the search jump's flash: a selection
@@ -205,8 +230,28 @@ function MapSurface({
       }}
     >
       <MapCanvas lines={data.lines} vp={vp} layers={layers} zBand={zBand} />
-      <MapPointsLayer points={data.points} vp={vp} layers={layers} bands={bands} floor={floor} />
-      {pane != null && <MapMobPins pins={pane.pins} vp={vp} selectedId={pane.selectedId} />}
+      <MapPointsLayer
+        points={data.points}
+        vp={vp}
+        layers={layers}
+        bands={bands}
+        floor={floor}
+        linkFor={linkFor}
+        onOpenZone={(zone) => {
+          onJump({ zone, at: null })
+        }}
+      />
+      {pane != null && (
+        <MapMobPins
+          pins={pane.pins}
+          vp={vp}
+          selectedId={pane.selectedId}
+          wishes={pane.wishes}
+          onMark={pane.mark}
+          onOpenMob={onOpenMob}
+        />
+      )}
+      {timers.length > 0 && <MapTimerPins timers={timers} vp={vp} />}
       {ringAt != null && <MarkerRing at={ringAt} size={26} testId="maps-pane-marker" />}
       {at != null && <MarkerRing at={at} size={22} testId="maps-marker" />}
       {/* THE ONE SEAM, AGAIN: the typed reading reaches the screen through `mapFromLoc` and then
@@ -258,11 +303,23 @@ export interface MapBodyProps {
   locMarker: EqLoc | null
   /** A cross-zone hit was clicked — `useSearchJump`'s handler, which changes zone first. */
   onJump: (to: JumpTarget) => void
+  /** Every stem an installed pack provides — gates which connection labels become links. */
+  zones: readonly ZoneShort[]
+  /** Open a mob row's page on the Mobs tab — this zone's rows and the cross-zone hits alike. */
+  onOpenMob?: (target: MobTarget) => void
+  /** Open a wished drop's Loot drill-down from the pane's captions. */
+  onOpenLoot?: (name: string) => void
 }
 
 export default function MapBody(props: MapBodyProps): JSX.Element {
   const { data, empty, vp, hostRef, layers, bands, floor, pane, zoneName, marker, onJump } = props
-  const { locMarker } = props
+  const { locMarker, zones, onOpenMob, onOpenLoot } = props
+  // The respawn-timer join for the map ON SCREEN (`data.zone`, like every overlay) — and ONLY
+  // that stem: `zoneName` is the zone being opened, and useMapData keeps the previous `data`
+  // while the next loads, so pairing the two here drew the old map's rows against the new
+  // zone's catalog for the length of a fetch. Subscribed here rather than in MapsView so the
+  // view above stays ignorant of the respawn module.
+  const timers = useTimerPins(data?.zone ?? null)
   return (
     <Stack direction="row" spacing={1.5} sx={{ position: 'relative', flexGrow: 1, minHeight: 0 }}>
       {data != null ? (
@@ -276,6 +333,10 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           marker={marker}
           locMarker={locMarker}
           pane={paneOverlay(pane)}
+          timers={timers}
+          zones={zones}
+          onJump={onJump}
+          onOpenMob={onOpenMob}
         />
       ) : (
         empty
@@ -293,6 +354,9 @@ export default function MapBody(props: MapBodyProps): JSX.Element {
           selectedId={pane.selectedId}
           onSelect={pane.select}
           onHit={onJump}
+          wishes={pane.wishes}
+          onOpenMob={onOpenMob}
+          onOpenLoot={onOpenLoot}
           pinsCapped={pane.pinsCapped}
           onClose={() => {
             pane.setOpen(false)

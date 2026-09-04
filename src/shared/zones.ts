@@ -235,7 +235,7 @@ export const ZONES: readonly ZoneEntry[] = [
   {
     short: 'nro',
     name: 'The Northern Desert of Ro',
-    aliases: ['North Ro'],
+    aliases: ['North Ro', 'North Desert of Ro'],
     mobCatalogNames: ['North Ro'],
     era: 'classic'
   },
@@ -273,7 +273,7 @@ export const ZONES: readonly ZoneEntry[] = [
   {
     short: 'sro',
     name: 'The Southern Desert of Ro',
-    aliases: ['South Ro'],
+    aliases: ['South Ro', 'South Desert of Ro'],
     mobCatalogNames: ['South Ro', 'Southern Ro'],
     era: 'classic'
   },
