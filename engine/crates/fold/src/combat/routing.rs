@@ -236,6 +236,16 @@ fn both(st: &mut EngineState, ts: i64, fresh_only: bool, f: impl Fn(&mut Agg)) {
     f(&mut st.zone_agg);
 }
 
+/// File the target of a hit YOU landed into `ever_struck` — never off a damage shield: a "ds"
+/// line is the defender's buff answering a swing, so it proves the TARGET attacked, not that you
+/// chose to. Filing it would let one thorns tick on a mob-charmed group-mate refuse that player's
+/// `My leader is …` binds for the rest of the log.
+fn note_struck_by_you(st: &mut EngineState, ev: &DamageEvent<'_>) {
+    if ev.dtype != "ds" {
+        st.note_struck(&id_key_ref(ev.target));
+    }
+}
+
 /// Fold one landed damage line and report the verdict it reached. `None` means the line was ignored
 /// before any verdict was needed, which is where the analytics fold returns early.
 pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> {
@@ -245,12 +255,9 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
     let at = classify(st, ev.attacker, ev.target);
     // "You hit it", filed once, off the verdict `classify` just reached — here rather than inside
     // `classify`, which is pure and asked by the miss and resist probes too, so a decision that also
-    // mutated state would count one swing three times. Never off a damage shield: a "ds" line is the
-    // defender's buff answering a swing, so it proves the TARGET attacked, not that you chose to.
-    // Filing it would let one thorns tick on a mob-charmed group-mate refuse that player's
-    // `My leader is …` binds for the rest of the log.
-    if at == Attribution::OutYou && ev.dtype != "ds" {
-        st.note_struck(&id_key_ref(ev.target));
+    // mutated state would count one swing three times.
+    if at == Attribution::OutYou {
+        note_struck_by_you(st, ev);
     }
     // Before the ignore gate and the outgoing/incoming split: a bound ally pet swinging at YOU
     // classifies as `Incoming` rather than `Ignore`, and that line is the strongest soft-hostile
