@@ -72,6 +72,44 @@ export interface DiscoveryProbes {
 /** The character-log filename the game writes: `eqlog_<Char>_<server>.txt`. */
 const EQLOG_RE = /^eqlog_.+\.txt$/i
 
+/** A candidate path that names THIS game rather than one of its siblings. See `legendsFirst`. */
+const EQ_LEGENDS_PATH_RE = /everquest\s*legends/i
+
+/**
+ * THIS APP IS FOR EVERQUEST **LEGENDS**, AND A MACHINE CAN HAVE MORE THAN ONE EVERQUEST ON IT
+ * (2026-08-17). Stable-partition a tier of candidates so the ones whose path names Legends are
+ * probed first.
+ *
+ * MEASURED on the reporting machine, whose registry yields all of these and in this order:
+ *
+ *     C:\Users\wange\AppData\Local\Programs\everquest-companion   (this app's own uninstall entry)
+ *     D:\Games\EverQuest                                          (retail/Teek — 38 character logs)
+ *     D:\Games\EverQuest II
+ *     D:\Games\EverQuest Legends                                  (the one we want)
+ *
+ * `discoverEqRoot` returns the FIRST candidate that has logs, and `D:\Games\EverQuest` has 38 of
+ * them — so without this the registry lookup does not merely fail, it succeeds at tailing the
+ * WRONG GAME, which is a worse outcome than finding nothing (the user gets a confidently populated
+ * app full of data from a game this app does not model). `hasLogs` cannot break the tie: a retail
+ * EverQuest log directory is shaped exactly like a Legends one, same `eqlog_<Char>_<server>.txt`.
+ * The path is the only evidence available at this point, and where the path is silent (an install
+ * at `D:\Games\EQL`) the tie genuinely cannot be broken here — that is what the Settings override
+ * is for, and it always wins.
+ *
+ * WHY PER-TIER AND NOT ONE GLOBAL SORT: "an explicit env/registry candidate outranks the drive
+ * sweep" is its own precedence law, pinned by eqDiscovery.test.mts, and a registry candidate whose
+ * path happens not to say "Legends" (`E:\Games\EQL`) must still be probed before a swept public
+ * path that does. So each tier is partitioned on its own and the tiers stay in order. STABLE, so
+ * within a tier nothing else about the existing order changes — on a machine with exactly one
+ * EverQuest, every candidate lands in the same bucket and this is a no-op.
+ */
+export function legendsFirst(candidates: readonly string[]): string[] {
+  const named: string[] = []
+  const rest: string[] = []
+  for (const c of candidates) (EQ_LEGENDS_PATH_RE.test(c) ? named : rest).push(c)
+  return [...named, ...rest]
+}
+
 /**
  * THE OUTCOME OF READING A LOGS DIR — three answers, never two (JOS-82).
  *
@@ -315,14 +353,18 @@ export function discoverEqRoot(probes: DiscoveryProbes): string | null {
     candidates.push(c)
   }
 
-  for (const c of probes.extraCandidates()) push(c)
+  // Each tier is `legendsFirst`-partitioned on its own, so a path naming Legends outranks a
+  // sibling EverQuest install WITHIN its tier while the tiers keep their own precedence.
+  for (const c of legendsFirst(probes.extraCandidates())) push(c)
   // Skip generating (and thus probing) the drive-sweep candidates once we are already over
   // budget — the env/registry phase alone can spend it on a pathological Uninstall hive.
   if (!overBudget()) {
+    const swept: string[] = []
     for (const drive of probes.fixedDrives()) {
       const d = drive.replace(/[\\/]+$/, '')
-      for (const sub of DAYBREAK_SUBPATHS) push(`${d}\\${sub}`)
+      for (const sub of DAYBREAK_SUBPATHS) swept.push(`${d}\\${sub}`)
     }
+    for (const c of legendsFirst(swept)) push(c)
   }
 
   for (const c of candidates) {
@@ -521,6 +563,13 @@ export function fixedDrives(): string[] {
 const INSTALL_PATH_VALUES = ['InstallLocation', 'InstallPath', 'InstallDir'] as const
 
 /**
+ * The value names holding a FILE inside the install dir rather than the dir itself. The Daybreak
+ * launcher writes these and none of the three above — see `eqInstallDirFromFileValue` for the
+ * measured registry shape and why this list is exactly two names long.
+ */
+const INSTALL_FILE_VALUES = ['UninstallString', 'DisplayIcon'] as const
+
+/**
  * The game's name has to appear in the path itself for it to be a candidate. This is the
  * `reg query … /f EverQuest` filter, preserved EXACTLY — see `registryInstallCandidates`.
  */
@@ -575,6 +624,75 @@ export function eqInstallPathValue(value: unknown): string | null {
   return p && EQ_PATH_RE.test(p) ? p : null
 }
 
+/**
+ * THE DAYBREAK LAUNCHER WRITES NO `InstallLocation`, SO THE INSTALL DIR HAS TO COME OUT OF A FILE
+ * PATH — one `dirname` away, and this is that step.
+ *
+ * MEASURED on a reporter's machine (2026-08-17, Windows 11 10.0.26200), a real EQ Legends install
+ * at `D:\Games\EverQuest Legends` that discovery could not find AT ALL. The registry knew exactly
+ * where it was; the values above were simply not the ones it used:
+ *
+ *   HKCU\…\CurrentVersion\Uninstall\DGC-EverQuest Legends
+ *       DisplayName        EverQuest Legends
+ *       UninstallString    D:\Games\EverQuest Legends\Uninstaller.exe
+ *       DisplayIcon        D:\Games\EverQuest Legends\Everquest.ico
+ *
+ * No `InstallLocation`, no `InstallPath`, no `InstallDir` — so `eqInstallPathValue` could never
+ * fire, and the drive sweep's `DAYBREAK_SUBPATHS` do not contain a `Games\` layout either. The
+ * `DGC-` prefix is the Daybreak launcher's own key-naming convention (`DGC-EverQuest`,
+ * `DGC-EverQuest II`, `DGC-EverQuest Legends` all present on that box), so this shape is the
+ * launcher's, not one machine's peculiarity.
+ *
+ * WHY THE FILTER STAYS ON THE RAW VALUE, not on the derived directory: that is exactly what
+ * `eqInstallPathValue` does, and it is the more permissive of the two — an `EverQuest.exe` sitting
+ * in a folder whose own name never says so still yields its folder as a CANDIDATE. Being a
+ * candidate costs one `readdir`; `hasLogs` is what actually decides, and it is the only thing that
+ * should. The same permissiveness admits the harmless near-misses this necessarily picks up (an
+ * EverQuest II install, and this app's OWN uninstall entry, whose InstallLocation says
+ * "everquest-companion") — none of them hold a `Logs\eqlog_*.txt` and all of them fail the probe.
+ *
+ * PURE, and separated from the registry walk, so the command-line shapes below are a unit test
+ * rather than a claim about someone's machine.
+ */
+export function eqInstallDirFromFileValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const raw = value.trim()
+  if (!raw || !EQ_PATH_RE.test(raw)) return null
+  const file = programPathFromCommand(raw)
+  if (file === null) return null
+  const dir = parentDir(file)
+  // `parentDir` hands back its argument unchanged when there is no separator at all (a bare
+  // `Uninstaller.exe`), which is not a directory and must not become a candidate.
+  return dir === file ? null : dir
+}
+
+/**
+ * The program/icon path out of one of those values. Three shapes, and the order matters:
+ *
+ *   1. `"C:\…\Uninstall EQ.exe" /currentuser` — QUOTED. The quotes are the delimiter, so this is
+ *      the only shape where arguments can be split off unambiguously, and it is tried first.
+ *   2. `C:\…\App.exe,0` — `DisplayIcon`'s optional icon INDEX (negative indices are legal too).
+ *   3. `D:\Games\EverQuest Legends\Uninstaller.exe /S` — UNQUOTED, and the path may itself contain
+ *      spaces (the measured case does). Splitting on whitespace would cut `EverQuest Legends` in
+ *      half, so the file EXTENSION is the only reliable cut. Lazy, so the FIRST extension wins and
+ *      an argument that is itself a path cannot extend the match.
+ *
+ * Anything with no recognizable executable/icon extension returns null rather than a guess — a
+ * wrong directory here would be probed, fail `hasLogs`, and cost nothing, but inventing a path
+ * shape nobody has observed is how a matcher starts drifting.
+ */
+function programPathFromCommand(raw: string): string | null {
+  if (raw.startsWith('"')) {
+    const close = raw.indexOf('"', 1)
+    if (close < 0) return null
+    const quoted = raw.slice(1, close).trim()
+    return quoted === '' ? null : quoted
+  }
+  const withoutIconIndex = raw.replace(/,\s*-?\d+\s*$/, '')
+  const m = /^(.*?\.(?:exe|ico|dll|cmd|bat))(?:\s|$)/i.exec(withoutIconIndex)
+  return m ? m[1] : null
+}
+
 /** Open a key defensively — a missing key, a denied ACL and a malformed path are all `null`. */
 function openKey(reg: typeof NativeReg, parent: NativeReg.HKEY, path: string): NativeReg.HKEY | null {
   try {
@@ -625,22 +743,42 @@ interface RegistrySweep {
 }
 
 /**
+ * The candidates stated by ONE key's OWN values — the two decoders, over their two value lists.
+ *
+ * Split out of `collectInstallPaths` so that function stays under the complexity ceiling and so the
+ * "read a value defensively" wrapper is written once instead of per list. A value we cannot read is
+ * simply not a source of candidates.
+ *
+ * ORDER IS PRECEDENCE: the explicit install-DIR values run first, so a key carrying both an
+ * `InstallLocation` and an `UninstallString` yields the explicit one ahead of the derived one.
+ * `discoverEqRoot` returns the first candidate that has logs.
+ */
+function collectKeyOwnValues(key: NativeReg.HKEY, sweep: RegistrySweep): void {
+  const read = (name: string): unknown => {
+    try {
+      return sweep.reg.getValue(key, null, name)
+    } catch {
+      return undefined
+    }
+  }
+  for (const name of INSTALL_PATH_VALUES) {
+    const path = eqInstallPathValue(read(name))
+    if (path) sweep.out.push(path)
+  }
+  for (const name of INSTALL_FILE_VALUES) {
+    const dir = eqInstallDirFromFileValue(read(name))
+    if (dir) sweep.out.push(dir)
+  }
+}
+
+/**
  * Collect install paths from `key` and (to `MAX_KEY_DEPTH`) its subkeys. Every registry call is
  * wrapped: a key we cannot read is simply not a source of candidates.
  */
 function collectInstallPaths(key: NativeReg.HKEY, depth: number, sweep: RegistrySweep): void {
   const reg = sweep.reg
   if (sweep.visited++ >= MAX_KEYS_VISITED || Date.now() >= sweep.deadline) return
-  for (const name of INSTALL_PATH_VALUES) {
-    let raw: unknown
-    try {
-      raw = reg.getValue(key, null, name)
-    } catch {
-      continue
-    }
-    const path = eqInstallPathValue(raw)
-    if (path) sweep.out.push(path)
-  }
+  collectKeyOwnValues(key, sweep)
   if (depth >= MAX_KEY_DEPTH) return
   let subKeys: string[]
   try {
@@ -663,8 +801,11 @@ function collectInstallPaths(key: NativeReg.HKEY, depth: number, sweep: Registry
 /**
  * Probe the Windows registry (defensively) for an EverQuest / Daybreak install location. Checks the
  * standard Uninstall hives (both HKLM 64/32-bit views and HKCU) plus Daybreak/SOE launcher keys.
- * Returns any `InstallLocation` / `InstallPath` / `InstallDir` value that names EverQuest — most
- * machines have none (the game is a public-folder install), which is fine.
+ * Returns any `InstallLocation` / `InstallPath` / `InstallDir` value that names EverQuest, plus the
+ * containing directory of any `UninstallString` / `DisplayIcon` that does — the Daybreak launcher
+ * writes only the latter kind (`eqInstallDirFromFileValue` carries the measured key). Plenty of
+ * machines have neither and resolve through the drive sweep instead, which is fine and is the
+ * documented normal for a default public-folder install.
  *
  * IN-PROCESS AND SCOPED SINCE JOS-184. This was EIGHT synchronous `reg.exe query … /s /f EverQuest`
  * subprocesses: a recursive TEXT SEARCH of the whole Uninstall hive whose stdout we then grepped

@@ -23,6 +23,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   driveLettersFromMountedDevices,
+  eqInstallDirFromFileValue,
   eqInstallPathValue,
   fixedDrives,
   networkDriveLetters,
@@ -60,6 +61,60 @@ test('eqInstallPathValue: keeps a path that names the game, in the same cases re
   assert.equal(eqInstallPathValue(undefined), null)
   assert.equal(eqInstallPathValue(1), null)
   assert.equal(eqInstallPathValue(['C:\\EverQuest']), null)
+})
+
+test('eqInstallDirFromFileValue: the Daybreak launcher states the install dir as a FILE in it', () => {
+  // THE REGRESSION THIS EXISTS FOR, verbatim from the reporting machine (Windows 11 10.0.26200,
+  // 2026-08-17): a real `D:\Games\EverQuest Legends` install that discovery missed completely,
+  // because the launcher's Uninstall key carries NO InstallLocation/InstallPath/InstallDir. Both
+  // of the values it does carry name the folder one `dirname` up.
+  assert.equal(
+    eqInstallDirFromFileValue('D:\\Games\\EverQuest Legends\\Uninstaller.exe'),
+    'D:\\Games\\EverQuest Legends'
+  )
+  assert.equal(
+    eqInstallDirFromFileValue('D:\\Games\\EverQuest Legends\\Everquest.ico'),
+    'D:\\Games\\EverQuest Legends'
+  )
+  // The three command-line shapes, in the order `programPathFromCommand` tries them.
+  // 1. QUOTED program path with arguments after it — the only unambiguous split.
+  assert.equal(
+    eqInstallDirFromFileValue('"C:\\Games\\EverQuest\\Uninstall EverQuest.exe" /currentuser'),
+    'C:\\Games\\EverQuest'
+  )
+  // 2. DisplayIcon's icon INDEX, positive and negative.
+  assert.equal(eqInstallDirFromFileValue('D:\\Games\\EverQuest\\EQ.exe,0'), 'D:\\Games\\EverQuest')
+  assert.equal(eqInstallDirFromFileValue('D:\\Games\\EverQuest\\EQ.exe,-101'), 'D:\\Games\\EverQuest')
+  // 3. UNQUOTED, with arguments, and a SPACE IN THE PATH — the shape that makes splitting on
+  //    whitespace wrong. The extension is the cut, and it is lazy, so an argument that is itself a
+  //    path cannot extend the match.
+  assert.equal(
+    eqInstallDirFromFileValue('D:\\Games\\EverQuest Legends\\Uninstaller.exe /S'),
+    'D:\\Games\\EverQuest Legends'
+  )
+  assert.equal(
+    eqInstallDirFromFileValue('D:\\Games\\EverQuest\\un.exe /log C:\\other\\place.exe'),
+    'D:\\Games\\EverQuest'
+  )
+  // Forward slashes: these values reach us from installers of every vintage.
+  assert.equal(eqInstallDirFromFileValue('D:/Games/EverQuest/un.exe'), 'D:/Games/EverQuest')
+
+  // THE FILTER IS THE SAME ONE, ON THE RAW VALUE — a path that never names the game is not a
+  // candidate however well-formed it is.
+  assert.equal(eqInstallDirFromFileValue('C:\\Program Files\\Steam\\steam.exe'), null)
+  // No recognizable extension ⇒ null, never a guess at where the path ends.
+  assert.equal(eqInstallDirFromFileValue('D:\\Games\\EverQuest\\somefile'), null)
+  // A bare filename has no containing directory to offer.
+  assert.equal(eqInstallDirFromFileValue('EverQuest.exe'), null)
+  // An unterminated quote is malformed, not a path.
+  assert.equal(eqInstallDirFromFileValue('"D:\\Games\\EverQuest\\un.exe'), null)
+  // Empty / whitespace-only / non-string values, exactly as `eqInstallPathValue` refuses them.
+  assert.equal(eqInstallDirFromFileValue(''), null)
+  assert.equal(eqInstallDirFromFileValue('   '), null)
+  assert.equal(eqInstallDirFromFileValue(null), null)
+  assert.equal(eqInstallDirFromFileValue(undefined), null)
+  assert.equal(eqInstallDirFromFileValue(1), null)
+  assert.equal(eqInstallDirFromFileValue(['D:\\EverQuest\\un.exe']), null)
 })
 
 test('registryInstallCandidates: reads the machine in-process, never throws, honours the ceiling', () => {

@@ -131,25 +131,33 @@ test('discoverEqRoot: a candidate found BEFORE the deadline is still returned', 
 test('discoverEqRoot: a single blocking (offline-share) probe caps the whole call', () => {
   // The reported hang, in miniature: the FIRST candidate is an offline mapped drive whose readdir
   // blocks past the entire budget. The real install sits behind it — and must NOT be waited for.
+  //
+  // THE BLOCKING CANDIDATE NAMES LEGENDS ON PURPOSE (2026-08-17). `legendsFirst` partitions each
+  // tier, so a stale `Z:\offline` that did not name the game would now be reordered BEHIND the
+  // real install and this test would stop exercising the ceiling it exists for — it would pass on
+  // the ordering rather than on the budget. Both candidates sitting in the same partition bucket
+  // keeps the blocking one genuinely first, which is what makes the assertions below mean
+  // something. It is also the more faithful shape: the share that hung was somebody's EQ install.
   let clock = 0
   const probed: string[] = []
+  const offlineShare = 'Z:\\Games\\EverQuest Legends'
   const realInstall = 'C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends'
   const root = discoverEqRoot({
     hasLogs: (c): boolean => {
       probed.push(c)
-      if (c === 'Z:\\offline') {
+      if (c === offlineShare) {
         clock += 30_000 // the SMB timeout
         return false
       }
       return c === realInstall
     },
-    extraCandidates: () => ['Z:\\offline', realInstall],
+    extraCandidates: () => [offlineShare, realInstall],
     fixedDrives: () => [],
     budgetMs: 6_000,
     now: () => clock
   })
   assert.equal(root, null, 'the one blocking probe exhausts the budget; we do not hang on the rest')
-  assert.deepEqual(probed, ['Z:\\offline'], 'the real install behind it is never reached')
+  assert.deepEqual(probed, [offlineShare], 'the real install behind it is never reached')
 })
 
 test('discoverEqRoot: a filtered (non-fixed) drive is never probed at all', () => {
