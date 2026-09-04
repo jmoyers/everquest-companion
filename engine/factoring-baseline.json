@@ -183,7 +183,7 @@
       "file": "crates/eqlog/src/parse/world.rs",
       "metric": "file-lines",
       "name": "",
-      "value": 445
+      "value": 448
     },
     {
       "file": "crates/eqlog/src/spelldb/overlay.rs",

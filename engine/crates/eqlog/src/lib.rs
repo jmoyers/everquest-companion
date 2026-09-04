@@ -247,6 +247,28 @@ mod tests {
     }
 
     #[test]
+    fn a_bonus_parenthetical_is_the_same_gain_carrying_the_same_percentage() {
+        let p = bare();
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You gain experience (with a bonus)! (3.118%)",
+        );
+        assert!(out.ends_with(r#""party":false,"pct":3.118}"#), "{out}");
+        // The two parentheticals are independent; this arm carries no sample of its own.
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You gain party experience (with a bonus)! (1.5%)",
+        );
+        assert!(out.ends_with(r#""party":true,"pct":1.5}"#), "{out}");
+        // …and a player QUOTING the message is chat: the anchors still refuse it.
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] Dekar tells General1:1, 'you should be seeing \"You gain experience (plus a bonus)\"'",
+        );
+        assert!(!out.contains(r#""kind":"expGain""#), "{out}");
+    }
+
+    #[test]
     fn the_spell_db_puts_a_candidate_list_on_a_landing() {
         let p = parser_for("Primitive", chrono_tz::America::Los_Angeles);
         let out = parse_one(

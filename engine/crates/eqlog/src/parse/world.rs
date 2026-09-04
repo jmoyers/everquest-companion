@@ -92,7 +92,10 @@ impl WorldRes {
             offer: Regex::new(r"^You offered [0-9,]+ (.+?) to (.+?)\.$").unwrap(),
             trade_done: Regex::new(r"^You complete the trade with (.+?)\.$").unwrap(),
             level: Regex::new(r"^You have gained a level! Welcome to level ([0-9]+)!$").unwrap(),
-            exp: Regex::new(r"^You gain (party )?experience!(?: \(([0-9.]+)%\))?$").unwrap(),
+            exp: Regex::new(
+                r"^You gain (party )?experience(?: \(with a bonus\))?!(?: \(([0-9.]+)%\))?$",
+            )
+            .unwrap(),
             aa: Regex::new(&format!(
                 r"^You have gained (an|[0-9]+) ability point(?:\(s\))?!{s}+You now have ([0-9]+) ability point"
             ))
@@ -413,6 +416,12 @@ pub fn classify_level(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
 }
 
 /// Experience gains. `pct` is omitted, never 0, when the line stated no percentage.
+///
+/// A server bonus MOVES the sentence (`You gain experience (with a bonus)!`, the parenthetical
+/// before the bang) and replaces the plain line for the event's whole duration, so an unmatched
+/// bonus shape costs every experience surface at once. The percentage already carries the bonus
+/// (measured: bonus lines still sum to ~100 between dings), so the group is non-capturing and
+/// `party`/`pct` keep their indices.
 pub fn classify_exp(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
     if !c.text.starts_with("You gain ") {
         return false;

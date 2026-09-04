@@ -130,6 +130,17 @@ export interface LevelEventE extends LogEventBase {
  * "experience" are 11 player chat lines and one mob emote (`Coercer T\`vala experiences a
  * quickening.`), which is why the classifier's regex is anchored at BOTH ends.
  *
+ * A SERVER EXPERIENCE BONUS MOVES THE SENTENCE rather than adding one:
+ * `You gain experience (with a bonus)! (3.118%)`, with the parenthetical BEFORE the bang.
+ * SECOND-LOG SWEEP (read-only, 2026-09-04, 168 MB): while a bonus event runs the game prints
+ * that shape and NO plain gain line at all — 275 bonus lines and 0 plain lines over the event's
+ * first two hours — so an unmatched bonus shape blanks every experience surface, and `kills` its
+ * credited/witnessed split, for the event's whole duration. The stated percentage ALREADY carries
+ * the bonus: across the six level spans inside the event the bonus-line percentages still sum to
+ * 98.3-101.4 between dings, exactly as the plain lines do. So it needs no multiplier and carries
+ * no extra field — it is the same event. The party arm of the shape is unobserved, and matched
+ * anyway: two independent optional groups in a lane that already exists is not an invented arm.
+ *
  * UNIT HONESTY (law 1): 1% at level 40 is far more raw experience than 1% at level 10, and
  * the log never states a raw exp number, a to-next-level total, or a bar position. Σ percent
  * is therefore "levels of progress", never "xp" — see shared/progressionStats.ts.
