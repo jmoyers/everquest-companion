@@ -612,6 +612,8 @@ const api = {
   checkForUpdates: (): Promise<UpdateStatus> => ipcRenderer.invoke(IPC.checkForUpdates),
   /** Apply the downloaded update now (quit + install + relaunch). */
   installUpdate: (): Promise<void> => ipcRenderer.invoke(IPC.installUpdate),
+  /** Turn automatic updates on/off (on by default); resolves to the resulting status. */
+  setAutoUpdate: (enabled: boolean): Promise<UpdateStatus> => ipcRenderer.invoke(IPC.setAutoUpdate, enabled),
   /** The running app's version (app.getVersion()). */
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
 

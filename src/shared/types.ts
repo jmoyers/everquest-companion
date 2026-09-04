@@ -985,6 +985,13 @@ export interface UpdateStatus {
    *  so instead of showing an eternally-stale "not checked yet" that reads as a broken
    *  updater — dev is the only place that state can persist. */
   disabled?: boolean
+  /**
+   * Is AUTOMATIC updating on? ON by default; when a user turns it off the app never polls, never
+   * auto-downloads and never installs on quit — the manual "Check for updates" and "Restart to
+   * update" buttons are the only paths. Rides along on every status push so the toggle in
+   * Preferences always reflects the real setting.
+   */
+  auto?: boolean
 }
 
 // ----- Split-out sections -----

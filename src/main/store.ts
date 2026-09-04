@@ -597,6 +597,20 @@ export function getUpdateChannel(): UpdateChannel {
 }
 
 /**
+ * Is AUTOMATIC updating on? ON by default — the behaviour that shipped before the toggle existed is
+ * unchanged, so only an explicit `false` (a user who turned it off in Preferences) disables the
+ * background poll + auto-download + apply-on-quit. Absent reads as on.
+ */
+export function getAutoUpdate(): boolean {
+  return store.get('autoUpdate') !== false
+}
+
+/** Persist the automatic-update preference. */
+export function setAutoUpdate(enabled: boolean): void {
+  store.set('autoUpdate', enabled)
+}
+
+/**
  * Last completed update check (epoch millis), or undefined if we have never
  * completed one. Read once at updater init so "checked …" survives a relaunch —
  * including the relaunch our OWN apply-on-quit performs (Task #60).

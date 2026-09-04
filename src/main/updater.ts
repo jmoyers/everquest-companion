@@ -8,7 +8,13 @@
 // Windows it is achievable ONLY because of the installer shape we already ship
 // (per-user one-click NSIS). See the research block below for why.
 //
-// SHAPE OF THE FLOW
+// TOGGLEABLE, ON BY DEFAULT. Everything below is the on state, which is the default and unchanged
+// from before this toggle existed. A user can turn "Automatic updates" OFF in Preferences, and then
+// the app never checks, downloads, or installs on its own — the manual "Check for updates" and
+// "Restart to update" buttons are the only things that act. The flag `autoEnabled` gates the whole
+// cadence (see `schedule`) and `autoInstallOnAppQuit`, so the switch is total.
+//
+// SHAPE OF THE FLOW (auto on — the default)
 //   1. Check on a lazy cadence (shared/update.ts: ~45s after launch, then every
 //      4h +/- 25% jitter, exponential backoff on failure). Never a modal.
 //   2. On `update-available` we start the download OURSELVES (autoDownload is
@@ -161,7 +167,13 @@ import {
   type UpdateLogSinks,
   type UpdateStep
 } from './updateLog'
-import { getUpdateChannel, getUpdateLastCheckedAt, setUpdateLastCheckedAt } from './store'
+import {
+  getAutoUpdate,
+  getUpdateChannel,
+  getUpdateLastCheckedAt,
+  setAutoUpdate as persistAutoUpdate,
+  setUpdateLastCheckedAt
+} from './store'
 import { classifyFailure, recordEvent } from './telemetry'
 
 const { autoUpdater } = electronUpdater
@@ -200,6 +212,16 @@ const LIBRARY_LOGGER = {
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Is AUTOMATIC updating on? ON by default (see `getAutoUpdate`). It gates THREE things and nothing
+ * else: whether the background poll runs at all (`schedule` is a no-op when off), whether
+ * `autoInstallOnAppQuit` is armed, and it rides along on every pushed status so the Preferences
+ * toggle reflects the truth. The manual "Check for updates" and "Restart to update" paths ignore it
+ * entirely — turning auto off never takes away a button, it only stops the app from checking,
+ * downloading and installing on its own. Read once at init from the store, flipped by the IPC.
+ */
+let autoEnabled = true
 
 /** The last status pushed — the single source of truth behind `update:getStatus`. */
 let lastStatus: UpdateStatus = { state: 'idle' }
@@ -575,7 +597,10 @@ export function initUpdater(
   // in-memory-only stamp read "never" for the first minute of every launch —
   // and forever for a user who quits before the first check.
   lastCheckedAt = getUpdateLastCheckedAt()
-  lastStatus = lastCheckedAt ? { state: 'idle', checkedAt: lastCheckedAt } : { state: 'idle' }
+  // Read before the first status so the toggle paints truthfully on the very first frame (on by
+  // default; a stored `false` is a user who turned it off).
+  autoEnabled = getAutoUpdate()
+  lastStatus = { state: 'idle', auto: autoEnabled, ...(lastCheckedAt ? { checkedAt: lastCheckedAt } : {}) }
 
   // Registered in dev too: Preferences shows the version + a (benign) status there.
   ipcMain.handle(IPC.getAppVersion, () => app.getVersion())
@@ -586,18 +611,26 @@ export function initUpdater(
     // forever (dev never checks), which reads as a broken updater rather than an absent one.
     // No checkedAt — a stamp inherited from the store would claim a check this process
     // never made.
-    lastStatus = { state: 'idle', disabled: true }
+    lastStatus = { state: 'idle', disabled: true, auto: autoEnabled }
     ipcMain.handle(IPC.installUpdate, noInstallInDev)
     ipcMain.handle(IPC.checkForUpdates, () => lastStatus)
+    // The preference still PERSISTS in dev, so a developer's choice carries into their packaged
+    // build — there is just no machinery here to start or stop.
+    ipcMain.handle(IPC.setAutoUpdate, (_e, enabled: boolean) => {
+      autoEnabled = enabled === true
+      persistAutoUpdate(autoEnabled)
+      lastStatus = { ...lastStatus, auto: autoEnabled }
+      return lastStatus
+    })
     logInfo('[everquest-companion] Auto-update disabled (dev / not packaged).')
     return
   }
 
   const currentVersion = app.getVersion()
 
-  /** Record + broadcast a status. `checkedAt` rides along on every push once known. */
+  /** Record + broadcast a status. `checkedAt` and `auto` ride along on every push. */
   const push = (status: UpdateStatus): void => {
-    lastStatus = lastCheckedAt ? { ...status, checkedAt: lastCheckedAt } : status
+    lastStatus = { ...status, auto: autoEnabled, ...(lastCheckedAt ? { checkedAt: lastCheckedAt } : {}) }
     const win = getMainWindow()
     if (win && !win.isDestroyed()) win.webContents.send(IPC.onUpdateStatus, lastStatus)
   }
@@ -643,7 +676,10 @@ export function initUpdater(
   // is armed. That is why we never persist a 'ready' state across restarts: the
   // startup check must be allowed to run and re-arm it. Also why a non-zero exit
   // code skips the install — a crash never installs anything.
-  autoUpdater.autoInstallOnAppQuit = true
+  // ARMED WHEN AUTOMATIC UPDATES ARE ON (the default). With auto off this is false, so a staged
+  // build — even one the user downloaded via the manual "Check for updates" — is NEVER installed
+  // without an explicit "Restart to update" click.
+  autoUpdater.autoInstallOnAppQuit = autoEnabled
   // We ship an NSIS target, never the web installer. Left at its default (false)
   // electron-updater logs a deprecation nag on EVERY download
   // (NsisUpdater.js:44-46).
@@ -711,8 +747,16 @@ export function initUpdater(
     return lastStatus
   }
 
-  /** Self-rescheduling poll loop — a setInterval can't carry jitter or backoff. */
+  /**
+   * Self-rescheduling poll loop — a setInterval can't carry jitter or backoff.
+   *
+   * THE AUTO-UPDATE GATE LIVES HERE, which is what makes it total: every background check reaches
+   * the feed through this one function — startup, the periodic re-arm, the post-manual-check
+   * re-anchor, and both resume paths — so a single `autoEnabled` guard turns the WHOLE automatic
+   * cadence off. The manual "Check for updates" IPC calls `runCheck` directly and is untouched.
+   */
   const schedule = (phase: 'startup' | 'periodic' | 'resume'): void => {
+    if (!autoEnabled) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       void runCheck(false).finally(() => schedule('periodic'))
@@ -723,11 +767,31 @@ export function initUpdater(
   ipcMain.handle(IPC.checkForUpdates, async (): Promise<UpdateStatus> => {
     const res = await runCheck(true)
     // Re-anchor the background cadence off the manual check so we don't poll
-    // again three seconds later.
+    // again three seconds later. A no-op when auto is off (schedule's own guard).
     schedule('periodic')
     return res
   })
 
+  // renderer -> main: turn AUTOMATIC updates on/off. Persist it, arm or disarm apply-on-quit, and
+  // start or stop the background cadence — then re-push so the toggle and the nav chip reflect it at
+  // once. Turning OFF never discards a staged 'ready' build: the manual "Restart to update" button
+  // still applies it; we just stop doing anything on our own.
+  ipcMain.handle(IPC.setAutoUpdate, (_e, enabled: boolean): UpdateStatus => {
+    autoEnabled = enabled === true
+    persistAutoUpdate(autoEnabled)
+    autoUpdater.autoInstallOnAppQuit = autoEnabled
+    if (autoEnabled) {
+      schedule('startup')
+    } else if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    push(lastStatus)
+    return lastStatus
+  })
+
+  // Begins the background cadence when auto is on (the default); a no-op when a user has turned it
+  // off (schedule's own guard).
   schedule('startup')
 
   // THE OTHER HALF OF "RETRY ON RESUME" (JOS-307), and it is the half that covers the common case.
