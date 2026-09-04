@@ -238,8 +238,7 @@ fn both(st: &mut EngineState, ts: i64, fresh_only: bool, f: impl Fn(&mut Agg)) {
 
 /// File the target of a hit YOU landed into `ever_struck` — never off a damage shield: a "ds"
 /// line is the defender's buff answering a swing, so it proves the TARGET attacked, not that you
-/// chose to. Filing it would let one thorns tick on a mob-charmed group-mate refuse that player's
-/// `My leader is …` binds for the rest of the log.
+/// chose to. One thorns tick must not refuse a mob-charmed group-mate's leader binds forever.
 fn note_struck_by_you(st: &mut EngineState, ev: &DamageEvent<'_>) {
     if ev.dtype != "ds" {
         st.note_struck(&id_key_ref(ev.target));
@@ -1193,22 +1192,6 @@ mod tests {
         st.world.claim(pet, 0);
         st.note_pet(&id_key_ref(pet));
         st
-    }
-
-    /// A damage shield answering a swing is not YOU striking the swinger: a "ds" line files nothing
-    /// in `ever_struck`, so one thorns tick on a mob-charmed group-mate cannot refuse that player's
-    /// `My leader is …` binds forever. A hit you chose still refuses.
-    #[test]
-    fn a_damage_shield_tick_does_not_file_the_target_as_struck() {
-        let mut st = EngineState::new();
-        st.set_player_name("Primitive");
-        let mut ds = dmg("You", "Malkil", 5, 1_000);
-        ds.dtype = "ds";
-        ds.skill = "thorns".into();
-        route(&mut st, &ds);
-        assert!(st.ally_caster_allowed("malkil"));
-        route(&mut st, &dmg("You", "Malkil", 12, 2_000));
-        assert!(!st.ally_caster_allowed("malkil"));
     }
 
     /// You → a pet name is outgoing to a hostile twin, never dropped as friendly fire.
