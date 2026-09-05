@@ -127,7 +127,8 @@ function slotWord(slot: string): string {
 }
 
 /** The slot a target cleared in (fork ask, kaltinril 2026-09-04) — flexShrink 0: one short word
- *  that must survive the ellipsis race the mob text is allowed to lose. Null for a wished
+ *  that sits OUTSIDE the tile's shrinkable group entirely, so the name and mob ellipsize and the
+ *  slot never clips (fork report: it printed cut off inside the group). Null for a wished
  *  non-upgrade, which cleared nothing and claims nothing. */
 function SlotChip({ slot }: { slot: GearTarget['slot'] }): JSX.Element | null {
   if (slot === undefined) return null
@@ -223,7 +224,6 @@ function TargetRow({
         ) : (
           name
         )}
-        <SlotChip slot={target.slot} />
         <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
           {mobLinked ? (
             <>
@@ -235,6 +235,7 @@ function TargetRow({
           )}
         </Typography>
       </Box>
+      <SlotChip slot={target.slot} />
       {onToggleWish !== undefined && (
         <WishToggle
           name={target.name}
