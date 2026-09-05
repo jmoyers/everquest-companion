@@ -161,20 +161,20 @@ test('SHIELD is a pick in the Weapon type control (2026-08-15 ruling), and it un
 })
 
 test('IGNORE HASTE drops the haste credit from EFF DMG and BIS, and the WORN haste reaches a threshold too', () => {
-  // The Club states HASTE 10 - under the dps focus (roleWeights.ts) that is 40 of its ~49; without
-  // it the club reads ~9 (a 0.17 ratio at 20, two regen at 3). Thelvorn reads ~20 with no haste
-  // at all. `effdmg>10` is the line between the two readings of the Club, and Thelvorn clears it
-  // either way - so the threshold is what proves the flag reached the filter, not just the cells.
-  const counted = filterGearRows(ALL, filters({ text: 'effdmg>10' }))
+  // The Club states HASTE 10 - under the dps focus (roleWeights.ts) that is 40 of its ~51; without
+  // it the club reads ~11 (a 0.17 ratio at 30 since 2026-09-04, two regen at 3). Thelvorn reads
+  // well clear with no haste at all. `effdmg>12` is the line between the two readings of the Club,
+  // and Thelvorn clears it either way - the threshold proves the flag reached the filter.
+  const counted = filterGearRows(ALL, filters({ text: 'effdmg>12' }))
   assert.ok(names(counted).includes('Wooden Club'), 'haste counts by default')
-  const ignored = filterGearRows(ALL, filters({ text: 'effdmg>10', ignoreHaste: true }))
+  const ignored = filterGearRows(ALL, filters({ text: 'effdmg>12', ignoreHaste: true }))
   assert.ok(!names(ignored).includes('Wooden Club'), 'the ignore flag reaches the threshold too')
   assert.ok(names(ignored).includes('Thelvorn, Blade of Light'), 'a no-haste weapon is untouched')
   // AND SO DOES THE HASTE THE CHARACTER WEARS (2026-08-25): a player already in a 10% item gets no
   // credit for the Club's 10% - the same rule, arriving through `GearFilterDeps` off the dump.
-  const worn = filterGearRows(ALL, filters({ text: 'effdmg>10' }), { ownedHaste: 10 })
+  const worn = filterGearRows(ALL, filters({ text: 'effdmg>12' }), { ownedHaste: 10 })
   assert.ok(!names(worn).includes('Wooden Club'), 'worn haste reaches the threshold')
-  const lesser = filterGearRows(ALL, filters({ text: 'effdmg>10' }), { ownedHaste: 5 })
+  const lesser = filterGearRows(ALL, filters({ text: 'effdmg>12' }), { ownedHaste: 5 })
   assert.ok(names(lesser).includes('Wooden Club'), 'and five points above the worn 5% still count')
 })
 
