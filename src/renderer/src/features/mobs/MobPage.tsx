@@ -43,11 +43,14 @@
 import { type JSX, useEffect, useState } from 'react'
 import { Chip, Divider, Paper, Stack, Typography } from '@mui/material'
 import type { KillMap, MobEntry, MobKnowledge, MobQuestUse } from '@shared/types'
+import type { ZoneShort } from '@shared/maps'
 import { killsFor } from '@shared/kills'
 import { CONSIDER_FACTION_COLOR, CONSIDER_FACTION_LABEL, considerDifficultyShort } from '@shared/logEvents'
 import { wikiPageUrl } from '@shared/wiki'
 import { formatDate, formatDateTime } from '../../lib/formatDate'
 import { tierStyle } from '../../lib/tierChip'
+import { CellLink } from '../../lib/CellLink'
+import { dropZoneTarget } from '../gear/dropLinks'
 import { outOfEraLabel } from './dropEra'
 import { ItemDrillDown, type OpenItem } from './MobDropRow'
 // The two DROP BLOCKS and the derivation behind them, split out at the 400-line ceiling when the
@@ -262,14 +265,30 @@ function MobStats({
   )
 }
 
-/** Level/zone as the WIKI states them — a range as often as a number. */
-function WikiLevelZone({ zone, levelText }: { zone?: string; levelText?: string }): JSX.Element | null {
+/** Level/zone as the WIKI states them — a range as often as a number. The zone opens its map when
+ *  the table resolves the spelling (dropLinks' refuse-over-guess rule) and the host routes it —
+ *  the far end of the Gear tab's Mob door should not be where the zone links stop working. */
+function WikiLevelZone({
+  zone,
+  levelText,
+  onOpenMapZone
+}: {
+  zone?: string
+  levelText?: string
+  onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
+}): JSX.Element | null {
   // Deliberately falsiness, not nullishness: an empty string from the page says nothing, so a
   // blank zone AND a blank level renders no line at all (what `zone || levelText` always meant).
   if (!zone && !levelText) return null
+  const stem = zone ? dropZoneTarget(zone) : null
   return (
     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-      {zone}
+      {zone &&
+        (stem !== null && onOpenMapZone !== undefined ? (
+          <CellLink text={zone} onOpen={() => { onOpenMapZone(stem) }} />
+        ) : (
+          zone
+        ))}
       {zone && levelText && ' · '}
       {levelText && `level ${levelText}`}
     </Typography>
@@ -352,7 +371,19 @@ function WikiSourceLine({ wikiUrl }: { wikiUrl?: string }): JSX.Element | null {
  * identity than this page's name would: the raid roster matches its targets article-insensitively
  * (bossStatus.ts), so it pins the record it matched, exactly as `entry` pins the identity half.
  */
-export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }): JSX.Element {
+export function MobPage({
+  target,
+  kills,
+  onOpenLoot,
+  onOpenMapZone
+}: {
+  target: MobTarget
+  kills: KillMap
+  /** the drop dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17); absent, no button */
+  onOpenLoot?: (item: string) => void
+  /** the zone line's route to the Maps tab; absent, the zone stays the plain caption it was */
+  onOpenMapZone?: (zone: ZoneShort) => void
+}): JSX.Element {
   const { mob, seed, entry, con } = target
   const kill = target.kill ?? killsFor(kills, mob)
   const { data, loading } = useMobKnowledge(mob, seed, entry)
@@ -377,7 +408,7 @@ export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }
         con={con}
         kill={kill}
       />
-      <WikiLevelZone zone={data?.zone} levelText={data?.levelText} />
+      <WikiLevelZone zone={data?.zone} levelText={data?.levelText} onOpenMapZone={onOpenMapZone} />
       <DropsSection
         wiki={wiki}
         outOfEra={outOfEra}
@@ -396,7 +427,12 @@ export function MobPage({ target, kills }: { target: MobTarget; kills: KillMap }
 
       {/* One hop deep: the item's own dialog. Mounted only on demand (see ItemDrillDown). */}
       {drill && (
-        <ItemDrillDown item={drill.item} family={drill.family} onClose={() => setDrill(null)} />
+        <ItemDrillDown
+          item={drill.item}
+          family={drill.family}
+          onClose={() => setDrill(null)}
+          onOpenLoot={onOpenLoot}
+        />
       )}
     </>
   )

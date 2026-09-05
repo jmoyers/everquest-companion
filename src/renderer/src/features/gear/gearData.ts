@@ -27,6 +27,8 @@ import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
 import { isKept } from '@shared/lootDisposition'
 import { useLootHistory } from '../loot/useLootHistory'
 import { useComboSnap } from '../profiles/ClassComboData'
+import { useModule } from '../../lib/useModule'
+import type { CharacterSnap } from '@shared/characterTypes'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
 // see `useGearCompare` for why this channel and not the ownership payload beside it.
 import { usePlannerInventory } from '../planner/plannerInventory'
@@ -41,8 +43,26 @@ import { sourceIndex } from '../planner/sourceIndex'
 import { sameClasses } from '../planner/plannerClasses'
 import { gearOwnershipMap, ownershipFor, type GearOwnershipMap } from './gearOwnership'
 // JOS-329: the two pieces of state below survive a tab switch now — see each one's own comment.
-import { sanitizeGearClasses, sanitizeUpgrade } from './areaMemory'
+import { sanitizeGearClassPins, sanitizeUpgrade, type GearClassPins } from './areaMemory'
 import { useRemembered } from './useAreaMemory'
+
+/**
+ * The index row as the TABLE reads it: the drop trio's four arrays REQUIRED rather than optional
+ * (the wire omits them for a row nobody names; the cells want `[]`), and the wider search key.
+ *
+ * THE TRIO ARRIVES ON THE WIRE since 2026-08-25 (fork decision, kaltinril — data-server ruling 4,
+ * *the renderer never munges domain data*): `src/main/planner/gearIndex.ts` folds both witnesses
+ * through `shared/itemSources.dropDetails` at build. From 2026-08-15 to then this file ran that
+ * merge itself, 6,814 rows per window, over a catalog inversion only the renderer could load. What
+ * this type still ADDS is the search key, so it stays.
+ */
+export interface GearViewRow extends GearRow {
+  dropMobs: string[]
+  dropZones: string[]
+  dropLevels: string[]
+  /** `dropMobs[i]`'s catalog page title, `''` when the witness stated none — the link's pin. */
+  dropPages: string[]
+}
 
 // ---- the fetch ----------------------------------------------------------------------
 
@@ -51,13 +71,41 @@ function effectHaystack(row: GearRow): string {
   return row.effects.map((e) => `${e.name} ${e.detail ?? ''}`).join(' ')
 }
 
-/** The index row with the table's own, wider search key. Same type — only the haystack grew. */
-function toRow(row: GearRow): GearRow {
-  return { ...row, searchKey: `${row.name} ${effectHaystack(row)}`.toLowerCase() }
+/**
+ * The index row with the table's own, wider search key. Same type — only the haystack grew.
+ *
+ * WHAT THE HAYSTACK HOLDS: the name, the effects, the slots, the classes, the weapon skill, the
+ * drop mobs and zones, and `shield` for a row the index flagged. WHAT IT DOES NOT HOLD, since
+ * 2026-08-25 (fork review): the STAT VECTOR and the drop LEVELS. `ac 13 cha 15 …` folded into
+ * every key made typing `10` or `ac` match most of the corpus - a number is a threshold's question
+ * (`ac>=20`, gearFilter.ts), never a substring's, and a level text like `36-40` is the same kind
+ * of number wearing a dash.
+ */
+function toRow(row: GearRow): GearViewRow {
+  const dropMobs = row.dropMobs ?? []
+  const dropZones = row.dropZones ?? []
+  const searchParts = [
+    row.name,
+    effectHaystack(row),
+    row.slots.join(' '),
+    row.classes.join(' '),
+    row.skill ?? '',
+    dropMobs.join(' '),
+    dropZones.join(' '),
+    row.shield === true ? 'shield' : ''
+  ]
+  return {
+    ...row,
+    dropMobs,
+    dropZones,
+    dropLevels: row.dropLevels ?? [],
+    dropPages: row.dropPages ?? [],
+    searchKey: searchParts.join(' ').toLowerCase()
+  }
 }
 
 export interface GearIndexState {
-  rows: GearRow[]
+  rows: GearViewRow[]
   /** false until the first fetch settles */
   ready: boolean
   /** the corpus's own `scrapedAt` — WHEN the data is from */
@@ -389,19 +437,24 @@ export function useGearClasses(): GearClasses {
   // An unresolved slot contributes nothing, so a half-known combo yields the classes it does know
   // and nothing it does not (law 1) — the same read PlannerView makes.
   const detected = useMemo(() => (current === null ? [] : resolvedClasses(current)), [current])
-  const [pinned, setPinned] = useRemembered<ClassAbbr[] | null>('eq.gear.classes', sanitizeGearClasses)
+  // THE PIN IS PER CHARACTER (fork ask, kaltinril 2026-09-04): a twink druid and a WAR/MNK/SHM
+  // main each keep their own, keyed by name, so a character switch stops resetting the trio by
+  // hand. A character with no pin of its own reads the legacy `'*'` fallback, then detection.
+  const me = useModule<CharacterSnap>('character')?.character?.name ?? '*'
+  const [pins, setPins] = useRemembered<GearClassPins | null>('eq.gear.classes', sanitizeGearClassPins)
+  const pinned = pins === null ? null : (pins[me] ?? pins['*'] ?? null)
 
   const set = useCallback(
     (next: ClassAbbr[]) => {
-      setPinned(next)
+      setPins({ ...(pins ?? {}), [me]: next })
     },
-    [setPinned]
+    [pins, setPins, me]
   )
   // ADOPTING THE OFFER PINS, and always did: taking today's detection is accepting one answer, not
   // handing the filter back to inference forever (the `useBrowseClasses.adopt` rule, stated there).
   const adopt = useCallback(() => {
-    setPinned(detected)
-  }, [detected, setPinned])
+    setPins({ ...(pins ?? {}), [me]: detected })
+  }, [pins, detected, setPins, me])
 
   const classes = pinned ?? detected
   const offer = pinned !== null && detected.length > 0 && !sameClasses(pinned, detected) ? detected : null

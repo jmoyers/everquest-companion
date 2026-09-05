@@ -32,7 +32,7 @@
 // filter runs on a deferred value, and the catalog is an ES-imported JSON already bundled for
 // main's mob lookup. No IPC, no network, works offline.
 
-import { type JSX, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { type JSX, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -52,9 +52,13 @@ import type {
   MobEntry
 } from '@shared/types'
 import { killIndex, killsFor } from '@shared/kills'
+import type { ZoneShort } from '@shared/maps'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
+import { parkReturn, takeReturn } from '../../lib/navReturn'
 import { useModule } from '../../lib/useModule'
+import { CellLink } from '../../lib/CellLink'
+import { dropZoneTarget } from '../gear/dropLinks'
 import { MobPage } from './MobPage'
 import { RecentlyConsidered } from './RecentlyConsidered'
 import { MOB_CATALOG, searchMobs } from './mobSearch'
@@ -81,10 +85,14 @@ function useKills(): KillMap {
 function MobResultRow({
   entry,
   kills,
-  onOpen
+  onOpen,
+  onOpenMapZone
 }: {
   entry: MobEntry
   kills: KillMap
+  /** a zone spelling's door to its map (fork decision, kaltinril 2026-08-18: cross-link things); the row's
+   *  own click still opens the mob — CellLink stops the propagation */
+  onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
   onOpen: (t: MobTarget) => void
 }): JSX.Element {
   const drops = entry.drops?.length ?? 0
@@ -121,7 +129,19 @@ function MobResultRow({
         </Typography>
       )}
       <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
-        {entry.zones?.join(', ')}
+        {(entry.zones ?? []).map((z, i) => {
+          const stem = onOpenMapZone === undefined ? null : dropZoneTarget(z)
+          return (
+            <Box key={z} component="span">
+              {i > 0 && ', '}
+              {stem === null || onOpenMapZone === undefined ? (
+                z
+              ) : (
+                <CellLink text={z} onOpen={() => { onOpenMapZone(stem) }} />
+              )}
+            </Box>
+          )
+        })}
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
       {kill && kill.count > 0 && (
@@ -258,12 +278,18 @@ function MobDrill({
   target,
   kills,
   nav,
-  onClose
+  onClose,
+  onOpenLoot,
+  onOpenMapZone
 }: {
   target: MobTarget
   kills: KillMap
   nav?: NavBack
   onClose: () => void
+  /** the drop dialog's route to the Loot tab (fork decision, kaltinril 2026-08-17) — MobPage passes it through */
+  onOpenLoot?: (item: string) => void
+  /** the page's zone line's route to the Maps tab — MobPage passes it through the same way */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
   // ONE expression, read by TWO things (JOS-201): the button below, and the mouse's Back button,
   // which registers it for as long as this page is on screen. The browse surface behind it
@@ -281,10 +307,40 @@ function MobDrill({
         </Button>
       </Box>
       <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-        <MobPage key={`${target.mob}#${target.entry?.page ?? ''}`} target={target} kills={kills} />
+        <MobPage
+          key={`${target.mob}#${target.entry?.page ?? ''}`}
+          target={target}
+          kills={kills}
+          onOpenLoot={onOpenLoot}
+          onOpenMapZone={onOpenMapZone}
+        />
       </Box>
     </Stack>
   )
+}
+
+/**
+ * THE DRILL STATE, AND THE PAGE THAT COMES BACK WITH THE TAB (fork decision, kaltinril 2026-08-25 -
+ * lib/navReturn.ts). This view unmounts on every tab switch, so a drop dialog's "Open in Loot"
+ * used to say `Back to Mobs` and land on the search list. The drill is PARKED whenever the view
+ * leaves the screen and TAKEN only when a Back is what brought it back; a deep-linked `target`
+ * still wins, and every other arrival - the nav row, a bare opener - opens on the browse surface
+ * exactly as before. The take runs in the state INITIALIZER so the page is there on the first
+ * paint (React uses the first initializer result, so StrictMode's second call reading `null` is
+ * the one it discards); the park reads a ref so the unmount sees the drill as it last rendered.
+ */
+function useDrill(target: MobTarget | null | undefined): [MobTarget | null, (t: MobTarget | null) => void] {
+  const [drill, setDrill] = useState<MobTarget | null>(() => {
+    // Taken UNCONDITIONALLY, so a deep link arriving over a stale Back note spends the note too.
+    const parked = takeReturn('mobs') as MobTarget | null
+    return target ?? parked
+  })
+  const drillRef = useRef(drill)
+  useEffect(() => {
+    drillRef.current = drill
+  }, [drill])
+  useEffect(() => () => parkReturn('mobs', drillRef.current), [])
+  return [drill, setDrill]
 }
 
 /**
@@ -305,16 +361,26 @@ export default function MobsView({
   target,
   targetNonce,
   onTargetConsumed,
-  nav
+  nav,
+  onOpenLoot,
+  onOpenMapZone
 }: {
   target?: MobTarget | null
   targetNonce?: number
   onTargetConsumed?: () => void
   nav?: NavBack
+  /**
+   * The item drill-down's route to the Loot tab (fork decision, kaltinril 2026-08-17) — App's `openLoot`,
+   * the same contract the Gear and Wishlist names use. Threaded, never imported: this view
+   * knows nothing about the router, only that a page it shows may hand an item onward.
+   */
+  onOpenLoot?: (item: string) => void
+  /** The page's zone line's route to the Maps tab — App's `openMapZone`, same posture. */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
   const [query, setQuery] = useState('')
   const deferred = useDeferredValue(query)
-  const [drill, setDrill] = useState<MobTarget | null>(target ?? null)
+  const [drill, setDrill] = useDrill(target)
   // A NATIVE drill — a row on this tab's own surfaces. It ends whatever journey a link parked, so
   // Back below means the browse surface, which is where the reader genuinely came from.
   const openNative = (t: MobTarget): void => {
@@ -344,7 +410,17 @@ export default function MobsView({
   // when you zone, so memoize on the zone string.
   const zoneRows = useMemo(() => (zone ? mobsInZone(zone, MOB_CATALOG) : []), [zone])
 
-  if (drill) return <MobDrill target={drill} kills={kills} nav={nav} onClose={() => setDrill(null)} />
+  if (drill)
+    return (
+      <MobDrill
+        target={drill}
+        kills={kills}
+        nav={nav}
+        onClose={() => setDrill(null)}
+        onOpenLoot={onOpenLoot}
+        onOpenMapZone={onOpenMapZone}
+      />
+    )
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%' }}>
@@ -365,7 +441,8 @@ export default function MobsView({
                 {hits.length} of {MOB_CATALOG.length} mobs
               </Typography>
               {hits.map((h) => (
-                <MobResultRow key={h.entry.page} entry={h.entry} kills={kills} onOpen={openNative} />
+                <MobResultRow key={h.entry.page} entry={h.entry} kills={kills} onOpen={openNative}
+                  onOpenMapZone={onOpenMapZone} />
               ))}
             </>
           ) : (

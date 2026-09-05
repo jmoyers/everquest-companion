@@ -29,7 +29,8 @@
 // PURE AND NODE-TESTABLE (relative value imports, the house law) — `tests/gearColumnPrefs.test.mts`
 // drives every branch without a DOM, a React tree or a `localStorage`.
 
-import { PICKABLE_COLUMNS } from './gearColumns'
+import { PICKABLE_COLUMNS, gearColumnIds } from './gearColumns'
+import { sanitizeFlag } from './areaMemory'
 import { DEFAULT_GEAR_FILTERS, type GearFilters, type GearSortKey } from './gearFilter'
 
 // ---- the column choice ---------------------------------------------------------------------
@@ -66,6 +67,82 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
   return PICKABLE_COLUMNS.filter((k) => on.has(k))
 }
 
+// ---- the column widths (fork decision, kaltinril 2026-08-15: *resize and have the sizes stick*) -----------
+
+/** The drag clamp: narrower than 48 has no legible content, wider than 1200 is a typo. */
+export const GEAR_WIDTH_MIN = 48
+export const GEAR_WIDTH_MAX = 1200
+
+/** The ONE spelling of a legal column width — the drag, the double-click fit and the sanitizer all
+ *  answer through it, so the three paths cannot round or bound differently. */
+export function clampGearWidth(value: number): number {
+  return Math.round(Math.min(GEAR_WIDTH_MAX, Math.max(GEAR_WIDTH_MIN, value)))
+}
+
+/** One cell as the double-click fit reads it: what its content needs, and the padding IT states. */
+export interface CellMeasure {
+  /** the content's own width - text at full length, never the clipped box (GearTableHead.contentWidth) */
+  content: number
+  /** the cell's resolved horizontal padding, both edges */
+  padding: number
+}
+
+/**
+ * THE WIDTH THAT FITS A COLUMN: the widest `content + padding` over the header and every mounted
+ * body cell, clamped like any other width. The arithmetic is here, pure, because it is the part
+ * that went wrong twice (GearTableHead.tsx carries the two post-mortems) and the part a node test
+ * can hold: the padding is EACH CELL'S OWN, never a constant - a numeric header pads 8+16 and an
+ * identity cell 16+16, and one number fits neither - and the same measures give the same answer,
+ * which is what makes a second double-click land where the first did instead of eight pixels off.
+ */
+export function fitColumnWidth(cells: readonly CellMeasure[]): number {
+  let want = 0
+  for (const cell of cells) want = Math.max(want, cell.content + cell.padding)
+  return clampGearWidth(want)
+}
+
+/**
+ * The user's dragged column widths in px, keyed by column id — the identity columns and `owned` by
+ * their fixed names, every numeric column by its `GearSortKey`. ABSENT (null) means never resized,
+ * and the automatic layout (`gearTableLayout`) answers; PRESENT switches the whole table to stated
+ * pixels, because a hand-set width beside percentage columns would reflow under every pane resize —
+ * the opposite of "stick".
+ */
+export type GearColumnWidths = Record<string, number>
+
+// The identity-column ids, DERIVED from the roster (`gearColumnIds` with no numeric columns and
+// every flag on) rather than restated — a column added to the table is accepted here by construction.
+const FIXED_WIDTH_IDS: ReadonlySet<string> = new Set(gearColumnIds([], true, true))
+
+/**
+ * A stored width map, or `null` when nothing usable is stored. Unknown ids drop (a column this
+ * build no longer draws is not an error), non-numbers drop, and every survivor is clamped — a
+ * corrupted store degrades to the automatic layout rather than to a broken table (JOS-105).
+ */
+export function sanitizeWidths(raw: unknown): GearColumnWidths | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const out: GearColumnWidths = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue
+    if (!FIXED_WIDTH_IDS.has(key) && !PICKABLE.has(key)) continue
+    out[key] = clampGearWidth(value)
+  }
+  return Object.keys(out).length === 0 ? null : out
+}
+
+// ---- the drop columns choice ---------------------------------------------------------------
+
+/**
+ * Are the Zone / Level / Mob columns drawn (fork decision, kaltinril 2026-08-15: *make zone/level/mob an optional
+ * toggle*)? ON unless a stored `false` says otherwise — the columns shipped on, and an unreadable
+ * store must come back ON (`sanitizeFlag`'s fallback, the same degradation `eraOnly` states). One
+ * flag for the trio: they are one answer ("where does it drop"), and three toggles would invite a
+ * mob column with no zone to anchor it.
+ */
+export function sanitizeDropCols(raw: unknown): boolean {
+  return sanitizeFlag(raw, true)
+}
+
 // ---- the toolbar choice --------------------------------------------------------------------
 
 /**
@@ -76,7 +153,10 @@ export function toggleColumn(base: readonly GearSortKey[], key: GearSortKey): Ge
  * that shaped phase 3) — it is the one control that is not a narrowing of the corpus but the way
  * into it, and a Gear tab you cannot type into is not a configuration anyone meant to reach.
  */
-export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'upgrade'] as const
+// `shield` was a control for two hours on 2026-08-15 and is NOT legacy vocabulary: it shipped in a
+// test build only, and kaltinril (the fork) ruled it into the Weapon type dropdown (`GearWeaponPick`) before a
+// release carried the toggle. `haste` (same day) draws on the identity row, after the Owned chip.
+export const GEAR_CONTROLS = ['slot', 'weapon', 'effect', 'classes', 'era', 'owned', 'haste', 'upgrade'] as const
 
 export type GearControl = (typeof GEAR_CONTROLS)[number]
 
@@ -88,7 +168,8 @@ export const GEAR_CONTROL_LABEL: Record<GearControl, string> = {
   classes: 'Classes',
   era: 'Current era',
   owned: 'Owned or looted',
-  upgrade: 'Upgrade state'
+  upgrade: 'Upgrade state',
+  haste: 'Ignore haste'
 }
 
 const CONTROLS: ReadonlySet<string> = new Set<string>(GEAR_CONTROLS)
@@ -126,6 +207,9 @@ export const LEGACY_GEAR_CONTROLS: readonly string[] = [
   'upgrade',
   'ratio',
   'thresholds'
+  // `weapon` is not here and neither is `haste` (added 2026-08-15), for the same reason: a control
+  // that did not exist when a legacy bare-array choice was written is a control that choice never
+  // ruled on, so `resolveChoice` must turn it ON — which it does exactly BECAUSE it is absent here.
 ]
 
 /**
@@ -223,6 +307,8 @@ export function inertFilters(filters: GearFilters, visible: ReadonlySet<GearCont
     classes: visible.has('classes') ? filters.classes : [],
     // NOT `d.eraOnly` — that is `true`. Inert is the value that hides nothing.
     eraOnly: visible.has('era') ? filters.eraOnly : false,
-    ownedOnly: visible.has('owned') ? filters.ownedOnly : false
+    ownedOnly: visible.has('owned') ? filters.ownedOnly : false,
+    // Inert = haste COUNTS: the score's default reading, and the one that drops no term silently.
+    ignoreHaste: visible.has('haste') ? filters.ignoreHaste : false
   }
 }

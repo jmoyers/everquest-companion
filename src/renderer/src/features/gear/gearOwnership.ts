@@ -46,6 +46,8 @@
 //    a surface starts disagreeing with itself.
 
 import type { GearRow } from '../../../../shared/planner/gear'
+import { scaleGearStat } from '../../../../shared/planner/gearScale'
+import { upgradeStateForTier } from '../../../../shared/itemUpgrade'
 import {
   ownershipForLootName,
   ownershipIndexFrom,
@@ -63,6 +65,11 @@ export interface OwnedFact {
   /** the ` +N` the name stated. ABSENT means it stated none — never `+0` (phase 1's rule). */
   tier?: number
   count: number
+  /** an EQUIPPED copy sitting in a client cell that names no wiki slot — `Any Slot` / `Held`
+   *  (`OwnershipRow.slot === null`). It is worn (its haste is haste you have) but it does not
+   *  OCCUPY its native slot, so it must not set that slot's bar (fork report, kaltinril
+   *  2026-09-04: a resist shield parked in Any Slot barred the offhand it was not in). */
+  wildcard?: true
 }
 
 /** Everything this app can say about one candidate item. */
@@ -130,10 +137,16 @@ export function ownedFacts(rows: readonly OwnershipRow[]): OwnedFact[] {
   const groups = new Map<string, OwnedFact>()
   for (const row of rows) {
     if (row.exaltation) continue
-    const key = `${row.place}|${row.tier === undefined ? '' : String(row.tier)}`
+    const wildcard = row.place === 'equipped' && row.slot === null ? true : undefined
+    const key = `${row.place}|${row.tier === undefined ? '' : String(row.tier)}|${wildcard === undefined ? '' : 'any'}`
     const seen = groups.get(key)
     if (seen) seen.count += row.count
-    else groups.set(key, row.tier === undefined ? { place: row.place, count: row.count } : { place: row.place, tier: row.tier, count: row.count })
+    else {
+      const fact: OwnedFact = { place: row.place, count: row.count }
+      if (row.tier !== undefined) fact.tier = row.tier
+      if (wildcard) fact.wildcard = true
+      groups.set(key, fact)
+    }
   }
   // Place first (the reading order above), then plus-state ascending with "stated nothing" first:
   // the row that says least is the weakest claim and belongs at the front of the sentence.
@@ -191,6 +204,34 @@ export function gearOwnershipMap(
  */
 export function ownershipFor(map: GearOwnershipMap, row: Pick<GearRow, 'key'>): GearOwnership {
   return map.get(row.key) ?? NOTHING
+}
+
+// ---- the haste this character wears (fork decision, kaltinril 2026-08-25) ------------------
+
+/**
+ * THE BEST HASTE PERCENTAGE ON AN EQUIPPED ROW, or 0 when nothing worn states one — the number
+ * the derived scores credit an item's haste only above (`gearScale.GearDerivedOpts.ownedHaste`;
+ * worn haste does not stack).
+ *
+ * EQUIPPED ROWS ONLY. A haste sword in the bank or a bag is worn by nobody, so it counts for
+ * nothing here (fork ruling, kaltinril: *haste should only be EQUIPPED items*) — the `place`
+ * classification the fold already makes is the whole gate, and the six other places are simply
+ * not read. The row is joined to the corpus BY KEY (phase 3's seam) to read its stated HASTE, and
+ * that number is scaled to the ` +N` the dump printed (`scaleGearStat`, the flat rule — the same
+ * floor `gearCompare.equippedState` takes: the tier its name states, no banked fraction). A worn
+ * item the corpus does not know, or one stating no haste line, contributes nothing (law 1).
+ */
+export function equippedHaste(entries: readonly OwnershipEntry[], byKey: ReadonlyMap<string, GearRow>): number {
+  let best = 0
+  for (const [key, rows] of entries) {
+    const haste = byKey.get(key)?.stats.HASTE
+    if (haste === undefined) continue
+    for (const row of rows) {
+      if (row.place !== 'equipped') continue
+      best = Math.max(best, scaleGearStat('HASTE', haste, upgradeStateForTier(row.tier)))
+    }
+  }
+  return best
 }
 
 // ---- the words ------------------------------------------------------------------------------

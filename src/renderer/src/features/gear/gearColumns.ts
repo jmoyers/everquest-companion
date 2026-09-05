@@ -34,7 +34,7 @@
 // rather than a preference. The table is `tableLayout: fixed` (a windowed table whose columns
 // re-measure per slice moves its row heights under a hook whose every index assumes they cannot —
 // LootTables.tsx states the full argument). Under percentages the numeric columns SHARE a fixed
-// budget: N columns each take `NUMERIC_BUDGET / N`, the identity columns take a constant, and the
+// budget: N columns each take `numericBudget / N`, the identity columns take a constant, and the
 // NAME column states no width at all so it absorbs the slack. Each share is CLAMPED both ways —
 // a CEILING (`MAX_NUMERIC_WIDTH`) because a stat cell holds at most `-12345` and handing four
 // columns 13% apiece starves the one column that actually ellipsises, the item name; and a FLOOR
@@ -49,8 +49,8 @@
 // the table, so `tests/gearFilter.test.mts` can assert that a sort key brings its column with it
 // and `tests/gearColumnPrefs.test.mts` that a chosen set of thirty overflows on purpose.
 
-import { GEAR_PERCENT_STAT_KEYS, GEAR_STAT_KEYS, type GearStatKey } from '../../../../shared/planner/gear'
-import type { GearSort, GearSortKey } from './gearFilter'
+import { GEAR_PERCENT_STAT_KEYS, GEAR_STAT_KEYS, isGearStatKey, type GearStatKey } from '../../../../shared/planner/gear'
+import { isDropSortKey, type GearSort, type GearSortKey } from './gearFilter'
 
 /**
  * The columns that are always there: armour, the two pools every class reads, and the weapon
@@ -73,8 +73,31 @@ export const CORE_COLUMNS: readonly GearSortKey[] = ['AC', 'HP', 'MP', 'RATIO']
  */
 export const MAX_DERIVED_COLUMNS = 1
 
-/** Percent of the table the numeric columns share between them. */
-const NUMERIC_BUDGET = 52
+/**
+ * Percent of the table the numeric columns share between them — A FUNCTION OF WHETHER THE DROP
+ * TRIO IS DRAWN, since 2026-08-25.
+ *
+ * RE-BUDGETED 2026-08-15, when the three drop columns joined the identity set, and the arithmetic
+ * is the whole story: every stated width below plus this budget must leave the ITEM column — the
+ * one column that states NO width and absorbs the slack — a legible share. It was 52 when the
+ * identity columns cost 24% + 15% owned (leaving the name ≥ 9%); with zone/level/mob the identity
+ * set costs 47% + 11%, so 26 is what keeps the worst percent-mode case at 84% and the name at 16%.
+ * OVERFLOWING THIS SUM DOES NOT SCROLL — `tableLayout: fixed` squeezes the unstated column to
+ * ZERO, which deletes the item name, its click-through and the wish control from the screen (found
+ * the hard way, 2026-08-15). The percentage-fit test in gearColumnPrefs.test.mts now sums every
+ * stated column so it cannot happen quietly again.
+ *
+ * AND WHEN THE TRIO IS OFF, THE 21% IT COST GOES BACK TO THE NUMBERS (fork review, 2026-08-25).
+ * The budget was one constant, sized for the trio, so switching the Drop columns chip off left
+ * the numeric set at the same 26% with 21% of the table lying empty beside it — and worse, the
+ * percent floor still admitted only five columns where main (no trio, 52%) served ten, so a
+ * six-column pick fell into pixel mode and scrolled a table that had room to spare. 47 is the
+ * trio's 21 handed back plus the same 26: the identity set without it costs 26% + 11%, so the
+ * worst case is again 84% and the name keeps 16% - and `MAX_PERCENT_COLUMNS` reads nine.
+ */
+function numericBudget(hasDrops: boolean): number {
+  return hasDrops ? 26 : 47
+}
 /** …and the floor one column may shrink to, which is what caps the derived count above. */
 const MIN_NUMERIC_WIDTH = 5
 /**
@@ -89,16 +112,21 @@ const MIN_NUMERIC_WIDTH = 5
 const MAX_NUMERIC_WIDTH = 8
 
 /**
- * The widest numeric set percentages can still serve at that floor — ten.
+ * The widest numeric set percentages can still serve at that floor — FIVE with the drop trio
+ * drawn (2026-08-15, when the trio shrank the numeric budget) and NINE without it (2026-08-25,
+ * when the budget learned to hand the trio's share back — see `numericBudget`).
  *
- * IT USED TO BE EXACTLY THE CORE PLUS `MAX_DERIVED_COLUMNS`, and that was the point: the derived
- * cap WAS this floor, so nothing the tab could derive could ever cross into pixel mode. JOS-302 cut
- * the derivation to core+1 and the two numbers stopped meeting — which is a WIDENING of the same
- * guarantee rather than a break in it: the derived set is now five at its very widest, half of what
- * percentages can serve, so it is further inside the budget than it has ever been. Only a PICKED
- * set can cross the line, exactly as before.
+ * Five is exactly the core plus `MAX_DERIVED_COLUMNS`, the way it was before JOS-302 — so nothing
+ * the tab can DERIVE ever crosses into pixel mode whichever way the chip is set, and the untouched
+ * default keeps its percentage layout. A PICKED set past the line crosses it and the table scrolls
+ * sideways inside its own pane, which is the design absorbing a wide choice rather than starving
+ * the item column to pay for it.
  */
-export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH)
+export function maxPercentColumns(hasDrops: boolean): number {
+  return Math.floor(numericBudget(hasDrops) / MIN_NUMERIC_WIDTH)
+}
+/** The trio-drawn line, for readers stating the shipped default's shape. */
+export const MAX_PERCENT_COLUMNS = maxPercentColumns(true)
 
 /**
  * The pixel widths the table states once percentages cannot serve the set. Each is a legible
@@ -106,10 +134,46 @@ export const MAX_PERCENT_COLUMNS = Math.floor(NUMERIC_BUDGET / MIN_NUMERIC_WIDTH
  * holds a name that ellipsises. Their SUM is what makes the table wider than the pane, which is
  * what makes the pane scroll it.
  */
-const PX = { name: 340, slot: 120, classes: 110, numeric: 78, owned: 150 } as const
+const PX = { name: 280, wish: 90, slot: 110, classes: 100, zone: 130, zoneLevel: 90, mob: 180, numeric: 78, owned: 150 } as const
 
-export const SLOT_COLUMN_WIDTH = '13%'
-export const CLASS_COLUMN_WIDTH = '11%'
+/**
+ * The numeric cells' shared padding — the other half of `MAX_NUMERIC_WIDTH`'s bargain above. The
+ * ceiling only holds if a sortable header (label + arrow, ~60px for `Ratio`) fits the cell it
+ * states: a label wider than its sticky cell slides under the NEXT header, which then intercepts
+ * the click aimed at it — gear.e2e.mts measured exactly that. MUI's default 16px a side spends
+ * 32px of a ~60px cell on air; 8px keeps the header its own. It lives HERE, the layout-constants
+ * module, because the header (GearTableHead) and the body cells (GearTable) must state ONE padding
+ * or the columns shear — neither component may own the number the other must match.
+ */
+export const NUMERIC_PAD = { px: 1 } as const
+
+/**
+ * EVERY COLUMN THE TABLE DRAWS, IN DRAW ORDER — the one statement of the roster, so the header's
+ * render order, the body's colspan, the pixel-mode width sum and the width sanitizer's allowlist
+ * cannot drift apart (the same quiet-drift class the `NUMERIC_BUDGET` re-budget was bitten by).
+ * The identity trio's presence follows the same two flags the layout reads.
+ */
+export function gearColumnIds(columns: readonly GearColumn[], showDrops: boolean, hasOwned: boolean): string[] {
+  return [
+    'name',
+    'wish',
+    'slot',
+    'classes',
+    ...(showDrops ? ['zone', 'zoneLevel', 'mob'] : []),
+    ...columns.map((c) => c.key),
+    ...(hasOwned ? ['owned'] : [])
+  ]
+}
+
+/** The wish column (2026-08-15): the control left the Item cell so the name keeps its room. 6% is
+ *  what keeps the compact "Remove" clickable at the 900px window minimum — a button clipped past
+ *  its cell edge hit-tests as the NEIGHBOUR cell (caught by gearCompareSteps' reachability pass). */
+export const WISH_COLUMN_WIDTH = '6%'
+export const SLOT_COLUMN_WIDTH = '11%'
+export const CLASS_COLUMN_WIDTH = '9%'
+export const ZONE_COLUMN_WIDTH = '7%'
+export const ZONE_LEVEL_COLUMN_WIDTH = '5%'
+export const MOB_COLUMN_WIDTH = '9%'
 
 /**
  * THE OWNERSHIP COLUMN (JOS-285, phase 4) — appended AFTER `visibleColumns`' numerics, and only
@@ -127,7 +191,7 @@ export const CLASS_COLUMN_WIDTH = '11%'
  * the difference either. So the column is absent and the `/outputfile` freshness line beside the
  * count says why (GearView). Either witness alone is enough to draw it.
  */
-export const OWNED_COLUMN_WIDTH = '15%'
+export const OWNED_COLUMN_WIDTH = '11%'
 
 export interface GearColumn {
   key: GearSortKey
@@ -151,6 +215,11 @@ const PERCENT_KEYS: ReadonlySet<string> = new Set<string>(GEAR_PERCENT_STAT_KEYS
  */
 export function columnLabel(key: GearSortKey): string {
   if (key === 'RATIO') return 'Ratio'
+  // `BEST`, not the key's own spelling (fork decision, kaltinril 2026-08-15: *people won't know what BIS
+  // means*). The KEY stays `BIS` so stored column choices and search tokens survive the rename.
+  if (key === 'BIS') return 'BEST'
+  // `EFF_DMG` deliberately has no arm, the same argument as `EFF_HP` above: the underscore rule
+  // already spells `EFF DMG`.
   if (key === 'name') return 'Item'
   return key.replace(/_/g, ' ')
 }
@@ -177,11 +246,18 @@ function column(key: GearSortKey): GearColumn {
  * DERIVED FROM `GEAR_STAT_KEYS`, never re-typed. A rescrape that widens the vector widens the
  * picker in the same commit, which is the only way "all stats" can stay true.
  */
-export const PICKABLE_COLUMNS: readonly GearSortKey[] = GEAR_STAT_KEYS.flatMap<GearSortKey>((key) => {
-  if (key === 'DELAY') return [key, 'RATIO']
-  if (key === 'HP') return [key, 'EFF_HP']
-  return [key]
-})
+export const PICKABLE_COLUMNS: readonly GearSortKey[] = [
+  ...GEAR_STAT_KEYS.flatMap<GearSortKey>((key) => {
+    // EFF DMG stands after RATIO for the same placement-is-documentation reason RATIO stands after
+    // DELAY: the ratio is its largest input, so the reader meets the score beside what it is made of.
+    if (key === 'DELAY') return [key, 'RATIO', 'EFF_DMG']
+    if (key === 'HP') return [key, 'EFF_HP']
+    return [key]
+  }),
+  // BIS closes the list rather than standing anywhere inside it: it is the one key made of ALL of
+  // the others, so there is no neighbour that documents it — last is the honest placement.
+  'BIS'
+]
 
 /**
  * The numeric columns for this sort: the core, then the sort key if it is not already one of them.
@@ -200,7 +276,9 @@ export const PICKABLE_COLUMNS: readonly GearSortKey[] = GEAR_STAT_KEYS.flatMap<G
  */
 export function visibleColumns(sort: GearSort): GearColumn[] {
   const keys: GearSortKey[] = [...CORE_COLUMNS]
-  if (sort.key !== 'name' && !keys.includes(sort.key)) keys.push(sort.key)
+  // A drop-trio sort names no NUMERIC column — its three columns are the `showDrops` trio, drawn
+  // by the table itself — so it seeds nothing here.
+  if (sort.key !== 'name' && !isDropSortKey(sort.key) && !keys.includes(sort.key)) keys.push(sort.key)
   return keys.map(column)
 }
 
@@ -224,16 +302,37 @@ export function columnsFor(chosen: readonly GearSortKey[] | null, sort: GearSort
  *
  * IDENTITY-PRESERVING when the sort is already on a drawn column, so the memo chain downstream
  * re-runs when the sort MOVES and never merely because it rendered.
+ *
+ * `showDrops` DEFAULTS TO FALSE, and the default is the safe direction: a caller that does not
+ * say whether the trio is drawn gets a drop sort confined exactly as a removed numeric column is,
+ * never a lit header on a column that may not exist. (It grew as a required third parameter on
+ * 2026-08-18 and the unit test kept calling it with two, which is `undefined` - falsy by luck.)
  */
-export function sortWithin(sort: GearSort, columns: readonly GearColumn[]): GearSort {
+export function sortWithin(sort: GearSort, columns: readonly GearColumn[], showDrops = false): GearSort {
   if (sort.key === 'name' || columns.some((c) => c.key === sort.key)) return sort
+  // A drop-trio sort's column is the trio itself — valid exactly while the trio is drawn, and it
+  // falls with the trio for the same reason a removed numeric column takes its sort down.
+  if (isDropSortKey(sort.key) && showDrops) return sort
   const first = columns[0]
   return first === undefined ? { key: 'name', dir: 'asc' } : { key: first.key, dir: 'desc' }
 }
 
+/**
+ * The pixel a column measures when the user resizes with nothing stored for it (fork decision,
+ * kaltinril 2026-08-15) — the same `PX` table pixel mode states, so the first drag starts from a familiar
+ * shape. Numeric columns share one default; identity columns each state their own.
+ */
+export function defaultColumnPx(id: string): number {
+  // The `PX` table answers by key — an identity column states its own width, every numeric column
+  // (whose id is its `GearSortKey`, never a `PX` key) shares one. Indexing the table instead of
+  // enumerating its keys again is what keeps this and `PX` one statement.
+  return id in PX ? PX[id as keyof typeof PX] : PX.numeric
+}
+
 /** One numeric column's width, as the percentage string the header cell states. */
-export function numericWidth(count: number): string {
-  const each = count > 0 ? NUMERIC_BUDGET / count : NUMERIC_BUDGET
+export function numericWidth(count: number, hasDrops = true): string {
+  const budget = numericBudget(hasDrops)
+  const each = count > 0 ? budget / count : budget
   const clamped = Math.min(MAX_NUMERIC_WIDTH, Math.max(MIN_NUMERIC_WIDTH, each))
   return `${String(Math.round(clamped * 10) / 10)}%`
 }
@@ -253,30 +352,53 @@ export interface GearTableLayout {
   minWidth: number
   /** `undefined` in percentage mode: the item column takes whatever the stated ones leave */
   name: string | undefined
+  wish: string
   slot: string
   classes: string
+  zone: string
+  zoneLevel: string
+  mob: string
   numeric: string
   owned: string
 }
 
-export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayout {
-  if (count <= MAX_PERCENT_COLUMNS) {
+export function gearTableLayout(count: number, hasOwned: boolean, hasDrops = true): GearTableLayout {
+  // BOTH HALVES READ `hasDrops` (2026-08-25): the line past which percentages stop serving, and
+  // the share each numeric column takes under it. The pixel branch read it from the day the trio
+  // shipped; the percent branch did not, which is how a table with the trio off kept the trio's
+  // narrow budget and fell into pixel mode at six columns.
+  if (count <= maxPercentColumns(hasDrops)) {
     return {
       mode: 'percent',
       minWidth: 0,
       name: undefined,
+      wish: WISH_COLUMN_WIDTH,
       slot: SLOT_COLUMN_WIDTH,
       classes: CLASS_COLUMN_WIDTH,
-      numeric: numericWidth(count),
+      zone: ZONE_COLUMN_WIDTH,
+      zoneLevel: ZONE_LEVEL_COLUMN_WIDTH,
+      mob: MOB_COLUMN_WIDTH,
+      numeric: numericWidth(count, hasDrops),
       owned: OWNED_COLUMN_WIDTH
     }
   }
   return {
     mode: 'pixel',
-    minWidth: PX.name + PX.slot + PX.classes + count * PX.numeric + (hasOwned ? PX.owned : 0),
+    minWidth:
+      PX.name +
+      PX.wish +
+      PX.slot +
+      PX.classes +
+      (hasDrops ? PX.zone + PX.zoneLevel + PX.mob : 0) +
+      count * PX.numeric +
+      (hasOwned ? PX.owned : 0),
     name: `${String(PX.name)}px`,
+    wish: `${String(PX.wish)}px`,
     slot: `${String(PX.slot)}px`,
     classes: `${String(PX.classes)}px`,
+    zone: `${String(PX.zone)}px`,
+    zoneLevel: `${String(PX.zoneLevel)}px`,
+    mob: `${String(PX.mob)}px`,
     numeric: `${String(PX.numeric)}px`,
     owned: `${String(PX.owned)}px`
   }
@@ -296,6 +418,7 @@ export function gearTableLayout(count: number, hasOwned: boolean): GearTableLayo
 export function statText(value: number | undefined, key: GearSortKey): string {
   if (value === undefined) return ''
   if (key === 'RATIO') return value.toFixed(2)
+  if (key === 'EFF_DMG' || key === 'BIS') return value.toFixed(1)
   if (key === 'WEIGHT') return value.toFixed(1)
   if (PERCENT_KEYS.has(key)) return `${String(value)}%`
   return String(value)
@@ -310,5 +433,7 @@ export function statText(value: number | undefined, key: GearSortKey): string {
  * fails to typecheck rather than quietly asking the vector for a field it does not have.
  */
 export function statKeysOf(columns: readonly GearColumn[]): GearStatKey[] {
-  return columns.flatMap((c) => (c.key === 'name' || c.key === 'RATIO' || c.key === 'EFF_HP' ? [] : [c.key]))
+  // `isGearStatKey` rather than an enumeration of the derived keys: a derived key added to the
+  // vocabulary drops out here BY CONSTRUCTION instead of by somebody remembering this line.
+  return columns.flatMap((c) => (isGearStatKey(c.key) ? [c.key] : []))
 }

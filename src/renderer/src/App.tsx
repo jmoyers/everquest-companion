@@ -105,14 +105,16 @@ function PlainView({
   return (
     <>
       {/* The Loot tab stays MOUNTED across a deep link (no `key` churn on item change) —
-          remounting per character rebuild only, exactly like Mobs and Combat. */}
+          remounting per character rebuild only, exactly like Mobs and Combat. Its own doors out:
+          the drill-down's source mobs and zones link exactly as the Gear row that may have sent
+          the reader here does (dropLinks.ts). */}
       {view === 'loot' && (
         <LootView
           key={viewKey}
           focusItem={routing.lootItem}
           focusNonce={routing.lootNonce}
           onFocusConsumed={routing.clearLootFocus}
-          nav={routing.nav}
+          nav={routing.nav} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone}
         />
       )}
       {/* Maps remounts per character rebuild like the rest: the zone it auto-opens comes from
@@ -135,18 +137,22 @@ function PlainView({
           remount `key` is the whole character contract. The one prop it takes is the app's own
           router — every donor name in the pane links OUT to that item's Loot drill-down. */}
       {view === 'planner' && <PlannerView key={viewKey} onOpenLoot={routing.openLoot} />}
-      {/* GEAR (JOS-284) takes the same one prop and for the same reason: the table reads the
+      {/* GEAR (JOS-284) keys on the character contract for the same reason: the table reads the
           committed corpus, which is character-independent, so the remount `key` is the whole
           character contract and every item name links OUT to that item's Loot drill-down — which
-          is where the per-item tier block is drawn. */}
-      {view === 'gear' && <GearView key={viewKey} onOpenLoot={routing.openLoot} />}
+          is where the per-item tier block is drawn. The drop trio's doors (fork decision, kaltinril 2026-08-17):
+          the Mob cell opens the mob's page, the Zone cell opens that zone's map — GearTable
+          states both contracts. One line on purpose: this file sits at its
+          400-code-line ceiling and every mount pays from it. */}
+      {view === 'gear' && <GearView key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />}
       {/* WISH LIST (JOS-324's tab, JOS-326's feature) — one flat list of items this character has
           decided they want, grouped by where to go and get them. Keyed like the rest because a
           wish list is a CHARACTER's: the rebuild counter is how this app says that, and the
-          remount is what re-reads the store under the new one. The one prop is the app's router —
-          every wish name links OUT to that item's Loot drill-down, the same contract the
-          Exaltations tab's donor names use, so the drill's Back arrow comes home here. */}
-      {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} />}
+          remount is what re-reads the store under the new one. The props are the app's router —
+          every wish name links OUT to that item's Loot drill-down (the contract the Exaltations
+          tab's donor names use, so the drill's Back arrow comes home here), and the route's zone
+          headings and camp mobs open the Maps tab and the mob's page, the drop trio's doors. */}
+      {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived
@@ -233,7 +239,11 @@ function ViewContent({
           target={routing.mobTarget}
           targetNonce={routing.mobNonce}
           onTargetConsumed={routing.clearMob}
-          nav={routing.nav}
+          // A drop dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17) — the same
+          // openLoot contract every other item name in the app already deep-links through —
+          // and the page's own zone line out to the Maps tab, the drop trio's other door.
+          // One line with nav on purpose: App.tsx sits at its 400-code-line ceiling.
+          nav={routing.nav} onOpenLoot={routing.openLoot} onOpenMapZone={routing.openMapZone}
         />
       )}
       {view === 'bosses' && <BossView key={viewKey} onOpenMob={routing.openMob} />}

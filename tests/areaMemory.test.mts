@@ -46,6 +46,7 @@ import {
   MAX_REMEMBERED_SEARCH,
   sanitizeBrowseForm,
   sanitizeFlag,
+  sanitizeGearClassPins,
   sanitizeGearClasses,
   sanitizeGearForm,
   sanitizeGearSort,
@@ -165,7 +166,7 @@ const anyIdList = (raw: unknown): boolean =>
 const READERS: Reader[] = [
   { key: 'eq.gear.filters', read: sanitizeGearForm, fallback: DEFAULT_GEAR_FORM },
   { key: 'eq.gear.sort', read: sanitizeGearSort, fallback: DEFAULT_GEAR_SORT },
-  { key: 'eq.gear.classes', read: sanitizeGearClasses, fallback: null },
+  { key: 'eq.gear.classes', read: sanitizeGearClassPins, fallback: null },
   { key: 'eq.gear.upgrade', read: sanitizeUpgrade, fallback: ITEM_UPGRADE_BASE },
   { key: 'eq.gear.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.planner.filters', read: (r) => sanitizeBrowseForm(r, BROWSE_FALLBACK), fallback: BROWSE_FALLBACK },
@@ -220,7 +221,8 @@ test('a well-formed gear form round-trips, and unknown members drop out rather t
     weaponTypes: [WEAPON_PICKS[0], 'imaginary'],
     effect: 'proc',
     eraOnly: false,
-    ownedOnly: true
+    ownedOnly: true,
+    ignoreHaste: true
   }
   const got = sanitizeGearForm(stored)
   assert.deepEqual(got.slots, ['PRIMARY', 'SECONDARY'], 'unknown slot dropped, duplicate dropped, order kept')
@@ -228,6 +230,13 @@ test('a well-formed gear form round-trips, and unknown members drop out rather t
   assert.equal(got.effect, 'proc')
   assert.equal(got.eraOnly, false)
   assert.equal(got.ownedOnly, true)
+  // The Ignore-haste chip (2026-08-15) is the sixth stored field: a real `true` comes back, an
+  // absent or unreadable one is the shipped OFF - never a chip that switched itself on.
+  assert.equal(got.ignoreHaste, true)
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: undefined }).ignoreHaste, false, 'absent is the default')
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: 'true' }).ignoreHaste, false, 'a string is not a boolean')
+  assert.equal(sanitizeGearForm({ ...stored, ignoreHaste: false }).ignoreHaste, false)
+  assert.equal(DEFAULT_GEAR_FORM.ignoreHaste, false, 'and the default is OFF - the first haste item is a real upgrade')
 })
 
 test('a partial gear form keeps its siblings — one bad field is not a bad form', () => {
@@ -360,4 +369,18 @@ test('…and the sanitizer is `normalizeUpgradeState` rather than a second opini
       )
     }
   }
+})
+
+test('class pins are PER CHARACTER, and the legacy single pin becomes the every-character fallback', () => {
+  // Fork ask, kaltinril 2026-09-04: "i have to keep manually changing it back to SHM since i'm on
+  // a twink DRU" — one shared pin made every character switch a hand edit.
+  assert.deepEqual(sanitizeGearClassPins({ classes: ['WAR', 'MNK'] }), { '*': ['WAR', 'MNK'] })
+  assert.deepEqual(sanitizeGearClassPins({ Drywrought: ['WAR', 'MNK', 'SHM'], Twink: ['DRU'] }), {
+    Drywrought: ['WAR', 'MNK', 'SHM'],
+    Twink: ['DRU']
+  })
+  // The allowlist still stands per entry — localStorage is a file the user can edit.
+  assert.deepEqual(sanitizeGearClassPins({ Drywrought: ['WAR', 'nonsense'] }), { Drywrought: ['WAR'] })
+  assert.equal(sanitizeGearClassPins(null), null)
+  assert.equal(sanitizeGearClassPins({}), null, 'an object with no pins has said nothing')
 })

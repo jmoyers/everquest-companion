@@ -28,7 +28,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { farmZone, groupNeeds, type FarmNeed } from '../src/renderer/src/features/planner/plannerFarm'
+import { campTail, campText, farmZone, groupNeeds, type FarmNeed } from '../src/renderer/src/features/planner/plannerFarm'
 import { sourcesFor } from '../src/renderer/src/features/planner/sourceIndex'
 import type { DonorProgress } from '../src/renderer/src/features/planner/plannerProgress'
 
@@ -157,4 +157,26 @@ test('a donor nothing places keeps the honest non-zone heading', () => {
   })
   assert.equal(groups.length, 1)
   assert.equal(groups[0].kind, 'unknown')
+})
+
+test('campTail is the camp line AFTER the mob`s name - level verbatim, +N more, nothing invented', () => {
+  // Split out (2026-08-18) so the wish list can make the name itself a door while the tail keeps
+  // this module's one spelling: `campText` IS the name plus the tail, always.
+  const one = { sources: [{ mob: 'the froglok shin lord', levelText: '30', zones: ['Upper Guk'] }] }
+  assert.equal(campTail(one), ' (lvl 30)')
+  assert.equal(campText(one), `the froglok shin lord${campTail(one)}`)
+  // A range is a level the catalog stated - verbatim, never its midpoint (law 1).
+  const range = { sources: [{ mob: 'a ghoul', levelText: '36-40', zones: [] }] }
+  assert.equal(campTail(range), ' (lvl 36-40)')
+  // A page-only witness has no level text: a bare name, no `(lvl ?)` and no `(lvl 0)`.
+  const bare = { sources: [{ mob: 'a bandit', zones: [] }] }
+  assert.equal(campTail(bare), '')
+  assert.equal(campText(bare), 'a bandit')
+  // More witnesses are counted, never listed - the cell is one line.
+  const many = { sources: [...one.sources, ...range.sources, ...bare.sources] }
+  assert.equal(campTail(many), ' (lvl 30) +2 more')
+  assert.equal(campTail({ sources: [...bare.sources, ...one.sources] }), ' +1 more', 'the FIRST witness sets the level, or its absence')
+  // Nobody named: nothing at all.
+  assert.equal(campTail({ sources: [] }), '')
+  assert.equal(campText({ sources: [] }), '')
 })

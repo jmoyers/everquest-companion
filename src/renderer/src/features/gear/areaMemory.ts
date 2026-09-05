@@ -61,15 +61,16 @@
 import { CLASS_ABBRS, MAX_COMBO_SLOTS, type ClassAbbr } from '../../../../shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
 import { EQUIP_SLOTS, type EquipSlot, type SocketType } from '../../../../shared/planner/types'
-import { WEAPON_PICKS, type WeaponPick } from '../../../../shared/planner/weaponType'
 import { PICKABLE_COLUMNS } from './gearColumns'
 import {
   DEFAULT_GEAR_FILTERS,
   DEFAULT_GEAR_SORT,
+  GEAR_WEAPON_PICKS,
   type EffectFilter,
   type GearFilters,
   type GearSort,
-  type GearSortKey
+  type GearSortKey,
+  type GearWeaponPick
 } from './gearFilter'
 
 // ---- the tier table ---------------------------------------------------------------------------
@@ -194,7 +195,7 @@ function sanitizeSlot(raw: unknown, fallback: EquipSlot | null): EquipSlot | nul
  * fields over it on every render, so writing them here would persist a value that is overwritten
  * before anything reads it.
  */
-export type GearFormMemory = Pick<GearFilters, 'slots' | 'weaponTypes' | 'effect' | 'eraOnly' | 'ownedOnly'>
+export type GearFormMemory = Pick<GearFilters, 'slots' | 'weaponTypes' | 'effect' | 'eraOnly' | 'ownedOnly' | 'ignoreHaste'>
 
 /** What the bar opens on when nothing is stored — the shipped defaults, projected. */
 export const DEFAULT_GEAR_FORM: GearFormMemory = {
@@ -202,7 +203,8 @@ export const DEFAULT_GEAR_FORM: GearFormMemory = {
   weaponTypes: DEFAULT_GEAR_FILTERS.weaponTypes,
   effect: DEFAULT_GEAR_FILTERS.effect,
   eraOnly: DEFAULT_GEAR_FILTERS.eraOnly,
-  ownedOnly: DEFAULT_GEAR_FILTERS.ownedOnly
+  ownedOnly: DEFAULT_GEAR_FILTERS.ownedOnly,
+  ignoreHaste: DEFAULT_GEAR_FILTERS.ignoreHaste
 }
 
 const EFFECT_FILTERS: readonly EffectFilter[] = ['any', 'has', 'proc', 'worn', 'focus', 'click']
@@ -217,17 +219,18 @@ export function sanitizeGearForm(raw: unknown): GearFormMemory {
   if (o === null) return DEFAULT_GEAR_FORM
   return {
     slots: sanitizeList<EquipSlot>(o.slots, EQUIP_SLOTS),
-    weaponTypes: sanitizeList<WeaponPick>(o.weaponTypes, WEAPON_PICKS),
+    weaponTypes: sanitizeList<GearWeaponPick>(o.weaponTypes, GEAR_WEAPON_PICKS),
     effect: sanitizeOne<EffectFilter>(o.effect, EFFECT_FILTERS, DEFAULT_GEAR_FORM.effect),
     // Era ships ON, so an unreadable value must come back ON — `sanitizeFlag`'s fallback, never a
     // bare `=== true`, which would silently turn the default filter off for a corrupted store.
     eraOnly: sanitizeFlag(o.eraOnly, DEFAULT_GEAR_FORM.eraOnly),
-    ownedOnly: sanitizeFlag(o.ownedOnly, DEFAULT_GEAR_FORM.ownedOnly)
+    ownedOnly: sanitizeFlag(o.ownedOnly, DEFAULT_GEAR_FORM.ownedOnly),
+    ignoreHaste: sanitizeFlag(o.ignoreHaste, DEFAULT_GEAR_FORM.ignoreHaste)
   }
 }
 
-/** Every axis the table can sort on: the item column, plus every column the picker can draw. */
-const SORT_KEYS: readonly GearSortKey[] = ['name', ...PICKABLE_COLUMNS]
+/** Every axis the table can sort on: the item column, the drop trio, plus every pickable column. */
+const SORT_KEYS: readonly GearSortKey[] = ['name', 'zone', 'zoneLevel', 'mob', ...PICKABLE_COLUMNS]
 
 /**
  * The stored sort. Both halves are checked independently, so a build that renamed a stat key gives
@@ -261,6 +264,30 @@ export function sanitizeGearClasses(raw: unknown): ClassAbbr[] | null {
   const o = asRecord(raw)
   if (o === null || !Array.isArray(o.classes)) return null
   return sanitizeList<ClassAbbr>(o.classes, CLASS_ABBRS, MAX_COMBO_SLOTS)
+}
+
+/** Pins BY CHARACTER NAME, with `'*'` the every-character fallback the legacy shape becomes. */
+export type GearClassPins = Partial<Record<string, ClassAbbr[]>>
+
+/**
+ * PER-CHARACTER PINS (fork ask, kaltinril 2026-09-04: *"i have to keep manually changing it back
+ * to SHM since i'm on a twink DRU"*). One shared pin made every character switch a hand edit; the
+ * stored shape is now a map keyed by character name, and the legacy single-pin `{ classes: [...] }`
+ * reads as the `'*'` fallback so nobody's standing pin is lost by upgrading. Every list still goes
+ * through `sanitizeGearClasses`' own allowlist reasoning — localStorage is a file the user can edit.
+ */
+export function sanitizeGearClassPins(raw: unknown): GearClassPins | null {
+  const o = asRecord(raw)
+  if (o === null) return null
+  if (Array.isArray(o.classes)) {
+    const legacy = sanitizeGearClasses(raw)
+    return legacy === null ? null : { '*': legacy }
+  }
+  const out: GearClassPins = {}
+  for (const [who, list] of Object.entries(o)) {
+    if (Array.isArray(list)) out[who] = sanitizeList<ClassAbbr>(list, CLASS_ABBRS, MAX_COMBO_SLOTS)
+  }
+  return Object.keys(out).length > 0 ? out : null
 }
 
 /**

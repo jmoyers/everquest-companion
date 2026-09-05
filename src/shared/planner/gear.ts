@@ -208,6 +208,30 @@ export interface GearRow {
    * page carried none; an entry's `zone` is absent when the page listed the mob under no heading.
    */
   wikiSources?: { mob: string; zone?: string }[]
+  /**
+   * WHERE IT DROPS, FOLDED AT BUILD (fork decision, kaltinril 2026-08-25) — both witnesses merged
+   * (`shared/itemSources.mergeItemSources`: the mob catalog's `|known_loot` inversion and the
+   * page's own `wikiSources` above) and folded into the Gear tab's three columns by
+   * `dropDetails`. The four arrays are ALIGNED: `dropLevels[i]` and `dropPages[i]` belong to
+   * `dropMobs[i]`, `''` where the catalog stated none.
+   *
+   * ON THE WIRE rather than derived per window, which is data-server ruling 4 (docs/plans/
+   * data-server.md: *the renderer never munges domain data* — views arrive render-ready). The
+   * renderer folded these itself from 2026-08-15 to 2026-08-25, 6,814 rows per fetch. ABSENT
+   * when nobody names the item (a quest reward, a crafted item) — an empty array would be this
+   * index inventing an answer where the catalog stated none.
+   */
+  dropMobs?: string[]
+  dropZones?: string[]
+  dropLevels?: string[]
+  dropPages?: string[]
+  /**
+   * Reads as a shield (`renderer/features/gear/gearFilter.isShieldLike`'s rule — SECONDARY slot
+   * and a shield word in the name or a `Skill: Shield` line), answered ONCE at build so the search
+   * word and the Weapon-type pick come off one flag. Present only when true. MEASURED 2026-08-25:
+   * 130 rows (the census the `shieldRows` stat pins).
+   */
+  shield?: true
 }
 
 // ---- the served payload ---------------------------------------------------------------------
@@ -250,6 +274,10 @@ export interface GearBuildStats {
   rangeTexts: number
   /** rows carrying a LAYER 3 acquisition-edge verdict (JOS-333, `eraDerive.ts`) */
   eraDerivedRows: number
+  /** rows naming at least one drop mob after the two-witness merge (`dropMobs` present) */
+  dropRows: number
+  /** rows the shield rule accepts (`shield: true`) — 130 on the 2026-08-25 census */
+  shieldRows: number
   /** stat keys the vector does not index, by normalized key — the law-1 census (see the header) */
   unindexedStatKeys: Record<string, number>
   /** stat values no parse could read, by normalized key */

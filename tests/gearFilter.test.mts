@@ -174,17 +174,22 @@ const names = (rows: readonly GearRow[]): string[] => rows.map((r) => r.name)
 // THE PREDICATES — absent is not zero
 // =================================================================================
 
-test('NOTHING THE TABLE FILTERS ON IS A NUMBER any more - the JOS-302 removal, as a claim', () => {
-  // The owner's fourth ask deleted the min-ratio box and the stat-at-least chips outright. There
-  // is no assertion to make about a parser that no longer exists, so what is pinned instead is the
-  // SHAPE that replaced it: every field of `GearFilters` is a set membership or a flag, and none of
-  // them reads `row.stats`. A field added here that DID read a number would fail this.
+test('the STRUCTURED filters are set memberships; the numbers ride the search box (2026-08-15)', () => {
+  // JOS-302 deleted the toolbar's numeric filters; the 2026-08-15 fork ask (kaltinril) brought numeric
+  // filtering back as SEARCH-BOX TOKENS (`parseGearQuery`), which honours what that ruling was
+  // about — toolbar real estate. So the shape pinned here is: every structured field is still a
+  // set membership or a flag (`ignoreHaste` is the 2026-08-15 addition — a knob on the DERIVED
+  // scores, not a row filter), and the one place a number can filter is `text`.
   const keys = Object.keys(DEFAULT_GEAR_FILTERS).sort()
-  assert.deepEqual(keys, ['classes', 'effect', 'eraOnly', 'ownedOnly', 'slots', 'text', 'weaponTypes'])
-  // …and "absent is not zero" now lives entirely in the SORT, which is where the tests for it are.
+  assert.deepEqual(keys, ['classes', 'effect', 'eraOnly', 'ignoreHaste', 'ownedOnly', 'slots', 'text', 'weaponTypes'])
+  // …and "absent is not zero" holds in the SORT and in a THRESHOLD alike (its own tests below).
   assert.equal(sortValue(THELVORN, 'HASTE'), undefined, 'no HASTE line is not 0% haste')
   assert.equal(sortValue(CLUB, 'HASTE'), 10)
 })
+
+// THE QUERY PARSER, THE THRESHOLD PREDICATE AND THE SHIELD FILTER (both 2026-08-15) ARE TESTED IN
+// `tests/gearQueryFilter.test.mts` — this file sits at the repo's 400-code-line factoring ceiling,
+// and the rule is to split, never to ratchet (the gearEffectiveHp.test.mts precedent).
 
 test('a class list nobody stated is an unknown, and an unknown is never a mismatch', () => {
   assert.equal(classMismatch(['PAL'], ['WAR', 'ROG']), true)
@@ -408,6 +413,22 @@ test('the sort is TOTAL — name is the tiebreak, so nothing re-shuffles under t
   assert.deepEqual(names(sortGearRows([a, b], { key: 'name', dir: 'desc' })), ['B Ring', 'A Ring'])
 })
 
+test('the drop trio sorts: text by the FIRST shown entry, level by its LOW end, unstated LAST', () => {
+  const a = { ...row({ key: 'a', name: 'A Blade' }), dropZones: ['Unrest'], dropMobs: ['a ghoul'], dropLevels: ['36-40'] }
+  const b = { ...row({ key: 'b', name: 'B Club' }), dropZones: ['Befallen'], dropMobs: ['the zombie'], dropLevels: ['~12'] }
+  const c = { ...row({ key: 'c', name: 'C Cap' }), dropZones: [], dropMobs: [], dropLevels: [] }
+  // Text axes rank the first entry — the name the cell shows — and a row naming nothing files
+  // last in BOTH directions, the numeric path's own absent-is-not-a-value rule.
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zone', dir: 'asc' })), ['B Club', 'A Blade', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zone', dir: 'desc' })), ['A Blade', 'B Club', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([c, b, a], { key: 'mob', dir: 'asc' })), ['A Blade', 'B Club', 'C Cap'])
+  // A range ranks by where it STARTS ("36-40" is 36) and "~12" reads its number.
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zoneLevel', dir: 'asc' })), ['B Club', 'A Blade', 'C Cap'])
+  assert.deepEqual(names(sortGearRows([a, b, c], { key: 'zoneLevel', dir: 'desc' })), ['A Blade', 'B Club', 'C Cap'])
+  // A bare GearRow carries no trio — a drop sort files everything as unstated, name-ordered.
+  assert.deepEqual(names(sortGearRows(ALL, { key: 'zone', dir: 'asc' })), names(sortGearRows(ALL, { key: 'name', dir: 'asc' })))
+})
+
 test('ratio is a sort key of its own, and it is gearRatio - never a second opinion', () => {
   const sorted = sortGearRows(ALL, { key: 'RATIO', dir: 'desc' })
   assert.deepEqual(names(sorted).slice(0, 2), ['Thelvorn, Blade of Light', 'Wooden Club'])
@@ -526,9 +547,9 @@ test('the derivation can add at most ONE column, and the widths always fit the p
   const pct = Number(numericWidth(widest).replace('%', ''))
   assert.ok(pct * widest <= 60, `${String(widest)} columns at ${String(pct)}% overflow the table`)
   // The ceiling: a small set never fattens its numeric columns - the item name takes the slack.
-  assert.equal(numericWidth(4), '8%')
+  assert.equal(numericWidth(4), '6.5%')
   assert.equal(numericWidth(1), '8%')
-  assert.equal(numericWidth(10), '5.2%')
+  assert.equal(numericWidth(10), '5%', 'past the floor the clamp holds - pixel mode owns that case')
 })
 
 test('a cell states what the item states - blank is "states none", never a zero', () => {
