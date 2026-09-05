@@ -48,12 +48,12 @@
 // one `nowrap` row of controls that do not shrink, and the cards live in their own bounded
 // scroller, exactly as the gear table does.
 
-import { type JSX, useMemo } from 'react'
-import { Box, Chip, MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { type JSX, useCallback, useMemo } from 'react'
+import { Box, Chip, MenuItem, Slider, Stack, TextField, Typography } from '@mui/material'
 import { CLASS_ABBRS } from '@shared/classCombo'
 import { ITEM_UPGRADE_BASE } from '@shared/itemUpgrade'
 import type { ZoneShort } from '@shared/maps'
-import type { GearRole } from '@shared/planner/progressionPlan'
+import { readsSurvivability, type GearRole } from '@shared/planner/progressionPlan'
 import type { ProgressionSnap } from '@shared/types'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { useModule } from '../../lib/useModule'
@@ -62,6 +62,7 @@ import {
   PLAN_ROLES,
   sanitizePlanReach,
   sanitizePlanRole,
+  sanitizePlanSurvivability,
   type PlanReach
 } from '../gear/areaMemory'
 import {
@@ -107,16 +108,50 @@ const REACH_LABEL: Record<PlanReach, string> = {
 // (`planBlurb.ts`) is where a pick's weights and weapon shape are spelled out, per role, on request.
 const ROLE_HINT = 'What the route ranks items for'
 const REACH_HINT = 'The hardest fight the route will send you to'
+const SURVIVABILITY_HINT =
+  'How much staying alive weighs beside damage: Glass cannon prices defense at almost nothing, Wooden sword prices it high'
 
 interface PicksProps {
   role: GearRole
   setRole: (r: GearRole) => void
   reach: PlanReach
   setReach: (r: PlanReach) => void
+  survivability: number
+  setSurvivability: (v: number) => void
 }
 
-/** The two closed picks, drawn as the Gear tab's Effect control is — one select each. */
-function PlanPickers({ role, setRole, reach, setReach }: PicksProps): JSX.Element {
+/**
+ * THE DPS DEFENSE DIAL (fork decision, kaltinril 2026-09-04: *"if you have 500 str, and no other
+ * stats, you're going to die"*) — drawn only for the focuses that read it (`readsSurvivability`):
+ * tank and healer ARE positions on this axis, so offering them the slider would be a knob on a
+ * knob. The midpoint is the weight table itself; the ends are spelled out in `roleWeights.ts`.
+ */
+function SurvivabilitySlider(props: Pick<PicksProps, 'role' | 'survivability' | 'setSurvivability'>): JSX.Element | null {
+  if (!readsSurvivability(props.role)) return null
+  return (
+    <Box title={SURVIVABILITY_HINT} sx={{ width: 170, flexShrink: 0, px: 1 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+        Glass cannon · Wooden sword
+      </Typography>
+      <Slider
+        size="small"
+        min={0}
+        max={1}
+        step={0.1}
+        value={props.survivability}
+        data-testid="plan-survivability"
+        onChange={(_, v) => {
+          props.setSurvivability(v as number)
+        }}
+        sx={{ py: 0.5 }}
+      />
+    </Box>
+  )
+}
+
+/** The two closed picks, drawn as the Gear tab's Effect control is — one select each — and the
+ *  defense dial the dps focuses add. */
+function PlanPickers({ role, setRole, reach, setReach, survivability, setSurvivability }: PicksProps): JSX.Element {
   return (
     <>
       <TextField
@@ -156,6 +191,8 @@ function PlanPickers({ role, setRole, reach, setReach }: PicksProps): JSX.Elemen
           </MenuItem>
         ))}
       </TextField>
+
+      <SurvivabilitySlider role={role} survivability={survivability} setSurvivability={setSurvivability} />
     </>
   )
 }
@@ -201,7 +238,14 @@ function PlanHeader(props: HeaderProps): JSX.Element {
       alignItems="center"
       sx={{ flexWrap: 'nowrap', minWidth: 0, mb: 1, flexShrink: 0 }}
     >
-      <PlanPickers role={props.role} setRole={props.setRole} reach={props.reach} setReach={props.setReach} />
+      <PlanPickers
+        role={props.role}
+        setRole={props.setRole}
+        reach={props.reach}
+        setReach={props.setReach}
+        survivability={props.survivability}
+        setSurvivability={props.setSurvivability}
+      />
 
       {/* THE GEAR TAB'S OWN PIN (see the header): one trio, read by both tabs. */}
       <ChipMultiSelect
@@ -286,6 +330,9 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   const [eraOnly, setEraOnly] = useEraOnly()
   const [role, setRole] = useRemembered<GearRole>('eq.plan.role', sanitizePlanRole)
   const [reach, setReach] = useRemembered<PlanReach>('eq.plan.reach', sanitizePlanReach)
+  const [survival, setSurvival] = useRemembered('eq.plan.survivability', sanitizePlanSurvivability)
+  const survivability = survival.dial
+  const setSurvivability = useCallback((dial: number) => setSurvival({ dial }), [setSurvival])
   // The progression snapshot supplies the LOG clock the level statement's age is measured against
   // (never the wall clock, which would call a freshly-loaded log three weeks stale) — the read
   // `LevelingView` and `CharacterIdentity` both make, spelled the same way.
@@ -301,10 +348,10 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   // switching role re-reads what you have rather than merely re-sorting what you might get. The
   // wish list goes to the ROUTE and not the corpora (planData's header): a wish click re-cuts the
   // brackets, never re-scores the corpus.
-  const corpora = usePlanCorpora(rows, ownership.map, { role, classes: classes.classes })
+  const corpora = usePlanCorpora(rows, ownership.map, { role, classes: classes.classes, survivability })
   const picks = useMemo(
-    () => ({ classes: classes.classes, role, reach, eraOnly }),
-    [classes.classes, role, reach, eraOnly]
+    () => ({ classes: classes.classes, role, reach, eraOnly, survivability }),
+    [classes.classes, role, reach, eraOnly, survivability]
   )
   const route = usePlanRoute(stated.level, picks, corpora, wishes.list)
 
@@ -315,6 +362,8 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
         setRole={setRole}
         reach={reach}
         setReach={setReach}
+        survivability={survivability}
+        setSurvivability={setSurvivability}
         classes={classes}
         eraOnly={eraOnly}
         setEraOnly={setEraOnly}

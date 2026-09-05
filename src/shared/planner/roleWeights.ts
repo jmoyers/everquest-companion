@@ -230,12 +230,20 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *   * ATTACK — the number the hit and damage rolls actually read; STR feeds it by proxy, so ATTACK
  *     outweighs STR per point.
  *   * DEX — proc rate, and the accuracy stat for archery and throwing. It does NOT raise melee hit
- *     chance in this era, so the melee focuses read it SMALL (0.2 since 2026-09-04, down from 1 —
+ *     chance in this era, so the melee focuses read it SMALL (0.4 — down from 1 on 2026-09-04 when
  *     ten DEX on a slow blade outvoted a third of a real weapon's white damage, the other half of
- *     the Cursed Blade case). Ranged keeps its 2: there DEX is the accuracy stat itself.
+ *     the Cursed Blade case; the on-weapon overvote is `weaponGarnish`'s job now, so armor DEX
+ *     sits at the proc stat's worth). Ranged keeps its 2: there DEX is the accuracy stat itself.
  *   * AGI — a sliver of AC above 75 and a little avoidance; "basically useless" at item
  *     magnitudes (owner) and weighted like it.
  *   * AC and `ehp` (HP + STA) — staying alive; every focus reads them, the tank reads them big.
+ *     The melee focuses read them at HALF the balanced profile's, not a token (fork decision,
+ *     kaltinril 2026-09-04: *"if you have 500 str, and no other stats, you're going to die"* — a
+ *     dps focus prioritizes damage, it does not price defense at zero, and at AC 0.5/ehp 0.2 a
+ *     stat-stripped STR item beat a balanced one: Boots of Brawn, +9 STR −13 DEX, outranked
+ *     Shiverback-Hide Boots and their nine STA and nine AGI). The dps defense rows are also a
+ *     DIAL: the table states the midpoint and the survivability slider slides them — see
+ *     `readsSurvivability` and `DEFENSE_SPANS` below.
  *   * HP_REGEN — downtime between fights, which is a solo concern and a tank's.
  *   * `manaStat`, MP, MANA_REGEN — the caster's damage budget; a hybrid's small one; nothing at
  *     all for a class with no bar (the class layer zeroes all three together).
@@ -275,10 +283,10 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  * caster bracer could outrank plate.)
  */
 const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
-  AC: 0.5,
+  AC: 1,
   STR: 1.5,
-  AGI: 0.1,
-  DEX: 0.2,
+  AGI: 0.2,
+  DEX: 0.4,
   MP: 0.05,
   HP_REGEN: 3,
   MANA_REGEN: 1,
@@ -289,9 +297,9 @@ const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
 const ONE_HAND_DPS: RoleWeights = {
   stats: { ...MELEE_STATS, BACKSTAB: 2 },
   manaStat: 0.3,
-  ehp: 0.2,
+  ehp: 0.4,
   ratio: 40,
-  saves: 0.15,
+  saves: 0.3,
   weaponGarnish: 0.25
 }
 /** A two-hander cannot backstab. The rest — damage bonus included, via the ratio — is the melee profile. */
@@ -310,9 +318,9 @@ const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS } }
 const RANGED: RoleWeights = {
   stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2 },
   manaStat: 0.3,
-  ehp: 0.2,
+  ehp: 0.4,
   ratio: 40,
-  saves: 0.15,
+  saves: 0.3,
   weaponGarnish: 0.25
 }
 
@@ -415,6 +423,49 @@ export function roleStatKeys(role: GearRole): readonly GearStatKey[] {
   return Object.keys(ROLE_WEIGHTS[role].stats) as GearStatKey[]
 }
 
+/**
+ * THE DPS SURVIVABILITY SLIDER — "Glass Cannon" to "Wooden Sword" (fork decision, kaltinril
+ * 2026-09-04, the Boots of Brawn case in the WEIGHTS essay above). How much staying-alive a damage
+ * focus prices in is a TASTE where the other focuses are a role, so the five defense rows slide
+ * between two endpoints and everything that is damage (ratio, STR, ATTACK, HASTE) holds still. The
+ * TABLE's stated value is the midpoint and the default; 0 restores the pure-damage weights this
+ * file carried before the recalibration, so a player who wants the old glass-cannon list can have
+ * it back with one drag.
+ */
+const DPS_FOCUSES: ReadonlySet<GearRole> = new Set(['dps', 'dps1h', 'dps2h', 'dualwield', 'range'])
+
+/** Whether a focus reads the survivability dial at all — the UI shows the slider for exactly these. */
+export function readsSurvivability(role: GearRole): boolean {
+  return DPS_FOCUSES.has(role)
+}
+
+/** `[glass cannon, wooden sword]` per defense row; the table's stated value sits at the midpoint. */
+const DEFENSE_SPANS = {
+  AC: [0.5, 1.5],
+  AGI: [0.1, 0.3],
+  DEX: [0.2, 0.6],
+  ehp: [0.2, 0.6],
+  saves: [0.15, 0.45]
+} as const
+
+function lerp(span: readonly [number, number], t: number): number {
+  return span[0] + (span[1] - span[0]) * t
+}
+
+function survivalWeights(base: RoleWeights, role: GearRole, t: number): RoleWeights {
+  const stats = { ...base.stats, AC: lerp(DEFENSE_SPANS.AC, t), AGI: lerp(DEFENSE_SPANS.AGI, t) }
+  // Ranged DEX is the accuracy stat — damage, not defense — and the dial must not touch it.
+  if (role !== 'range') stats.DEX = lerp(DEFENSE_SPANS.DEX, t)
+  return { ...base, stats, ehp: lerp(DEFENSE_SPANS.ehp, t), saves: lerp(DEFENSE_SPANS.saves, t) }
+}
+
+/** The focus at the dial's position: the table itself at the default, a blend otherwise. */
+function focusWeights(role: GearRole, survivability: number | undefined): RoleWeights {
+  const base = ROLE_WEIGHTS[role]
+  if (survivability === undefined || survivability === 0.5 || !DPS_FOCUSES.has(role)) return base
+  return survivalWeights(base, role, Math.min(1, Math.max(0, survivability)))
+}
+
 /** The two inputs the class layer and the haste rule need beside the item and the focus. */
 export interface RoleContext {
   /**
@@ -427,6 +478,9 @@ export interface RoleContext {
   ownedHaste?: number
   /** the picked classes; EMPTY is unknown and gates nothing (law 1), not "nobody" */
   classes?: readonly ClassAbbr[]
+  /** the dps focuses' defense dial, 0 "Glass Cannon" to 1 "Wooden Sword" (`readsSurvivability`);
+   *  0.5 — the default — IS the table above, and every other focus ignores it entirely. */
+  survivability?: number
 }
 
 /**
@@ -454,7 +508,7 @@ export interface RoleContext {
  * than an accumulation of float dust — the ranking, not the value, is the answer this returns.
  */
 export function roleValue(stats: GearStats, role: GearRole, ctx: RoleContext = {}): number {
-  const weights = ROLE_WEIGHTS[role]
+  const weights = focusWeights(role, ctx.survivability)
   const gate = liveGate(ctx.classes ?? [])
   const ratio = gearEffectiveRatio(stats)
   const damage = (ratio === undefined ? 0 : ratio * weights.ratio) + hasteTerm(stats, weights, gate, ctx.ownedHaste ?? 0)

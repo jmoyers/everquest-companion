@@ -343,12 +343,33 @@ test('RANGED takes a bow or a throwing weapon in the RANGE slot, nothing else th
   assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dps2h, 'PRIMARY', bow), false)
   assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dualwield, 'PRIMARY', bow), false)
   // THE WEIGHTS: DEX is the ranged accuracy stat and the one attribute this focus weighs above the
-  // melee's — tenfold since 2026-09-04, when melee DEX fell to 0.2 (the Cursed Blade case: proc
-  // garnish must not outvote white damage). STR falls below theirs; a bow's ratio reads as an axe's.
+  // melee's — fivefold, since melee DEX reads at the proc stat's 0.4 (the Cursed Blade overvote is
+  // `weaponGarnish`'s job now). STR falls below theirs; a bow's ratio reads as an axe's.
   assert.equal(roleValue({ DEX: 10 }, 'range'), 20)
-  assert.equal(roleValue({ DEX: 10 }, 'dps'), 2)
+  assert.equal(roleValue({ DEX: 10 }, 'dps'), 4)
   assert.equal(roleValue({ STR: 10 }, 'range') < roleValue({ STR: 10 }, 'dps'), true)
   assert.equal(roleValue({ DMG: 30, DELAY: 50 }, 'range'), roleValue({ DMG: 30, DELAY: 50 }, 'dps'))
+})
+
+test('the survivability dial slides the dps DEFENSE rows and nothing else', () => {
+  const armour = { AC: 10, STA: 10, AGI: 10, SV_FIRE: 10 }
+  const damage = { DMG: 12, DELAY: 24, STR: 10, ATTACK: 10, HASTE: 10 }
+  // The table IS the midpoint: absent, 0.5, and out-of-range clamp all read the same weights.
+  assert.equal(roleValue(armour, 'dps'), roleValue(armour, 'dps', { survivability: 0.5 }))
+  assert.equal(roleValue(armour, 'dps', { survivability: 0 }), roleValue(armour, 'dps', { survivability: -3 }))
+  // Defense is worth strictly more at every step toward the wooden end…
+  const glass = roleValue(armour, 'dps', { survivability: 0 })
+  const wooden = roleValue(armour, 'dps', { survivability: 1 })
+  assert.ok(glass < roleValue(armour, 'dps') && roleValue(armour, 'dps') < wooden)
+  // …while pure damage holds still end to end, because the dial is about defense alone.
+  assert.equal(roleValue(damage, 'dps', { survivability: 0 }), roleValue(damage, 'dps', { survivability: 1 }))
+  // Ranged DEX is accuracy — damage — and does not slide; melee DEX does.
+  assert.equal(roleValue({ DEX: 10 }, 'range', { survivability: 0 }), roleValue({ DEX: 10 }, 'range', { survivability: 1 }))
+  assert.ok(roleValue({ DEX: 10 }, 'dps', { survivability: 0 }) < roleValue({ DEX: 10 }, 'dps', { survivability: 1 }))
+  // The focuses that ARE a position on this axis ignore it entirely.
+  for (const role of ['tank', 'healer', 'balanced', 'dd'] as const) {
+    assert.equal(roleValue(armour, role, { survivability: 0 }), roleValue(armour, role, { survivability: 1 }))
+  }
 })
 
 test('the caster roles read mana and INT where the melee roles read a weapon', () => {

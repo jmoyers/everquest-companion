@@ -472,12 +472,19 @@ test('a TANK plan and a DPS plan order the same two items OPPOSITELY', () => {
   const tank = buildProgressionPlan(inputs({ role: 'tank' }), two)
   assert.deepEqual(names(tank[0]), ['Plate of the Sentinel', 'Blade of Haste'])
 
-  const dps = buildProgressionPlan(inputs({ role: 'dps' }), two)
+  // AT THE GLASS-CANNON END OF THE DIAL a dps plan is pure damage and the blade comes first. At
+  // the DEFAULT midpoint this plate — AC 30, 70 effective HP — outscores this blade even for dps
+  // (`roleWeights.ts`, the survivability recalibration: defense is priced, not zeroed), so the
+  // flip this test pins is the dial's, exercised end-on. Both ends still order OPPOSITELY to tank
+  // somewhere, which is what "a tank's list is not a dps's list" always meant.
+  const dps = buildProgressionPlan(inputs({ role: 'dps', survivability: 0 }), two)
   assert.deepEqual(names(dps[0]), ['Blade of Haste', 'Plate of the Sentinel'])
+  const wooden = buildProgressionPlan(inputs({ role: 'dps', survivability: 1 }), two)
+  assert.deepEqual(names(wooden[0]), ['Plate of the Sentinel', 'Blade of Haste'])
 
   // The scores that produced the flip, so the weights table cannot drift without this going red.
   assert.equal(roleValue(PLATE.stats, 'tank') > roleValue(BLADE.stats, 'tank'), true)
-  assert.equal(roleValue(BLADE.stats, 'dps') > roleValue(PLATE.stats, 'dps'), true)
+  assert.equal(roleValue(BLADE.stats, 'dps', { survivability: 0 }) > roleValue(PLATE.stats, 'dps', { survivability: 0 }), true)
 
   // HEALER is a third opinion, not a synonym for either: mana and WIS outrank both of the above.
   const wand = { MP: 60, WIS: 12, MANA_REGEN: 2 }

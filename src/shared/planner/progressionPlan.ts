@@ -127,6 +127,7 @@ import {
   CLASS_FACTS,
   ROLE_WEAPON_POLICY,
   policyAdmits,
+  readsSurvivability,
   roleValue,
   type ClassFacts,
   type GearRole,
@@ -135,8 +136,8 @@ import {
 } from './roleWeights'
 import { plusSuffix, zoneLevelKey, type PlusName, type ZoneLevels } from './zoneLevels'
 
-// The two names this file used to define and now only passes through — see `roleWeights.ts`.
-export { roleValue, type GearRole, type RoleContext, CLASS_FACTS, type ClassFacts }
+// The names this file used to define and now only passes through — see `roleWeights.ts`.
+export { readsSurvivability, roleValue, type GearRole, type RoleContext, CLASS_FACTS, type ClassFacts }
 
 // =================================================================================================
 // THE PLAN'S SHAPE
@@ -155,6 +156,8 @@ export interface PlanInputs {
    */
   reach: 'solo' | 'group'
   eraOnly: boolean
+  /** the dps focuses' defense dial (`RoleContext.survivability`); absent is the 0.5 default */
+  survivability?: number
   /** plan §8 calls 6 a first guess, so it is an input and not a constant. Default 6. */
   bracketSize?: number
 }
@@ -753,8 +756,8 @@ function upgradeSlot(row: GearRow, gate: AdmitGate): EquipSlot | undefined {
   return bestSlot
 }
 
-/** The three inputs the POOL depends on — everything in `PlanInputs` except the level. */
-export type PlanScope = Pick<PlanInputs, 'classes' | 'role' | 'eraOnly'>
+/** The pool's inputs — everything in `PlanInputs` except the level and the reach. */
+export type PlanScope = Pick<PlanInputs, 'classes' | 'role' | 'eraOnly' | 'survivability'>
 
 /**
  * THE ROW'S SCORE IN EACH SLOT IT FITS, and the best of them (rule 12).
@@ -765,7 +768,7 @@ export type PlanScope = Pick<PlanInputs, 'classes' | 'role' | 'eraOnly'>
  * item is worth most is the slot you would wear it in.
  */
 function scoresOf(row: GearRow, scope: PlanScope, corpora: PlanCorpora): { best: number; bySlot: number[] } {
-  const ctx = { classes: scope.classes }
+  const ctx = { classes: scope.classes, survivability: scope.survivability }
   if (row.stats.HASTE === undefined || row.slots.length === 0) {
     const one = roleValue(row.stats, scope.role, ctx)
     return { best: one, bySlot: row.slots.map(() => one) }

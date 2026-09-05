@@ -129,6 +129,8 @@ export interface PlanPicks {
   role: GearRole
   reach: PlanReach
   eraOnly: boolean
+  /** the dps focuses' defense dial (`RoleContext.survivability`), 0.5 when the slider is home */
+  survivability: number
 }
 
 /**
@@ -149,16 +151,19 @@ export interface PlanPicks {
 export function usePlanCorpora(
   rows: readonly GearRow[],
   ownership: GearOwnershipMap | null,
-  picks: Pick<PlanPicks, 'role' | 'classes'>
+  picks: Pick<PlanPicks, 'role' | 'classes' | 'survivability'>
 ): PlanCorpora {
-  // Destructured so the memos key on the two values and not on the pick object's identity.
-  const { role, classes } = picks
+  // Destructured so the memos key on the three values and not on the pick object's identity.
+  const { role, classes, survivability } = picks
   const keys = useMemo(() => ownedKeysOf(ownership), [ownership])
   // Keyed on the ARRAY identity, which `useGearIndex` holds stable for the life of the window, so
   // this 6,766-entry map is built once per window and never per pick — `useGearCompare` builds the
   // same map next door for the hover cards and for the same reason.
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
-  const side = useMemo(() => ownedSide(keys, byKey, role, classes), [keys, byKey, role, classes])
+  const side = useMemo(
+    () => ownedSide(keys, byKey, { role, classes, survivability }),
+    [keys, byKey, role, classes, survivability]
+  )
   return useMemo(
     () => ({
       gear: rows,
@@ -190,14 +195,17 @@ export function usePlanRoute(
   corpora: PlanCorpora,
   list: WishList
 ): PlanBracket[] {
-  const { classes, role, reach, eraOnly } = picks
+  const { classes, role, reach, eraOnly, survivability } = picks
   const entries = list.entries
   const wished = useMemo(() => new Set(entries.map((e) => e.itemKey)), [entries])
-  const pool = useMemo(() => candidatePool({ classes, role, eraOnly }, corpora), [classes, role, eraOnly, corpora])
+  const pool = useMemo(
+    () => candidatePool({ classes, role, eraOnly, survivability }, corpora),
+    [classes, role, eraOnly, survivability, corpora]
+  )
   return useMemo(() => {
     if (level === null) return []
-    return routeFromPool({ level, classes, role, reach, eraOnly }, corpora, pool, wished)
-  }, [level, classes, role, reach, eraOnly, corpora, pool, wished])
+    return routeFromPool({ level, classes, role, reach, eraOnly, survivability }, corpora, pool, wished)
+  }, [level, classes, role, reach, eraOnly, survivability, corpora, pool, wished])
 }
 
 /**

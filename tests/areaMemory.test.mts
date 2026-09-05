@@ -55,11 +55,13 @@ import {
   sanitizeOpenGroups,
   sanitizePlanReach,
   sanitizePlanRole,
+  sanitizePlanSurvivability,
   sanitizeSearch,
   sanitizeUpgrade,
   tierOf,
   PLAN_REACHES,
   PLAN_ROLES,
+  PLAN_SURVIVABILITY_BASE,
   type AreaFormKey,
   type BrowseFormMemory
 } from '../src/renderer/src/features/gear/areaMemory'
@@ -104,9 +106,10 @@ const BROWSE_FALLBACK: BrowseFormMemory = { socket: 'proc', slot: null, trioOnly
 test('the restart split is a table, and every key in it is on one of exactly two tiers', () => {
   const keys = Object.keys(AREA_FORM_TIER) as AreaFormKey[]
   // Eleven fields arrived with JOS-329; the progression planner's two picks (`eq.plan.role`,
-  // `eq.plan.reach`) make thirteen. The number is here so a key added without a row in `READERS`
-  // below fails TWICE — once on the count, once on the coverage sweep.
-  assert.equal(keys.length, 13, 'thirteen fields are stored — update this test when a fourteenth is')
+  // `eq.plan.reach`) made thirteen, and its survivability dial makes fourteen. The number is here
+  // so a key added without a row in `READERS` below fails TWICE — once on the count, once on the
+  // coverage sweep.
+  assert.equal(keys.length, 14, 'fourteen fields are stored — update this test when a fifteenth is')
   for (const key of keys) {
     const tier = tierOf(key)
     assert.ok(tier === 'restart' || tier === 'session', `${key} is on an unknown tier ${tier}`)
@@ -134,11 +137,12 @@ test('WHAT YOU CHOSE IS RESTART-SCOPED — including the slider, whose old law s
     'eq.gear.classes',
     'eq.gear.upgrade',
     'eq.planner.filters',
-    // The Plan tab's two picks. Neither is typed and neither is poked out of a list — they are the
-    // shape you gave the route, so they come back next launch like every other closed-vocabulary
-    // pick in this area.
+    // The Plan tab's picks. None is typed and none is poked out of a list — they are the shape you
+    // gave the route, so they come back next launch like every other closed-vocabulary pick in
+    // this area. The survivability dial rides with them: a Glass cannon plans glass next launch.
     'eq.plan.role',
-    'eq.plan.reach'
+    'eq.plan.reach',
+    'eq.plan.survivability'
   ]
   for (const key of chosen) assert.equal(tierOf(key), 'restart', `${key} must survive a restart`)
 })
@@ -191,7 +195,9 @@ const READERS: Reader[] = [
   // The Plan tab's two picks. Both are closed vocabularies, so both take NO `legal` exemption:
   // 'nonsense' is not a role, and the fallback is the fold's own default in each case.
   { key: 'eq.plan.role', read: sanitizePlanRole, fallback: 'balanced' },
-  { key: 'eq.plan.reach', read: sanitizePlanReach, fallback: 'solo' }
+  { key: 'eq.plan.reach', read: sanitizePlanReach, fallback: 'solo' },
+  // The dps defense dial — a record for the same shape reason as `eq.gear.upgrade` above.
+  { key: 'eq.plan.survivability', read: sanitizePlanSurvivability, fallback: PLAN_SURVIVABILITY_BASE }
 ]
 
 test('every stored key has a reader in this file — a new key cannot be covered by being forgotten', () => {
@@ -400,6 +406,16 @@ test('the Plan tab`s two picks round-trip, and their vocabularies come from the 
   // reaching the fold, which would read it as a role with no weights table (JOS-105).
   assert.equal(sanitizePlanRole('TANK'), 'balanced', 'the vocabulary is case-sensitive')
   assert.equal(sanitizePlanReach('duo'), 'solo', 'a reach nobody measured is not a reach')
+})
+
+test('the survivability dial round-trips its whole range, and an off-scale number CLAMPS rather than defaults', () => {
+  // The garbage sweep proves junk defaults; this is the other half — every legal position survives,
+  // both ends included, so a stored Glass cannon does not quietly re-center itself next launch.
+  for (const dial of [0, 0.1, 0.5, 1]) assert.deepEqual(sanitizePlanSurvivability({ dial }), { dial })
+  // A finite number OUTSIDE the scale is a position, exaggerated — the nearest end, not the middle:
+  // defaulting would move a hand-edited 1.2 to the opposite half of the axis it was reaching for.
+  assert.deepEqual(sanitizePlanSurvivability({ dial: 1.2 }), { dial: 1 })
+  assert.deepEqual(sanitizePlanSurvivability({ dial: -0.3 }), { dial: 0 })
 })
 
 test('the 2026-08-15 role widening did not evict a pick anybody already had stored', () => {

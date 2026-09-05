@@ -29,14 +29,13 @@
 // full credit, so a better haste weapon clears the bar and a hasteless one with a slightly better
 // ratio does not.
 
-import type { ClassAbbr } from '../../../../shared/classCombo'
 import type { GearRow } from '../../../../shared/planner/gear'
 import type { EquipSlot } from '../../../../shared/planner/types'
 import {
   ownedHasteOutside,
   roleValue,
-  type GearRole,
-  type OwnedHaste
+  type OwnedHaste,
+  type PlanScope
 } from '../../../../shared/planner/progressionPlan'
 import type { GearOwnershipMap } from '../gear/gearOwnership'
 
@@ -102,7 +101,8 @@ export interface OwnedSide {
  *
  * THE SAME CLASS GATE THE CANDIDATES ARE READ THROUGH (fold rule 13) — a bar and the item measured
  * against it must agree on which stats are live, or a warrior's INT glove would set a bar its own
- * replacement is not allowed to clear.
+ * replacement is not allowed to clear. The same survivability dial too, for the same reason: a bar
+ * scored glass-cannon against candidates scored wooden would clear or block on taste alone.
  *
  * A KEY THE CORPUS HAS NO ROW FOR CONTRIBUTES NOTHING (law 1). The dump names items this scrape may
  * not describe; a row we cannot score is not a bar of zero, it is a slot this map declines to speak
@@ -115,8 +115,7 @@ export interface OwnedSide {
 export function ownedSide(
   keys: Pick<OwnedKeys, 'worn' | 'wornAny'>,
   byKey: ReadonlyMap<string, GearRow>,
-  role: GearRole,
-  classes: readonly ClassAbbr[]
+  scope: Pick<PlanScope, 'role' | 'classes' | 'survivability'>
 ): OwnedSide {
   const rows: GearRow[] = []
   const haste: OwnedHaste[] = []
@@ -129,9 +128,10 @@ export function ownedSide(
     if (row.stats.HASTE !== undefined && row.stats.HASTE > 0) haste.push({ haste: row.stats.HASTE, slots: row.slots })
   }
   const bars = new Map<EquipSlot, number>()
+  const ctx = { classes: scope.classes, survivability: scope.survivability }
   for (const row of rows) {
     for (const slot of row.slots) {
-      const score = roleValue(row.stats, role, { classes, ownedHaste: ownedHasteOutside(haste, slot) })
+      const score = roleValue(row.stats, scope.role, { ...ctx, ownedHaste: ownedHasteOutside(haste, slot) })
       const held = bars.get(slot)
       if (held === undefined || score > held) bars.set(slot, score)
     }

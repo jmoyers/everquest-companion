@@ -127,6 +127,8 @@ export const AREA_FORM_TIER = {
   // and re-homing it would give this area two.
   'eq.plan.role': 'restart',
   'eq.plan.reach': 'restart',
+  /** the dps focuses' Glass cannon ↔ Wooden sword defense dial — a pick like the two above */
+  'eq.plan.survivability': 'restart',
   // ---- the Wish list tab ----
   'eq.wishlist.search': 'session',
   // ---- the Character tab ----
@@ -359,6 +361,24 @@ export function sanitizePlanRole(raw: unknown): GearRole {
 /** The stored reach. SOLO is the default because it is the ask's own words (plan §8). */
 export function sanitizePlanReach(raw: unknown): PlanReach {
   return sanitizeOne<PlanReach>(raw, PLAN_REACHES, 'solo')
+}
+
+/**
+ * The stored survivability dial (`roleWeights.RoleContext.survivability`), 0 "Glass cannon" to 1
+ * "Wooden sword". A one-field record rather than a bare number for `sanitizeUpgrade`'s own shape
+ * reason: a stray number in the store reads as garbage, never as a coincidental dial position.
+ */
+export interface PlanSurvivability {
+  dial: number
+}
+
+/** 0.5 is the default because it IS the weight table — an unreadable value costs no opinion. */
+export const PLAN_SURVIVABILITY_BASE: PlanSurvivability = { dial: 0.5 }
+
+export function sanitizePlanSurvivability(raw: unknown): PlanSurvivability {
+  const o = asRecord(raw)
+  if (o === null || typeof o.dial !== 'number' || !Number.isFinite(o.dial)) return PLAN_SURVIVABILITY_BASE
+  return { dial: Math.min(1, Math.max(0, o.dial)) }
 }
 
 // ---- the Exaltations tab -----------------------------------------------------------------------

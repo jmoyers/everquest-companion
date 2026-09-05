@@ -59,7 +59,7 @@ test('HELD is what the route will not farm; WORN is what the dump says is EQUIPP
   assert.deepEqual([...keys.worn], ['haste sword'], 'only the equipped copy sets a bar')
 
   // …so the looted glove sets NO haste and the melted tunic NO chest bar.
-  const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
+  const side = ownedSide(keys, BY_KEY, { role: 'dps', classes: ['WAR'] })
   assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
   assert.deepEqual([...side.bars.keys()], ['PRIMARY'])
 
@@ -74,7 +74,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
     const stowed = ownedKeysOf(new Map([['haste sword', own({ facts: [at(place)] })]]))
     assert.deepEqual([...stowed.held], ['haste sword'], `${place}: still not a thing to farm`)
     assert.deepEqual([...stowed.worn], [], `${place}: not worn`)
-    const side = ownedSide(stowed, BY_KEY, 'dps', ['WAR'])
+    const side = ownedSide(stowed, BY_KEY, { role: 'dps', classes: ['WAR'] })
     assert.deepEqual(side.haste, [], `${place}: a haste blade there is not haste you have`)
     assert.equal(side.bars.size, 0, `${place}: sets no bar`)
   }
@@ -82,7 +82,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
   for (const facts of [[at('equipped')], [at('bank'), at('equipped')]]) {
     const keys = ownedKeysOf(new Map([['haste sword', own({ facts })]]))
     assert.deepEqual([...keys.worn], ['haste sword'])
-    const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
+    const side = ownedSide(keys, BY_KEY, { role: 'dps', classes: ['WAR'] })
     assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
     assert.equal(side.bars.get('PRIMARY'), roleValue(SWORD.stats, 'dps'))
   }
@@ -90,7 +90,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
 
 test('the haste source keeps full credit in its own slot, and every other bar is read against it', () => {
   const worn = new Set(['haste sword', 'quick gloves', 'plain tunic'])
-  const side = ownedSide({ worn, wornAny: new Set() }, BY_KEY, 'dps', ['WAR'])
+  const side = ownedSide({ worn, wornAny: new Set() }, BY_KEY, { role: 'dps', classes: ['WAR'] })
   // Two sources, each placed in every slot it fits.
   assert.deepEqual(side.haste, [
     { haste: 36, slots: ['PRIMARY'] },
@@ -107,7 +107,7 @@ test('the haste source keeps full credit in its own slot, and every other bar is
 })
 
 test('a key the corpus has no row for contributes nothing — a gap, not a bar of zero', () => {
-  const side = ownedSide({ worn: new Set(['unknown relic']), wornAny: new Set() }, BY_KEY, 'tank', [])
+  const side = ownedSide({ worn: new Set(['unknown relic']), wornAny: new Set() }, BY_KEY, { role: 'tank', classes: [] })
   assert.equal(side.bars.size, 0)
   assert.deepEqual(side.haste, [])
 })
@@ -129,7 +129,7 @@ const CURSED_BLADE = row({
 
 test('cursed blade loses to blood fire, base against base: the flat bonus and the DEX are garnish', () => {
   const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const side = ownedSide({ worn: new Set([BLOOD_FIRE.key]), wornAny: new Set() }, byKey, 'dps1h', ['WAR'])
+  const side = ownedSide({ worn: new Set([BLOOD_FIRE.key]), wornAny: new Set() }, byKey, { role: 'dps1h', classes: ['WAR'] })
   const bar = side.bars.get('PRIMARY')
   assert.ok(bar !== undefined, 'the worn blade sets a PRIMARY bar')
   const challenger = roleValue(CURSED_BLADE.stats, 'dps1h', { classes: ['WAR'] })
@@ -146,13 +146,13 @@ test('an Any Slot resident is worn for haste and absent for bars — the wildcar
   const keys = ownedKeysOf(new Map([['haste sword', own({ facts: [wild] })]]))
   assert.deepEqual([...keys.worn], [])
   assert.deepEqual([...keys.wornAny], ['haste sword'])
-  const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
+  const side = ownedSide(keys, BY_KEY, { role: 'dps', classes: ['WAR'] })
   assert.equal(side.bars.size, 0, 'no bar from the wildcard cell')
   assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }], 'its haste still counts')
   // Worn in a REAL cell too: the real cell wins and the bar is back.
   const both = ownedKeysOf(new Map([['haste sword', own({ facts: [wild, at('equipped')] })]]))
   assert.deepEqual([...both.worn], ['haste sword'])
-  assert.equal(ownedSide(both, BY_KEY, 'dps', ['WAR']).bars.size > 0, true)
+  assert.equal(ownedSide(both, BY_KEY, { role: 'dps', classes: ['WAR'] }).bars.size > 0, true)
 })
 
 test('vacra av svim loses the offhand to whitened treant fists: weapon garnish is damped', () => {
@@ -169,11 +169,36 @@ test('vacra av svim loses the offhand to whitened treant fists: weapon garnish i
     stats: { DMG: 10, DELAY: 31, STR: 6, WIS: 6, AGI: 6, HP: 5, AC: 6 }
   })
   const byKey = new Map([[FISTS.key, FISTS]])
-  const bar = ownedSide({ worn: new Set([FISTS.key]), wornAny: new Set() }, byKey, 'dps1h', ['WAR', 'MNK', 'SHM']).bars.get('SECONDARY')
+  const bar = ownedSide({ worn: new Set([FISTS.key]), wornAny: new Set() }, byKey, { role: 'dps1h', classes: ['WAR', 'MNK', 'SHM'] }).bars.get('SECONDARY')
   assert.ok(bar !== undefined)
   const challenger = roleValue(VACRA.stats, 'dps1h', { classes: ['WAR', 'MNK', 'SHM'] })
   assert.ok(
     challenger < bar,
     `the stat-stick (${challenger.toFixed(1)}) must not clear the offhand bar (${bar.toFixed(1)})`
   )
+})
+
+test('boots of brawn lose to shiverback-hide boots: a dps focus prices defense, not just STR', () => {
+  // The third field case (fork, kaltinril 2026-09-04: "if you have 500 str, and no other stats,
+  // you're going to die"): with defense at a token weight, +9 STR bought −13 DEX and the loss of
+  // nine STA and nine AGI, and the route called it an upgrade. The dial's DEFAULT midpoint pins
+  // the verdict the other way; the GLASS-CANNON end is allowed to keep the old one — that end of
+  // the slider is the old table, on purpose.
+  const SHIVERBACK = row({
+    key: 'shiverback-hide boots', name: 'Shiverback-Hide Boots', slots: ['FEET'],
+    stats: { STR: 5, STA: 9, AGI: 9, AC: 6 }
+  })
+  const BRAWN_STATS = { STR: 9, DEX: -13, AC: 8 }
+  const byKey = new Map([[SHIVERBACK.key, SHIVERBACK]])
+  const scope = { role: 'dps' as const, classes: ['SHM' as const] }
+  const bar = ownedSide({ worn: new Set([SHIVERBACK.key]), wornAny: new Set() }, byKey, scope).bars.get('FEET')
+  assert.ok(bar !== undefined)
+  const challenger = roleValue(BRAWN_STATS, 'dps', { classes: scope.classes })
+  assert.ok(
+    challenger < bar,
+    `the STR boots (${challenger.toFixed(1)}) must not clear the FEET bar (${bar.toFixed(1)})`
+  )
+  // …and the bar reads the dial too (`ownedSide`): both sides move together at the glass end.
+  const glass = ownedSide({ worn: new Set([SHIVERBACK.key]), wornAny: new Set() }, byKey, { ...scope, survivability: 0 }).bars.get('FEET')
+  assert.ok(glass !== undefined && glass < bar, 'the glass-cannon bar prices the defense off both sides')
 })
