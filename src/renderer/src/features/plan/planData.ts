@@ -49,15 +49,19 @@ import {
   type GearRole,
   type GearTarget,
   type PlanBracket,
-  type PlanCorpora
+  type PlanCorpora,
+  type QuestSource
 } from '@shared/planner/progressionPlan'
+import { ownershipKey } from '@shared/planner/ownership'
 import { statedLevel, zoneLevelProfile, type ZoneLevels } from '@shared/planner/zoneLevels'
+import questsJson from '../../data/eqlegends/quests.json'
+import poskyJson from '../../data/eqlegends/posky.json'
 import { MOB_CATALOG } from '../mobs/mobSearch'
 import type { PlanReach } from '../gear/areaMemory'
 import type { GearOwnershipMap } from '../gear/gearOwnership'
 import { useWishlist } from '../wishlist/useWishlist'
 import { wishFromGear } from '../wishlist/wishSearch'
-import { ownedKeysOf, ownedSide } from './planOwned'
+import { ownedKeysOf, ownedSide, ownedUpgrades, type OwnedUpgrade } from './planOwned'
 
 // ---- the catalog folds ------------------------------------------------------------------------
 
@@ -74,6 +78,59 @@ export function zoneProfiles(): ReadonlyMap<string, ZoneLevels> {
 /** The join key for a mob NAME, the `mergeItemSources` fold — see the header for what it is not. */
 function mobKey(name: string): string {
   return name.trim().toLowerCase()
+}
+
+// ---- the quest lane (fork, 2026-09-05) --------------------------------------------------------
+// REWARD → QUEST, folded once from the two quest corpora: `quests.json` (904 pages: rewards,
+// startZone, giver, minLevel) and `posky.json` (the Plane of Sky test chains — Sandals of
+// Alacrity, Dagas, Ton Po's Eye Patch and the rest of the 841 rows no drop witness reaches).
+// Keys are `ownershipKey`, the same fold `GearRow.key` is filed under, so the pool's lookup is one
+// `Map.get`. A reward named by several quests keeps every source; the fold's `targetOf` takes the
+// first that qualifies.
+
+let QUEST_SOURCES: ReadonlyMap<string, QuestSource[]> | null = null
+
+interface QuestPage {
+  name?: string
+  startZone?: string
+  giver?: string
+  minLevel?: number
+  rewards?: { name?: string }[]
+}
+interface PoskyPage {
+  name?: string
+  giver?: string
+  reward?: string
+}
+
+function addQuestSource(out: Map<string, QuestSource[]>, reward: string | undefined, source: QuestSource): void {
+  if (reward === undefined || reward === '') return
+  const key = ownershipKey(reward)
+  const held = out.get(key)
+  if (held === undefined) out.set(key, [source])
+  else held.push(source)
+}
+
+function questSourcesOf(key: string): readonly QuestSource[] {
+  if (QUEST_SOURCES === null) {
+    const out = new Map<string, QuestSource[]>()
+    for (const q of (questsJson as { quests: QuestPage[] }).quests) {
+      const source: QuestSource = {
+        quest: q.name ?? '',
+        zone: q.startZone ?? '',
+        giver: q.giver ?? '',
+        ...(q.minLevel === undefined ? {} : { minLevel: q.minLevel })
+      }
+      if (source.quest === '') continue
+      for (const r of q.rewards ?? []) addQuestSource(out, r.name, source)
+    }
+    for (const p of (poskyJson as { quests: PoskyPage[] }).quests) {
+      if (p.name === undefined) continue
+      addQuestSource(out, p.reward, { quest: p.name, zone: 'Plane of Sky', giver: p.giver ?? '' })
+    }
+    QUEST_SOURCES = out
+  }
+  return QUEST_SOURCES.get(key) ?? []
 }
 
 function mobLevels(): ReadonlyMap<string, number> {
@@ -171,11 +228,32 @@ export function usePlanCorpora(
       mobLevel: mobLevelOf,
       con: conBand,
       owned: keys.held,
+      questSources: questSourcesOf,
       ownedBestBySlot: side.bars,
       ownedHaste: side.haste
     }),
     [rows, keys, side]
   )
+}
+
+/**
+ * WHAT YOU ALREADY OWN THAT BEATS WHAT YOU WEAR — the equip advisory (`planOwned.ownedUpgrades`),
+ * on the same memo discipline as the corpora hook beside it. The `byKey` map is built next door
+ * twice already (`usePlanCorpora`, `useGearCompare`) and that precedent is the license for a third:
+ * keying on the window-stable `rows` identity makes each of them once-per-window.
+ */
+export function useOwnedUpgrades(
+  rows: readonly GearRow[],
+  ownership: GearOwnershipMap | null,
+  picks: Pick<PlanPicks, 'role' | 'classes' | 'survivability'>
+): OwnedUpgrade[] {
+  const { role, classes, survivability } = picks
+  const keys = useMemo(() => ownedKeysOf(ownership), [ownership])
+  const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
+  return useMemo(() => {
+    const scope = { role, classes, survivability }
+    return ownedUpgrades(keys, byKey, ownedSide(keys, byKey, scope), scope)
+  }, [keys, byKey, role, classes, survivability])
 }
 
 /**

@@ -144,6 +144,38 @@ function mobText(target: GearTarget): string {
   return target.mobLevel === null ? mob : `${mob} (Lvl ${String(target.mobLevel)})`
 }
 
+/** The pointer, worded: `quest: <name> — <giver>` for the quest lane, the mob witness otherwise. */
+function witnessText(target: GearTarget): string {
+  if (target.quest === undefined) return mobText(target)
+  return `quest: ${target.quest}${target.mob === '' ? '' : ` — ${target.mob}`}`
+}
+
+/**
+ * THE WITNESS LINE — its own row under the name since the 2026-09-05 relayout (fork report: *"the
+ * mob it drops from is now hidden by lack of space"* — the name, slot word and wish control left
+ * the mob a sliver, and the tooltip was carrying what the tile should say). A second line costs
+ * height the grid can afford; a witness nobody can read costs the whole point of the row.
+ */
+function WitnessLine({ target, onOpenMob }: { target: GearTarget; onOpenMob?: ((t: MobTarget) => void) | undefined }): JSX.Element {
+  // NAMED, BASE-ZONE witnesses only (owner ruling, 2026-08-18): a `+N` witness names a creature
+  // the catalog has no row for (planData header), and a common's bare name can mean nine pages —
+  // both stay the plain text they were rather than linking to a guess. A quest is not a mob at all.
+  const mobLinked =
+    onOpenMob !== undefined && target.quest === undefined && target.plus === null && !isCommonMob(target.mob)
+  return (
+    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0, pl: 4.5 }}>
+      {mobLinked ? (
+        <>
+          <CellLink text={target.mob} onOpen={() => { onOpenMob(mobTargetOf(target)) }} />
+          {target.mobLevel === null ? '' : ` (Lvl ${String(target.mobLevel)})`}
+        </>
+      ) : (
+        witnessText(target)
+      )}
+    </Typography>
+  )
+}
+
 /**
  * THE MOB CLICK, with the page the item page named PINNED (`GearTarget.mobPage` → `MobTarget.entry`).
  * A name resolves to one page of possibly several; the entry is the row the wiki actually linked, so
@@ -184,76 +216,59 @@ function TargetRow({
   onToggleWish?: ((t: GearTarget) => void) | undefined
 }): JSX.Element {
   const name = <DonorName name={target.name} bold onOpen={onOpenLoot} />
-  // NAMED, BASE-ZONE witnesses only (owner ruling, 2026-08-18): a `+N` witness names a creature
-  // the catalog has no row for (planData header), and a common's bare name can mean nine pages —
-  // both stay the plain text they were rather than linking to a guess.
-  const mobLinked = onOpenMob !== undefined && target.plus === null && !isCommonMob(target.mob)
   const row = compare?.byKey.get(target.key)
   return (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
+    <Box
       data-testid="plan-target"
       data-item-key={target.key}
       data-wished={target.wished ? 'true' : undefined}
-      // THE WITNESS RIDES ON THE HOVER. In a ~320px column the mob text is the first thing to
-      // ellipsize, so the hover carries what the row had to clip — the alternative (letting the
-      // tile grow to fit) is the one thing the grid must not do. Nothing else does: the score that
-      // ordered the list is a heuristic and the tooltip diet says a rank is not a thing to footnote.
-      title={`${target.name} - ${mobText(target)}`}
-      sx={{ flexWrap: 'nowrap', minWidth: 0, py: 0.25, pl: 1 }}
+      title={`${target.name} - ${witnessText(target)}`}
+      sx={{ minWidth: 0, py: 0.25, pl: 1 }}
     >
-      {target.iconId !== undefined && (
-        <Box
-          component="img"
-          src={itemIconUrl(target.iconId)}
-          alt=""
-          onError={(e) => {
-            e.currentTarget.style.display = 'none'
-          }}
-          sx={{ width: 20, height: 20, flexShrink: 0 }}
-        />
-      )}
-      {/* THE ONE SHRINKABLE GROUP: every piece of world text, ellipsizing together. */}
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0, flexGrow: 1, overflow: 'hidden' }}>
-        {compare !== undefined && row !== undefined ? (
-          <GearRowCompare row={row} data={compare}>
-            <span>{name}</span>
-          </GearRowCompare>
-        ) : (
-          name
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
+        {target.iconId !== undefined && (
+          <Box
+            component="img"
+            src={itemIconUrl(target.iconId)}
+            alt=""
+            onError={(e) => {
+              e.currentTarget.style.display = 'none'
+            }}
+            sx={{ width: 20, height: 20, flexShrink: 0 }}
+          />
         )}
-        <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
-          {mobLinked ? (
-            <>
-              <CellLink text={target.mob} onOpen={() => { onOpenMob(mobTargetOf(target)) }} />
-              {target.mobLevel === null ? '' : ` (Lvl ${String(target.mobLevel)})`}
-            </>
+        {/* THE ONE SHRINKABLE GROUP: the name, ellipsizing alone — the witness has its own line. */}
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, minWidth: 0, flexGrow: 1, overflow: 'hidden' }}>
+          {compare !== undefined && row !== undefined ? (
+            <GearRowCompare row={row} data={compare}>
+              <span>{name}</span>
+            </GearRowCompare>
           ) : (
-            mobText(target)
+            name
           )}
-        </Typography>
-      </Box>
-      <SlotChip slot={target.slot} />
-      {onToggleWish !== undefined && (
-        <WishToggle
-          name={target.name}
-          wished={target.wished}
-          testId="plan-target-wish"
-          onToggle={() => {
-            onToggleWish(target)
-          }}
-        />
-      )}
-      {/* THE BAND ONLY WHEN IT ADDS SOMETHING. A run's heading already states one band for the whole
-          trip, and inside a ~320px tile repeating it on every row costs the width the item name needs
-          — worst case a `+N` run printing "difficulty unstated" four times in a column that fits it
-          once. A target whose band DIFFERS from its run's still draws its own chip, because that is a
-          real fact about a different mob; a target that agrees says nothing twice. Nothing is hidden
-          by this rule that the tile is not already showing one line above. */}
-      {target.band !== runBand && <BandChip band={target.band} plus={target.plus} />}
-    </Stack>
+        </Box>
+        <SlotChip slot={target.slot} />
+        {onToggleWish !== undefined && (
+          <WishToggle
+            name={target.name}
+            wished={target.wished}
+            testId="plan-target-wish"
+            onToggle={() => {
+              onToggleWish(target)
+            }}
+          />
+        )}
+        {/* THE BAND ONLY WHEN IT ADDS SOMETHING. A run's heading already states one band for the
+            whole trip, and inside a ~320px tile repeating it on every row costs the width the item
+            name needs — worst case a `+N` run printing "difficulty unstated" four times in a column
+            that fits it once. A target whose band DIFFERS from its run's still draws its own chip,
+            because that is a real fact about a different mob; a target that agrees says nothing
+            twice. Nothing is hidden by this rule that the tile is not already showing one line
+            above. */}
+        {target.band !== runBand && <BandChip band={target.band} plus={target.plus} />}
+      </Stack>
+      <WitnessLine target={target} onOpenMob={onOpenMob} />
+    </Box>
   )
 }
 

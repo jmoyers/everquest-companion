@@ -193,6 +193,9 @@ export interface GearTarget {
   mobPage?: string
   /** the level the CATALOG states for that mob, or `null`. See `witnessesOf` for the +N split. */
   mobLevel: number | null
+  /** the QUEST this item is a reward of (the quest lane) — `mob` is then the giver, and there is
+   *  no dropper to click; absent on every kill-witnessed target */
+  quest?: string
   /** the con verdict at the earliest level in the bracket where it qualifies — `null` for a +N */
   band: ConBand | null
   /**
@@ -275,6 +278,14 @@ export interface PlanCorpora {
   con: (myLevel: number, mobLevel: number) => ConBand
   /** item keys the character already owns — EXCLUDED as targets (you do not farm what you have) */
   owned: ReadonlySet<string>
+  /**
+   * THE QUEST LANE (fork, 2026-09-05): reward relationships for items whose pages state no dropper —
+   * a lookup by `row.key`, `undefined`/absent meaning the caller has no quest corpus. 841 of the
+   * corpus's rows are reachable ONLY this way (Sky class armor, Sandals of Alacrity, Dagas, Ton
+   * Po's Eye Patch…), and a route that stays silent about all of them is not answering "what should
+   * I go after".
+   */
+  questSources?: (key: string) => readonly QuestSource[]
   /**
    * item keys already on the wish list — FLAGGED, not excluded (`GearTarget.wished`). The plan seeds
    * that document and then keeps routing to it; it never silently drops a thing the user asked for.
@@ -391,9 +402,23 @@ interface Witness {
   zone: string
   plus: number | null
   mob: string
-  /** the page spelling, untouched — `GearTarget.mobPage` */
-  mobPage: string
+  /** the page spelling, untouched — `GearTarget.mobPage`; absent on a quest witness */
+  mobPage?: string
   mobLevel: number | null
+  /** A QUEST witness (fork, kaltinril 2026-09-05: *"WE build the recommended… i want to know what
+   *  the best gears to go after are"*): the reward relationship the quest corpus states where the
+   *  item page states no dropper. `mob` carries the GIVER; the gate is `minLevel` when the quest
+   *  states one, the zone profile when it does not, and nothing when neither is stated. */
+  quest?: string
+  minLevel?: number
+}
+
+/** What the quest corpus states about one reward — `PlanCorpora.questSources` hands these in. */
+export interface QuestSource {
+  quest: string
+  zone: string
+  giver: string
+  minLevel?: number
 }
 
 /**
@@ -554,6 +579,7 @@ function bandInBracket(
  */
 function qualify(witness: Witness, bracket: Bracket, ctx: PlanCtx): { band: ConBand | null } | null {
   const { con, profiles } = ctx.corpora
+  if (witness.quest !== undefined) return qualifyQuest(witness, bracket, ctx)
   if (witness.plus === null) {
     if (witness.mobLevel === null) return null
     const band = bandInBracket(witness.mobLevel, bracket, con, ctx.gate)
@@ -562,6 +588,19 @@ function qualify(witness: Witness, bracket: Bracket, ctx: PlanCtx): { band: ConB
   const profile = witness.zone === '' ? undefined : profiles.get(zoneLevelKey(witness.zone))
   if (profile === undefined) return null
   return bandInBracket(profile.median, bracket, con, ctx.gate) === null ? null : { band: null }
+}
+
+/**
+ * QUEST WITNESS: there is no mob to con, so the gate is whichever of these the data states, in
+ * order of specificity — the quest's own `minLevel` (the bracket has to reach it), else the start
+ * zone's profile (the +N witness's own weaker claim about the PLACE), else nothing: an ungated
+ * quest qualifies in the first bracket, because "go when you like" is what the corpus said.
+ */
+function qualifyQuest(witness: Witness, bracket: Bracket, ctx: PlanCtx): { band: ConBand | null } | null {
+  if (witness.minLevel !== undefined) return bracket.to >= witness.minLevel ? { band: null } : null
+  const profile = witness.zone === '' ? undefined : ctx.corpora.profiles.get(zoneLevelKey(witness.zone))
+  if (profile === undefined) return { band: null }
+  return bandInBracket(profile.median, bracket, ctx.corpora.con, ctx.gate) === null ? null : { band: null }
 }
 
 /** The first witness of a candidate that qualifies for this bracket, as a target — or `null`. */
@@ -576,8 +615,9 @@ function targetOf(candidate: PlanCandidate, bracket: Bracket, ctx: PlanCtx): Gea
       zone: witness.zone,
       plus: witness.plus,
       mob: witness.mob,
-      mobPage: witness.mobPage,
+      ...(witness.mobPage === undefined ? {} : { mobPage: witness.mobPage }),
       mobLevel: witness.mobLevel,
+      ...(witness.quest === undefined ? {} : { quest: witness.quest }),
       band: verdict.band,
       score: candidate.score,
       ...(candidate.slot === undefined ? {} : { slot: candidate.slot }),
@@ -806,6 +846,13 @@ export function candidatePool(scope: PlanScope, corpora: PlanCorpora): PlanCandi
     if (!wearable(row, scope.classes)) continue
     if (!eraLegal(row, scope.eraOnly)) continue
     const witnesses = witnessesOf(row, corpora.mobLevel)
+    // The quest lane fills in ONLY where no dropper is stated: a killable witness is the more
+    // actionable pointer when the page states both.
+    if (witnesses.length === 0) {
+      for (const q of corpora.questSources?.(row.key) ?? []) {
+        witnesses.push({ zone: q.zone, plus: null, mob: q.giver, mobLevel: null, quest: q.quest, ...(q.minLevel === undefined ? {} : { minLevel: q.minLevel }) })
+      }
+    }
     if (witnesses.length === 0) continue
     const { best, bySlot } = scoresOf(row, scope, corpora)
     const slot = upgradeSlot(row, { bySlot, bars: corpora.ownedBestBySlot, policy })

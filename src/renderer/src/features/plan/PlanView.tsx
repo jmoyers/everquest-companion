@@ -78,7 +78,7 @@ import { useStatedLevel, type StatedLevel } from '../leveling/useStatedLevel'
 import { CURRENT_ERA_LABEL, useEraOnly } from '../planner/plannerData'
 import type { MobTarget } from '../mobs/mobTarget'
 import PlanBracketCard from './PlanBracketCard'
-import { usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
+import { useOwnedUpgrades, usePlanCorpora, usePlanRoute, usePlanWishes } from './planData'
 import { planBlurb } from './planBlurb'
 
 /** What each role is CALLED. A `Record` so an eleventh role is a type error here (the `VIEW_LABELS` trick). */
@@ -349,6 +349,7 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
   // wish list goes to the ROUTE and not the corpora (planData's header): a wish click re-cuts the
   // brackets, never re-scores the corpus.
   const corpora = usePlanCorpora(rows, ownership.map, { role, classes: classes.classes, survivability })
+  const ownedUps = useOwnedUpgrades(rows, ownership.map, { role, classes: classes.classes, survivability })
   const picks = useMemo(
     () => ({ classes: classes.classes, role, reach, eraOnly, survivability }),
     [classes.classes, role, reach, eraOnly, survivability]
@@ -382,6 +383,23 @@ export default function PlanView({ onOpenLoot, onOpenMapZone, onOpenMob }: PlanV
       >
         {planBlurb(role, classes.classes)}
       </Typography>
+
+      {/* THE EQUIP ADVISORY (fork ruling, kaltinril 2026-09-05: "if i have it in a bank slot and
+          i'm an idiot it needs to tell me to equip it"): what your own bags and bank hold that
+          beats what you wear, before a single farm is suggested — the cheapest upgrade is the one
+          you already own. Capped like every strip; the fold sorted best-first. */}
+      {ownedUps.length > 0 && (
+        <Typography
+          variant="body2"
+          color="warning.main"
+          data-testid="plan-owned-upgrades"
+          sx={{ mb: 1, px: 0.5, flexShrink: 0 }}
+        >
+          You already own upgrades — equip:{' '}
+          {ownedUps.slice(0, 5).map((u) => `${u.name} (${u.slot.charAt(0) + u.slot.slice(1).toLowerCase()})`).join(' · ')}
+          {ownedUps.length > 5 ? ` · +${String(ownedUps.length - 5)} more` : ''}
+        </Typography>
+      )}
 
       {/* The cards' own bounded scroller: a seven-card route grows THIS box, never the page. */}
       <Box sx={{ flexGrow: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} data-testid="plan-route">

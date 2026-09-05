@@ -466,6 +466,37 @@ test('roleValue reads ABSENT as nothing, and never returns NaN', () => {
   }
 })
 
+test('a QUEST reward with no dropper is a target — the quest lane, gated by minLevel', () => {
+  // The 2026-09-05 fork ruling ("WE build the recommended… i want to know what the best gears to
+  // go after are"): 841 corpus rows are reachable only as quest rewards — Sandals of Alacrity,
+  // Dagas, Ton Po's Eye Patch — and the drop-witness law kept every one of them invisible. A
+  // quest witness carries the QUEST as the pointer, the giver where the mob would be, NO band
+  // (there is nothing to con), and qualifies only in brackets that reach the quest's minLevel.
+  const SANDALS = row({
+    key: 'sandals of alacrity', name: 'Sandals of Alacrity', slots: ['FEET'],
+    classes: ['ROG'], stats: { STR: 10, AGI: 10, HP: 20 }
+  })
+  const base = corpora({ gear: [SANDALS], owned: new Set(), wished: new Set() })
+  const sourced: PlanCorpora = {
+    ...base,
+    questSources: (key) =>
+      key === 'sandals of alacrity' ? [{ quest: 'Monk Test of Speed', zone: 'Plane of Sky', giver: 'Gwan, of the Blue', minLevel: 46 }] : []
+  }
+  // Opened at 40 so the FIRST bracket (40-45) tops out BELOW the minLevel and the second reaches it.
+  const route = buildProgressionPlan(inputs({ level: 40 }), sourced)
+  const hits = route.flatMap((b) => b.targets.filter((t) => t.key === 'sandals of alacrity').map((t) => ({ to: b.to, t })))
+  assert.ok(hits.length > 0, 'the reward reaches the route through the quest lane')
+  assert.ok(hits.every((h) => h.to >= 46), 'no bracket below the quest`s minLevel offers it')
+  const first = hits[0].t
+  assert.equal(first.quest, 'Monk Test of Speed')
+  assert.equal(first.mob, 'Gwan, of the Blue', 'the giver rides where the mob would')
+  assert.equal(first.zone, 'Plane of Sky')
+  assert.equal(first.band, null, 'a quest has nothing to con')
+  // …and a page that DOES state a dropper never consults the lane: the kill witness wins.
+  const dropped = buildProgressionPlan(inputs({}), corpora({ wished: new Set() }))
+  for (const b of dropped) for (const t of b.targets) assert.equal(t.quest, undefined)
+})
+
 test('a TANK plan and a DPS plan order the same two items OPPOSITELY', () => {
   const two = corpora({ gear: [PLATE, BLADE], owned: new Set(), wished: new Set() })
 

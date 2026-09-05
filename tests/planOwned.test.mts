@@ -1,10 +1,11 @@
 // THE OWNED SIDE OF THE GAP TEST — `features/plan/planOwned.ts`, the production fold behind
 // `PlanCorpora.owned`, `ownedBestBySlot` and `ownedHaste` (progressionPlan.ts rules 8 and 12).
 //
-// WHAT IS PINNED, and both were bugs on 2026-08-25:
-//   1. TWO SETS. A looted-but-not-in-dump item and a melted one are EXCLUDED as targets and set NO
-//      bar and NO haste; neither does a copy the dump files in a BAG or the BANK (owner, 2026-08-25:
-//      "haste should only be EQUIPPED items"). Only an EQUIPPED copy does either.
+// WHAT IS PINNED:
+//   1. TWO SETS. A dump-owned copy and a melted one are EXCLUDED as targets; a bare loot line is
+//      NOT (fork ruling 2026-09-05 — the log is a memory of possession, the dump is proof). No
+//      copy in a BAG or the BANK sets a bar or haste (owner, 2026-08-25: "haste should only be
+//      EQUIPPED items"): only an EQUIPPED copy does either.
 //   2. ONE HASTE RULE. The haste weapon's own bar keeps full credit for its haste; a haste item in
 //      another slot is scored against the sword; a hasteless slot's bar is its plain score.
 //
@@ -15,7 +16,7 @@ import assert from 'node:assert/strict'
 import type { GearRow } from '../src/shared/planner/gear'
 import { roleValue } from '../src/shared/planner/progressionPlan'
 import type { GearOwnership, GearOwnershipMap, OwnedFact } from '../src/renderer/src/features/gear/gearOwnership'
-import { ownedKeysOf, ownedSide } from '../src/renderer/src/features/plan/planOwned'
+import { ownedKeysOf, ownedSide, ownedUpgrades } from '../src/renderer/src/features/plan/planOwned'
 
 function row(over: Partial<GearRow> & Pick<GearRow, 'key' | 'name'>): GearRow {
   return {
@@ -49,13 +50,16 @@ const BY_KEY = new Map([SWORD, GLOVES, TUNIC].map((r) => [r.key, r]))
 test('HELD is what the route will not farm; WORN is what the dump says is EQUIPPED — two sets, not one', () => {
   const map: GearOwnershipMap = new Map([
     ['haste sword', own({ facts: [at('equipped')] })],
-    // Looted this epoch and no longer in the dump: sold, banked elsewhere, or handed on.
+    // Looted this epoch and no longer in the dump: sold, destroyed, or handed to a friend — which
+    // is exactly why it is STILL A TARGET (fork ruling, 2026-09-05: "you can't count looted alone,
+    // i have to own it"). The dump is the proof of possession; the log is only a memory of one.
     ['quick gloves', own({ looted: true })],
-    // Melted: the exaltation row proves a copy passed through, and the dump names no copy.
+    // Melted: the exaltation row proves the copy is in your gear right now, just not as itself.
     ['plain tunic', own({ exaltations: 1 })]
   ])
   const keys = ownedKeysOf(map)
-  assert.deepEqual([...keys.held].sort(), ['haste sword', 'plain tunic', 'quick gloves'], 'all three are excluded as targets')
+  assert.deepEqual([...keys.held].sort(), ['haste sword', 'plain tunic'], 'dump-owned and melted are excluded as targets')
+  assert.equal(keys.held.has('quick gloves'), false, 'a bare loot line does NOT exclude the farm')
   assert.deepEqual([...keys.worn], ['haste sword'], 'only the equipped copy sets a bar')
 
   // …so the looted glove sets NO haste and the melted tunic NO chest bar.
@@ -251,4 +255,28 @@ test('imbued granite spaulders lose to sode of empowerment near the glass end: r
       `at dial ${String(survivability)} the resist slab (${challenger.toFixed(1)}) must not clear the bar (${bar.toFixed(1)})`
     )
   }
+})
+
+test('what you OWN but do not WEAR that beats what you wear is called out — the equip advisory', () => {
+  // Fork ruling, 2026-09-05: "if i have it in a bank slot and i'm an idiot it needs to tell me to
+  // equip it." Worn: the plain tunic. Banked: a better chest (beats the bar), the haste sword (a
+  // PRIMARY gap — fills it), and a worse chest (stays silent). Same dial, same bars, base v base.
+  const BETTER = row({ key: 'fine tunic', name: 'Fine Tunic', slots: ['CHEST'], stats: { AC: 30 } })
+  const WORSE = row({ key: 'ragged tunic', name: 'Ragged Tunic', slots: ['CHEST'], stats: { AC: 5 } })
+  const byKey = new Map([...BY_KEY, [BETTER.key, BETTER], [WORSE.key, WORSE]])
+  const keys = ownedKeysOf(
+    new Map([
+      ['plain tunic', own({ facts: [at('equipped')] })],
+      ['fine tunic', own({ facts: [at('bank')] })],
+      ['haste sword', own({ facts: [at('inventory')] })],
+      ['ragged tunic', own({ facts: [at('bank')] })]
+    ])
+  )
+  const scope = { role: 'dps' as const, classes: ['WAR' as const] }
+  const ups = ownedUpgrades(keys, byKey, ownedSide(keys, byKey, scope), scope)
+  assert.deepEqual(ups.map((u) => `${u.name}:${u.slot}`).sort(), ['Fine Tunic:CHEST', 'Haste Sword:PRIMARY'])
+  // Sorted best-first: the sword's ratio and haste dwarf a chest's AC.
+  assert.equal(ups[0].name, 'Haste Sword')
+  // Nothing worn, nothing advised about it: the worn tunic itself never appears.
+  assert.equal(ups.some((u) => u.key === 'plain tunic'), false)
 })

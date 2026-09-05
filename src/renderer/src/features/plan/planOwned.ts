@@ -7,10 +7,9 @@
 // TWO READINGS OF ONE OWNERSHIP MAP, AND THEY ARE DIFFERENT SETS ON PURPOSE (corrected 2026-08-25;
 // the first cut used one set for both, and it was the wider one):
 //
-//   * HELD is what the route must not send you to farm: a copy the dump names, a copy the log saw
-//     you loot this epoch, or an exaltation — proof a copy passed through your hands, even if you
-//     melted it (`gearOwnership.ts` rule 2, and `gearData.useOwnedOrLooted`'s own predicate). That
-//     is the fold's `owned` set, the EXCLUSION (rule 8).
+//   * HELD is what the route must not send you to farm: a copy the dump names, or an exaltation —
+//     proof a copy is in your possession right now, melted included. NOT a bare loot line (the
+//     2026-09-05 ruling on `ownedKeysOf`). That is the fold's `owned` set, the EXCLUSION (rule 8).
 //   * WORN is what sets a slot's BAR and states the haste you have: copies the dump files at an
 //     EQUIPPED location, and nothing else. Owner ruling, 2026-08-25: *"haste should only be
 //     EQUIPPED items"* — haste and bars come from what is EQUIPPED, and a haste blade in the bank is
@@ -55,7 +54,14 @@ export interface OwnedKeys {
 /**
  * One pass over the ownership map, both sets. `null` (no dump, no loot) is two empty sets.
  * A key is WORN when any of its dump facts sits at an equipped location — a copy worn AND a copy
- * banked is still worn — and HELD when the dump, the log or an exaltation names it anywhere.
+ * banked is still worn — and HELD when the DUMP names a copy or an exaltation row proves one was
+ * melted in.
+ *
+ * A LOOT LINE ALONE IS NOT HELD (fork ruling, kaltinril 2026-09-05: *"Looted once doesn't mean i
+ * didn't accidently destroy, sell, or give it to a friend, so you can't count looted alone, i have
+ * to own it"*) — the log proves a copy passed THROUGH your hands, the dump proves one is IN them,
+ * and only the second is a reason to stop recommending the farm. This reverses the 2026-08-25
+ * reading, which hid the Bow of the Underfoot from the very player who had lost his.
  */
 export function ownedKeysOf(map: GearOwnershipMap | null): OwnedKeys {
   const held = new Set<string>()
@@ -67,7 +73,7 @@ export function ownedKeysOf(map: GearOwnershipMap | null): OwnedKeys {
       const wild = o.facts.some((fact) => fact.place === 'equipped' && fact.wildcard === true)
       if (cell) worn.add(key)
       else if (wild) wornAny.add(key)
-      if (o.owned || o.looted || o.exaltations > 0) held.add(key)
+      if (o.owned || o.exaltations > 0) held.add(key)
     }
   }
   return { held, worn, wornAny }
@@ -137,4 +143,48 @@ export function ownedSide(
     }
   }
   return { bars, haste }
+}
+
+/** One thing you already own that beats what you wear — the "equip it, you idiot" advisory. */
+export interface OwnedUpgrade {
+  key: string
+  name: string
+  /** the slot it clears, at its highest-clearing score */
+  slot: EquipSlot
+}
+
+/**
+ * WHAT YOU OWN BUT DO NOT WEAR THAT BEATS WHAT YOU WEAR (fork ruling, kaltinril 2026-09-05: *"if i
+ * have it in a bank slot and i'm an idiot it needs to tell me to equip it"*). The route excludes
+ * everything HELD as a farm target — correctly, you do not farm what you have — but a banked
+ * upgrade was falling into the silence between "go get" and "already worn". Same math as the gap
+ * test on candidates: the held row's score in a slot, against that slot's bar, base against base,
+ * through the same dial. A slot with NO bar is a gap and the held item fills it. Sorted best first.
+ */
+export function ownedUpgrades(
+  keys: OwnedKeys,
+  byKey: ReadonlyMap<string, GearRow>,
+  side: OwnedSide,
+  scope: Pick<PlanScope, 'role' | 'classes' | 'survivability'>
+): OwnedUpgrade[] {
+  const out: { up: OwnedUpgrade; score: number }[] = []
+  const ctx = { classes: scope.classes, survivability: scope.survivability }
+  for (const key of keys.held) {
+    if (keys.worn.has(key) || keys.wornAny.has(key)) continue
+    const row = byKey.get(key)
+    if (row === undefined) continue
+    let bestSlot: EquipSlot | undefined
+    let bestScore = -Infinity
+    for (const slot of row.slots) {
+      const score = roleValue(row.stats, scope.role, { ...ctx, ownedHaste: ownedHasteOutside(side.haste, slot) })
+      const bar = side.bars.get(slot)
+      if (bar !== undefined && score <= bar) continue
+      if (score > bestScore) {
+        bestScore = score
+        bestSlot = slot
+      }
+    }
+    if (bestSlot !== undefined) out.push({ up: { key, name: row.name, slot: bestSlot }, score: bestScore })
+  }
+  return out.sort((a, b) => b.score - a.score || a.up.name.localeCompare(b.up.name)).map((o) => o.up)
 }
