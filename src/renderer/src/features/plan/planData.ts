@@ -111,23 +111,31 @@ function addQuestSource(out: Map<string, QuestSource[]>, reward: string | undefi
   else held.push(source)
 }
 
+function foldQuestPages(out: Map<string, QuestSource[]>): void {
+  for (const q of (questsJson as { quests: QuestPage[] }).quests) {
+    const source: QuestSource = {
+      quest: q.name ?? '',
+      zone: q.startZone ?? '',
+      giver: q.giver ?? '',
+      ...(q.minLevel === undefined ? {} : { minLevel: q.minLevel })
+    }
+    if (source.quest === '') continue
+    for (const r of q.rewards ?? []) addQuestSource(out, r.name, source)
+  }
+}
+
+function foldPoskyPages(out: Map<string, QuestSource[]>): void {
+  for (const p of (poskyJson as { quests: PoskyPage[] }).quests) {
+    if (p.name === undefined) continue
+    addQuestSource(out, p.reward, { quest: p.name, zone: 'Plane of Sky', giver: p.giver ?? '' })
+  }
+}
+
 function questSourcesOf(key: string): readonly QuestSource[] {
   if (QUEST_SOURCES === null) {
     const out = new Map<string, QuestSource[]>()
-    for (const q of (questsJson as { quests: QuestPage[] }).quests) {
-      const source: QuestSource = {
-        quest: q.name ?? '',
-        zone: q.startZone ?? '',
-        giver: q.giver ?? '',
-        ...(q.minLevel === undefined ? {} : { minLevel: q.minLevel })
-      }
-      if (source.quest === '') continue
-      for (const r of q.rewards ?? []) addQuestSource(out, r.name, source)
-    }
-    for (const p of (poskyJson as { quests: PoskyPage[] }).quests) {
-      if (p.name === undefined) continue
-      addQuestSource(out, p.reward, { quest: p.name, zone: 'Plane of Sky', giver: p.giver ?? '' })
-    }
+    foldQuestPages(out)
+    foldPoskyPages(out)
     QUEST_SOURCES = out
   }
   return QUEST_SOURCES.get(key) ?? []
