@@ -227,3 +227,28 @@ test('withered leather boots lose to shiverback at EVERY dial position: flat HP 
     )
   }
 })
+
+test('imbued granite spaulders lose to sode of empowerment near the glass end: resists are chunks too', () => {
+  // The fifth field case (fork, kaltinril 2026-09-05: "only 1 click off glass cannon and it's
+  // recommending shoulders that lose str and dex??"): five +10 saves on one shoulder piece — 50
+  // flat points through the per-point saves weight — bought back a lost 7 STR / 7 DEX / 7 STA /
+  // 7 AGI. Saves on the melee focuses are now the ehp treatment: zero at the glass end, real only
+  // toward wooden. The full-wooden verdict stays the spaulders' on purpose — trading 28 attribute
+  // points for +10 AC and +50 resists IS the max-defense end of the dial.
+  const SODE = row({
+    key: 'sode of empowerment', name: 'Sode of Empowerment', slots: ['SHOULDERS'],
+    stats: { STR: 7, STA: 7, AGI: 7, DEX: 7, AC: 10 }
+  })
+  const SPAULDERS = { AC: 20, SV_FIRE: 10, SV_COLD: 10, SV_MAGIC: 10, SV_DISEASE: 10, SV_POISON: 10 }
+  const byKey = new Map([[SODE.key, SODE]])
+  for (const survivability of [0, 0.2, 0.3, 0.5]) {
+    const scope = { role: 'dps' as const, classes: ['WAR' as const, 'MNK' as const, 'SHM' as const], survivability }
+    const bar = ownedSide({ worn: new Set([SODE.key]), wornAny: new Set() }, byKey, scope).bars.get('SHOULDERS')
+    assert.ok(bar !== undefined)
+    const challenger = roleValue(SPAULDERS, 'dps', { classes: scope.classes, survivability })
+    assert.ok(
+      challenger < bar,
+      `at dial ${String(survivability)} the resist slab (${challenger.toFixed(1)}) must not clear the bar (${bar.toFixed(1)})`
+    )
+  }
+})
