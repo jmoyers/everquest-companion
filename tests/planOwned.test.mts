@@ -154,3 +154,26 @@ test('an Any Slot resident is worn for haste and absent for bars — the wildcar
   assert.deepEqual([...both.worn], ['haste sword'])
   assert.equal(ownedSide(both, BY_KEY, 'dps', ['WAR']).bars.size > 0, true)
 })
+
+test('vacra av svim loses the offhand to whitened treant fists: weapon garnish is damped', () => {
+  // The second field case (fork, kaltinril 2026-09-04): a 10/31 stat-stick outranked a 14/28+13
+  // because six STR at full weight outvoted a fifth of the offhand's white damage. On a weapon
+  // row the attribute garnish counts at the focus's stated fraction (`weaponGarnish`), and the
+  // stick belongs in a wildcard cell, not the offhand.
+  const FISTS = row({
+    key: 'whitened treant fists', name: 'Whitened Treant Fists', slots: ['PRIMARY', 'SECONDARY'],
+    stats: { DMG: 14, DELAY: 28, DMG_BONUS: 13 }
+  })
+  const VACRA = row({
+    key: 'vacra av svim', name: 'Vacra Av Svim', slots: ['SECONDARY'],
+    stats: { DMG: 10, DELAY: 31, STR: 6, WIS: 6, AGI: 6, HP: 5, AC: 6 }
+  })
+  const byKey = new Map([[FISTS.key, FISTS]])
+  const bar = ownedSide({ worn: new Set([FISTS.key]), wornAny: new Set() }, byKey, 'dps1h', ['WAR', 'MNK', 'SHM']).bars.get('SECONDARY')
+  assert.ok(bar !== undefined)
+  const challenger = roleValue(VACRA.stats, 'dps1h', { classes: ['WAR', 'MNK', 'SHM'] })
+  assert.ok(
+    challenger < bar,
+    `the stat-stick (${challenger.toFixed(1)}) must not clear the offhand bar (${bar.toFixed(1)})`
+  )
+})

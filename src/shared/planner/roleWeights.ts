@@ -192,8 +192,14 @@ interface RoleWeights {
   manaStat: number
   /** coefficient on `gearEffectiveHp` (HP + STA); why HP/STA are not in `stats` is below */
   ehp: number
-  /** coefficient on `gearRatio` (weapons only — a non-weapon contributes nothing) */
+  /** coefficient on `gearEffectiveRatio` (weapons only — a non-weapon contributes nothing) */
   ratio: number
+  /** what everything that is NOT damage counts for ON A WEAPON ROW (a row stating DMG and DELAY).
+   *  A damage focus's weapon is a damage instrument, so its attribute garnish is damped — the
+   *  Vacra Av Svim case (fork decision, kaltinril 2026-09-04): six STR at full weight outvoted a
+   *  fifth of the offhand's white damage. HASTE is damage and is never damped; a caster or healer
+   *  focus states no damp, because their held items are stat-sticks by design. Absent = 1. */
+  weaponGarnish?: number
   /** coefficient applied to EVERY stated save, one number for all ten */
   saves: number
 }
@@ -211,8 +217,10 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *
  * WHAT EACH ROW MEANS IN THE GAME, so a number can be argued with rather than guessed at:
  *   * `ratio` (weapons only) — effective DMG over DELAY, the foundation of melee damage; nothing
- *     on a glove competes with it, hence 30 on the melee focuses (20 until 2026-09-04, tuned when
- *     the flat bonus rode beside it at ×3 — see the DMG_BONUS and DEX rows).
+ *     on a glove competes with it, hence 40 on the melee focuses (20 until 2026-09-04, tuned when
+ *     the flat bonus rode beside it at ×3; raised with the bonus fold and again with the
+ *     weapon-garnish damp, so a real blade still outranks a breastplate in a damage focus —
+ *     see the DMG_BONUS and DEX rows and `weaponGarnish`).
  *   * HASTE — a straight multiplier on swings, and WORN HASTE DOES NOT STACK, so `roleValue`
  *     credits it only above what the player already owns (the 2026-08-22 ruling, below).
  *   * DMG_BONUS — a flat add per hit, applied AFTER the multiplied roll. It rides through the
@@ -282,8 +290,9 @@ const ONE_HAND_DPS: RoleWeights = {
   stats: { ...MELEE_STATS, BACKSTAB: 2 },
   manaStat: 0.3,
   ehp: 0.2,
-  ratio: 30,
-  saves: 0.15
+  ratio: 40,
+  saves: 0.15,
+  weaponGarnish: 0.25
 }
 /** A two-hander cannot backstab. The rest — damage bonus included, via the ratio — is the melee profile. */
 const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS } }
@@ -302,8 +311,9 @@ const RANGED: RoleWeights = {
   stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2 },
   manaStat: 0.3,
   ehp: 0.2,
-  ratio: 30,
-  saves: 0.15
+  ratio: 40,
+  saves: 0.15,
+  weaponGarnish: 0.25
 }
 
 /**
@@ -446,24 +456,38 @@ export interface RoleContext {
 export function roleValue(stats: GearStats, role: GearRole, ctx: RoleContext = {}): number {
   const weights = ROLE_WEIGHTS[role]
   const gate = liveGate(ctx.classes ?? [])
-  const total =
-    statedTotal(stats, weights, gate, ctx.ownedHaste ?? 0) +
+  const ratio = gearEffectiveRatio(stats)
+  const damage = (ratio === undefined ? 0 : ratio * weights.ratio) + hasteTerm(stats, weights, gate, ctx.ownedHaste ?? 0)
+  const garnish =
+    statedTotal(stats, weights, gate) +
     manaTotal(stats, weights, gate) +
     derivedTotal(stats, weights)
-  return Math.round(total * 1000) / 1000
+  // The weapon-garnish damp (see `RoleWeights.weaponGarnish`): damage terms in full, always;
+  // everything else at the focus's stated fraction when the row IS a weapon.
+  const damp = ratio === undefined ? 1 : (weights.weaponGarnish ?? 1)
+  return Math.round((damage + garnish * damp) * 1000) / 1000
 }
 
-/** The focus row, through the class gate and the haste rule — LAYER 1 × LAYER 2. */
-function statedTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate, ownedHaste: number): number {
+/** The focus row, through the class gate — LAYER 1 × LAYER 2. HASTE lives in `hasteTerm`: it is
+ *  a damage term and must ride outside the weapon-garnish damp. */
+function statedTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate): number {
   let total = 0
   for (const key of Object.keys(weights.stats) as GearStatKey[]) {
+    if (key === 'HASTE') continue
     const stated = stats[key]
     const coefficient = weights.stats[key]
     if (stated === undefined || coefficient === undefined || !statIsLive(key, gate)) continue
-    const value = key === 'HASTE' ? hasteCredit(stated, ownedHaste) : stated
-    total += value * coefficient
+    total += stated * coefficient
   }
   return total
+}
+
+/** The haste row alone — a swing multiplier, i.e. damage, never garnish. The credit rule as ever. */
+function hasteTerm(stats: GearStats, weights: RoleWeights, gate: LiveGate, ownedHaste: number): number {
+  const stated = stats.HASTE
+  const coefficient = weights.stats.HASTE
+  if (stated === undefined || coefficient === undefined || !statIsLive('HASTE', gate)) return 0
+  return hasteCredit(stated, ownedHaste) * coefficient
 }
 
 /**
@@ -486,7 +510,8 @@ function manaTotal(stats: GearStats, weights: RoleWeights, gate: LiveGate): numb
   return total
 }
 
-/** Saves, effective HP and the weapon ratio — the three terms no class gates. */
+/** Saves and effective HP — the class gates neither. (The ratio is `roleValue`'s own term now:
+ *  it is damage, and damage rides outside the weapon-garnish damp.) */
 function derivedTotal(stats: GearStats, weights: RoleWeights): number {
   let total = 0
   for (const key of SAVE_KEYS) {
@@ -495,8 +520,6 @@ function derivedTotal(stats: GearStats, weights: RoleWeights): number {
   }
   const ehp = gearEffectiveHp(stats)
   if (ehp !== undefined) total += ehp * weights.ehp
-  const ratio = gearEffectiveRatio(stats)
-  if (ratio !== undefined) total += ratio * weights.ratio
   return total
 }
 
