@@ -59,12 +59,12 @@ test('HELD is what the route will not farm; WORN is what the dump says is EQUIPP
   assert.deepEqual([...keys.worn], ['haste sword'], 'only the equipped copy sets a bar')
 
   // …so the looted glove sets NO haste and the melted tunic NO chest bar.
-  const side = ownedSide(keys.worn, BY_KEY, 'dps', ['WAR'])
+  const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
   assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
   assert.deepEqual([...side.bars.keys()], ['PRIMARY'])
 
   // No dump and no loot is two empty sets, never a throw.
-  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Set() })
+  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Set(), wornAny: new Set() })
 })
 
 test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling; the same item EQUIPPED sets both', () => {
@@ -74,15 +74,15 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
     const stowed = ownedKeysOf(new Map([['haste sword', own({ facts: [at(place)] })]]))
     assert.deepEqual([...stowed.held], ['haste sword'], `${place}: still not a thing to farm`)
     assert.deepEqual([...stowed.worn], [], `${place}: not worn`)
-    const side = ownedSide(stowed.worn, BY_KEY, 'dps', ['WAR'])
+    const side = ownedSide(stowed, BY_KEY, 'dps', ['WAR'])
     assert.deepEqual(side.haste, [], `${place}: a haste blade there is not haste you have`)
     assert.equal(side.bars.size, 0, `${place}: sets no bar`)
   }
   // EQUIPPED — and a second copy in the bank beside it changes nothing: the worn one is worn.
   for (const facts of [[at('equipped')], [at('bank'), at('equipped')]]) {
-    const worn = ownedKeysOf(new Map([['haste sword', own({ facts })]])).worn
-    assert.deepEqual([...worn], ['haste sword'])
-    const side = ownedSide(worn, BY_KEY, 'dps', ['WAR'])
+    const keys = ownedKeysOf(new Map([['haste sword', own({ facts })]]))
+    assert.deepEqual([...keys.worn], ['haste sword'])
+    const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
     assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
     assert.equal(side.bars.get('PRIMARY'), roleValue(SWORD.stats, 'dps'))
   }
@@ -90,7 +90,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
 
 test('the haste source keeps full credit in its own slot, and every other bar is read against it', () => {
   const worn = new Set(['haste sword', 'quick gloves', 'plain tunic'])
-  const side = ownedSide(worn, BY_KEY, 'dps', ['WAR'])
+  const side = ownedSide({ worn, wornAny: new Set() }, BY_KEY, 'dps', ['WAR'])
   // Two sources, each placed in every slot it fits.
   assert.deepEqual(side.haste, [
     { haste: 36, slots: ['PRIMARY'] },
@@ -107,7 +107,7 @@ test('the haste source keeps full credit in its own slot, and every other bar is
 })
 
 test('a key the corpus has no row for contributes nothing — a gap, not a bar of zero', () => {
-  const side = ownedSide(new Set(['unknown relic']), BY_KEY, 'tank', [])
+  const side = ownedSide({ worn: new Set(['unknown relic']), wornAny: new Set() }, BY_KEY, 'tank', [])
   assert.equal(side.bars.size, 0)
   assert.deepEqual(side.haste, [])
 })
@@ -129,7 +129,7 @@ const CURSED_BLADE = row({
 
 test('cursed blade loses to blood fire, base against base: the flat bonus and the DEX are garnish', () => {
   const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const side = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'])
+  const side = ownedSide({ worn: new Set([BLOOD_FIRE.key]), wornAny: new Set() }, byKey, 'dps1h', ['WAR'])
   const bar = side.bars.get('PRIMARY')
   assert.ok(bar !== undefined, 'the worn blade sets a PRIMARY bar')
   const challenger = roleValue(CURSED_BLADE.stats, 'dps1h', { classes: ['WAR'] })
@@ -137,4 +137,20 @@ test('cursed blade loses to blood fire, base against base: the flat bonus and th
     challenger < bar,
     `the level-20 drop (${challenger.toFixed(1)}) must not clear the bar (${bar.toFixed(1)})`
   )
+})
+
+test('an Any Slot resident is worn for haste and absent for bars — the wildcard is not its native slot', () => {
+  // The field case: a resist shield parked in Any Slot (slot: null in the dump) must not bar the
+  // offhand it is not in — but a haste item there is still haste you have (worn is worn).
+  const wild: OwnedFact = { place: 'equipped', count: 1, wildcard: true }
+  const keys = ownedKeysOf(new Map([['haste sword', own({ facts: [wild] })]]))
+  assert.deepEqual([...keys.worn], [])
+  assert.deepEqual([...keys.wornAny], ['haste sword'])
+  const side = ownedSide(keys, BY_KEY, 'dps', ['WAR'])
+  assert.equal(side.bars.size, 0, 'no bar from the wildcard cell')
+  assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }], 'its haste still counts')
+  // Worn in a REAL cell too: the real cell wins and the bar is back.
+  const both = ownedKeysOf(new Map([['haste sword', own({ facts: [wild, at('equipped')] })]]))
+  assert.deepEqual([...both.worn], ['haste sword'])
+  assert.equal(ownedSide(both, BY_KEY, 'dps', ['WAR']).bars.size > 0, true)
 })

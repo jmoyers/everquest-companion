@@ -44,8 +44,13 @@ import type { GearOwnershipMap } from '../gear/gearOwnership'
 export interface OwnedKeys {
   /** excluded as targets: you do not farm what has passed through your hands */
   held: ReadonlySet<string>
-  /** sets the bars and states the owned haste: what the dump files as EQUIPPED, nothing else */
+  /** sets the bars and states the owned haste: what the dump files as EQUIPPED in a real cell */
   worn: ReadonlySet<string>
+  /** EQUIPPED only in a wildcard cell (`Any Slot` / `Held`): worn — its haste is haste you have —
+   *  but occupying no wiki slot, so it sets NO bar (fork report, kaltinril 2026-09-04: a resist
+   *  shield parked in Any Slot barred the offhand it was not in). A key worn in a real cell TOO
+   *  stays in `worn`. */
+  wornAny: ReadonlySet<string>
 }
 
 /**
@@ -56,13 +61,17 @@ export interface OwnedKeys {
 export function ownedKeysOf(map: GearOwnershipMap | null): OwnedKeys {
   const held = new Set<string>()
   const worn = new Set<string>()
+  const wornAny = new Set<string>()
   if (map !== null) {
     for (const [key, o] of map) {
-      if (o.facts.some((fact) => fact.place === 'equipped')) worn.add(key)
+      const cell = o.facts.some((fact) => fact.place === 'equipped' && fact.wildcard === undefined)
+      const wild = o.facts.some((fact) => fact.place === 'equipped' && fact.wildcard === true)
+      if (cell) worn.add(key)
+      else if (wild) wornAny.add(key)
       if (o.owned || o.looted || o.exaltations > 0) held.add(key)
     }
   }
-  return { held, worn }
+  return { held, worn, wornAny }
 }
 
 /** The owned side of the gap test, as the fold's two corpora fields. */
@@ -104,17 +113,19 @@ export interface OwnedSide {
  * and the bars are scored afterwards because a bar's haste term needs every source known first.
  */
 export function ownedSide(
-  worn: ReadonlySet<string>,
+  keys: Pick<OwnedKeys, 'worn' | 'wornAny'>,
   byKey: ReadonlyMap<string, GearRow>,
   role: GearRole,
   classes: readonly ClassAbbr[]
 ): OwnedSide {
   const rows: GearRow[] = []
   const haste: OwnedHaste[] = []
-  for (const key of worn) {
+  for (const key of [...keys.worn, ...keys.wornAny]) {
     const row = byKey.get(key)
     if (row === undefined) continue
-    rows.push(row)
+    // A wildcard resident is worn for HASTE (it is on the character) and absent for BARS (it
+    // occupies no wiki slot) — the fork report above.
+    if (keys.worn.has(key)) rows.push(row)
     if (row.stats.HASTE !== undefined && row.stats.HASTE > 0) haste.push({ haste: row.stats.HASTE, slots: row.slots })
   }
   const bars = new Map<EquipSlot, number>()
