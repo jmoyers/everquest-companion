@@ -57,6 +57,9 @@ export interface WindowedRows {
   bottomPad: number
   /** Total content height (px) — count * rowHeight. */
   totalHeight: number
+  /** The container's scrollTop the slice was computed from, clamped non-negative — so a consumer
+   *  can style a scrolled state (the gear header's shadow) without a second listener. */
+  scrollTop: number
 }
 
 export interface UseWindowedRowsOptions {
@@ -114,7 +117,8 @@ export function windowSlice({
     end,
     topPad: start * row,
     bottomPad: Math.max(0, (rows - end) * row),
-    totalHeight
+    totalHeight,
+    scrollTop: Math.max(0, scrollTop)
   }
 }
 
