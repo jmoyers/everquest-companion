@@ -266,6 +266,30 @@ export function sanitizeGearClasses(raw: unknown): ClassAbbr[] | null {
   return sanitizeList<ClassAbbr>(o.classes, CLASS_ABBRS, MAX_COMBO_SLOTS)
 }
 
+/** Pins BY CHARACTER NAME, with `'*'` the every-character fallback the legacy shape becomes. */
+export type GearClassPins = Partial<Record<string, ClassAbbr[]>>
+
+/**
+ * PER-CHARACTER PINS (fork ask, kaltinril 2026-09-04: *"i have to keep manually changing it back
+ * to SHM since i'm on a twink DRU"*). One shared pin made every character switch a hand edit; the
+ * stored shape is now a map keyed by character name, and the legacy single-pin `{ classes: [...] }`
+ * reads as the `'*'` fallback so nobody's standing pin is lost by upgrading. Every list still goes
+ * through `sanitizeGearClasses`' own allowlist reasoning — localStorage is a file the user can edit.
+ */
+export function sanitizeGearClassPins(raw: unknown): GearClassPins | null {
+  const o = asRecord(raw)
+  if (o === null) return null
+  if (Array.isArray(o.classes)) {
+    const legacy = sanitizeGearClasses(raw)
+    return legacy === null ? null : { '*': legacy }
+  }
+  const out: GearClassPins = {}
+  for (const [who, list] of Object.entries(o)) {
+    if (Array.isArray(list)) out[who] = sanitizeList<ClassAbbr>(list, CLASS_ABBRS, MAX_COMBO_SLOTS)
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 /**
  * THE SIMULATE-UPGRADE SLIDER — AND THE LAW THIS OVERRULES.
  *

@@ -27,6 +27,8 @@ import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
 import { isKept } from '@shared/lootDisposition'
 import { useLootHistory } from '../loot/useLootHistory'
 import { useComboSnap } from '../profiles/ClassComboData'
+import { useModule } from '../../lib/useModule'
+import type { CharacterSnap } from '@shared/characterTypes'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
 // see `useGearCompare` for why this channel and not the ownership payload beside it.
 import { usePlannerInventory } from '../planner/plannerInventory'
@@ -41,7 +43,7 @@ import { sourceIndex } from '../planner/sourceIndex'
 import { sameClasses } from '../planner/plannerClasses'
 import { gearOwnershipMap, ownershipFor, type GearOwnershipMap } from './gearOwnership'
 // JOS-329: the two pieces of state below survive a tab switch now — see each one's own comment.
-import { sanitizeGearClasses, sanitizeUpgrade } from './areaMemory'
+import { sanitizeGearClassPins, sanitizeUpgrade, type GearClassPins } from './areaMemory'
 import { useRemembered } from './useAreaMemory'
 
 /**
@@ -435,19 +437,24 @@ export function useGearClasses(): GearClasses {
   // An unresolved slot contributes nothing, so a half-known combo yields the classes it does know
   // and nothing it does not (law 1) — the same read PlannerView makes.
   const detected = useMemo(() => (current === null ? [] : resolvedClasses(current)), [current])
-  const [pinned, setPinned] = useRemembered<ClassAbbr[] | null>('eq.gear.classes', sanitizeGearClasses)
+  // THE PIN IS PER CHARACTER (fork ask, kaltinril 2026-09-04): a twink druid and a WAR/MNK/SHM
+  // main each keep their own, keyed by name, so a character switch stops resetting the trio by
+  // hand. A character with no pin of its own reads the legacy `'*'` fallback, then detection.
+  const me = useModule<CharacterSnap>('character')?.character?.name ?? '*'
+  const [pins, setPins] = useRemembered<GearClassPins | null>('eq.gear.classes', sanitizeGearClassPins)
+  const pinned = pins === null ? null : (pins[me] ?? pins['*'] ?? null)
 
   const set = useCallback(
     (next: ClassAbbr[]) => {
-      setPinned(next)
+      setPins({ ...(pins ?? {}), [me]: next })
     },
-    [setPinned]
+    [pins, setPins, me]
   )
   // ADOPTING THE OFFER PINS, and always did: taking today's detection is accepting one answer, not
   // handing the filter back to inference forever (the `useBrowseClasses.adopt` rule, stated there).
   const adopt = useCallback(() => {
-    setPinned(detected)
-  }, [detected, setPinned])
+    setPins({ ...(pins ?? {}), [me]: detected })
+  }, [pins, detected, setPins, me])
 
   const classes = pinned ?? detected
   const offer = pinned !== null && detected.length > 0 && !sameClasses(pinned, detected) ? detected : null
