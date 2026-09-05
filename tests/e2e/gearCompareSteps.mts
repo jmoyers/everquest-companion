@@ -340,7 +340,7 @@ async function stepPairOpens(page: Page, base: GearRow): Promise<boolean> {
   check('the item card states the item’s own numbers', card.stats.includes('DMG'), card.stats || '(none)')
   check('…and says nothing about a simulation, because the selector is at base', !card.simulated)
   check('the equipped card is drawn beside it, because the staged dump has been read', card.equipped)
-  checkEquippedCard(card, base)
+  checkEquippedCard(card)
   checkFreshness(card)
   await checkPairOnScreen(page, 'default size')
   return true
@@ -369,7 +369,7 @@ function checkFreshness(card: PairRead): void {
  * staged dump. The comparison is BASE AGAINST BASE (the 2026-09-05 ruling), so the same item shows
  * `NO_BASE_CHANGE` — the card's own words — while the name still states the worn copy's `+5`.
  */
-function checkEquippedCard(card: PairRead, base: GearRow): void {
+function checkEquippedCard(card: PairRead): void {
   check(
     'the equipped card names the cell this item would go in, once',
     card.cells.length === 1 && card.cells[0].cell === 'PRIMARY',
