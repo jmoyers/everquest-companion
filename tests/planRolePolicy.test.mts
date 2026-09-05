@@ -352,7 +352,7 @@ test('RANGED takes a bow or a throwing weapon in the RANGE slot, nothing else th
 })
 
 test('the survivability dial slides the dps DEFENSE rows and nothing else', () => {
-  const armour = { AC: 10, STA: 10, AGI: 10, SV_FIRE: 10 }
+  const armour = { AC: 10, STA: 10, AGI: 10, SV_FIRE: 10, HP_REGEN: 2 }
   const damage = { DMG: 12, DELAY: 24, STR: 10, ATTACK: 10, HASTE: 10 }
   // The table IS the midpoint: absent, 0.5, and out-of-range clamp all read the same weights.
   assert.equal(roleValue(armour, 'dps'), roleValue(armour, 'dps', { survivability: 0.5 }))
@@ -366,6 +366,10 @@ test('the survivability dial slides the dps DEFENSE rows and nothing else', () =
   // Ranged DEX is accuracy — damage — and does not slide; melee DEX does.
   assert.equal(roleValue({ DEX: 10 }, 'range', { survivability: 0 }), roleValue({ DEX: 10 }, 'range', { survivability: 1 }))
   assert.ok(roleValue({ DEX: 10 }, 'dps', { survivability: 0 }) < roleValue({ DEX: 10 }, 'dps', { survivability: 1 }))
+  // Regen is DEFENSE stated as a rate and slides with the rest (the Chrysoberyl Talisman case:
+  // held flat, the wooden end priced 5 AC on a trinket above a real talisman's regen).
+  assert.ok(roleValue({ HP_REGEN: 2 }, 'dps', { survivability: 0 }) < roleValue({ HP_REGEN: 2 }, 'dps', { survivability: 1 }))
+  assert.ok(roleValue({ AC: 5 }, 'dps', { survivability: 1 }) < roleValue({ HP_REGEN: 2 }, 'dps', { survivability: 1 }))
   // The focuses that ARE a position on this axis ignore it entirely.
   for (const role of ['tank', 'healer', 'balanced', 'dd'] as const) {
     assert.equal(roleValue(armour, role, { survivability: 0 }), roleValue(armour, role, { survivability: 1 }))
