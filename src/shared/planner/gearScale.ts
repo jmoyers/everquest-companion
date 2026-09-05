@@ -95,6 +95,25 @@ export function gearRatio(stats: GearStats): number | undefined {
 }
 
 /**
+ * What one point of flat DMG_BONUS is worth in points of DMG at endgame. DMG is multiplied by the
+ * whole attack roll; the bonus is added once, flat, after it. Measured, not invented (fork
+ * measurement, kaltinril 2026-09-04): 85 plain mainhand hits with a 19-DMG blade at level 50
+ * averaged 341, so a bonus point buys about a seventeenth of what a DMG point does.
+ */
+export const AVG_HIT_MULTIPLIER = 17
+
+/**
+ * The ratio a ROLE scores by: `gearRatio` with the weapon's own flat DMG_BONUS folded in at its
+ * measured worth (fork decision, kaltinril 2026-09-04). The fix this carries: a flat 17 scored as
+ * `DMG_BONUS × 3` outranked eight points of multiplied DMG, and the route sent a level-50 to
+ * Unrest for a downgrade. The Gear tab's Ratio column stays `gearRatio` — the game's own spelling.
+ */
+export function gearEffectiveRatio(stats: GearStats): number | undefined {
+  if (stats.DMG === undefined || stats.DMG_BONUS === undefined) return gearRatio(stats)
+  return damageRatio(stats.DMG + stats.DMG_BONUS / AVG_HIT_MULTIPLIER, stats.DELAY)
+}
+
+/**
  * EFFECTIVE HP (JOS-336) — raw HP plus raw STA, from a (base or scaled) vector.
  *
  * WHY IT IS A DERIVED KEY RATHER THAN A COLUMN THAT ADDS TWO CELLS UP. It is `gearRatio`'s twin in

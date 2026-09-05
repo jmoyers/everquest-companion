@@ -158,7 +158,7 @@ export function usePlanCorpora(
   // this 6,766-entry map is built once per window and never per pick — `useGearCompare` builds the
   // same map next door for the hover cards and for the same reason.
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
-  const side = useMemo(() => ownedSide(keys.worn, byKey, role, classes), [keys, byKey, role, classes])
+  const side = useMemo(() => ownedSide(keys.worn, byKey, role, classes, keys.wornPlus), [keys, byKey, role, classes])
   return useMemo(
     () => ({
       gear: rows,

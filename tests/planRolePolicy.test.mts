@@ -305,12 +305,17 @@ test('the melee builds share ONE weights profile except where the game differs �
       assert.equal(roleValue(stats, role), generic)
     }
   }
-  // WHERE THEY DIFFER IS A GAME FACT, NOT AN OPINION (owner ruling 2026-08-22): a two-hander's
-  // damage bonus grows with its delay, so `dps2h` weighs it 4 to the one-handers' 3 — and nobody
-  // backstabs with a two-hander, so that stat is absent from `dps2h` even for a rogue.
-  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps2h'), 40)
-  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps1h'), 30)
-  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dualwield'), 30)
+  // WHERE THEY DIFFER IS A GAME FACT, NOT AN OPINION: nobody backstabs with a two-hander, so that
+  // stat is absent from `dps2h` even for a rogue. The damage bonus stopped being a weights cell
+  // (fork decision, kaltinril 2026-09-04, the Cursed Blade case): it rides the ratio at its
+  // measured worth (`gearEffectiveRatio`), so a bonus with no weapon under it scores nothing in
+  // every melee focus alike — and on a weapon it raises the ratio, never a flat line of its own.
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps2h'), 0)
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dps1h'), 0)
+  assert.equal(roleValue({ DMG_BONUS: 10 }, 'dualwield'), 0)
+  assert.ok(
+    roleValue({ DMG: 10, DELAY: 20, DMG_BONUS: 10 }, 'dps1h') > roleValue({ DMG: 10, DELAY: 20 }, 'dps1h')
+  )
   assert.equal(roleValue({ BACKSTAB: 5 }, 'dps1h', { classes: ['ROG'] }), 10)
   assert.equal(roleValue({ BACKSTAB: 5 }, 'dps2h', { classes: ['ROG'] }), 0)
   // What DOES differ is what each will look at, and that is a different table entirely.

@@ -38,6 +38,7 @@ import {
   type GearRole,
   type OwnedHaste
 } from '../../../../shared/planner/progressionPlan'
+import { scaleGearRow } from '../../../../shared/planner/gearScale'
 import type { GearOwnershipMap } from '../gear/gearOwnership'
 
 /** The two sets — see the header for why they differ. */
@@ -46,6 +47,11 @@ export interface OwnedKeys {
   held: ReadonlySet<string>
   /** sets the bars and states the owned haste: what the dump files as EQUIPPED, nothing else */
   worn: ReadonlySet<string>
+  /** the ` +N` the worn copy's name stated, per key — absent means the name stated none (never
+   *  `+0`, phase 1's rule). The bar is scored AT this plus (fork decision, kaltinril 2026-09-04):
+   *  a +7 blade scored at +0 set a bar a third under what the player actually swings, and a
+   *  level-20 drop cleared it. */
+  wornPlus: ReadonlyMap<string, number>
 }
 
 /**
@@ -56,13 +62,19 @@ export interface OwnedKeys {
 export function ownedKeysOf(map: GearOwnershipMap | null): OwnedKeys {
   const held = new Set<string>()
   const worn = new Set<string>()
+  const wornPlus = new Map<string, number>()
   if (map !== null) {
     for (const [key, o] of map) {
-      if (o.facts.some((fact) => fact.place === 'equipped')) worn.add(key)
+      for (const fact of o.facts) {
+        if (fact.place !== 'equipped') continue
+        worn.add(key)
+        // Two equipped copies at different pluses: the bar is the better one you swing.
+        if (fact.tier !== undefined && fact.tier > (wornPlus.get(key) ?? -1)) wornPlus.set(key, fact.tier)
+      }
       if (o.owned || o.looted || o.exaltations > 0) held.add(key)
     }
   }
-  return { held, worn }
+  return { held, worn, wornPlus }
 }
 
 /** The owned side of the gap test, as the fold's two corpora fields. */
@@ -107,13 +119,18 @@ export function ownedSide(
   worn: ReadonlySet<string>,
   byKey: ReadonlyMap<string, GearRow>,
   role: GearRole,
-  classes: readonly ClassAbbr[]
+  classes: readonly ClassAbbr[],
+  wornPlus?: ReadonlyMap<string, number>
 ): OwnedSide {
   const rows: GearRow[] = []
   const haste: OwnedHaste[] = []
   for (const key of worn) {
-    const row = byKey.get(key)
-    if (row === undefined) continue
+    const base = byKey.get(key)
+    if (base === undefined) continue
+    // The bar is what the player actually swings: the corpus row scaled to the worn ` +N`
+    // (fork decision, kaltinril 2026-09-04). No plus stated is the base row, never `+0` invented.
+    const plus = wornPlus?.get(key)
+    const row = plus === undefined ? base : scaleGearRow(base, { full: plus, fraction: 0 })
     rows.push(row)
     if (row.stats.HASTE !== undefined && row.stats.HASTE > 0) haste.push({ haste: row.stats.HASTE, slots: row.slots })
   }
