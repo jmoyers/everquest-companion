@@ -196,6 +196,10 @@ export interface GearTarget {
    * the upgrade-gap test and sorts first. See `candidatesOf`.
    */
   wished: boolean
+  /** THE SLOT IT CLEARED THE BAR IN — the one you would wear it in, and what the row prints (fork
+   *  ask, kaltinril 2026-09-04: "it should show what SLOT it's recommending an item for"). Absent
+   *  on a wished non-upgrade, which cleared nothing and claims nothing. */
+  slot?: EquipSlot
 }
 
 /**
@@ -395,6 +399,8 @@ export interface PlanCandidate {
   score: number
   /** beats the bar somewhere the role is listening */
   upgrade: boolean
+  /** the best slot it cleared in — `GearTarget.slot`'s source; absent when `upgrade` is false */
+  slot?: EquipSlot
 }
 
 /** What the bracket fold needs, bundled — four positional arguments is the ceiling. */
@@ -562,6 +568,7 @@ function targetOf(candidate: PlanCandidate, bracket: Bracket, ctx: PlanCtx): Gea
       mobLevel: witness.mobLevel,
       band: verdict.band,
       score: candidate.score,
+      ...(candidate.slot === undefined ? {} : { slot: candidate.slot }),
       wished: ctx.wished.has(candidate.row.key)
     }
   }
@@ -713,7 +720,8 @@ interface AdmitGate {
 }
 
 /**
- * IS THIS AN UPGRADE? — the admission test (rule 8). A GAP test rather than a ranking, now read
+ * WHERE IS THIS AN UPGRADE? — the admission test (rule 8) answering with the SLOT: the admitted
+ * clearing slot where it scores highest (the one you would wear it in), `undefined` for none, read
  * THROUGH the role's weapon-slot policy (rule 10).
  *
  * An item is in when there is AT LEAST ONE slot it fits where BOTH are true: the role would take a
@@ -730,13 +738,19 @@ interface AdmitGate {
  * THE POLICY IS CHECKED EVEN WHEN NO BARS WERE HANDED IN, which is the whole point of the empty
  * offhand: it is closed because the ROLE says so, not because anything is known to be worn there.
  */
-function isUpgrade(row: GearRow, gate: AdmitGate): boolean {
-  return row.slots.some((slot, i) => {
-    if (!policyAdmits(gate.policy, slot, row)) return false
-    if (gate.bars === undefined) return true
-    const best = gate.bars.get(slot)
-    return best === undefined || gate.bySlot[i] > best
+function upgradeSlot(row: GearRow, gate: AdmitGate): EquipSlot | undefined {
+  let bestSlot: EquipSlot | undefined
+  let bestScore = -Infinity
+  row.slots.forEach((slot, i) => {
+    if (!policyAdmits(gate.policy, slot, row)) return
+    const bar = gate.bars?.get(slot)
+    if (bar !== undefined && gate.bySlot[i] <= bar) return
+    if (gate.bySlot[i] > bestScore) {
+      bestScore = gate.bySlot[i]
+      bestSlot = slot
+    }
   })
+  return bestSlot
 }
 
 /** The three inputs the POOL depends on — everything in `PlanInputs` except the level. */
@@ -782,8 +796,8 @@ export function candidatePool(scope: PlanScope, corpora: PlanCorpora): PlanCandi
     const witnesses = witnessesOf(row, corpora.mobLevel)
     if (witnesses.length === 0) continue
     const { best, bySlot } = scoresOf(row, scope, corpora)
-    const upgrade = isUpgrade(row, { bySlot, bars: corpora.ownedBestBySlot, policy })
-    out.push({ row, witnesses, score: best, upgrade })
+    const slot = upgradeSlot(row, { bySlot, bars: corpora.ownedBestBySlot, policy })
+    out.push({ row, witnesses, score: best, upgrade: slot !== undefined, ...(slot === undefined ? {} : { slot }) })
   }
   return out
 }

@@ -121,6 +121,11 @@ function runLabel(run: GearRun): string {
 }
 
 /** Which mob, at what level the CATALOG states, in which zone — the stated witness, composed. */
+/** `SECONDARY` → `Secondary` — the slot chip's one word (the vocabulary is single tokens). */
+function slotWord(slot: string): string {
+  return slot.charAt(0) + slot.slice(1).toLowerCase()
+}
+
 function mobText(target: GearTarget): string {
   const mob = target.plus === null ? target.mob : `${target.mob} +${String(target.plus)}`
   return target.mobLevel === null ? mob : `${mob} (Lvl ${String(target.mobLevel)})`
@@ -205,6 +210,13 @@ function TargetRow({
           </GearRowCompare>
         ) : (
           name
+        )}
+        {/* the slot it cleared in (fork ask, kaltinril 2026-09-04) - flexShrink 0: one short
+            word that must survive the ellipsis race the mob text is allowed to lose */}
+        {target.slot !== undefined && (
+          <Typography variant="caption" color="text.secondary" data-testid="plan-target-slot" sx={{ flexShrink: 0 }}>
+            {slotWord(target.slot)}
+          </Typography>
         )}
         <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
           {mobLinked ? (
