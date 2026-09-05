@@ -237,13 +237,14 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *   * AGI — a sliver of AC above 75 and a little avoidance; "basically useless" at item
  *     magnitudes (owner) and weighted like it.
  *   * AC and `ehp` (HP + STA) — staying alive; every focus reads them, the tank reads them big.
- *     The melee focuses read them at HALF the balanced profile's, not a token (fork decision,
- *     kaltinril 2026-09-04: *"if you have 500 str, and no other stats, you're going to die"* — a
- *     dps focus prioritizes damage, it does not price defense at zero, and at AC 0.5/ehp 0.2 a
+ *     The melee focuses price the DEFENSE FAMILY for real, not at a token (fork decision, kaltinril
+ *     2026-09-04: *"if you have 500 str, and no other stats, you're going to die"* — at AC 0.5 a
  *     stat-stripped STR item beat a balanced one: Boots of Brawn, +9 STR −13 DEX, outranked
- *     Shiverback-Hide Boots and their nine STA and nine AGI). The dps defense rows are also a
- *     DIAL: the table states the midpoint and the survivability slider slides them — see
- *     `readsSurvivability` and `DEFENSE_SPANS` below.
+ *     Shiverback-Hide Boots and their nine STA and nine AGI) — but their `ehp` IS a token, because
+ *     it is the flat-HP channel and 40 stated hitpoints on a caster stick were outbidding five STR
+ *     (the Withered Leather Boots case, 2026-09-05; STA moved to its own attribute row instead —
+ *     the ABSENT list below). The dps defense rows are also a DIAL: the table states the midpoint
+ *     and the survivability slider slides them — see `readsSurvivability` and `DEFENSE_SPANS`.
  *   * HP_REGEN — downtime between fights, which is a solo concern and a tank's — and on the dps
  *     focuses it is DEFENSE and slides with the dial (the Chrysoberyl Talisman case, fork report
  *     2026-09-04: with regen held flat while AC slid, the wooden end priced 5 AC on a trinket
@@ -258,9 +259,13 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *   * saves — resisting a mob's roots, snares, dots and nukes; situational for everyone.
  *
  * WHAT IS DELIBERATELY ABSENT, and why each absence is a decision:
- *   * HP and STA. They ride through `ehp` (`gearEffectiveHp`), so listing them in `stats` too would
- *     count them twice — and the derived key is the one that already answers "what if only one of
- *     them is stated".
+ *   * HP and STA ride through `ehp` (`gearEffectiveHp`), so listing them in `stats` too would
+ *     count them twice — EXCEPT the melee focuses, which price STA as a body attribute beside AGI
+ *     (fork ruling, kaltinril 2026-09-05: *"rank stats like hp ridiculously low"* — flat HP comes
+ *     in chunks of 40 that outbid real stats through any shared channel, so the melee `ehp` fell
+ *     to a token and STA, which arrives at attribute magnitudes, moved to its own row; the STA
+ *     double-count through the token `ehp` is accepted and small). Every other focus keeps the
+ *     one-channel reading.
  *   * DMG and DELAY. They ride through `ratio` (`gearRatio` → `damageRatio`), which is undefined for
  *     anything that is not a weapon. A raw DMG weight would rank 6,000 non-weapons at zero on a key
  *     they never state.
@@ -284,14 +289,17 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  * mana regen are here at the hybrid's small weight and the CLASS LAYER zeroes them for a class with
  * no bar, so a warrior's glove with `INT: 10` on it is worth exactly what the same glove without
  * it is worth. (The 0.8 INT this table carried before that ruling out-weighed AC, which is how a
- * caster bracer could outrank plate.)
+ * caster bracer could outrank plate.) The hybrid's weight got SMALLER on 2026-09-05 (MP 0.02 here,
+ * `manaStat` 0.1 on the focuses): a melee-heavy trio's mana is a rounding error in a DAMAGE
+ * ranking (fork ruling, kaltinril — the Withered Leather Boots case).
  */
 const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
   AC: 1,
   STR: 1.5,
   AGI: 0.2,
   DEX: 0.4,
-  MP: 0.05,
+  STA: 0.4,
+  MP: 0.02,
   HP_REGEN: 6,
   MANA_REGEN: 1,
   END_REGEN: 1,
@@ -300,8 +308,8 @@ const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
 }
 const ONE_HAND_DPS: RoleWeights = {
   stats: { ...MELEE_STATS, BACKSTAB: 2 },
-  manaStat: 0.3,
-  ehp: 0.4,
+  manaStat: 0.1,
+  ehp: 0.1,
   ratio: 40,
   saves: 0.3,
   weaponGarnish: 0.25
@@ -321,8 +329,8 @@ const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS } }
  */
 const RANGED: RoleWeights = {
   stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2 },
-  manaStat: 0.3,
-  ehp: 0.4,
+  manaStat: 0.1,
+  ehp: 0.1,
   ratio: 40,
   saves: 0.3,
   weaponGarnish: 0.25
@@ -432,9 +440,9 @@ export function roleStatKeys(role: GearRole): readonly GearStatKey[] {
  * 2026-09-04, the Boots of Brawn case in the WEIGHTS essay above). How much staying-alive a damage
  * focus prices in is a TASTE where the other focuses are a role, so the defense rows slide
  * between two endpoints and everything that is damage (ratio, STR, ATTACK, HASTE) holds still. The
- * TABLE's stated value is the 0.5 midpoint of every span; 0 restores the pure-damage weights this
- * file carried before the recalibration, so a player who wants the old glass-cannon list can have
- * it back with one drag.
+ * TABLE's stated value is the 0.5 midpoint of every span; at 0 the flat-HP channel reads ZERO and
+ * the rest of the defense family sits at its pure-damage floor, so a player who drags all the way
+ * left gets a list ranked by what kills things and almost nothing else.
  *
  * THE DEFAULT IS 0.3, NOT THE MIDPOINT (fork ruling, kaltinril 2026-09-05: *"it should be scaled
  * more towards DPS right? but allow them to adjust it"*). A player who picked a DAMAGE focus asked
@@ -457,8 +465,9 @@ const DEFENSE_SPANS = {
   AC: [0.5, 1.5],
   AGI: [0.1, 0.3],
   DEX: [0.2, 0.6],
+  STA: [0.2, 0.6],
   HP_REGEN: [3, 9],
-  ehp: [0.2, 0.6],
+  ehp: [0, 0.2],
   saves: [0.15, 0.45]
 } as const
 
@@ -471,6 +480,7 @@ function survivalWeights(base: RoleWeights, role: GearRole, t: number): RoleWeig
     ...base.stats,
     AC: lerp(DEFENSE_SPANS.AC, t),
     AGI: lerp(DEFENSE_SPANS.AGI, t),
+    STA: lerp(DEFENSE_SPANS.STA, t),
     HP_REGEN: lerp(DEFENSE_SPANS.HP_REGEN, t)
   }
   // Ranged DEX is the accuracy stat — damage, not defense — and the dial must not touch it.

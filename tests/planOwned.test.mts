@@ -202,3 +202,28 @@ test('boots of brawn lose to shiverback-hide boots: a dps focus prices defense, 
   const glass = ownedSide({ worn: new Set([SHIVERBACK.key]), wornAny: new Set() }, byKey, { ...scope, survivability: 0 }).bars.get('FEET')
   assert.ok(glass !== undefined && glass < bar, 'the glass-cannon bar prices the defense off both sides')
 })
+
+test('withered leather boots lose to shiverback at EVERY dial position: flat HP is priced ridiculously low', () => {
+  // The fourth field case (fork, kaltinril 2026-09-05: "rank stats like hp ridiculously low, and
+  // MP on a melee heavy 3 class build low"): a caster hitpoint stick — no damage stat at all —
+  // outbid the melee boots at full Glass Cannon, because 40 flat HP through a shared ehp channel
+  // dwarfed five STR. The melee ehp is a token now (zero at the glass end), mana is a rounding
+  // error, and STA — attribute-sized, unlike HP — moved to its own row so THIS fix cannot re-open
+  // the Boots of Brawn case above.
+  const SHIVERBACK = row({
+    key: 'shiverback-hide boots', name: 'Shiverback-Hide Boots', slots: ['FEET'],
+    stats: { STR: 5, STA: 9, AGI: 9, AC: 6 }
+  })
+  const WITHERED = { AC: 5, DEX: 8, WIS: 3, HP: 40, MP: 5, SV_POISON: 10 }
+  const byKey = new Map([[SHIVERBACK.key, SHIVERBACK]])
+  for (const survivability of [0, 0.3, 0.5, 1]) {
+    const scope = { role: 'dps' as const, classes: ['SHM' as const], survivability }
+    const bar = ownedSide({ worn: new Set([SHIVERBACK.key]), wornAny: new Set() }, byKey, scope).bars.get('FEET')
+    assert.ok(bar !== undefined)
+    const challenger = roleValue(WITHERED, 'dps', { classes: scope.classes, survivability })
+    assert.ok(
+      challenger < bar,
+      `at dial ${String(survivability)} the HP stick (${challenger.toFixed(1)}) must not clear the bar (${bar.toFixed(1)})`
+    )
+  }
+})
