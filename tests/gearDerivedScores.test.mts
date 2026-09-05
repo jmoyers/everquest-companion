@@ -134,16 +134,18 @@ test('haste is credited only ABOVE what is worn, and the chip is an infinite wor
   assert.ok(gearBisValue({ HASTE: 20 })! > 0)
 })
 
-test('ORDER: a 41% haste sword leads a stronger swap only until the player already wears haste', () => {
-  // The measurement that motivated the knob (gearScale.ts, 2026-08-15): a haste weapon led EFF
-  // DMG on the live table with most of its score the haste term. Wearing that haste already, the
-  // weapon with the better ratio is the better weapon - and the sort says so through `sortValue`.
+test('ORDER: the better ratio leads REGARDLESS of haste — a weapon never wins the hand on it', () => {
+  // Superseding the 2026-08-15 measurement by the 2026-09-05 fork ruling (the Fangol case): worn
+  // haste does not stack, lives equally on belts and capes, and keeps granting from an Any Slot,
+  // so it is a property of the LOADOUT and prices at ZERO on a weapon row. The stronger swing
+  // leads the sort with or without haste owned — the haste column still SHOWS the percentage, it
+  // just cannot decide a weapon comparison any more.
   const hasty = row({ key: 'hasty', name: 'Hasty Blade', stats: { DMG: 10, DELAY: 20, HASTE: 41 } })
   const strong = row({ key: 'strong', name: 'Strong Blade', stats: { DMG: 15, DELAY: 20 } })
-  const bare = sortGearRows([strong, hasty], { key: 'EFF_DMG', dir: 'desc' }).map((r) => r.name)
-  assert.deepEqual(bare, ['Hasty Blade', 'Strong Blade'], 'nothing worn: the first haste item is a real upgrade')
+  const bare = sortGearRows([hasty, strong], { key: 'EFF_DMG', dir: 'desc' }).map((r) => r.name)
+  assert.deepEqual(bare, ['Strong Blade', 'Hasty Blade'], 'nothing worn: damage decides, not haste')
   const worn = sortGearRows([hasty, strong], { key: 'EFF_DMG', dir: 'desc' }, { ownedHaste: 41 }).map((r) => r.name)
-  assert.deepEqual(worn, ['Strong Blade', 'Hasty Blade'], 'wearing 41% already: the better ratio wins')
+  assert.deepEqual(worn, ['Strong Blade', 'Hasty Blade'], 'wearing 41% already: same order — the rule is unconditional')
 })
 
 test('the slider moves both scores - they read the SCALED vector through sortValue', () => {
