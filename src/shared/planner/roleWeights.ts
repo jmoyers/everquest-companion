@@ -430,12 +430,21 @@ export function roleStatKeys(role: GearRole): readonly GearStatKey[] {
 /**
  * THE DPS SURVIVABILITY SLIDER — "Glass Cannon" to "Wooden Sword" (fork decision, kaltinril
  * 2026-09-04, the Boots of Brawn case in the WEIGHTS essay above). How much staying-alive a damage
- * focus prices in is a TASTE where the other focuses are a role, so the five defense rows slide
+ * focus prices in is a TASTE where the other focuses are a role, so the defense rows slide
  * between two endpoints and everything that is damage (ratio, STR, ATTACK, HASTE) holds still. The
- * TABLE's stated value is the midpoint and the default; 0 restores the pure-damage weights this
+ * TABLE's stated value is the 0.5 midpoint of every span; 0 restores the pure-damage weights this
  * file carried before the recalibration, so a player who wants the old glass-cannon list can have
  * it back with one drag.
+ *
+ * THE DEFAULT IS 0.3, NOT THE MIDPOINT (fork ruling, kaltinril 2026-09-05: *"it should be scaled
+ * more towards DPS right? but allow them to adjust it"*). A player who picked a DAMAGE focus asked
+ * for damage; the dial's home leans that way, and the defense half of the axis is there to be
+ * chosen rather than presumed. 0.3 and not the asked-about 0.2 because at 0.2 the Boots of Brawn
+ * verdict above sits 0.02 from flipping back — the default should not balance the case that
+ * created the dial on a knife's edge.
  */
+export const SURVIVABILITY_DEFAULT = 0.3
+
 const DPS_FOCUSES: ReadonlySet<GearRole> = new Set(['dps', 'dps1h', 'dps2h', 'dualwield', 'range'])
 
 /** Whether a focus reads the survivability dial at all — the UI shows the slider for exactly these. */
@@ -469,11 +478,13 @@ function survivalWeights(base: RoleWeights, role: GearRole, t: number): RoleWeig
   return { ...base, stats, ehp: lerp(DEFENSE_SPANS.ehp, t), saves: lerp(DEFENSE_SPANS.saves, t) }
 }
 
-/** The focus at the dial's position: the table itself at the default, a blend otherwise. */
+/** The focus at the dial's position — `SURVIVABILITY_DEFAULT` when none is handed in, so every
+ *  surface that never grew a slider reads the same default opinion the Plan tab does. */
 function focusWeights(role: GearRole, survivability: number | undefined): RoleWeights {
   const base = ROLE_WEIGHTS[role]
-  if (survivability === undefined || survivability === 0.5 || !DPS_FOCUSES.has(role)) return base
-  return survivalWeights(base, role, Math.min(1, Math.max(0, survivability)))
+  if (!DPS_FOCUSES.has(role)) return base
+  const t = Math.min(1, Math.max(0, survivability ?? SURVIVABILITY_DEFAULT))
+  return t === 0.5 ? base : survivalWeights(base, role, t)
 }
 
 /** The two inputs the class layer and the haste rule need beside the item and the focus. */
@@ -489,7 +500,8 @@ export interface RoleContext {
   /** the picked classes; EMPTY is unknown and gates nothing (law 1), not "nobody" */
   classes?: readonly ClassAbbr[]
   /** the dps focuses' defense dial, 0 "Glass Cannon" to 1 "Wooden Sword" (`readsSurvivability`);
-   *  0.5 — the default — IS the table above, and every other focus ignores it entirely. */
+   *  absent is `SURVIVABILITY_DEFAULT` (damage-leaning, by ruling), 0.5 IS the table above, and
+   *  every other focus ignores it entirely. */
   survivability?: number
 }
 

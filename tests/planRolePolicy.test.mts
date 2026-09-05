@@ -31,6 +31,7 @@ import { buildGearIndex } from '../src/main/planner/gearIndex'
 import type { GearRow } from '../src/shared/planner/gear'
 import {
   ROLE_WEAPON_POLICY,
+  SURVIVABILITY_DEFAULT,
   gearHandedness,
   isShieldLike,
   policyAdmits,
@@ -343,10 +344,11 @@ test('RANGED takes a bow or a throwing weapon in the RANGE slot, nothing else th
   assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dps2h, 'PRIMARY', bow), false)
   assert.equal(policyAdmits(ROLE_WEAPON_POLICY.dualwield, 'PRIMARY', bow), false)
   // THE WEIGHTS: DEX is the ranged accuracy stat and the one attribute this focus weighs above the
-  // melee's — fivefold, since melee DEX reads at the proc stat's 0.4 (the Cursed Blade overvote is
-  // `weaponGarnish`'s job now). STR falls below theirs; a bow's ratio reads as an axe's.
+  // melee's — the melee proc stat reads 0.32 at the dial's damage-leaning default (the Cursed
+  // Blade overvote is `weaponGarnish`'s job now). STR falls below theirs; a bow's ratio reads as
+  // an axe's.
   assert.equal(roleValue({ DEX: 10 }, 'range'), 20)
-  assert.equal(roleValue({ DEX: 10 }, 'dps'), 4)
+  assert.equal(roleValue({ DEX: 10 }, 'dps'), 3.2)
   assert.equal(roleValue({ STR: 10 }, 'range') < roleValue({ STR: 10 }, 'dps'), true)
   assert.equal(roleValue({ DMG: 30, DELAY: 50 }, 'range'), roleValue({ DMG: 30, DELAY: 50 }, 'dps'))
 })
@@ -354,8 +356,8 @@ test('RANGED takes a bow or a throwing weapon in the RANGE slot, nothing else th
 test('the survivability dial slides the dps DEFENSE rows and nothing else', () => {
   const armour = { AC: 10, STA: 10, AGI: 10, SV_FIRE: 10, HP_REGEN: 2 }
   const damage = { DMG: 12, DELAY: 24, STR: 10, ATTACK: 10, HASTE: 10 }
-  // The table IS the midpoint: absent, 0.5, and out-of-range clamp all read the same weights.
-  assert.equal(roleValue(armour, 'dps'), roleValue(armour, 'dps', { survivability: 0.5 }))
+  // Absent is the damage-leaning DEFAULT, not the table's midpoint, and out-of-range clamps.
+  assert.equal(roleValue(armour, 'dps'), roleValue(armour, 'dps', { survivability: SURVIVABILITY_DEFAULT }))
   assert.equal(roleValue(armour, 'dps', { survivability: 0 }), roleValue(armour, 'dps', { survivability: -3 }))
   // Defense is worth strictly more at every step toward the wooden end…
   const glass = roleValue(armour, 'dps', { survivability: 0 })

@@ -37,6 +37,7 @@ import { readFileSync } from 'node:fs'
 import { CLASS_ABBRS, MAX_COMBO_SLOTS } from '../src/shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState } from '../src/shared/itemUpgrade'
 import { ITEM_MAX_TIER } from '../src/shared/itemStats'
+import { SURVIVABILITY_DEFAULT } from '../src/shared/planner/progressionPlan'
 import { EQUIP_SLOTS } from '../src/shared/planner/types'
 import { WEAPON_PICKS } from '../src/shared/planner/weaponType'
 import { DEFAULT_GEAR_FILTERS, DEFAULT_GEAR_SORT } from '../src/renderer/src/features/gear/gearFilter'
@@ -406,6 +407,12 @@ test('the Plan tab`s two picks round-trip, and their vocabularies come from the 
   // reaching the fold, which would read it as a role with no weights table (JOS-105).
   assert.equal(sanitizePlanRole('TANK'), 'balanced', 'the vocabulary is case-sensitive')
   assert.equal(sanitizePlanReach('duo'), 'solo', 'a reach nobody measured is not a reach')
+})
+
+test('the stored dial default IS the scorer`s default — two spellings, one number', () => {
+  // `areaMemory.ts` reads `progressionPlan` type-only, so it spells 0.3 rather than importing
+  // `SURVIVABILITY_DEFAULT`; this is the pin that keeps the two from drifting apart.
+  assert.equal(PLAN_SURVIVABILITY_BASE.dial, SURVIVABILITY_DEFAULT)
 })
 
 test('the survivability dial round-trips its whole range, and an off-scale number CLAMPS rather than defaults', () => {

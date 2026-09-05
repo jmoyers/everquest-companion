@@ -126,6 +126,7 @@ import { layeredVerdict } from './era'
 import {
   CLASS_FACTS,
   ROLE_WEAPON_POLICY,
+  SURVIVABILITY_DEFAULT,
   policyAdmits,
   readsSurvivability,
   roleValue,
@@ -137,7 +138,15 @@ import {
 import { plusSuffix, zoneLevelKey, type PlusName, type ZoneLevels } from './zoneLevels'
 
 // The names this file used to define and now only passes through — see `roleWeights.ts`.
-export { readsSurvivability, roleValue, type GearRole, type RoleContext, CLASS_FACTS, type ClassFacts }
+export {
+  SURVIVABILITY_DEFAULT,
+  readsSurvivability,
+  roleValue,
+  type GearRole,
+  type RoleContext,
+  CLASS_FACTS,
+  type ClassFacts
+}
 
 // =================================================================================================
 // THE PLAN'S SHAPE

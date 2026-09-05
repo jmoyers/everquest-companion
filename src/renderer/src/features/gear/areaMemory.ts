@@ -372,8 +372,11 @@ export interface PlanSurvivability {
   dial: number
 }
 
-/** 0.5 is the default because it IS the weight table — an unreadable value costs no opinion. */
-export const PLAN_SURVIVABILITY_BASE: PlanSurvivability = { dial: 0.5 }
+/** The default leans damage by ruling — `roleWeights.SURVIVABILITY_DEFAULT` argues the number, and
+ *  it is SPELLED here rather than imported because this file reads `progressionPlan` type-only (the
+ *  import comment above); `tests/areaMemory.test.mts` pins the two spellings together. An
+ *  unreadable value costs no NEW opinion, it re-states the shipped one. */
+export const PLAN_SURVIVABILITY_BASE: PlanSurvivability = { dial: 0.3 }
 
 export function sanitizePlanSurvivability(raw: unknown): PlanSurvivability {
   const o = asRecord(raw)
