@@ -244,7 +244,11 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *     Shiverback-Hide Boots and their nine STA and nine AGI). The dps defense rows are also a
  *     DIAL: the table states the midpoint and the survivability slider slides them — see
  *     `readsSurvivability` and `DEFENSE_SPANS` below.
- *   * HP_REGEN — downtime between fights, which is a solo concern and a tank's.
+ *   * HP_REGEN — downtime between fights, which is a solo concern and a tank's — and on the dps
+ *     focuses it is DEFENSE and slides with the dial (the Chrysoberyl Talisman case, fork report
+ *     2026-09-04: with regen held flat while AC slid, the wooden end priced 5 AC on a trinket
+ *     above a real talisman's regen — "recommend[ed] some useless crap"). Regen is staying alive
+ *     stated as a rate, so it rides between the old 3 and the tank's neighborhood.
  *   * `manaStat`, MP, MANA_REGEN — the caster's damage budget; a hybrid's small one; nothing at
  *     all for a class with no bar (the class layer zeroes all three together).
  *   * CHA — charm, mez and lull resolution for ENC and BRD; gated to them, absent from the melee
@@ -288,7 +292,7 @@ const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
   AGI: 0.2,
   DEX: 0.4,
   MP: 0.05,
-  HP_REGEN: 3,
+  HP_REGEN: 6,
   MANA_REGEN: 1,
   END_REGEN: 1,
   ATTACK: 2,
@@ -444,6 +448,7 @@ const DEFENSE_SPANS = {
   AC: [0.5, 1.5],
   AGI: [0.1, 0.3],
   DEX: [0.2, 0.6],
+  HP_REGEN: [3, 9],
   ehp: [0.2, 0.6],
   saves: [0.15, 0.45]
 } as const
@@ -453,7 +458,12 @@ function lerp(span: readonly [number, number], t: number): number {
 }
 
 function survivalWeights(base: RoleWeights, role: GearRole, t: number): RoleWeights {
-  const stats = { ...base.stats, AC: lerp(DEFENSE_SPANS.AC, t), AGI: lerp(DEFENSE_SPANS.AGI, t) }
+  const stats = {
+    ...base.stats,
+    AC: lerp(DEFENSE_SPANS.AC, t),
+    AGI: lerp(DEFENSE_SPANS.AGI, t),
+    HP_REGEN: lerp(DEFENSE_SPANS.HP_REGEN, t)
+  }
   // Ranged DEX is the accuracy stat — damage, not defense — and the dial must not touch it.
   if (role !== 'range') stats.DEX = lerp(DEFENSE_SPANS.DEX, t)
   return { ...base, stats, ehp: lerp(DEFENSE_SPANS.ehp, t), saves: lerp(DEFENSE_SPANS.saves, t) }
