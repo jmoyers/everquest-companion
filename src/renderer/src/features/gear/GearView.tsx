@@ -495,6 +495,29 @@ function useOwnFilters(
   return { own, setOwn }
 }
 
+/** "There is more above" said out loud, for the reader the header shadow is too quiet for: the
+ *  count is free arithmetic off the fixed row height, and the click is the way back to the top. */
+function RowsAbove({
+  scrollTop,
+  scrollRef
+}: {
+  scrollTop: number
+  scrollRef: React.RefObject<HTMLDivElement | null>
+}): JSX.Element | null {
+  if (scrollTop <= 0) return null
+  return (
+    <Chip
+      size="small"
+      clickable
+      label={`↑ ${String(Math.floor(scrollTop / ROW_HEIGHT))} above`}
+      title="Back to top"
+      data-testid="gear-rows-above"
+      onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+      sx={{ position: 'absolute', top: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 3 }}
+    />
+  )
+}
+
 export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearViewProps = {}): JSX.Element {
   const { rows, ready, refused, scrapedAt } = useGearIndex()
   const classes = useGearClasses()
@@ -641,19 +664,7 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
           </Typography>
         )}
       </Box>
-      {/* "There is more above" said out loud, for the reader the header shadow is too quiet for:
-          the count is free arithmetic off the fixed row height, and the click is the way back. */}
-      {win.scrollTop > 0 && (
-        <Chip
-          size="small"
-          clickable
-          label={`↑ ${String(Math.floor(win.scrollTop / ROW_HEIGHT))} above`}
-          title="Back to top"
-          data-testid="gear-rows-above"
-          onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-          sx={{ position: 'absolute', top: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 3 }}
-        />
-      )}
+      <RowsAbove scrollTop={win.scrollTop} scrollRef={scrollRef} />
       </Box>
     </Box>
   )
