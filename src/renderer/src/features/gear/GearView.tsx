@@ -586,7 +586,11 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
           left, the sets pane as a fixed column on the right — and with the pane retired the row has
           nothing left to lay out. What survives is the part that was never about the pane: the list
           is its own bounded scroller, so a filter that matches 6,766 rows grows this box's scroll
-          height and never the page (the standing UI law, measured in gear.e2e.mts). */}
+          height and never the page (the standing UI law, measured in gear.e2e.mts).
+          The relative WRAPPER exists for the one overlay below it: the "rows above" chip floats
+          over the scroller without living inside it, where a sticky would fight the horizontal
+          scroll the pixel layout is allowed to have (fork decision, kaltinril 2026-09-04). */}
+      <Box sx={{ position: 'relative', display: 'flex', flexGrow: 1, minHeight: 0 }}>
       <Box
         ref={scrollRef}
         data-testid="gear-list"
@@ -636,6 +640,20 @@ export default function GearView({ onOpenLoot, onOpenMob, onOpenMapZone }: GearV
             {emptyText(ready, refused, table)}
           </Typography>
         )}
+      </Box>
+      {/* "There is more above" said out loud, for the reader the header shadow is too quiet for:
+          the count is free arithmetic off the fixed row height, and the click is the way back. */}
+      {win.scrollTop > 0 && (
+        <Chip
+          size="small"
+          clickable
+          label={`↑ ${String(Math.floor(win.scrollTop / ROW_HEIGHT))} above`}
+          title="Back to top"
+          data-testid="gear-rows-above"
+          onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          sx={{ position: 'absolute', top: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 3 }}
+        />
+      )}
       </Box>
     </Box>
   )
