@@ -126,6 +126,18 @@ function slotWord(slot: string): string {
   return slot.charAt(0) + slot.slice(1).toLowerCase()
 }
 
+/** The slot a target cleared in (fork ask, kaltinril 2026-09-04) — flexShrink 0: one short word
+ *  that must survive the ellipsis race the mob text is allowed to lose. Null for a wished
+ *  non-upgrade, which cleared nothing and claims nothing. */
+function SlotChip({ slot }: { slot: GearTarget['slot'] }): JSX.Element | null {
+  if (slot === undefined) return null
+  return (
+    <Typography variant="caption" color="text.secondary" data-testid="plan-target-slot" sx={{ flexShrink: 0 }}>
+      {slotWord(slot)}
+    </Typography>
+  )
+}
+
 function mobText(target: GearTarget): string {
   const mob = target.plus === null ? target.mob : `${target.mob} +${String(target.plus)}`
   return target.mobLevel === null ? mob : `${mob} (Lvl ${String(target.mobLevel)})`
@@ -211,13 +223,7 @@ function TargetRow({
         ) : (
           name
         )}
-        {/* the slot it cleared in (fork ask, kaltinril 2026-09-04) - flexShrink 0: one short
-            word that must survive the ellipsis race the mob text is allowed to lose */}
-        {target.slot !== undefined && (
-          <Typography variant="caption" color="text.secondary" data-testid="plan-target-slot" sx={{ flexShrink: 0 }}>
-            {slotWord(target.slot)}
-          </Typography>
-        )}
+        <SlotChip slot={target.slot} />
         <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>
           {mobLinked ? (
             <>
