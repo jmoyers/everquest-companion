@@ -56,7 +56,7 @@ test('HELD is what the route will not farm; WORN is what the dump says is EQUIPP
   ])
   const keys = ownedKeysOf(map)
   assert.deepEqual([...keys.held].sort(), ['haste sword', 'plain tunic', 'quick gloves'], 'all three are excluded as targets')
-  assert.deepEqual([...keys.worn], ['haste sword'], 'only the equipped copy sets a bar')
+  assert.deepEqual([...keys.worn.keys()], ['haste sword'], 'only the equipped copy sets a bar')
 
   // …so the looted glove sets NO haste and the melted tunic NO chest bar.
   const side = ownedSide(keys.worn, BY_KEY, 'dps', ['WAR'])
@@ -64,7 +64,7 @@ test('HELD is what the route will not farm; WORN is what the dump says is EQUIPP
   assert.deepEqual([...side.bars.keys()], ['PRIMARY'])
 
   // No dump and no loot is two empty sets and an empty plus map, never a throw.
-  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Set(), wornPlus: new Map() })
+  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Map() })
 })
 
 test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling; the same item EQUIPPED sets both', () => {
@@ -73,7 +73,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
   for (const place of ['inventory', 'bank', 'sharedBank', 'personalDepot'] as const) {
     const stowed = ownedKeysOf(new Map([['haste sword', own({ facts: [at(place)] })]]))
     assert.deepEqual([...stowed.held], ['haste sword'], `${place}: still not a thing to farm`)
-    assert.deepEqual([...stowed.worn], [], `${place}: not worn`)
+    assert.deepEqual([...stowed.worn.keys()], [], `${place}: not worn`)
     const side = ownedSide(stowed.worn, BY_KEY, 'dps', ['WAR'])
     assert.deepEqual(side.haste, [], `${place}: a haste blade there is not haste you have`)
     assert.equal(side.bars.size, 0, `${place}: sets no bar`)
@@ -81,7 +81,7 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
   // EQUIPPED — and a second copy in the bank beside it changes nothing: the worn one is worn.
   for (const facts of [[at('equipped')], [at('bank'), at('equipped')]]) {
     const worn = ownedKeysOf(new Map([['haste sword', own({ facts })]])).worn
-    assert.deepEqual([...worn], ['haste sword'])
+    assert.deepEqual([...worn.keys()], ['haste sword'])
     const side = ownedSide(worn, BY_KEY, 'dps', ['WAR'])
     assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
     assert.equal(side.bars.get('PRIMARY'), roleValue(SWORD.stats, 'dps'))
@@ -89,7 +89,11 @@ test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling
 })
 
 test('the haste source keeps full credit in its own slot, and every other bar is read against it', () => {
-  const worn = new Set(['haste sword', 'quick gloves', 'plain tunic'])
+  const worn = new Map<string, number | undefined>([
+    ['haste sword', undefined],
+    ['quick gloves', undefined],
+    ['plain tunic', undefined]
+  ])
   const side = ownedSide(worn, BY_KEY, 'dps', ['WAR'])
   // Two sources, each placed in every slot it fits.
   assert.deepEqual(side.haste, [
@@ -107,7 +111,7 @@ test('the haste source keeps full credit in its own slot, and every other bar is
 })
 
 test('a key the corpus has no row for contributes nothing — a gap, not a bar of zero', () => {
-  const side = ownedSide(new Set(['unknown relic']), BY_KEY, 'tank', [])
+  const side = ownedSide(new Map([['unknown relic', undefined]]), BY_KEY, 'tank', [])
   assert.equal(side.bars.size, 0)
   assert.deepEqual(side.haste, [])
 })
@@ -129,7 +133,7 @@ const CURSED_BLADE = row({
 
 test('cursed blade loses to blood fire +7: the flat bonus buys a seventeenth, the plus is real', () => {
   const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const side = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'], new Map([[BLOOD_FIRE.key, 7]]))
+  const side = ownedSide(new Map([[BLOOD_FIRE.key, 7]]), byKey, 'dps1h', ['WAR'])
   const bar = side.bars.get('PRIMARY')
   assert.ok(bar !== undefined, 'the worn blade sets a PRIMARY bar')
   const challenger = roleValue(CURSED_BLADE.stats, 'dps1h', { classes: ['WAR'] })
@@ -141,7 +145,7 @@ test('cursed blade loses to blood fire +7: the flat bonus buys a seventeenth, th
 
 test('the +7 bar is a real raise: the same blade at base scores strictly less', () => {
   const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const at0 = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR']).bars.get('PRIMARY')
-  const at7 = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'], new Map([[BLOOD_FIRE.key, 7]])).bars.get('PRIMARY')
+  const at0 = ownedSide(new Map([[BLOOD_FIRE.key, undefined]]), byKey, 'dps1h', ['WAR']).bars.get('PRIMARY')
+  const at7 = ownedSide(new Map([[BLOOD_FIRE.key, 7]]), byKey, 'dps1h', ['WAR']).bars.get('PRIMARY')
   assert.ok(at0 !== undefined && at7 !== undefined && at7 > at0)
 })
