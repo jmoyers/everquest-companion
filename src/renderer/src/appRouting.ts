@@ -11,6 +11,10 @@ import { VIEW_LABELS, type View } from './appViews'
 import { afterBack, afterLink, originTop, type NavOrigin } from './navOrigin'
 import type { CombatFocus } from './features/combat/combatFocus'
 import type { MobTarget } from './features/mobs/mobTarget'
+import type { ZoneShort } from '@shared/maps'
+// The Maps tab's zone selection is persisted machine-local state with pin semantics (JOS-97);
+// `openMapZone` writes a pick through the same pure rules the toolbar uses. See the opener's doc.
+import { onPick, saveZoneSelection } from './features/maps/zoneFollow'
 
 /**
  * THE ONE BACK CONTRACT (JOS-43). Every cross-view drill receiver takes this same object — never
@@ -153,6 +157,16 @@ export interface AppRouting {
    */
   openLeveling: (level?: number) => void
   clearLevelFocus: () => void
+  /**
+   * The Maps tab, pointed at a zone another surface named (the Gear tab's Zone cells, user ask
+   * 2026-08-17). UNLIKE the openers above there is no focus/nonce pair to hand `MapsView`: which
+   * zone the viewer shows is already persisted machine-local state with pin semantics
+   * (features/maps/zoneFollow.ts, JOS-97), and a cross-view zone link IS a pick — so this writes
+   * the pick through the same pure rule the toolbar's selector uses and switches tabs; the
+   * remount reads it back. Unanchored on purpose: Maps is a tab with no drill and no Back button,
+   * so parking an origin would promise a return nothing on that surface can deliver.
+   */
+  openMapZone: (zone: ZoneShort) => void
   /** The spell the drilldown should draw, or null. Never bare — a spell page IS its spell. */
   spellName: string | null
   spellNonce: number
@@ -239,6 +253,15 @@ export function useAppRouting(view: View, setView: (v: View) => void): AppRoutin
   // to every spell name in the window, so a fresh identity per render would re-render every list
   // that draws one.
   const spell = useFocusSlot<string>('spell', linkTo)
+  // Not a FocusSlot: the Maps tab's zone is persisted pin state, so the pick is written first and
+  // the remount reads it back. Unanchored — Maps has no drill and no Back button.
+  const openMapZone = useCallback(
+    (zone: ZoneShort) => {
+      saveZoneSelection(onPick(zone))
+      linkTo('maps', false)
+    },
+    [linkTo]
+  )
   // THE WHOLE ROUTER IS ONE MEMOIZED OBJECT (JOS-510 item 3). It is handed down as `routing` to
   // `ViewContent`, which is a `React.memo` boundary now — a fresh object here would make that
   // boundary compare unequal on every App render and buy nothing.
@@ -269,9 +292,10 @@ export function useAppRouting(view: View, setView: (v: View) => void): AppRoutin
       lootItem: loot.value,
       lootNonce: loot.nonce,
       openLoot: loot.open,
-      clearLootFocus: loot.clear
+      clearLootFocus: loot.clear,
+      openMapZone
     }),
-    [selectView, nav, spell, mob, quest, level, combat, loot]
+    [selectView, nav, spell, mob, quest, level, combat, loot, openMapZone]
   )
 }
 

@@ -30,6 +30,8 @@
     "gen:telemetry-doc": "tsx scripts/gen-telemetry-doc.mts",
     "dev:stack": "tsx scripts/dev-feedback-server.mts",
     "fixtures:e2e": "node --import tsx tests/extract-e2e-fixtures.mjs",
+
+    "fixtures:consider-pairs": "node --import tsx tests/extract-consider-pairs.mjs",
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/",
     "lint:fix": "eslint . --fix --cache --cache-location node_modules/.cache/eslint/",
     "lint:measure": "tsx scripts/lint-report.mts --measure",
