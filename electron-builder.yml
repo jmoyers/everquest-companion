@@ -216,3 +216,24 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: EQ Legends Companion
   artifactName: everquest-companion-Setup-${version}.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  identity: null
+  files:
+    - out/**
+    - package.json
+    - resources/wiki-images/**
+    - '!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}'
+    - '!**/*.{o,obj,map,ts,tsx}'
+    - '!node_modules/onnxruntime-node/bin/napi-v3/{win32,linux}/**'
+    - '!node_modules/koffi/**'
+    - '!node_modules/native-reg/**'
