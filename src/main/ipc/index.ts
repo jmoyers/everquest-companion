@@ -38,6 +38,7 @@ import { registerSoundsIpc } from './sounds'
 import { registerSpeechIpc } from './speech'
 import { registerTelemetryIpc } from './telemetry'
 import { registerUiScaleIpc } from './uiScale'
+import { registerAiIpc } from './ai'
 // The celebration toast's producer channel. It lives beside the window it feeds (src/main/toast.ts)
 // rather than in this folder, because everything it does is window fan-out + item resolution.
 import { registerToastIpc } from '../toast'
@@ -80,6 +81,7 @@ export function registerIpc(): void {
   // (../unreleased.ts explains what it is for and how to adopt it).
   registerCharacterSheetIpc()
   registerOutputsIpc()
+  registerAiIpc()
   registerWorldIpc()
   registerComboIpc()
   registerRosterIpc()

@@ -83,6 +83,19 @@ test('allowedExternalUrl accepts exactly the links the app produces today', () =
   )
 })
 
+test('openrouter.ai is two paths, not the host', () => {
+  assert.equal(allowedExternalUrl('https://openrouter.ai/keys'), 'https://openrouter.ai/keys')
+  assert.equal(
+    allowedExternalUrl('https://openrouter.ai/collections/free-models'),
+    'https://openrouter.ai/collections/free-models'
+  )
+  assert.equal(allowedExternalUrl('https://openrouter.ai/keys/x'), 'https://openrouter.ai/keys/x')
+  assert.equal(allowedExternalUrl('https://openrouter.ai/'), null)
+  assert.equal(allowedExternalUrl('https://openrouter.ai/models'), null)
+  assert.equal(allowedExternalUrl('https://openrouter.ai/keys-evil'), null)
+  assert.equal(allowedExternalUrl('https://openrouter.ai/collections/free-models-evil'), null)
+})
+
 test('the github.com entry is scoped to THIS repo, not to the host (JOS-263)', () => {
   // The owner's ruling on the JOS-254 widening: github.com is not one site the way a wiki is, so
   // the entry buys exactly one repo's subtree. Everything else on the host is refused — starting

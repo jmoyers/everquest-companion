@@ -464,7 +464,7 @@ const DEFAULT_OVERLAY_CONFIG: Record<OverlayKind, OverlayConfig> = {
   // (2026-08-16) is that this one ships on: it answers a question the player just asked by typing
   // `/con`, which is exactly what the alert banner's "text over the game nobody asked for" is not.
   // prettier-ignore
-  conCard: { open: true, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, conCard: { ...DEFAULT_CON_CARD_CONFIG } }
+  conCard: { open: true, locked: true, bgAlpha: 0.72, bounds: undefined, drill: null, conCard: { ...DEFAULT_CON_CARD_CONFIG } }, ai: { open: false, locked: false, bgAlpha: 0.72, bounds: undefined, drill: null }
 }
 
 /** Read a kind's overlay config, filling missing fields with the kind's defaults.

@@ -68,6 +68,7 @@ test('every kind gets the zone style its own renderer sensor implies', () => {
     'heal-overall': 'chrome',
     xp: 'chrome',
     respawn: 'chrome',
+    ai: 'chrome',
     // The LIST kinds hold capture over their whole window while hovered (`onMouseEnter={onEnter}`
     // on the root) — overlayScale.tsx calls it the same trade taken at the other extreme.
     events: 'window',

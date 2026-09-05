@@ -134,7 +134,8 @@ const OVERLAY_MENU_ROWS: readonly (readonly [OverlayKind, string])[] = [
   // instruction (2026-08-16, the JOS-139 mirroring precedent): a window that appears by itself
   // needs its off switch within reach of the place you are already looking when you want it gone.
   // The 'toast' kind stays absent for its own stated reason — nobody places a celebration strip.
-  ['conCard', 'Resists, drops and level when you con']
+  ['conCard', 'Resists, drops and level when you con'],
+  ['ai', 'Ask about items, spells, and this fight']
 ]
 
 /**

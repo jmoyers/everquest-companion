@@ -63,6 +63,8 @@
     // …and `logStream.ts` (line / character rebuild / quiet-switch offer, JOS-432), likewise.
     "src/preload/logStream.ts",
     // …and `engine.ts` (the data server's brokered byte channel, JOS-484), likewise.
-    "src/preload/engine.ts"
+    "src/preload/engine.ts",
+    // …and `ai.ts` (the AI assistant bridge).
+    "src/preload/ai.ts"
   ]
 }

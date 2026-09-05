@@ -56,6 +56,7 @@ export type View =
   // error thrown here is attributed to the tab you came from, which for a drill is the honest
   // answer anyway. Widening either enum is a separate, owner-sequenced change.
   | 'spell'
+  | 'ai'
 
 export const VIEW_KEY = 'eq.view'
 export const DEFAULT_VIEW: View = 'overview'
@@ -96,7 +97,8 @@ export const VIEW_LABELS: Record<View, string> = {
   // Named even though no nav row draws it: this table is also what a drill's Back button reads
   // (navOrigin.ts), so the day a spell page links onward to something else, that something's Back
   // says "Back to Spell" without anybody remembering to come here.
-  spell: 'Spell'
+  spell: 'Spell',
+  ai: 'AI Assistant'
 }
 
 // Every member of `View` this BUILD can actually render. A view missing here is silently
@@ -120,6 +122,7 @@ const KNOWN_VIEWS: View[] = [
   // JOS-327: `character` used to be spliced in behind `UNRELEASED` right here, beside the
   // owner-tools splice below. It is a plain member now — every build draws it.
   'character',
+  'ai',
   // Compile-time in a BUILD (`false ? [...] : []` folds away, taking the literal with it) and a
   // runtime read of the opt-in on a dev server — so a contributor's checkout, which has no
   // `EQ_OWNER_TOOLS`, bounces a persisted 'triage' to the default view instead of routing to a

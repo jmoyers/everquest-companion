@@ -42,6 +42,8 @@ import AlertsView from './features/alerts/AlertsView'
 import BuffsView from './features/buffs/BuffsView'
 import TimersView from './features/timers/TimersView'
 import PreferencesView from './features/preferences/PreferencesView'
+import AIAssistantTab from './features/aiAssistant/AIAssistantTab'
+import { useAiProactiveInbox } from './features/aiAssistant/useAiProactiveInbox'
 // TWO FACTS THE PREFERENCES SNAPSHOT CANNOT LEARN FROM A CARD: what the X does (JOS-139 — the tray
 // menu carries the same checkbox) and WHICH OVERLAYS ARE OPEN (JOS-408 — the title bar's Overlay
 // menu opens them, and the Appearance rows tag a closed one). Both are recorded HERE, at the root.
@@ -273,6 +275,7 @@ function ViewContent({
           onFocusConsumed={routing.clearCombatFocus}
         />
       )}
+      {view === 'ai' && <AIAssistantTab key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenAlerts={() => routing.selectView('alerts')} />}
     </SpellLinkProvider>
   )
 }
@@ -426,6 +429,7 @@ export default function App(): JSX.Element {
   // with nothing parked is a no-op rather than a surprise tab switch.
   useBackFallback(routing.nav.back)
 
+  useAiProactiveInbox()
   // Remember the selected tab across launches (renderer-only) — and, when that tab is one of the
   // gear area's four, remember it a SECOND time as the area's last-used tab (JOS-324). Two keys
   // because they answer two questions: `eq.view` is "where was I", which relaunch restores, while

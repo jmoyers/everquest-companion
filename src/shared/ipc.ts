@@ -18,6 +18,18 @@ export const IPC = {
   // was working towards rather than around.
   onModuleChanged: 'module:changed',
 
+  // ---- AI Assistant ----
+  aiSendPrompt: 'ai:sendPrompt',
+  aiConfigGet: 'ai:configGet',
+  aiConfigSet: 'ai:configSet',
+  aiContextGet: 'ai:contextGet',
+  aiSaveDraftAlert: 'ai:saveDraftAlert',
+  aiStatusGet: 'ai:statusGet',
+  aiUsageGet: 'ai:usageGet',
+  aiUsage: 'ai:usage',
+  aiProactive: 'ai:proactive',
+  aiChunk: 'ai:chunk',
+
   // ---- progress / inventory (per-character persisted state) ----
   getProgress: 'progress:get',
   reloadInventory: 'inventory:reload',
