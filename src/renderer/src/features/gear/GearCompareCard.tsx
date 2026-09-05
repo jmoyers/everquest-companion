@@ -103,21 +103,21 @@
 
 import { type JSX, type ReactElement, useCallback, useEffect, useState } from 'react'
 import type { GearRow } from '@shared/planner/gear'
-import { scaleGearRow } from '@shared/planner/gearScale'
 import { ITEM_MAX_TIER } from '@shared/itemStats'
 import { percentLabel } from '@shared/itemUpgrade'
 import { outputKind } from '@shared/outputs/kinds'
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, LABEL_STYLE, MoreLine, TEXT_STYLE } from '../../lib/hoverCards'
 import { Tooltip } from '../../lib/Tooltip'
 import {
+  NO_BASE_CHANGE,
   arrowText,
   compareDirection,
   compareStats,
   dumpFreshnessText,
   equippedCells,
-  equippedState,
   hostText,
   statPairText,
+  swapSections,
   type EquippedCell,
   type StatCompare
 } from './gearCompare'
@@ -264,11 +264,9 @@ function SwapLines({ changes }: { changes: StatCompare[] }): JSX.Element {
 function EquippedRow({ cell, row, data }: { cell: EquippedCell; row: GearRow; data: GearCompareData }): JSX.Element {
   const host = cell.host
   const worn = host === null ? undefined : data.byKey.get(host.key)
-  // The worn copy is scaled at ITS OWN `+N` before the subtraction — comparing a candidate against
-  // a base-tier reading of something you have already merged five times is the wrong answer, and
-  // `equippedState` is where the fraction the dump does not state is priced (gearCompare.ts).
-  const changes =
-    host === null || worn === undefined ? [] : compareStats(row.stats, scaleGearRow(worn, equippedState(host)).stats)
+  // BASE AGAINST BASE, the same math the route admits by (`swapSections` argues the reversal); the
+  // section's label states the frame whenever the worn copy is merged past base.
+  const sections = swapSections(row.stats, host, worn)
   return (
     <div
       style={{ marginTop: 3 }}
@@ -291,12 +289,21 @@ function EquippedRow({ cell, row, data }: { cell: EquippedCell; row: GearRow; da
       {host !== null && worn === undefined && (
         <div style={LABEL_STYLE}>the item database has no numbers for that one</div>
       )}
-      {changes.length > 0 && (
-        <>
-          <SwapLines changes={changes} />
-          <MoreLine total={changes.length} shown={MAX_DELTAS} />
-        </>
-      )}
+      {sections.map((s) => (
+        <div key={s.label ?? 'swap'}>
+          {s.label !== undefined && <div style={LABEL_STYLE}>{s.label}</div>}
+          {s.changes.length === 0 ? (
+            <div style={LABEL_STYLE} data-testid="gear-compare-delta">
+              {NO_BASE_CHANGE}
+            </div>
+          ) : (
+            <>
+              <SwapLines changes={s.changes} />
+              <MoreLine total={s.changes.length} shown={MAX_DELTAS} />
+            </>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

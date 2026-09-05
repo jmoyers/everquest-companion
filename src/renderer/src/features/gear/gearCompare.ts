@@ -55,7 +55,7 @@
 // scaled at `{full: tier, fraction: 0}` — a FLOOR on what it reads, and `equippedState` says so in
 // one place rather than at each call site.
 
-import { GEAR_STAT_KEYS, type GearStatKey, type GearStats } from '../../../../shared/planner/gear'
+import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from '../../../../shared/planner/gear'
 import type { PlannerInventoryHost } from '../../../../shared/planner/inventorySlots'
 import { cellsForSlot, planSlotLabel, type EquipSlot, type PlanSlotId } from '../../../../shared/planner/types'
 import { upgradeStateForTier, type ItemUpgradeState } from '../../../../shared/itemUpgrade'
@@ -221,6 +221,33 @@ export function arrowText(entry: StatCompare): string {
   const worn = entry.equipped === undefined ? '—' : statText(entry.equipped, entry.key)
   const mine = entry.item === undefined ? '—' : statText(entry.item, entry.key)
   return `${label} ${worn}→${mine}`
+}
+
+/**
+ * THE CARD COMPARES BASE TO BASE — the fork ruling (kaltinril, 2026-09-05: *"i think the card
+ * should show base comparison honestly"*), and a deliberate reversal of the worn-at-its-own-`+N`
+ * reading this file carried before it. That reading was a fact about a swap today, but it
+ * contradicted the route's own admission math (fold rule 6, base against base) every time a merged
+ * item was involved: the route called a drop an upgrade and the hover showed all red. One math,
+ * both surfaces. The honesty is in the LABEL: when the worn copy is merged the card says so, so
+ * "base vs base" is a stated frame rather than a hidden one — and a merged copy's real numbers
+ * still live on the Character tab, whose job that is (JOS-416).
+ */
+export interface SwapSection {
+  /** the frame, stated: absent when the worn copy is base and there is nothing to flag */
+  label?: string
+  changes: StatCompare[]
+}
+
+/** The one line an empty base-to-base comparison prints — same item, nothing to say (law 1 says
+ *  silence, this says WHY the card is silent). The e2e derives its expected words from here. */
+export const NO_BASE_CHANGE = 'no stat differs, base to base'
+
+export function swapSections(item: GearStats, host: PlannerInventoryHost | null, worn: GearRow | undefined): SwapSection[] {
+  if (host === null || worn === undefined) return []
+  const tier = host.tier ?? 0
+  const label = tier === 0 ? undefined : `base vs base — you wear it merged to +${String(tier)}`
+  return [{ label, changes: compareStats(item, worn.stats) }]
 }
 
 /** `Thelvorn, Blade of Light +5` — the worn copy as the dump names it, tier and all. */
