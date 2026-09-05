@@ -53,10 +53,11 @@ test('the mana stat lands on the class\'s OWN attribute, at the focus\'s weight,
   for (const role of ROLES) {
     assert.equal(roleValue({ INT: 10, WIS: 10 }, role, { classes: ['WAR'] }), 0, `${role}: a warrior has no mana stat`)
   }
-  // THE HYBRID CASE the melee ruling left open: a Shadowknight on 2H DPS keeps a small INT credit
-  // (the melee focuses' 0.3) because he does have a bar — and a Paladin the same for WIS.
-  assert.equal(roleValue({ INT: 10 }, 'dps2h', { classes: ['SHD'] }), 3)
-  assert.equal(roleValue({ WIS: 10 }, 'dps2h', { classes: ['PAL'] }), 3)
+  // THE HYBRID CASE the melee ruling left open: a Shadowknight on 2H DPS keeps a TINY INT credit
+  // (the melee focuses' 0.1 — "MP on a melee heavy 3 class build low", kaltinril 2026-09-05)
+  // because he does have a bar — and a Paladin the same for WIS.
+  assert.equal(roleValue({ INT: 10 }, 'dps2h', { classes: ['SHD'] }), 1)
+  assert.equal(roleValue({ WIS: 10 }, 'dps2h', { classes: ['PAL'] }), 1)
   assert.equal(roleValue({ WIS: 10 }, 'dps2h', { classes: ['SHD'] }), 0)
 })
 
@@ -83,11 +84,11 @@ test('a TRIO is live-for-any, and an EMPTY trio is unknown — it gates nothing 
   // The owner's example: a 4 STR / 10 INT glove. To a warrior it is 4 STR. Add a Shadowknight to
   // the trio and the INT is live again, because somebody picked can use it.
   assert.equal(roleValue(glove, 'dps', { classes: ['WAR'] }), 6)
-  assert.equal(roleValue(glove, 'dps', { classes: ['WAR', 'SHD'] }), 9)
+  assert.equal(roleValue(glove, 'dps', { classes: ['WAR', 'SHD'] }), 7)
   assert.equal(roleValue(glove, 'dps', { classes: ['WAR', 'BER', 'MNK'] }), 6)
   // NO CLASS STATED is not "nobody": both mana stats count, and so do CHA, BACKSTAB and END —
   // exactly what the fold scored before the gate existed, so an unpinned trio loses nothing.
-  assert.equal(roleValue(glove, 'dps'), 9)
+  assert.equal(roleValue(glove, 'dps'), 7)
   assert.equal(roleValue({ INT: 10, WIS: 10 }, 'dd'), 34)
   assert.equal(roleValue({ CHA: 10, BACKSTAB: 5, END_REGEN: 3 }, 'balanced'), 2 + 2.5 + 3)
   assert.equal(roleValue(glove, 'dps', { classes: [] }), roleValue(glove, 'dps'))
