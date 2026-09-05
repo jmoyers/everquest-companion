@@ -13,7 +13,7 @@
 import type { ClassAbbr } from '../classCombo'
 import { GEAR_STAT_KEYS, type GearRow, type GearStatKey, type GearStats } from './gear'
 import type { EquipSlot } from './types'
-import { gearEffectiveHp, gearRatio } from './gearScale'
+import { gearEffectiveHp, gearEffectiveRatio } from './gearScale'
 // The skill vocabulary is NOT restated here — `weaponType.ts` measured it and folded it, and one
 // fold is what keeps the Gear tab's weapon filter and this policy answering the same question.
 import { WEAPON_CATEGORY_MEMBERS, weaponTypeOf } from './weaponType'
@@ -210,17 +210,21 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  * Change a number here and every surface moves together; there is no second table.
  *
  * WHAT EACH ROW MEANS IN THE GAME, so a number can be argued with rather than guessed at:
- *   * `ratio` (weapons only) — DMG over DELAY, the foundation of melee damage; nothing on a glove
- *     competes with it, hence 20 on the melee focuses.
+ *   * `ratio` (weapons only) — effective DMG over DELAY, the foundation of melee damage; nothing
+ *     on a glove competes with it, hence 30 on the melee focuses (20 until 2026-09-04, tuned when
+ *     the flat bonus rode beside it at ×3 — see the DMG_BONUS and DEX rows).
  *   * HASTE — a straight multiplier on swings, and WORN HASTE DOES NOT STACK, so `roleValue`
  *     credits it only above what the player already owns (the 2026-08-22 ruling, below).
- *   * DMG_BONUS — a flat add per hit; for a TWO-HANDER it also grows with delay, which is the one
- *     cell where the melee focuses differ (4 on `dps2h`, 3 elsewhere).
+ *   * DMG_BONUS — a flat add per hit, applied AFTER the multiplied roll. It rides through the
+ *     ratio (`gearEffectiveRatio`, at its measured 1/17th-of-a-DMG-point worth) and appears in NO
+ *     `stats` row (fork decision, kaltinril 2026-09-04): weighted flat at 3 it outranked eight
+ *     points of multiplied DMG, and the route sent a level-50 to Unrest for a downgrade.
  *   * ATTACK — the number the hit and damage rolls actually read; STR feeds it by proxy, so ATTACK
  *     outweighs STR per point.
  *   * DEX — proc rate, and the accuracy stat for archery and throwing. It does NOT raise melee hit
- *     chance in this era, so it is moderate for every melee and special for none of them: a dual
- *     wielder with two proc weapons gets twice the value, but the table cannot see procs.
+ *     chance in this era, so the melee focuses read it SMALL (0.2 since 2026-09-04, down from 1 —
+ *     ten DEX on a slow blade outvoted a third of a real weapon's white damage, the other half of
+ *     the Cursed Blade case). Ranged keeps its 2: there DEX is the accuracy stat itself.
  *   * AGI — a sliver of AC above 75 and a little avoidance; "basically useless" at item
  *     magnitudes (owner) and weighted like it.
  *   * AC and `ehp` (HP + STA) — staying alive; every focus reads them, the tank reads them big.
@@ -266,7 +270,7 @@ const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
   AC: 0.5,
   STR: 1.5,
   AGI: 0.1,
-  DEX: 1,
+  DEX: 0.2,
   MP: 0.05,
   HP_REGEN: 3,
   MANA_REGEN: 1,
@@ -275,14 +279,14 @@ const MELEE_STATS: Partial<Record<GearStatKey, number>> = {
   HASTE: 4
 }
 const ONE_HAND_DPS: RoleWeights = {
-  stats: { ...MELEE_STATS, DMG_BONUS: 3, BACKSTAB: 2 },
+  stats: { ...MELEE_STATS, BACKSTAB: 2 },
   manaStat: 0.3,
   ehp: 0.2,
-  ratio: 20,
+  ratio: 30,
   saves: 0.15
 }
-/** The two-hander's bonus grows with delay; a two-hander cannot backstab. The rest is the melee profile. */
-const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS, DMG_BONUS: 4 } }
+/** A two-hander cannot backstab. The rest — damage bonus included, via the ratio — is the melee profile. */
+const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS } }
 
 /**
  * THE RANGED PROFILE. DEX is the accuracy and damage stat for archery and throwing in this era,
@@ -295,10 +299,10 @@ const TWO_HAND_DPS: RoleWeights = { ...ONE_HAND_DPS, stats: { ...MELEE_STATS, DM
  * throwing weapon, so nothing here is a ranged-only invention.
  */
 const RANGED: RoleWeights = {
-  stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2, DMG_BONUS: 3 },
+  stats: { ...MELEE_STATS, STR: 0.8, DEX: 2, HASTE: 2 },
   manaStat: 0.3,
   ehp: 0.2,
-  ratio: 20,
+  ratio: 30,
   saves: 0.15
 }
 
@@ -328,8 +332,7 @@ const CASTER_STATS: Partial<Record<GearStatKey, number>> = {
   CHA: 0.5,
   HP_REGEN: 3,
   ATTACK: 0.1,
-  HASTE: 0.3,
-  DMG_BONUS: 0.1
+  HASTE: 0.3
 }
 
 const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
@@ -346,7 +349,6 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       END_REGEN: 1,
       ATTACK: 0.6,
       HASTE: 2,
-      DMG_BONUS: 1.5,
       BACKSTAB: 0.5
     },
     manaStat: 0.5,
@@ -365,8 +367,7 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       MANA_REGEN: 1,
       END_REGEN: 1,
       ATTACK: 0.5,
-      HASTE: 1,
-      DMG_BONUS: 0.5
+      HASTE: 1
     },
     manaStat: 0.3,
     ehp: 1.2,
@@ -390,8 +391,7 @@ const ROLE_WEIGHTS: Readonly<Record<GearRole, RoleWeights>> = {
       HP_REGEN: 6,
       MANA_REGEN: 12,
       ATTACK: 0.1,
-      HASTE: 0.5,
-      DMG_BONUS: 0.2
+      HASTE: 0.5
     },
     manaStat: 1.5,
     ehp: 0.4,
@@ -495,7 +495,7 @@ function derivedTotal(stats: GearStats, weights: RoleWeights): number {
   }
   const ehp = gearEffectiveHp(stats)
   if (ehp !== undefined) total += ehp * weights.ehp
-  const ratio = gearRatio(stats)
+  const ratio = gearEffectiveRatio(stats)
   if (ratio !== undefined) total += ratio * weights.ratio
   return total
 }

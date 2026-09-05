@@ -111,3 +111,30 @@ test('a key the corpus has no row for contributes nothing — a gap, not a bar o
   assert.equal(side.bars.size, 0)
   assert.deepEqual(side.haste, [])
 })
+
+// ---- the Cursed Blade regression (fork, kaltinril 2026-09-04) ---------------------------------
+// A reworked level-20 drop (12/36 with a flat DMG Bonus 17 and 10 DEX) outranked an 11/24 blade
+// twice over: the bonus was weighted flat at 3, and melee DEX at 1 let ten of it outvote a third
+// of a blade's white damage. Both leaks are pinned here BASE against BASE, the fold's own rule 6
+// ("base stats can be used, that's fine, because we can upgrade") — the bars stay unscaled.
+
+const BLOOD_FIRE = row({
+  key: 'blood fire', name: 'Blood Fire', slots: ['PRIMARY', 'SECONDARY'],
+  stats: { DMG: 11, DELAY: 24 }
+})
+const CURSED_BLADE = row({
+  key: 'cursed blade', name: 'Cursed Blade', slots: ['PRIMARY', 'SECONDARY'],
+  stats: { DMG: 12, DELAY: 36, DMG_BONUS: 17, DEX: 10, STA: -5 }
+})
+
+test('cursed blade loses to blood fire, base against base: the flat bonus and the DEX are garnish', () => {
+  const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
+  const side = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'])
+  const bar = side.bars.get('PRIMARY')
+  assert.ok(bar !== undefined, 'the worn blade sets a PRIMARY bar')
+  const challenger = roleValue(CURSED_BLADE.stats, 'dps1h', { classes: ['WAR'] })
+  assert.ok(
+    challenger < bar,
+    `the level-20 drop (${challenger.toFixed(1)}) must not clear the bar (${bar.toFixed(1)})`
+  )
+})
