@@ -65,6 +65,11 @@ export interface OwnedFact {
   /** the ` +N` the name stated. ABSENT means it stated none — never `+0` (phase 1's rule). */
   tier?: number
   count: number
+  /** an EQUIPPED copy sitting in a client cell that names no wiki slot — `Any Slot` / `Held`
+   *  (`OwnershipRow.slot === null`). It is worn (its haste is haste you have) but it does not
+   *  OCCUPY its native slot, so it must not set that slot's bar (fork report, kaltinril
+   *  2026-09-04: a resist shield parked in Any Slot barred the offhand it was not in). */
+  wildcard?: true
 }
 
 /** Everything this app can say about one candidate item. */
@@ -132,10 +137,16 @@ export function ownedFacts(rows: readonly OwnershipRow[]): OwnedFact[] {
   const groups = new Map<string, OwnedFact>()
   for (const row of rows) {
     if (row.exaltation) continue
-    const key = `${row.place}|${row.tier === undefined ? '' : String(row.tier)}`
+    const wildcard = row.place === 'equipped' && row.slot === null ? true : undefined
+    const key = `${row.place}|${row.tier === undefined ? '' : String(row.tier)}|${wildcard === undefined ? '' : 'any'}`
     const seen = groups.get(key)
     if (seen) seen.count += row.count
-    else groups.set(key, row.tier === undefined ? { place: row.place, count: row.count } : { place: row.place, tier: row.tier, count: row.count })
+    else {
+      const fact: OwnedFact = { place: row.place, count: row.count }
+      if (row.tier !== undefined) fact.tier = row.tier
+      if (wildcard) fact.wildcard = true
+      groups.set(key, fact)
+    }
   }
   // Place first (the reading order above), then plus-state ascending with "stated nothing" first:
   // the row that says least is the weakest claim and belongs at the front of the sentence.
