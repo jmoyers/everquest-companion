@@ -488,6 +488,7 @@ export default function GearTable({
         onWidths={onWidths}
         widths={widths}
         layout={layout}
+        scrolled={win.scrollTop > 0}
       />
       <TableBody>
         <PadRow height={win.topPad} colSpan={span} />

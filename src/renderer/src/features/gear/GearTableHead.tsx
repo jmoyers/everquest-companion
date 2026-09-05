@@ -220,9 +220,10 @@ function SortHeader({
       data-col={column.key}
       // A right-aligned label ends where the GRIP sits, so the numeric headers state extra right
       // padding to clear it (fork decision, kaltinril 2026-08-15: `STR` read `STI` at a narrow width). Body
-      // cells keep `NUMERIC_PAD` — no grip lives there.
+      // cells keep `NUMERIC_PAD` — no grip lives there. No `position` stated: the table is
+      // `stickyHeader` (fork decision, kaltinril 2026-09-04), whose `sticky` anchors the absolute
+      // grip exactly as the old `relative` did.
       sx={{
-        position: 'relative',
         ...(width === undefined ? {} : { width }),
         ...(align === 'right' ? { ...NUMERIC_PAD, pr: '16px' } : {})
       }}
@@ -257,7 +258,7 @@ function PlainHeader({
   children: React.ReactNode
 }): JSX.Element {
   return (
-    <TableCell data-col={id} title={title} data-testid={testId} sx={{ position: 'relative', width }}>
+    <TableCell data-col={id} title={title} data-testid={testId} sx={{ width }}>
       {children}
       <ResizeHandle onWidths={onWidths} />
     </TableCell>
@@ -281,7 +282,8 @@ export const GearHead = memo(function GearHead({
   onSort,
   onWidths,
   widths,
-  layout
+  layout,
+  scrolled
 }: {
   columns: readonly GearColumn[]
   sort: GearSort
@@ -295,11 +297,14 @@ export const GearHead = memo(function GearHead({
   widths: GearColumnWidths | null
   /** the automatic layout the host already computed (it reads `minWidth`/`mode` from the same one) */
   layout: GearTableLayout
+  /** rows are under the sticky header (fork decision, kaltinril 2026-09-04): the shadow that says
+   *  "scrolled — there is more above". A primitive, so `memo` re-renders only when it flips. */
+  scrolled: boolean
 }): JSX.Element {
   const w = (id: string, auto: string | undefined): string | undefined =>
     widths === null ? auto : `${String(widths[id] ?? defaultColumnPx(id))}px`
   return (
-    <TableHead>
+    <TableHead sx={{ '& th': { boxShadow: scrolled ? 3 : 'none' } }}>
       <TableRow>
         {/* In percentage mode the item NAME states no width and takes whatever the stated columns
             leave (LootTables.tsx); in pixel mode every column is stated, because the SUM is what
