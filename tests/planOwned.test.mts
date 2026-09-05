@@ -63,8 +63,8 @@ test('HELD is what the route will not farm; WORN is what the dump says is EQUIPP
   assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
   assert.deepEqual([...side.bars.keys()], ['PRIMARY'])
 
-  // No dump and no loot is two empty sets and an empty plus map, never a throw.
-  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Set(), wornPlus: new Map() })
+  // No dump and no loot is two empty sets, never a throw.
+  assert.deepEqual(ownedKeysOf(null), { held: new Set(), worn: new Set() })
 })
 
 test('a haste item in a BAG or the BANK sets neither a bar nor the haste ceiling; the same item EQUIPPED sets both', () => {
@@ -110,38 +110,4 @@ test('a key the corpus has no row for contributes nothing — a gap, not a bar o
   const side = ownedSide(new Set(['unknown relic']), BY_KEY, 'tank', [])
   assert.equal(side.bars.size, 0)
   assert.deepEqual(side.haste, [])
-})
-
-// ---- the Cursed Blade regression (fork, kaltinril 2026-09-04) ---------------------------------
-// A reworked level-20 drop (12/36 with a flat DMG Bonus 17) outranked a +7-enhanced 11/24 blade
-// because the bonus was weighted flat and the worn bar was scored at +0. Both halves are pinned
-// here with the real items' numbers: the bonus folds into the ratio at its measured worth
-// (gearEffectiveRatio), and the bar is scaled to the plus the dump stated.
-
-const BLOOD_FIRE = row({
-  key: 'blood fire', name: 'Blood Fire', slots: ['PRIMARY', 'SECONDARY'],
-  stats: { DMG: 11, DELAY: 24 }
-})
-const CURSED_BLADE = row({
-  key: 'cursed blade', name: 'Cursed Blade', slots: ['PRIMARY', 'SECONDARY'],
-  stats: { DMG: 12, DELAY: 36, DMG_BONUS: 17, DEX: 10, STA: -5 }
-})
-
-test('cursed blade loses to blood fire +7: the flat bonus buys a seventeenth, the plus is real', () => {
-  const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const side = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'], new Map([[BLOOD_FIRE.key, 7]]))
-  const bar = side.bars.get('PRIMARY')
-  assert.ok(bar !== undefined, 'the worn blade sets a PRIMARY bar')
-  const challenger = roleValue(CURSED_BLADE.stats, 'dps1h', { classes: ['WAR'] })
-  assert.ok(
-    challenger < bar,
-    `the level-20 drop (${challenger.toFixed(1)}) must not clear the +7 bar (${bar.toFixed(1)})`
-  )
-})
-
-test('the +7 bar is a real raise: the same blade at base scores strictly less', () => {
-  const byKey = new Map([[BLOOD_FIRE.key, BLOOD_FIRE]])
-  const at0 = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR']).bars.get('PRIMARY')
-  const at7 = ownedSide(new Set([BLOOD_FIRE.key]), byKey, 'dps1h', ['WAR'], new Map([[BLOOD_FIRE.key, 7]])).bars.get('PRIMARY')
-  assert.ok(at0 !== undefined && at7 !== undefined && at7 > at0)
 })
