@@ -256,7 +256,11 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *     and healing focuses because no class that takes those focuses fights with it.
  *   * BACKSTAB — a rogue skill; gated to ROG and absent from `dps2h` (no backstab with a 2H).
  *   * END_REGEN — disciplines; gated to classes that have them, absent from the caster focuses.
- *   * saves — resisting a mob's roots, snares, dots and nukes; situational for everyone.
+ *   * saves — resisting a mob's roots, snares, dots and nukes; situational for everyone — and on
+ *     the melee focuses a TOKEN sliding from zero, like `ehp` and for the same chunk reason
+ *     (fork, kaltinril 2026-09-05, the Imbued Granite Spaulders case: five +10 saves on one
+ *     shoulder piece bought back a lost 7 STR / 7 DEX one click off Glass cannon). The wooden
+ *     half of the dial is where resists are priced for real.
  *
  * WHAT IS DELIBERATELY ABSENT, and why each absence is a decision:
  *   * HP and STA ride through `ehp` (`gearEffectiveHp`), so listing them in `stats` too would
@@ -311,7 +315,7 @@ const ONE_HAND_DPS: RoleWeights = {
   manaStat: 0.1,
   ehp: 0.1,
   ratio: 40,
-  saves: 0.3,
+  saves: 0.1,
   weaponGarnish: 0.25
 }
 /** A two-hander cannot backstab. The rest — damage bonus included, via the ratio — is the melee profile. */
@@ -332,7 +336,7 @@ const RANGED: RoleWeights = {
   manaStat: 0.1,
   ehp: 0.1,
   ratio: 40,
-  saves: 0.3,
+  saves: 0.1,
   weaponGarnish: 0.25
 }
 
@@ -468,7 +472,7 @@ const DEFENSE_SPANS = {
   STA: [0.2, 0.6],
   HP_REGEN: [3, 9],
   ehp: [0, 0.2],
-  saves: [0.15, 0.45]
+  saves: [0, 0.2]
 } as const
 
 function lerp(span: readonly [number, number], t: number): number {
