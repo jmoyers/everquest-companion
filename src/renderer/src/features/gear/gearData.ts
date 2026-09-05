@@ -192,6 +192,7 @@ export function useGearOwnership(): GearOwnershipState {
   // owner's 12,045 loot events are `sold`, and 467 distinct base names appear in his log ONLY that
   // way. Each one of them used to print `Looted` in a column that means "you have one".
   const lootedNames = useMemo(
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LootEvent. Becomes a view descriptor when the source lands.
     () => [...new Set(history.filter(isKept).map((e) => e.item))],
     [history]
   )

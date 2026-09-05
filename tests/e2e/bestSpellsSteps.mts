@@ -49,7 +49,8 @@ import { ARTIFACTS, check, countOf, note, settle } from './appHarness.mjs'
 import {
   clearBestSpellsSearch,
   fillOutsideClassQuery,
-  stepBestSpellsSearch
+  stepBestSpellsSearch,
+  stepBestSpellsTypeSearch
 } from './bestSpellsSearchSteps.mjs'
 
 const PANEL = '[data-testid="best-spells"]'
@@ -508,6 +509,11 @@ export async function stepBestSpells(page: Page): Promise<void> {
   // have left the panel on a tab with rows in it, which is the state "the table gave way" is a
   // claim about, and it hands the box back empty so the checks below still see the ranked table.
   await stepBestSpellsSearch(page)
+
+  // JOS-507 — the same box, asked by TYPE. It runs directly after the wiki search because the two
+  // are the same control read two ways, and it likewise hands the panel back with no filter set, so
+  // the checks below still see the ranked table they were written against.
+  await stepBestSpellsTypeSearch(page)
 
   // NO INNER SCROLLER, the JOS-289 law, restated for the control JOS-448 added: `fullWidth` tabs
   // must not have quietly become a scroller in a 260px column. JOS-447 put a SLIDER in the same

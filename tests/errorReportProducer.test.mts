@@ -14,6 +14,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   currentMode,
+  noteEngineEdge,
   noteEventKind,
   noteReplaying,
   readBreadcrumbs,
@@ -94,6 +95,45 @@ test('mode comes from the REPLAY BRACKET, not from a per-event flag', () => {
   assert.equal(currentMode(), 'replay')
   noteReplaying(false)
   assert.equal(currentMode(), 'live')
+})
+
+test('THE ENGINE FILLS THE BOOT WINDOW, which had no producer at all (JOS-501)', () => {
+  // THE GAP THIS CLOSES. JOS-499 took the parser out of this process, and the ring's one
+  // surviving producer became the engine's module CURSORS — which cannot fire until an engine is
+  // connected, attached and LIVE. On the owner's real log that is the better part of a minute
+  // after launch, so every crash in the boot window produced a report with an EMPTY ring, and the
+  // boot window is where the supervisor, the connect flow and the first attach all live.
+  resetBreadcrumbs()
+  assert.deepEqual(readBreadcrumbs(), [], 'nothing has happened yet')
+
+  noteEngineEdge('engine:spawned')
+  noteEngineEdge('engine:ready')
+  noteEngineEdge('engine:live')
+  const crumbs = readBreadcrumbs()
+  assert.deepEqual(
+    crumbs.map((c) => c.kind),
+    // NEWEST FIRST, like every other reading of this ring — a report is read backwards from the
+    // crash, so the launch reads bottom-up: spawned, then ready, then live.
+    ['engine:live', 'engine:ready', 'engine:spawned'],
+    'the launch is legible, newest first'
+  )
+
+  // A KIND IS NOT CONTENT, and here the type system is what enforces it: `noteEngineEdge` takes a
+  // union of four literals, so there is no expression a caller could pass that carries a name, a
+  // path, a port or a pid. This asserts the OUTPUT half of that — nothing but the edge survives.
+  assert.ok(
+    crumbs.every((c) => Object.keys(c).length === 2 && typeof c.offsetMs === 'number'),
+    'a breadcrumb is a kind and an offset, and never grew a third field'
+  )
+
+  // THE RING STILL FAVOURS THE RECENT, which is the right trade rather than a loss: a live session
+  // spends all ten slots on module cursors within a beat or two, and boot crumbs only ever mattered
+  // for a crash that happened before those existed.
+  for (let i = 0; i < 10; i++) noteEventKind('damage', 1_000 + i)
+  assert.ok(
+    readBreadcrumbs().every((c) => c.kind === 'damage'),
+    'ten later events evict the launch, because ten later events means the launch went fine'
+  )
 })
 
 // =========================================================================================

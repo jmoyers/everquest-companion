@@ -37,10 +37,8 @@ import { useEffect } from 'react'
 import type {
   AlertDef,
   AlertPrefs,
-  AlertsDelta,
   AppSignal,
-  FiredAlert,
-  ModuleDelta
+  FiredAlert
 } from '@shared/types'
 import {
   alertBannerText,
@@ -272,22 +270,24 @@ export default function AlertPlayer(): null {
     const onFocus = (): void => void refreshAlertStore()
     window.addEventListener('focus', onFocus)
 
-    const offDelta = window.eq.onModuleDelta<AlertsDelta>((d: ModuleDelta<AlertsDelta>) => {
-      if (d.moduleId !== 'alerts') return
-      for (const fire of d.delta.fired) {
-        // AN ECHO IS NOT A FIRING (JOS-380). `origin: 'app'` marks the record main queued because
-        // THIS player told it about a signal it had just played — replaying it here is the same
-        // alert twice. It was inaudible for the life of the feature (audio coalescing swallows a
-        // repeat within 1.5 s) and visible the day the banner arrived: two lines, one raid target.
-        // The record still reaches history and the feed; only playback is skipped, and the play
-        // stays where it is rather than moving into the echo, which would add a flush of latency
-        // to the celebration sound.
-        if (fire.origin === 'app') continue
-        const def = defs.find((a) => a.id === fire.alertId)
-        // The firing is passed through: it is where the spell context lives (W1), and the
-        // speech modes are the only thing that reads it.
-        if (def) playAlertNow(def, fire)
-      }
+    // ONE FIRE, ON ITS OWN CHANNEL (JOS-499 item 7). This used to filter the alerts module's
+    // `module:delta` for its `fired[]` array, because a fire rode out on the same increment as the
+    // module's state. Main's fold is deleted and the engine is the evaluator, so a fire arrives as
+    // itself — `IPC.onAlertFired`, one `FiredAlert` per firing, which is exactly the record this
+    // loop used to read out of the delta. Nothing below this line changed.
+    const offFired = window.eq.onAlertFired((fire: FiredAlert) => {
+      // AN ECHO IS NOT A FIRING (JOS-380). `origin: 'app'` marks the record main queued because
+      // THIS player told it about a signal it had just played — replaying it here is the same
+      // alert twice. It was inaudible for the life of the feature (audio coalescing swallows a
+      // repeat within 1.5 s) and visible the day the banner arrived: two lines, one raid target.
+      // The record still reaches history and the feed; only playback is skipped, and the play
+      // stays where it is rather than moving into the echo, which would add a flush of latency
+      // to the celebration sound.
+      if (fire.origin === 'app') return
+      const def = defs.find((a) => a.id === fire.alertId)
+      // The firing is passed through: it is where the spell context lives (W1), and the
+      // speech modes are the only thing that reads it.
+      if (def) playAlertNow(def, fire)
     })
     // CELEBRATION TOASTS make no sound (owner, 2026-08-05). This player briefly owned a second
     // subscription — `toast:sound` — because the overlay bundle has no audio stack. It is gone:
@@ -295,7 +295,7 @@ export default function AlertPlayer(): null {
     // same player, with their own cooldowns. A card is a thing you see.
     return () => {
       window.removeEventListener('focus', onFocus)
-      offDelta()
+      offFired()
     }
   }, [])
 

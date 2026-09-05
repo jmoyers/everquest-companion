@@ -142,9 +142,16 @@
       "additionalProperties": false
     },
 
+    "FireCaptures": {
+      "title": "FireCaptures",
+      "description": "WHAT THE FIRING MAY SAY OUT LOUD — the named regex captures the rule's own matcher took (JOS-103), PLUS the one auto token (JOS-353). Open by design for `Cells`' reason at full strength: the key set is the DEF'S OWN PATTERN's contract (`(?<player>…)` makes `{player}` sayable), never the protocol's, so a user writing a new group is not a protocol change.\n\nEVERY VALUE IS ALREADY DEFANGED, AND THAT IS THIS TYPE'S WHOLE POINT. The keys come from a pattern the user may have imported from a stranger; the VALUES come out of a log line, which carries other players' chosen names and — for the chat families — text a stranger typed. So each value has crossed `sanitizeCapture`'s two controls ENGINE-SIDE before it reaches this frame: ANSI/VT sequences removed whole, every C0/C1/DEL control and the invisible + BiDi-override class deleted, CR/LF/TAB folded to one space, and the result capped at 48 characters — a NAME's worth of text, not a LINE's. At most 8 entries survive, in the pattern's own declaration order. The full threat model is `src/shared/alertCaptures.ts`; `fold::modules::alerts_captures` is its engine-side half, and the two are pinned equal by test. A CONSUMER STILL MUST NOT TREAT THESE AS TRUSTED TEXT — defanged is not the same as authored by the user.\n\nTHE `target` KEY IS THE ONE THE PATTERN DID NOT DECLARE (JOS-353, and it is a closed list of one). It holds the entity the matched event says the spell is affecting, resolved from a CLOSED TABLE of parser-extracted fields on the very event this def matched, with the parser's sentinels rendered as English ('self' → \"you\", 'pet' → \"your pet\"). It is present ONLY when the def's own speech phrase writes `{target}`, and a group the pattern declared under that name always wins — so a def that never asks carries no `captures` key at all and its frame is byte-identical to the one it sent before this field existed.\n\nWHY IT IS MERGED HERE RATHER THAN SENT AS A SEPARATE `target` FIELD. The app must not re-derive the merge: which token the phrase wanted, who wins a name collision, and where the 8-entry bound falls are all EVALUATOR decisions, and an app that made them again would be the second evaluator this boundary exists to delete (`alertsAudioRules.ts`'s own refusal). One resolved map is what `FiredAlert.captures` has always been and what `applyCaptures` reads, so the app copies it across and substitutes.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+
     "FireMessage": {
       "title": "FireMessage",
-      "description": "AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in these four fields, so no client ever has to hold the definition the fire came from.",
+      "description": "AN ALERT FIRED (owner ruling 22). The engine evaluates the user's alert definitions against LIVE events — replay must never make a sound, which is the same boundary law the app-side evaluator has always obeyed — and this is what it says when one matches. CONNECTION-WIDE, and therefore carrying NO `id`: a fire belongs to the world rather than to any subscription, which is the `EpochMessage` precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client has to reconcile across a generation, while a fire is a thing that happened once — there is nothing to drop and nothing to re-request, so a generation number would be a field with no reader. IT IS FULLY RESOLVED SERVER-SIDE (the conCard principle): everything the app needs in order to make the identical noise is in this frame, so no client ever has to hold the definition the fire came from.\n\nTHE FRAME GREW THREE OPTIONAL FIELDS AND THE REASON IS A REGRESSION THE OWNER MADE RELEASE-GATING (JOS-500, ruling 27: \"we're not releasing without full parity\"). Until them the frame had exactly four, and `alertsAudioRules.ts` said what that cost in the same breath as claiming it was survivable — \"costs a firing some of its WORDS and never its existence\". It was survivable only while the app still had an evaluator to fall back to. The deletion release (JOS-499) removed that fallback, which turned a degradation into the product: a `custom` phrase's `{token}`s resolved to nothing, the `spellName` speech modes fell back to the alert's own name, and an early warning's banner had no deadline to count down to. `captures`, `spell` and `dueAt` are those three losses, restored — and they are what a fire SAYS rather than whether it happened, which is why every one of them is optional and why nearly every real firing still sends none of them.\n\nTHE ABSENCES ARE THE COMMON CASE, DELIBERATELY. An alert that declares no capture group, whose phrase writes no `{target}`, whose event family names no spell and which carries no early-warning offset sends the identical four fields it always sent. Nothing is null-filled and nothing is synthesized: an absent key is the honest encoding of \"this firing has nothing true to say here\", and inventing a value would be worse than saying less (world-model law 1).",
       "type": "object",
       "properties": {
         "kind": { "type": "string", "enum": ["fire"] },
@@ -163,9 +170,241 @@
         "message": {
           "description": "THE TEXT THAT MATCHED — the log line the trigger fired on, which is what `FiredAlert.matchedText` has always carried and what the event log prints beside the alert's name.",
           "type": "string"
+        },
+        "captures": {
+          "description": "THE WORDS THIS FIRING MAY SPEAK, or absent when it has none — see `FireCaptures` for what may be in it and what has already been done to it. Absent for the overwhelming majority of alerts, which declare no named group and ask for no `{target}`.",
+          "$ref": "#/$defs/FireCaptures"
+        },
+        "spell": {
+          "description": "THE SPELL THIS FIRING IS ABOUT, display form with the rank suffix INTACT (\"Mesmerization III\") — exactly as the log spelled it, and exactly what `FiredAlert.spell` has always carried. Rank-stripping is the SPEAKER's job (`speechTextFor` folds it out through the same rank machinery the matcher uses), not the producer's: a consumer that wants the rank must still be able to see it. IT IS THE NAME THAT ACTUALLY SATISFIED THE ALERT (JOS-84), not the event's best-effort pick — EQ's landing sentences are shared across a whole spell family (`<mob> slows down.` is five different spells), so the parser puts a guess in the event's `spell` and the truth in its `candidates`, and once a Shiftless Deeds alert is allowed to fire on a line whose `spell` field says \"Forlorn Deeds\", speaking \"Forlorn Deeds\" would be a second wrong answer wearing the first one's clothes. The name reported is the candidate the def's OWN matcher accepted, asked with the same rank fold the match used, so the two cannot split apart. ABSENT whenever the matched event names no spell: most event families, every `raw` trigger that matched a spell-less line, and every `app` signal. Never synthesized and never guessed — a spell mode with no spell falls back to the alert's own name, which is a true statement about what fired.",
+          "type": "string"
+        },
+        "dueAt": {
+          "description": "WHEN THE THING THIS FIRING WARNS ABOUT IS DUE (ms epoch) — the countdown half of JOS-378, and present ONLY on an EARLY-WARNING firing (`AlertDef.earlyWarnSec`, JOS-216/235). IT IS THE ROW'S STATED END, not the instant the warning spoke: `at` is when the sound was made and this is what it was early FOR, so the difference between them IS the lead time the user configured. A banner counts down to it (`BannerLine.tsx` re-renders against the wall clock, so the number on screen is a render rather than a timer) and holds until the deadline instead of for the configured dwell. IT IS A HOST CLOCK WHERE `at` IS ORDINARILY THE LOG'S, and so is the `at` beside it on this one frame: an early warning has no matching event — its whole subject is a deadline that arrives WHILE THE LOG IS IDLE, which is exactly when a player is watching a mez run down — so it is delivered by the engine's heartbeat and both stamps come from that beat. The retired evaluator made the same choice in the same place, so the app receives the identical number under either. ABSENT ON EVERY ORDINARY FIRE, which is nearly all of them: a fire that IS the thing happening warns about nothing, and a deadline field on it would have no reader.",
+          "type": "integer"
         }
       },
       "required": ["kind", "at", "rule", "sound", "message"],
+      "additionalProperties": false
+    },
+
+    "KnowledgeMissMessage": {
+      "title": "KnowledgeMissMessage",
+      "description": "THE ENGINE COULD NOT ANSWER A NAME, AND THE APP OWNS THE NETWORK (boundary verdict 5: \"The wiki FETCH stays app-side in v1 — app fetches on an engine miss-event and pushes the result in — so the engine ships without a network stack. Scrape throttles preserved.\"). This is that miss-event, and the answer comes back as a `knowledge.define` command.\n\nCONNECTION-WIDE, AND THEREFORE CARRYING NO `id` — the `EpochMessage`/`FireMessage` precedent. A miss belongs to the PROCESS rather than to any subscription or any request: the same name is missing whether it was asked for by a `knowledge.item` op on one connection or by the fold's own probe on the ingest thread, and every window on this app would want the same fetch made once.\n\nIT CARRIES NO `epoch` EITHER, and that is the `FireMessage` argument exactly. Every frame that carries a generation describes WINDOW STATE a client has to reconcile across a bump; this describes the CORPUS, which is committed data plus an overlay that survives an attach (a character switch is not the app withdrawing what it fetched). There is nothing to drop and nothing to re-request, so a generation number would be a field with no reader.\n\nEACH NAME IS ANNOUNCED AT MOST ONCE PER PROCESS. A stacked loot burst probes one name many times and a `/con` ring re-cons the same mob three times in five seconds; asking the app to fetch each of those would be the engine breaking the etiquette law on the app's behalf. A `knowledge.define` for the name makes every later lookup a hit, so nothing has to un-remember anything.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["knowledgeMiss"] },
+        "domain": { "$ref": "#/$defs/KnowledgePushDomain" },
+        "name": {
+          "description": "The name to look up, in the spelling the FETCH should use — the display name for an item (what `resolvePage(display)` searches for), and for a mob the CANONICAL spelling the raid roster states, because that is the spelling the wiki and the committed catalog use. Never a folded key: a key is a join handle and the wiki has no page for one.",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "domain", "name"],
+      "additionalProperties": false
+    },
+
+    "ModuleChangedMessage": {
+      "title": "ModuleChangedMessage",
+      "description": "A MODULE'S PUBLISHED STATE MOVED — the dirty bit, and nothing more. CONNECTION-WIDE and carrying no `id`, on the `FireMessage` precedent: a module belongs to the world rather than to any subscription. IT CARRIES NO STATE, DELIBERATELY. The whole payload is a name and a cursor, so a client that is not showing that module pays one small frame and ignores it, and a client that is re-fetches through `module.snapshot` — which is the op that already exists and the only place a module's shape is stated. A frame that carried the state would be `module.snapshot` pushed at a cadence nobody asked for, which is the per-window snapshot fan-out this whole boundary exists to delete. IT IS COALESCED TO ONE PER MODULE PER SERVE BEAT (~10 Hz, `views::SERVE_EVERY`), not one per event: a busy tail moves a module's seq many times between two beats and the newest cursor is the whole answer — the same newest-wins rule rule 2 states for diffs. Nothing is sent for a module whose seq did not move, so an idle session pays nothing. IT IS NOT AN EPOCH AND DOES NOT REPLACE ONE: a bump still means drop-everything-and-take-the-reset, and a `moduleChanged` inside one generation means only `there is something newer to fetch`.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["moduleChanged"] },
+        "module": {
+          "description": "The module's id, exactly as the registry spells it and exactly as `module.snapshot` takes it — `loot`, `kills`, `buffTimers`.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The module's OWN published seq as of this beat — the same cursor `ModuleSnapshotResult.seq` carries, so a client holding a snapshot compares the two numbers and refetches only when this one is ahead. For the four modules that publish a private revision counter (combo, character, respawn, buffTimers) it is that counter, because a preference push advances no log seq.",
+          "type": "integer"
+        }
+      },
+      "required": ["kind", "module", "seq"],
+      "additionalProperties": false
+    },
+
+    "ConCardMessage": {
+      "title": "ConCardMessage",
+      "description": "ONE LIVE `/con`, AS A FINISHED CARD (boundary verdict 2). The fold used to call synchronously INTO Electron — `considerModule.setConCardHook` — and the verdict inverts that: the engine emits the card and main only opens the overlay window. CONNECTION-WIDE, carrying no `id` and no `epoch`, on the `FireMessage` precedent and for its reasons: a con belongs to the world rather than to any subscription, and it is a thing that HAPPENED once, with no window state to reconcile across a generation. LIVE ONLY, STRUCTURALLY — a historical fold reaches this nowhere, so a startup replay of a month of logs draws nothing. It is the same boundary law a fire obeys and the same one `main/conCard.ts` states as its third refusal. SELF-CONTAINED BY LAW: the overlay window has no knowledge service, no ledger and no store, so everything the card draws is in this frame and the window fetches nothing (`shared/conCard.ts ConCardPayload`, whose field set this is). TWO OF THE APP'S THREE REFUSALS ARE NOT HERE, and both absences are argued rather than overlooked. The re-open suppression is a fact about the PERSON — a card they closed within the last minute, measured on the wall clock they live on — and it is driven by a window event (`con:card-closed`) that never reaches the fold; it stays with the window that owns it. The PLAYER refusal (`conCardIsPlayer`) needs the committed mob catalog to answer, and applying only its name-shape half would refuse a card for every proper-named NPC the app draws one for today (Innoruuk, Blugurg) — a regression dressed as a port. It arrives with the knowledge surface; until then the app's own gate still stands in front of the overlay.",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["conCard"] },
+        "at": {
+          "description": "When the `/con` happened, on THE LOG'S OWN CLOCK — the `ts` of the consider event, never the host's. Spelled `at` here rather than `ts` because that is what every other connection-wide frame the engine sends calls its instant (`FireMessage.at`), and one vocabulary for one concept is worth a rename in the app-side shim.",
+          "type": "integer"
+        },
+        "id": {
+          "description": "QUEUE IDENTITY: the canonical mob key (`shared/mobKey.ts mobKey`). A re-con REFRESHES the card on screen rather than stacking a second one, which is what the overlay's card queue keys off.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The mob's display name as the log printed it, whitespace-collapsed and capped (`cappedName`) — a rendering guarantee, not taste: a 40 kB mob name cannot push a card off the screen.",
+          "type": "string"
+        },
+        "level": {
+          "description": "The level the con line stated. Every con line in the real log states one; absent when this one did not.",
+          "type": "integer"
+        },
+        "zone": {
+          "description": "The zone the player was in when they conned. Absent before the first zone line of the fold.",
+          "type": "string"
+        },
+        "rare": {
+          "description": "The ` - a rare creature - ` infix was on the line. Absent rather than false when it was not, which is the shape the app's payload has.",
+          "type": "boolean"
+        },
+        "chips": {
+          "description": "ALWAYS FIVE, ALWAYS IN `RESIST_AXES` ORDER (magic, fire, cold, poison, disease). All five are present whatever the ledger has seen, because `we have not seen fire cast on this` and `fire is fine` are different statements and a missing chip says neither.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConCardChip" }
+        },
+        "spellData": {
+          "description": "FALSE WHEN THE CLIENT'S `spells_us.txt` COULD NOT BE READ, and the card says so instead of drawing five identical `not enough data` chips with no explanation. It is false in every frame this build sends: the spell-table parse is boundary verdict 7 and has not moved engine-side yet, so this engine takes the SAME branch `mobResistProfile` takes app-side when the table is absent — five empty chips and this flag down. That is the app's own honest answer under the same condition rather than a stub, and it is named in the engine README as the gap the con-card cutover waits on.",
+          "type": "boolean"
+        }
+      },
+      "required": ["kind", "at", "id", "name", "chips", "spellData"],
+      "additionalProperties": false
+    },
+
+    "ConCardChip": {
+      "title": "ConCardChip",
+      "description": "ONE AXIS CHIP (`shared/conCard.ts ConCardChip`). IT CARRIES NUMBERS, NOT SENTENCES, and that is the same decision the app made: the words on the chip (`R 126 (110-144)`, `n=32`) are the mob page's own vocabulary, built by the one derivation both surfaces read, and a wire carrying finished strings would be a second copy of it that drifts the first time a word changes. This is the one place the render-ready rule bends, and it bends the way the app already bent it. ABSENT IS THE EMPTY CELL. `tag`, `benchmark` and `fit` are optional here where the app's type spells them `| null`, and the two say the same thing: a con card is a WHOLE CARD every time, so absence has no second meaning to be confused with — unlike a diff's `cells`, where absent means unchanged and null means cleared. The three travel together: a chip has all of them or none of them. `tag` is the guidance band, absent when nothing at all has been observed on this axis AND when the fit is PINNED — a posterior that slid off the end of the grid is the model saying it cannot answer, and a card that printed a band anyway would be inventing one. `benchmark` is the two landing chances behind that band at the viewer's level, plus the same pair at each end of the interval. `fit` is the estimate and its 95% interval, wide at a low `n`, which is the honest display of a thin cell rather than a reason to withhold it.",
+      "type": "object",
+      "properties": {
+        "axis": { "$ref": "#/$defs/ResistAxis" },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "benchmark": { "$ref": "#/$defs/ResistAxisBenchmark" },
+        "pinned": {
+          "description": "The fit ran out of grid: no number, no band, and the raw resist rate instead.",
+          "type": "boolean"
+        },
+        "empirical": { "$ref": "#/$defs/ResistEmpirical" },
+        "npcOnly": {
+          "description": "Every observation behind this axis came from a pet or another creature. The chip says so.",
+          "type": "boolean"
+        },
+        "n": {
+          "description": "OBSERVATIONS THAT COULD HAVE GONE EITHER WAY — `ResistEstimate.nInformative`, not `n`. The two are the same number on most cells and part company exactly where a proc dominates, which is where an older chip claimed eighty observations off eight.",
+          "type": "integer"
+        },
+        "nTotal": {
+          "description": "Everything the fit saw, informative or not. Printed beside `n` when they differ.",
+          "type": "integer"
+        },
+        "fit": { "$ref": "#/$defs/ResistFit" }
+      },
+      "required": ["axis", "pinned", "empirical", "npcOnly", "n", "nTotal"],
+      "additionalProperties": false
+    },
+
+    "ResistAxis": {
+      "title": "ResistAxis",
+      "description": "`shared/resistTypes.ts ResistAxis`. The display order is this list's order and every surface uses all five of it.",
+      "type": "string",
+      "enum": ["magic", "fire", "cold", "poison", "disease"]
+    },
+
+    "ResistTag": {
+      "title": "ResistTag",
+      "description": "`shared/resistTypes.ts ResistTag` — the scannable word. NO ACRONYMS, EVER (owner ruling): the axis word is the only label this app prints for an axis, and these four are the only bands.",
+      "type": "string",
+      "enum": ["weak", "normal", "resistant", "very resistant"]
+    },
+
+    "ResistGuidance": {
+      "title": "ResistGuidance",
+      "description": "`shared/resistTypes.ts ResistGuidance` — the sentence under the word. The same three bands read twice: `resistant` means `needs overchannel`, every time, on every surface.",
+      "type": "string",
+      "enum": [
+        "should land",
+        "needs overchannel",
+        "may not land even with overchannel"
+      ]
+    },
+
+    "ResistEmpirical": {
+      "title": "ResistEmpirical",
+      "description": "What the informative observations said, with no model in the way: how many there were and how many of them resisted.",
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer" },
+        "resisted": { "type": "integer" }
+      },
+      "required": ["total", "resisted"],
+      "additionalProperties": false
+    },
+
+    "ResistFit": {
+      "title": "ResistFit",
+      "description": "The posterior's point estimate and the ends of its 95% interval, in resist points. Clamped at zero for DISPLAY app-side — the grid runs below zero because `rc` does, and `R -150` is noise on a card while `R 0` is the same statement in the reader's units.",
+      "type": "object",
+      "properties": {
+        "R": { "type": "number" },
+        "lo": { "type": "number" },
+        "hi": { "type": "number" }
+      },
+      "required": ["R", "lo", "hi"],
+      "additionalProperties": false
+    },
+
+    "ResistAxisBenchmark": {
+      "title": "ResistAxisBenchmark",
+      "description": "`shared/resistTypes.ts ResistAxisBenchmark` — the answer at the estimate, and the answer at each end of the interval, so a surface prints the uncertainty in the reader's own units. `atLo` is the OPTIMISTIC end (the low R) and `atHi` the pessimistic one: the interval's ends CROSS when they are mapped through the level formula, and naming them after the R they came from is what stops a surface printing the range backwards.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "mobLevel": { "type": ["integer", "null"] },
+        "atMobLevel": { "type": "boolean" },
+        "pPlain": { "type": "number" },
+        "pOver": { "type": "number" },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "guidance": { "$ref": "#/$defs/ResistGuidance" },
+        "atLo": { "$ref": "#/$defs/ResistBenchmark" },
+        "atHi": { "$ref": "#/$defs/ResistBenchmark" }
+      },
+      "required": [
+        "level",
+        "mobLevel",
+        "atMobLevel",
+        "pPlain",
+        "pOver",
+        "tag",
+        "guidance",
+        "atLo",
+        "atHi"
+      ],
+      "additionalProperties": false
+    },
+
+    "ResistBenchmark": {
+      "title": "ResistBenchmark",
+      "description": "ONE EVALUATION OF THE BENCHMARK (`shared/resistTypes.ts ResistBenchmark`): the two probabilities the tag is drawn from, and how they were evaluated. `level` is the caster level `rc0` was computed at; `atMobLevel` says the viewer's own level was not known, so the benchmark is an EVEN-LEVEL cast and the surfaces say `at the mob's level`.",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "mobLevel": { "type": ["integer", "null"] },
+        "atMobLevel": { "type": "boolean" },
+        "pPlain": {
+          "description": "P(a rank-0, adjust-0, all-or-nothing spell lands), 0 to 1.",
+          "type": "number"
+        },
+        "pOver": {
+          "description": "The same, with the overchannel invocation up.",
+          "type": "number"
+        },
+        "tag": { "$ref": "#/$defs/ResistTag" },
+        "guidance": { "$ref": "#/$defs/ResistGuidance" }
+      },
+      "required": [
+        "level",
+        "mobLevel",
+        "atMobLevel",
+        "pPlain",
+        "pOver",
+        "tag",
+        "guidance"
+      ],
       "additionalProperties": false
     },
 
@@ -184,9 +423,21 @@
           "description": "How far the fold has got, 0 to 100, FRACTIONAL. The engine emits the number it actually measured and does not pre-round it: rounding is a display decision and belongs to whoever is drawing the bar. That is not in tension with the renderer-never-munges rule - that rule is about DOMAIN data (no client-side filtering, sorting or aggregation of the world), and formatting a progress readout for the pixel it lands on is not domain work. A NOTE FOR WORKED EXAMPLES: Rust serializes an f64 whole value as X.0, so a fixture carrying `62` would come back `62.0` and stop being byte-verbatim across the two languages. Examples therefore use a genuinely fractional value (62.4), which round-trips identically in both.",
           "type": "number"
         },
-        "events": { "type": "integer" }
+        "events": { "type": "integer" },
+        "offset": {
+          "description": "THE MARK: the end of the last complete line this fold has folded, and `pct`'s own numerator. It is the SAME coordinate `HealthMark.offset` reports and the same one cache law 3 names (state is addressed by log identity and byte offset), which is why it carries that field's name rather than a new one - it is a fact about the LOG, not about the wire, and nothing here is a framing concern. It rides the frame because `pct` cannot be turned back into it: a client holding only a percentage can say `62%` and can never say `128 MB of 205 MB`, and the second sentence is the one that tells a person whether to wait or to go and make coffee.",
+          "type": "integer"
+        },
+        "logSize": {
+          "description": "`pct`'s DENOMINATOR - how big the fold currently believes the log to be, which is the larger of the file's size at open and the amount actually read. EverQuest is still appending while the fold runs, so a denominator fixed at open would let a live tail report more than 100%. It can therefore GROW between two frames, which is honest rather than awkward: a client deriving a completion estimate must re-read it every frame instead of caching the first one it saw.",
+          "type": "integer"
+        },
+        "live": {
+          "description": "WHICH OF THE ENGINE'S TWO LOOPS EMITTED THIS FRAME. Absent means the historical SCAN - the catch-up a loading bar is about. `true` means the LIVE TAIL, which emits the identical shape for as long as somebody is playing. Present only when true, like every other flag on this wire: a scan frame says nothing rather than saying false. IT EXISTS BECAUSE THE TWO ARE INDISTINGUISHABLE BY THEIR NUMBERS. A caught-up tail sits at `pct` 100 with `events` climbing, which is exactly what a scan that has just finished looks like, so a client deciding from frame CONTENT whether a catch-up is still running would leave a bar reading `100%` on screen with the count rising forever. The engine knows which loop it is in and this is it saying so.",
+          "type": "boolean"
+        }
       },
-      "required": ["pct", "events"],
+      "required": ["pct", "events", "offset", "logSize"],
       "additionalProperties": false
     }
   }

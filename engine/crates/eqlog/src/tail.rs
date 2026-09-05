@@ -1,88 +1,53 @@
-//! ============================================================================
-//! tail — FOLLOWING A FILE EVERQUEST IS STILL WRITING (JOS-459 phase 1, JOS-472).
-//! ============================================================================
+//! Following a file EverQuest is still writing: the other half of ingest, where `scan.rs` folds a
+//! complete file. Purely byte-level — it emits complete raw lines and parses nothing, the caller
+//! parses, and every line it emits is a live line (see [`LIVE`]).
 //!
-//! `scan.rs` folds a COMPLETE file. This is the other half of ingest: the same bytes, arriving a
-//! few hundred at a time from another process, read byte-exactly — never re-read, never
-//! double-read. It is the Rust port of `src/main/log/Tailer.ts`, and like that file it is purely
-//! byte-level: it emits complete raw LINES and parses nothing. The caller parses (parity with the
-//! TS shape: `Tailer` emits `'line'`, `session.ts` parses), and every line this module emits is a
-//! LIVE line — see [`LIVE`].
+//! ## The mark law
 //!
-//! Boundary verdicts 4-5 of docs/plans/data-server.md put the tail — and therefore the MARK — in
-//! the engine. So the two laws below are this module's whole reason to exist.
+//! Two offsets, never to be swapped:
 //!
-//! ## THE MARK LAW (ruling 18 law 3: state is addressed by log identity + byte offset)
+//!   * [`read_offset`](TailCore::read_offset) — the read cursor: bytes pulled off the file,
+//!     including a trailing partial line the game has not finished writing.
+//!   * [`checkpoint_offset`](TailCore::checkpoint_offset) — the mark: the end of the last complete
+//!     line emitted, exactly `read_offset - leftover.len()`. Anything claiming "the state I hold is
+//!     `fold(bytes[0, b))`" needs `b` to be this. [`FileTail::mark`] pairs it with the log's
+//!     identity, and that pair is the only way this module's state is named.
 //!
-//! There are TWO offsets and they must never be swapped:
+//! A line with no terminating newline is not emitted and the mark stays before it, however long the
+//! game takes to finish it.
 //!
-//!   * [`read_offset`](TailCore::read_offset) — the READ cursor. How many bytes this tail has
-//!     pulled off the file, INCLUDING a trailing partial line the game has not finished writing.
-//!     The cold-read delta ("how many bytes has nobody read") wants this one.
-//!   * [`checkpoint_offset`](TailCore::checkpoint_offset) — THE MARK. The end of the last COMPLETE
-//!     line emitted, i.e. exactly `read_offset - leftover.len()`. Anything claiming "the state I
-//!     hold is `fold(bytes[0, b))`" needs `b` to be this, which is the same definition
-//!     `ScanResult.endOffset` uses. It is the addressable coordinate: [`FileTail::mark`] pairs it
-//!     with the log's identity and that pair is the only way this module's state is named.
+//! No wall clock appears in what this module emits. Poll timing decides when bytes are read and
+//! never what comes out: the same bytes, chunked any way at all, produce the same line sequence.
 //!
-//! They differ by at most one partial line, which is nothing to a byte-count bucket and everything
-//! to a claim about what has been folded. A line with no terminating newline is NOT emitted and the
-//! mark stays BEFORE it, however long the game takes to finish it.
+//! ## The leftover is bytes, never a string
 //!
-//! No wall clock appears anywhere in what this module emits. Poll timing decides WHEN bytes are
-//! read and can never decide WHAT comes out: the same bytes, chunked any way at all, produce the
-//! same line sequence — which is the determinism ruling 18 law 1 calls cacheability.
+//! Reads are sliced at a fixed byte count ([`TAIL_READ_SLICE_BYTES`]), so a boundary lands
+//! mid-line and just as easily mid-character. Decoding a fragment that ends inside a multi-byte
+//! sequence yields U+FFFD and destroys the character permanently, so nothing is decoded until its
+//! terminating newline is in hand. That is also what makes the mark exact arithmetic.
 //!
-//! ## THE LEFTOVER IS BYTES, NEVER A STRING
+//! ## Truncation and rotation
 //!
-//! The carry across reads is an undecoded `Vec<u8>` (`Tailer.ts:89`), and that is not a tidy-up.
-//! Reads are sliced at a fixed byte count ([`TAIL_READ_SLICE_BYTES`]), so a boundary lands wherever
-//! it lands — mid-line, and just as easily mid-CHARACTER. Decoding a fragment that ends inside a
-//! multi-byte sequence yields U+FFFD and destroys the character permanently; nothing here is decoded
-//! until its terminating newline is in hand. That is also what makes the mark exact arithmetic
-//! instead of a re-encode. (This is the lesson the JOS-464 audit wrote down, and the reason the
-//! whole read path is proven one byte at a time.)
+//!   1. The only trigger is a strict shrink (`size < read_offset`), tested once per poll. A file
+//!      truncated to exactly the byte count already read is indistinguishable from an idle one.
+//!   2. On a shrink the tail restarts at zero and discards the partial-line carry, so lines that
+//!      survived the truncation are emitted again. De-duplication would be a claim about content
+//!      that a byte-level tail has no business making.
+//!   3. A shrink that is over before it is observed is invisible: grown back past the old cursor
+//!      between two polls, no poll sees the shrink and the tail reads at an offset that now names
+//!      different bytes. Inherent to polling; stated rather than papered over.
+//!   4. A mid-read shrink ends the cycle early and leaves the next poll's shrink test to decide,
+//!      rather than treating a short read as an error.
+//!   5. Replacement (the path unlinked and recreated) forces a reopen, because an open handle
+//!      follows the file it opened and not the name; the evidence is a `metadata` call that failed
+//!      with `NotFound`. The reopen does not itself reset the offset — rule 1 decides that from the
+//!      new size. The hole that leaves: a replacement already longer than the old cursor the first
+//!      time it is seen is read from the middle. Unreachable in practice, and pinned by a test.
 //!
-//! ## TRUNCATION / ROTATION — WHAT `Tailer.ts` ACTUALLY DOES, REPRODUCED
+//! ## Watching is polling, deliberately
 //!
-//! Characterized by reading `Tailer.ts nextRead` (:280-289) and `readSlices` (:346), not guessed:
-//!
-//!   1. The ONLY trigger is `size < readOffset` — a STRICT shrink, tested once per poll. A file
-//!      truncated to exactly the byte count already read is indistinguishable from an idle file and
-//!      nothing happens; that is the TS behaviour and it is reproduced.
-//!   2. On a shrink the tail RESTARTS AT ZERO: the read offset is set to 0, the partial-line carry
-//!      is DISCARDED (a half-written line that a truncation ate never becomes a line), the handle is
-//!      reopened, and the whole new file is read from byte 0. Lines that survived the truncation are
-//!      therefore EMITTED AGAIN. The TS makes no attempt to detect that, and neither does this: a
-//!      truncation is a new file as far as the tail is concerned, and de-duplication would be a
-//!      claim about content that a byte-level tail has no business making.
-//!   3. A shrink that is over before it is observed is INVISIBLE. If the file is truncated and grown
-//!      back past the old read offset between two polls, no poll ever sees `size < readOffset`, and
-//!      the tail keeps reading at an offset that now names different bytes. This is inherent to
-//!      polling and the TS has the same hole (chokidar's `change` event carries no size history);
-//!      it is stated here rather than papered over.
-//!   4. A mid-read shrink — the file gets smaller between the size probe and a slice read — ends the
-//!      cycle early (`bytesRead <= 0` → `break`, :346) and leaves the next poll's shrink test to
-//!      decide, rather than treating a short read as an error.
-//!   5. REPLACEMENT (the path unlinked and recreated) forces a reopen, because an open handle
-//!      follows the file it opened and not the name. The TS learns this from chokidar's
-//!      `unlink`→`add` pair; polling learns it from a `metadata` call that failed with `NotFound`,
-//!      which is the same evidence one layer down. Like the TS, the reopen does NOT itself reset the
-//!      offset — rule 1's shrink test decides that from the new file's actual size. THE HOLE THAT
-//!      LEAVES, stated rather than fixed: a replacement that is ALREADY longer than the old cursor
-//!      the first time it is seen never trips the shrink test and is read from the middle. It is
-//!      unreachable in practice (a fresh EverQuest log starts at zero bytes while the cursor it is
-//!      compared against is megabytes in, so the very next look catches it small), it is the TS's
-//!      behaviour exactly, and it is pinned by a test that says so — inventing a fix here would give
-//!      the port behaviour the golden oracle never proved.
-//!
-//! ## WATCHING IS POLLING, DELIBERATELY
-//!
-//! `Tailer.ts:158` runs chokidar with `usePolling: true` because EverQuest writes through a path
-//! some watchers miss, and that has matched the product for a year. There is no `notify` dependency
-//! here and adding one would be a bet against a year of evidence. The poll interval is a parameter
-//! ([`FileTail::follow`]); one `metadata` call per interval is strictly LESS IO than the TS spends,
-//! since the polling watcher's own stat and the size probe collapse into that one call.
+//! EverQuest writes through a path some watchers miss, and polling has matched the product for a
+//! year. The poll interval is a parameter ([`FileTail::follow`]) and costs one `metadata` call.
 
 use std::fs::File;
 use std::io;
@@ -92,37 +57,29 @@ use std::time::Duration;
 
 use crate::scan::memchr;
 
-/// THE MOST BYTES ONE READ MAY ASK FOR (`Tailer.ts:35`, JOS-363).
+/// The most bytes one read may ask for.
 ///
-/// EverQuest writes its log SYNCHRONOUSLY from the game thread, so anything that delays its append
-/// is a frame it did not draw. An append that extends the file needs the file resource exclusively;
-/// one uncapped read of a whole delta holds that resource shared for the length of the read, and the
-/// delta after a stall or a busy raid is not small. Slicing turns one long hold into a run of short
-/// ones with a yield between them.
+/// EverQuest writes its log synchronously from the game thread, so anything that delays its append
+/// is a frame it did not draw. An append needs the file resource exclusively, and one uncapped read
+/// of a whole delta holds it shared for the length of the read. Slicing turns one long hold into a
+/// run of short ones with a yield between them.
 ///
-/// 256 KiB is ~2500 log lines: far more than a poll interval of real play produces, and small enough
-/// that a slice is a single-digit-millisecond read off a warm file. Public because the tests assert
-/// on the number of slices a stated burst takes, and a test that guessed it would silently stop
-/// testing anything.
+/// 256 KiB is ~2500 log lines: far more than a poll interval of real play produces, and small
+/// enough that a slice is a single-digit-millisecond read off a warm file.
 pub const TAIL_READ_SLICE_BYTES: usize = 256 * 1024;
 
-/// EVERY LINE THIS MODULE EMITS IS A LIVE LINE (`session.ts:387-401`).
-///
-/// `live` is a property of the SOURCE, not of a line: the scan folds history (`live = false`) and
-/// the tail folds what is happening now (`live = true`). It is a constant rather than a field on an
-/// emitted struct because there is no configuration in which a tailed line is not live — the module
-/// that wires this into `session.attach` stamps it, and this is the name it stamps.
+/// Every line this module emits is a live line. `live` is a property of the source, not of a line:
+/// the scan folds history, the tail folds what is happening now. A constant rather than a field
+/// because there is no configuration in which a tailed line is not live.
 pub const LIVE: bool = true;
 
-/// The default poll interval, matching `Tailer.ts`'s `pollInterval ?? 400`.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(400);
 
 /// Positional reads — the one file operation the slice loop needs, named as a trait so the loop can
-/// be proven against a source as rude as the OS (`OneByteAtATime`, the precedent in
-/// `engine/crates/protocol/tests/transport.rs`).
+/// be proven against a source as rude as the OS.
 ///
-/// `read_at` MAY return fewer bytes than asked for, and every caller here treats that as normal
-/// rather than as an end: a short read is the commonest thing a real file hands back under a writer.
+/// `read_at` may return fewer bytes than asked for, and every caller treats that as normal rather
+/// than as an end: a short read is the commonest thing a real file hands back under a writer.
 pub trait ReadAt {
     /// Read into `out` starting at `offset`. `Ok(0)` means end of file.
     fn read_at(&self, offset: u64, out: &mut [u8]) -> io::Result<usize>;
@@ -155,13 +112,11 @@ fn read_filled<S: ReadAt + ?Sized>(src: &S, offset: u64, out: &mut [u8]) -> io::
     Ok(got)
 }
 
-/// Split `bytes` into complete lines, handing each to `emit`, and return the trailing PARTIAL line
-/// (everything after the last newline — possibly empty).
+/// Split `bytes` into complete lines, handing each to `emit`, and return the trailing partial line
+/// (everything after the last newline, possibly empty).
 ///
-/// The rules are `scan.rs`'s rules, byte for byte, because the tail's whole acceptance is that its
-/// line sequence equals the scan's: split on the newline BYTE; strip ONE trailing `\r` as a byte
-/// before the decoder sees it; DROP an empty line in the splitter so it never reaches the parser;
-/// decode each line exactly once, whole.
+/// The rules are `scan.rs`'s rules byte for byte, because the tail's acceptance is that its line
+/// sequence equals the scan's.
 fn split_lines<'a>(bytes: &'a [u8], emit: &mut impl FnMut(&str)) -> &'a [u8] {
     let mut start = 0usize;
     while let Some(off) = memchr(b'\n', &bytes[start..]) {
@@ -178,7 +133,7 @@ fn split_lines<'a>(bytes: &'a [u8], emit: &mut impl FnMut(&str)) -> &'a [u8] {
     &bytes[start..]
 }
 
-/// The tail's ENTIRE STATE: a read cursor and the undecoded partial line under it. Pure — it knows
+/// The tail's entire state: a read cursor and the undecoded partial line under it. Pure — it knows
 /// nothing about files, handles or clocks, which is what lets the byte laws above be proven by
 /// feeding it one byte at a time.
 #[derive(Debug, Default, Clone)]
@@ -188,8 +143,8 @@ pub struct TailCore {
 }
 
 impl TailCore {
-    /// A tail whose read cursor starts at `offset` and which holds no partial line — the shape a
-    /// handoff from the scan produces (`ScanResult.endOffset` is by definition a line boundary).
+    /// A tail whose read cursor starts at `offset` and holds no partial line — the shape a handoff
+    /// from the scan produces, since the scan's end offset is by definition a line boundary.
     pub fn at(offset: u64) -> Self {
         Self {
             offset,
@@ -197,12 +152,12 @@ impl TailCore {
         }
     }
 
-    /// The READ cursor: bytes pulled off the file, partial trailing line included.
+    /// The read cursor: bytes pulled off the file, partial trailing line included.
     pub fn read_offset(&self) -> u64 {
         self.offset
     }
 
-    /// THE MARK: the end of the last complete line emitted. See the module header's mark law.
+    /// The mark: the end of the last complete line emitted. See the module header's mark law.
     pub fn checkpoint_offset(&self) -> u64 {
         self.offset - self.leftover.len() as u64
     }
@@ -214,14 +169,14 @@ impl TailCore {
     }
 
     /// Fold `chunk` — the bytes at `read_offset` — emitting every line it completes, and advance the
-    /// cursor by its length. The cursor advances BEFORE the split, exactly as `Tailer.ts:349-350`
-    /// orders it, so the mark is correct at every point a caller could observe it.
+    /// cursor by its length. The cursor advances before the split, so the mark is correct at every
+    /// point a caller could observe it.
     pub fn consume(&mut self, chunk: &[u8], mut emit: impl FnMut(&str)) {
         self.offset += chunk.len() as u64;
         if self.leftover.is_empty() {
             let rest = split_lines(chunk, &mut emit);
-            // COPIED, never a view: `chunk` is a slice-sized read buffer, and keeping a borrow of it
-            // as the carry would pin 256 KiB alive for the sake of a partial line.
+            // Copied, never a view: keeping a borrow of the read buffer as the carry would pin
+            // 256 KiB alive for the sake of a partial line.
             self.leftover.extend_from_slice(rest);
         } else {
             let mut buf = std::mem::take(&mut self.leftover);
@@ -240,7 +195,7 @@ impl TailCore {
         }
     }
 
-    /// Restart at byte 0, DISCARDING the partial line (truncation rule 2 in the module header).
+    /// Restart at byte 0, discarding the partial line (truncation rule 2 in the module header).
     pub fn reset(&mut self) {
         self.offset = 0;
         self.leftover.clear();
@@ -254,10 +209,9 @@ pub enum TailStart {
     Eof,
     /// At byte 0 — the whole file, as lines.
     FromStart,
-    /// At an explicit byte offset: THE GAPLESS HANDOFF from the scan. The scan reports the offset it
-    /// stopped at and the tail picks up exactly there, so bytes appended during the scan are read
-    /// rather than skipped, and none are read twice. Clamped to the current size in case the file
-    /// shrank between the scan and the tail's first look.
+    /// At an explicit byte offset: the gapless handoff from the scan. The tail picks up exactly
+    /// where the scan stopped, so bytes appended during the scan are read rather than skipped and
+    /// none are read twice. Clamped to the current size in case the file shrank in between.
     At(u64),
 }
 
@@ -291,9 +245,8 @@ pub struct PollStats {
     pub missing: bool,
 }
 
-/// A COORDINATE, in the only vocabulary ruling 18 law 3 allows: which log, and how far into it the
-/// emitted lines reach. Every future cache key over tail state is built from this pair and nothing
-/// else — no wall time, no "current".
+/// A coordinate: which log, and how far into it the emitted lines reach. Every cache key over tail
+/// state is built from this pair and nothing else — no wall time, no "current".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TailMark<'a> {
     /// The log's identity.
@@ -304,12 +257,11 @@ pub struct TailMark<'a> {
 
 /// A tail over one growing file: a persistent read handle, a poll cycle, and [`TailCore`] under it.
 ///
-/// THE HANDLE IS HELD OPEN ON A FILE ANOTHER PROCESS IS APPENDING TO, deliberately (`Tailer.ts:95`).
-/// Opening and closing around every read — up to ~2/sec in combat — is an on-access-scan trigger for
-/// Defender's minifilter against a file that is routinely hundreds of MB, and a share-mode
-/// negotiation against EQ's own handle, on the path of a game that writes its log from the render
-/// thread. A shared read handle never blocks an append. The four things that force a reopen are
-/// exactly the cases where the handle stops describing the file at the path — see [`ReopenReason`].
+/// The handle is held open on a file another process is appending to, deliberately. Opening and
+/// closing around every read — up to ~2/sec in combat — triggers Defender's on-access scan against
+/// a file that is routinely hundreds of MB, and negotiates share mode against EQ's own handle. A
+/// shared read handle never blocks an append. The cases that force a reopen are exactly the ones
+/// where the handle stops describing the file at the path — see [`ReopenReason`].
 #[derive(Debug)]
 pub struct FileTail {
     path: PathBuf,
@@ -324,9 +276,8 @@ pub struct FileTail {
 
 impl FileTail {
     /// Point a tail at a path. Does not open the file — the first poll that finds bytes does that —
-    /// but does resolve the starting offset, and like `Tailer.start` it does NOT fail when the path
-    /// is not there yet: an absent file starts the cursor at the requested offset (or 0), and the
-    /// first poll that finds the file applies the shrink rule to it.
+    /// and does not fail when the path is not there yet: an absent file starts the cursor at the
+    /// requested offset, and the first poll that finds the file applies the shrink rule to it.
     pub fn open(path: impl Into<PathBuf>, start: TailStart) -> Self {
         let path = path.into();
         let size = std::fs::metadata(&path).map(|m| m.len()).ok();
@@ -347,8 +298,7 @@ impl FileTail {
         }
     }
 
-    /// Shrink the read slice. TESTS ONLY, and the reason it exists rather than a constant the tests
-    /// override: proving the multi-slice path over a committed fixture would otherwise need a
+    /// Shrink the read slice. Tests only: proving the multi-slice path otherwise needs a
     /// quarter-megabyte of log per assertion.
     #[doc(hidden)]
     pub fn with_slice_bytes(mut self, bytes: usize) -> Self {
@@ -361,12 +311,12 @@ impl FileTail {
         &self.path
     }
 
-    /// The READ cursor. See the module header's mark law before using this for anything.
+    /// The read cursor. See the module header's mark law before using this for anything.
     pub fn read_offset(&self) -> u64 {
         self.core.read_offset()
     }
 
-    /// THE MARK: the end of the last complete line emitted.
+    /// The mark: the end of the last complete line emitted.
     pub fn checkpoint_offset(&self) -> u64 {
         self.core.checkpoint_offset()
     }
@@ -379,11 +329,11 @@ impl FileTail {
         }
     }
 
-    /// ONE POLL: look at the file, read whatever is new, emit the lines it completes.
+    /// One poll: look at the file, read whatever is new, emit the lines it completes.
     ///
     /// Idempotent when nothing changed — an idle poll opens nothing, reads nothing and emits
-    /// nothing. Errors leave the tail RUNNING (the handle is dropped so the next cycle opens a fresh
-    /// one under [`ReopenReason::Error`]); the offset is untouched, so a failed read costs bytes
+    /// nothing. Errors leave the tail running (the handle is dropped so the next cycle opens a fresh
+    /// one under [`ReopenReason::Error`]) and the offset is untouched, so a failed read costs bytes
     /// nobody has read, never bytes nobody will read.
     pub fn poll(&mut self, mut emit: impl FnMut(&str)) -> io::Result<PollStats> {
         let mut stats = PollStats::default();
@@ -408,7 +358,7 @@ impl FileTail {
             stats.restarted = true;
         }
         if size <= self.core.read_offset() {
-            // Nothing new. Deliberately NOT opening a handle to prove it: the steady-state poll on
+            // Nothing new, and deliberately no handle opened to prove it: the steady-state poll on
             // an idle log must cost one metadata call and nothing else.
             return Ok(stats);
         }
@@ -430,7 +380,7 @@ impl FileTail {
             }
             Err(e) => {
                 // The handle is the prime suspect for anything that failed in there — drop it and
-                // let the next cycle open a fresh one under a COUNTED reason rather than hiding the
+                // let the next cycle open a fresh one under a counted reason rather than hiding the
                 // reopen inside a retry.
                 drop(file);
                 self.pending_open = Some(ReopenReason::Error);
@@ -439,9 +389,8 @@ impl FileTail {
         }
     }
 
-    /// Poll forever at `interval`, until `stop` is set. Errors do not end the loop — they are handed
-    /// to `on_error` and the next cycle opens a fresh handle, which is `Tailer`'s `'error'` event
-    /// with the same "the tailer keeps running" contract.
+    /// Poll forever at `interval`, until `stop` is set. Errors do not end the loop: they go to
+    /// `on_error` and the next cycle opens a fresh handle.
     ///
     /// The sleep is broken into short naps so `stop` is honoured promptly instead of after a whole
     /// interval; nothing about the pacing reaches `emit`.
@@ -465,7 +414,7 @@ impl FileTail {
         }
     }
 
-    /// Open only if there is no trusted handle; record WHY under the reason that forced it.
+    /// Open only if there is no trusted handle; record why under the reason that forced it.
     fn ensure_handle(&mut self, stats: &mut PollStats) -> io::Result<()> {
         if self.fh.is_some() && self.pending_open.is_none() {
             return Ok(());
@@ -508,9 +457,8 @@ fn read_slices<S: ReadAt + ?Sized>(
         stats.bytes += got as u64;
         core.consume(&buf[..got], &mut *emit);
         if core.read_offset() < size {
-            // The slice boundary's whole point: give the game's synchronous append a gap to take the
-            // file resource in. `Tailer.ts` yields the event loop here; a dedicated below-normal
-            // thread yields the scheduler.
+            // The slice boundary's whole point: give the game's synchronous append a gap to take
+            // the file resource in.
             std::thread::yield_now();
         }
     }
@@ -538,7 +486,7 @@ mod tests {
         core.consume(b"[ts] first\n[ts] unfinis", |l| out.push(l.to_string()));
         assert_eq!(out, ["[ts] first"]);
         assert_eq!(core.read_offset(), 23);
-        // THE MARK LAW: the cursor is past the partial line, the mark is not.
+        // The mark law: the cursor is past the partial line, the mark is not.
         assert_eq!(core.checkpoint_offset(), 11);
         assert_eq!(core.pending_bytes(), 12);
 
@@ -562,8 +510,8 @@ mod tests {
 
     #[test]
     fn a_multi_byte_character_cut_in_half_by_a_chunk_boundary_survives_whole() {
-        // Authored bytes, not a log claim: this proves the SPLITTER, and the committed corpus is
-        // scrubbed ASCII so it cannot exercise a mid-character cut on its own.
+        // Authored bytes, not a log claim: the committed corpus is scrubbed ASCII, so it cannot
+        // exercise a mid-character cut on its own.
         let bytes = "[ts] Sh\u{e0}dow \u{2014} \u{1f600} done\n"
             .as_bytes()
             .to_vec();
@@ -579,14 +527,14 @@ mod tests {
 
     #[test]
     fn a_chunk_ending_on_the_newline_byte_and_one_ending_mid_crlf() {
-        // Ends exactly ON the newline: the line is complete and the mark reaches the cursor.
+        // Ends exactly on the newline: the line is complete and the mark reaches the cursor.
         let mut core = TailCore::default();
         let mut out = Vec::new();
         core.consume(b"[a] one\r\n", |l| out.push(l.to_string()));
         assert_eq!(out, ["[a] one"]);
         assert_eq!(core.checkpoint_offset(), 9);
 
-        // Ends BETWEEN the CR and the LF: nothing is emitted, and the CR is still a byte rather than
+        // Ends between the CR and the LF: nothing is emitted, and the CR is still a byte rather than
         // a decoded character, so the next chunk's LF can still strip it.
         let mut core = TailCore::default();
         let mut out = Vec::new();
@@ -602,7 +550,7 @@ mod tests {
     fn an_empty_line_is_dropped_by_the_splitter_and_a_lone_cr_line_with_it() {
         let (got, core) = lines_in_chunks(b"\n\r\n[a] one\n\n", 3);
         assert_eq!(got, ["[a] one"]);
-        // Dropped lines still MOVE THE MARK — they were read, they are just not lines.
+        // Dropped lines still move the mark — they were read, they are just not lines.
         assert_eq!(core.checkpoint_offset(), 12);
     }
 
@@ -658,7 +606,7 @@ mod tests {
 
     #[test]
     fn a_source_that_ends_early_ends_the_cycle_rather_than_erroring() {
-        // `size` claims more than the source holds — the mid-read shrink of truncation rule 4.
+        // `size` claims more than the source holds: the mid-read shrink of truncation rule 4.
         let src = OneByteAtATime(b"[a] one\n".to_vec());
         let mut core = TailCore::default();
         let mut stats = PollStats::default();

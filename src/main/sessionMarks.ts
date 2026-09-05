@@ -27,7 +27,10 @@
 import { IPC } from '../shared/ipc'
 import { addSessionMark } from '../shared/sessionSegments'
 import { OVERLAY_KINDS } from '../shared/types'
-import { combat } from './pipeline'
+// THE THIRD HOLDER OF THE BOUNDARY (JOS-493). It owns the serve flag and the fire-and-forget rule;
+// this file simply hands it the instant it already stamped. A launch that is not serving from an
+// engine pays one boolean read per press.
+import { serveSessionMark } from './dataServer/serveCommands'
 import { getMainWindow, getOverlayWindow } from './windows'
 
 /** The whole state, ascending. Resets to empty at process start — see the header. */
@@ -63,7 +66,10 @@ export function pressNewSession(): readonly number[] {
   // and in that state the loot half must not record one either — "one concept, one word, one
   // button" is a promise about the BOUNDARY, and a mark the meter never took is a boundary only
   // half the app has. The surfaces are showing their own loading states meanwhile.
-  if (!combat.sessionMark(at)) return marks
+  // NO APP-SIDE GATE (JOS-499). `combat.sessionMark(at)` used to refuse a mark this process's
+  // own engine could not place, and the press was dropped. The engine answers the same refusal
+  // over `sessionMarks.add` (`serveCommands.ts` narrates it), so the press is forwarded and the
+  // mark is recorded app-side, which is where marks have always been persisted.
   const next = addSessionMark(marks, at)
   // The shared dedupe declined it (two presses inside one millisecond): the instant it would have
   // opened is not the newest one. Nothing moved, so nothing is broadcast — a control re-asserting
@@ -71,6 +77,13 @@ export function pressNewSession(): readonly number[] {
   // the test: at the cap an accepted mark also leaves the list the same length.
   if (next.length === 0 || next[next.length - 1] !== at) return marks
   marks = next
+  // AND THE ENGINE'S WORLD, WHICH IS A THIRD HOLDER OF THIS ONE INSTANT (JOS-493). It is told LAST,
+  // after both of this process's halves have accepted, for the reason the ordering above exists: a
+  // mark this app itself declined — the engine refusing mid-fold, or the dedupe dropping a double
+  // press — must not be announced to a third world as though it had happened. It is fire and
+  // forget (`dataServer/serveCommands.ts`), so nothing below waits on it and the window that
+  // pressed still gets its list in the same turn.
+  serveSessionMark(at)
   broadcastSessionMarks()
   return marks
 }

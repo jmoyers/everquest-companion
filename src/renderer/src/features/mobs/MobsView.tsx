@@ -45,21 +45,18 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import PetsIcon from '@mui/icons-material/Pets'
 import type {
-  CharacterDelta,
   CharacterSnap,
-  ConsiderDelta,
   ConsiderSnap,
   KillMap,
-  KillsDelta,
   KillsSnap,
   MobEntry
 } from '@shared/types'
-import { killIndex, killsBaselineStale, killsFor, mergeKillsDelta } from '@shared/kills'
+import { killIndex, killsFor } from '@shared/kills'
 import type { NavBack } from '../../appRouting'
 import { useBackTarget } from '../../appBack'
 import { useModule } from '../../lib/useModule'
 import { MobPage } from './MobPage'
-import { RecentlyConsidered, applyConsiderDelta } from './RecentlyConsidered'
+import { RecentlyConsidered } from './RecentlyConsidered'
 import { MOB_CATALOG, searchMobs } from './mobSearch'
 import { mobsInZone } from './mobZone'
 import type { MobTarget } from './mobTarget'
@@ -75,14 +72,10 @@ import type { MobTarget } from './mobTarget'
  * object, which `useModule` replaces exactly when the map can have changed.
  */
 function useKills(): KillMap {
-  const snap = useModule<KillsSnap, KillsDelta>('kills', mergeKillsDelta, killsBaselineStale)
+  const snap = useModule<KillsSnap>('kills')
   return useMemo(() => killIndex(snap?.mobs ?? {}), [snap])
 }
 
-/** The character module's delta is a partial merge (see main/modules/character.ts). */
-function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): CharacterSnap {
-  return { ...state, ...delta }
-}
 
 /** ONE search result. The catalog row IS the row — level, zones and drop count, all local. */
 function MobResultRow({
@@ -330,11 +323,11 @@ export default function MobsView({
   }
 
   const kills = useKills()
-  const considered = useModule<ConsiderSnap, ConsiderDelta>('consider', applyConsiderDelta) ?? []
+  const considered = useModule<ConsiderSnap>('consider') ?? []
   // WHERE YOU ARE. The character module carries the RAW display zone off the `zone` log event;
   // it is undefined until the log prints one (a fresh log, or before the replay reaches a zone
   // line), and that absence is a state this view renders — never a blank heading.
-  const zone = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)?.zone
+  const zone = useModule<CharacterSnap>('character')?.zone
 
   // An inbound target (deep link / raid card) opens the page, then is consumed. Keyed on the
   // NONCE, not the target's identity: the same mob asked for twice must open twice.

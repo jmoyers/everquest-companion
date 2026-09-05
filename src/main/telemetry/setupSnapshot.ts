@@ -52,7 +52,7 @@ import {
   getVoicePrefs
 } from '../store'
 import { listPacks } from '../sounds'
-import { recordEvent } from './collector'
+import { recordEvent, telemetryCollecting } from './collector'
 import { buildSetupSnapshot, type SetupFacts } from './setupFacts'
 
 /**
@@ -73,39 +73,84 @@ const SNAPSHOT_DELAY_MS = 10_000
  */
 const GPU_INFO_TIMEOUT_MS = 5_000
 
-/** ONE PER PROCESS. `replayDone` can only be marked once (perf.ts refuses a duplicate), but a
- *  character switch replays through the same code and a second latch here costs one boolean. */
-let scheduled = false
+/**
+ * How long after an OPT-IN the snapshot is re-armed. Short, because the reason the boot delay is
+ * ten seconds — stay out of the way of a launch — does not apply to a switch a user pressed
+ * minutes later. It is not zero so the toggle's own IPC answer is never behind a `getGPUInfo`.
+ */
+const OPT_IN_DELAY_MS = 1_000
+
+/**
+ * ONE PER PROCESS — AND THE LATCH IS ON THE RECORD, NOT ON THE TIMER (JOS-501).
+ *
+ * It used to be one boolean set when the timer was ARMED, and that quietly lost the snapshot for
+ * a whole class of session. The snapshot fires ten seconds after `replayDone`; `recordEvent` drops
+ * everything while collection is off; and the latch then guaranteed no second attempt. So a user
+ * who launched opted out and turned telemetry ON afterwards contributed no machine-class row for
+ * that session — which is the population the snapshot exists for, since somebody enabling
+ * telemetry mid-session is very often doing it to report a problem.
+ *
+ * `armed` prevents two timers; `recorded` is the once-ever fact, and only a snapshot the ring
+ * actually ACCEPTED sets it. The telemetry e2e was red on exactly this: its fourth launch boots
+ * opted out and flips the switch on, and no snapshot could ever follow.
+ */
+let armed = false
+let recorded = false
 
 /**
  * Arm the snapshot. Called from `markStartupPhase('replayDone')` — the one moment the app agrees
- * its launch is over — and idempotent, so an extra call is a no-op rather than a second event.
+ * its launch is over — and from the opt-in edge (`flush.ts applyTelemetryEnabled`). Idempotent:
+ * an extra call is a no-op rather than a second event.
  *
  * The timer is `unref`'d: a snapshot pending when the user quits must not hold the process open
  * for ten seconds to file a diagnostic about a session that has ended.
  */
 export function scheduleSetupSnapshot(delayMs = SNAPSHOT_DELAY_MS): void {
-  if (scheduled) return
-  scheduled = true
+  if (armed || recorded) return
+  armed = true
   const timer = setTimeout(() => {
+    armed = false
     void recordSetupSnapshot()
   }, delayMs)
   timer.unref()
 }
 
-/** Test seam: forget that a snapshot was armed. Never called by the app. */
-export function resetSetupSnapshot(): void {
-  scheduled = false
+/**
+ * THE USER JUST TURNED TELEMETRY ON. Re-arm if this process never managed to file its snapshot.
+ *
+ * Called from `flush.ts applyTelemetryEnabled`, which is the ONE place both the Preferences toggle
+ * and the first-run notice go through — so the two can no more diverge here than they can on the
+ * switch itself. A no-op when the snapshot already landed, which is the ordinary launch.
+ */
+export function armSetupSnapshotOnOptIn(): void {
+  scheduleSetupSnapshot(OPT_IN_DELAY_MS)
 }
 
-/** Take the snapshot now. Exported for the IPC-free path a future "send diagnostics" button would
- *  want, and awaited by nothing: the whole point is that it cannot delay anything. */
+/** Test seam: forget that a snapshot was armed or taken. Never called by the app. */
+export function resetSetupSnapshot(): void {
+  armed = false
+  recorded = false
+}
+
+/**
+ * Take the snapshot now. Exported for the IPC-free path a future "send diagnostics" button would
+ * want, and awaited by nothing: the whole point is that it cannot delay anything.
+ *
+ * IT ASKS THE RING BEFORE IT BUILDS, and that order is the fix rather than an optimisation. The
+ * gather below reaches the store, the filesystem and the GPU process; doing all of it to hand the
+ * result to a `recordEvent` that will drop it is waste, but the part that MATTERS is that a
+ * dropped snapshot must not count as a taken one. `recorded` is therefore set on the far side of
+ * the record, and a disabled ring leaves the snapshot pending for the opt-in edge to re-arm.
+ */
 export async function recordSetupSnapshot(): Promise<void> {
+  if (recorded || !telemetryCollecting()) return
   try {
     recordEvent(buildSetupSnapshot(await gatherFacts()))
+    recorded = true
   } catch {
     // Deliberately silent, and deliberately not `logError`: a diagnostic that files an error
     // report about its own failure to file a diagnostic is a loop with a fleet-wide audience.
+    // `recorded` stays false, so a later opt-in gets one more attempt.
   }
 }
 

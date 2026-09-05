@@ -34,7 +34,20 @@ import {
   type LedgerSource,
   type LedgerWriteOutcome
 } from './ledgerFile'
-import type { ResistLedgerSeam } from './module'
+/**
+ * THE SEAM, DECLARED WHERE IT IS BUILT (JOS-499). It lived in `resist/module.ts` — the fold plug —
+ * so that nothing under `src/main/modules` had to import Electron. There is no fold and no plug;
+ * the only thing that ever produced one of these is `resistLedgerSeam()` below, and the only
+ * thing that consumed it was the deleted module. It is kept rather than inlined because the
+ * ENGINE owns this ledger's IO now (boundary verdict 4) and this seam is what the app-arm
+ * writers are still shaped around; `artifactOwner.ts` gates whether they run at all.
+ */
+export interface ResistLedgerSeam {
+  beginSource: (key: string) => void
+  persist: () => void
+  counts: () => { rows: number; mobs: number }
+}
+import { appOwnsArtifacts } from '../dataServer/artifactOwner'
 // Inlined committed baseline (bundled into the main build, like spells.json).
 import baselineJson from '../data/resistBaseline.json'
 
@@ -135,8 +148,23 @@ export function beginResistSource(key: string): ResistBucket {
   return resistLedger().beginSource(key)
 }
 
-/** Snapshot the user's half to disk. Cheap enough for a periodic call; best-effort. */
+/**
+ * Snapshot the user's half to disk. Cheap enough for a periodic call; best-effort.
+ *
+ * …UNLESS THE ENGINE OWNS THIS FILE (JOS-497 item 2, boundary verdict 4). Under serve, `stateDir`
+ * has been handed to a connected engine that reads and writes `resist-ledger.json` itself, in this
+ * app's byte-verbatim format — so this process persisting too would be two writers on one file with
+ * two cadences, which is the exact thing JOS-496 declined to ship. The guard is HERE rather than at
+ * the caller (`module.ts`'s sixty-tick persist) so that no future call site can escape it by not
+ * knowing about it; `dataServer/artifactOwner.ts` is the latch and carries the whole argument.
+ *
+ * THE FOLD IS UNTOUCHED. This app keeps folding its own ledger in memory — the parity probe
+ * compares the two worlds and the resist card's rows are still read out of it — and what stops is
+ * only the WRITE. On every launch with no engine, and with `EQC_ENGINE_SERVE=0`, this is exactly
+ * the function it has always been.
+ */
 export function persistResistLedger(): void {
+  if (!appOwnsArtifacts()) return
   if (store) saveUserSources(store)
 }
 

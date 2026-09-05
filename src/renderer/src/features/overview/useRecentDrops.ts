@@ -13,7 +13,7 @@
 // strictly contains the 25 rows rendered here.
 
 import { useMemo } from 'react'
-import type { LootDelta, LootSnap } from '@shared/types'
+import type { LootSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 import { questItemNames } from '../loot/lootItemData'
 import { useNotablePickups } from '../loot/useNotablePickups'
@@ -27,7 +27,7 @@ const NOT_DISMISSED = new Set<string>()
 /** The feed's rows, newest-first and capped. Each row carries its own knowledge record, so a
  *  hover costs no second lookup and the card needs no second map. */
 export function useRecentDrops(): DropRow[] {
-  const history = useModule<LootSnap, LootDelta>('loot', (s, d) => [...s, ...d.appended]) ?? NO_LOOT
+  const history = useModule<LootSnap>('loot') ?? NO_LOOT
   // Nothing is dismissable on this surface (the dismiss affordance belongs to the Loot tab's
   // strip), so the dismissed set is permanently empty — we only want `byKey`.
   const { byKey } = useNotablePickups(history, NOT_DISMISSED)

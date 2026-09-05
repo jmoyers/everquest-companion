@@ -15,6 +15,12 @@
  * `rowsFor` treats it like `name`/`spellType` and dropping it would make the two sides' row
  * accounting differ for a reason that is invisible until it isn't.
  *
+ * AN `effects` CORRECTION IS NOT PROJECTED, and the omission is a closed list rather than a habit:
+ * the sidecar's charter is the fields the PARSER's output depends on, the parser's `SpellEntry`
+ * does not carry the slot list, and its `field_of` deliberately PANICS on a field it does not
+ * know — the safety this filter exists to preserve. A future field the parser should carry gets
+ * added to `PARSER_FIELDS` and to the Rust reader in the same change, never by loosening either.
+ *
  * DRIFT IS CAUGHT TWICE. `npm run oracle:rust-parser` regenerates this file and refuses to compare
  * when the committed copy is stale; and a list that moved without the sidecar moves the TS goldens,
  * so byte-identity fails on the next check either way.
@@ -30,11 +36,14 @@ import { SPELL_REMOVALS } from '../src/main/data/spellRemovals'
 const ROOT = join(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..')
 export const SIDECAR = join(ROOT, 'engine', 'crates', 'eqlog', 'data', 'spell-overlay.json')
 
+/** The correction fields the Rust parser's `field_of` knows. See the header's `effects` note. */
+const PARSER_FIELDS = new Set(['name', 'spellType', 'classes', 'msgCastOnYou', 'msgCastOnOther', 'msgWearsOff'])
+
 /** The sidecar's bytes, as the generator would write them right now. */
 export function renderSidecar(): string {
   const body = {
     removals: SPELL_REMOVALS.map((r) => r.spell),
-    corrections: SPELL_CORRECTIONS.map((c) => ({
+    corrections: SPELL_CORRECTIONS.filter((c) => PARSER_FIELDS.has(c.field)).map((c) => ({
       spells: [...c.spells],
       field: c.field,
       from: c.from,

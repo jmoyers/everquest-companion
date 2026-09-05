@@ -62,6 +62,17 @@
 //
 // A bullet NEVER restates its neighbour, never names a file, a module or a wave, and never
 // explains how the app works internally (state, never process — the UI conventions).
+//
+// A BULLET IS SHORT (owner, 2026-09-03: "that's an incredibly long paragraph"). The shape is
+// three sentences at most and it is enforced by `tests/releaseNotes.test.mts`:
+//
+//   1. WHAT THE PLAYER SEES NOW — the fix or the feature, stated as the outcome. This sentence is
+//      the whole bullet for a small change.
+//   2. (optional) WHY IT WAS WRONG, in one sentence of cause and effect in the player's terms.
+//   3. (optional) WHAT CHANGED, in one clause. Never the layers of the fix, never the diagnostics
+//      that went in beside it — a second thing the player can see is a second bullet.
+//
+// If the sentence needs a comma-spliced tour of the mechanism, it is a ticket comment, not a note.
 
 /** Which sub-header an entry sits under. Absent ⇒ the entry is a bullet under no sub-header. */
 export type ReleaseEntryKind = 'new' | 'fixed' | 'changed'
@@ -124,6 +135,124 @@ export interface ReleaseNote {
  * still sees exactly the releases above it.
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.16.0',
+    date: '2026-09-03',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Fights no longer end after one second, and buff and debuff timers no longer run on the wrong clock. On some machines, most often under Wine, the engine could not learn your time zone and quietly assumed UTC, so it read every log line as hours old. The app now tells it the zone.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'The performance panel shows which clock the engine is on and how far it sits from your machine\'s. Seconds are normal; whole hours mean a wrong time zone, and the panel says so.'
+      }
+    ]
+  },
+  {
+    version: '1.15.0',
+    date: '2026-09-02',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'The endless catch-up loop is fixed. A rare pattern in a log - a wear-off or death landing in the same second as a crowd of same-named applications - crashed the engine at the same spot on every re-read, so the app re-read your log over and over while the Combat tab kept resetting mid-fight and the Leveling tab blanked.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'The engine is no longer restarted for things that were never its fault: a slow answer to a routine health check now gets a second ask before any restart, waking your machine from sleep no longer counts against it, and your PC briefly running short of network connections is waited out instead of blamed. Each of those used to cost you a full catch-up read.'
+      },
+      {
+        kind: 'fixed',
+        text: 'Timers for upgraded spells now start from your rank\'s real duration. The spell database only knows the base ranks, so an upgraded buff or debuff counted down from the wrong number until the app had watched enough casts - now the upgrade tier\'s duration growth is applied from your first cast.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Debuff timers no longer show roughly double the real duration. When a slowed mob died unseen, a later kill of a same-named mob could be misread as the debuff still running, and the timer believed the longer claim. A mob\'s death can no longer outrank the durations the log has actually watched end.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Vengeance of the Wild counts as a DoT again in Best Spells, with its damage totalled per tick instead of once.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Swift Like The Wind no longer shows up twice for enchanters - it is level 47 only, and the phantom level-49 card is gone.',
+        fromReport: true
+      }
+    ]
+  },
+  {
+    version: '1.14.0',
+    date: '2026-08-27',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Your meters no longer vanish mid-session to an engine restart. A routine health check could mistake the engine\'s own status broadcasts for a fault and restart it - most often during the catch-up read, which then started over. The check now knows those messages are normal.',
+        fromReport: true
+      },
+      {
+        kind: 'fixed',
+        text: 'Kills in a base-difficulty raid or personal instance now count toward the weekly ladder. The game prints the same zone line for a base instance as for the open world, so those clears were filed as open-world kills - the app now reads the creating-instance notice and files them right, including your past clears.',
+        fromReport: true
+      }
+    ]
+  },
+  {
+    version: '1.13.0',
+    date: '2026-08-27',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'The catch-up bar can no longer get stuck at 100%. The app used to stop waiting after two minutes on a big log or a slow disk - it now waits as long as your log takes, and it can tell catching up from live play, so the bar always finishes.',
+        fromReport: true
+      },
+      {
+        kind: 'changed',
+        text: 'An engine that stops answering or keeps restarting mid-session now shows up in diagnostics, so a report about "it never finishes loading" arrives with its cause.'
+      }
+    ]
+  },
+  {
+    version: '1.12.0',
+    date: '2026-08-26',
+    entries: [
+      {
+        kind: 'fixed',
+        text: 'Scrolling no longer stutters during combat. The app was quietly redrawing almost every panel ten times a second whenever your log was busy - it now redraws only what actually changed, batched to the display’s own rhythm, and the busiest page went from a fifth of the machine’s attention to under three percent. Hover cards also stopped piling up while you scroll: sweeping the pointer across a list opens at most one.',
+        fromReport: true
+      },
+      {
+        kind: 'new',
+        text: 'Search your spells by type, just like the game’s own window - type “tap” and get every tap you can cast, by level, with category and subcategory shown, scoped to your class combo.'
+      },
+      {
+        kind: 'new',
+        text: 'Every spell name in the app is now a link. Click one and get its page: the upgrade line it belongs to, the level YOUR combo gets each step, and every class that learns it.'
+      }
+    ]
+  },
+  {
+    version: '1.11.0',
+    date: '2026-08-26',
+    entries: [
+      {
+        kind: 'changed',
+        text: 'The app rebuilt its log reader from the ground up as a dedicated high-speed engine. The old reader deliberately ran at six-tenths speed on the app’s busiest thread so it wouldn’t stutter your game, and a long-running log still took over a minute to load - the new engine reads flat out in its own process, several times faster, and nothing it does can be felt in the app or in the game.'
+      },
+      {
+        kind: 'changed',
+        text: 'Right after launch or a character switch, a progress bar now shows the catch-up honestly - percent done, how much of your log is read, and about how long is left - and panels fill in all at once the moment it finishes. And if the engine ever cannot start (an overzealous antivirus, a broken install), the app says exactly that in plain words, with a retry button and a one-click bug report - instead of sitting silently empty.'
+      },
+      {
+        kind: 'new',
+        text: 'The performance panel shows the engine’s own numbers - how fast it read your log, how quickly it serves the screen, and whether it is inside its budgets - and a bug report carries the same numbers, so a report about slowness arrives with its diagnosis attached.'
+      }
+    ]
+  },
   {
     version: '1.10.0',
     date: '2026-08-24',

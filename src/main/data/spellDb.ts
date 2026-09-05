@@ -44,7 +44,7 @@ import { foldApostrophes } from '../../shared/spellSearch'
 // `Your <X> spell has worn off of <mob>.` line becomes a `cc` event at all, so it is also what
 // decides whether the `breaks` template can fire. rulesets.ts's only reference back here is an
 // `import type`, so this edge is one-way at runtime.
-import { CC_STEMS, CHARM_STEMS } from '../log/rulesets'
+import { CC_STEMS, CHARM_STEMS } from './spellStems'
 // OUR corrections to the scrape (JOS-150). They are applied to the ENTRIES, before any table is
 // derived, so the suffix index, the wears-off map, the suggestion catalog and every search string
 // all see one corrected text. Read that file's header before adding one: it carries the evidence

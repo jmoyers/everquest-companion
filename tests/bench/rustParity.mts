@@ -28,6 +28,48 @@
  *      WHEN BOTH SIDES CARRY THEM — a build whose fold has no engine subscribed reports them as
  *      SKIPPED by name rather than passing for having said nothing.
  *
+ * ── THE GOLDENS ARE A SNAPSHOT OF A DEAD PIPELINE, AND THE ENGINE HAS MOVED PAST THEM ──────────
+ *
+ * The recorder died with the TS fold it ran, so the goldens on disk are FROZEN at the moment of
+ * the port and can never be re-recorded. That was the design: a safety net against UNINTENDED
+ * drift, kept for one release. INTENDED divergences have since shipped, and a runner of this
+ * oracle must know their shapes to read a red honestly:
+ *
+ *   JOS-521 (2026-08-26) — the fold now reads the creating-instance notice, so a kill inside a
+ *   bare-named raid/personal instance keys tier 0 where the TS fold keyed TIER_OPEN_WORLD (-1).
+ *   Phase 2: the `kills` module reds with tier moves of exactly -1 → 0 (whole entries relocating
+ *   between those two keys; 3,472 kills across the six-slice corpus, no other tier moves, no kill
+ *   gained or lost). Phase 1: the byte-identity bar reds on `Player <name> creating instance
+ *   <zone> <id>.` lines — `instanceCreate` events where the golden says `unknown` (86 lines
+ *   across the corpus). A red CONFINED to those two shapes is the fix working, not drift; any
+ *   OTHER divergence is still exactly what this net exists to catch.
+ *
+ *   JOS-527 (2026-08-28) — the estimator's DB floor is now RANK-SCALED, so a spell whose cast line
+ *   named a roman numeral stands on a floor the TS fold never computed. Phase 2: the `buffs` module
+ *   reds on RAISED durations and on nothing else — 18 leaves of 155,734 across the six-slice
+ *   corpus, in exactly five classes (`.state.stats.<line>.estimateMs` ×13,
+ *   `.state.stats.<line>.estimatorSource` ×3 where a raised floor overtook a learned value,
+ *   `.state.active[].estimatedMs` ×1, `.state.active[].overlayDurationMs` ×1). Every move is
+ *   upward and every one is `base × (1 + tier × pct)` for that spell's category; `early-leveling`
+ *   is untouched, and `buffTimers` is green on all six. Phase 1 is unaffected — nothing about the
+ *   parser changed. A `buffs` red outside those five field classes, or in any other module, is
+ *   still drift.
+ *
+ *   JOS-535 (2026-09-01) — the death lower bound is now SUBORDINATE to the fades the log has
+ *   actually watched end: where the estimator's window holds any clean cycle, a bound contributes
+ *   at most the longest of them (rule 12d), and a bound mints only while its active row still
+ *   lives (rule 12e). Phase 2: the `buffs` module reds on 4 FURTHER leaves, in two spells and one
+ *   shape — an over-claiming bound replaced by the DB floor. `.state.stats.negation of life`
+ *   estimateMs 115000 → 90000 with estimatorSource `deathBound` → `db` (early-leveling, which
+ *   JOS-527 left untouched), and `.state.stats.soothe` estimateMs 190000 → 150000 with the same
+ *   source move (current). Both bounds claimed far past every clean cycle in their own window
+ *   (82 s and 29 s maxima), so the cap takes them under the floor. `.state.stats.odium` is the
+ *   ruling's own control: with no clean cycle in its window (`n` 0) its bound is untouched, and the
+ *   only thing that moves it is JOS-527's raised floor. Rule 12e moves NO leaf here — measured by
+ *   rerunning this oracle with 12d alone reverted — because no recorded slice holds a bound minted
+ *   off a culled record. Phase 1 is unaffected. A `buffs` red outside these two spells and
+ *   JOS-527's five field classes is still drift.
+ *
  * ── `--ledger`: WHAT A PARTIAL PORT IS ALLOWED TO CLAIM ────────────────────────────────────────
  *
  * `firstDiff` answers "are these the same?" and it is the right instrument for a bar that is
@@ -68,15 +110,20 @@ import { existsSync, readFileSync } from 'node:fs'
 import { constants, setPriority } from 'node:os'
 import { join } from 'node:path'
 import { ROOT } from '../e2e/build.mjs'
+// THE ARTIFACT VOCABULARY, off a leaf that knows nothing about a fold (JOS-499 item 5). This file
+// used to reach it through `goldenOracle.mjs` and so inherited that file's whole doomed import
+// graph — the parser, the replay slicer, the combat engine, the module registry — not one of which
+// this harness has ever called. Owner ruling 26 keeps THIS side alive for one release as the
+// engine-vs-recorded-goldens safety net; the RECORDER dies with the TS fold it runs.
 import {
   GOLDENS_DIR,
   SLICES_DIR,
   eventsPath,
-  firstDiff,
   normalizeJson,
-  snapshotsPath,
-  type Diff
-} from './goldenOracle.mjs'
+  snapshotsPath
+} from './goldenPaths.mjs'
+// …and the differ from its own home rather than re-exported through the oracle.
+import { firstDiff, type Diff } from '../../src/shared/deepDiff'
 import { buildLedger, type Ledger } from './parityLedger.mjs'
 import { SIDECAR, renderSidecar } from '../../scripts/gen-engine-spell-overlay.mjs'
 

@@ -1,8 +1,8 @@
-//! `src/main/log/parseCasts.ts` — the cast lifecycle, charm + crowd control, buff fades, pet
-//! ownership, stances, gems, the illusion click-off, rogue poisons, the DB-gated buff events and —
-//! matched LAST of all — spell-landing emotes.
+//! The cast lifecycle, charm and crowd control, buff fades, pet ownership, stances, gems, the
+//! illusion click-off, rogue poisons, the DB-gated buff events, and — matched last of all —
+//! spell-landing emotes.
 
-use crate::event::Ev;
+use crate::event::{Ev, Key, Kind};
 use crate::names::{id_key, norm};
 use crate::spelldb::SpellDb;
 use crate::stems::cc_stems_test;
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use super::data::{POISON_BY_COAT_MSG, POISON_DRY_MSG, POISON_PROCS};
 use super::Ctx;
 
-/// The six exact sentences a pet speaks out loud — `PET_SAY_LINES` in shared/logScrub.ts, in order.
+/// The six exact sentences a pet speaks out loud, in order.
 const PET_SAY_LINES: [(&str, &str); 6] = [
     ("follow", "Following you, Master."),
     ("regroup", "Now regrouping, master."),
@@ -57,12 +57,11 @@ pub struct CastRes {
     coat_other_generic: Regex,
     article: Regex,
     single_word_name: Regex,
-    /// Last WORD of every proc emote → the emotes that end with it.
+    /// Last word of every proc emote to the emotes that end with it.
     proc_by_last_word: HashMap<&'static str, Vec<usize>>,
     say_kind_by_text: HashMap<&'static str, &'static str>,
 }
 
-/// See `AcquireRes`'s note: `Default` is `new`.
 impl Default for CastRes {
     fn default() -> Self {
         Self::new()
@@ -126,17 +125,17 @@ impl CastRes {
     }
 }
 
-/// `You begin casting|singing <Spell>.` — the player's own cast, with the VERB kept.
+/// `You begin casting|singing <Spell>.` — the player's own cast, with the verb kept.
 fn own_cast_begin(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.cast_begin.captures(c.text) else {
         return false;
     };
-    out.begin("castBegin");
+    out.begin(Kind::CastBegin);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("spell", crate::jsstr::js_trim(&m[2]));
+    out.s(Key::Spell, crate::jsstr::js_trim(&m[2]));
     // Absent rather than false for a cast.
     if &m[1] == "singing" {
-        out.b("sung", true);
+        out.b(Key::Sung, true);
     }
     true
 }
@@ -149,32 +148,32 @@ pub fn classify_cast_lifecycle(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if text.contains(" begins casting ") || text.contains(" begins singing ") {
         if let Some(m) = r.other_cast_begin.captures(text) {
             if id_key(&m[1]) != "you" {
-                out.begin("otherCastBegin");
+                out.begin(Kind::OtherCastBegin);
                 out.envelope(c.seq, c.ts, c.raw);
-                out.s("caster", &norm(&m[1]));
-                out.s("spell", crate::jsstr::js_trim(&m[2]));
+                out.s(Key::Caster, &norm(&m[1]));
+                out.s(Key::Spell, crate::jsstr::js_trim(&m[2]));
                 return true;
             }
         }
     }
     if text.contains("spell fizzles!") {
         if let Some(m) = r.cast_fizzle.captures(text) {
-            out.begin("castFizzle");
+            out.begin(Kind::CastFizzle);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
             return true;
         }
     }
     if text.contains("spell is interrupted.") {
         if let Some(m) = r.cast_interrupt.captures(text) {
-            out.begin("castInterrupted");
+            out.begin(Kind::CastInterrupted);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
             return true;
         }
     }
     if text == CAST_RESUMED_LINE {
-        out.begin("castResumed");
+        out.begin(Kind::CastResumed);
         out.envelope(c.seq, c.ts, c.raw);
         return true;
     }
@@ -188,13 +187,13 @@ pub fn classify_charm(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) 
             return false;
         };
         let cands = db.and_then(|db| db.match_cast_on_other(c.text));
-        out.begin("charm");
+        out.begin(Kind::Charm);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("mob", &norm(&m[1]));
+        out.s(Key::Mob, &norm(&m[1]));
         if let Some((entry, _)) = cands {
             let db = db.expect("a hit implies a db");
             out.cands_nd(
-                "candidates",
+                Key::Candidates,
                 entry
                     .cands
                     .iter()
@@ -224,11 +223,11 @@ fn classify_non_enchanter_charm(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> 
     {
         return false;
     }
-    out.begin("charm");
+    out.begin(Kind::Charm);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("mob", &norm(&target));
+    out.s(Key::Mob, &norm(&target));
     out.cands_nd(
-        "candidates",
+        Key::Candidates,
         entry
             .cands
             .iter()
@@ -237,7 +236,7 @@ fn classify_non_enchanter_charm(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> 
     true
 }
 
-/// "worn off" — uncharm / CC refresh / named-target fade, else the TARGETLESS self+pet fade.
+/// "worn off" — uncharm, CC refresh or named-target fade, else the targetless self/pet fade.
 pub fn classify_worn_off(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text.contains("worn off of") {
@@ -246,42 +245,41 @@ pub fn classify_worn_off(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut E
         };
         let is_charm = match db {
             Some(db) => db.is_charm_spell(&m[1]),
-            // With no DB installed `charmSpell` is `CHARM_STEMS` itself (installSpellDb's own
-            // purity contract).
+            // With no DB installed, the charm test is the stem roster itself.
             None => crate::stems::charm_stems_test(&m[1]),
         };
         if is_charm {
-            out.begin("uncharm");
+            out.begin(Kind::Uncharm);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("mob", &norm(&m[2]));
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Mob, &norm(&m[2]));
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
             return true;
         }
         if cc_stems_test(&m[1]) {
-            out.begin("cc");
+            out.begin(Kind::Cc);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("mob", &norm(&m[2]));
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
-            out.b("refresh", true);
+            out.s(Key::Mob, &norm(&m[2]));
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
+            out.b(Key::Refresh, true);
             return true;
         }
-        out.begin("buffFade");
+        out.begin(Kind::BuffFade);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("spell", crate::jsstr::js_trim(&m[1]));
-        out.s("target", &norm(&m[2]));
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
+        out.s(Key::Target, &norm(&m[2]));
         return true;
     } else if text.contains("worn off.") {
         if let Some(m) = r.buff_fade_pet.captures(text) {
-            out.begin("buffFade");
+            out.begin(Kind::BuffFade);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
-            out.s("target", "pet");
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Target, "pet");
             return true;
         }
         if let Some(m) = r.buff_fade_self.captures(text) {
-            out.begin("buffFade");
+            out.begin(Kind::BuffFade);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("spell", crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
             return true;
         }
     }
@@ -297,14 +295,14 @@ pub fn classify_cc_apply(r: &CastRes, db: Option<&SpellDb>, c: &Ctx, out: &mut E
         return false;
     };
     let hit = db.and_then(|db| db.match_cast_on_other(c.text));
-    out.begin("cc");
+    out.begin(Kind::Cc);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("mob", &norm(&m[1]));
-    out.s("verb", &m[2]);
+    out.s(Key::Mob, &norm(&m[1]));
+    out.s(Key::Verb, &m[2]);
     if let Some((entry, _)) = hit {
         let db = db.expect("a hit implies a db");
         out.cands_nd(
-            "candidates",
+            Key::Candidates,
             entry
                 .cands
                 .iter()
@@ -321,10 +319,10 @@ pub fn classify_cc_wake(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.cc_wake.captures(c.text) else {
         return false;
     };
-    out.begin("ccWake");
+    out.begin(Kind::CcWake);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("mob", &norm(&m[1]));
-    out.s("by", &norm(&m[2]));
+    out.s(Key::Mob, &norm(&m[1]));
+    out.s(Key::By, &norm(&m[2]));
     true
 }
 
@@ -335,10 +333,10 @@ pub fn classify_pet_claim(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.pet_claim.captures(c.text) else {
         return false;
     };
-    out.begin("petClaim");
+    out.begin(Kind::PetClaim);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("name", &norm(&m[1]));
-    out.s("via", "tell");
+    out.s(Key::Name, &norm(&m[1]));
+    out.s(Key::Via, "tell");
     true
 }
 
@@ -352,14 +350,14 @@ pub fn classify_pet_say(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(say) = r.say_kind_by_text.get(&m[2]) else {
         return false;
     };
-    out.begin("petSay");
+    out.begin(Kind::PetSay);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("name", &norm(&m[1]));
-    out.s("say", say);
+    out.s(Key::Name, &norm(&m[1]));
+    out.s(Key::Say, say);
     true
 }
 
-/// `<Name> says, 'My leader is <You>.'` — the `/pet who leader` answer, which BINDS.
+/// `<Name> says, 'My leader is <You>.'` — the `/pet who leader` answer, which binds.
 pub fn classify_pet_leader(r: &CastRes, character: Option<&str>, c: &Ctx, out: &mut Ev) -> bool {
     let Some(self_name) = character.filter(|s| !s.is_empty()) else {
         return false;
@@ -373,14 +371,14 @@ pub fn classify_pet_leader(r: &CastRes, character: Option<&str>, c: &Ctx, out: &
     if m[2].to_lowercase() != crate::jsstr::js_trim(self_name).to_lowercase() {
         return false;
     }
-    out.begin("petClaim");
+    out.begin(Kind::PetClaim);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("name", &norm(&m[1]));
-    out.s("via", "leader");
+    out.s(Key::Name, &norm(&m[1]));
+    out.s(Key::Via, "leader");
     true
 }
 
-/// The same answer about SOMEBODY ELSE — it must run after `classify_pet_leader`.
+/// The same answer about somebody else; must run after `classify_pet_leader`.
 pub fn classify_ally_pet_leader(
     r: &CastRes,
     character: Option<&str>,
@@ -403,15 +401,14 @@ pub fn classify_ally_pet_leader(
     if !is_player_shaped_name(r, owner) {
         return false;
     }
-    out.begin("allyPetLeader");
+    out.begin(Kind::AllyPetLeader);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("pet", &norm(&m[1]));
-    out.s("owner", &norm(owner));
+    out.s(Key::Pet, &norm(&m[1]));
+    out.s(Key::Owner, &norm(owner));
     true
 }
 
-/// `isPlayerShapedName` — shared/playerShape.ts. A leading article is the mob marker; a player is
-/// one capitalized word.
+/// A leading article is the mob marker; a player is one capitalized word.
 fn is_player_shaped_name(r: &CastRes, name: &str) -> bool {
     let n = crate::jsstr::js_trim(name);
     if n.is_empty() {
@@ -430,70 +427,73 @@ pub fn classify_aa_activate(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let Some(m) = r.aa_activate.captures(c.text) else {
         return false;
     };
-    out.begin("aaActivate");
+    out.begin(Kind::AaActivate);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("name", crate::jsstr::js_trim(&m[1]));
+    out.s(Key::Name, crate::jsstr::js_trim(&m[1]));
     true
 }
 
 pub fn classify_stance(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You assume ") {
         if let Some(m) = r.stance.captures(c.text) {
-            out.begin("stanceChange");
+            out.begin(Kind::StanceChange);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("stance", &crate::jsstr::js_trim(&m[1]).to_lowercase());
+            out.s(Key::Stance, &crate::jsstr::js_trim(&m[1]).to_lowercase());
             return true;
         }
     }
     if c.text.starts_with("You begin reciting ") {
         if let Some(m) = r.invocation.captures(c.text) {
-            out.begin("invocationChange");
+            out.begin(Kind::InvocationChange);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("invocation", &crate::jsstr::js_trim(&m[1]).to_lowercase());
+            out.s(
+                Key::Invocation,
+                &crate::jsstr::js_trim(&m[1]).to_lowercase(),
+            );
             return true;
         }
     }
     false
 }
 
-/// The memorize / forget / spell-set family. Each of the four prefixes RETURNS, match or not.
+/// The memorize / forget / spell-set family. Each of the four prefixes returns, match or not.
 pub fn classify_spell_gems(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text.starts_with("You forget ") {
         let Some(m) = r.forget.captures(text) else {
             return false;
         };
-        out.begin("spellForget");
+        out.begin(Kind::SpellForget);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("spell", crate::jsstr::js_trim(&m[1]));
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
         return true;
     }
     if text.starts_with("You have finished memorizing ") {
         let Some(m) = r.memorize_done.captures(text) else {
             return false;
         };
-        out.begin("spellMemorize");
+        out.begin(Kind::SpellMemorize);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("spell", crate::jsstr::js_trim(&m[1]));
-        out.b("done", true);
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
+        out.b(Key::Done, true);
         return true;
     }
     if text.starts_with("Beginning to memorize ") {
         let Some(m) = r.memorize_begin.captures(text) else {
             return false;
         };
-        out.begin("spellMemorize");
+        out.begin(Kind::SpellMemorize);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("spell", crate::jsstr::js_trim(&m[1]));
-        out.b("done", false);
+        out.s(Key::Spell, crate::jsstr::js_trim(&m[1]));
+        out.b(Key::Done, false);
         return true;
     }
     if text.starts_with("Spell set ") {
         if let Some(m) = r.spell_set.captures(text) {
-            out.begin("spellSet");
+            out.begin(Kind::SpellSet);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("set", crate::jsstr::js_trim(&m[1]));
-            out.s("action", &m[2]);
+            out.s(Key::Set, crate::jsstr::js_trim(&m[1]));
+            out.s(Key::Action, &m[2]);
             return true;
         }
     }
@@ -504,9 +504,9 @@ pub fn classify_illusion_fade(c: &Ctx, out: &mut Ev) -> bool {
     if c.text != "Your illusion fades." {
         return false;
     }
-    out.begin("illusionFade");
+    out.begin(Kind::IllusionFade);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("target", "self");
+    out.s(Key::Target, "self");
     true
 }
 
@@ -516,38 +516,38 @@ pub fn classify_poison_coat(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if text.starts_with("You coat your blades ") && text.ends_with('.') {
         // An unknown coat line is still a coat — say so, decline to name the poison.
         let p = POISON_BY_COAT_MSG.iter().find(|(msg, _, _)| *msg == text);
-        out.begin("poisonCoat");
+        out.begin(Kind::PoisonCoat);
         out.envelope(c.seq, c.ts, c.raw);
         match p {
             Some((_, name, group)) => {
-                out.s("poison", name);
-                out.s("group", group);
+                out.s(Key::Poison, name);
+                out.s(Key::Group, group);
             }
             None => {
-                out.s("poison", "unknown");
-                out.s("group", "unknown");
+                out.s(Key::Poison, "unknown");
+                out.s(Key::Group, "unknown");
             }
         }
-        out.s("who", "you");
+        out.s(Key::Who, "you");
         return true;
     }
     if text.contains("coats their blades in ") {
         if let Some(m) = r.coat_other_named.captures(text) {
             let probe = format!("You coat your blades in {}.", crate::jsstr::js_trim(&m[2]));
             let p = POISON_BY_COAT_MSG.iter().find(|(msg, _, _)| *msg == probe);
-            out.begin("poisonCoat");
+            out.begin(Kind::PoisonCoat);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("poison", p.map_or("unknown", |(_, name, _)| name));
-            out.s("group", p.map_or("unknown", |(_, _, group)| group));
-            out.s("who", &norm(&m[1]));
+            out.s(Key::Poison, p.map_or("unknown", |(_, name, _)| name));
+            out.s(Key::Group, p.map_or("unknown", |(_, _, group)| group));
+            out.s(Key::Who, &norm(&m[1]));
             return true;
         }
         if let Some(m) = r.coat_other_generic.captures(text) {
-            out.begin("poisonCoat");
+            out.begin(Kind::PoisonCoat);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("poison", "unknown");
-            out.s("group", "unknown");
-            out.s("who", &norm(&m[1]));
+            out.s(Key::Poison, "unknown");
+            out.s(Key::Group, "unknown");
+            out.s(Key::Who, &norm(&m[1]));
             return true;
         }
     }
@@ -576,9 +576,9 @@ fn poison_proc_target(text: &str, suffix: &str) -> Option<String> {
 pub fn classify_poison_proc(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if let Some((_, group)) = POISON_DRY_MSG.iter().find(|(msg, _)| *msg == text) {
-        out.begin("poisonDry");
+        out.begin(Kind::PoisonDry);
         out.envelope(c.seq, c.ts, c.raw);
-        out.s("group", group);
+        out.s(Key::Group, group);
         return true;
     }
     if !(text.ends_with('!') || text.ends_with('.')) {
@@ -594,32 +594,32 @@ pub fn classify_poison_proc(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     for &i in cands {
         let p = &POISON_PROCS[i];
         if let Some(target) = poison_proc_target(text, p.suffix) {
-            out.begin("poisonProc");
+            out.begin(Kind::PoisonProc);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("strike", p.strikes[0]);
+            out.s(Key::Strike, p.strikes[0]);
             out.strs(
-                "candidates",
+                Key::Candidates,
                 &p.strikes.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
             );
-            out.s("effect", p.effect);
-            out.s("target", &norm(&target));
+            out.s(Key::Effect, p.effect);
+            out.s(Key::Target, &norm(&target));
             return true;
         }
     }
     false
 }
 
-/// `buffApplyEvent` — `spell`/`illusion`/`durationMs` come from the FIRST candidate.
+/// `spell`, `illusion` and `durationMs` come from the first candidate.
 fn buff_apply_event(db: &SpellDb, c: &Ctx, out: &mut Ev, target: &str, cands: &[usize]) {
     let first = db.entry(cands[0]);
-    out.begin("buffApply");
+    out.begin(Kind::BuffApply);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("target", target);
-    out.s("spell", &first.name);
-    out.b("illusion", first.illusion);
-    out.i_or_null("durationMs", first.duration_ms);
+    out.s(Key::Target, target);
+    out.s(Key::Spell, &first.name);
+    out.b(Key::Illusion, first.illusion);
+    out.i_or_null(Key::DurationMs, first.duration_ms);
     out.cands_ndi(
-        "candidates",
+        Key::Candidates,
         cands.iter().map(|&i| {
             let s = db.entry(i);
             (s.name.clone(), s.duration_ms, s.illusion)
@@ -639,17 +639,17 @@ pub fn classify_db_buff(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> bool {
     }
     if let Some(worn) = db.wears_off(c.text) {
         if !worn.is_empty() {
-            out.begin("buffWearOff");
+            out.begin(Kind::BuffWearOff);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("spell", &db.entry(worn[0]).name);
+            out.s(Key::Spell, &db.entry(worn[0]).name);
             out.strs(
-                "candidates",
+                Key::Candidates,
                 &worn
                     .iter()
                     .map(|&i| db.entry(i).name.clone())
                     .collect::<Vec<_>>(),
             );
-            out.s("target", "self");
+            out.s(Key::Target, "self");
             return true;
         }
     }
@@ -661,14 +661,14 @@ pub fn classify_db_buff(db: Option<&SpellDb>, c: &Ctx, out: &mut Ev) -> bool {
     false
 }
 
-/// Spell-landing emotes — matched LAST so they never shadow a real family.
+/// Spell-landing emotes — matched last so they never shadow a real family.
 pub fn classify_spell_emote(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if c.text.starts_with("You ") {
         if r.emote_self.is_match(c.text) {
-            out.begin("spellEmote");
+            out.begin(Kind::SpellEmote);
             out.envelope(c.seq, c.ts, c.raw);
-            out.s("subject", "self");
-            out.s("text", c.text);
+            out.s(Key::Subject, "self");
+            out.s(Key::Text, c.text);
             return true;
         }
         return false;
@@ -679,9 +679,9 @@ pub fn classify_spell_emote(r: &CastRes, c: &Ctx, out: &mut Ev) -> bool {
     if id_key(&m[1]) == "you" {
         return false;
     }
-    out.begin("spellEmote");
+    out.begin(Kind::SpellEmote);
     out.envelope(c.seq, c.ts, c.raw);
-    out.s("subject", &norm(&m[1]));
-    out.s("text", c.text);
+    out.s(Key::Subject, &norm(&m[1]));
+    out.s(Key::Text, c.text);
     true
 }

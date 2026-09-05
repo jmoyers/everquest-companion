@@ -354,7 +354,17 @@ export async function stepUnlockEra(page: Page): Promise<void> {
 
   // The card behind the same name carries the same verdict — the surface that has no row to chip.
   if (check('the badged spell name is reachable to hover', await hoverAt(page, SPELL_NAME, 0.5, 0.5))) {
-    await settleCount(page, SPELL_CARD, 1, { timeoutMs: 8_000 })
+    // THE CARD BEING IN THE DOM IS NOT THE CONDITION — the popper mounts on the enter delay and the
+    // body then fetches over IPC, so a read taken at mount sees a card with no record in it yet and
+    // no era pill on it, whatever the sidecar says. Waiting for the STAT ROWS is waiting for the
+    // answer to have arrived, which is the same condition `spell-card.e2e.mts openCardFor` uses.
+    // (Latent until JOS-508 put a fourth await in the `spells:detail` handler and the extra
+    // milliseconds made an always-wrong read reliably wrong — wave E3's law, paid late.)
+    await settle(
+      () => countOf(page, `${SPELL_CARD} [data-testid="spell-card-stat"]`),
+      (n) => n > 0,
+      { timeoutMs: 15_000 }
+    )
     check('…and its card wears the same words', (await countOf(page, CARD_ERA)) === 1)
     // Closed and WAITED FOR: a MUI popper left open grows the document and fails `stepPageScroll`.
     await page.mouse.move(2, 2)

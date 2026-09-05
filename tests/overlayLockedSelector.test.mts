@@ -75,13 +75,17 @@ test('THE HOOK NOTE SURVIVES WHERE THE DECISION LIVES', () => {
   // told, in place, why there is no second argument and what pays for the pin instead.
   assert.match(windows, /WH_MOUSE_LL/)
   assert.match(windows, /overlayHotZone|overlayHover/)
-  // The replay gate's mouse half is RETIRED, not merely unused: nothing may still be able to ask
-  // for forwarding. Its show/hide half is untouched and is asserted in tests/replayGate.test.mts.
-  const gate = src('../src/main/replayGate.ts')
-  assert.doesNotMatch(gate, /export function overlayForwardsMouse/)
-  assert.doesNotMatch(gate, /export function overlayMouseForward/)
-  // …and the gate still says what it was for, so the next reader does not rediscover JOS-62.
-  assert.match(gate, /WH_MOUSE_LL/)
+  // THE REPLAY GATE IS GONE ENTIRELY (JOS-499), mouse half and show/hide half alike, and the
+  // claim this block made is now structural rather than asserted: there is no file left that
+  // could ask for mouse forwarding, and no fold in this process for it to have been protecting.
+  // What replaced BOTH halves is the boundary — the engine folds in its own process at
+  // below-normal priority — which is the fix JOS-62 was an approximation of.
+  //
+  // THE ONE THING STILL WORTH PINNING is that nothing anywhere reinstalls the hook, so the
+  // check widens from one file to the whole main process rather than being deleted.
+  for (const rel of ['../src/main/windows.ts', '../src/main/overlayHover.ts', '../src/main/presenceEffects.ts']) {
+    assert.doesNotMatch(src(rel), /overlayForwardsMouse|overlayMouseForward/)
+  }
 })
 
 test('THE PIN IS REVEALED BY A HIT TEST, and it is scoped to the chrome — not the window', () => {

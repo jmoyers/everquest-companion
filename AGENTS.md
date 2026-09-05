@@ -61,20 +61,10 @@ docs/agents-archive.md.
   cannot touch, and a stated size expectation in the dispatch comment so an
   overrun is visible mid-flight. The full-discipline brief — both-surface
   parity, comment-law rewrites, full unit plus multi-spec e2e — is reserved
-  for changes that move laws or data. MEASURED, and why this is a law: the
-  owner asked to swap a heart icon for a labeled toggle (JOS-343) and the
-  integrator's brief tripled it (both surfaces, semantics change, six e2e
-  claims revised, two full spec suites re-run repeatedly) — 55 minutes and
-  225k tokens for what the owner correctly called a pretty cosmetic change.
-  The diagnosis found no stuck loop: every token was "legitimate" under the
-  brief as written, which is exactly the problem — uniform maximal
-  verification makes small changes cost like features, and the e2e
-  wall-clock (3-6 minutes per spec, run 2-4 times) dominates everything on
-  a small ticket. The one counterweight, stated so it is not forgotten:
-  that oversized verification did catch a real wrong-direction-click bug
-  (an ungated toggle on an unready store). The law is calibration, not
-  laxity — a targeted step would have caught the same bug on the surface
-  that had it.
+  for changes that move laws or data. The law is calibration, not laxity: a
+  targeted step catches the same bug on the surface that has it. The measured
+  incident (JOS-343, 55 min / 225k tokens for a cosmetic toggle):
+  docs/agents-archive.md.
 - **THE BOARD IS IN LINEAR, AND THE OWNER STEERS IT (owner, 2026-08-05).**
   Canonical project management is the kanban in the owner's PERSONAL Linear
   workspace (Josh's Maker Space, team JOS — never the work workspace).
@@ -87,18 +77,14 @@ docs/agents-archive.md.
   only (no Backlog), tickets are END-TO-END improvements titled
   `Module / What the user gets`, and In Progress/Done moves carry
   wave-and-commit comments. Only owner-accepted work becomes a ticket.
-- **DISPATCH COMMENT AFTER LAUNCH, NEVER BEFORE (owner, 2026-08-13).** The
-  order of operations at dispatch is: make the Agent call, SEE IT SUCCEED,
-  then move the ticket to In Progress and write the "Dispatched" comment —
-  never the reverse, and never the comment in an earlier message than the
-  launch. A dispatch comment written first turns into a standing lie the
-  moment the launch is skipped (it happened three times on 2026-08-13:
-  JOS-287 and JOS-297 caught in-session, JOS-296 caught by the OWNER after
-  status reports repeated "building" off nothing but the comment). Corollary:
-  fleet status is reported ONLY from evidence — a spawn result in context, a
-  live task, a worktree or branch — never from ticket comments. A
-  "Dispatched" comment found without a matching worker gets the ticket
-  corrected (back to Todo, honest note) immediately.
+- **DISPATCH COMMENT AFTER LAUNCH, NEVER BEFORE (owner, 2026-08-13).** Make
+  the Agent call, SEE IT SUCCEED, then move the ticket to In Progress and
+  write the "Dispatched" comment — never the reverse. Corollary: fleet
+  status is reported ONLY from evidence — a spawn result in context, a live
+  task, a worktree or branch — never from ticket comments. A "Dispatched"
+  comment found without a matching worker gets the ticket corrected (back to
+  Todo, honest note) immediately. The three same-day incidents
+  (JOS-287/296/297): docs/agents-archive.md.
 - **BRANCH INTEGRATION RULES (owner, 2026-08-05 — one merge behavior, not a
   juggle).** Every worker commits on its OWN worktree branch, never on main.
   Before reporting done, the worker makes the branch MERGE-READY: full checks
@@ -128,21 +114,30 @@ docs/agents-archive.md.
   row (spec · signature · occurrences · disposition), integrators append on
   sighting, and a flake at 3+ occurrences must have a fix ticket or chip —
   "green on re-run" is a report line, never a resolution. Known rows:
-  - `sky-filters.e2e` · expanded-quest step vs live-log viewKey remount (6
-    sightings, multi-spec-sweep only) · **RESOLVED 9816cd34 (JOS-279)** —
-    order-hardening was a BET; `tests/e2e/viewRemount.mts` HOLDS the
-    precondition instead. Full history: docs/agents-archive.md.
-  - `sky-filters.e2e` · a SECOND, distinct cause: collapsed-mount/close-panel
-    steps failed once with the remount guard HOLDING ("0 rebuilds seen while
-    settling") · 1 sighting (2026-08-13, JOS-294 worker six-spec sweep; green
-    standalone and in the next full sweep) · NOT the resolved row's signature —
-    unknown mechanism, watch for a second sighting before diagnosing.
+  - `sky-filters.e2e` · remount race · **RESOLVED 9816cd34 (JOS-279)**
+    (`tests/e2e/viewRemount.mts` holds the precondition); a SECOND distinct
+    cause with the guard holding · 1 sighting 2026-08-13 · watch. Both rows
+    at full length: docs/agents-archive.md.
+  - `engined tests/perf_snapshot.rs` · `perf.snapshot was refused: Unavailable
+    "the fold did not answer within 5000 ms"` from the `until` poll while the
+    engine is still loading its spell catalog on a starved CI runner · 1
+    sighting (2026-09-04, v1.16.0 tag run, two tests at once; the main-push
+    run of the same commit was green) · HARDENED same day: `until` reads that
+    one refusal as "not yet" and keeps polling to `PATIENCE`; every other
+    refusal still panics.
+  - `engined tests/combat.rs` live-meter tests · the fight closes before the
+    test's hit lands (`Drop` op where an edit was expected; segment "fight"
+    not "current"), plus one harness connect timeout · 1 sighting (2026-09-04,
+    v1.16.0 tag engine job, second attempt, three tests; same commit green on
+    the main push) · MECHANISM KNOWN: `Staged::line` stamps relative to TEST
+    START while closure is judged on the wall clock (`FALLBACK_IDLE_MS` 60 s),
+    so a runner that takes over a minute to go live has already idled the
+    fight · chip filed: anchor live stamps to go-live.
   - `combat-dashboard.e2e` · narrow-window resize never lands, settleStable
-    settles on stale geometry · 5 sightings (2026-08-10/11/12 full-sweep; 4th
-    in the JOS-229 sweep; 5th 2026-08-12 STANDALONE on the JOS-240 merge
-    verification — the full-sweep-only pattern is broken, green on immediate
-    rerun) · fix shape diagnosed (wait for bounds to differ before settling);
-    ticket JOS-232 filed — now firing standalone, priority raised.
+    settles on stale geometry · 6 sightings 2026-08-10→26, including
+    STANDALONE (the full-sweep-only pattern is broken) · fix shape diagnosed
+    (wait for bounds to differ before settling); ticket JOS-232 filed —
+    priority raised.
   - `window-bounds.e2e` · close-time bounds write never lands under sweep
     load ("closing the window writes down where it was left — (none)",
     cascades into both relaunch-bounds checks) · 2 sightings (2026-08-12
@@ -157,6 +152,17 @@ docs/agents-archive.md.
     been closed" · 1 sighting (2026-08-13 sweep, JOS-279; six green serially
     after, none in the next sweep) · a host/load event, not one spec's race —
     a second sighting is a runner-concurrency ticket.
+  - `engine-boots.e2e` · the clean-shutdown claim failed once under a full
+    sweep · 1 sighting (2026-08-26, JOS-501; green standalone ×3 same day) ·
+    under concurrent launches the wait for the stdin-close exit is what loses
+    a race with the runner's teardown. Report line until a second sighting;
+    if it recurs, the suspect is the wait, not the contract.
+  - `engined/tests/combat.rs` live-meter current-kind · expected `current`,
+    got closed `fight` after process startup consumed the fixed 18 s freshness
+    margin · 1 sighting (2026-08-30, JOS-531 CI; green standalone and full
+    combat suite locally) · **RESOLVED in the JOS-531 CI follow-up** — start
+    the engine before stamping the live fixture, so startup is outside the
+    world-time precondition.
   - `presenceWorker.test` first-tick dedup · watches the REAL machine; fails
     while EverQuest runs with a player at the keyboard · 3 sightings
     (2026-08-10 ×2, 2026-08-12 JOS-239 worker mid-session, green on final
@@ -268,14 +274,13 @@ docs/agents-archive.md.
   STOPPED — a message resumes it; don't ping-pong twice, finish its
   integration yourself from `git status` + its interim report. Stories:
   docs/agents-archive.md.
-- **Wave choreography, distilled 2026-08-05 (25-wave session):**
+- **Wave choreography, distilled 2026-08-05 (25-wave session; commit
+  specifics: docs/agents-archive.md):**
   - A file carrying TWO waves' hunks lands with the LATER wave's commit +
-    a "completes <sha>" note (App.tsx with toasts+deep-links;
-    windowControls with fightSelection+levelUp). Never `git add -p` a
-    shared hot file into halves.
+    a "completes <sha>" note. Never `git add -p` a shared hot file into
+    halves.
   - `git status --porcelain | grep '^[MADR] '` BEFORE every commit — the
-    index is shared and a sibling's staged deletion WILL ride your commit
-    (6db8790 swept one; its wave's later commit completed it).
+    index is shared and a sibling's staged deletion WILL ride your commit.
   - **e2e runs PARALLEL and from a worktree** (wave E1,
     docs/plans/e2e-parallel.md). The isolation unit is ONE LAUNCH — a
     `mkdtempSync` userData dir per `launchApp()`, artifacts under
@@ -401,7 +406,7 @@ docs/agents-archive.md.
   next TICK EDGE after the time requested and a work/rest cycle SNAPS TO THE
   GRID — no fixed argument buys an arbitrary duty. Anything pacing itself
   with a timer must MEASURE what it got and bookkeep the difference
-  (`replaySlicer.ts`'s debt ledger is the pattern), never trust the nominal
+  (the deleted `replaySlicer.ts`'s debt ledger was the pattern), never trust the nominal
   argument; `setImmediate` is not a pause at all. Measurements:
   docs/agents-archive.md.
 - **`setFocusable` IS NOT AN ATTRIBUTE WRITE ON WINDOWS — IT MOVES THE
@@ -438,6 +443,13 @@ threshold. The short version:
   regenerating wholesale (`npm run lint:ratchet`) to make a red build green
   silently widens it and defeats the whole design. `EQ_LINT_NO_RATCHET=1 npx
   eslint .` shows the true state.
+- **THE ENGINE HAS THE SAME BARS, RATCHETED (JOS-523).** `npm run
+  check:rust-factoring` measures every `engine/crates` source against
+  complexity 12 / 400 code lines per file / 100 per function, frozen at
+  today's debt by `engine/factoring-baseline.json` (only-ever-shrinks; fix
+  then `-- --write` in the same commit). Counting rules in
+  `scripts/rustFactoring.mts`; runs in CI's engine job. The burn-down is
+  JOS-525.
 - **Refactor-wave law.** `lint-worklist.md` (generated beside the ratchet)
   partitions the inventory into five disjoint waves so agents run in
   parallel on non-overlapping files. Every wave is **BEHAVIOR-PRESERVING
@@ -447,29 +459,52 @@ threshold. The short version:
   throughout. Wave map: docs/agents-archive.md.
 ## Architecture
 
+**THE FOLD IS IN THE RUST ENGINE (JOS-459, deleted from TypeScript by JOS-499).** One child process
+parses, folds and serves; this app is a client. The full design, the owner's 27 rulings and the
+remaining backlog live in `docs/plans/data-server.md`, main's half is mapped in
+`src/main/dataServer/README.md`, and the engine's own side in `engine/crates/engined/README.md`.
+
 ```
-scan (live:false) + Tailer (live:true, byte-offset handoff — LOSSLESS seam)
-   └► parseEvent (ONE pass, seq-numbered) ─► LogBus
-        ├► derived events: bus.emitDerived queues, drains AFTER the primary
-        │  event (no re-entrancy). Producers: buffs (buffExpired), epoch.
-        ├► ModuleRegistry ─► EqModule { id, reset(), onEvent(ev, live),
-        │    onTick?(now), snapshot()→{seq,state}, flushDelta()→delta|null }
-        │  Live deltas push `module:delta` (throttled); replay is silent.
-        │  A 1s wall-clock tick drives time-based logic while the log idles.
-        │  A REPLAY IS A BRACKETED STATE (JOS-60), not just a per-event flag:
-        │  `registry.beginReplay()/endReplay()` around the scan, every push
-        │  path gated by it, and endReplay DISCARDS what the fold accumulated
-        │  (modules append to `pending` whatever `live` says — the push is the
-        │  registry's call). The heartbeat stops for the duration too.
-        │  Modules incl. `progression` (columnar exp/kill/zone analytics,
-        │  capped w/ windowStart honesty, recent-kills ring) and `combo`
-        │  (registered FIRST; evidence → candidate-set slots → fuzzy
-        │  intervals; corrections TIME-keyed in the store, v3 migration).
-        └► CombatEngine (pull-snapshot variant: `combat:snapshot` IPC +
-           throttled `combat:activity` nudge; per-encounter event ring for
-           the timeline; cached finalized summaries; capped payloads;
-           session state timeline + proc detection/PPM/attribution —
-           procDetect/procWindows/procViews, all law-8 additive)
+EverQuest client ──appends──► log file ──► ENGINE (engine/crates/engined, below-normal priority)
+                                             tail + scan + parse → fold (20 modules + combat)
+                                             → views (filtered, sorted, windowed, render-ready)
+                                             → JSON over loopback TCP, one line per message
+   Electron main ──spawns/supervises──┘         │
+     supervisor.ts (spawn, token, respawn, READY on a proven round trip)
+     engineClientHost.ts (attach, the four streams, engineRequest)
+     rendererBroker.ts (byte relay: a renderer gets its OWN connection; main never parses a frame)
+   Renderers ─── useView(descriptor) ─────────┘   loading / error / reconnecting states;
+                                                  NEVER re-sorts or re-filters what arrives
+                                                  (ruling 4, enforced by eslint.domainMunging.mjs)
+```
+
+Two boundary laws hold this up, and both FAIL THE BUILD rather than relying on memory:
+
+- **the engine's own budgets** — `engine/crates/engined/tests/budget.rs`, `npm run budget:ci` in CI
+  on every push, `npm run budget:g3` at the release cut;
+- **the renderer never munges domain data** — `eslint.domainMunging.mjs`, scoped to
+  `src/renderer/**`, exemptions inline and reasoned, count only ever shrinks
+  (`tests/domainMunging.test.mts`).
+
+- **THE LOG CLOCK IS THE HOST'S TO NAME, AND A SILENT UTC IS A DEFECT (JOS-536).** A log stamp is
+  a zone-less local wall clock; the engine's own probe (`iana-time-zone`, a WinRT call) fails under
+  Wine and on some real installs, and a UTC fallback moves every event by whole hours so fights close
+  on every beat. `session.attach` carries the host's `clock` (IANA name + UTC offset, read fresh per
+  attach), `eqlog::resolve_zone` ranks host name → platform probe → fixed offset → UTC, an offset
+  vetoes a name that disagrees with it, and `perf.snapshot.clockSkewMs` measures the live tail's
+  newest line against the wall clock — a whole number of hours there is a wrong zone, never lag.
+  In a bug report's perf block, `behindMs` of exactly N hours is this bug; `clock utc` names it.
+
+**ENGINE COMMENTS STATE THE RULE, NOT THE STORY (owner, 2026-08-27, JOS-524).** A comment
+names a design rule or a constraint the code cannot show: 1-3 lines, one-line why. Module
+headers, single-digit lines. Out: build history, `JOS-nnn` breadcrumbs, alternatives essays,
+restatements of the next line, pointers to another file's header. **Git carries provenance;
+comments carry the rule.** An unverifiable fact (observed behaviour, measured threshold) is
+kept, in one line.
+
+The world-model laws below are still the law — they describe what the fold MEANS, and every one of
+them was ported to Rust and proven deep-equal on six slices of the real log before the TypeScript
+copy was deleted. Where one names a TypeScript file that is gone, read it for the RULE.
 Maps: src/main/maps (pack discovery/per-layer cross-pack merge/LRU/search,
 Electron-free w/ injected roots) over shared/maps types + shared/zones
 (THE zone-knowledge table); renderer features/maps (canvas geometry, DOM
@@ -478,31 +513,35 @@ labels w/ collision declutter, floor slicing). Pure fns + goldens all over.
   SOUTH — JOS-65). Wiki mob pins and the user's typed-/loc marker (JOS-98,
   `eq.maps.loc`, per zone) both go through it and then through `project`;
   a second copy of those negations is the bug this repo already shipped once.
-Renderer: useModule(id, applyDelta) — hydrate, seq-dedupe deltas, re-hydrate
-on `log:character`. Overlay = second renderer entry (overlay.html) with a
-minimal `eqOverlay` bridge (transparent alwaysOnTop, click-through pin).
+Renderer: `useView(descriptor)` — subscribe, take the reset, ride the diffs, and drop everything on
+an epoch bump (resume is always re-query). `useModule` was its predecessor and went with the fold.
+Overlay = second renderer entry (overlay.html) with a minimal `eqOverlay` bridge (transparent
+alwaysOnTop, click-through pin).
 ```
 
-- **A WINDOW THAT FOLDS A MODULE NEEDS BOTH HALVES OF THE TRANSPORT — THE DELTAS
-  AND THE REBUILD** (JOS-172). `module:delta` is an INCREMENT and a
-  historical fold emits none (`endReplay()` DISCARDS — JOS-60's rule, and it
-  stays), so "hydrate once, then ride deltas" is only complete if something
-  says *ask again*. `sendWorldRebuilt` (pipeline.ts) is the ONE answer to
-  "who is told the world was rebuilt" — the main window and
-  `MODULE_READING_OVERLAYS`; every `IPC.onCharacter` send goes through it.
+- **A WINDOW READING A FOLD NEEDS BOTH HALVES OF THE TRANSPORT — THE INCREMENTS
+  AND THE REBUILD** (JOS-172, and the engine's diff protocol is built on it).
+  An increment is an increment: a historical fold emits none, so "hydrate once,
+  then ride deltas" is only complete if something says *ask again*. In the
+  engine that answer is the EPOCH — a character switch or a respawn bumps it,
+  every client drops its window state and takes the fresh reset, and resume is
+  always re-query. `sendWorldChanged` (serveDeltas.ts) is the app-side beat.
   The fix is the DELIVERY, never the discard. **And re-hydration is a SECOND
   reason a row can vanish**: anything watching a row set for removals is
   told which kind of change it sees (`timerDrops` takes a `rebuilt` flag and
   says nothing across a re-fold). Full story + the e2e slow-fold trick:
   docs/agents-archive.md.
 - **A MODULE WITH A SECOND INPUT MUST REPORT ITS OWN REVISION AS `seq`, NOT
-  THE LAST EVENT'S** (JOS-87). `useModule` dedupes on `seq`, so "last
-  LogEvent seq folded in" only works when state moves ONLY on events; the
+  THE LAST EVENT'S** (JOS-87). Any reader deduping on `seq` — the app's
+  mirrors and the engine's own cursors both do — only works when "last
+  LogEvent seq folded in" is the whole story, i.e. when state moves ONLY on
+  events; the
   combo module's user correction advanced no seq, so an idle-log correction
   was dropped as a duplicate — forever, on an idle log. Fix: a private
-  counter bumped by anything that can change state (`ComboModule.markStale`,
-  reported by BOTH `snapshot()` and `flushDelta()`), plus the PUSH half —
-  out-of-band writes call `registry.flushNow()` (ipc/combo.ts `republish()`).
+  counter bumped by anything that can change state, reported by the module's
+  own snapshot, plus the PUSH half — an out-of-band write has to make the
+  world publish, or the correction sits in a module nobody re-reads. Four
+  modules carry such a counter (combo, character, respawn, buffTimers).
   A unit test cannot see either half; `tests/e2e/loadout-override.e2e.mts` is
   what caught it. Full story: docs/agents-archive.md.
 - **Character epochs**: character-scoped state (leveling/AA, loot, kills,
@@ -702,29 +741,21 @@ minimal `eqOverlay` bridge (transparent alwaysOnTop, click-through pin).
   while a session is live (~seconds after a sound). So "all audio silent, nothing
   muted, mixer looks empty" is this, and hunting a mute finds nothing.
   **AND THE APP HAS NO TOOL FOR IT, BY RULING** (JOS-443, owner, verbatim: *we
-  don't need any special audio debugging tools at all*). JOS-442 shipped one —
-  `audioSessionNative.ts` reading the app's own WASAPI session over a
-  hand-walked COM vtable, an `audio:session` IPC channel, and a Preferences
-  Sound check card that printed the verdict. All of it is DELETED, together
-  with the shared verdict/readout module and the e2e spec that drove it. The
-  mechanism above stays written down because it is how the owner will
-  recognise the failure himself; the app's answer to it is the Windows volume
-  mixer, not a card. What SURVIVES from that ticket is the invisible half, and
-  it is the part worth keeping: a failed sound fetch is never cached
+  don't need any special audio debugging tools at all*). The JOS-442
+  diagnostics (WASAPI session reader, `audio:session` IPC, the Preferences
+  check card) are DELETED; the app's answer is the Windows volume mixer, and
+  the mechanism above stays written down so the owner can recognise the
+  failure himself. What SURVIVES: a failed sound fetch is never cached
   (`soundCache` evicts null resolutions so the next firing retries), every
   fetch/play failure writes ONE per-key-per-minute line to errors.log
-  (`alerts/audioHealth.ts` + the pure rules in `shared/audioFailureLog.ts`),
-  and a device change leaves a `console.info` breadcrumb. No readout state is
-  kept — state nobody reads is state that rots.
-  **AND THE E2E SUITE MAKES NO SOUND** (same ticket, reported live: runs were
-  audibly playing alert tones on the owner's desktop). Every harness launch
-  passes Chromium's `--mute-audio` (`tests/e2e/appWindow.mts launchApp`, and
-  `scripts/site-screens.mts` for the same reason). It silences the OUTPUT, not
-  the code — elements are still constructed, `play()` still resolves or
-  rejects, speech still travels its seam — so behaviour assertions are
-  unchanged. It is a harness argument rather than an `EQ_E2E` branch on
-  purpose: the test mode must keep changing as little about the product as
-  possible.
+  (`alerts/audioHealth.ts` + `shared/audioFailureLog.ts`), and a device
+  change leaves a `console.info` breadcrumb. No readout state is kept —
+  state nobody reads is state that rots.
+  **AND THE E2E SUITE MAKES NO SOUND** (same ticket): every harness launch
+  passes Chromium's `--mute-audio` (`tests/e2e/appWindow.mts launchApp`,
+  `scripts/site-screens.mts`). It silences the OUTPUT, not the code —
+  `play()` still resolves or rejects — so behaviour assertions are unchanged.
+  Deleted-tooling story: docs/agents-archive.md.
 
 ### Electron trust boundary (do not weaken)
 
@@ -1126,25 +1157,17 @@ the full per-lane evidence lives in docs/agents-archive.md.
   A pet-claim tell from a name EVER seen charmed re-arms the charmed set,
   never the permanent one (`everCharmed`).
   **AND THE PET-BUFF RUNG IS NO LONGER THE COMBAT MODEL'S ALONE (JOS-454).**
-  It was a state transition inside the engine — the arm is per-stream, so
-  `parseEvent` cannot emit it — and this entry used to name the two ways out
-  and rule for the first: a derived-event seam feeding both models, never a
-  second arm. The seam is built. `bindPetBuffLanding` emits a derived
-  `petClaim {via:'petBuff'}` on `bus.emitDerived` (Task #47's queue, the one
-  `buffExpired` rides), and every model that already binds a `petClaim` —
-  progression's kill credit, buffs.ts's entity succession, roster, the
-  resist fold — learns the pet at the instant the meter does. ONE PRODUCER,
-  ONE KIND, and the producer IGNORES its own kind (`ingestPetClaim`), which
-  is what makes it provably loop-free. The ARM AND THE GATE ARE UNTOUCHED,
-  so which names bind has not moved — only who is told. WHAT BOUGHT IT: the
-  owner's summoned necro pet Vibartik, bound in the engine at 13:42:43 by
-  `Augment Death` and not by the progression fold until his first tell at
-  14:37:53, whose four kills in that gap read as `4 kills by others seen` on
-  a Leveling panel sitting under a meter that had him. STILL NOT CLOSED: a
-  pet its owner neither buffs nor orders stays invisible (order it once).
-  Goldens: `p2-pet-arc-bound.log`, `p3-pet-upgraded-buff-bound.log`,
-  `p4-pet-buff-kill-credit.log`, petBuffBind/petClaimWindows/
-  petBuffKillCredit tests. Full measurements: docs/agents-archive.md.
+  `bindPetBuffLanding` emits a derived `petClaim {via:'petBuff'}` on
+  `bus.emitDerived` (Task #47's queue, the one `buffExpired` rides), so
+  every model that binds a `petClaim` — progression's kill credit, buffs.ts
+  entity succession, roster, the resist fold — learns the pet at the instant
+  the meter does. ONE PRODUCER, ONE KIND, and the producer IGNORES its own
+  kind (`ingestPetClaim`), which makes it provably loop-free. The ARM AND
+  THE GATE ARE UNTOUCHED, so which names bind has not moved — only who is
+  told. STILL NOT CLOSED: a pet its owner neither buffs nor orders stays
+  invisible (order it once). Goldens: `p2`/`p3`/`p4` pet-arc logs,
+  petBuffBind/petClaimWindows/petBuffKillCredit tests. The incident that
+  bought it (Vibartik) + measurements: docs/agents-archive.md.
 - Exp: `You gain (party )?experience!( (N.NN%))?` — the percent is an
   INCREMENT of the current level bar (sums to ~100 between dings);
   unstated ⇒ at the cap, modeled `pct: undefined` never 0. The exp line
@@ -1478,7 +1501,11 @@ the full per-lane evidence lives in docs/agents-archive.md.
   rule 2026-08-10).** Notes are a release-driven activity; worker branches
   never touch `releaseNotes.ts` — the integrator drafts the whole entry from
   the release's merged tickets when the tag is cut. Full story:
-  docs/agents-archive.md.
+  docs/agents-archive.md. **A NOTE IS SHORT (owner, 2026-09-03):** at most
+  three sentences — what the player sees now, optionally why it was wrong,
+  optionally what changed in a clause; a second visible thing is a second
+  bullet. The shape rules live in the file header and
+  `tests/releaseNotes.test.mts` enforces the ceiling.
 - **RELEASE CADENCE: tag only when the user asks, or at a clearly STABLE
   point** — features verified end-to-end, the gauntlet green, no waves in
   flight. Commits land on main continuously; a tag is a deliberate act,
@@ -1876,13 +1903,12 @@ plumbing proven). Reuses the tier-2 lifecycle via
   PLpgSQL, fixed Repeatable Read + OCC (retry only SQLSTATE 40001),
   3,000-row txn cap (bounds every sweep), one DDL per txn,
   `CREATE INDEX ASYNC`, jsonb young + unindexable (we use text).
-- **F2: DEPLOYED AND LIVE (2026-08-04).** Live-verified: submit 201 + ULID,
-  idempotent replay 200 same id, oversize 413; kill switch OPEN; the three
-  constants filled in net.ts (api pcy0z3xjp9… · bucket
-  eqcompanion-logs-6c58f5cc · us-east-1). Two DSQL live findings encoded:
-  grants on the system-owned `public` schema are unsupported, and
-  `statement_timeout` cannot be SET (client-side query_timeout only; db.ts).
-  Remaining negatives + the SNS confirmation: docs/agents-archive.md.
+- **F2: DEPLOYED AND LIVE (2026-08-04)** — submit/idempotency/oversize
+  live-verified, kill switch OPEN, constants in net.ts. Two DSQL live
+  findings encoded: grants on the system-owned `public` schema are
+  unsupported, and `statement_timeout` cannot be SET (client-side
+  query_timeout only; db.ts). Verification detail + the SNS confirmation:
+  docs/agents-archive.md.
 - **ANALYTICS COHORT SPLIT — LIVE (2026-08-05, waves R+S, run under the
   standing authorization).** The migration ran COPY-FIRST per owner ruling
   (staging tables, row-count AND sum(n) verification, swap via DSQL's
@@ -1966,11 +1992,10 @@ plumbing proven). Reuses the tier-2 lifecycle via
   cohort and the digest says so.
 ## Known open items
 
-- **TOOLCHAIN WAVE — LANDED** (verified 2026-08-06, JOS-63): electron
-  43.2.0, vite 7.3.6, electron-vite 5.0.0 are what the tree runs. Still
-  open: the installer ships ~150MB of other-platform onnx binaries (trim via
-  asarUnpack filters; koffi's excluded prebuilds are the worked example).
-  History: docs/agents-archive.md.
+- **Toolchain (JOS-63, landed 2026-08-06)**: electron 43.2.0 / vite 7.3.6 /
+  electron-vite 5.0.0. Still open: ~150MB of other-platform onnx binaries in
+  the installer (trim via asarUnpack filters; koffi's excluded prebuilds are
+  the worked example). History: docs/agents-archive.md.
 
 - **Feedback loop**: planned in `docs/plans/feedback-triage.md`; F1/F2 have
   since SHIPPED (see Cloud above) — the plan is historical intent now.

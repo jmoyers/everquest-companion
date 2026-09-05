@@ -54,6 +54,23 @@ import { registerWorldIpc } from './world'
 // launch it hands out (src/main/dataServer/), like the toast and con-card producer channels above,
 // rather than in a file here — everything it does is socket + port lifecycle.
 import { registerRendererBrokerIpc } from '../dataServer/rendererBroker'
+// …and what the shell may ASK about that engine's launch (JOS-503): the fold's progress while one
+// is running, the reason it will not start when it will not, and the retry button. A leaf here
+// rather than beside the broker because the retry reaches the composition root — see its header.
+import { registerEngineLaunchIpc } from './engine'
+// WHO DRAWS THE CON CARD (JOS-496, boundary verdict 2). Under serve the engine resolves the card
+// and `dataServer/conCardServe.ts` opens the window, so the TypeScript hook — which today calls
+// synchronously into Electron from inside the fold — stands down. Composed HERE and passed as a
+// predicate, for two reasons written out at `registerConCardIpc`: `conCard.ts` sits downstream of
+// the serve receiver so an import would close a module cycle, and the question can only be answered
+// honestly per `/con` rather than once at registration.
+//
+// THE COMPOUND GATE LOST ITS WEAKER HALF (JOS-499 item 9) AND KEPT THE ONE THAT MATTERED.
+// `shimServing()` was two default-on env flags and answered `true` on every checkout with no
+// engine binary at all — the misreading that shipped a silent card once (conCard.ts has the long
+// version). `engineServeReadiness().ok` is a MEASUREMENT: a client exists, its connection is
+// ready, both worlds are on the same log, and the fold has gone live. That is the question, and
+// deleting the flag beside it leaves the gate strictly more honest rather than weaker.
 
 export function registerIpc(): void {
   registerCharacterIpc()
@@ -95,7 +112,11 @@ export function registerIpc(): void {
   // See ./dev.ts.
   registerDevIpc()
   // Registered in EVERY build too, and for the same reason: the handler refuses when there is no
-  // engine on this launch, which is every launch without `EQC_ENGINE=1`. One gate, in engineHost.ts
-  // — a second `if` around this call would be a second place to forget.
+  // engine on this launch — since JOS-495 that means `EQC_ENGINE=0` or a checkout with no binary,
+  // rather than the default it used to be. One gate, in engineHost.ts — a second `if` around this
+  // call would be a second place to forget.
   registerRendererBrokerIpc()
+  // Registered in every build for the third time and the same reason (JOS-503): the state these
+  // answer with is most interesting precisely on the launches where there is no engine at all.
+  registerEngineLaunchIpc()
 }

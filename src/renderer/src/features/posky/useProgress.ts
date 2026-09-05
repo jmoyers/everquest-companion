@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CountSource,
   ItemCountOverride,
-  LootDelta,
   LootEvent,
   LootSnap,
   PoskyQuest,
   ProgressState,
-  TurnInDelta,
   TurnInSnap
 } from '@shared/types'
 import { getPoskyData } from '../../data'
@@ -48,8 +46,6 @@ import {
   sanitizeItemOverrides
 } from '../../../../shared/itemOverrides'
 
-const applyLootDelta = (s: LootSnap, d: LootDelta): LootSnap => [...s, ...d.appended]
-const applyTurnInDelta = (s: TurnInSnap, d: TurnInDelta): TurnInSnap => [...s, ...d.appended]
 const EMPTY_LOOT: LootEvent[] = []
 
 const posky = getPoskyData()
@@ -473,7 +469,7 @@ function useTurnInLedger(
   // Raw (nullable) turn-in snapshot: null until the module hydrates. We gate the
   // celebration baseline on hydration so the historical turn-ins that arrive WITH the
   // snapshot seed the baseline silently instead of looking like live transitions.
-  const turnInsRaw = useModule<TurnInSnap, TurnInDelta>('turnins', applyTurnInDelta)
+  const turnInsRaw = useModule<TurnInSnap>('turnins')
 
   // Baseline of per-quest turn-in COUNTS — seeded silently on the FIRST observation so
   // historical turn-ins (in the initial log scan) never celebrate. A count that GROWS after the
@@ -582,7 +578,7 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
   const [character, setCharacter] = useState<string | null>(null)
   const [countSource, setCountSourceState] = useState<CountSource>(loadCountSource)
 
-  const lootHistory = useModule<LootSnap, LootDelta>('loot', applyLootDelta) ?? EMPTY_LOOT
+  const lootHistory = useModule<LootSnap>('loot') ?? EMPTY_LOOT
 
   useEffect(() => {
     void window.eq.getProgress().then(setProgress)

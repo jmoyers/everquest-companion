@@ -16,13 +16,12 @@
 
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/ipc'
-import { idKey } from '../log/parser'
+import { idKey } from '../../shared/spellKey'
 // The engine's copy (JOS-482, boundary verdict 3) — the same pull-becomes-push story combo tells,
 // and additive in the same way: a launch with no engine finds a null.
 import { pushAppKnowledge } from '../dataServer/definePush'
-import { rosterModule } from '../pipeline'
 import { activeCharId } from '../session'
-import { clearRosterEdit, getRosterEdits, setRosterEdit } from '../store'
+import { clearRosterEdit, setRosterEdit } from '../store'
 
 /** Long enough for every EQ name; short enough that nothing can wedge a paragraph into the
  *  store. The game's own limit is 15; the slack is for a future server that raises it. */
@@ -43,7 +42,6 @@ export function registerRosterIpc(): void {
   // Character-scoped, PULLED rather than pushed — the ComboModule precedent: `reset()` on a
   // character switch bumps the module's revision and the next read simply asks this provider
   // again, so the module never has to know which character is active.
-  rosterModule.setEditsProvider(() => getRosterEdits(activeCharId()))
 
   ipcMain.handle(IPC.rosterSetEdit, (_e, payload: unknown) => {
     const p = payload as { name?: unknown; action?: unknown } | null
@@ -53,7 +51,6 @@ export function registerRosterIpc(): void {
       return { ok: false as const, error: 'That is not a usable character name.' }
     }
     setRosterEdit(activeCharId(), { key: idKey(display), name: display, action, setAt: Date.now() })
-    rosterModule.invalidate()
     pushAppKnowledge('roster.define')
     return { ok: true as const }
   })
@@ -62,7 +59,6 @@ export function registerRosterIpc(): void {
     const display = name((payload as { name?: unknown } | null)?.name)
     if (!display) return { ok: false as const, error: 'That is not a usable character name.' }
     clearRosterEdit(activeCharId(), idKey(display))
-    rosterModule.invalidate()
     pushAppKnowledge('roster.define')
     return { ok: true as const }
   })

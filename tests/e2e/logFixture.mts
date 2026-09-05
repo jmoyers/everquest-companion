@@ -51,11 +51,12 @@
  * filename rule — load-bearing, see below — has one home whichever moment does the writing.
  */
 
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, symlinkSync, utimesSync, writeSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, symlinkSync, utimesSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { discoverEqRoot, fixedDrives, rootHasLogs } from '../../src/main/log/discovery'
+import { settleEngineServing } from './engineSteps.mjs'
 import { launchApp, removeUserData, type LaunchedApp } from './appWindow.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -109,6 +110,56 @@ function stageSpells(installDir: string): void {
   } catch {
     // neither ⇒ the resist spec takes its stated no-spell-data branch
   }
+}
+
+/**
+ * HAND-AUTHORED client tables — `spells_us.txt` and `dbstr_us.txt` (JOS-507).
+ *
+ * `stageSpells` above links the REAL install's spell table, which is right for the resist spec: that
+ * one is measuring against the owner's own data and states a no-spell-data branch for a machine
+ * without EverQuest on it. THIS ONE IS THE OPPOSITE CHOICE and deliberately so — the search-by-type
+ * claim must hold on EVERY machine, CI included, so the bytes are authored here rather than found.
+ * The repo may carry neither Daybreak file nor a derivative of one; these rows are invented, and the
+ * only thing borrowed from the real files is the SHAPE (173 caret-delimited fields, the category ids
+ * in 86 and 87, `dbstr` type 5) plus the four words the owner's screenshot shows.
+ *
+ * EVERY CLASS LEARNS EVERY ROW, which is what makes the step independent of whatever loadout the
+ * fixture log happens to infer. A spec that had to guess the combo before it could pick a category
+ * would be a spec that skips on most machines.
+ *
+ * THE NAMES ARE THE POINT. `Leech` and `Siphon Strength` are filed under `Taps` and contain no `tap`
+ * in their names, which is the whole claim the DOM step makes: a type search finds them.
+ */
+function stageClientTables(installDir: string): void {
+  const F_CLASS_FIRST = 36
+  const row = (spell: {
+    id: number
+    name: string
+    category: number
+    subcategory: number
+    level: number
+  }): string => {
+    const f = new Array<string>(173).fill('0')
+    f[0] = String(spell.id)
+    f[1] = spell.name
+    f[86] = String(spell.category)
+    f[87] = String(spell.subcategory)
+    // All sixteen class columns, so the row is in scope for any combo.
+    for (let i = 0; i < 16; i += 1) f[F_CLASS_FIRST + i] = String(spell.level)
+    return f.join('^')
+  }
+  const spells = [
+    { id: 341, name: 'Lifetap', category: 114, subcategory: 43, level: 1 },
+    { id: 343, name: 'Siphon Strength', category: 114, subcategory: 76, level: 34 },
+    { id: 500, name: 'Leech', category: 114, subcategory: 33, level: 49 },
+    { id: 600, name: 'Lightning Bolt', category: 25, subcategory: 0, level: 29 }
+  ]
+    .map(row)
+    .join('\n')
+  writeFileSync(join(installDir, 'spells_us.txt'), `${spells}\n`, 'latin1')
+  // `id^type^string^flag^`, type 5 being the spell-category namespace.
+  const dbstr = ['114^5^Taps^0^', '43^5^Health^0^', '76^5^Power Tap^0^', '33^5^Duration Tap^0^', '25^5^Direct Damage^0^'].join('\n')
+  writeFileSync(join(installDir, 'dbstr_us.txt'), `${dbstr}\n`, 'latin1')
 }
 
 /** Two-digit, zero-padded — the way EQ writes it (`[Wed Aug 05 20:48:16 2026]`). */
@@ -221,6 +272,12 @@ export function stageFixture(
   opts: {
     maps?: boolean
     spells?: boolean
+    /**
+     * HAND-AUTHORED `spells_us.txt` + `dbstr_us.txt` (JOS-507). Mutually exclusive with `spells`,
+     * which links the REAL table — see `stageClientTables` for why the search-by-type spec authors
+     * its bytes instead of finding them.
+     */
+    clientTables?: boolean
     inventory?: string
     /** a committed `/outputfile achievements` dump to stage beside the executable (JOS-429) */
     achievements?: string
@@ -254,6 +311,7 @@ export function stageFixture(
 
   if (opts.maps) stageMaps(installDir)
   if (opts.spells) stageSpells(installDir)
+  if (opts.clientTables) stageClientTables(installDir)
 
   const appendAt = (at: Date, ...messages: readonly string[]): number => {
     if (messages.length === 0) return 0
@@ -287,6 +345,37 @@ export interface FixtureLaunch extends LaunchedApp {
 }
 
 /**
+ * The staging half of `launchOnFixture`'s options, forwarded to `stageFixture`.
+ *
+ * ITS OWN FUNCTION because the forwarding is a WHITELIST and every option is a branch: adding
+ * JOS-507's `clientTables` put `launchOnFixture` over the complexity ceiling, and this file's rule —
+ * like the repo's — is to SPLIT rather than to ratchet.
+ *
+ * AND A MISSING LINE HERE IS SILENT, which is the thing worth knowing about this shape: an option
+ * the caller set and this function drops produces no error anywhere. JOS-507's tables were staged
+ * nowhere for exactly that reason, and because "no client table" and "no engine" are
+ * indistinguishable from outside the app, the spec's honest skip branch reported the wrong cause for
+ * two full runs.
+ */
+function stagingOpts(opts: {
+  maps?: boolean
+  spells?: boolean
+  clientTables?: boolean
+  inventory?: string
+  achievements?: string
+  others?: Readonly<Record<string, string>>
+}): Parameters<typeof stageFixture>[1] {
+  return {
+    ...(opts.maps === undefined ? {} : { maps: opts.maps }),
+    ...(opts.spells === undefined ? {} : { spells: opts.spells }),
+    ...(opts.clientTables === undefined ? {} : { clientTables: opts.clientTables }),
+    ...(opts.inventory === undefined ? {} : { inventory: opts.inventory }),
+    ...(opts.achievements === undefined ? {} : { achievements: opts.achievements }),
+    ...(opts.others === undefined ? {} : { others: opts.others })
+  }
+}
+
+/**
  * THE ONE ENTRY POINT A SPEC USES: stage a fixture, launch the app onto it, and make `close()`
  * take the staged install away with it.
  *
@@ -300,29 +389,52 @@ export async function launchOnFixture(
   opts: {
     maps?: boolean
     spells?: boolean
+    /** Hand-authored client tables (JOS-507). Forwarded to `stageFixture` — see the note there. */
+    clientTables?: boolean
     inventory?: string
     /** a committed `/outputfile achievements` dump to stage beside the executable (JOS-429) */
     achievements?: string
     userData?: string
     env?: Record<string, string>
+    /** Forwarded to launchApp: the working directory, and therefore whether an engine BINARY can
+     *  be resolved at all. See that option for why absence is arranged this way (JOS-499). */
+    cwd?: string
+    /**
+     * WAIT FOR THE ENGINE TO BE ANSWERING BEFORE HANDING THE LAUNCH BACK (JOS-499). Default true.
+     *
+     * WHY THIS EXISTS, MEASURED. Every module-backed surface in the product is served by the engine
+     * now, and the engine is a separate process that has to start, read its spell DB and fold the
+     * log before it can answer anything — 4.3 s for the spell DB alone on a DEBUG cargo build, which
+     * is what this suite runs (the engine's own README measures release at roughly a tenth of it).
+     * The app's own fold used to be loaded at module scope and answered the first read instantly, so
+     * a spec could assert on a snapshot the moment its window existed. It cannot any more, and three
+     * specs failed on exactly that: an XP pace of "-", a boss roster of 0, a respawn card with no
+     * gaps — all of them correct readings of a world that had not arrived yet.
+     *
+     * SO THE HARNESS WAITS WHERE A USER WOULD WAIT. This is not a workaround: the app genuinely
+     * shows a loading state until the engine is live, and a harness that asserted through it would
+     * be testing a frame the product never means anybody to act on. Waiting HERE rather than in
+     * sixty specs is what keeps that fact in one place.
+     *
+     * IT IS BOUNDED AND NON-FATAL. A launch with no engine (`cwd` above) never prints the sentence,
+     * and that is a legitimate state rather than a failure — so the wait expires quietly and the
+     * spec proceeds to make whatever claim it came to make.
+     */
+    waitForEngine?: boolean
     others?: Readonly<Record<string, string>>
   } = {}
 ): Promise<FixtureLaunch> {
   const owned = typeof fixture === 'string'
-  const log = owned
-    ? stageFixture(fixture, {
-        ...(opts.maps === undefined ? {} : { maps: opts.maps }),
-        ...(opts.spells === undefined ? {} : { spells: opts.spells }),
-        ...(opts.inventory === undefined ? {} : { inventory: opts.inventory }),
-        ...(opts.achievements === undefined ? {} : { achievements: opts.achievements }),
-        ...(opts.others === undefined ? {} : { others: opts.others })
-      })
-    : fixture
+  const log = owned ? stageFixture(fixture, stagingOpts(opts)) : fixture
   const launched = await launchApp({
     installDir: log.installDir,
     ...(opts.userData === undefined ? {} : { userData: opts.userData }),
-    ...(opts.env === undefined ? {} : { env: opts.env })
+    ...(opts.env === undefined ? {} : { env: opts.env }),
+    ...(opts.cwd === undefined ? {} : { cwd: opts.cwd })
   })
+  // See `waitForEngine`: bounded, quiet on expiry, and the reason sixty specs did not each grow a
+  // wait of their own.
+  if (opts.waitForEngine !== false) await settleEngineServing(launched.app)
   return {
     ...launched,
     log,

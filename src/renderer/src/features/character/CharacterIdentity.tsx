@@ -20,21 +20,18 @@
 
 import type { JSX } from 'react'
 import { Stack, Typography } from '@mui/material'
-import type { CharacterDelta, CharacterSnap, ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { CharacterSnap, ProgressionSnap } from '@shared/types'
 import { currentLevelRead } from '@shared/currentLevel'
 import { Tooltip } from '../../lib/Tooltip'
 import { useModule } from '../../lib/useModule'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 import { ProvenanceChip, SlotChips } from '../profiles/ClassComboChips'
 import { useComboSnap } from '../profiles/ClassComboData'
 
-function applyCharacterDelta(state: CharacterSnap, delta: CharacterDelta): CharacterSnap {
-  return { ...state, ...delta }
-}
 
 export default function CharacterIdentity(): JSX.Element {
-  const who = useModule<CharacterSnap, CharacterDelta>('character', applyCharacterDelta)
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta)
+  const who = useModule<CharacterSnap>('character')
+  const prog = useModule<ProgressionSnap>('progression')
   const combo = useComboSnap()
 
   const character = who?.character ?? null

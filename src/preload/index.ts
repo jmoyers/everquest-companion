@@ -16,12 +16,13 @@ import type {
   EqConfig,
   EqConfigResult,
   FeedReport,
+  FiredAlert,
   ItemKnowledge,
   LogLine,
   LogSwitchNudge,
   LootEvent,
   MobKnowledge,
-  ModuleDelta,
+  ModuleChanged,
   ModuleSnapshot,
   PackInstallProgress,
   PackMutationResult,
@@ -187,7 +188,7 @@ export interface SubmitOpts {
 }
 
 export type { CharacterRef, EqConfig, EqConfigResult, LogLine, LogSwitchNudge, LootEvent, ProgressState }
-export type { ModuleDelta, ModuleSnapshot }
+export type { ModuleChanged, ModuleSnapshot }
 export type { AlertDef, AlertPrefs, SoundData, SoundPack, SpellCatalog, ItemKnowledge, MobKnowledge }
 export type { UserSound, UserSoundImportResult, UserSoundRemoveResult }
 export type {
@@ -518,11 +519,32 @@ const api = {
   /** Full hydration snapshot for a module (null if the id is unknown). */
   getModuleSnapshot: <Snap>(moduleId: string): Promise<ModuleSnapshot<Snap> | null> =>
     ipcRenderer.invoke(IPC.getModuleSnapshot, moduleId),
-  /** Subscribe to every `module:delta`; the hook filters by moduleId. */
-  onModuleDelta: <Delta>(cb: (d: ModuleDelta<Delta>) => void): (() => void) => {
-    const listener = (_e: unknown, d: ModuleDelta<Delta>): void => cb(d)
-    ipcRenderer.on(IPC.onModuleDelta, listener)
-    return () => ipcRenderer.removeListener(IPC.onModuleDelta, listener)
+  /**
+   * Subscribe to alert FIRES (JOS-499 item 7) — one `FiredAlert` per firing, played by the
+   * always-mounted `AlertPlayer`.
+   *
+   * IT IS ITS OWN DOOR BECAUSE A FIRE IS AN EVENT, NOT STATE. It used to ride `module:delta`
+   * alongside the alerts module's state, which worked only because this process had a fold to put
+   * it on; with the fold deleted the two are separated by what they are. `module:changed` — the
+   * channel that replaced the delta — is a dirty bit that deliberately carries no payload, and a
+   * fire is nothing BUT payload: miss it and the sound never happens, where a missed cursor is
+   * repaired by the next read.
+   */
+  onAlertFired: (cb: (f: FiredAlert) => void): (() => void) => {
+    const listener = (_e: unknown, f: FiredAlert): void => cb(f)
+    ipcRenderer.on(IPC.onAlertFired, listener)
+    return () => ipcRenderer.removeListener(IPC.onAlertFired, listener)
+  },
+  /**
+   * Subscribe to every `module:changed` — the SERVED world's dirty bit (JOS-493); the hook filters
+   * by moduleId. The SAME member under the SAME name is on the overlay bridge, for the reason
+   * `onCharacter` is duplicated there: one transport, one spelling, or the two windows end up
+   * disagreeing about which world they are folding.
+   */
+  onModuleChanged: (cb: (c: ModuleChanged) => void): (() => void) => {
+    const listener = (_e: unknown, c: ModuleChanged): void => cb(c)
+    ipcRenderer.on(IPC.onModuleChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.onModuleChanged, listener)
   },
 
   // ---- class-combo corrections (docs/plans/class-combo-inference.md § 5.3) ----

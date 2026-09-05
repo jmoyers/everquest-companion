@@ -166,6 +166,36 @@ test('a release states one change per bullet, and multi-change releases have sev
   }
 })
 
+// A BULLET IS SHORT (owner, 2026-09-03). Three sentences at most — the outcome, optionally why it
+// was wrong, optionally what changed — and a character ceiling so three sentences cannot become
+// three paragraphs. Applied from 1.16.0 on: the older entries were written before the rule and
+// are history, not a template (the file header states the shape).
+const SHORT_NOTES_FROM = '1.16.0'
+const MAX_NOTE_SENTENCES = 3
+const MAX_NOTE_CHARS = 320
+
+function sentencesOf(text: string): number {
+  return (text.match(/[.!?](\s|$)/g) ?? []).length
+}
+
+test('a release note bullet is short: three sentences and 320 characters at most, from 1.16.0 on', () => {
+  const governed = RELEASE_NOTES.filter((n) => compareVersions(n.version, SHORT_NOTES_FROM) >= 0)
+  assert.ok(governed.length >= 1, 'the rule governs at least the release that introduced it')
+  for (const note of governed) {
+    for (const entry of note.entries) {
+      const sentences = sentencesOf(entry.text)
+      assert.ok(
+        sentences <= MAX_NOTE_SENTENCES,
+        `v${note.version}: ${String(sentences)} sentences in one bullet — outcome, cause, change; a second visible thing is a second bullet: "${entry.text.slice(0, 60)}…"`
+      )
+      assert.ok(
+        entry.text.length <= MAX_NOTE_CHARS,
+        `v${note.version}: ${String(entry.text.length)} characters in one bullet (ceiling ${String(MAX_NOTE_CHARS)}): "${entry.text.slice(0, 60)}…"`
+      )
+    }
+  }
+})
+
 // ------------------------------------------------------------------- thanks
 
 test('THANKS IS EARNED: only tagged entries carry the flag, and only tagged releases thank', () => {

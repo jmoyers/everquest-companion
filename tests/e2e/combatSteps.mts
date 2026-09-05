@@ -357,7 +357,18 @@ export async function stepScriptedPull(page: Page, log: FixtureLog): Promise<Sna
     after.recent.length > before,
     `${String(before)} → ${String(after.recent.length)} lines in the ring`
   )
-  const rendered = await countOf(page, '[data-testid="combat-log"] > div')
+  // WAIT FOR THE DOM CONDITION, NOT FOR THE IPC ONE (JOS-510). Every `settle` above reads
+  // `snapshot(page)`, which calls `window.eq.getCombatSnapshot` DIRECTLY — it bypasses the React
+  // tree, so it reports what MAIN holds, not what has been painted. Reading the DOM bare on the
+  // next line therefore assumed the render had already happened, which is a bet on scheduling and
+  // is the one thing this suite's own vocabulary says never to do.
+  //
+  // It was a bet that usually won and now wins less often: the served-data store coalesces its
+  // pushes onto an animation frame, and an e2e window is NEVER COMPOSITED, so it always takes the
+  // fallback timer rather than a real frame. Nothing about the claim changes — if the lines never
+  // render, this settles at 0 and the check still fails.
+  const LOG_ROW = '[data-testid="combat-log"] > div'
+  const rendered = await settle(() => countOf(page, LOG_ROW), (n) => n >= 1, { timeoutMs: 8_000 })
   check('…and the combat log renders them', rendered >= 1, `${String(rendered)} rendered`)
 
   // THE POINT OF ALL OF IT: an EXACT number. The pull states its own damage, so the engine's

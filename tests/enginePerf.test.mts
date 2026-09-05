@@ -29,10 +29,12 @@ import {
   type ProcessReading
 } from '../src/main/processSample'
 import {
+  CLOCK_SKEW_WARN_MS,
   engineFireCount,
   eventFreshnessMs,
   formatBytes,
   formatAge,
+  formatEngineClock,
   formatEngineState,
   formatMicros,
   formatParity,
@@ -176,6 +178,10 @@ function sample(over: Partial<EnginePerfSample> = {}): EnginePerfSample {
     supervisor: 'ready',
     process: null,
     engine: snapshot(),
+    // JOS-502: the budgets ride the same tick. `null` is the ordinary case for these fixtures —
+    // they are about the SNAPSHOT's arithmetic, and a panel whose engine refused the budgets still
+    // draws every row above them.
+    budgets: null,
     parity: null,
     ...over
   }
@@ -224,6 +230,79 @@ test('freshness is the HOST clock minus the LOG clock, and absent when nothing h
 test('the state line names the status and the epoch, and says so when nobody answered', () => {
   assert.equal(formatEngineState(sample()), 'live · epoch 2')
   assert.equal(formatEngineState(sample({ engine: null, supervisor: 'backoff' })), 'backoff · not answering')
+})
+
+test('the clock line names the zone, where it came from, and how far it disagrees', () => {
+  // JOS-536. The engine resolves the log's zone at attach and measures the disagreement on the live
+  // tail; this row is where a person sees both. `host` means the app told it, which is the whole
+  // point of the hint the attach carries.
+  assert.deepEqual(
+    formatEngineClock(
+      sample({
+        engine: snapshot({
+          clockZone: 'America/Los_Angeles',
+          clockSource: 'host',
+          clockSkewMs: 412
+        })
+      })
+    ),
+    { text: 'America/Los_Angeles (host) · skew 412 ms', warning: false }
+  )
+  // A tail that has folded no fresh line has measured no skew, and says the zone alone.
+  assert.deepEqual(
+    formatEngineClock(
+      sample({ engine: snapshot({ clockZone: '-07:00', clockSource: 'offset' }) })
+    ),
+    { text: '-07:00 (offset)', warning: false }
+  )
+  // A fixed-offset zone reads as a stamp in the future when the host is east of the log's; the sign
+  // is kept, because which way the two clocks disagree is half the reading.
+  assert.deepEqual(
+    formatEngineClock(
+      sample({
+        engine: snapshot({ clockZone: 'UTC', clockSource: 'utc', clockSkewMs: -2_500 })
+      })
+    ),
+    { text: 'UTC (utc) · skew -2.5 s', warning: false }
+  )
+  // Nothing has attached, so there is no zone to name. Absent, never a guess.
+  assert.equal(formatEngineClock(sample()), null)
+  assert.equal(formatEngineClock(sample({ engine: null })), null)
+})
+
+test('past half an hour the clock line stops measuring and warns', () => {
+  // THE WINE FAILURE AS A PERSON SEES IT. 25,217,204 ms is the first 1.15.0 report's own number:
+  // seven hours, which is not a lag but a zone. The row drops the IANA name — somebody reading
+  // "fights and timers will be wrong" does not need an identifier to act on it.
+  const line = formatEngineClock(
+    sample({
+      engine: snapshot({
+        clockZone: 'UTC',
+        clockSource: 'utc',
+        clockSkewMs: 25_217_204
+      })
+    })
+  )
+  assert.deepEqual(line, {
+    text: "The log's clock disagrees with this machine's by 7h 0m. Fights and timers will be wrong.",
+    warning: true
+  })
+  // The mirror failure: an east-of-UTC host reads the log AHEAD, and warns just the same.
+  assert.equal(
+    formatEngineClock(
+      sample({ engine: snapshot({ clockZone: 'UTC', clockSource: 'utc', clockSkewMs: -CLOCK_SKEW_WARN_MS }) })
+    )?.warning,
+    true
+  )
+  // …and one second under the bar is still a measurement.
+  assert.equal(
+    formatEngineClock(
+      sample({
+        engine: snapshot({ clockZone: 'UTC', clockSource: 'utc', clockSkewMs: CLOCK_SKEW_WARN_MS - 1 })
+      })
+    )?.warning,
+    false
+  )
 })
 
 test('a parity probe that never ran is NOT a clean bill', () => {

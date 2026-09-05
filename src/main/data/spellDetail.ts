@@ -26,6 +26,11 @@ import { aeHits, aeMaxTargets } from '../../shared/aoeSpells'
 import { spellEffectClasses } from './spellEffectClass'
 import { normalizeSpellRank } from '../../shared/spellScale'
 import { spellNature, type SpellDb } from './spellDb'
+// THE UPGRADE LADDER (JOS-508). A second join beside the rank lineage above, and a DIFFERENT
+// question — see `spellLinePath.ts`'s header for why the two must never be folded together.
+// `dbRowFor` moved there so this file can import it without the dependency pointing both ways.
+import { buildSpellLinePath, dbRowFor } from './spellLinePath'
+import type { ClassAbbr } from '../../shared/classCombo'
 
 /** The outside witnesses the join consults when the caller has them. All optional, all default off. */
 export interface SpellDetailSources {
@@ -35,10 +40,24 @@ export interface SpellDetailSources {
   rank?: number
   /** the focus effects this character's GEAR puts in force (JOS-452). Absent is no gear reading. */
   focus?: readonly WornFocus[]
+  /**
+   * The loadout's RESOLVED classes (JOS-508) — the combo module's answer, never a guess.
+   *
+   * Absent and empty mean the same thing to every reader below and are both normal: a fresh log, or
+   * a combo that knows two slots of three. The ladder is still built and still drawn; only the
+   * "when do I get it" column goes honest instead of numeric.
+   */
+  combo?: readonly ClassAbbr[]
 }
 
-/** The record for a name no row of the DB carries. `found: false` is an answer, not an error. */
-function notFound(queried: string): SpellDetail {
+/**
+ * The record for a name no row of the DB carries. `found: false` is an answer, not an error.
+ *
+ * IT STILL CARRIES THE LOADOUT (JOS-508). The combo is a fact about the PLAYER rather than about
+ * the spell, so a miss is no reason to withhold it — and the drilldown page reads it to decide
+ * whether "not for your classes" is even a sentence it is entitled to say.
+ */
+function notFound(queried: string, combo: readonly ClassAbbr[]): SpellDetail {
   return {
     queried,
     found: false,
@@ -46,7 +65,9 @@ function notFound(queried: string): SpellDetail {
     illusion: false,
     classLevels: [],
     effectClasses: [],
-    lineage: null
+    lineage: null,
+    linePath: null,
+    combo: [...combo]
   }
 }
 
@@ -108,22 +129,6 @@ function buildLineage(
 }
 
 /**
- * THE ROW WHOSE FACTS ANSWER FOR THIS NAME - the exact rank when the DB carries it, the LINE's row
- * otherwise, and the caller is told which (`SpellDetail.name` vs `queried`).
- *
- * `db.byKey` is rank-FOLDED and keeps only the first row of a line, so reading it alone would
- * answer "Rune III" with Rune I's mana and duration and say nothing about the substitution. The 121
- * rank-suffixed rows the DB does carry deserve their own numbers; the ~1,800 lines it carries once
- * can only be answered by the line's row, and shared/spellDetail.ts `spellFactsAreForLine` is how
- * the card comes to say so out loud.
- */
-function dbRowFor(db: SpellDb, name: string): SpellEntry | undefined {
-  const wanted = name.toLowerCase()
-  const exact = db.spells.find((s) => s.name.trim().toLowerCase() === wanted)
-  return exact ?? db.byKey.get(spellLineKey(name))
-}
-
-/**
  * The one-spell record, joined from the DB entry, the effect-class overlay and the observed ranks.
  *
  * `observedRanks` is the caller's slice of `AlertsSnap.spellLastCast` - display names, rank intact.
@@ -142,9 +147,10 @@ export function buildSpellDetail(
   sources: SpellDetailSources = {}
 ): SpellDetail {
   const name = queried.trim()
-  if (!name) return notFound(queried)
+  const combo = sources.combo ?? []
+  if (!name) return notFound(queried, combo)
   const entry: SpellEntry | undefined = dbRowFor(db, name)
-  if (!entry) return notFound(name)
+  if (!entry) return notFound(name, combo)
   const classLevels = parseSpellClassLevels(entry.classes)
   return {
     queried: name,
@@ -156,7 +162,12 @@ export function buildSpellDetail(
     illusion: entry.illusion,
     classLevels,
     effectClasses: spellEffectClasses(entry),
-    lineage: buildLineage(name, db, observedRanks, entry)
+    lineage: buildLineage(name, db, observedRanks, entry),
+    // THE LADDER (JOS-508), asked about the ROW'S OWN NAME rather than the queried one: the
+    // research table files `Celestial Remedy`, and a hover on `Celestial Remedy III` has to reach
+    // the same progression the row it borrowed its facts from sits on.
+    linePath: buildSpellLinePath(db, entry.name, combo),
+    combo: [...combo]
   }
 }
 

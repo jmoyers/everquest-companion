@@ -22,12 +22,12 @@
 // into a rate would put a number this character never observed under an `observed` heading.
 
 import { useMemo } from 'react'
-import type { LootEvent, ProgressionDelta, ProgressionSnap } from '@shared/types'
+import type { LootEvent, ProgressionSnap } from '@shared/types'
 import type { Timeslice } from '@shared/timeslice'
 import { rangeStats } from '@shared/progressionStats'
 import { itemZoneRows, type ItemZoneRow } from '@shared/lootRates'
 import { useModule } from '../../lib/useModule'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from '../leveling/progressionDelta'
+import { EMPTY_PROGRESSION } from '../leveling/progressionDelta'
 import { dataBounds } from '../leveling/zoneBands'
 
 /** The same one-millisecond tail `windowScope.ts` documents: `rangeStats` ranges are half-open,
@@ -60,7 +60,7 @@ function zoneOf(slice: Timeslice | undefined): { zoneKey: string | null; zoneExa
  * progression snapshot nothing.
  */
 export function useItemZoneRates(events: readonly LootEvent[], slice?: Timeslice): ItemZoneRates {
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
   return useMemo(() => {
     if (events.length === 0) return NO_ROWS
     const bounds = dataBounds(prog, [])

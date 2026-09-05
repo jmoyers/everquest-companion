@@ -129,6 +129,7 @@ version = "0.1.0"
 dependencies = [
  "eqlog",
  "fold",
+ "knowledge",
  "protocol",
  "serde",
  "serde_json",
@@ -264,6 +265,16 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "knowledge"
+version = "0.1.0"
+dependencies = [
+ "eqlog",
+ "fold",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

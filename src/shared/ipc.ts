@@ -4,8 +4,19 @@ export const IPC = {
   // ---- module transport (the one pattern for loot/turnins/kills/leveling/character) ----
   // renderer -> main
   getModuleSnapshot: 'module:getSnapshot',
-  // main -> renderer
-  onModuleDelta: 'module:delta',
+  // main -> renderer: A MODULE'S CURSOR MOVED (JOS-493).
+  //
+  // Not an increment and never a payload — `{ moduleId, seq }`, the dirty bit the data-server
+  // protocol already defines (`ModuleChangedMessage`), forwarded to every window that folds a
+  // module. The answer to it is `module:getSnapshot` above.
+  //
+  // `onModuleDelta: 'module:delta'` STOOD HERE AND IS GONE (JOS-499). It carried INCREMENTS out
+  // of this process's own TypeScript fold, numbered in that fold's sequence space, and the
+  // whole reason this channel exists is that the two spaces were unrelated: a window holding an
+  // ENGINE snapshot dropped every app delta as a dupe (the JOS-490 defect). The fold is deleted,
+  // so there is one producer, one numbering space, and one channel — which is what that ticket
+  // was working towards rather than around.
+  onModuleChanged: 'module:changed',
 
   // ---- progress / inventory (per-character persisted state) ----
   getProgress: 'progress:get',
@@ -71,6 +82,22 @@ export const IPC = {
   // renderer reports an 'app'-triggered fire (e.g. bossDefeat) so the module's
   // history stays the single source of truth (Task #22). Payload {alertId, context}.
   appFired: 'alerts:appFired',
+  /**
+   * main -> renderer(main app): ONE ALERT THAT FIRED, to be played (JOS-499 item 7).
+   *
+   * THE CHANNEL THE AUDIO CUTOVER ALWAYS NEEDED AND DID NOT HAVE. JOS-491 delivered an engine fire
+   * to the player by pushing it THROUGH this process's own alerts module — `playEngineFire` called
+   * `alertsModule.engineFired()` and `registry.flushNow()`, and the renderer heard it as a
+   * `module:delta` like any main-side fire. That was the right call while the TS fold existed (no
+   * second audio path, one lane, the delta everything downstream already read). The deletion
+   * release removes the module in the middle, so the fire needs its own door or every alert in the
+   * product goes silent.
+   *
+   * Payload: `FiredAlert` (shared/alertTypes.ts) — the same record the delta's `fired[]` carried,
+   * so `AlertPlayer` reads exactly what it always read and the `origin: 'app'` echo rule is
+   * unchanged.
+   */
+  onAlertFired: 'alerts:fired',
   getAlertPrefs: 'alertPrefs:get',
   setAlertPrefs: 'alertPrefs:set',
   // sound packs (discovery + audio bytes)
@@ -977,8 +1004,9 @@ export const IPC = {
   //
   // renderer -> main: open this window's ONE connection to the engine. Arg: a numeric nonce the
   // renderer minted, echoed on the push so a window that asked twice can tell the answers apart.
-  // Answers `{ok:false, reason}` when no engine is running on this launch, which is every launch
-  // without `EQC_ENGINE=1` — main's whole gate for the feature (src/main/dataServer/engineHost.ts).
+  // Answers `{ok:false, reason}` when no engine is running on this launch — since JOS-495 that is
+  // `EQC_ENGINE=0` or a checkout carrying no binary, not the default it used to be. Main's whole
+  // gate for the feature is one function (src/main/dataServer/engineHost.ts).
   engineConnect: 'engine:connect',
   // main -> renderer: the port, with the launch's token beside it. `event.ports[0]` is one end of a
   // `MessageChannelMain` whose other end main is pumping RAW SOCKET BYTES through — main never
@@ -986,6 +1014,21 @@ export const IPC = {
   // The token stays in the preload's closure and in the client it serves; it is never persisted,
   // never put in the DOM, and dies with the renderer.
   onEnginePort: 'engine:port',
+  // main -> renderer, PUSH: one `EngineLaunchSay` whenever the engine's LAUNCH state changes
+  // (JOS-503) — the historical fold's progress while one is running, and the reason it will not
+  // start when it will not. Never null: there is always a launch state, and `starting` is the
+  // honest one before anything has happened. Pushed on change only, never polled; during a fold
+  // that is the engine's own ~4 Hz progress cadence and nothing at all once it is live.
+  onEngineLaunch: 'engine:launch',
+  // renderer -> main: what `onEngineLaunch` last pushed. Not a poll — the ONE read a window makes
+  // on mount, because a push-only channel leaves a renderer that started (or reloaded) after the
+  // engine failed with no way to learn about a state that will never change again.
+  // Returns: EngineLaunchSay.
+  engineLaunchState: 'engine:launchState',
+  // renderer -> main: the failure card's RETRY button. Forgives the crash-loop trail, cancels any
+  // pending backoff and launches now (src/main/dataServer/supervisor.ts `restart`). A respawn is a
+  // launch (spawn contract rule 5), so this is a fresh token, port and epoch world. Returns void.
+  engineRetry: 'engine:retry',
 
   // ---- misc pushes ----
   onLine: 'log:line',

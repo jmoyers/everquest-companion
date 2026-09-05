@@ -1,0 +1,125 @@
+{
+  "moment": "the live surfaces — a `/con` becomes a card, a press is refused and then taken, and the modules say they moved",
+  "source": "JOS-487 (cutover ledger items 3, 4 and 6; boundary verdicts 2 and 6)",
+  "note": "THREE THINGS THE ENGINE SAYS WITHOUT BEING ASKED, and one command it can refuse. The `conCard` frame is boundary verdict 2 landing: the fold used to call synchronously INTO Electron through `considerModule.setConCardHook`, and the verdict inverts it — the engine resolves the whole card and main only opens the window. Like a fire it carries NO `id` and NO `epoch`: a con belongs to the world rather than to any subscription, and it is a thing that happened once, with no window state to reconcile across a generation. LOOK AT THE CHIPS. All five axes are present in `RESIST_AXES` order, every count is a real zero, and `spellData` is FALSE — which is not a stub but the branch `mobResistProfile` itself takes app-side when the client's `spells_us.txt` has not been read. That parse is boundary verdict 7 and has not moved engine-side, so the con-card CUTOVER waits on it while this frame does not: the shape is final and the chips fill in with no protocol change. THE TWO MARKS ARE THE SAME PRESS TWICE. Mid-fold the world is `folding` and the answer is `accepted: false` — which is NOT an error, it is `combat/engine.ts sessionMark`'s `if (st.hydrating) return false` in the protocol's own words, and it is what makes replay determinism structural: a mark is stored nowhere and cannot enter a replaying fold. The ack carries the STATUS it decided under so a client is not left racing a fold that went live between the refusal and a follow-up question. Once live the same press is taken, and the engine keeps nothing — an accepted mark changes no state this protocol can show you, which is why the ack does not pretend to report one. THE `moduleChanged` FRAMES are the dirty bit: a name and a cursor and no state at all, one per changed module per serve beat (~10 Hz), so a client holding a `module.snapshot` compares the two numbers and refetches only when this one is ahead. A frame that carried the state would be `module.snapshot` pushed at a cadence nobody asked for, which is the per-window snapshot fan-out this whole boundary exists to delete.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 1,
+        "op": "sessionMarks.add",
+        "params": { "at": 1787181700000 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": { "accepted": false, "status": "folding" }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "epoch",
+        "epoch": 2,
+        "reason": "progress",
+        "progress": {
+          "pct": 62.4,
+          "events": 1571003,
+          "offset": 156000000,
+          "logSize": 250000000
+        }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 2,
+        "op": "sessionMarks.add",
+        "params": { "at": 1787181760000 }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": { "accepted": true, "status": "live" }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "conCard",
+        "at": 1787181767000,
+        "id": "a fire giant warlord",
+        "name": "a fire giant warlord",
+        "level": 52,
+        "zone": "Nagafen's Lair",
+        "spellData": false,
+        "chips": [
+          {
+            "axis": "magic",
+            "pinned": false,
+            "empirical": { "total": 0, "resisted": 0 },
+            "npcOnly": false,
+            "n": 0,
+            "nTotal": 0
+          },
+          {
+            "axis": "fire",
+            "pinned": false,
+            "empirical": { "total": 0, "resisted": 0 },
+            "npcOnly": false,
+            "n": 0,
+            "nTotal": 0
+          },
+          {
+            "axis": "cold",
+            "pinned": false,
+            "empirical": { "total": 0, "resisted": 0 },
+            "npcOnly": false,
+            "n": 0,
+            "nTotal": 0
+          },
+          {
+            "axis": "poison",
+            "pinned": false,
+            "empirical": { "total": 0, "resisted": 0 },
+            "npcOnly": false,
+            "n": 0,
+            "nTotal": 0
+          },
+          {
+            "axis": "disease",
+            "pinned": false,
+            "empirical": { "total": 0, "resisted": 0 },
+            "npcOnly": false,
+            "n": 0,
+            "nTotal": 0
+          }
+        ]
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "moduleChanged",
+        "module": "consider",
+        "seq": 139862
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "moduleChanged",
+        "module": "eventFeed",
+        "seq": 139862
+      }
+    }
+  ]
+}

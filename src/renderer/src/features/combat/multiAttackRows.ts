@@ -67,6 +67,7 @@ function bucketPct(l: RoundLaneView, i: number): number {
  * round is dropped: `0 rounds` has no percentage to state and a row of dashes is furniture.
  */
 export function multiAttackRows(r: SourceRoundsView): MultiAttackRow[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives RoundLaneView. Becomes a view descriptor when the source lands.
   const lanes = r.lanes.filter((l) => l.rounds > 0)
   const max = Math.max(1, ...lanes.map((l) => l.rounds))
   return lanes.map((l) => {

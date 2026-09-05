@@ -67,7 +67,7 @@
 // today, and what it would do if a candidate were levelled - which is the owner's ask read
 // literally. The arithmetic is `shared/spellScale.ts`'s, fitted to his own log.
 
-import { type JSX, useMemo, useState } from 'react'
+import { type JSX, useState } from 'react'
 import {
   Box,
   Chip,
@@ -85,9 +85,6 @@ import {
 import {
   TAB_LABEL,
   TAB_ORDER,
-  bestSpellsAt,
-  defaultSorts,
-  tabColumns,
   type BestSpellColumn,
   type BestSpellRow,
   type BestSpellSort,
@@ -95,28 +92,28 @@ import {
   type BestSpellTab,
   type BestSpellsTable
 } from '@shared/bestSpells'
-import { searchBestSpells, EMPTY_BEST_SPELL_SEARCH } from '@shared/bestSpellsSearch'
-import { tokenizeSpellQuery } from '@shared/spellSearch'
 import { AOE_ASSUMPTION_TITLE } from '@shared/aoeSpells'
 import { WORN_FOCUS_TITLE } from '@shared/wornFocus'
-import { useWornFocus } from '../../lib/useWornFocus'
 import { Tooltip } from '../../lib/Tooltip'
 import { outOfEraLabel } from '../mobs/dropEra'
-import { useCurrentComboClasses, useLevelUnlocks } from './useLevelUnlocks'
+import { useCurrentComboClasses } from './useLevelUnlocks'
 import { comboClassSet } from '@shared/levelUnlocks'
 // The table primitives, shared with the search results next door (JOS-450) so a result and a
 // ranked row are the same row — and, one component further in, the `yours: III` chip the unlock
 // list draws (JOS-446): one wording, one tooltip.
 import { CELL_SX, HeadCell, SpellRow, widthOf } from './BestSpellsRows'
 import { BestSpellsResults, BestSpellsSearchField } from './BestSpellsSearch'
-import { useObservedSpellRanks } from '../../lib/useObservedSpellRanks'
+// SEARCH BY TYPE (JOS-507) — a THIRD body, engaged only by the type control. See that file's header
+// for why the categories are served rather than joined in this window (ruling 4), and the panel's
+// own 260px measurement below for why they are chips rather than columns.
+import { BestSpellsCatalogue, SpellTypeFilter } from './BestSpellsCatalogue'
 import type { ObservedSpellRanksSnap } from '@shared/spellRanks'
 import { LevelStepper } from './LevelStepper'
 import type { ViewedLevel } from './viewedLevel'
 import SpellRankSlider from './SpellRankSlider'
-
-/** How many rows are drawn before the disclosure. The owner's suggestion, and it fits the column. */
-const TOP_N = 10
+// The state and the three folds behind this panel — its own file since JOS-511 (that header says
+// why the seam is there). `TOP_N` travels with it: the catalogue's page size is derived from it.
+import { TOP_N, useReadout } from './useBestSpellsReadout'
 
 // THE COLUMN WIDTHS AND THE TWO-LINE ROW moved to `BestSpellsRows.tsx` with JOS-450, unchanged and
 // with their measurements attached; the paragraph below is the measurement they came out of and it
@@ -191,18 +188,21 @@ function RowDisclosure({
  */
 function TabTable({
   tab,
+  columns,
   data,
   sort,
   onSort,
   ranks
 }: {
   tab: BestSpellTab
+  /** The tab's columns, MEMOIZED BY THE PANEL (JOS-511 item 2) — see its call site for why the
+   *  array is passed rather than re-derived here: it is a prop on every row of the table. */
+  columns: readonly BestSpellColumn[]
   data: BestSpellsTable
   sort: BestSpellSort
   onSort: (s: BestSpellSort) => void
   ranks: ObservedSpellRanksSnap | null
 }): JSX.Element {
-  const columns = tabColumns(tab)
   const top = data.shown.slice(0, TOP_N)
   const rest = data.shown.slice(TOP_N)
   return (
@@ -421,59 +421,8 @@ export function useBestSpellsVisible(): boolean {
  * repeating the sentence in the column beside it would be the same instruction twice.
  */
 export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element | null {
-  const { level } = viewed
-  const data = useLevelUnlocks()
-  const combo = useCurrentComboClasses()
-  // JOS-446's observed ranks, one subscription for the whole panel (the NewAtLevelPanel arrangement).
-  const ranks = useObservedSpellRanks()
-  // JOS-452's worn focus, one subscription for the whole panel (the `ranks` arrangement). An empty
-  // list is the ordinary answer for a character with no dump, and it changes no figure.
-  const focus = useWornFocus()
-  const [sorts, setSorts] = useState(defaultSorts)
-  const [picked, setPicked] = useState<BestSpellTab | null>(null)
-  // THE SIMULATE SLIDER'S STATE, session-only and owned here (JOS-447 — SpellRankSlider's header
-  // says why it is not persisted). 0 is base, which is where every mount opens.
-  const [simulate, setSimulate] = useState(0)
-  // THE SEARCH (JOS-450). An empty box is the ranked readout, byte for byte — this state is the only
-  // thing that switches the body, and nothing about the tables reads it.
-  const [query, setQuery] = useState('')
-  const searching = query.trim() !== ''
-  // Re-ranked by the LEVEL, the SORT and the RANKS, and by nothing else — the whole readout is one
-  // pure call over an already-cached dataset, so stepping the level or the slider costs one fold of
-  // ~1,450 rows. All four tables are built every time on purpose: the tab labels carry counts, so
-  // the tabs you are not looking at are part of what the panel says.
-  const best = useMemo(
-    () => bestSpellsAt(data, combo, level, { sorts, observed: ranks, simulate, focus }),
-    [data, combo, level, sorts, ranks, simulate, focus]
-  )
-  // UNTIL SOMEBODY PICKS, THE PANEL PICKS THE FIRST TAB THAT HAS ANYTHING IN IT. `dd` is the owner's
-  // first-named tab and the right default for the caster this readout was written for, but a cleric
-  // has no DD table at all and opening him on an empty one would be the panel failing to answer a
-  // question it can answer. Derived at render rather than in an effect, so it follows the level.
-  const tab = picked ?? TAB_ORDER.find((t) => best.tabs[t].shown.length > 0) ?? 'dd'
-  // THE WHOLE-CATALOG FOLD (JOS-450), over the SAME already-cached ~1,450 rows and asking main
-  // nothing per keystroke. Memoized on the panel state it reads rather than debounced: there is no
-  // IPC on this path. An empty box computes nothing at all - the ranked readout must cost exactly
-  // what it cost before the box existed.
-  const results = useMemo(
-    () =>
-      searching
-        ? searchBestSpells(data, tokenizeSpellQuery(query), {
-            classes: best.classes,
-            level,
-            tab,
-            sort: sorts[tab],
-            observed: ranks,
-            simulate,
-            // JOS-452 — the results wear the same gear the ranked table does, because the marker
-            // over them is drawn once in the header above BOTH bodies.
-            focus
-          })
-        : EMPTY_BEST_SPELL_SEARCH,
-    [searching, data, query, best.classes, level, tab, sorts, ranks, simulate, focus]
-  )
-  // The loadout set the result chips are filled against: a class you could be running, at a glance.
-  const loadout = useMemo(() => new Set<string>(best.classes), [best.classes])
+  const r = useReadout(viewed)
+  const { best, tab, level, columns, ranks, searching, filtering, simulate } = r
   if (best.classes.length === 0) return null
   return (
     <Paper
@@ -483,34 +432,48 @@ export function BestSpellsPanel({ viewed }: BestSpellsPanelProps): JSX.Element |
       data-level={String(level)}
       data-simulate={String(simulate)}
       data-searching={String(searching)}
+      data-filtering={String(filtering)}
     >
-      <ReadoutHeader best={best} tab={tab} level={level} onLevel={(n) => viewed.pick(n)} />
-      <TabBar best={best} tab={tab} onPick={setPicked} />
+      <ReadoutHeader best={best} tab={tab} level={level} onLevel={r.onLevel} />
+      <TabBar best={best} tab={tab} onPick={r.setPicked} />
       {/* THE BOX SITS UNDER THE TABS AND OVER THE SLIDER (JOS-450). Under the tabs because the tab
           is what a result is read AS - the reader picks the question first and then types the
           spell; over the slider because the slider governs both bodies equally and reads as part of
           the table either way. */}
-      <BestSpellsSearchField query={query} onChange={setQuery} />
-      <SpellRankSlider rank={simulate} onChange={setSimulate} />
+      <BestSpellsSearchField query={r.query} onChange={r.setQuery} />
+      {/* THE TYPE CONTROL SITS UNDER THE BOX IT NARROWS (JOS-507). Under rather than beside: the
+          band has a 260px floor and two controls on one line would leave the placeholder as two
+          visible words. Its options are the ENGINE's — the vocabulary is the player's own file's,
+          so there is no list this app could ship. */}
+      <SpellTypeFilter
+        category={r.category}
+        state={r.catalogue}
+        onChange={r.setCategory}
+        onOpen={r.onOpenTypes}
+      />
+      <SpellRankSlider rank={simulate} onChange={r.setSimulate} />
       {/* KEYED BY THE TAB so the two disclosures inside reset when the table changes: `+7 more` left
           open on the DD table is not a statement about the DoT table underneath it. */}
-      {searching ? (
+      {filtering ? (
+        <BestSpellsCatalogue state={r.catalogue} scoped={r.scoped} onScoped={r.setScoped} />
+      ) : searching ? (
         <BestSpellsResults
-          results={results}
+          results={r.results}
           tab={tab}
-          columns={tabColumns(tab)}
-          sort={sorts[tab]}
-          onSort={(next) => setSorts((prev) => ({ ...prev, [tab]: next }))}
+          columns={columns}
+          sort={r.sort}
+          onSort={r.onSort}
           ranks={ranks}
-          loadout={loadout}
+          loadout={r.loadout}
         />
       ) : (
         <TabTable
           key={tab}
           tab={tab}
+          columns={columns}
           data={best.tabs[tab]}
-          sort={sorts[tab]}
-          onSort={(next) => setSorts((prev) => ({ ...prev, [tab]: next }))}
+          sort={r.sort}
+          onSort={r.onSort}
           ranks={ranks}
         />
       )}

@@ -84,7 +84,6 @@ import {
   EMPTY_RESPAWN_SNAP,
   RESPAWN_CONFIRM_TITLE,
   RESPAWN_UNWATCH_LABEL,
-  mergeRespawnDelta,
   orderRespawnRows,
   respawnBasisLabel,
   respawnClockLabel,
@@ -94,7 +93,6 @@ import {
   respawnReading,
   respawnSeenLabel,
   respawnSourceLabel,
-  type RespawnDelta,
   type RespawnRow,
   type RespawnSnap
 } from '@shared/respawn'
@@ -414,7 +412,7 @@ function RespawnFooter({
 }
 
 export default function RespawnOverlay(): JSX.Element {
-  const snap = useOverlayModule<RespawnSnap, RespawnDelta>('respawn', mergeRespawnDelta, EMPTY_RESPAWN_SNAP)
+  const snap = useOverlayModule<RespawnSnap>('respawn', EMPTY_RESPAWN_SNAP)
   const { locked, bgAlpha, textScale, hovering, patch, toggleLock, capture, dragRegion, noDrag } =
     useOverlayChrome()
   const nowMs = useSecondsClock()

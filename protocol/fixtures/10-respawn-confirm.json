@@ -1,0 +1,70 @@
+{
+  "moment": "the last command — a person says the mob they can see IS the spawn, and the clock moves to the sighting",
+  "source": "JOS-494 (the census's pre-ruling: confirmSighting is an impure input into the fold and becomes a pushed command like its siblings)",
+  "note": "THE THIRD RESPAWN INPUT, AND THE ONLY ONE THAT IS A COMMAND. The first frame here is the preference — `respawn.define`, the watch list, which the world RECORDS so the next attach re-applies it — and it is in this fixture to be contrasted rather than to set anything up: a watch is a fact about what the person wants and survives a relaunch in the settings file, while everything below is a fact about one spawn of one mob in one session and is stored by nobody. `src/main/ipc/respawn.ts` says so in as many words about its own handler ('it PERSISTS NOTHING'), and the engine's side of the seam holds to it: the fold it lives in is rebuilt from the log at every launch and the log has never heard of a confirmation, so a stored copy would outlive its subject. THAT ABSENCE IS WHAT KEEPS THE REPLAY DETERMINISTIC, exactly as it does for `sessionMarks.add` two fixtures back — an impure input nothing persists cannot make a re-fold of the same log disagree with the fold that saw the click. THE TWO CONFIRMS ARE THE SAME PRESS ON TWO ROWS. The first names a row the fold is holding with a live sighting on it and comes back `confirmed: true`: the clock's base leaves the death line and becomes the instant the log last NAMED the mob, which is what `RespawnRow.basis` then reports as `sighting` rather than `death`. The second names a row nothing is claiming any more — the mob died between the render and the press, or the id is simply not one this fold carries — and comes back `confirmed: false`, which is a NO-OP reported honestly and not an error: the request is perfectly well formed and the fold's own two refusals (unknown id, not currently seen) are the whole of the law. UNLIKE A MARK IT CANNOT BE REFUSED FOR BEING EARLY, and the ack shows it by having nowhere to say so: there is no `status` here, because a confirm's failure is never about what the world was doing. THE `moduleChanged` FRAME IS THE PROOF THE PRESS LANDED. Respawn is one of the four modules whose `seq` is a PRIVATE REVISION rather than a log seq (JOS-87), precisely because inputs like this one advance no log line — a confirm on an idle log moves that counter and nothing else, and a client deduping on an event seq would swallow the very push that carries it.",
+  "messages": [
+    {
+      "dir": "client",
+      "message": {
+        "id": 1,
+        "op": "respawn.define",
+        "params": {
+          "prefs": {
+            "watches": [{ "key": "a wan ghoul knight", "display": "a wan ghoul knight" }]
+          }
+        }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 1,
+        "ok": true,
+        "result": { "applied": true }
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 2,
+        "op": "respawn.confirmSighting",
+        "params": { "rowId": "unrest::a wan ghoul knight" }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 2,
+        "ok": true,
+        "result": { "confirmed": true }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "moduleChanged",
+        "module": "respawn",
+        "seq": 12
+      }
+    },
+    {
+      "dir": "client",
+      "message": {
+        "id": 3,
+        "op": "respawn.confirmSighting",
+        "params": { "rowId": "unrest::a decaying skeleton" }
+      }
+    },
+    {
+      "dir": "engine",
+      "message": {
+        "kind": "reply",
+        "id": 3,
+        "ok": true,
+        "result": { "confirmed": false }
+      }
+    }
+  ]
+}

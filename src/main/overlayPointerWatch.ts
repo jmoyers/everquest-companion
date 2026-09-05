@@ -15,7 +15,7 @@
 // "captured" means living anywhere.
 //
 // WHAT THIS FILE DOES NOT DO, stated because the owner's rule is about exactly these: it installs
-// no hook (nothing here touches WH_MOUSE_LL — `overlayMouseForward` in replayGate.ts still decides
+// no hook (nothing here touches WH_MOUSE_LL, and since JOS-499 nothing anywhere does — the hook
 // what forwards, unchanged), it moves no window and re-asserts no z-order (no `setAlwaysOnTop`,
 // no `setBounds`), and it calls `setIgnoreMouseEvents` never. Its whole per-tick cost is one
 // `getCursorScreenPoint()` — a `GetCursorPos` read — against a rectangle it is already holding.

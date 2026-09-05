@@ -55,7 +55,7 @@ import type { SpellEntry } from '../../shared/types'
 // re-spelled, because a roster keyed by a second opinion about what "Mesmerize IV" folds to is a
 // roster that disagrees with the parser on exactly the lines that matter. parseCommon's only
 // reference back this way is an `import type`, so this edge is one-way at runtime.
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 
 /**
  * The effect classes this module can read off a wiki effect line.

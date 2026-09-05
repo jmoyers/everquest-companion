@@ -226,6 +226,7 @@ export function crossZoneRows(args: {
 }): CrossZoneRow[] {
   const limit = args.limit ?? CROSS_ZONE_LIMIT
   const mobs = searchMobsAcrossZones({ ...args, limit })
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: MapSearchHit comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   const labels = args.hits.filter((h) => h.zone !== args.here).map(labelRow)
   return [...mobs, ...labels].sort(byRank).slice(0, limit)
 }

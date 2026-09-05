@@ -6,7 +6,7 @@ import type {
   CharacterRef,
   ItemKnowledge,
   MobKnowledge,
-  ModuleDelta,
+  ModuleChanged,
   ModuleSnapshot,
   OverlayConfig,
   OverlayDrill,
@@ -67,11 +67,20 @@ const overlayApi = {
   /** Hydrate a module's full state (`module:getSnapshot`). Null when the id is unknown. */
   getModuleSnapshot: <S>(id: string): Promise<ModuleSnapshot<S> | null> =>
     ipcRenderer.invoke(IPC.getModuleSnapshot, id),
-  /** Subscribe to `module:delta` pushes (all modules; the caller filters by moduleId). */
-  onModuleDelta: <D>(cb: (d: ModuleDelta<D>) => void): (() => void) => {
-    const listener = (_e: unknown, d: ModuleDelta<D>): void => cb(d)
-    ipcRenderer.on(IPC.onModuleDelta, listener)
-    return () => ipcRenderer.removeListener(IPC.onModuleDelta, listener)
+  /**
+   * Subscribe to `module:changed` pushes — the SERVED world's dirty bit (JOS-493); the caller
+   * filters by moduleId.
+   *
+   * THE SAME MEMBER, UNDER THE SAME NAME AND ON THE SAME CHANNEL as the main app's bridge, for the
+   * reason `onCharacter` below is duplicated: an overlay that folds a module hydrates through the
+   * very same `module:getSnapshot` handler the main window does, so under `EQC_ENGINE_SERVE=1` it
+   * holds an ENGINE snapshot and has exactly the main window's two-numbering-space problem. A
+   * second name for one signal is how the two windows end up folding two different worlds.
+   */
+  onModuleChanged: (cb: (c: ModuleChanged) => void): (() => void) => {
+    const listener = (_e: unknown, c: ModuleChanged): void => cb(c)
+    ipcRenderer.on(IPC.onModuleChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.onModuleChanged, listener)
   },
   /**
    * THE OTHER HALF OF THAT TRANSPORT (JOS-172): "the world for this character was rebuilt in

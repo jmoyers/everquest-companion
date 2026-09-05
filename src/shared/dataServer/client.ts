@@ -17,6 +17,22 @@
 // every window, and re-subscribes everything from scratch under fresh request ids. There is
 // deliberately no catch-up arm and no resume token: the only recovery is a re-query.
 //
+// THE PER-REQUEST DEADLINE (JOS-518). Until it existed, the only thing that could ever settle a
+// request was the connection: a reply, an error reply, or a transport that died. An engine that
+// ACCEPTED a request and then never answered — the wedged-alive pathology — left its caller's
+// promise pending forever, and every caller that had no timeout of its own simply stopped. It is a
+// FAILURE MECHANISM AND NOT A LATENCY BUDGET, which is the same sentence `World::module_snapshot`
+// writes about its own 5 s `SNAPSHOT_PATIENCE`: the engine's ask door already turns a wedged fold
+// into an `unavailable` reply, so this one sits well above it and only ever fires when the engine
+// is not answering AT ALL. It is per REQUEST and never touches the connection — a refused poll is
+// something the caller retries, not a reason to tear a socket down (`waitForFold` is the caller
+// that proves it).
+//
+// THE PENDING ENTRY GOES WITH IT, which is the half a caller's own `Promise.race` cannot do.
+// `readShim.ts` has raced its requests against a clock since JOS-489 and gets its answer that way —
+// but the entry it abandoned stayed in this map for the life of the connection, holding its
+// resolver. One place settles a request now, and it settles the bookkeeping too.
+//
 // THE NO-MUNGING LAW. This client NEVER sorts, filters, aggregates, re-keys or derives anything
 // from a row (owner ruling 4). Rows arrive render-ready — already formatted, already ordered — and
 // the ops are applied POSITIONALLY, exactly as sent: an insert lands immediately before or after
@@ -35,6 +51,7 @@
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
+  type ConCardMessage,
   type DiffMessage,
   type EngineMessage,
   type Epoch,
@@ -44,12 +61,18 @@ import {
   type FoldProgress,
   type Hello,
   type HelloReply,
+  type ModuleChangedMessage,
+  type KnowledgeMissMessage,
   type Reply,
   type ReplyResult,
   type RequestId,
   type ResetMessage,
   type ViewDescriptor
 } from './protocol.generated'
+import { createBroadcasts, deliver, listen, type Broadcasts } from './broadcasts'
+// THE PER-REQUEST DEADLINE's timer and its number, in the one module that touches a clock — see
+// this file's header for what it is for, and that one's for why it is not written inline.
+import { REQUEST_DEADLINE_MS, armDeadline } from './deadline'
 import { TransportError, type Transport } from './transport'
 import { EngineError, RESULT_GUARDS, type ParamsFor, type RequestOp, type ResultFor } from './ops'
 import { LOADING, applyDiff, type ViewState } from './viewWindow'
@@ -103,6 +126,47 @@ export interface EngineClient {
    * the honest shape for a sound: an alert nobody was listening for is not an alert to replay.
    */
   onFire(listener: (fire: FireMessage) => void): () => void
+
+  /**
+   * ONE LIVE `/con` PRODUCED A CARD (JOS-487, boundary verdict 2).
+   *
+   * `onFire`'s shape exactly, and for `onFire`'s reasons: connection-wide, no subscription, no
+   * epoch, nothing to replay. A card is a thing that happened, and a listener that missed one has
+   * missed it — which is the honest shape for a card whose whole purpose is the two seconds before
+   * you decide to pull.
+   */
+  onConCard(listener: (card: ConCardMessage) => void): () => void
+
+  /**
+   * A MODULE'S PUBLISHED STATE MOVED — the dirty bit (JOS-487).
+   *
+   * THE PUSH THAT REPLACES A POLL. It carries a name and a cursor and no state at all, so a holder
+   * of a `module.snapshot` compares its own `seq` against this one and refetches only when this one
+   * is ahead. The app-side `useModule` refetch shim rides it; until that lands, this is the seam it
+   * will ride and nothing subscribes.
+   *
+   * IT IS COALESCED ENGINE-SIDE to one per module per serve beat, so a busy tail delivers a
+   * bounded number of these rather than one per event — but a listener must still be idempotent in
+   * the cursor, because "the newest number wins" is the only thing the coalescing promises.
+   */
+  onModuleChanged(listener: (changed: ModuleChangedMessage) => void): () => void
+  /**
+   * KNOWLEDGE MISSES (JOS-486, boundary verdict 5). Connection-wide, like fires and progress, and
+   * with the same shape for the same reason: a miss belongs to the PROCESS's corpus rather than to
+   * any subscription, so it carries no id and no epoch.
+   *
+   * IT IS A REQUEST FOR WORK, WHICH IS WHAT MAKES IT DIFFERENT FROM A FIRE. The engine ships with no
+   * network stack; the app owns the wiki fetch and the scrape etiquette that goes with it (one
+   * serialized queue, 150 ms spacing, `Retry-After` honoured across the whole queue), so this frame
+   * says "I could not answer this name" and the answer goes back as a `knowledge.define` command.
+   * The engine announces each name AT MOST ONCE per process — a listener that misses one will not
+   * be told again, which is the same honest shape a fire has.
+   *
+   * THIS CLIENT ONLY DELIVERS IT. Nothing here fetches anything: the handler belongs to whoever owns
+   * main's `itemLookup`/`mobLookup` queues, and putting a fetch in a shared transport module would
+   * put a network call in the renderer's copy of it.
+   */
+  onKnowledgeMiss(listener: (miss: KnowledgeMissMessage) => void): () => void
   close(): void
 }
 
@@ -112,6 +176,8 @@ interface PendingRequest {
   readonly op: RequestOp
   readonly resolve: (result: ReplyResult) => void
   readonly reject: (error: EngineError) => void
+  /** The deadline armed for this request. Cleared by whichever settlement gets there first. */
+  readonly deadline: ReturnType<typeof setTimeout>
 }
 
 interface LiveSubscription {
@@ -136,7 +202,9 @@ interface ClientState {
   readonly subs: Map<RequestId, LiveSubscription>
   readonly stateListeners: Set<(state: ConnectionState) => void>
   readonly progressListeners: Set<(progress: FoldProgress) => void>
-  readonly fireListeners: Set<(fire: FireMessage) => void>
+  /** The four connection-wide fan-outs, held together because they are one family — see
+   *  `broadcasts.ts` for what makes them one. */
+  readonly broadcasts: Broadcasts
 }
 
 function setConnectionState(s: ClientState, next: ConnectionState): void {
@@ -178,11 +246,29 @@ function send(s: ClientState, message: ClientMessage): void {
   else if (s.state === 'connecting') s.outbox.push(message)
 }
 
+/**
+ * TAKE A REQUEST OFF THE BOOKS, and disarm its deadline in the same breath.
+ *
+ * ONE PLACE, so a settlement path cannot be written that forgets the timer: a reply, an error reply
+ * and a connection failure all come through here or through `rejectAllPending` below, and the
+ * deadline itself is the only settlement that has already fired.
+ */
+function takePending(s: ClientState, id: RequestId): PendingRequest | undefined {
+  const pending = s.pending.get(id)
+  if (pending === undefined) return undefined
+  s.pending.delete(id)
+  clearTimeout(pending.deadline)
+  return pending
+}
+
 function rejectAllPending(s: ClientState, error: EngineError): void {
   const inFlight = Array.from(s.pending.values())
   s.pending.clear()
   s.outbox.length = 0
-  for (const request of inFlight) request.reject(error)
+  for (const request of inFlight) {
+    clearTimeout(request.deadline)
+    request.reject(error)
+  }
 }
 
 /** THE EPOCH LAW's teeth: every window this client holds, gone, all at once. */
@@ -272,20 +358,42 @@ function sendRequest<O extends RequestOp>(
   params: ParamsFor<O>
 ): Promise<ReplyResult> {
   return new Promise<ReplyResult>((resolve, reject) => {
-    s.pending.set(id, { op, resolve, reject })
+    const deadline = armDeadline(() => {
+      onDeadline(s, id, op)
+    })
+    s.pending.set(id, { op, resolve, reject, deadline })
     // The registry above is what makes this cast true: `op` and `params` are drawn from the same
     // wire union this is asserting into, and TypeScript simply cannot see that through a generic.
     send(s, { id, op, params } as unknown as ClientMessage)
   })
 }
 
+/**
+ * NOBODY ANSWERED. Reject the one request and leave the connection exactly as it was.
+ *
+ * THE CONNECTION IS NOT FAILED HERE, and that is the whole difference between this and every other
+ * rejection in this file. A dead transport is a fact about the socket and takes every request with
+ * it (`failConnection`); a request nobody answered is a fact about ONE ask, and the engine on the
+ * other end may be perfectly healthy and merely busy in a way this app has not met before. The
+ * caller decides what that means — `foldWait.ts` retries a bounded few times and keeps waiting,
+ * because a folding engine is never given up on.
+ */
+function onDeadline(s: ClientState, id: RequestId, op: RequestOp): void {
+  // THROUGH THE SAME DOOR as a reply and an error reply, even though this one's timer has already
+  // fired and clearing it is a no-op: one settlement path is what makes "the map and the timer go
+  // together" a property of the code rather than a thing three functions have to remember.
+  const pending = takePending(s, id)
+  if (pending === undefined) return
+  s.debug(`${op} (request ${id}) went unanswered for ${REQUEST_DEADLINE_MS} ms - given up on`)
+  pending.reject(new EngineError('timeout', `the engine did not answer ${op} in time`, id))
+}
+
 function onReply(s: ClientState, reply: Reply): void {
-  const pending = s.pending.get(reply.id)
+  const pending = takePending(s, reply.id)
   if (pending === undefined) {
     s.debug(`a reply arrived for request ${reply.id}, which nobody is waiting for - dropped`)
     return
   }
-  s.pending.delete(reply.id)
   if (!RESULT_GUARDS[pending.op](reply.result)) {
     pending.reject(
       new EngineError('internal', `the reply to ${pending.op} carries another op's result`, reply.id)
@@ -296,12 +404,11 @@ function onReply(s: ClientState, reply: Reply): void {
 }
 
 function onErrorReply(s: ClientState, reply: ErrorReply): void {
-  const pending = s.pending.get(reply.id)
+  const pending = takePending(s, reply.id)
   if (pending === undefined) {
     s.debug(`an error arrived for request ${reply.id}, which nobody is waiting for - dropped`)
     return
   }
-  s.pending.delete(reply.id)
   pending.reject(new EngineError(reply.error.code, reply.error.message, reply.id))
 }
 
@@ -448,11 +555,12 @@ function receive(s: ClientState, message: EngineMessage): void {
   else if (message.kind === 'error') onErrorReply(s, message)
   else if (message.kind === 'epoch') onEpochMessage(s, message)
   else if (message.kind === 'reset') onReset(s, message)
-  // A FIRE TOUCHES NO WINDOW AND NO EPOCH. It carries neither, deliberately — see `onFire` — so it
-  // is handed straight to the listeners without passing through `noteEpoch`, which is the one place
-  // this client is entitled to drop state.
-  else if (message.kind === 'fire') for (const listener of s.fireListeners) listener(message)
-  else onDiff(s, message)
+  // THE FOUR CONNECTION-WIDE FRAMES, IN ONE BRANCH. None of them carries an id or an epoch, so none
+  // of them passes through `noteEpoch` — the one place this client is entitled to drop state — and
+  // `broadcasts.ts` is where that property became structural rather than repeated four times.
+  else if (deliver(s.broadcasts, message)) {
+    // Handled there. The predicate is what narrows the remaining frame to a diff below.
+  } else onDiff(s, message)
 }
 
 export function createEngineClient(options: EngineClientOptions): EngineClient {
@@ -468,7 +576,7 @@ export function createEngineClient(options: EngineClientOptions): EngineClient {
     subs: new Map(),
     stateListeners: new Set(),
     progressListeners: new Set(),
-    fireListeners: new Set()
+    broadcasts: createBroadcasts()
   }
   return {
     get state() {
@@ -495,12 +603,13 @@ export function createEngineClient(options: EngineClientOptions): EngineClient {
         s.progressListeners.delete(listener)
       }
     },
-    onFire: (listener): (() => void) => {
-      s.fireListeners.add(listener)
-      return (): void => {
-        s.fireListeners.delete(listener)
-      }
-    },
+    // FOUR ONE-LINERS OVER ONE HELPER. What these methods ever had in common was the
+    // add-and-return-a-delete, and four copies of it were four chances to write a listener that
+    // could not be removed.
+    onFire: (listener): (() => void) => listen(s.broadcasts.fire, listener),
+    onConCard: (listener): (() => void) => listen(s.broadcasts.conCard, listener),
+    onModuleChanged: (listener): (() => void) => listen(s.broadcasts.moduleChanged, listener),
+    onKnowledgeMiss: (listener): (() => void) => listen(s.broadcasts.knowledgeMiss, listener),
     close: (): void => {
       if (s.state === 'closed') return
       setConnectionState(s, 'closed')

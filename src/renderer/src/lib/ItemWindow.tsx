@@ -439,7 +439,9 @@ export function ItemWindow({
 
   // Cast/cooldown belong to the click effect, not the attribute grid (Boots of the Long
   // Road prints them right under its `Click Effect:` line).
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: ItemStat comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   const attrs = (block?.stats ?? []).filter((s) => !TIMING_KEYS.has(s.key))
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: ItemStat comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   const timing = (block?.stats ?? []).filter((s) => TIMING_KEYS.has(s.key))
 
   return (

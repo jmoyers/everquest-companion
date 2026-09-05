@@ -104,6 +104,7 @@ export function notableChips(chips: readonly ConCardChip[]): ConCardNotableChip[
 export function conCardTotalN(chips: readonly ConCardChip[]): number {
   // `nTotal` for the same reason `notableChips` reads it: this sentence is about what the app has
   // SEEN, and a cast that could not have been resisted was still seen (JOS-385).
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ConCardChip. Becomes a view descriptor when the source lands.
   return chips.reduce((sum, c) => sum + (Number.isFinite(c.nTotal) ? c.nTotal : 0), 0)
 }
 

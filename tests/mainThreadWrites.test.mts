@@ -150,7 +150,16 @@ test('A QUIT FINAL WRITES THROUGH ITS OWN SCRATCH FILE — never a torn file for
   // The two writers that CAN be dropped are dropped instead of racing: the overlay's periodic saver
   // and the ledger's writer both refuse while one is in flight, and both losses are bounded by a
   // cadence that was already their accepted loss.
-  assert.match(read('src/main/data/overlayPersistence.ts'), /export function saveUserOverlay\(register: OverlayRegister\): void \{\r?\n {2}if \(writing\) return/)
+  // THE IN-FLIGHT LATCH IS NOW THE SECOND GUARD, NOT THE FIRST (JOS-497 item 2). The ownership
+  // question comes before it and asks something different: `writing` is "is THIS process mid-write",
+  // and `appOwnsArtifacts()` is "does this process write this file at all on this launch" — under
+  // serve the engine owns `message-overlay.json`. Both are still here and the drop-rather-than-queue
+  // claim this test makes is untouched; only the order changed, so the pin is widened to allow the
+  // ownership guard in front rather than loosened to stop checking.
+  assert.match(
+    read('src/main/data/overlayPersistence.ts'),
+    /export function saveUserOverlay\(register: OverlayRegister\): void \{\r?\n {2}if \(!appOwnsArtifacts\(\)\) return\r?\n {2}if \(writing\) return/
+  )
   assert.match(read('src/main/resist/ledgerFile.ts'), /if \(writing\) return \{ status: 'busy' \}/)
 })
 
@@ -180,10 +189,15 @@ test('THE FINALS ARE WIRED WHERE THE APP ACTUALLY ENDS', () => {
   assert.match(body, /flushErrorLogSync\(\)/)
   // The error log goes LAST, so a line any step above it just wrote is in the batch.
   assert.ok(body.lastIndexOf('flushErrorLogSync()') > body.indexOf('flushRingSync'))
-  // The overlay's final is the teardown step that was already the last save of a run.
-  assert.match(index, /teardownStep\('main:saveOverlay', \(\) => saveUserOverlaySync\(/)
-  // …and the periodic saver on session.ts's tick is the ASYNC one.
-  assert.match(read('src/main/session.ts'), /\n {6}saveUserOverlay\(buffsModule\.overlayRegister\(\)\)/)
+  // THE OVERLAY REGISTER HAS NO APP-SIDE FINAL ANY MORE (JOS-499, boundary verdict 4). Both its
+  // writers lived here — the quit-time `saveUserOverlaySync` teardown step and the 60-tick
+  // `saveUserOverlay` rider on session.ts's heartbeat — and both read the register off this
+  // process's buffs module. The ENGINE owns that file now, so the honest assertion inverts:
+  // nothing here may write it, because writing one at quit would be this process publishing an
+  // empty opinion over the file the engine has been maintaining, at the one moment nothing is
+  // left to correct it.
+  assert.doesNotMatch(index, /saveUserOverlaySync\(/)
+  assert.doesNotMatch(read('src/main/session.ts'), /saveUserOverlay\(/)
 })
 
 test('THE OVERTURN: storeFile.ts is not on a live path, and a settings write never comes through it', () => {

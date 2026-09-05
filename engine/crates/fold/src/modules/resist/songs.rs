@@ -1,88 +1,59 @@
-//! BARD SONGS: which spells are songs, which song a landing sentence belongs to, and how a
-//! denominator is reconstructed for the ones whose landings the log never prints
-//! (`src/main/resist/songs.ts`, `songIdentity.ts`, `songFold.ts` — owner ruling 2026-08-16,
-//! verbatim: "make sure you can verify the song is running").
+//! Bard songs: which spells are songs, which song a landing sentence belongs to, and how a
+//! denominator is reconstructed for the ones whose landings the log never prints.
 //!
-//! ── THE PROBLEM ────────────────────────────────────────────────────────────────────────────────
+//! A cast rolls resistance once and the log prints the outcome either way. A song re-rolls on every
+//! pulse and the log prints only the resists, so a naive denominator reads a song that landed forty
+//! times and resisted twice as 100% resisted.
 //!
-//! A cast rolls resistance ONCE and the log prints the outcome either way. A SONG re-rolls on every
-//! pulse and the log prints only the RESISTS. So the naive denominator reads a song that landed
-//! forty times and resisted twice as 100% resisted, because thirty-eight of those pulses printed
-//! nothing at all — and songs would dominate every bard's profile with a number that is pure
-//! artifact.
+//! Identity, not the begin line, decides what a song is: EQ Legends bards run under the Symphonic
+//! Aura, which re-pulses every six seconds with no cast line at all. The owner's 2-million-line log
+//! holds five begin-singing lines against 4,152 pulses of one song's landing emote. So a spell only
+//! the Bard can learn is a song whether or not the log announced it, and the begin line is a
+//! corroborating signal that can only add to the set.
 //!
-//! ── AND WHY IDENTITY, NOT THE BEGIN LINE, DECIDES WHAT A SONG IS ────────────────────────────────
+//! Two ways to count attempts, and the first reconstructs nothing:
 //!
-//! The first cut asked the log's own `You begin singing` line. That is a perfectly good signal and
-//! it is almost never printed: EQ Legends bards run under the SYMPHONIC AURA, which re-pulses every
-//! six seconds with NO cast line at all. The owner's 2,013,829-line log contains FIVE begin-singing
-//! lines against 4,152 pulses of one song's landing emote. Nothing was ever flagged as a song, no
-//! cast was ever armed for an emote to join, and every one of 400 Largo's resists was filed as an
-//! ordinary cast with ZERO landings beside it — a spell 100% resisted by construction, dragging
-//! magic toward "nearly immune" on every mob a bard ever sang at.
+//!   1. The landing sentence is known. Every pulse that lands prints it and every pulse that misses
+//!      prints a resist, so attempts are lands + resists per (song, mob) exactly. The pulse rules
+//!      are deliberately not applied on top; they would count the same pulses twice.
+//!   2. It is not known. Only then does the reconstruction run, on the witnesses there are: resist
+//!      lines, DoT ticks, and the aura's own heartbeat.
 //!
-//! So a spell only the Bard can learn IS a song, whether or not the log announced it; the begin
-//! line stays a corroborating signal that can only ADD to the set.
+//! The pulse interval is 6 seconds, measured: gaps between consecutive resists of one song on one
+//! mob are 6, 12, 18 and 24 seconds, never 7, never 9. "Still singing" cannot be read off the cast
+//! lines because bards twist — a begin-singing line says one song started and nothing about any
+//! other stopping.
 //!
-//! ── TWO WAYS TO COUNT ATTEMPTS, AND THE FIRST ONE RECONSTRUCTS NOTHING ──────────────────────────
+//! The four rules:
 //!
-//!   1. THE SENTENCE IS KNOWN (the ordinary case). Every pulse that lands prints the song's
-//!      cast-on-other sentence and every pulse that misses prints a resist, so attempts are lands +
-//!      resists per (song, mob) EXACTLY. The pulse rules below are deliberately NOT applied on top:
-//!      they would count the same pulses twice.
-//!   2. THE SENTENCE IS NOT KNOWN. Only then does the reconstruction run, on the witnesses there
-//!      are — resist lines, DoT ticks, and the aura's own heartbeat.
+//!   1. Witnessed. A pulse of song S at t is witnessed iff the log printed, within +-1 s, a resist,
+//!      a landing emote or a DoT tick for S on any target.
+//!   2. Interpolated. Pulses at t+6k strictly between two witnesses no more than 30 s apart are
+//!      counted. Nothing is extrapolated before the first or after the last witness of a run, since
+//!      the edges are where "it might have stopped" lives. A begin-singing line inside the gap
+//!      re-anchors and the interior pulses before it are dropped: that line proves a restart.
+//!   3. In range. A pulse is an attempt against mob M only if M was alive and in melee contact
+//!      inside the previous 6 s; bard songs are point-blank and the log states no radius. This file
+//!      owns 1 and 2; the fold owns 3, which needs the world.
+//!   4. Separable. Songs are their own evidence family, so they can be excluded from R in one place.
 //!
-//! ── THE MEASUREMENT THE RECONSTRUCTION RESTS ON ─────────────────────────────────────────────────
+//! Which way each is wrong: rule 2 over-counts only if a song stopped and restarted inside a 30 s
+//! window without printing a begin line, which the log shows no mechanism for. Rule 3 under-counts
+//! attempts on mobs you are not meleeing, biasing R toward "more resistant" — the safe direction.
 //!
-//! Gaps between consecutive resists of one song on one mob in the owner's log are 6, 12, 18 and 24
-//! seconds — never 7, never 9. THE PULSE INTERVAL IS 6 SECONDS. That is what makes interpolation
-//! possible at all: between two things the log DID print six seconds apart, exactly zero pulses are
-//! missing; twelve seconds apart, exactly one is. And what makes it necessary is that "still
-//! singing" cannot be read off the cast lines: bards TWIST, so a begin-singing line says a song
-//! started and says nothing about any other song stopping.
+//! A stranger's songs print a landing sentence naming no caster, so they have no denominator anyone
+//! could see. Every arm below answers "handled" for a non-self caster without filing anything.
 //!
-//! ── THE FOUR RULES ─────────────────────────────────────────────────────────────────────────────
-//!
-//!   1. WITNESSED. A pulse of song S at t is witnessed iff the log printed, at t (+-1 s), a resist,
-//!      a landing emote or a DoT tick for S on ANY target. Something happened; the song was running.
-//!   2. INTERPOLATED. Pulses at t+6k strictly between two witnesses no more than 30 s apart are
-//!      counted. NOTHING is extrapolated before the first or after the last witness of a run — the
-//!      edges are exactly where "it might have stopped" lives. A begin-singing line inside the gap
-//!      RE-ANCHORS and the interior pulses before it are dropped, because that line proves a restart.
-//!   3. IN RANGE. A pulse is an attempt against mob M only if M was alive and in MELEE CONTACT
-//!      inside the previous 6 s. Bard songs are point-blank area effects and the log states no
-//!      radius. (This file owns 1 and 2; the fold owns 3, which needs the world.)
-//!   4. SEPARABLE. Songs are their own evidence family in the ledger, so if the numbers ever look
-//!      wrong they can be excluded from R in exactly one place.
-//!
-//! WHICH WAY EACH IS WRONG, because that is the whole argument: rule 2 can OVER-count only if a song
-//! stopped and restarted inside a 30 s window without printing a begin line, and the log shows no
-//! mechanism that does that. Rule 3 UNDER-counts attempts on rooted or ranged mobs you are not
-//! meleeing, which biases R upward, toward "more resistant" — the safe direction, since the cost of
-//! that error is being told to use a different spell rather than being told a resistant mob is easy.
-//!
-//! ── A STRANGER'S SONGS ARE NOT OURS TO READ ─────────────────────────────────────────────────────
-//!
-//! Another bard's pulses print a landing sentence that names no caster, so their songs have no
-//! denominator we could ever see. Filing the resist half alone is the defect this round fixed;
-//! refusing the whole spell is the honest half — which is why every arm below answers "handled"
-//! for a non-self caster without filing anything.
-//!
-//! ── AND THE INVERSION THIS PORT MAKES, stated so it is not read as a change ─────────────────────
-//!
-//! Over there `SongPulses` takes an emit callback and `SongFold` takes a `SongSink` back into the
-//! fold. A Rust module cannot hold a mutable reference back into the object that is calling it, so
-//! both hand their emissions BACK to the caller in order instead. The order is the only thing the
-//! fold can observe, and it is preserved exactly: interpolated pulses before the witnessed pulse
-//! that closed them, and one `SongOut` per `sink` call the TS would have made.
+//! Emissions are handed back to the caller in order rather than through a sink callback, because a
+//! Rust module cannot hold a mutable reference back into its caller. The order is the only thing
+//! the fold can observe: interpolated pulses precede the witnessed pulse that closed them.
 
 use super::catalog::facts_for_key;
 use crate::jsmap::JsMap;
 use eqlog::names::spell_canon_key;
 use std::collections::{HashMap, HashSet};
 
-/// MEASURED, not chosen: consecutive song resists on one mob are 6, 12, 18, 24 s apart.
+/// Measured, not chosen: consecutive song resists on one mob are 6, 12, 18, 24 s apart.
 pub const SONG_PULSE_MS: i64 = 6_000;
 /// Two witnesses further apart than this are two runs, and nothing is interpolated between them.
 pub const SONG_RUN_GAP_MS: i64 = 30_000;
@@ -107,7 +78,7 @@ pub struct SongPulse {
 /// What the song half asks the fold to do, in the order the TS's sink would have been called.
 #[derive(Debug, Clone)]
 pub enum SongOut {
-    /// `sink.land` / `sink.resist` — the landing sentence is known, so the pulse files directly.
+    /// The landing sentence is known, so the pulse files directly.
     File {
         mob_display: String,
         song_key: String,
@@ -138,10 +109,9 @@ struct Open {
 struct SongPulses {
     runs: HashMap<String, Run>,
     open: JsMap<Open>,
-    /// Instants the SYMPHONIC AURA stated outright, from the self-landing sentences it prints once
-    /// per pulse. Interior pulses snap to these when the gap contains any: a real instant the log
-    /// printed beats six-second arithmetic from the last witness, which drifts as soon as the
-    /// server tick does.
+    /// Instants the Symphonic Aura stated outright, from the self-landing sentences it prints once
+    /// per pulse. Interior pulses snap to these when the gap holds any: a real instant the log
+    /// printed beats six-second arithmetic, which drifts as soon as the server tick does.
     beats: Vec<i64>,
 }
 
@@ -173,7 +143,7 @@ impl SongPulses {
 
     /// The log printed something for song S at `ts`: a resist naming `mob_key`, or a landing/tick
     /// naming nobody in particular. Everything inside `SONG_WITNESS_JOIN_MS` of the first such line
-    /// is ONE pulse.
+    /// is one pulse.
     fn witness(&mut self, spell_key: &str, ts: i64, mob_key: Option<&str>, out: &mut Vec<SongOut>) {
         if let Some(open) = self.open.get_mut(spell_key) {
             if ts - open.ts <= SONG_WITNESS_JOIN_MS {
@@ -196,9 +166,9 @@ impl SongPulses {
         self.open.insert(spell_key.to_string(), fresh);
     }
 
-    /// Close any pulse that can no longer gain witnesses, WITHOUT ending the runs they belong to.
-    /// This is what the live tail calls on its heartbeat: a bard mid-rotation has an open pulse and
-    /// an open run, and ending the run would forfeit every interpolated pulse across the next gap.
+    /// Close any pulse that can no longer gain witnesses, without ending the runs they belong to.
+    /// The live tail's heartbeat: a bard mid-rotation has an open pulse and an open run, and ending
+    /// the run would forfeit every interpolated pulse across the next gap.
     fn settle(&mut self, now: i64, out: &mut Vec<SongOut>) {
         let keys: Vec<String> = self.open.iter().map(|(k, _)| k.to_string()).collect();
         for key in keys {
@@ -264,9 +234,9 @@ impl SongPulses {
         }
     }
 
-    /// The instants strictly inside a gap. THE AURA'S OWN HEARTBEAT WINS where it has anything to
-    /// say: those are instants the log PRINTED rather than arithmetic, so they cannot drift against
-    /// the server's tick. Six-second stepping is the fallback for a run with no heartbeat in it.
+    /// The instants strictly inside a gap. The aura's own heartbeat wins where it has anything to
+    /// say — those are instants the log printed rather than arithmetic, so they cannot drift
+    /// against the server's tick. Six-second stepping is the fallback for a gap with no heartbeat.
     fn interior_pulses(&self, prev: i64, ts: i64) -> Vec<i64> {
         let beats: Vec<i64> = self
             .beats
@@ -287,28 +257,25 @@ impl SongPulses {
     }
 }
 
-/// `songIdentity.ts isSongSpell` — true when the Bard is the ONLY class the catalog says can learn
-/// it. "Only" is load-bearing: a handful of lines are shared with other classes and those roll once
-/// per cast like anything else.
+/// True when the Bard is the only class the catalog says can learn it. "Only" is load-bearing: a
+/// handful of lines are shared with other classes and those roll once per cast like anything else.
 fn is_song_spell(spell_key: &str) -> bool {
     facts_for_key(spell_key).song
 }
 
-/// `songIdentity.ts songLandingObservable` — does the catalog know a landing sentence? When it does,
-/// the denominator is exact and nothing is reconstructed.
+/// Does the catalog know a landing sentence? When it does, the denominator is exact and nothing is
+/// reconstructed.
 fn song_landing_observable(spell_key: &str) -> bool {
     facts_for_key(spell_key).landing
 }
 
-/// `songIdentity.ts learnable` — A SONG YOU HAVE NOT LEARNED YET IS NOT THE SONG YOU ARE SINGING
-/// (JOS-384).
+/// A song you have not learned yet is not the song you are singing: narrow the candidates by the
+/// catalog's bard level against the level the log states for the character.
 ///
-/// This replaced a hard-coded pair of spell names. It is a FACT the catalog already states — the
-/// bard level of the line — read against the level the log states for the character. Two guards keep
-/// it from deciding more than it knows: an UNKNOWN level narrows nothing, and a narrowing that would
-/// empty the list is discarded whole, because a character singing a song the catalog says is above
-/// them means the level is wrong or the catalog is, and neither is grounds for throwing the
-/// observation away.
+/// Two guards keep it from deciding more than it knows. An unknown level narrows nothing, and a
+/// narrowing that would empty the list is discarded whole — a character singing a song the catalog
+/// says is above them means the level or the catalog is wrong, and neither is grounds for throwing
+/// the observation away.
 fn learnable(keys: Vec<String>, caster_level: Option<i64>) -> Vec<String> {
     let Some(level) = caster_level else {
         return keys;
@@ -325,19 +292,16 @@ fn learnable(keys: Vec<String>, caster_level: Option<i64>) -> Vec<String> {
     }
 }
 
-/// `songIdentity.ts resolveSongEmote` — WHICH song a landing sentence belongs to.
+/// Which song a landing sentence belongs to.
 ///
-/// EQ prints ONE sentence per spell FAMILY (world-model law 3), so the parser hands over a candidate
-/// LIST and the model resolves it: first against what the CHARACTER could have learned, then against
-/// what the log has NAMED, which for a song is its resist lines. Several candidates with nothing to
-/// separate them are REFUSED rather than guessed at — pooling two songs would smear their resist
-/// adjusts together, and a -100 proc adjust is exactly the thing this model exists to take out.
+/// EQ prints one sentence per spell family, so the parser hands over a candidate list: narrow it
+/// first by what the character could have learned, then by what the log has named, which for a song
+/// is its resist lines. Candidates with nothing to separate them are refused rather than guessed
+/// at, because pooling two songs would smear their resist adjusts together.
 ///
-/// THE ORDER OF THE TWO NARROWINGS IS NOT ARBITRARY. `named` is the stronger evidence and would be
-/// first if it were always THERE — but it is a running tally, so it says nothing about the pulses
-/// before the log first spelled the song out, and on the owner's log that is 35 landings. The level
-/// is known from the first `/who` and does not move, so it covers the opening of a session and
-/// `named` decides everything the level cannot.
+/// The level narrowing comes first because `named` is a running tally that says nothing about the
+/// pulses before the log first spelled the song out, while the level is known from the first
+/// `/who` and does not move.
 fn resolve_song_emote(
     candidates: &[String],
     named: &[String],
@@ -371,11 +335,11 @@ fn resolve_song_emote(
     None
 }
 
-/// `songFold.ts SongFold` — everything the fold does about songs, in one place.
+/// Everything the fold does about songs, in one place.
 #[derive(Debug, Default)]
 pub struct SongFold {
     pulses: SongPulses,
-    /// Songs the log has NAMED in a resist line, newest first. Resolves an ambiguous sentence.
+    /// Songs the log has named in a resist line, newest first. Resolves an ambiguous sentence.
     named: Vec<String>,
     /// Per mob: the songs a resist line named there. The better half of the same resolution.
     named_by_mob: HashMap<String, Vec<String>>,
@@ -391,17 +355,16 @@ impl SongFold {
         self.sung.clear();
     }
 
-    /// `SongFold.settle` — THE LIVE TAIL'S HEARTBEAT (JOS-481): decide what the passage of
-    /// WALL-CLOCK time has settled, and leave open what is genuinely still open.
+    /// The live tail's heartbeat: decide what the passage of wall-clock time has settled, and leave
+    /// open what is genuinely still open.
     ///
-    /// UNLIKE `flush` IT DOES NOT END A RUN, and that difference is the whole reason there are two
-    /// methods: a bard mid-rotation has an open pulse and an open run, and ending the run would
-    /// forfeit every interpolated pulse across the next gap. A zone line and the end of a profile
-    /// are real discontinuities and call `flush`; a heartbeat is not one.
+    /// Unlike `flush` it does not end a run, which is why there are two methods: a bard mid-rotation
+    /// has an open pulse and an open run, and ending the run would forfeit every interpolated pulse
+    /// across the next gap. A zone line and the end of a profile are real discontinuities and call
+    /// `flush`; a heartbeat is not one.
     ///
-    /// A HISTORICAL FOLD NEVER REACHES THIS, so the six goldens are still what a world with settle
-    /// never called produces — a song's last open pulse unclosed, and the interpolation leading up
-    /// to it unemitted, exactly as this module's header records.
+    /// A historical fold never reaches this, so a golden's world has a song's last open pulse
+    /// unclosed and the interpolation leading up to it unemitted.
     pub fn settle(&mut self, now: i64, out: &mut Vec<SongOut>) {
         self.pulses.settle(now, out);
     }
@@ -416,7 +379,7 @@ impl SongFold {
     }
 
     /// A song, by identity. A begin-singing line is a corroborating signal for the rare song a bard
-    /// starts by hand, and can only ever ADD to the set.
+    /// starts by hand, and can only ever add to the set.
     fn is_song(&self, spell_key: &str) -> bool {
         self.sung.contains(spell_key) || is_song_spell(spell_key)
     }
@@ -427,9 +390,9 @@ impl SongFold {
         self.pulses.note_sing(spell_key, ts, out);
     }
 
-    /// A landing sentence on YOURSELF. When it belongs to a song it is the aura's HEARTBEAT:
-    /// `Your feet move faster.` prints 6,966 times in the owner's log, once per pulse, whether or
-    /// not anything was in range. It is the only line that states a pulse instant directly.
+    /// A landing sentence on yourself. When it belongs to a song it is the aura's heartbeat: the
+    /// self-landing sentence prints once per pulse whether or not anything was in range, and it is
+    /// the only line that states a pulse instant directly.
     pub fn on_self_landing(&mut self, ts: i64, candidates: &[String]) {
         for name in candidates {
             if !self.is_song(&spell_canon_key(name)) {
@@ -456,8 +419,8 @@ impl SongFold {
         if !is_self {
             return true;
         }
-        // A resist line SPELLS THE SONG OUT, so the key it carries is the answer — there is no
-        // family table between the log's word and the ledger's row (JOS-384).
+        // A resist line spells the song out, so the key it carries is the answer: no family table
+        // sits between the log's word and the ledger's row.
         self.note_named(mob_key, spell_key);
         if song_landing_observable(spell_key) {
             out.push(SongOut::File {
@@ -472,7 +435,7 @@ impl SongFold {
         true
     }
 
-    /// A landing sentence naming a mob. Returns true when it belonged to a song — handled OR
+    /// A landing sentence naming a mob. Returns true when it belonged to a song — handled or
     /// refused, because either way no armed cast may claim it afterwards.
     pub fn on_emote(
         &mut self,
@@ -491,9 +454,8 @@ impl SongFold {
         }
         let named = self.named_for(mob_key);
         let Some(song_key) = resolve_song_emote(candidates, &named, caster_level) else {
-            // Either not a song, or two songs share the sentence and nothing separates them.
-            // Pooling two songs would smear their resist adjusts together, so an ambiguous pulse is
-            // refused — and still counts as handled, so no cast claims the sentence either.
+            // Either not a song, or two songs share the sentence and nothing separates them. An
+            // ambiguous pulse is refused, and still counts as handled so no cast claims it.
             return candidates.iter().any(|c| self.is_song(&spell_canon_key(c)));
         };
         if song_landing_observable(&song_key) {
@@ -509,7 +471,7 @@ impl SongFold {
         true
     }
 
-    /// A song's own damage line. Where the landing sentence is known, the SENTENCE is the
+    /// A song's own damage line. Where the landing sentence is known, the sentence is the
     /// observation and the tick is the same pulse printing twice. Where it is not, the tick is one
     /// of the few witnesses there are.
     pub fn on_damage(
@@ -582,7 +544,7 @@ mod tests {
         p.note_sing("largo's melodic binding", 7_000, &mut out);
         p.witness("largo's melodic binding", 12_000, None, &mut out);
         p.flush(&mut out);
-        // The restart re-anchors: the 6 s interior pulse is BEFORE it and is dropped.
+        // The restart re-anchors: the 6 s interior pulse is before it and is dropped.
         assert_eq!(pulses(&out), vec![(0, true), (12_000, true)]);
     }
 

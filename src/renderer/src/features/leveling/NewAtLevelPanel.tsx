@@ -158,11 +158,21 @@ export function NewAtLevelPanel({
     onFocusConsumed()
   })
 
-  const unlocks = unlocksAtLevel(data, combo, level)
+  // THE LEVEL JOIN, MEMOIZED (JOS-511 item 2). It folds the unlock dataset for the loadout at this
+  // level and it ran on every render of this panel — a keystroke in the search box below, a
+  // progression push two components up, a pointer move on the charts. Its three inputs are the
+  // dataset (a module-level cached pull), the combo (memoized by `useCurrentComboClasses`) and a
+  // number, so the fold now runs exactly when one of those moves. Its IDENTITY matters as much as
+  // its cost: `unlocks.spells` and `unlocks.skills` are the arrays the two lists take, and fresh
+  // arrays are what would defeat the row memo below them.
+  const unlocks = useMemo(() => unlocksAtLevel(data, combo, level), [data, combo, level])
   // Memoized for its IDENTITY as much as its cost: it is a dependency of the search below, and
   // `comboClassesOf` already hands back one object per combo snapshot.
   const classes = useMemo(() => comboClassSet(combo), [combo])
-  const resolved = new Set<string>(combo.resolved)
+  // The resolved set, ONCE PER COMBO. A fresh `Set` per render is a changed prop on every row of
+  // both lists and on every search result — the single loudest defeater of the row memo, because
+  // it is the prop every one of them takes.
+  const resolved = useMemo(() => new Set<string>(combo.resolved), [combo])
   const known = classes.length > 0
 
   // THE FILTER runs over the ~1,450 already-cached rows, so it is memoized on the query and the

@@ -1,62 +1,57 @@
-//! `src/main/modules/buffsStats.ts` — THE ONE OBSERVED-DURATION LEARNER (JOS-140), and the per-line
-//! game knowledge beside it: the mined duration samples, the recency map, and the spell catalog.
+//! The one observed-duration learner, and the per-line game knowledge beside it: the mined duration
+//! samples, the recency map, and the spell catalog.
 //!
 //! This is GAME knowledge, not character state — a spell's duration and its cast messages are
-//! identical across a character rebirth — which is why the module's rebirth and session-gap clears
-//! deliberately leave everything here intact.
+//! identical across a rebirth — so the module's rebirth and session-gap clears leave it intact.
 //!
-//! ── KEYED ON (LINE, CASTER) — ruling 4, and both halves of the key are the owner's ──────────────
+//! Keyed on (LINE, CASTER):
 //!
-//!   * the LINE is the rank-stripped key, so `Mesmerization III` and `Mesmerization VII` pool. That
-//!     OVERRULES the investigation's per-rank proposal for a measured reason: the committed
-//!     spells.json has 121 rank-suffixed names and ZERO rows at rank VI or above, so a per-rank key
-//!     would start every upgrade back at the DB floor and re-learn from nothing on every level.
+//!   * the LINE is rank-stripped, so `Mesmerization III` and `Mesmerization VII` pool. Not per-rank:
+//!     the committed spells.json has zero rows at rank VI or above, so a per-rank key would start
+//!     every upgrade back at the DB floor and re-learn from nothing on every level.
 //!   * the CASTER is 'self' or an allowlisted external. A duration is a fact about a caster's AAs,
-//!     focus items and rank; a grouped enchanter's 31-second mez and your own 44-second one are two
-//!     answers to two questions, and pooling them gives a bar wrong for both.
+//!     focus items and rank, so pooling a grouped enchanter's mez with your own gives a bar wrong
+//!     for both.
 //!
-//! ── THE ESTIMATOR ──────────────────────────────────────────────────────────────────────────────
+//! The estimator is `max(DB baseline, max over the recent window of observed samples)`. The DB base
+//! is a FLOOR and the observed max is an EXTENSION over it, because a beneficial buff's true
+//! duration is never below its base — AA and focus only extend — so a below-base observation is an
+//! early termination and the max discards it.
 //!
-//!   estimate = max( DB baseline , max-over-recent-window of observed samples )
+//! The baseline is RANK-SCALED: an upgrade tier grows a spell's duration by a per-category
+//! percentage, so the floor is the DB base grown by the highest tier a cast line has named for this
+//! (line, caster) — see `buffs_shapes::scaled_floor_ms`. Only that number changes; every rule the
+//! learner applies to it is untouched.
 //!
-//! The DB base is a FLOOR and the recent observed max is an EXTENSION over it, because a beneficial
-//! buff's true duration is never below its base (AA and focus only EXTEND) — so a BELOW-base
-//! observation is an early termination and the max discards it. Invisibility: DB 20m, observed max
-//! only 4m24 because it is always broken early ⇒ 20m, source 'db'. Swift Like the Wind: DB 16m,
-//! observed 36m20 ⇒ 36m, source 'observed'.
+//! The floor can lose exactly one way. Its assumption is a claim about the game the wiki describes,
+//! and this server re-tiered spells the scrape still describes the old way, so a below-floor
+//! observation may overrule it when the log CORROBORATES it (see [`corroborated_max`]). The source
+//! then reads `Cluster` rather than `Observed`, because the two make opposite claims about the row.
 //!
-//! JOS-212 ADDED THE ONE WAY THE FLOOR CAN LOSE. The floor's assumption is a claim about the game
-//! the wiki describes, and this one re-tiered the spells the scrape still describes the old way — so
-//! a below-floor observation may overrule it when the log CORROBORATES it (three clean cycles whose
-//! top three agree within 10%, `corroborated_max`). The source then reads 'cluster' rather than
-//! 'observed', because the two make opposite claims about the DB row.
+//! A third kind of evidence covers the case where no cycle can ever be witnessed: a debuffed mob's
+//! DEATH with no wear-off since the landing is a LOWER BOUND. On raid mobs that is all the evidence
+//! there is. A bound folds into the max like any other sample and reports `DeathBound` when it wins,
+//! and it is refused the cluster rule and the n/median columns, because it is not a CYCLE.
 //!
-//! JOS-379 ADDED A THIRD KIND OF EVIDENCE for the case where no cycle can ever be witnessed at all:
-//! a debuffed mob's DEATH with no wear-off since the landing is a LOWER BOUND. On raid mobs that is
-//! the whole of the available evidence — they die first, and this server prints no wear-off for your
-//! slow when somebody else lands the kill. A bound folds into the MAX exactly like any other sample
-//! and reports source 'deathBound' when it wins, because it is a bound and not an answer. It is
-//! refused the cluster rule and the n/median columns: a bound is not a CYCLE.
+//! And it is SUBORDINATE to what the log has actually watched end: where the window holds any clean
+//! fade, a bound contributes at most the longest of them — a death corroborates the ceiling fades
+//! have proven, never raises it. Where the window holds none, a bound is the only evidence there is
+//! and keeps its full reach up to its own rails.
 //!
-//! ── THE WINDOW IS APPLIED ONCE PER EVIDENCE CLASS (JOS-180) ────────────────────────────────────
-//!
-//! The most recent five UNCENSORED samples are one window and the most recent five LOWER BOUNDS are
-//! a second; the observed candidate is the MAX over both. A censored sample can therefore never
-//! push an uncensored one out of view, and vice versa. Measured on the owner's bytes: five early
-//! breaks of Dazzle IV drove the estimate to 100 s and evicted the 115 s reading; the 15 s grace an
-//! 'observed' estimate gets then culled every hold at 115 s; the real duration is 136 s, so no full
-//! cycle could ever be witnessed again and the number was frozen below the truth permanently.
-//! Splitting the windows is what makes the recovery STICK. A REAL DECREASE still recovers, which is
-//! the property the split must not cost — it takes five UNCENSORED shorter cycles, exactly as it
-//! always did.
+//! The window is applied ONCE PER EVIDENCE CLASS: the most recent five uncensored samples are one
+//! window and the most recent five lower bounds are a second, with the observed candidate the max
+//! over both. So a censored sample can never push an uncensored one out of view, or vice versa —
+//! without which a run of early breaks drives the estimate under the true duration, the shorter
+//! unwitnessed grace then culls every full-length hold, and the number is frozen below the truth
+//! permanently. A real decrease still recovers, in five uncensored shorter cycles.
 
 use crate::jsfn::parse_spell_rank;
 use crate::jsmap::JsMap;
 use crate::modules::buffs_shapes::{
-    corroborated_max, learn_key, percentile, BuffClass, DurationSample, EstimatorSource,
-    RECENT_SAMPLE_WINDOW, SELF_CASTER,
+    corroborated_max, learn_key, percentile, scaled_floor_ms, tier_of, BuffClass, DurationSample,
+    EstimatorSource, RECENT_SAMPLE_WINDOW, SELF_CASTER,
 };
-use crate::spell_facts::{Nature, SpellFacts, SpellRow};
+use crate::spell_facts::{DurationCategory, Nature, SpellFacts, SpellRow};
 use eqlog::jsstr::js_trim;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -68,17 +63,23 @@ pub struct WindowMax {
     pub bound: bool,
 }
 
-/// Fold one sample into the running window max (JOS-379).
-///
-/// A TIE GOES TO THE MEASURED CYCLE. Two samples agreeing on a number, one of them a real observed
-/// ending, is an OBSERVATION — the bound adds nothing to it and must not weaken the label the log
-/// already earned.
-fn fold_window_max(best: Option<WindowMax>, s: &DurationSample) -> WindowMax {
+/// Fold one sample into the running window max, with a death bound held to `fade_cap` — the ceiling
+/// the window's witnessed clean fades have proven. A tie goes to the MEASURED cycle: the bound adds
+/// nothing to an observation that agrees with it, and must not weaken the label the log earned.
+fn fold_window_max(
+    best: Option<WindowMax>,
+    s: &DurationSample,
+    fade_cap: Option<i64>,
+) -> WindowMax {
     let bound = s.death_bound;
+    let ms = match fade_cap {
+        Some(cap) if bound => s.ms.min(cap),
+        _ => s.ms,
+    };
     match best {
-        None => WindowMax { ms: s.ms, bound },
-        Some(b) if s.ms > b.ms => WindowMax { ms: s.ms, bound },
-        Some(b) if s.ms == b.ms && !bound => WindowMax {
+        None => WindowMax { ms, bound },
+        Some(b) if ms > b.ms => WindowMax { ms, bound },
+        Some(b) if ms == b.ms && !bound => WindowMax {
             ms: b.ms,
             bound: false,
         },
@@ -86,24 +87,38 @@ fn fold_window_max(best: Option<WindowMax>, s: &DurationSample) -> WindowMax {
     }
 }
 
-/// WHICH SPELLING OF A LINE THE BUFFS TAB SHOULD SHOW (JOS-411) — the rank question, answered once.
+/// The ceiling witnessed fades have proven for one sample list: the longest CLEAN cycle in the
+/// recency window, or `None` when the window holds no cycle at all.
 ///
-/// THE REPORT: *I now have the Mesmerization spell levelled up to X. The buffs section lists
-/// 'Mesmerization VI'.* The record's display name was written when the (line, caster) row was first
-/// minted and never again, so the tab showed whatever rank was equipped the first time a cycle
-/// happened to close — forever, across every upgrade.
+/// It walks the same window `observed_window_max_for` does, without the allocation `clean_window_for`
+/// makes for the cluster rule, because it runs on every estimate the projector reads.
+fn clean_fade_cap(samples: &[DurationSample]) -> Option<i64> {
+    let mut best: Option<i64> = None;
+    let mut clean = 0usize;
+    for s in samples.iter().rev() {
+        if s.is_lower_bound() {
+            continue;
+        }
+        best = Some(best.map_or(s.ms, |b: i64| b.max(s.ms)));
+        clean += 1;
+        if clean >= RECENT_SAMPLE_WINDOW {
+            break;
+        }
+    }
+    best
+}
+
+/// Which spelling of a line the Buffs tab shows — the rank question, answered once.
 ///
-/// HIGHEST RANK WINS. Last-write-wins is REFUSED for two reasons that are facts about this store
-/// rather than preferences: the store POOLS ACROSS CHARACTERS (everything here is game knowledge and
-/// survives the rebirth clear), so a second enchanter on the same log would drag the name back down;
-/// and it is the domain law already written down — *once you upgrade a spell it never downgrades,
-/// even on a loadout swap*.
+/// Highest rank wins. Last-write-wins is refused because this store POOLS ACROSS CHARACTERS
+/// (everything here is game knowledge and survives the rebirth clear), so a second enchanter on the
+/// same log would drag the name back down; and because once you upgrade a spell it never downgrades,
+/// even on a loadout swap.
 ///
-/// A TIE KEEPS THE EXISTING SPELLING, so a re-cast of the same rank never churns the row. A
-/// DIFFERENT BASE is not a rank comparison, so the newest name simply wins — two names can share a
-/// line key without sharing a base spelling (a hold that never resolved falls back to its first
-/// candidate; the corrections overlay can RENAME a line outright), and comparing ordinals across
-/// those would be arithmetic on unrelated words.
+/// A tie keeps the existing spelling, so a re-cast of the same rank never churns the row. A
+/// DIFFERENT BASE is not a rank comparison at all, so the newest name simply wins: two names can
+/// share a line key without sharing a base spelling, and comparing ordinals across those would be
+/// arithmetic on unrelated words.
 pub fn preferred_display_name(prev: &str, next: &str) -> String {
     let candidate = js_trim(next);
     if candidate.is_empty() || candidate == js_trim(prev) {
@@ -154,26 +169,29 @@ pub struct Estimate {
 }
 
 pub struct SpellStats {
-    /// The projected spell catalog — the authoritative prior. An EMPTY one is the TS's absent `db?`.
+    /// The projected spell catalog — the authoritative prior. An EMPTY one means no catalog at all.
     pub db: SpellFacts,
     /// Mined samples per (LINE, CASTER). Ranks pool within a caster; casters never pool with each
-    /// other (ruling 4).
+    /// other.
     samples: JsMap<SpellSamples>,
-    /// Spell keys ever seen fading / applied — the set `build_stats` walks.
+    /// Spell keys ever seen fading or applied — the set `build_stats` walks.
     pub ever_faded: Vec<String>,
     ever_faded_at: HashSet<String>,
-    /// SPELL LINES THIS LOG HAS EVER PRINTED A TARGET-NAMED WEAR-OFF FOR (JOS-379) — the
-    /// "wear-off channel witnessed" flag, learned at runtime and from nothing else.
+    /// Spell lines this log has ever printed a TARGET-NAMED wear-off for, learned at runtime and
+    /// from nothing else.
     ///
-    /// The death lower bound reads an ABSENCE: no `Your <X> spell has worn off of <mob>.` between
-    /// the landing and the corpse. An absence is only evidence about a spell that PRINTS the line in
-    /// the first place, so a line whose channel this log has never demonstrated teaches nothing from
-    /// silence, however many mobs die under it. It is the TARGET-NAMED sentence and not the self one:
-    /// `Your speed returns to normal.` proves a buff on YOU ends audibly and says nothing about
-    /// whether a debuff on a MOB does.
+    /// The death lower bound reads an ABSENCE: no wear-off between the landing and the corpse. An
+    /// absence is only evidence about a spell that prints the line in the first place, so a line
+    /// whose channel this log has never demonstrated teaches nothing from silence, however many mobs
+    /// die under it. It is the target-named sentence and not the self one: a self wear-off proves a
+    /// buff on YOU ends audibly and says nothing about whether a debuff on a mob does.
     wear_off_witnessed: HashSet<String>,
     /// Per-spell LAST-SEEN event ts: the newest castBegin / apply / fade involving the spell.
     last_seen: JsMap<i64>,
+    /// The highest upgrade tier a cast line has named for a (LINE, CASTER) — the roman numeral, and
+    /// nothing else. Highest wins for the same reason the display name's rank does: a spell once
+    /// upgraded never downgrades, and this store pools ranks under one line key.
+    cast_tiers: JsMap<i64>,
 }
 
 impl SpellStats {
@@ -185,6 +203,7 @@ impl SpellStats {
             ever_faded_at: HashSet::new(),
             wear_off_witnessed: HashSet::new(),
             last_seen: JsMap::new(),
+            cast_tiers: JsMap::new(),
         }
     }
 
@@ -194,11 +213,11 @@ impl SpellStats {
         self.ever_faded_at.clear();
         self.wear_off_witnessed.clear();
         self.last_seen.clear();
+        self.cast_tiers.clear();
     }
 
-    /// `everFaded.add` — a JS `Set`, so the INSERTION order is what `build_stats` walks. The object
-    /// it builds is keyed, so that order is not published; keeping it anyway is what makes a diff
-    /// between two runs of this crate readable.
+    /// Insertion order is what `build_stats` walks. The object it builds is keyed, so that order is
+    /// not published; keeping it stable anyway is what makes a diff between two runs readable.
     pub fn note_ever_faded(&mut self, key: &str) {
         if self.ever_faded_at.insert(key.to_string()) {
             self.ever_faded.push(key.to_string());
@@ -224,9 +243,41 @@ impl SpellStats {
         self.db.get(key)
     }
 
-    /// Authoritative DB duration (ms) for a spell key, or `None` when unknown.
+    /// Authoritative DB duration (ms) for a spell key, or `None` when unknown. The catalog's own
+    /// number, unscaled — what the DB STATES, as against the floor the estimator reads.
     pub fn db_duration_for(&self, key: &str) -> Option<i64> {
         self.row_of(key).and_then(|s| s.duration_ms)
+    }
+
+    /// Record the upgrade tier a cast line named for this (line, caster). An unsuffixed name states
+    /// the base tier and is not evidence, so it never lowers what a numeral already proved.
+    pub fn note_cast_tier(&mut self, key: &str, caster: &str, ranked_name: &str) {
+        let tier = tier_of(ranked_name);
+        if tier <= 0 {
+            return;
+        }
+        let lk = learn_key(key, caster);
+        if self.cast_tiers.get(&lk).is_none_or(|&prev| tier > prev) {
+            self.cast_tiers.insert(lk, tier);
+        }
+    }
+
+    /// The tier this (line, caster) has been seen cast at — 0 when no cast line ever named one.
+    pub fn cast_tier(&self, key: &str, caster: &str) -> i64 {
+        self.cast_tiers
+            .get(&learn_key(key, caster))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The FLOOR the estimator stands on: the DB base grown by the tier the log named for this
+    /// caster. A spell whose upgrade path nobody witnessed is its base duration exactly.
+    pub fn floor_for(&self, key: &str, caster: &str) -> Option<i64> {
+        let db_ms = self.db_duration_for(key)?;
+        let cat = self
+            .row_of(key)
+            .map_or(DurationCategory::Unstated, |s| s.category);
+        Some(scaled_floor_ms(db_ms, cat, self.cast_tier(key, caster)))
     }
 
     /// True when a spell KEY is illusion-flagged in the DB.
@@ -234,35 +285,36 @@ impl SpellStats {
         self.row_of(key).is_some_and(|s| s.illusion)
     }
 
-    /// DOES THE SPELL DATABASE SAY THIS SPELL NEVER EXPIRES (JOS-215)?
+    /// Does the spell database say this spell never expires?
     ///
-    /// THE DISCRIMINATOR IS `durationText === 'Permanent'`, and `durationMs == null` ALONE IS NOT
-    /// IT. Measured over the committed spells.json (1,926 rows): 62 rows state `Permanent`, every
-    /// one of them Self and beneficial, and every one of them carries `durationMs: null` because the
-    /// duration parser deliberately refuses the word. But 453 Self rows carry a null duration and the
-    /// rest of them are `Instant` nukes, `Unlimited`, and clock forms an older scrape could not read
-    /// — admitting on the null would open a permanent instance for every instant self-cast in the
-    /// game. The wiki's own WORD is the fact; the null is an artefact of reading it.
+    /// The discriminator is the duration TEXT reading `Permanent`, and a null duration alone is not
+    /// it. Measured over the committed spells.json: 62 rows state `Permanent` and all of them carry
+    /// a null duration, because the duration parser refuses the word — but 453 self rows carry a
+    /// null duration, and the rest are instant nukes, `Unlimited`, and clock forms an older scrape
+    /// could not read. Admitting on the null would open a permanent instance for every instant
+    /// self-cast in the game.
     pub fn is_permanent(&self, key: &str) -> bool {
         self.row_of(key)
             .is_some_and(|s| s.duration_text.as_deref() == Some("Permanent"))
     }
 
-    /// Append a mined duration sample for one caster. The DISPLAY NAME is re-read on every sample,
-    /// not written once at mint (JOS-411).
+    /// Append a mined duration sample for one caster. The display name is re-read on every sample,
+    /// not written once at mint.
     pub fn push_sample(&mut self, key: &str, caster: &str, spell: &str, sample: DurationSample) {
         self.row(key, caster, spell).samples.push(sample);
     }
 
-    /// A LANDING SAID WHAT THIS LINE IS CALLED (JOS-411) — the same display-name write as
-    /// `push_sample`, without a sample behind it.
+    /// A landing said what this line is called — the same display-name write as `push_sample`,
+    /// without a sample behind it.
     ///
-    /// It exists because a mint is not the only moment the log states a rank, and on the
-    /// crowd-control path it is the RARER one: the cast line is the only line in a mez's family that
-    /// carries the numeral, while a sample is minted only from a CLEAN cycle — a mez the player's
-    /// own nuke broke teaches the tab nothing. A row with no samples is a LEGAL row and always was.
+    /// A mint is not the only moment the log states a rank, and on the crowd-control path it is the
+    /// rarer one: the cast line is the only line in a mez's family carrying the numeral, while a
+    /// sample is minted only from a CLEAN cycle. A row with no samples is a legal row.
+    /// The same line states the RANK when it carries a numeral: this seam is fed the ranked cast
+    /// text, which on a crowd-control line is the only spelling that ever has one.
     pub fn note_display_name(&mut self, key: &str, caster: &str, spell: &str) {
         self.row(key, caster, spell);
+        self.note_cast_tier(key, caster, spell);
     }
 
     /// The (line, caster) row, minted if new, with its display name brought up to date.
@@ -270,8 +322,8 @@ impl SpellStats {
         let lk = learn_key(key, caster);
         match self.samples.get_mut(&lk) {
             Some(_) => {
-                // Two statements rather than one because the borrow of the row has to end before
-                // `preferred_display_name` can read it back; the effect is the TS's one line.
+                // Two statements because the borrow of the row has to end before
+                // `preferred_display_name` can read it back.
                 let updated = {
                     let s = self.samples.get(&lk).expect("present");
                     preferred_display_name(&s.spell, spell)
@@ -294,13 +346,12 @@ impl SpellStats {
     }
 
     /// Mark the sample closed at `closed_ts` CENSORED — the log named something that ended that
-    /// cycle early, so its span is a lower bound and not the duration (JOS-180).
+    /// cycle early, so its span is a lower bound and not the duration.
     ///
-    /// IT IS RETROACTIVE BECAUSE THE LOG IS. `<mob> has been awakened by <name>.` is printed AFTER
-    /// the wear-off sentence it explains — measured over the owner's whole log, 1,472 of 1,472
-    /// paired wakes follow their wear-off, in the same second — so the sample is always already
-    /// minted by the time the cause arrives. The estimate is a MAX over both windows and does not
-    /// move; what changes is only what this sample may EVICT later.
+    /// It is retroactive because the log is: the wake line is printed AFTER the wear-off sentence it
+    /// explains (measured: 1,472 of 1,472 paired wakes follow their wear-off, in the same second),
+    /// so the sample is always already minted when the cause arrives. The estimate is a max over
+    /// both windows and does not move; what changes is what this sample may EVICT later.
     ///
     /// Returns whether it found one, so the caller knows whether to re-stat.
     pub fn censor_sample_at(&mut self, key: &str, caster: &str, closed_ts: i64) -> bool {
@@ -334,12 +385,10 @@ impl SpellStats {
         if s.samples.is_empty() {
             return None;
         }
-        // The DISTRIBUTION columns describe every cycle the model measured, censored or not: the
-        // tab's n/median/min/max are a report on what was OBSERVED, and hiding the broken cycles
-        // there would misdescribe the log. Only the ESTIMATE reads the censoring.
-        //
-        // A DEATH BOUND IS NOT A CYCLE AND IS NOT COUNTED (JOS-379). `n` is the number of land→fade
-        // PAIRS and a bound has no fade in it — nothing ended, the mob simply stopped existing.
+        // The DISTRIBUTION columns describe every cycle the model measured, censored or not: they
+        // report what was OBSERVED, and hiding the broken cycles would misdescribe the log. Only the
+        // estimate reads the censoring. A death bound is not counted at all, because `n` is the
+        // number of land→fade pairs and a bound has no fade in it.
         let mut sorted: Vec<i64> = s
             .samples
             .iter()
@@ -368,19 +417,23 @@ impl SpellStats {
     /// The observed candidate that competes with the DB floor: the MAX over the most recent window
     /// of samples for this (line, caster), or `None` when there are none.
     ///
-    /// MAX, not median/p75: samples are dominated by early terminations that read SHORT — a buff
-    /// clicked off, a mez a nuke broke — and those never lift the max, so the max recovers a
-    /// focus/AA-extended true duration that a central statistic stays dragged below. A WINDOW rather
-    /// than all-time, because a focus effect that is later REMOVED genuinely shortens the duration
-    /// and an old long observation has to be able to age out.
+    /// MAX, not median or p75: samples are dominated by early terminations that read short — a buff
+    /// clicked off, a mez a nuke broke — and those never lift the max, so it recovers a focus- or
+    /// AA-extended true duration that a central statistic stays dragged below. A WINDOW rather than
+    /// all-time, because a focus effect later removed genuinely shortens the duration and an old
+    /// long observation has to be able to age out.
     ///
-    /// WHY A CENSORED SAMPLE STILL COUNTS TOWARD THE MAX: it is a real observation, just a truncated
-    /// one — the wake line proves the mez was still holding one instant before it, so the span is a
-    /// LOWER BOUND. Discarding it outright would hand the DB floor back to exactly the spells
-    /// JOS-126 was filed about. A lower bound is worth more than a wrong number, and MAX is the one
-    /// estimator that can accept one safely.
+    /// A censored sample still counts toward the max: it is a real observation, just a truncated
+    /// one, so the span is a LOWER BOUND. Discarding it outright would hand the DB floor back to
+    /// exactly the spells the learner exists for, and max is the one estimator that can accept a
+    /// lower bound safely.
+    ///
+    /// A DEATH bound is the one class held to a ceiling here: [`clean_fade_cap`] subordinates it to
+    /// what the window's own clean fades have proven. Nothing stored changes — the sample keeps the
+    /// span the corpse measured, and only this read is capped.
     pub fn observed_window_max_for(&self, key: &str, caster: &str) -> Option<WindowMax> {
         let s = self.samples.get(&learn_key(key, caster))?;
+        let fade_cap = clean_fade_cap(&s.samples);
         let mut best: Option<WindowMax> = None;
         let mut clean = 0usize;
         let mut broken = 0usize;
@@ -396,7 +449,7 @@ impl SpellStats {
                 }
                 clean += 1;
             }
-            best = Some(fold_window_max(best, sample));
+            best = Some(fold_window_max(best, sample, fade_cap));
             if clean >= RECENT_SAMPLE_WINDOW && broken >= RECENT_SAMPLE_WINDOW {
                 break;
             }
@@ -404,11 +457,11 @@ impl SpellStats {
         best
     }
 
-    /// The most recent five CLEAN samples for this (line, caster), newest first — the same window
-    /// the max walks on the uncensored side, handed out as a list because the below-floor overrule
-    /// asks a question a max cannot answer: do the observations AGREE?
+    /// The most recent CLEAN samples for this (line, caster), newest first — the same window the max
+    /// walks on the uncensored side, handed out as a list because the below-floor overrule asks a
+    /// question a max cannot answer: do the observations AGREE?
     ///
-    /// LOWER BOUNDS ARE ABSENT BY CONSTRUCTION. They are lower bounds on a duration, not
+    /// Lower bounds are absent by construction: they are bounds on a duration rather than
     /// measurements of one, so they may neither corroborate a cluster nor break one.
     pub fn clean_window_for(&self, key: &str, caster: &str) -> Vec<i64> {
         let Some(s) = self.samples.get(&learn_key(key, caster)) else {
@@ -426,15 +479,14 @@ impl SpellStats {
         out
     }
 
-    /// THE ONE ESTIMATOR — see this file's header for the three rules that compose it.
+    /// The one estimator — see this file's header for the rules that compose it.
     ///
-    /// TWO SMALL EXACTNESSES on the below-floor overrule. (1) The number it returns is the WHOLE
-    /// window's max, not the clean cluster's — if a censored sample in the window is longer, the log
-    /// proved the spell was still running at that instant and the estimate may never be drawn below
-    /// a proven lower bound. (2) The comparison is STRICT, so an observation that merely EQUALS the
-    /// floor changes nothing and stays 'db'.
+    /// Two exactnesses on the below-floor overrule. The number returned is the WHOLE window's max,
+    /// not the clean cluster's: if a censored sample in the window is longer, the log proved the
+    /// spell was still running then, and the estimate may never be drawn below a proven lower bound.
+    /// And the comparison is STRICT, so an observation merely equalling the floor changes nothing.
     pub fn estimate_for(&self, key: &str, caster: &str) -> Estimate {
-        let db_ms = self.db_duration_for(key);
+        let db_ms = self.floor_for(key, caster);
         let observed = self.observed_window_max_for(key, caster);
         let learned = match observed {
             Some(o) if o.bound => EstimatorSource::DeathBound,
@@ -472,12 +524,10 @@ impl SpellStats {
         }
     }
 
-    /// THE BUFF/DEBUFF CLASS OF A SPELL — from the spell's NATURE, and from nothing else (JOS-140
-    /// ruling 8). A spell whose nature nobody states is NOT a debuff by assumption: it reads 'buff',
-    /// and it is never resolved by looking at who it landed on. The removed fallback — a tally of
-    /// the entity DISPOSITIONS a spell's fades had landed on — is what put `Resist Magic` (spellType
-    /// `Resist Buff`, matching neither literal) on the DEBUFFS overlay when it landed on somebody
-    /// the model was not holding as a pet.
+    /// The buff/debuff class of a spell, from the spell's NATURE and from nothing else. A spell
+    /// whose nature nobody states is not a debuff by assumption — it reads `Buff` — and it is never
+    /// resolved by looking at who it landed on, which is what used to put a resist buff on the
+    /// debuffs overlay when it landed on somebody the model was not holding as a pet.
     pub fn class_of(&self, key: &str) -> BuffClass {
         match self.row_of(key).map(|s| s.nature) {
             Some(Nature::Detrimental) => BuffClass::Debuff,
@@ -485,18 +535,17 @@ impl SpellStats {
         }
     }
 
-    /// DOES THIS SPELL CALM ITS TARGET (JOS-213) — the second, orthogonal question, asked at the
-    /// same seam and answered from the same place. `class_of` says whether the spell is a good thing
-    /// or a bad thing; this says whether the thing it does happens to an ENEMY.
+    /// Does this spell CALM its target — a second, orthogonal question asked at the same seam.
+    /// `class_of` says whether the spell is a good thing or a bad thing; this says whether the thing
+    /// it does happens to an ENEMY.
     pub fn calms_target(&self, key: &str) -> bool {
         self.row_of(key).is_some_and(|s| s.calms_target)
     }
 
     /// The snapshot's per-line stats record: every spell ever faded, with or without samples.
     ///
-    /// It reports the SELF caster's numbers. The Buffs tab is a page about your own spells, and an
-    /// allowlisted external's samples live under their own learner key precisely so they cannot be
-    /// mistaken for yours.
+    /// It reports the SELF caster's numbers only. An allowlisted external's samples live under their
+    /// own learner key precisely so they cannot be mistaken for yours.
     pub fn build_stats(&self) -> serde_json::Map<String, serde_json::Value> {
         let mut stats = serde_json::Map::new();
         for key in &self.ever_faded {
@@ -504,6 +553,8 @@ impl SpellStats {
                 Some(st) => st,
                 None => {
                     let db_ms = self.db_duration_for(key);
+                    // No samples, so the estimate is the floor and the floor alone.
+                    let floor_ms = self.floor_for(key, SELF_CASTER);
                     BuffStat {
                         spell: self
                             .sample_spell_name(key, SELF_CASTER)
@@ -518,8 +569,8 @@ impl SpellStats {
                         min_ms: None,
                         max_ms: None,
                         db_duration_ms: db_ms,
-                        estimate_ms: db_ms,
-                        estimator_source: db_ms.map(|_| EstimatorSource::Db),
+                        estimate_ms: floor_ms,
+                        estimator_source: floor_ms.map(|_| EstimatorSource::Db),
                         last_seen_ms: self.last_seen.get(key).copied(),
                     }
                 }

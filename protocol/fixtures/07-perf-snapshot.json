@@ -1,7 +1,7 @@
 {
   "moment": "the engine reports itself — the numbers the in-app performance panel draws",
   "source": "JOS-483 (owner ruling 19 surface: \"the performance chip should incl perf of the server in end state\"; not a plan-doc moment — the four numbered moments are 01-04)",
-  "note": "THE OWNER'S ASK, ON THE WIRE: `i want to see the server in the cpu/performance overlay in app`. Four answers are worked here and they are four different sentences. The FIRST is a launched engine with nothing attached: `idle`, a real uptime, an empty `serve` list, and an `ingest` with no field in it at all — ABSENT, never zero, because a `scanMs` of 0 would say a whole log folded instantly rather than that no scan has finished. The SECOND is the same engine mid-scan with a subscription already open: the ingest has measured its spell catalog but not its scan, and the serve row is every counter at a REAL zero beside `subscribers: 1` — a window that is watching and has been served nothing yet, which is precisely the state a person stares at when a view looks empty and which an omitted row would make indistinguishable from a view nobody opened. Its two latency fields are absent, because nothing was timed. The THIRD is that session gone live: the ingest half is complete and the serve table carries the two measurements ruling 19 names — the payload budget (bytes, and the widest single frame) and fold-to-frame latency in MICROSECONDS, because cutting a fifty-row window off a fold takes tens of them and a serve path reporting `0 ms` reads as a measurement nobody took. The FOURTH is the op's only refusal: a fold that had a door and did not answer through it. An engine with nothing attached is NOT this — it is the first answer — and the distinction is the whole reason a wedged ingest is worth saying out loud rather than drawing as a row of zeros.",
+  "note": "THE OWNER'S ASK, ON THE WIRE: `i want to see the server in the cpu/performance overlay in app`. Four answers are worked here and they are four different sentences. The FIRST is a launched engine with nothing attached: `idle`, a real uptime, an empty `serve` list, and an `ingest` with no field in it at all — ABSENT, never zero, because a `scanMs` of 0 would say a whole log folded instantly rather than that no scan has finished. The SECOND is the same engine mid-scan with a subscription already open: the ingest has measured its spell catalog but not its scan, and the serve row is every counter at a REAL zero beside `subscribers: 1` — a window that is watching and has been served nothing yet, which is precisely the state a person stares at when a view looks empty and which an omitted row would make indistinguishable from a view nobody opened. Its two latency fields are absent, because nothing was timed. The THIRD is that session gone live: the ingest half is complete and the serve table carries the two measurements ruling 19 names — the payload budget (bytes, and the widest single frame) and fold-to-frame latency in MICROSECONDS, because cutting a fifty-row window off a fold takes tens of them and a serve path reporting `0 ms` reads as a measurement nobody took. The SECOND and THIRD also state the CLOCK: which zone this generation parses log stamps through and where that zone came from, present from the attach onward — and, on the live answer only, the signed distance between this machine's wall clock and the newest line the tail folded. A few hundred milliseconds is a healthy tail; a whole number of hours is a zone the engine resolved wrongly, which is the failure the field exists to make visible. The FOURTH is the op's only refusal: a fold that had a door and did not answer through it. An engine with nothing attached is NOT this — it is the first answer — and the distinction is the whole reason a wedged ingest is worth saying out loud rather than drawing as a row of zeros.",
   "messages": [
     {
       "dir": "client",
@@ -42,6 +42,8 @@
           },
           "events": 61402,
           "lastEventTs": 1787104512000,
+          "clockZone": "America/Los_Angeles",
+          "clockSource": "host",
           "ingest": { "spellDbMs": 386 },
           "serve": [
             {
@@ -78,6 +80,9 @@
           },
           "events": 139860,
           "lastEventTs": 1787181707000,
+          "clockZone": "America/Los_Angeles",
+          "clockSource": "host",
+          "clockSkewMs": 412,
           "ingest": { "spellDbMs": 0, "scanMs": 1017, "scanBytes": 9185240 },
           "serve": [
             {

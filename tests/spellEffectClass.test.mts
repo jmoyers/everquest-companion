@@ -43,7 +43,7 @@ import {
 } from '../src/main/data/spellEffectClass.ts'
 // The two things this file compares the derivation AGAINST: the name stems it is meant to replace,
 // and the overlay it is meant to be independent of.
-import { CC_STEMS, CHARM_STEMS } from '../src/main/log/rulesets.ts'
+import { CC_STEMS, CHARM_STEMS } from '../src/main/data/spellStems'
 import { applySpellCorrections } from '../src/main/data/spellCorrections.ts'
 import { CALM_LANDING_MESSAGES } from '../src/main/data/spellDb.ts'
 

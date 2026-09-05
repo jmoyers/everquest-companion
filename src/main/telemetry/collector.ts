@@ -206,6 +206,24 @@ export function recordEvent(ev: TelemetryEvent): void {
   writeRing({ ...ring, events: pushCapped(ring.events, { ts: Date.now(), ev }) })
 }
 
+/**
+ * IS THE RING ACCEPTING ANYTHING RIGHT NOW? — `recordEvent`'s own gate, asked out loud (JOS-501).
+ *
+ * `recordEvent` drops silently when collection is off, which is right for a firehose of dwell and
+ * heartbeat events: a caller that had to check first would be a second copy of the policy. But a
+ * ONCE-PER-PROCESS event cannot be dropped silently, because there is no second one coming — and
+ * that is exactly what happened to the setup snapshot, which arms ten seconds after `replayDone`
+ * and latched itself whether or not the ring took it. A user who turned telemetry on after boot
+ * never contributed a machine-class row for that session.
+ *
+ * So the snapshot asks before it builds, and stays pending when the answer is no. This is a READ
+ * of the same predicate rather than a second one — if it ever disagrees with the line in
+ * `recordEvent`, that is the bug.
+ */
+export function telemetryCollecting(): boolean {
+  return telemetryCollectEnabled(getTelemetryPrefs())
+}
+
 /** How many distinct views this session has dwelled on (the `sessionEnd` field). */
 export function viewsVisited(): number {
   return viewsSeen.size

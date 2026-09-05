@@ -37,7 +37,7 @@
 // block at all (an empty block would claim "we checked, there's nothing" — we can't know that).
 
 import { type JSX, useEffect, useRef, useState } from 'react'
-import type { FeedDelta, FeedEvent, FeedSnap, ModuleDelta } from '@shared/types'
+import { MODULE_WORLD_CHANGED, type FeedEvent, type FeedSnap, type ModuleChanged } from '@shared/types'
 import { CONSIDER_FACTION_COLOR } from '@shared/logEvents'
 import { wikiPageUrl } from '@shared/wiki'
 import { formatTime } from '../lib/formatDate'
@@ -101,6 +101,7 @@ function useTradeskillFilter(feed: FeedEvent[]): FeedEvent[] {
   const asked = useRef<Set<string>>(new Set())
 
   const lootKeys = feed
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives FeedEvent. Becomes a view descriptor when the source lands.
     .filter((e) => e.kind === 'loot')
     .map((e) => e.title.toLowerCase())
     .join('|')
@@ -130,6 +131,7 @@ function useTradeskillFilter(feed: FeedEvent[]): FeedEvent[] {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lootKeys])
 
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives FeedEvent. Becomes a view descriptor when the source lands.
   return feed.filter((e) => e.kind !== 'loot' || verdict[e.title.toLowerCase()] === false)
 }
 
@@ -326,19 +328,23 @@ function useEventFeed(): FeedSnap {
       })
     }
     hydrate()
-    const off = window.eqOverlay.onModuleDelta<FeedDelta>((d: ModuleDelta<FeedDelta>) => {
-      if (d.moduleId !== 'eventFeed') return
-      if (d.seq <= seqRef.current) {
-        // Backwards seq ⇒ the module reset (character switch). Re-hydrate from scratch.
-        if (d.seq < seqRef.current) hydrate()
+    // THE INCREMENT IS A CURSOR NOW (JOS-499 item 7). Main's own fold is deleted, so there is no
+    // `module:delta` carrying appended rows to concatenate: `module:changed` is a name and a
+    // revision, and the answer to it is the whole read above.
+    //
+    // THE CAP MOVES BACK WHERE IT BELONGS. This hook used to mirror the module's own 100-row cap
+    // while concatenating, because it was accumulating rows itself. It no longer accumulates — the
+    // served snapshot IS the ring, already capped by whoever owns it — so mirroring the number here
+    // would be a second opinion about a bound that is not this window's to hold.
+    const off = window.eqOverlay.onModuleChanged((c: ModuleChanged) => {
+      // The world that answers reads changed hands: nothing held is trustworthy, ask again.
+      if (c.moduleId === MODULE_WORLD_CHANGED) {
+        hydrate()
         return
       }
-      seqRef.current = d.seq
-      setRows((prev) => {
-        const next = [...prev, ...d.delta.appended]
-        // Mirror the module's cap so a long session can't grow this list unboundedly.
-        return next.length > 100 ? next.slice(next.length - 100) : next
-      })
+      if (c.moduleId !== 'eventFeed') return
+      if (c.seq <= seqRef.current) return
+      hydrate()
     })
     const offChar = window.eqOverlay.onCharacter(() => {
       hydrate()

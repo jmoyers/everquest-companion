@@ -51,8 +51,7 @@ import {
 } from '../shared/conCard'
 import type { ConsiderEvent } from '../shared/logEvents'
 import { localMobEntry } from './mobLookup'
-import { considerModule } from './pipeline'
-import { resistProfileDeps } from './ipc/resist'
+import { resistProfileDeps, servedMobLevel, type ServedMobLevel } from './ipc/resist'
 import { mobResistProfile } from './resist/profile'
 import { spellTable } from './resist/spellTable'
 
@@ -92,9 +91,20 @@ function sendToConCardOverlay(payload: ConCardPayload): void {
   else wc.send(IPC.onConCard, payload)
 }
 
-/** The five chips, off the same profile the mob page's Resists card is drawn from. */
-function chipsFor(display: string): { chips: ConCardPayload['chips']; spellData: boolean } {
-  const profile = mobResistProfile(display, resistProfileDeps())
+/**
+ * The five chips, off the same profile the mob page's Resists card is drawn from.
+ *
+ * THE LEVEL ARRIVES RESOLVED (JOS-497 item 1) rather than being read out of this process's fold
+ * inside the profile builder. Passing nothing is still legal and still means "ask the app's own
+ * fold" — which is what the TS con-card hook does, because that path runs INSIDE the fold's own
+ * delivery and has nowhere to put an await. Under serve the hook is not installed at all and the
+ * engine's card path resolves the level first, which is where the reader actually closes.
+ */
+function chipsFor(
+  display: string,
+  level?: ServedMobLevel
+): { chips: ConCardPayload['chips']; spellData: boolean } {
+  const profile = mobResistProfile(display, resistProfileDeps(level))
   return { chips: conCardChips(profile), spellData: profile.spellDataAvailable }
 }
 
@@ -114,22 +124,109 @@ function firstPass(ev: ConsiderEvent, zone: string | undefined, key: string): Co
  * an overlay window in the way.
  */
 export function noteConsider(ev: ConsiderEvent, zone: string | undefined, now = Date.now()): boolean {
-  if (!getOverlayConfig('conCard').open) return false
   if (looksLikePlayer(ev.mob)) return false
   const key = mobKey(ev.mob)
   if (!key) return false
-  // THE SUPPRESSION IS WALL CLOCK, NOT LOG CLOCK, and the difference is not academic: EQ stamps a
-  // line to the SECOND, so a con played back inside the same second as the close arrives with a `ts`
-  // up to 999 ms EARLIER than the close it is supposed to be suppressed by — which the e2e caught by
-  // putting the card straight back up. "Closed within the last minute" is a fact about the person,
-  // so it is measured on the clock the person lives on. `ev.ts` still stamps the payload, because
-  // WHEN THE CON HAPPENED is a fact about the log.
+  return openCard(firstPass(ev, zone, key), key, now)
+}
+
+/**
+ * THE HALF THAT IS ABOUT THE WINDOW RATHER THAN ABOUT THE LOG (JOS-496, boundary verdict 2).
+ *
+ * Pulled out of `noteConsider` so the ENGINE's card can reach it. Verdict 2 inverts the con-card
+ * hook — today the fold calls synchronously into Electron, and under serve the engine emits a
+ * resolved `world.conCard` frame and main only opens the window. What is left here is exactly what
+ * "only opens the window" means, and every line of it is about the PERSON rather than about the log:
+ *
+ *   * A CLOSED OVERLAY IS SILENT (the Preferences switch, checked here because a window that does
+ *     not exist cannot decline anything — see the file header).
+ *   * THE RE-OPEN SUPPRESSION, and it stays app-side deliberately and permanently. It is measured on
+ *     the WALL CLOCK, not the log clock, and the difference is not academic: EQ stamps a line to the
+ *     SECOND, so a con played back inside the same second as the close arrives with a `ts` up to
+ *     999 ms EARLIER than the close it is supposed to be suppressed by — which the e2e caught by
+ *     putting the card straight back up. "Closed within the last minute" is a fact about the person,
+ *     so it is measured on the clock the person lives on. The payload's `ts` is still the log's,
+ *     because WHEN THE CON HAPPENED is a fact about the log. Its only input is a window event
+ *     (`con:card-closed`) that never reaches any fold, and `engine/crates/engined/src/concard.rs`
+ *     says the same thing from the other side.
+ *   * WHICH CARD IS ON SCREEN, so a late second pass for a mob that has been replaced is dropped.
+ */
+function openCard(base: ConCardPayload, key: string, now: number): boolean {
+  if (!getOverlayConfig('conCard').open) return false
   if (conCardSuppressed(closedAt.get(key), now)) return false
-  const base = firstPass(ev, zone, key)
   showing = key
   sendToConCardOverlay(base)
   enrich(base, key)
   return true
+}
+
+/** The header the engine resolved, as this file's own vocabulary. See `noteEngineConCard`. */
+export interface ServedConCard {
+  /** `mobKey(mob)` — the queue identity, folded engine-side. */
+  readonly id: string
+  /** The log's own clock, as the engine read it. */
+  readonly at: number
+  /** Whitespace-collapsed and capped engine-side (`capped_name`). */
+  readonly name: string
+  readonly level?: number
+  readonly zone?: string
+  readonly rare?: true
+}
+
+/**
+ * ONE `/con` AS THE ENGINE RESOLVED IT (JOS-496). Returns whether a card was sent, on
+ * `noteConsider`'s terms and for its reason.
+ *
+ * ── WHAT THE ENGINE OWNS HERE, AND IT IS THE WHOLE FOLD HALF ───────────────────────────────────
+ *
+ * The queue identity, the display name, the level the line stated, the zone, the rare infix and the
+ * instant — all six are facts about a log line, and all six arrive resolved. Two of `noteConsider`'s
+ * three refusals arrive with them: a line that names nothing (`mob_key` empty) and a line that names
+ * a PERSON (`con_card_is_player`, both halves, against the committed catalog) never produce a frame
+ * at all. And the third — never for a historical line — is structural one layer down, because the
+ * engine's `ConsiderModule` only pushes when live.
+ *
+ * SO THE SYNCHRONOUS CALL INTO ELECTRON IS GONE UNDER SERVE. That is the census finding verdict 2
+ * names: `considerModule.setConCardHook` ran a knowledge lookup, a resist profile and an overlay
+ * send ON THE THREAD PARSING THE LOG. Under serve the hook is not installed at all
+ * (`registerConCardIpc`), and what reaches this process is a frame off a socket.
+ *
+ * ── AND WHY THE CHIPS ARE STILL JOINED HERE, WHICH IS THE HONEST PART ──────────────────────────
+ *
+ * Verdict 2's full form is "the fully resolved card, resist profile joined engine-side", and the
+ * chips are NOT joined engine-side yet. `engined/src/concard.rs` states why at length and it is not
+ * an oversight: the resist estimate needs the client's own `spells_us.txt` (boundary verdict 8,
+ * still open) for every axis, every resist adjust and every fit, and downstream of that sit
+ * `shared/resistModel.ts`, `resistFit.ts` and `resistFormula.ts` — a second body of work. So the
+ * engine sends the five EMPTY chips with `spellData: false`, which is the honest branch its own
+ * profile builder takes when the table has not been read.
+ *
+ * TAKING THE ENGINE'S EMPTY FIVE HERE WOULD THEREFORE BE A REGRESSION WEARING A CUTOVER'S CLOTHES:
+ * every card under serve would draw "no notable resists · nothing seen yet" forever, while the app
+ * holds a ledger that can answer. So this joins the chips from `chipsFor` — the SAME call the app's
+ * own card makes, off the same ledger and the same table, both of which are still app-owned until
+ * verdicts 4 and 8 land. The engine's `chips` and `spellData` fields are deliberately ignored, and
+ * the day the table lands engine-side this function loses its join rather than growing one.
+ */
+export async function noteEngineConCard(card: ServedConCard, now = Date.now()): Promise<boolean> {
+  if (!card.id) return false
+  // THE DOUBLE GATE, kept rather than trusted away. The engine refuses a person's card with exactly
+  // this rule against exactly this catalog (`concard.rs con_card_is_player`), so this can only ever
+  // agree — which is the point: a card over another player's head is the thing the owner asked never
+  // to happen, and neither side may admit what the other refuses. It costs one catalog lookup.
+  if (looksLikePlayer(card.name)) return false
+  // THE LEVEL IS ASKED OF WHICHEVER WORLD ANSWERS THIS APP'S READS (JOS-497 item 1), and this is
+  // why the function is asynchronous now. It is the same round trip `ipc/resist.ts` makes for the
+  // mob page, and on this path it is free in the way that matters: the card's trigger has ALREADY
+  // crossed a socket to get here, so the await costs one more loopback hop to a process that has
+  // finished folding — microseconds — against a card whose whole promise is the two seconds before
+  // you decide to fight. `conCardServe.ts` narrates the outcome when this settles.
+  const { chips, spellData } = chipsFor(card.name, await servedMobLevel(card.name))
+  const payload: ConCardPayload = { id: card.id, ts: card.at, name: card.name, chips, spellData }
+  if (card.level !== undefined) payload.level = card.level
+  if (card.zone !== undefined) payload.zone = card.zone
+  if (card.rare === true) payload.rare = true
+  return openCard(payload, card.id, now)
 }
 
 /**
@@ -186,9 +283,44 @@ export function noteConCardClosed(input: unknown, now = Date.now()): void {
  * becomes a card. Called from `ipc/index.ts` beside the other producer registrations.
  */
 export function registerConCardIpc(): void {
-  considerModule.setConCardHook((ev, zone) => {
-    noteConsider(ev, zone)
-  })
+  // WHO DRAWS THE CARD, ASKED PER `/con` (JOS-496, boundary verdict 2).
+  //
+  // THE HOOK IS STILL INSTALLED, AND THE FIRST CUT OF THIS DID NOT INSTALL IT. That version read
+  // `shimServing()` once at registration and skipped the hook when it was true — and it was WRONG
+  // in a way worth writing down, because the same shape is a live hazard elsewhere in this feature.
+  // `shimServing()` IS NOT "AN ENGINE EXISTS". It is `EQC_ENGINE` AND `EQC_ENGINE_SERVE`, both
+  // default-on since JOS-495, and it is answered `true` on every dev checkout that has never run
+  // `cargo build` — where there is no binary, no client, and no frame will ever arrive. A hook
+  // skipped on that answer is a con card that silently never appears again, in exactly the tree
+  // `engineHost.ts`'s header promises "exactly the app it got before this ticket". A packaged build
+  // whose engine failed to spawn is the same state with a user on the other end of it.
+  //
+  // SO THE QUESTION IS ASKED AT THE MOMENT IT CAN BE ANSWERED HONESTLY, and the authority is the
+  // one the read path already uses: `engineServeReadiness()` — is there a client, is it connected,
+  // are both worlds on the SAME log, and has the engine's fold gone live. All four hold exactly
+  // when the engine is folding the line this hook just received and will emit a frame for it. One
+  // gate, one authority, and no second opinion about what "serving" means.
+  //
+  // A DOUBLE IS IMPOSSIBLE TO RULE OUT AND HARMLESS BY CONSTRUCTION; A MISS IS NEITHER. If
+  // readiness flips between the frame and the hook, both draw — and they draw the SAME card, under
+  // the same `mobKey` queue identity, so the overlay treats the second as the first getting fuller
+  // (`enrich`'s re-send does exactly this on every launch already). That asymmetry is why the gate
+  // is written to fail towards drawing.
+  //
+  // IT ARRIVES AS A FUNCTION RATHER THAN BEING READ HERE for a structural reason: `serveShim.ts`
+  // and the client reach this file through the serve receiver (serveShim → engineClientHost →
+  // conCardServe → conCard), so importing either would close a module cycle between a leaf and the
+  // composition root. `ipc/index.ts` holds both halves and is where the decision belongs.
+  //
+  // THE CLOSE CHANNEL IS REGISTERED IN BOTH WORLDS, because the suppression it feeds is app-side in
+  // both (see `openCard`) — the engine has no idea what a re-con is and by design never will.
+  // THE TS HOOK IS GONE (JOS-499, boundary verdict 2 completed). `considerModule.setConCardHook`
+  // was the fold calling SYNCHRONOUSLY INTO ELECTRON from inside itself — the census finding the
+  // verdict exists to resolve — and it drew the card whenever the engine was not going to. The
+  // engine emits `world.conCard` fully resolved now and `dataServer/conCardServe.ts` opens the
+  // window, so there is one producer and the predicate this function takes has one honest use
+  // left: refusing to draw twice. It is kept as a parameter because `ipc/index.ts` still owns
+  // the readiness question and the close channel below is registered in every world.
   ipcMain.on(IPC.conCardClosed, (_e, key: unknown) => {
     try {
       noteConCardClosed(key)

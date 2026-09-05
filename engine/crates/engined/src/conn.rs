@@ -1,25 +1,18 @@
-//! ONE CONNECTION, FROM HELLO TO CLOSE.
+//! One connection, from hello to close.
 //!
-//! THE HANDSHAKE IS THE WHOLE ACCESS CONTROL. Loopback is not a permission boundary: any process
-//! running as this user can connect to 127.0.0.1 on any port, so the port authenticates nobody
-//! (`protocol::token` states the threat in full). The first frame must be a `hello` carrying the
-//! per-launch token, compared in constant time, and a connection that fails is answered once and
-//! closed.
+//! The handshake is the whole access control. Loopback is not a permission boundary — any process
+//! running as this user can connect to 127.0.0.1 — so the first frame must be a `hello` carrying the
+//! per-launch token, compared in constant time, and a failed connection is answered once and closed.
 //!
-//! REFUSALS ARE COURTEOUS AND THEN FINAL. A failed handshake gets a `HelloReply { ok: false }`
-//! before the socket closes — the schema calls it a courtesy and says a client must treat a bare
-//! close as the same outcome. THE JUDGMENT CALL, STATED: that reply carries `engineVersion` and
-//! `protocolVersion`, so a caller who guessed a token wrong learns two version numbers. That is
-//! worth it. The supervisor's stale-token case and its skewed-build case are the two failures this
-//! process is most likely to have on a developer's machine, and telling them apart from a bare TCP
-//! reset is guesswork; the compare is constant-time, so the reply leaks nothing about the secret
-//! itself, and a caller who can already reach loopback learns nothing it could not learn from the
-//! installed binary.
+//! The refusal is courteous and then final: a `HelloReply { ok: false }` before the socket closes,
+//! and a client must treat a bare close as the same outcome. It carries both version fields
+//! deliberately — a stale token and a skewed build are the two most likely failures on a developer's
+//! machine, the constant-time compare leaks nothing about the secret, and a caller that can already
+//! reach loopback learns nothing it could not read off the installed binary.
 //!
-//! TWO THREADS, ONE OUTBOX. The reader thread parses and dispatches; a writer thread drains the
-//! connection's queue. Replies and connection-wide announcements go through the SAME queue, so what
-//! a client observes is one ordered stream and the engine never has to reason about two writers.
-//! See [`crate::wire`] for why the socket is split rather than shared.
+//! Two threads, one outbox: the reader parses and dispatches, the writer drains the connection's
+//! queue. Replies and connection-wide announcements share that queue, so a client observes one
+//! ordered stream and the engine never reasons about two writers.
 
 use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, Sender};
@@ -36,14 +29,14 @@ use crate::spawn::DIAGNOSTIC_PREFIX;
 use crate::wire::{self, Outgoing};
 use crate::world::{ListenerId, World};
 
-/// The engine binary's own version, reported at hello. INFORMATIONAL ONLY — `protocolVersion` is
-/// the compatibility check, and the schema says so.
+/// The engine binary's own version, reported at hello. Informational only — `protocolVersion` is the
+/// compatibility check.
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Everything a connection thread needs: the world it serves and the secret it checks against.
 pub struct Server {
     world: World,
-    /// The expected token. IT IS NEVER LOGGED, never sent, and never compared with `==` —
+    /// The expected token. Never logged, never sent, and never compared with `==` —
     /// [`tokens_match`] exists because a byte-at-a-time compare over loopback is a timing oracle.
     token: String,
 }
@@ -83,11 +76,10 @@ impl Server {
             eprintln!("{DIAGNOSTIC_PREFIX} connection closed: {why}");
         }
 
-        // TEAR-DOWN, IN THIS ORDER, AND THE ORDER IS THE POINT. Dropping the outbox ends the
-        // writer's queue; joining it waits for everything already queued to reach the wire —
-        // which is what makes the courtesy refusal above a real promise rather than a race
-        // against `close()`. The join is bounded by the socket's write timeout (see
-        // `wire::WRITE_TIMEOUT`).
+        // Tear-down in this order, and the order is the point: dropping the outbox ends the
+        // writer's queue, and joining it waits for everything already queued to reach the wire —
+        // which is what makes the courtesy refusal a real promise rather than a race against
+        // `close()`. The join is bounded by `wire::WRITE_TIMEOUT`.
         self.world.leave(membership.id);
         drop(outbox);
         if writer.join().is_err() {
@@ -109,9 +101,9 @@ impl Server {
             Err(why) => return Some(why),
         }
 
-        // THE SESSION IS THE MEMBERSHIP'S RECEIPT. Everything a connection owns that outlives one
-        // request — today its subscriptions — is keyed by this id inside the world, so a connection
-        // that dies takes them with it through `leave` and nothing has to be reconciled.
+        // The session is the membership's receipt: everything a connection owns that outlives one
+        // request is keyed by this id inside the world, so a connection that dies takes them with
+        // it through `leave` and nothing has to be reconciled.
         let mut session = Session::new(listener);
         loop {
             let raw = match incoming.recv() {
@@ -119,9 +111,9 @@ impl Server {
                 // The peer finished. Not an event worth a diagnostic: a renderer closing a window
                 // ends here.
                 Ok(None) => return None,
-                // MALFORMED IS FATAL TO THE CONNECTION, per the transport's own semantics: a frame
-                // that is not a message means the two sides no longer agree about where messages
-                // begin, and nothing after it can be trusted either.
+                // Malformed is fatal to the connection: a frame that is not a message means the two
+                // sides no longer agree about where messages begin, so nothing after it is
+                // trustworthy either.
                 Err(e) => return Some(format!("{e}")),
             };
 
@@ -167,10 +159,9 @@ impl Server {
             Err(e) => return Err(format!("no hello arrived: {e}")),
         };
 
-        // EVERY FIRST-FRAME FAILURE IS ANSWERED THE SAME WAY: one `HelloReply { ok: false }`, then
+        // Every first-frame failure is answered the same way: one `HelloReply { ok: false }`, then
         // the socket closes. A first frame that is a perfectly good `echo` is still a handshake
-        // failure, because nothing may precede the hello, and a client that meets one uniform
-        // answer has one case to handle rather than three.
+        // failure, because nothing may precede the hello.
         let refuse = |why: String| -> Result<bool, String> {
             let _ignored = outbox.send(EngineMessage::HelloReply(hello_reply(false)));
             Err(why)
@@ -180,16 +171,14 @@ impl Server {
             return refuse("the first frame on the connection was not a hello".to_owned());
         };
 
-        // TOKEN FIRST, THEN VERSION. Authenticate before diagnosing: it costs nothing here, and it
-        // keeps the order of checks from being a thing anybody has to think about later.
+        // Token first, then version: authenticate before diagnosing.
         if !tokens_match(&self.token, &hello.token) {
             return refuse("a connection presented the wrong token".to_owned());
         }
         if hello.protocol_version != PROTOCOL_VERSION {
-            // VERSION SKEW IS A BUILD ERROR, NOT A RUNTIME STATE. Both sides generate from one
-            // committed artifact, so a mismatch means somebody shipped half a build. There is no
-            // compatibility mode to fall back to and inventing one would be inventing a second
-            // contract.
+            // Version skew is a build error, not a runtime state: both sides generate from one
+            // committed artifact, so a mismatch means half a build shipped. There is no
+            // compatibility mode, and inventing one would be inventing a second contract.
             return refuse(format!(
                 "a client generated against protocol {} met an engine on protocol {PROTOCOL_VERSION}",
                 hello.protocol_version
@@ -206,8 +195,8 @@ impl Server {
     }
 }
 
-/// Build the handshake answer. The two version fields are DIFFERENT CLAIMS: `engineVersion` says
-/// which binary this is, `protocolVersion` says which contract it speaks, and only the second one
+/// Build the handshake answer. The two version fields are different claims: `engineVersion` says
+/// which binary this is, `protocolVersion` says which contract it speaks, and only the second
 /// decides anything.
 fn hello_reply(ok: bool) -> HelloReply {
     HelloReply {
@@ -223,8 +212,8 @@ fn pump(mut outgoing: Outgoing, inbox: &Receiver<EngineMessage>) {
     for message in inbox {
         match outgoing.send(&message) {
             Ok(()) => {}
-            // A WRITE FAILURE ENDS THE WRITER, NOT THE ENGINE. The reader thread finds out when its
-            // own socket fails, and the world drops this listener the next time it broadcasts.
+            // A write failure ends the writer, not the engine: the reader finds out when its own
+            // socket fails, and the world drops this listener the next time it broadcasts.
             Err(TransportError::Io(_) | TransportError::Closed) => return,
             Err(e) => {
                 eprintln!("{DIAGNOSTIC_PREFIX} a message could not be sent: {e}");

@@ -1,39 +1,26 @@
 //! The per-launch connection token.
 //!
-//! THE THREAT, STATED PLAINLY. The engine will listen on loopback TCP (owner ruling 7: a local
-//! socket is the most cross-platform transport). Loopback is not a permission boundary: any
-//! process running as this user — and on a shared machine, sometimes not even this user — can
-//! connect to 127.0.0.1 on any port. So the port is not the authentication; the token is. Electron
-//! main mints one per launch, hands it to the engine out of band at spawn, and the app presents it
-//! in the first message on every connection. It is never written to disk, never logged, and never
-//! survives the process that made it: a respawn is a launch, and a launch mints a new one.
+//! The engine listens on loopback TCP, and loopback is not a permission boundary: any process on
+//! the machine can connect. The port is not the authentication — the token is. It is minted per
+//! launch, handed to the engine out of band at spawn, presented in the first message of every
+//! connection, and never written to disk or logged.
 //!
-//! WHY THE COMPARE IS THE INTERESTING PART. A byte-at-a-time compare returns sooner for a wrong
-//! guess that shares a longer prefix. Over loopback, where a caller can retry thousands of times a
-//! second with no network jitter, that is a usable oracle: an attacker recovers the token one byte
-//! at a time instead of guessing 2^128. [`tokens_match`] therefore folds every byte into one
-//! accumulator with no data-dependent branch and no early return — length inequality included,
-//! because returning early on a length mismatch is still a branch on the secret.
+//! The compare must be constant-time with respect to content: over loopback a caller can retry
+//! thousands of times a second with no jitter, so a byte-at-a-time compare is a usable oracle that
+//! recovers the token one byte at a time. [`tokens_match`] folds every byte into one accumulator
+//! with no data-dependent branch and no early return — length inequality included, because an early
+//! return on a length mismatch is still a branch on the secret. The accumulator goes through
+//! [`std::hint::black_box`] so the optimizer cannot prove an early exit.
 //!
-//! THE HONEST LIMIT: a hand-written loop is at the optimizer's mercy, so the accumulator goes
-//! through [`std::hint::black_box`] to stop LLVM proving it may exit early. That is the strongest
-//! statement this crate can make without taking a dependency on a constant-time primitives crate;
-//! the TypeScript side has it easier and uses `crypto.timingSafeEqual`, which is constant-time by
-//! contract rather than by construction.
-//!
-//! MINTING IS NOT HERE, on purpose. The engine verifies; it never issues. Whatever spawns the
-//! engine owns the secret's lifetime, and a process that can mint its own credential is a process
-//! whose credential proves nothing.
+//! Minting is not here. The engine verifies and never issues: a process that can mint its own
+//! credential has a credential that proves nothing.
 
-/// The floor a token must clear, in bytes of the encoded string. It matches `minLength` on `Token`
-/// in `protocol/schema/messages.schema.json`.
+/// The floor a token must clear, in bytes of the encoded string, matching `minLength` on `Token` in
+/// the schema.
 ///
-/// THE ARITHMETIC, because two languages state it and they must agree: the token travels as hex, so
-/// 32 encoded bytes is 32 hex characters, which is 16 raw bytes — 128 bits. That is the FLOOR an
-/// incoming token must clear, not what the app spends: `mintToken` in
-/// `src/main/dataServer/token.ts` draws 32 raw bytes and sends 64 hex characters (256 bits).
-/// Either figure is far past guessable at any rate a loopback socket can be driven, and the floor
-/// is deliberately the weaker of the two so it can outlive a change to what minting chooses.
+/// The token travels as hex, so 32 encoded bytes is 16 raw bytes — 128 bits. This is the floor, not
+/// what minting spends (the app sends 64 hex characters); the floor is deliberately the weaker of
+/// the two so it outlives a change to what minting chooses.
 pub const MIN_TOKEN_BYTES: usize = 32;
 
 /// The ceiling, matching `maxLength` on `Token`. It exists so a hostile first message cannot make
@@ -42,9 +29,9 @@ pub const MAX_TOKEN_BYTES: usize = 256;
 
 /// Does the presented token match the expected one?
 ///
-/// Constant-time with respect to CONTENT: the loop runs over the longer of the two and folds every
-/// byte, so no prefix is cheaper to test than any other. It is deliberately NOT constant-time with
-/// respect to the presented length, which the caller chose and which is therefore not a secret.
+/// Constant-time with respect to content: the loop runs over the longer of the two and folds every
+/// byte, so no prefix is cheaper to test than any other. Deliberately not constant-time with respect
+/// to the presented length, which the caller chose and is therefore not a secret.
 ///
 /// A token that fails the length bounds can never match, whatever `expected` holds — so an engine
 /// that somehow started with an empty expectation still refuses an empty presentation rather than
@@ -101,8 +88,7 @@ mod tests {
 
     #[test]
     fn a_correct_prefix_is_not_a_partial_match() {
-        // The property the constant-time compare exists for, asserted at the level a test can
-        // reach: no prefix of the real token is ever accepted, however long.
+        // No prefix of the real token is ever accepted, however long.
         for cut in 1..GOOD.len() {
             assert!(!tokens_match(GOOD, &GOOD[..cut]));
         }

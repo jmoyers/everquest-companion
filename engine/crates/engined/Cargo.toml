@@ -28,3 +28,9 @@ eqlog = { path = "../eqlog" }
 # slices; this crate re-decides none of that either. It reaches ingest through ONE trait, and the
 # whole of the join is `src/foldsink.rs`.
 fold = { path = "../fold" }
+
+# THE COMMITTED CORPORA (JOS-486). One process-wide instance, shared by the ingest thread (the
+# fold's own item/mob probes) and by every connection thread (the `knowledge.*` ops) — boundary
+# verdict 5's "the mutual dependency dissolves in-process", literally. It depends on `fold` and not
+# the reverse, which is why `parity` links none of the 12 MB.
+knowledge = { path = "../knowledge" }

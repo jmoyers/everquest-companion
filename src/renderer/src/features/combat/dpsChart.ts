@@ -273,6 +273,7 @@ export interface PlacedMarker {
  */
 export function placeMarkers(tl: TimelineView | null, chart: DpsChart | null): PlacedMarker[] {
   if (!tl || !chart) return []
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives TimelineMarker. Becomes a view descriptor when the source lands.
   return tl.markers.filter((m) => m.t >= chart.t0 && m.t <= chart.t1).map((m) => ({ m, x: xAtT(chart, m.t) }))
 }
 

@@ -292,7 +292,9 @@ export function evidenceByFamily(est: ResistEstimate): {
   songs: ResistSpellEvidence[]
 } {
   return {
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ResistSpellEvidence. Becomes a view descriptor when the source lands.
     casts: est.perSpell.filter((e) => e.family === 'cast'),
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ResistSpellEvidence. Becomes a view descriptor when the source lands.
     songs: est.perSpell.filter((e) => e.family === 'song'),
   }
 }

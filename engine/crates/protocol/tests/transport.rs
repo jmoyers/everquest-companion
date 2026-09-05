@@ -1,15 +1,7 @@
-//! THE SEAM, PROVEN.
-//!
-//! The owner's constraint on this protocol was that the wire method must be swappable by replacing
-//! one artifact — "im thinking over the open internet via websockets etc." The structural answer is
-//! that protocol logic talks to a [`Transport`] and only one module below it knows what a frame is.
-//!
-//! A claim like that is cheap to make and easy to break silently, so this suite makes it a
-//! MEASUREMENT: one conversation — the real handshake, a real subscribe, a real reset, a real diff
-//! — is run twice, once over a transport that has no bytes in it at all and once over NDJSON, and
-//! the two are asserted to deliver the same messages. Code that can run with the framing removed
-//! is code that was not depending on the framing. A future WebSocket adapter is a third row in the
-//! same table.
+//! The transport seam, proven by measurement rather than by claim: one conversation — the real
+//! handshake, subscribe, reset and diff — is run twice, once over a transport with no bytes in it
+//! at all and once over NDJSON, and the two must deliver the same messages. Code that runs with the
+//! framing removed was not depending on the framing. A new adapter is a third row in the same table.
 
 use std::io::{BufReader, Cursor, Read};
 
@@ -17,16 +9,14 @@ use protocol::generated::{ClientMessage, EngineMessage};
 use protocol::transport::ndjson::{self, NdjsonTransport, DELIMITER, MAX_LINE_BYTES};
 use protocol::transport::{memory, Transport, TransportError};
 
-/// A byte source that hands out EXACTLY ONE BYTE per `read` call.
+/// A byte source that hands out exactly one byte per `read` call.
 ///
-/// Every other reader in this suite is a `Cursor` over a complete `Vec`, so `fill_buf` returns the
-/// whole wire in one go and every frame — and every multi-byte character in it — arrives intact by
-/// luck. A real `TcpStream` does no such thing: a read boundary falls wherever the kernel put it,
-/// routinely mid-character. This is the adversarial case, and it is the worst one on purpose,
-/// because a codec that survives one byte at a time survives every chunking a socket can produce.
+/// Every other reader here is a `Cursor` over a complete `Vec`, so every frame arrives intact by
+/// luck; a real socket's read boundary falls wherever the kernel put it, routinely mid-character. A
+/// codec that survives one byte at a time survives every chunking a socket can produce.
 ///
-/// It is a `Read` rather than a `BufReader::with_capacity(1, …)` because `BufReader` is entitled to
-/// round a tiny capacity up, which would quietly make the test stop testing anything.
+/// A `Read` rather than `BufReader::with_capacity(1, …)` because `BufReader` may round a tiny
+/// capacity up, which would quietly stop the test testing anything.
 struct OneByteAtATime {
     bytes: Vec<u8>,
     at: usize,
@@ -97,8 +87,6 @@ fn as_json<T: serde::Serialize>(items: &[T]) -> Vec<serde_json::Value> {
         .map(|m| serde_json::to_value(m).expect("serializes"))
         .collect()
 }
-
-// ---- the two adapters, delivering the same conversation ----------------------------------------
 
 /// Play the conversation over the in-memory pair: no bytes, no frames, no newline anywhere.
 fn over_memory() -> (Vec<ClientMessage>, Vec<EngineMessage>) {
@@ -223,13 +211,10 @@ fn the_framing_is_exactly_one_message_per_line() {
     }
 }
 
-// ---- the framing cannot be broken from above ----------------------------------------------------
-
 #[test]
 fn a_payload_full_of_newlines_cannot_forge_a_frame() {
-    // The property that makes LF safe as a delimiter, asserted rather than assumed: serde_json
-    // escapes every control character inside a string, so no message content can smuggle a frame
-    // boundary. Nothing above the transport has to know this, which is the point.
+    // serde_json escapes every control character inside a string, so no message content can smuggle
+    // a frame boundary. Nothing above the transport has to know this.
     let hostile = "line one\nline two\r\n{\"kind\":\"epoch\"}\n\n";
     let message: EngineMessage = serde_json::from_value(serde_json::json!({
         "kind": "reset",
@@ -258,18 +243,12 @@ fn a_payload_full_of_newlines_cannot_forge_a_frame() {
     assert!(reader.recv().expect("no second frame").is_none());
 }
 
-// ---- the read boundary must not be able to change what a message says ---------------------------
-
 #[test]
 fn a_multi_byte_character_split_across_reads_arrives_byte_identical() {
-    // THE REGRESSION. The first cut of `recv` ran `from_utf8_lossy` over each `fill_buf` chunk and
-    // accumulated the result into a `String`. A character straddling two reads had each half
-    // replaced with U+FFFD — and because both halves sit inside a JSON string, the corrupted frame
-    // STILL PARSED. The message arrived, looked healthy, and said something the peer never sent.
-    //
-    // Every other test in this file reads from a `Cursor` over a complete `Vec`, so none of them
-    // could ever see it. This one feeds the wire one byte per read, which splits every one of the
-    // characters below.
+    // A per-chunk `from_utf8_lossy` replaces each half of a straddling character with U+FFFD, and
+    // because both halves sit inside a JSON string the corrupted frame still parses — the message
+    // arrives looking healthy and says something the peer never sent. Feeding the wire one byte per
+    // read splits every one of the characters below.
     let payload = "Vibartik — naïve ™ 日本語 🜁";
     assert!(
         payload.chars().any(|c| c.len_utf8() >= 2),
@@ -296,8 +275,7 @@ fn a_multi_byte_character_split_across_reads_arrives_byte_identical() {
         "a read boundary altered the message"
     );
 
-    // …and say it at the level the defect actually showed: the string itself, character for
-    // character, with no replacement character anywhere in it.
+    // …and at the level the defect shows: the string itself, with no replacement character in it.
     let EngineMessage::ResetMessage(reset) = back else {
         panic!("expected a reset")
     };
@@ -311,8 +289,7 @@ fn a_multi_byte_character_split_across_reads_arrives_byte_identical() {
 
 #[test]
 fn a_whole_conversation_survives_being_delivered_one_byte_at_a_time() {
-    // The same claim over the real fixtures rather than one hand-built message, so the guarantee
-    // covers every shape the committed contract demonstrates.
+    // The same claim over the real fixtures, so it covers every shape the contract demonstrates.
     let (_, engine_turns) = conversation();
     let mut writer: NdjsonTransport<Cursor<Vec<u8>>, Vec<u8>, EngineMessage, ClientMessage> =
         NdjsonTransport::new(Cursor::new(Vec::new()), Vec::new());
@@ -332,9 +309,8 @@ fn a_whole_conversation_survives_being_delivered_one_byte_at_a_time() {
 
 #[test]
 fn broken_utf8_on_the_wire_is_refused_rather_than_patched_over() {
-    // A peer that cannot spell its own strings is a peer whose message must not be guessed at. The
-    // lossy path would have accepted this and handed up a string with U+FFFD in it, which is a
-    // wrong answer wearing a successful decode.
+    // A lossy decode would accept this and hand up a string with U+FFFD in it, which is a wrong
+    // answer wearing a successful decode.
     let mut wire: Vec<u8> =
         br#"{"kind":"reset","id":1,"epoch":0,"total":1,"rows":[{"key":"row:1","cells":{"text":""#
             .to_vec();
@@ -372,9 +348,8 @@ fn a_truncated_final_frame_is_an_error_rather_than_a_quiet_nothing() {
 
 #[test]
 fn an_unterminated_flood_is_refused_at_the_framing_limit() {
-    // A peer that never sends a delimiter would otherwise grow the read buffer without bound - on
-    // loopback, a one-line denial of service. The limit is a FRAMING concern and lives here, not
-    // in the protocol.
+    // A peer that never sends a delimiter would otherwise grow the read buffer without bound. The
+    // limit is a framing concern and lives here, not in the protocol.
     let flood = vec![b'x'; MAX_LINE_BYTES + 1024];
     let mut reader: NdjsonTransport<Cursor<Vec<u8>>, Vec<u8>, EngineMessage, EngineMessage> =
         NdjsonTransport::new(Cursor::new(flood), Vec::new());

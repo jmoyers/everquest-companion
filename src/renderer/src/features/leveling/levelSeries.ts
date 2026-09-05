@@ -48,6 +48,7 @@ export interface LevelFeedEntry {
 
 /** Sort a level list by time (ascending). Input order is log order, but be explicit. */
 export function sortLevels(levels: readonly LevelEvent[]): LevelPoint[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LevelEvent. Becomes a view descriptor when the source lands.
   return [...levels].sort((a, b) => a.ts - b.ts).map((l) => ({ ts: l.ts, level: l.level }))
 }
 

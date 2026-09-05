@@ -1,29 +1,15 @@
 import { type JSX, useMemo } from 'react'
 import { Box, Paper, Stack, Typography } from '@mui/material'
-import type {
-  AAEvent,
-  AASpendEvent,
-  LevelingDelta,
-  LevelingSnap,
-  ProgressionDelta,
-  ProgressionSnap
-} from '@shared/types'
-import { computeAAAccounting } from '@shared/aa'
+import type { AASpendEvent, LevelingSnap, ProgressionSnap } from '@shared/types'
 import { aaPace, type AaPace } from '@shared/aaPace'
 // "What level am I" is the STATED fact now (JOS-192) — the later of your last ding and your own
 // `/who` row — not the tail of the dings. `peakLevel`/`swapCount` still read the ding series,
 // because those two really are questions about the level-up record.
 import { useStatedLevel } from './useStatedLevel'
 import { useModule } from '../../lib/useModule'
-import {
-  buildLevelSegments,
-  levelFeedEntries,
-  peakLevel,
-  sortLevels,
-  swapCount,
-  type LevelPoint,
-  type LevelSegment
-} from './levelSeries'
+import { peakLevel, swapCount, type LevelSegment } from './levelSeries'
+// Every fold over the `leveling` snapshot — see that file's header for why they left this one.
+import { useLevelingSeries } from './useLevelingSeries'
 import { AreaChart, LevelStepChart, SWAP_COLOR, ZoneLegendStrip, type ChartChrome } from './levelCharts'
 import { CHART_W, fmtDelta, type AaPoint } from './levelChartGeometry'
 // THE FRACTIONAL CURVE (JOS-292): the dings are anchors now, and the percentages the game states
@@ -39,20 +25,20 @@ import { visibleFrom, visibleSegments, windowFor, windowOver, type TimescaleId }
 // this tab's timescale — the duration rungs are four more slices in the same id space — so a
 // reader who narrows to this session on the Loot ledger finds the xp rates already narrowed.
 import { ScopeBar } from '../timeslice/ScopeBar'
-import { useTimeslice } from '../timeslice/useTimeslice'
+import { useTimesliceOn } from '../timeslice/useTimeslice'
 import { TAIL_MS, sliceDurationMs, type SliceId, type SliceRange, type Timeslice } from '@shared/timeslice'
 // The SCOPE (JOS-75): which stretch of the log every number on this tab describes. The timescale
 // moved the curves; this moves the arithmetic with them — one `rangeStats` call over one range,
 // narrowed by a drag when there is one. Nothing here re-derives a rate.
 import { scopedStats, type ScopedStats } from './windowScope'
 import { useChartSelection } from './useChartSelection'
-import { EMPTY_PROGRESSION, applyProgressionDelta } from './progressionDelta'
+import { EMPTY_PROGRESSION } from './progressionDelta'
 import { RangeStatsPanel } from './RangeStatsPanel'
 import { comboSource } from './comboAdapter'
 import { useComboIntervals } from '../profiles/ClassComboData'
 // The module fold moved beside the view (levelingModule.ts) the day a SECOND reader appeared:
 // the always-mounted ding detector behind the level-up toast watches the same append-only series.
-import { EMPTY_LEVELING, applyLevelingDelta } from './levelingModule'
+import { EMPTY_LEVELING } from './levelingModule'
 // The four hero cards — split into their own file the day this one reached the measured ceiling.
 import { LevelingHeroes } from './LevelingHeroes'
 import { NewAtLevelPanel } from './NewAtLevelPanel'
@@ -276,39 +262,23 @@ function useLevelingCharts(o: {
   )
   // Rebuilt narrow, NOT the whole SelectionApi: the charts spread this straight onto a DOM
   // element, so anything else on the object would land there as an unknown attribute.
-  const pointer = { onPointerDown, onPointerMove, onPointerUp, onPointerCancel }
-  const chrome = scale ? { scale, bands, range: sel, draft, suppressed: dragging, pointer } : null
+  //
+  // MEMOIZED FOR ITS IDENTITY (JOS-511 item 2), which is the only thing about it that costs
+  // anything: the four handlers are `useChartSelection`'s own `useCallback`s and never change, so
+  // a fresh literal per render was a new object wrapping four stable functions — and it is a
+  // member of `chrome` below, which every chart, band and hover layer on the tab reads.
+  const pointer = useMemo(
+    () => ({ onPointerDown, onPointerMove, onPointerUp, onPointerCancel }),
+    [onPointerDown, onPointerMove, onPointerUp, onPointerCancel]
+  )
+  // …AND SO IS THE CHROME. It is the object both plots and both hover layers take, so a fresh one
+  // per render is a changed prop on every chart in the column whatever moved. Its members are all
+  // memoized or ordinary state now, so this identity moves exactly when the picture does.
+  const chrome = useMemo(
+    () => (scale ? { scale, bands, range: sel, draft, suppressed: dragging, pointer } : null),
+    [scale, bands, sel, draft, dragging, pointer]
+  )
   return { chrome, legend, scope, clear, aaVisible, segVisible, curve }
-}
-
-/**
- * The interleaved level/AA/swap feed, newest first — a pure derivation, lifted out of the view
- * so the component stays inside its measured line budget.
- *
- * A post-swap ding is the first level of a NEW loadout: the elapsed time back to the previous
- * ding spans the (unlogged) swap, so it is not a "time to level" — showing `+38.9h` there would
- * be fabricated. Label the swap instead.
- *
- * UNCUT, and the view slices it AFTER scoping (JOS-75): a `.slice(0, 60)` here would take the
- * sixty NEWEST entries in the whole log and then filter, so a window that sits behind them
- * would come up empty with events plainly drawn on the chart above it. Each `sinceMs` is still
- * measured against the ding's true predecessor, in or out of scope — the elapsed time to reach
- * a level is a fact about the level, not about what you are looking at.
- */
-function buildFeed(levels: readonly LevelPoint[], aas: readonly AAEvent[]): FeedItem[] {
-  const items: FeedItem[] = []
-  for (const e of levelFeedEntries(levels)) {
-    items.push({
-      ts: e.ts,
-      kind: e.afterSwap ? 'swap' : 'level',
-      label: e.afterSwap ? `Level ${e.level} (class swap)` : `Level ${e.level}`,
-      detail: e.afterSwap ? 'new loadout - level re-reported' : e.sinceMs != null ? `+${fmtDelta(e.sinceMs)}` : ''
-    })
-  }
-  for (const a of aas) {
-    items.push({ ts: a.ts, kind: 'aa', label: `+${a.amount} AA`, detail: `${a.nowHave} unspent` })
-  }
-  return items.sort((a, b) => b.ts - a.ts)
 }
 
 /** How many feed rows the panel draws. Applied AFTER the scope filter — see `buildFeed`. */
@@ -340,43 +310,6 @@ function useScopedReads(o: {
     [scope, prog, state]
   )
   return { feed: scoped, pace }
-}
-
-/** The record's bounds also depend on THIS tab's own two series, which the progression snapshot
- *  does not carry. Memoized here because the timeslice hook takes it as a dependency. */
-function useExtraTs(levels: readonly LevelPoint[], aas: readonly AaPoint[]): number[] {
-  return useMemo(() => [...levels.map((p) => p.ts), ...aas.map((a) => a.ts)], [levels, aas])
-}
-
-/**
- * THE REFUND-PROOF AA HEADLINE (Task #48), in the shape the four hero cards take.
- *
- * The identity is NOT Σ gains — a respec refunds points with no log line, they re-enter as fresh
- * gain lines, so Σ gains double-counts every refunded point. Instead:
- *   allocated = latest-epoch cost per (ability,rank), cost-0 auto-grants excluded
- *   unspent   = last authoritative "you now have" − spends after it
- *   earned    = allocated + unspent   (the identity the user validated)
- * See src/shared/aa.ts for the full derivation, and `AaOverTimePanel` above for why the cumulative
- * curve is allowed to disagree with `earned`.
- *
- * Its own hook, and its keys are the hero card's prop names on purpose: the view spreads it
- * straight onto `LevelingHeroes`, which is one fewer place for four numbers to be mis-paired.
- * `unspent` is null rather than 0 for a character with no AA line at all — an unknown balance and
- * an empty one are different facts.
- */
-// Not `readonly`: `computeAAAccounting` declares mutable arrays, and these come straight off the
-// module snapshot that already owns them. Widening here would only move the cast.
-function useAaHeadline(
-  aas: AAEvent[],
-  spends: AASpendEvent[]
-): { aaEarned: number; aaSpent: number; aaUnspent: number | null; boughtCount: number } {
-  const acct = useMemo(() => computeAAAccounting(aas, spends), [aas, spends])
-  return {
-    aaEarned: acct.earned,
-    aaSpent: acct.allocated,
-    aaUnspent: aas.length ? acct.unspent : null,
-    boughtCount: acct.boughtCount
-  }
 }
 
 /**
@@ -538,54 +471,47 @@ export default function LevelingView({
   onFocusConsumed,
   onOpenLoot
 }: LevelingViewProps): JSX.Element {
-  const state = useModule<LevelingSnap, LevelingDelta>('leveling', applyLevelingDelta) ?? EMPTY_LEVELING
-  const { levels, aaGains: aas, aaSpends: spends } = state
+  const state = useModule<LevelingSnap>('leveling') ?? EMPTY_LEVELING
+  const { aaSpends: spends } = state
   // The SECOND module this view reads: the capped, range-queryable analytics series behind
   // the zone bands and the range panel. Deliberately separate from `leveling`, whose
   // contract is "everything, forever" (see src/main/modules/progression.ts).
-  const prog = useModule<ProgressionSnap, ProgressionDelta>('progression', applyProgressionDelta) ?? EMPTY_PROGRESSION
+  const prog = useModule<ProgressionSnap>('progression') ?? EMPTY_PROGRESSION
   // The THIRD module, through its own hook: `character`, for the stated level fact (JOS-192). It
   // is the only one carrying your own `/who` row's number, which is what corrects the level after
   // a loadout swap the log never announced.
   const stated = useStatedLevel(prog)
 
-  const sortedLevels = useMemo(() => sortLevels(levels), [levels])
-  const sortedAAs = useMemo(() => [...aas].sort((a, b) => a.ts - b.ts), [aas])
+  // EVERY FOLD OVER THE `leveling` SNAPSHOT, ONCE, in its own file (useLevelingSeries.ts) — the
+  // sorted series, the segments, the cumulative AA curve, the uncut feed, the bounds' extra
+  // timestamps and the refund-proof AA headline. They moved out together when this view reached the
+  // measured line ceiling; the file header says why that is the seam.
+  const { sortedLevels, sortedAAs, levelSegments, aaCumulative, feed, extraTs, aa } =
+    useLevelingSeries(state)
 
   // CURRENT level is the level the log last STATED — the later of your last ding and your own
   // `/who` row (JOS-192). Never max(): you level three classes at once and a loadout swap
   // re-reports the level of the new (lowest) class, so the peak belongs to a class that may no
   // longer be in the loadout. It's surfaced separately as "peak", off the ding series, which is
   // exactly the question that series answers.
-  const levelSegments = useMemo(() => buildLevelSegments(sortedLevels), [sortedLevels])
   const currentLevel = stated.level
   const peak = peakLevel(sortedLevels)
   const swaps = swapCount(levelSegments)
 
-  // The refund-proof AA identity, in hero-card shape — derivation and reasoning in `useAaHeadline`.
-  const aa = useAaHeadline(aas, spends)
-
   // The purchases list itself moved into AaLedgerPanel, which regroups the same deduped
   // (ability, rank) purchases into per-ability LADDERS (src/shared/aaLedger.ts) — the model
   // always knew the rungs; only this view was flat.
-
-  // `nowHave` rides along so the hover readout can state the unspent balance the gain line
-  // itself reported, instead of re-deriving a balance the log already gave us.
-  // `gain` rides along for the same reason: a windowed curve can open on a gain that has no
-  // predecessor in the drawn array, and the tooltip must still name that LINE's own points.
-  const aaCumulative = useMemo<AaPoint[]>(() => {
-    let sum = 0
-    return sortedAAs.map((a) => ({ ts: a.ts, y: (sum += a.amount), nowHave: a.nowHave, gain: a.amount }))
-  }, [sortedAAs])
-
-  const feed = useMemo(() => buildFeed(sortedLevels, sortedAAs), [sortedLevels, sortedAAs])
 
   // THE SLICE — app-wide and session-lifetime (features/timeslice/useTimeslice). THIS TAB OPENS ON
   // `Zone + Session` (owner ruling, JOS-288): the exp surfaces are about the camp you are in right
   // now, and a session that spans a loadout swap sums `levelEquiv` straight across the boundary. The
   // Loot ledger's own opening (`All`, hiding nothing) is untouched — useTimeslice's header states
   // why those two coexist under one shared pick.
-  const { bounds, available, slice, setId, setCustom, custom } = useTimeslice(useExtraTs(sortedLevels, aaCumulative), 'zoneSession')
+  // THE SNAPSHOT TRAVELS, THE SUBSCRIPTION DOES NOT (JOS-511 item 1). `prog` above is this tab's
+  // own subscription; `useTimesliceOn` resolves the slice against THAT snapshot instead of opening
+  // a second `useModule('progression')` beside it. Two subscriptions were two hydrations at mount
+  // and two renders per progression push, over a ~7k-row snapshot.
+  const { bounds, available, slice, setId, setCustom, custom } = useTimesliceOn(prog, extraTs, 'zoneSession')
   const charts = useLevelingCharts({ prog, aas: aaCumulative, segments: levelSegments, slice, bounds })
   // The SCOPE on its own — the only one of the three the reads below need before the charted gate
   // has been asked. `chrome` and `curve` are null on exactly the same condition it is, and all
@@ -608,13 +534,21 @@ export default function LevelingView({
   const bestSpells = useBestSpellsVisible()
   // One props object, two placements (see both call sites): the panel is the same surface in the
   // charted and the chart-less state, and spelling its props twice is how they drift.
-  const unlockPanel = {
-    currentLevel,
-    viewed,
-    focusLevel,
-    focusNonce,
-    onFocusConsumed: onFocusConsumed ?? ((): void => undefined)
-  }
+  //
+  // MEMOIZED (JOS-511 item 2) because it is SPREAD onto the panel: a fresh object here is five
+  // fresh props on the surface that folds the unlock join, and the `onFocusConsumed` fallback
+  // minted a new no-op function on every render of the tab. `viewed` is stable now too
+  // (viewedLevel.ts), so this identity moves only when one of the five values does.
+  const unlockPanel = useMemo(
+    () => ({
+      currentLevel,
+      viewed,
+      focusLevel,
+      focusNonce,
+      onFocusConsumed: onFocusConsumed ?? ((): void => undefined)
+    }),
+    [currentLevel, viewed, focusLevel, focusNonce, onFocusConsumed]
+  )
 
   return (
     // NO HEIGHT, NO SCROLLER — THE PAGE IS THE SCROLLER (JOS-289, owner directive 2026-08-13:

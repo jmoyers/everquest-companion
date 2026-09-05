@@ -20,6 +20,13 @@ devlog.txt
 # (crates/protocol/src/generated.rs) has to come out byte-identical on the dev box and the CI
 # runner, and it is exactly the kind of thing that should be reviewed in a diff.
 engine/target/
+# …AND EVERY OTHER CARGO TARGET DIRECTORY IN THIS TREE (JOS-496). A worktree agent cannot build into
+# `engine/target/` while the owner's dev app is running out of it, so every brief in this program
+# tells the worker to set `CARGO_TARGET_DIR` to a sibling — `target-verify`, `target-<agent>`, one
+# per contender. Those are the same hundreds of megabytes of regenerable object files, and the
+# pattern is here rather than each agent remembering to clean up: MEASURED, one `git add -A --
+# engine` staged 5,118 build artifacts into a commit before this line existed.
+engine/target-*/
 
 # downloaded sound packs (audio binaries — `npm run fetch:packs` restores them; the app
 # also self-provisions the default pack at runtime). peon/sc_marine are no longer shipped

@@ -84,7 +84,7 @@
 // ticket's way around it, not an explanation of it.
 
 import { itemKey } from './itemsDb'
-import { spellCanonKey } from './log/parseCommon'
+import { spellCanonKey } from '../shared/spellKey'
 import type { ItemDbEntry } from './itemsDb'
 import type { ItemEffect } from '../shared/itemStats'
 import type { HeldCounts } from '../shared/types'

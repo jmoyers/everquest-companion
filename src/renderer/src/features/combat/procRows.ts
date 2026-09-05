@@ -185,6 +185,7 @@ export function procCount(p: ProcsView): number {
 /** Firings of HELD CLICKIES in this selection (JOS-438) — counted apart from the procs above,
  *  because they are not procs and `overall` therefore excludes them. */
 export function clickCount(p: ProcsView): number {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives ProcLaneView. Becomes a view descriptor when the source lands.
   return (p.lanes ?? []).reduce((n, l) => n + (l.origin === 'click' ? l.count : 0), 0)
 }
 

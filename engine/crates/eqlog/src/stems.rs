@@ -1,18 +1,17 @@
-//! THE TWO ROSTERS `classifyWornOff` ASKS — `CHARM_STEMS` and `CC_STEMS` from
-//! `src/main/log/rulesets.ts`, plus the one effect rule the derived charm roster reads.
+//! The two spell-name rosters a worn-off line is classified against, plus the one effect rule the
+//! derived charm roster reads.
 //!
-//! `CHARM_STEMS` is the only pattern in the whole port that JS can express and the `regex` crate
-//! cannot: two of its branches carry a NEGATIVE LOOKAHEAD, and both of them are load-bearing rather
-//! than decorative — `\bcharm\b(?! of )` is what keeps the two item focus effects (`Naki's Charm of
-//! Pernicity`, `Tavee's Charm of Diuturnity`) out of the roster, and `\ballure\b(?! of death)` is
-//! what keeps `Allure of Death`, a beneficial necro self-buff, out of it (JOS-250's audit). So the
-//! pattern is split: everything without a lookahead stays one alternation, and the two that have
-//! one are a match walk plus a `starts_with` on the tail — which is what the lookahead means.
+//! The charm roster is the only pattern in the port that JS can express and the `regex` crate
+//! cannot: two branches carry a negative lookahead, and both are load-bearing.
+//! `\bcharm\b(?! of )` keeps the item focus effects (`Naki's Charm of Pernicity`) out, and
+//! `\ballure\b(?! of death)` keeps `Allure of Death`, a beneficial necro self-buff, out. So the
+//! pattern is split: the lookahead-free branches stay one alternation, and the two with one are a
+//! match walk plus a `starts_with` on the tail.
 
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Every `CHARM_STEMS` branch that carries no lookahead, in the TS order.
+/// Every charm branch that carries no lookahead, in the app's order.
 fn charm_plain() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -33,12 +32,11 @@ fn allure_word() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?i)(?-u:\b)allure(?-u:\b)").unwrap())
 }
 
-/// `CHARM_STEMS.test(name)`.
 pub fn charm_stems_test(name: &str) -> bool {
     if charm_plain().is_match(name) {
         return true;
     }
-    // A JS alternation with a lookahead succeeds if ANY position satisfies the whole branch, so the
+    // A JS alternation with a lookahead succeeds if any position satisfies the whole branch, so the
     // walk has to look at every occurrence rather than only the first.
     if charm_word()
         .find_iter(name)
@@ -58,7 +56,7 @@ fn starts_with_ci(text: &str, lower: &str) -> bool {
         && text.as_bytes()[..lower.len()].eq_ignore_ascii_case(lower.as_bytes())
 }
 
-/// `CC_STEMS.test(name)` — no lookahead anywhere, so it stays one pattern.
+/// No lookahead anywhere, so it stays one pattern.
 pub fn cc_stems_test(name: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -72,10 +70,9 @@ pub fn cc_stems_test(name: &str) -> bool {
 
 /// Does this wiki effect line classify as `charm`?
 ///
-/// `classifyEffectLine` walks a fourteen-rule table and returns the FIRST rule that matches; the
-/// charm rule is the FIRST entry, so `classifyEffectLine(line) === 'charm'` is exactly
-/// `/^charm\b/i.test(line.trim())` and the other thirteen rules cannot change the answer. Only the
-/// charm class is read here (`derivedCharmRoster`), so only the charm rule is ported.
+/// The app's effect classifier returns the first of fourteen rules that matches and charm is the
+/// first entry, so the other thirteen cannot change this answer. Only the charm class is read here,
+/// so only the charm rule is ported.
 pub fn classify_effect_line_is_charm(line: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"(?i)^charm(?-u:\b)").unwrap());

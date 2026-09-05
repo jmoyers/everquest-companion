@@ -22,19 +22,20 @@
 // argument about whose clock is whose.
 
 import { type JSX } from 'react'
-import { Divider, Stack, Typography } from '@mui/material'
+import { Divider, Stack, Tooltip, Typography } from '@mui/material'
 import {
   engineFireCount,
   eventFreshnessMs,
   formatAge,
   formatBytes,
+  formatEngineClock,
   formatEngineState,
   formatMicros,
   formatParity,
   type EnginePerfSample
 } from '@shared/enginePerf'
 import { formatCpu, formatMemory, formatMs } from '@shared/perf'
-import type { PerfServeSource } from '@shared/dataServer/protocol.generated'
+import type { PerfBudget, PerfServeSource } from '@shared/dataServer/protocol.generated'
 
 /** One `label · value` row. The popover's own shape — see `PerfChip.tsx`'s `Fact`, which this
  *  deliberately mirrors rather than imports: that one is private to the chip's own layout, and two
@@ -132,6 +133,85 @@ function ServeTable({ sample }: { sample: EnginePerfSample }): JSX.Element {
   )
 }
 
+/**
+ * ONE BUDGET, DRAWN — and the whole row is somebody else's sentence (ruling 19, JOS-502).
+ *
+ * NOTHING HERE IS COMPUTED, and that is not this file being lazy: `limit` and `measured` arrive as
+ * strings the ENGINE rendered, and `verdict` arrives already decided. The comparison is arithmetic
+ * and the two budgets are in different units (bytes per second, microseconds), so ruling 4 puts
+ * both on the engine's side of the wire — which also means a third budget ships without one line
+ * changing in this file. The only decisions taken here are pixel decisions: which colour a failure
+ * is, and that an unmeasured budget says so in words instead of printing an empty measurement
+ * beside a verdict that would read as a judgement.
+ *
+ * THE CAVEAT IS THE TOOLTIP, not a footnote somewhere else. `serveLatency`'s number includes the
+ * engine's ~10 Hz coalescing beat and is a wedge detector rather than a compute budget, and
+ * `foldRate`'s pass sits on a floor an eighth below the measured rate while the program's own G3
+ * goal is NOT met — both are sentences a reader needs at the moment he reads the number, and the
+ * engine sends them with it precisely so they cannot drift apart from it.
+ */
+function BudgetRow({ budget }: { budget: PerfBudget }): JSX.Element {
+  const value =
+    budget.verdict === 'unmeasured'
+      ? 'not yet measured'
+      : `${budget.measured ?? 'not measured'} · ${budget.verdict}`
+  return (
+    <Tooltip title={`${budget.limit}. ${budget.note}`} placement="left">
+      <Stack direction="row" justifyContent="space-between" spacing={2}>
+        <Typography variant="caption" color="text.secondary">
+          {budget.label}
+        </Typography>
+        <Typography
+          variant="caption"
+          color={budget.verdict === 'fail' ? 'error.main' : 'text.primary'}
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+        >
+          {value}
+        </Typography>
+      </Stack>
+    </Tooltip>
+  )
+}
+
+/**
+ * The budget table — every budget this engine enforces, measured rather than promised (ruling 3).
+ *
+ * IT IS ABSENT RATHER THAN EMPTY when there is no engine to ask, on this file's standing rule: a
+ * heading over nothing invites the question of whether the budgets went away. When the engine DOES
+ * answer, every row it sent is drawn in the order it sent them — no sort and no filter here, and
+ * none is possible without a served descriptor to ask for one (ruling 4, and the no-munging lint
+ * is what holds the line).
+ */
+function BudgetTable({ sample }: { sample: EnginePerfSample }): JSX.Element | null {
+  const budgets = sample.budgets?.budgets ?? []
+  if (budgets.length === 0) return null
+  return (
+    <Stack spacing={0.25} data-testid="perf-engine-budgets">
+      {budgets.map((budget) => (
+        <BudgetRow key={budget.id} budget={budget} />
+      ))}
+    </Stack>
+  )
+}
+
+/**
+ * WHICH CLOCK THE FOLD IS ON — a fact row while the two clocks agree, a sentence when they do not.
+ *
+ * The warning is drawn full-width rather than as a `label · value` pair because it is not a
+ * measurement any more: a whole number of hours is a zone the engine resolved wrongly, and every
+ * number above it is wrong with it. Absent entirely before an attach has resolved a zone.
+ */
+function ClockRow({ sample }: { sample: EnginePerfSample }): JSX.Element | null {
+  const line = formatEngineClock(sample)
+  if (line === null) return null
+  if (!line.warning) return <Fact label="clock" value={line.text} />
+  return (
+    <Typography variant="caption" color="error.main" data-testid="perf-engine-clock-warning">
+      {line.text}
+    </Typography>
+  )
+}
+
 /** How far behind the log's own clock the engine's last folded event is. */
 function freshness(sample: EnginePerfSample): string | null {
   const ms = eventFreshnessMs(sample)
@@ -159,6 +239,7 @@ export default function PerfEngineSection({
       </Typography>
       <ProcessRow sample={sample} />
       <Fact label="state" value={formatEngineState(sample)} />
+      <ClockRow sample={sample} />
       {engine?.events !== undefined && (
         <Fact
           label="events folded"
@@ -170,6 +251,10 @@ export default function PerfEngineSection({
       )}
       <IngestFacts sample={sample} />
       <ServeTable sample={sample} />
+      {/* The budgets read LAST of the measurements, deliberately: they are the verdict on the
+          ingest and serve numbers directly above them, and a verdict above its evidence is a
+          verdict a reader has to scroll back up to check. */}
+      <BudgetTable sample={sample} />
       {fires !== null && <Fact label="fires" value={count(fires)} />}
       <Fact label="parity, last probe" value={formatParity(sample.parity)} />
     </Stack>

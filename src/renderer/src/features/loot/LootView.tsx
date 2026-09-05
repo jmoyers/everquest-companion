@@ -205,6 +205,7 @@ function LootDetailTakeover(p: TakeoverProps): JSX.Element {
       owned={invByKey.get(itemCountKey(item))?.inv}
       // SLICED, like the ledger it came from: the drill-down's counts, its mob table and its
       // per-zone rates all describe the stretch the control says they do.
+      // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LootEvent. Becomes a view descriptor when the source lands.
       events={events.filter((e) => e.item.toLowerCase() === item.toLowerCase())}
       slice={slice}
       stats={itemStats[itemCountKey(item)]}
@@ -334,6 +335,7 @@ export default function LootView(props: LootViewProps = {}): JSX.Element {
   // membership test (`shared/timeslice.ts`), half-open exactly like `rangeStats`, so a row is in
   // this table if and only if the same instant is inside the range the xp numbers were measured
   // over. Under `All` it keeps every row, so this costs one pass and changes nothing.
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives LootEvent. Becomes a view descriptor when the source lands.
   const sliced = useMemo(() => history.filter((e) => inSlice(slice, e.ts, e.zone)), [history, slice])
   // THE WHOLE history goes in, not `sliced`: the hook applies the slice through the same membership
   // test `inSlice` is, so the caption's count and the caption's rate cannot disagree about what

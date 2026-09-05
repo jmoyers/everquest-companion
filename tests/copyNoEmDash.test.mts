@@ -61,11 +61,10 @@ const COPY_DIRS = ['src/renderer', 'src/shared'] as const
 /** Main-process modules whose strings are drawn by the renderer. See the header's limit note. */
 const COPY_FILES = [
   'src/main/store.ts',
-  'src/main/combat/ingest.ts',
-  'src/main/combat/lifecycle.ts',
-  'src/main/combat/procWindows.ts',
-  'src/main/combat/segmentViews.ts',
-  'src/main/combat/state.ts',
+  // The five `src/main/combat/**` entries left with the fold (JOS-499). The copy they carried —
+  // meter row labels, segment names, the unparsed-line notice — is the ENGINE's to produce now,
+  // and the em-dash law follows it there rather than being dropped: `engine/crates/fold` renders
+  // those cells, so the check belongs in the Rust suite the day that copy grows a dash.
   'src/main/feedback/slice.ts',
   'src/main/feedback/submit.ts',
   'src/main/updater.ts',

@@ -30,11 +30,19 @@
 // for an answer that cannot change. It is a READOUT, never a grant — main registers the handler
 // unconditionally and refuses when no engine is running, so a renderer that ignored this flag would
 // find `{ok:false}` on the other side of the door.
+//
+// AND IT READS THE FLAG THE WAY MAIN DOES, THROUGH THE SAME PREDICATE (JOS-495). The default is ON
+// now, and a readout still comparing `=== '1'` would answer FALSE on every ordinary launch — so
+// `engineProvider.tsx` would never even attempt the connect that `rendererBroker.ts` was standing
+// ready to serve, and the renderer half of the cutover would be dark in exactly the builds it is
+// meant to run in. The mismatch would be silent at both ends: main refuses nothing, the renderer
+// asks nothing. `shared/dataServer/engineFlags.ts` is why the two cannot drift.
 
 import { ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
 import { messagePortChannel } from '../shared/dataServer/messagePortChannel'
 import type { ByteChannel } from '../shared/dataServer/ndjson'
+import type { EngineLaunchSay } from '../shared/engineLaunch'
 
 /** One brokered connection, as the renderer sees it: bytes, and the secret to open with. */
 export interface EngineConnection extends ByteChannel {
@@ -76,13 +84,10 @@ ipcRenderer.on(IPC.onEnginePort, (event, payload: PortPush) => {
 })
 
 export const engineBridge = {
-  /**
-   * Was this launch started with `EQC_ENGINE=1`? A readout, not a grant — see the header.
-   *
-   * The renderer uses it to decide whether to try at all, which keeps every launch that is not a
-   * developer's from making one IPC call it knows the answer to.
-   */
-  engineEnabled: process.env.EQC_ENGINE === '1',
+  // `engineEnabled` LIVED HERE AND IS GONE (JOS-499 item 9). It let the renderer skip one IPC
+  // call on a launch that had deliberately turned the engine off. There is no such launch, and a
+  // readout with one possible value is a member every reader has to prove is dead. The
+  // renderer now simply asks, and `engineConnect` answering null is the honest "not yet".
 
   /**
    * Open this window's ONE connection to the engine, or answer null.
@@ -114,5 +119,35 @@ export const engineBridge = {
       return null
     }
     return arriving
-  }
+  },
+
+  // ── THE LAUNCH, AS THE SHELL SEES IT (JOS-503) ──────────────────────────────────────────────
+  //
+  // A PUSH AND A READ, and the read is not a poll. `onEngineLaunch` carries every change; the one
+  // `engineLaunchState()` exists because a window that mounted (or reloaded, or was opened by the
+  // updater) AFTER the state stopped changing would otherwise never learn it — and the states that
+  // stop changing are precisely the two the shell has to draw. One call at mount, never again.
+  //
+  // NOTHING ABOUT THIS CROSSES THE ENGINE'S WIRE. The renderer's own `EngineClient` could hear the
+  // progress half itself (`client.onProgress`), and deliberately does not: the FAILURE half has no
+  // socket to arrive on, and splitting one question across two transports would make the shell
+  // reconcile what main already knows. `main/dataServer/engineLaunchState.ts` carries the argument.
+
+  /** Every change to the engine's launch state. Returns the unsubscriber. */
+  onEngineLaunch: (cb: (say: EngineLaunchSay) => void): (() => void) => {
+    const listener = (_e: unknown, say: EngineLaunchSay): void => {
+      cb(say)
+    }
+    ipcRenderer.on(IPC.onEngineLaunch, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC.onEngineLaunch, listener)
+    }
+  },
+
+  /** What the push last carried. The ONE read a window makes, on mount. */
+  engineLaunchState: (): Promise<EngineLaunchSay> =>
+    ipcRenderer.invoke(IPC.engineLaunchState) as Promise<EngineLaunchSay>,
+
+  /** The failure card's retry button. Resolves when main has taken the ask, not when it worked. */
+  engineRetry: (): Promise<void> => ipcRenderer.invoke(IPC.engineRetry) as Promise<void>
 }

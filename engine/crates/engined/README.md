@@ -57,6 +57,9 @@ never the process.
 | `combat.snapshot` | `CombatSnapshotResult` | **THE METER, ASKED** (JOS-485). The whole of what `combat:snapshot` serves over IPC today, from the fold that is running, through the same one door. Not a `module.snapshot` — the combat engine is the post-registry subscriber, not a module. The reply carries the INSTANT it was taken at, because the engine chooses it: the process's wall clock once the tail is live, the fold's own `lastTs` before that. See "Which clock a combat answer is taken by". |
 | `combat.searchFights` | `CombatSearchFightsResult` | **THE SEARCH BOX** (Task #61, moved server-side). Ranked over the fold's UNCAPPED encounter history plus the open fight; `corpus` says how much was looked through, so a UI can say `2 of 1,428` honestly. An empty query answers no hits and a real corpus. A `limit` is CLAMPED rather than refused, which is `src/main/ipc/world.ts`'s own rule. |
 | `alerts.define` · `buffTrust.define` · `respawn.define` · `combo.define` · `roster.define` | `DefineAck` | **APP KNOWLEDGE IN** (JOS-482, boundary verdict 3). Each is an idempotent FULL-SET REPLACE of one family. The world records the push and hands it to the live fold, so `applied: true` means the RUNNING fold has the set — not that a queue took it. A push made before any attach is HELD and applied at the next attach's construction. `count` is the entries taken for a list payload and absent for the two families that push one object. See "Defines and fires". |
+| `knowledge.item` · `knowledge.mob` · `knowledge.spell` | `KnowledgeResult` | **THE COMMITTED CORPORA, ENGINE-SIDE** (JOS-486, design surface 5). `items.json` (8.75 MB), `mobs.json` (3.2 MB), `quests.json` and `posky.json` are `include_str`'d into the `knowledge` crate and indexed **on first use**, so an attach pays for nothing a client has not asked for. **None of the three can fail**: a name no corpus holds is `found: false` beside a record carrying every LOCAL association the engine could still gather, because a missing wiki page does not unmake a posky quest use. There is no `unavailable` arm either — a corpus question names nothing that could be absent, so a mob card is a real card before the first attach. `knowledge.mob` is the one that touches the fold, and only for the own-loot half of its join. See "The knowledge surface". |
+| `knowledge.search` | `KnowledgeSearchResult` | Name search across all four corpora. **The ENGINE ranks** (exact, then prefix, then contains; then by length, then alphabetically) because the renderer never munges domain data. A type-ahead, not a page: `limit` is capped, and `total` states how many matched. |
+| `knowledge.define` | `DefineAck` | **THE ANSWER TO A MISS, PUSHED BACK** (boundary verdict 5). The engine has no network stack; the app owns the wiki fetch and the etiquette that goes with it. **Not a full-set replace**, and the schema argues it: the other five defines carry user preferences a store can restate whole, this one carries the WIKI. It keeps the half of the command law the law is for — idempotent and order-independent per key. `domain` is `item` or `mob` only, refused by SHAPE. |
 | anything else | `ErrorReply { unknownOp }` | The connection survives — a refused request is not a broken conversation. |
 
 And one message the engine sends that answers no request at all:
@@ -64,6 +67,7 @@ And one message the engine sends that answers no request at all:
 | Frame | When | Notes |
 | --- | --- | --- |
 | `FireMessage` | an alert matched a LIVE event | **ALERT FIRES OUT** (owner ruling 22). Connection-wide, so it carries no `id` — the epoch-message precedent. It carries no `epoch` either, and that is the difference from an epoch message rather than an oversight: every other stream frame describes WINDOW STATE a client reconciles across a generation, while a fire is a thing that happened once. Fully resolved server-side: `sound` is the `<packId>/<soundId>` key the app plays. |
+| `KnowledgeMissMessage` | a lookup found no page for a name | **A REQUEST FOR WORK** (JOS-486, boundary verdict 5) — the one frame that asks the app for something rather than telling it something. No `id` (the fire's precedent) and no `epoch`, for the fire's reason plus one: a miss describes the PROCESS's corpus, which is committed data plus an overlay that survives an attach, so there is no generation it could belong to. **Each name is announced at most once per process** — a stacked loot burst probes one name many times, and asking the app to fetch each of those would be the engine breaking the etiquette law on the app's behalf. The answer comes back as `knowledge.define`. |
 
 A known op with unreadable params is `badParams`. A frame that is not a message at all, or one with
 no `id` to correlate a refusal with, **closes the connection** — the schema's own rule is that a
@@ -316,20 +320,53 @@ diffs as the fold moves.
 | Source | Reads | Default order | Cells |
 | --- | --- | --- | --- |
 | `loot.ledger` | the `loot` module's rows | `at` desc, then `seq` desc — newest first, which is what the flat ledger draws | `at`, `item`, `count`, `from`, `zone`, `disposition`, `created` |
+| `timers.rows` | `buffs.active` + `buffTimers.holds`/`.ends`, through `fold::modules::buff_timer_rows` | `order` asc — the projection's own: self rows, then one block per target | `name`, `rank`, `kind`, `surface`, `group`, `mode`, `ambiguous`, `calmsTarget`, `inferredTarget`, `startedTs`, `durationMs`, `endsAt`, `target`, `targetKey`, `count`, `caster`, `order`, `flat` |
+| `buffs.active` | the `buffs` module's live instances | `startedTs` asc — the order the module publishes and the tab lists | `spell`, `castName`, `cls`, `self`, `disposition`, `target`, `inferredTarget`, `startedTs`, `estimatedMs`, `p25`, `p75`, `n`, `durationSource`, `permanent`, `permanentSource`, `messageDriven`, `ambiguous`, `count`, `caster`, `calmsTarget` |
+| `respawn.watches` | the `respawn` module's rows | `order` asc — the module's own, which is a function of `now` | `display`, `key`, `zone`, `baseTs`, `basis`, `source`, `overridden`, `samples`, `kills`, `seenTs`, `seenVia`, `estimateMs`, `observedMs`, `customMs`, `wikiText`, `wikiMs`, `wikiPage`, `order` |
+| `kills.recent` | the `progression` module's recent-kill ring | `at` desc, then `seq` desc | `at`, `name`, `zone`, `pet`, `expLine`, `expStated`, `expParty`, `expPct` |
+| `progression.recent` | the `progression` module's level and AA columns | `at` desc, then `seq` desc | `at`, `kind`, `value`, `label` |
+| `eventFeed.recent` | the `eventFeed` module's ring | `at` desc, then `seq` desc | `at`, `kind`, `title`, `detail`, `page`, `rewardItem`, `rewardPage`, `rewardStats`, `conFaction`, `conDifficulty`, `conLevel`, `conRare` |
 | `combat.live` | the combat engine's selected segment | `total` desc — the meter's own ranking, which is what every surface draws | `rank`, `name`, `kind`, `tag`, `pct`, `total`, `dps`, `crit`, `hit`, `resist`, `ambiguous` |
 
-**THE TWO ARE DIFFERENT KINDS OF SOURCE, and that is why the second one mattered.** `loot.ledger`
-APPENDS — a row, once written, never changes — so a live window over it produces inserts and drops
-and never an `update`. `combat.live` EDITS: the same handful of keys sit in the window for a whole
-fight while their numbers move. That is the shape the diff protocol's third op exists for, and until
-JOS-485 it had exhaustive unit tests and no integration coverage at all. `tests/combat.rs` is where
-it gets some.
+**THEY ARE TWO DIFFERENT KINDS OF SOURCE, and that is why `combat.live` mattered.** `loot.ledger`,
+`kills.recent`, `progression.recent` and `eventFeed.recent` APPEND — a row, once written, never
+changes — so a live window over one produces inserts and drops and never an `update`.
+`combat.live`, `timers.rows`, `buffs.active` and `respawn.watches` EDIT: the same handful of keys sit
+in the window while their numbers move. That is the shape the diff protocol's third op exists for,
+and until JOS-485 it had exhaustive unit tests and no integration coverage at all. `tests/combat.rs`
+is where it gets some.
 
-`eventFeed.recent` is **skipped, and named rather than forgotten**: the fold's event feed admits
-nothing that did not arrive live through an injected item probe, an injected consider table, or an
-out-of-band alert push, and this engine carries none of the three. Its ring is empty in every fold
-this build can perform, so a view over it could only ever serve an empty window and no test could
-tell a working one from a broken one. It arrives with the sources that feed it.
+**`kills.recent` reads the PROGRESSION module and the name says the SURFACE.** Every other source
+here is named for the module it reads, and this one is the exception with a reason: the `kills`
+module is a lifetime tally keyed by mob that the boss and mob pages look things up in, and it has no
+recent list at all — the recent-kills FEED is a fifty-entry ring `progression` keeps, because a kill
+and the experience line that follows it are one fact joined at fold time and only that module sees
+both. A client asking for recent kills gets recent kills.
+
+**`eventFeed.recent` was unregistered for two reasons and TWO TICKETS TOOK THEM AWAY SEPARATELY.**
+The reason was: the ring admits nothing that did not arrive live through an injected item probe, an
+injected consider table, or an out-of-band alert or quest push, so it could only ever be empty — and
+therefore "no test could tell a working one from a broken one". JOS-487 answered the second clause by
+pointing the test somewhere else: the projection is a pure function of a ring, `views/event_feed.rs`
+pins every cell against a hand-built one, and a broken cell fails a test whether or not any fold can
+produce the entry it mangled. JOS-486 took the FIRST clause away in the same wave — the loot source's
+item probe is a real in-process lookup now, so a live loot line puts a row in that ring. A renderer
+subscribing during the cutover is told **nothing here yet** rather than **no such surface**, which
+were always different things to be told.
+
+**Two orders that no column sort can express are published as integer FIELDS.** `timers.rows` carries
+`order` (self rows, then per-target blocks, blocks ordered by their soonest row) and `flat`
+(`compareRows` over everything: countdowns ahead of count-ups ahead of permanents, then by end
+instant); `respawn.watches` carries `order` (seen-recently first, then unstale, then by remaining —
+a subtraction against `now`). Each is the row's index in that order, computed once per serve pass by
+the projection that owns the rule, so the client names the order it wants and never re-sorts. That is
+ruling 4 kept rather than bent: the decision stayed engine-side and what crossed the wire is its
+answer. Both are unique, so either makes the sort total on its own.
+
+**`respawn.watches` is ordered against the MODULE's clock, never a fresh read.** The respawn module
+is advanced by the log while folding and by the live tick once a tail owns the file; reading a second
+clock in the serve path would order the rows against an instant the model has never seen, and would
+put a wall-clock read where ruling 18 law 1 forbids one.
 
 **A query FIELD is not a CELL, and the whole layer turns on that.** A sort term names `at`; a cell is
 also called `at`; they are different values. The cell is `"Aug 19, 04:14 PM"` because that is what the
@@ -362,6 +399,34 @@ counter the `loot` module bumps on every push and every clear, read through the 
 `as_roster` is — so an idle session costs one comparison per cadence tick and nothing else. The rate
 is a ceiling (~10 Hz, `views::SERVE_EVERY`), not a heartbeat: nothing is sent when nothing moved.
 
+**WHERE RULING 4 STOPS: numbers, not sentences.** `loot.ledger` renders its instant as
+`"Aug 19, 04:21 PM"` because that is what the pixel says, and six sources later that is still the
+rule — with two named exceptions, both of which are the APP's own decision rather than a relaxation
+of the owner's. A value read against NOW is served as the INSTANT: a timer bar's remaining time
+changes every frame, so serving it as text would mean a diff per visible row per serve beat and it
+would still be stale between two frames. What crosses is `startedTs`, `durationMs` and `mode` — the
+three numbers `timerReading` is a pure function of, which is what the overlay already ticks against
+at 1 Hz — plus `endsAt`, the one derived instant that is a fact about the ROW rather than about now.
+And a value whose wording is a SHARED derivation is served as its numbers: the buff row's
+`~4m 30s`, the resist chip's `R 126 (110-144)`, the respawn row's provenance line are each built by
+one function the tab, the overlay and the hover card all read, so a wire carrying finished strings
+would be a second copy of a vocabulary that must not drift — which is the call `shared/conCard.ts`
+already made for a payload that fetches nothing ("IT CARRIES NUMBERS, NOT SENTENCES"). Everything
+else is rendered here: a date, a name, a count, a decomposed bitfield (`kills.recent`'s three
+experience flags, so no renderer runs `flag & 2`), a routing answer (`timers.rows`' `surface`), a
+comparison already made (`respawn.watches`' `overridden`). **AND A CELL IS A SCALAR** — a list or an
+object is not one, so a row's candidate spells become its joined `name` plus an `ambiguous` flag and
+a feed entry's `reward` block becomes prefixed cells. Nothing is stringified into a cell for a client
+to parse back out; that would be the munging the ruling forbids, wearing a scalar's clothes.
+
+**Three of the seven change signals are COARSE, and the coarseness is stated at the module.** `loot`,
+`respawn` and `buffTimers` keep real revision counters that move only when their state could have;
+`buffs`, `progression` and `eventFeed` do not, so they report the fold's own `seq`, which moves on
+every event. That never misses a change — the property correctness needs — and it over-reports, which
+costs one re-cut per serve beat on a busy tail over row sets of tens. The honest fix is the counters,
+not a cache (ruling 5). `timers.rows` takes the MAX of its two inputs, because either moving could
+move the window.
+
 **`src/views/diff.rs` is the engine half of `src/shared/dataServer/viewWindow.ts`, and that file is
 its specification.** The client refuses rather than guesses — an anchor it does not hold, a key it
 does not hold, a key it already holds — so every op this engine emits must be one the client can
@@ -374,9 +439,33 @@ assertion every case makes is that it refuses nothing.
 **The engine measures its own serve path** (owner ruling 19, foundations). `src/views/meter.rs` counts
 fold-to-frame latency per source — from the instant the ingest folded the event to the instant the
 frame reached the outbox — and diff sizes per subscription, in ops and in the frame's own serialized
-bytes. A stderr line at a 10 s cadence, forced once when the fold lands. The `perf.budgets` surface is
-a later ticket; what exists now is the measurement, so that surface has numbers to serve rather than a
-place to put numbers nobody took.
+bytes. A stderr line at a 10 s cadence, forced once when the fold lands.
+
+**And since JOS-502 it serves them, judged** — surface 8 complete. `src/budgets.rs` holds the two
+ceilings `tests/budget.rs` asserts in CI and renders a verdict against the generation that is actually
+running, so the in-app panel and a bug report state what THIS machine did rather than what a runner
+did. The rows are render-ready (ruling 4 applied to a diagnostic): the comparison is arithmetic, the
+two budgets are in different units, and the caveat that keeps each number from being misread is prose —
+all three on this side of the wire, which also means a third budget ships without a renderer change.
+**The unmet G3 goal is stated in the fold-rate row itself**, because a pass sits on a floor an eighth
+below the measured rate and a row that let that read as the goal reached would be lying by omission.
+
+**`views::Timeline` is the history behind the totals.** A fixed-capacity ring — `TIMELINE_CAPACITY`
+moments at `TIMELINE_CADENCE`, five minutes — sampled off the serve beat, where every figure is an
+INTERVAL rather than a running total: `perf.snapshot` already answers the cumulative question, and a
+list of ever-growing totals makes a reader subtract against a baseline he cannot see. Three properties
+are load-bearing and each has its own unit test: **the bound** (an engine up for a week costs what one
+up for a minute costs, and the oldest moment is DROPPED rather than summarised into a subtler
+accumulator); **a quiet window is recorded as quiet** (a ring that dropped its silent samples would
+compress a lull into no space and make the busy moments either side look adjacent); and **it reads a
+clock it is given** (process uptime, passed in — no wall clock near a performance answer, no timestamp
+that says when a person played, and every ring test is arithmetic with nothing sleeping in it).
+
+Frames and bytes are cumulative counters the ring subtracts against its own last reading, so the serve
+path pays nothing for them. A MAXIMUM is not invertible — a cumulative worst of 56 ms says nothing
+about which window set it — so the windowed extreme is the one field accumulated beside the counters
+and drained by `Meter::take_window`. The three drains in `views/meter.rs` are independent by design: a
+timeline sample can never steal the interval a stderr line was about to print.
 
 ## Which clock a combat answer is taken by
 
@@ -404,13 +493,25 @@ mid-fold answer is a pure function of the bytes folded so far and re-asking it a
 gives the same answer — ruling 18 law 1, for this surface. And the wall clock enters exactly where it
 already entered: a live world, which the six-slice oracle has never described and cannot.
 
-**`hydrating` IS `true` IN EVERY ANSWER THIS BUILD GIVES, and that is a named gap rather than a
-bug.** `fold/src/combat/state.rs` fact 1: the snapshot-time sweep block — the charm sweep, the ally
-expiry, the pet nudge and the deferred encounter closure — is unported, because a historical fold
-provably never enters it and porting a code path nothing can reach would be inventing one. Clearing
-the flag without porting those four would promise a liveness the fold does not have, and the app's
-own UI reads it to decide whether to draw a loading state. **The meter-cutover ticket is where it
-changes, and it changes by porting the sweeps.** Nothing here should clear it on its own.
+**`hydrating` CLEARS AT THE GO-LIVE BEAT, AND THE FOUR SWEEPS ARE WHAT EARNED IT** (JOS-488).
+JOS-485 answered `true` here in every state, deliberately: the snapshot-time sweep block was unported,
+and clearing the flag without it would have promised a liveness the fold did not have. Both halves
+landed together. `EventSink::tick` calls `CombatEngine::set_live()` on its FIRST beat and only there
+— the same place `session.ts` puts `combat.setLive()`, before `startHeartbeat`'s single
+`registry.tick(Date.now())` — and from then on every combat answer runs the charm sweep, the ally-bind
+expiry, the pet nudge and the deferred encounter closure at the instant it was taken at. **So a live
+meter closes a fight the log stopped talking about**, on the log's own numbers and stamped at the
+fight's own clock, exactly as the app's does.
+
+**ONE FLAG DECIDES BOTH QUESTIONS, and that is the point**: a world entitled to a wall clock is
+exactly a world entitled to age itself against one. The historical path reaches neither — the scan
+cannot call `tick`, so it cannot leave hydration, so it cannot enter the sweep block — which is what
+keeps a mid-fold answer a pure function of its bytes and keeps the six-slice oracle green without a
+line of special-casing. Two smaller consequences are stated rather than inherited: a live combat
+answer MUTATES the fold (see `answer_asks`, and `CombatEngine`'s `st` field for why the mutation
+stays inside the engine), and the CLASSIFICATION RING is still unported — so `recent` is `[]` in a
+live answer where the app publishes classified lines. That is now this engine's named combat gap, and
+it is a much smaller one: nothing on the meter's rows reads it.
 
 ## Defines and fires
 
@@ -476,6 +577,275 @@ it would corrupt the owner's hands-on regression evidence, which is what this pr
 on. `engineClientHost.ts noteFire` writes one dev-log line per fire and counts them. The audio
 cutover is the alerts-surface ticket, which deletes the app-side evaluator in the same change that
 gives that line a speaker, so the two can never both be live.
+
+## The live surfaces — the con card, the session mark, the module dirty bit
+
+Three things JOS-487 adds beside the views, and all three are about the same boundary: what a LIVE
+engine says without being asked, and the one command it is allowed to refuse.
+
+**`world.conCard` — the fold stops calling into Electron** (boundary verdict 2). The census found
+`considerModule.setConCardHook` running `main/conCard.ts noteConsider` INSIDE the fold's own delivery
+— a knowledge lookup, a resist profile and an overlay send, on the thread parsing the log. The
+verdict inverts it: the consider module buffers its live cons (`take_cons`, the shape `take_fires`
+already is), the ingest drains them beside the fires, and `crate::concard` resolves the whole card.
+It is connection-wide with no `id` and no `epoch`, on the `FireMessage` precedent, and LIVE ONLY
+structurally — a startup replay of a month of logs draws nothing, because a historical event cannot
+reach the push at all.
+
+**The chips are the EMPTY five and `spellData` is false, and that is not a stub.** It is the branch
+`mobResistProfile` itself takes app-side when the client's `spells_us.txt` has not been read — five
+empty axes and the flag down, exactly what the card draws today on the first `/con` of a session.
+The engine cannot take the other branch yet: **the spell-table parse is boundary verdict 7 and the
+cutover ledger's item 6, still open**, and without it there is no axis for a spell, no resist adjust,
+and therefore no estimate to fit — nor has the estimator behind it moved (`shared/resistModel.ts`,
+`resistFit.ts`, `resistFormula.ts`). **So the con-card CUTOVER is blocked on the spell table and this
+frame is not**: the shape is final, the header is real, and the chips fill in with no protocol change
+the day the table lands. That is why `ConCardChip` is typed on the wire in full rather than left
+open.
+
+**Two of the app's three refusals stay app-side, with reasons.** The re-open suppression ("never
+twice inside a minute of a close") is a fact about the PERSON measured on the wall clock they live on
+— EQ stamps to the second, and a log-clock comparison put the card straight back up in the app's own
+e2e — and its only input is a window event the fold never sees. The PLAYER refusal is
+`isPlayerShapedName(name) && !knownMob(name)`, and this engine has the first half and not the second:
+the committed mob catalog moves with the KNOWLEDGE surface. Applying the name-shape test alone would
+refuse a card for every proper-named NPC the app draws one for today — Innoruuk, Blugurg, Sheldon —
+which is a regression wearing a port's clothes. So neither half is applied here, and until the
+catalog is engine-side the app's own `looksLikePlayer` still stands in front of the overlay window.
+
+**`sessionMarks.add` — a command that can be refused** (boundary verdict 6). One press splits
+everything, so the APP stamps the clock once and hands that same number in; an engine that stamped
+its own would put everything looted between the two reads on the wrong side of one of the two
+boundaries. THE ENGINE STORES NOTHING — a mark is ephemeral on both sides, which is half of why a
+relaunch replays the log into the records the log alone describes. The other half is the refusal:
+`accepted: false` unless the world is LIVE, which is the honest engine-side spelling of
+`combat/engine.ts sessionMark`'s `if (st.hydrating) return false`. A refusal is NOT an error — the
+frame deserialized, the op exists, the instant is well formed, and the answer is *not now* — so it is
+a reply a client branches on rather than something in every error log the app collects. The ack
+carries the STATUS it decided under, in the same critical section as the decision, because a client
+asking `session.health` afterwards would be racing a fold that may have gone live in between.
+
+**What an accepted mark DOES to the world today is nothing, and that is a named gap.** The mark's
+effect is a COMBAT-ENGINE act — close the open fight, freeze the running stay into history tagged
+`closedBy: 'mark'`, mint fresh accumulators — and this crate's sink does not register the combat
+engine at all (`Fold::with_combat` is the combat surface's own ticket). What exists now is the
+command, the law and the reply: the half that decides WHETHER, without the half that DOES.
+
+**`moduleChanged` — the dirty bit, and the end of the poll.** Every module answers
+`EqModule::published_seq`, read WITHOUT building the state — because the serve loop asks all twenty
+once per beat, and asking through `snapshot()` would serialize twenty modules' whole state ten times
+a second to compare twenty integers. The frame
+carries a name and a cursor and no state at all, so a client not showing that module pays one small
+frame and ignores it, and a client that is re-fetches through `module.snapshot` — the op that already
+exists and the only place a module's shape is stated. A frame that carried the state would be
+`module.snapshot` pushed at a cadence nobody asked for, which is the per-window snapshot fan-out this
+boundary exists to delete.
+
+**It is coalesced to one frame per module per beat**, not one per event: the ingest holds the last
+cursor it announced per module (`Serving::announced_seqs`, beside the meter and for the meter's
+reasons — it belongs to this generation and it costs no lock) and hands the world only what moved.
+Nothing is sent for a module that did not move, so an idle session pays twenty integer comparisons at
+10 Hz and nothing else. It is NOT an epoch and does not replace one: a bump still means
+drop-everything-and-take-the-reset, and a `moduleChanged` inside one generation means only *there is
+something newer to fetch*. The app-side `useModule` → refetch shim is a later ticket; this is the
+seam it rides.
+
+**AND SINCE JOS-509 THE CURSOR IS HONEST — the coalescing had nothing to coalesce.** The transcript
+below was recorded before that ticket and shows the defect in one screenful: sixteen of the twenty
+modules report the SAME number (`139862`) because for each of them `published_seq` was
+`self.seq = ev.seq()`, stamped at the top of `on_event` before the match on kind. That is a global
+log-line counter wearing twenty per-module names, so `changed_modules` found twenty numbers that had
+all changed on every beat and every subscribed renderer re-fetched a whole snapshot ten times a
+second. Measured on the owner's machine: identical push counts for `roster`, `loot` and `turnins`
+during a live tail, 11.9 renderer commits per beat out of ONE log line, at 271–288 ms a push on his
+real tree. Those sixteen now carry a `fold::announce::Announce` bumped only from the arms that
+mutate published state — a melee round leaves fourteen of them silent
+(`tests/live_surfaces.rs a_melee_round_leaves_the_modules_it_has_nothing_to_do_with_silent`).
+
+**The invariant a reader must not "tidy": the announce cursor is no longer EQUAL to the `seq` inside
+that module's snapshot, and it is not meant to be.** The goldens pin every migrated snapshot's `seq`
+byte-for-byte, so the two numbers had to come apart; what is preserved is the only property the
+clients need. `useModule.ts`, `useOverlayModule.ts`, `BuffsOverlay.tsx` and main's `serveMirrors.ts`
+all take `knownSeq` off a held SNAPSHOT and drop any frame at or below it — so the cursor stays in
+the snapshot's own number space and lands strictly ABOVE the fold position each change happened at
+(`max(cursor, seq) + 1`). It is therefore above any snapshot a client could hold from before the
+change, and below only one taken after it, which already carries the change and is right to drop the
+frame. A cursor restarting at 1 would have sat permanently below the log-line seq and frozen every
+one of those panels after its first hydrate. `fold::announce`'s header is the full argument.
+## The knowledge surface
+
+**The corpora move into the engine (JOS-486, design surface 5).** `items.json` (8.75 MB, 11,288 item
+pages), `mobs.json` (3.2 MB, 7,866 mob pages), `quests.json` and `posky.json` are `include_str`'d
+into a new `knowledge` crate — the `spells.json` precedent, one copy of each file in the tree, so a
+re-scrape reaches every reader at once. That is ~12 MB leaving main's heap, and the renderer's own
+bundled copies follow when its surfaces cut over.
+
+The crate is `main/itemLookup.ts` + `main/mobLookup.ts` and the six pure files they are built out of
+(`itemsDb`, `questItemIndex`, `mobLookupLocal`, `mobAliases`, `mobDropEra`, and the own-loot half of
+`mobLookupParse`), ported, **with the network removed**.
+
+### Three steps, and the third one inverted
+
+Over there the resolution is committed DB → userData cache → politely-throttled wiki call. Here it is
+committed corpus → **runtime overlay** → **a miss**:
+
+1. **The committed corpus** answers the overwhelming majority and short-circuits everything after it.
+2. **The runtime overlay** is what the userData cache was — answers the app has already fetched and
+   pushed back with `knowledge.define`.
+3. **A miss** is recorded, drained at whatever boundary notices it (the ingest's fold boundary for
+   the fold's own probes, the op itself for a client's question), and announced connection-wide as a
+   `knowledgeMiss` frame. The app fetches, keeping its own serialized queue, its own 150 ms spacing
+   and its own `Retry-After` cooldown — **scraper etiquette is a LAW and it stays where the socket
+   is** — and pushes the answer in.
+
+**Each name is announced at most once per process.** A stacked loot burst probes one name many times
+and a `/con` ring re-cons the same mob three times in five seconds; asking the app to fetch each of
+those would be the engine breaking the etiquette law on the app's behalf. A `knowledge.define` for
+the name makes every later lookup a hit, so nothing has to un-remember anything.
+
+### Every index is built on first use
+
+`include_str!` puts the bytes in the binary; nothing is PARSED until something asks. `itemLookup.ts`
+made the same call and measured it (JOS-371: 41.8 ms of parse for a ~20.4 MB retained graph, plus
+three derived indexes being charged to `DATA_READY_MS` for a service nothing had asked anything of
+yet). Here it matters with the same shape for a different reason: **an attach must not pay for a
+corpus no client has queried**, because an attach is on the path of the one thing this whole program
+exists to make fast.
+
+### The fold gets the real lookups — in the PRODUCTION construction only
+
+`consider` and `eventFeed` are the two modules whose TypeScript twins take an injected lookup
+(`deps.lookupMob`, `deps.lookupItem`) and do nothing at all without one. `tests/bench/foldArm.mts`
+injects neither, which is why every recorded golden carries `knowledge` **absent** from every
+consider row and an **empty** event feed — and why the parity construction must keep injecting
+neither, forever.
+
+**The dependency direction is what makes that structural rather than conventional.** The `knowledge`
+crate depends on `fold`; `fold` cannot name `knowledge`. So `fold::registered()` — the construction
+the parity runner, the bench arm and every fold test use — has no way to reach a corpus even by
+accident, and the `parity` binary does not carry 12 MB of committed JSON in its text section.
+`Registry::install_knowledge` is called by `foldsink::registry_for` and by nothing else in this repo.
+
+**And a production fold differs from that world only on the LIVE TAIL.** Both probes sit behind the
+`live` gate: the feed admits nothing historical at all, and `consider` enriches live cons plus a
+bounded backfill on the first **wall-clock tick**, which `fold_bytes` never calls. A historical fold
+with a corpus installed is the same fold as one without — which is the property the oracle checks,
+and the DEFAULT `oracle:rust-fold` is green across all six slices with the lookups in the build.
+
+**The probe is synchronous, and that is the boundary dissolving.** Over there both lookups are
+promises, because main's answer may be a wiki round trip: the row is appended immediately and
+`knowledge` lands later as its own delta. Here the corpus is an in-memory index in the same process,
+so a live con enriches inside the same fold and the row is published complete. There is therefore
+**no out-of-band seq bump** — the TS bumps `seq` on the async landing so `useModule`'s gap check
+accepts a delta with no event behind it, and a bump here would put the module's published seq ahead
+of the event it folded for no reader's benefit.
+
+### The one part a corpus cannot answer
+
+`knowledge.mob` joins four sources and one of them is yours: **what you have actually looted off that
+creature**. That index lives inside the `consider` module on the ingest thread, is character-scoped
+and epoch-scoped, and is read through the same one door everything else is (`Ask::Loot`). The order
+is the design — the corpus resolves the roster's alias identity FIRST, so what crosses the thread
+boundary is a handful of rows rather than a handle on somebody's state — and an engine with no fold
+answers with an empty history, which is the same value a creature nothing has been looted from gets.
+
+### The named gap: `knowledge.spell`
+
+It answers off `eqlog`'s **effective** catalog (the committed scrape with removals, derived durations
+and corrections applied — one load, never a second) and states exactly the fields that DB carries. It
+does **not** carry the join half of `main/data/spellDetail.ts`: no derived effect classes, no rank
+lineage, and none of the metrics `spellMetricsAt` reads at a gain level, at a mote rank or with worn
+focus. Those need three inputs this engine does not have yet — the parsed `spells_us.txt` client
+table (boundary verdict 7, unbuilt), the observed-rank module's join, and the planner's worn-focus
+reading — and half a card is a wrong answer wearing a right one's clothes. It answers `found: false`
+for a rank-suffixed name the DB has no row for rather than handing back the LINE's numbers with no
+note that they are the line's. Named here and in the schema beside the op, the way `earlyWarnSec` is
+named in the alert evaluator.
+
+## Watching the corpora answer, by hand
+
+A **real session** against a release build, and **with no log and no attach at all** — which is the
+point of the session rather than a shortcut: a corpus question names nothing a fold owns, so the
+engine answers all of it before it has read a byte of anybody's log.
+
+```js
+// scratch/drive486.mjs — node scratch/drive486.mjs <repo root>
+// (spawn and frame printing are drive.mjs's, verbatim; there is no log to stage)
+send({ op: 'hello', token: TOKEN, protocolVersion: 1 })
+send({ id: 1, op: 'knowledge.item', params: { name: 'Cloak of Flames' } })   // a hit
+send({ id: 2, op: 'knowledge.mob',  params: { name: 'a sand giant' } })      // four sources, joined
+send({ id: 3, op: 'knowledge.item', params: { name: 'Shard of Nothing' } })  // a MISS
+// …then, 400 ms later, the app "fetches" and pushes the answer back:
+send({ id: 4, op: 'knowledge.define', params: { domain: 'item', name: 'Shard of Nothing',
+       entry: { page: 'Shard of Nothing', lore: true, summary: 'Fetched by the app, not by the engine.' } } })
+send({ id: 5, op: 'knowledge.item', params: { name: 'Shard of Nothing' } })  // …and now a hit
+send({ id: 6, op: 'knowledge.search', params: { query: 'cloak of flames', domain: 'item', limit: 3 } })
+```
+
+The transcript, verbatim except where a record is elided — the two hits below are the committed
+corpus's real records and the mob one runs to 6 KB of drop table:
+
+```console
+$ cargo build --release -p engined
+$ node scratch/drive486.mjs .
+EQC-ENGINE PORT=62213 PROTOCOL=1
+<- {"engineVersion":"0.1.0","kind":"hello","ok":true,"protocolVersion":1}
+
+<- {"id":1,"kind":"reply","ok":true,"result":{"domain":"item","found":true,"name":"Cloak of Flames",
+    "record":{"cached":true,"dropsFrom":[{"mob":"Lord Nagafen","zone":"Nagafen's Lair"}],
+    "eraTag":"Classic","iconId":658,"lore":false,"name":"Cloak of Flames","page":"Cloak of Flames",
+    "quest":false,"questUses":[],"stats":{"ac":10,"classes":["ALL"],"slot":"BACK",
+    "stats":[{"key":"DEX","value":"+9"},{"key":"AGI","value":"+9"},{"key":"HP","value":"+50"},
+    {"key":"HASTE","value":"+36%"}], …},"statsBlock":"MAGIC ITEM\n\nSlot: BACK\n\nAC: 10\n\n…"}}}
+
+<- {"id":2,"kind":"reply","ok":true,"result":{"domain":"mob","found":true,"name":"a sand giant",
+    "record":{"cached":true,"levelText":"33-37","page":"A Sand Giant",
+    "zone":"Southern Desert of Ro, Oasis of Marr, Northern Desert of Ro",
+    "dropsWiki":[{"item":"Sand of Ro","eraTag":"Temple","eraZones":["Oasis of Marr", …]},
+                 {"item":"Essence of Sunlight","eraTag":"Classic","eraZones":[…]}, … 16 in all],
+    "quests":[{"quest":"Armor of Ro Quests","page":"Armor of Ro Quests","giver":"Lord Searfire",
+               "zone":"Temple of Solusek Ro"},
+              {"quest":"Princess Lenya (Quest)","page":"Princess Lenya (Quest)","giver":"Tynkale",
+               "zone":"Northern Felwithe"}]}}}
+
+<- {"domain":"item","kind":"knowledgeMiss","name":"Shard of Nothing"}
+<- {"id":3,"kind":"reply","ok":true,"result":{"domain":"item","found":false,"name":"Shard of Nothing",
+    "record":{"lore":false,"name":"Shard of Nothing","offline":true,"quest":false,"questUses":[]}}}
+
+-> {"id":4,"op":"knowledge.define","params":{"domain":"item","name":"Shard of Nothing", …}}
+<- {"id":4,"kind":"reply","ok":true,"result":{"applied":true}}
+<- {"id":5,"kind":"reply","ok":true,"result":{"domain":"item","found":true,"name":"Shard of Nothing",
+    "record":{"cached":true,"lore":true,"name":"Shard of Nothing","page":"Shard of Nothing",
+    "quest":false,"questUses":[],"summary":"Fetched by the app, not by the engine."}}}
+
+<- {"id":6,"kind":"reply","ok":true,"result":{"query":"cloak of flames","total":1,
+    "hits":[{"domain":"item","name":"Cloak of Flames","page":"Cloak of Flames"}]}}
+```
+
+Five things in that transcript are worth naming, because each of them is a decision rather than an
+outcome:
+
+* **The era evidence on the mob's drop list is joined engine-side** (JOS-377's defect, which is why
+  it exists): the mob catalog states names only, so each drop's `eraTag` and `eraZones` come from the
+  ITEM page, in the 8.75 MB corpus that only this process now holds. It attaches EVIDENCE and reaches
+  **no verdict** — there is exactly one era rule in this app and a second opinion computed here would
+  be the beginning of a third.
+* **The miss frame arrives BEFORE the reply it belongs to.** Both go out on the connection's one
+  outbox and the broadcast happens inside the dispatch, before the outcome is written. Nothing
+  depends on the order — the frame carries no id and the reply is correlated by one — and it is
+  stated here so a reader of a real capture does not go looking for a bug.
+* **The miss still ANSWERS.** `found: false` beside a card with the player's own name in it, and
+  `offline: true` rather than `notFound: true`: over there `notFound` means "the wiki lookup RAN and
+  found no page", and this engine has no network stack, so it cannot make that claim. `offline` is
+  the app's own word for "the wiki could not be consulted — local sources may still have answered",
+  which is exactly true, and it is the state the renderer already treats as retryable. The retry is
+  the frame.
+* **`knowledge.define` needs no attach and survives one.** The overlay is what the APP has told this
+  process about committed data, not what a generation folded — the same sentence `World::defines`
+  makes about the other five families.
+* **`total: 1` on the search** is the match count, not the hit count. It is the one number a caller
+  cannot compute from what it was handed, which is what lets a type-ahead print `1-20 of 143` without
+  ever holding 143.
 
 ## Watching app knowledge land, and an alert fire, by hand
 
@@ -895,6 +1265,19 @@ Eight things in that transcript are this ticket:
 > boundary — which clears the world. So the only fight in the history is the one the driver wrote,
 > which is also why `selectedId` is empty in the mid-fold answer.
 
+**RECORDED UNDER JOS-485, AND TWO OF ITS FRAMES WOULD READ DIFFERENTLY TODAY.** It is kept as it was
+run rather than edited to match, because a transcript is a record; here is exactly what JOS-488 moved
+and why. The LIVE answer (`id:4`) would say `hydrating: false` now, and — because the driver stamped
+its fight **56 seconds** before the instant that answer was taken — the snapshot-time sweeps would
+finalize it: `kind: "fight"` instead of `"current"`, no `currentTarget`, and the hit appended
+afterwards would open a fresh encounter rather than joining that one, so frame 6's two updates would
+be a drop and an update instead. **That is the engine being right, and it is an artifact of the
+staging rather than of the meter**: a real live session writes its lines at the instant they happen,
+so its open fight is seconds old and stays open — which is precisely what `tests/combat.rs` stages
+now, and what `Staged::stale` stages deliberately to watch a fight close on the clock alone. The
+MID-FOLD answer (`id:3`) is unchanged in every field, including `hydrating: true`: the scan cannot
+reach the flag, so a replay is still not a moment in time.
+
 ## Running it by hand
 
 Three lines, and the transcript below is a real session (`cargo run` writes its build output to
@@ -1173,6 +1556,176 @@ The `spell db ready in 403 ms` line is a first attach. A second attach in the sa
 the catalog is `Arc`-shared per process now, and the fold's resist catalog reads that same one rather
 than loading a second.
 
+## Watching the live surfaces, by hand
+
+A **real session** covering all three at once, on the same twenty-copy fixture the sections above
+use. Two things about the staging are load-bearing rather than convenient. The tail lines are stamped
+from the HOST's clock, not dated in 2026: a live engine ticks its own modules on the wall clock
+(ruling 22), so a 24-second mez recorded a week ago is swept the instant the fold goes live — which
+is exactly the divergence JOS-479's parity probe measured. And the first `sessionMarks.add` goes out
+WITH the attach, so the world is still starting when it lands.
+
+```js
+// scratch/drive487.mjs — node scratch/drive487.mjs <repo root> [repeats]
+// (staging, spawn and frame printing are drive.mjs's, verbatim; the tail lines and `talk` differ)
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const stamp = (agoSec) => {
+  const d = new Date(Date.now() - agoSec * 1000)
+  const p = (n) => String(n).padStart(2, '0')
+  return `[Mon ${MONTHS[d.getMonth()]} ${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${d.getFullYear()}]`
+}
+fs.appendFileSync(log, [
+  `${stamp(90)} You have entered Nagafen's Lair.`,
+  `${stamp(32)} You begin casting Mesmerization.`,     // the anchor: a landing with no cast is nobody's
+  `${stamp(30)} a lava guardian has been mesmerized.`,
+  ''
+].join('\n'))
+
+function talk(port) {
+  const s = net.connect({ host: '127.0.0.1', port })
+  let buf = ''
+  let live = false
+  const send = (o) => { console.log('-> ' + JSON.stringify(o)); s.write(JSON.stringify(o) + '\n') }
+  s.on('connect', () => {
+    send({ op: 'hello', token: TOKEN, protocolVersion: 1 })
+    send({ id: 3, op: 'session.attach', params: { logPath: log } })
+    send({ id: 4, op: 'sessionMarks.add', params: { at: Date.now() } })   // mid-fold, deliberately
+    send({ id: 7, op: 'view.subscribe', params: { source: 'timers.rows', filter: { surface: 'debuffs' } } })
+  })
+  s.on('data', (d) => {
+    buf += d.toString()
+    const parts = buf.split('\n'); buf = parts.pop()
+    for (const lineText of parts.filter(Boolean)) {
+      console.log('<- ' + lineText)
+      const msg = JSON.parse(lineText)
+      if (!live && msg.kind === 'moduleChanged') {      // the first beat past the landing
+        live = true
+        setTimeout(() => {
+          send({ id: 8, op: 'sessionMarks.add', params: { at: Date.now() } })
+          console.log('# the game writes a /con and a loot line')
+          fs.appendFileSync(log, [
+            `${stamp(1)} A fire giant warlord glares at you threateningly -- looks like quite a gamble. (Lvl: 52)`,
+            `${stamp(0)} You have looted a Cloak of Flames from a fire giant warlord corpse.`,
+            ''
+          ].join('\n'))
+          setTimeout(() => { s.end(); engine.stdin.end(); fs.rmSync(dir, { recursive: true }) }, 3500)
+        }, 500)
+      }
+    }
+  })
+}
+```
+
+**Every byte below is what came off the socket**, nothing elided — including all twenty dirty bits.
+
+```console
+$ cargo build --release -p engined
+$ node scratch/drive487.mjs C:/Users/jmoye/everquest-companion 20
+# staged C:\Users\…\Temp\engined-487-2VZKHE\eqlog_Primitive_freeport.txt (9185424 bytes)
+EQC-ENGINE PORT=61565 PROTOCOL=1
+-> {"op":"hello","token":"0f7d…7089","protocolVersion":1}
+-> {"id":3,"op":"session.attach","params":{"logPath":"C:\\Users\\…\\eqlog_Primitive_freeport.txt"}}
+-> {"id":4,"op":"sessionMarks.add","params":{"at":1787692441556}}
+-> {"id":7,"op":"view.subscribe","params":{"source":"timers.rows","filter":{"surface":"debuffs"}}}
+<- {"engineVersion":"0.1.0","kind":"hello","ok":true,"protocolVersion":1}
+<- {"epoch":2,"kind":"epoch","reason":"attach"}
+<- {"id":3,"kind":"reply","ok":true,"result":{"accepted":true,"epoch":2}}
+<- {"id":4,"kind":"reply","ok":true,"result":{"accepted":false,"status":"attaching"}}
+<- {"id":7,"kind":"reply","ok":true,"result":{"subscribed":true,"subscription":7}}
+<- {"epoch":2,"id":7,"kind":"reset","rows":[],"total":0}
+[eqc-engine] ingest: spell db ready in 392 ms
+<- {"epoch":2,"kind":"epoch","progress":{"events":15932,"pct":11.415172560352142},"reason":"progress"}
+<- {"epoch":2,"kind":"epoch","progress":{"events":63844,"pct":45.6623776975347},"reason":"progress"}
+<- {"epoch":2,"kind":"epoch","progress":{"events":111763,"pct":79.90908204128628},"reason":"progress"}
+<- {"epoch":2,"kind":"epoch","progress":{"events":139863,"pct":100.0},"reason":"progress"}
+[eqc-engine] fold landed: 139863 events, mark 9185424 of C:\Users\…\eqlog_Primitive_freeport.txt, now live
+[eqc-engine] views: timers.rows 1 frames (1 reset / 0 diff), 1 rows, 0 ops, 440 B (widest 440 B); fold->frame mean 8.8 ms max 8.8 ms over 1
+<- {"epoch":2,"id":7,"kind":"reset","rows":[{"cells":{"ambiguous":false,"calmsTarget":false,"caster":null,"count":null,"durationMs":24000,"endsAt":1787692435000,"flat":0,"group":"target","inferredTarget":false,"kind":"cc","mode":"countdown","name":"Mesmerization","order":0,"rank":null,"startedTs":1787692411000,"surface":"debuffs","target":"a lava guardian","targetKey":"a lava guardian"},"key":"cc|a lava guardian|mesmerization"}],"total":1}
+<- {"kind":"moduleChanged","module":"combo","seq":139343}
+<- {"kind":"moduleChanged","module":"roster","seq":139862}
+<- {"kind":"moduleChanged","module":"loot","seq":139862}
+<- {"kind":"moduleChanged","module":"turnins","seq":139862}
+<- {"kind":"moduleChanged","module":"classUnlocks","seq":139862}
+<- {"kind":"moduleChanged","module":"kills","seq":139862}
+<- {"kind":"moduleChanged","module":"respawn","seq":3}
+<- {"kind":"moduleChanged","module":"progression","seq":139862}
+<- {"kind":"moduleChanged","module":"leveling","seq":139862}
+<- {"kind":"moduleChanged","module":"character","seq":38}
+<- {"kind":"moduleChanged","module":"outputFiles","seq":139862}
+<- {"kind":"moduleChanged","module":"spellSets","seq":139862}
+<- {"kind":"moduleChanged","module":"itemTiers","seq":139862}
+<- {"kind":"moduleChanged","module":"observedSpellRanks","seq":139862}
+<- {"kind":"moduleChanged","module":"alerts","seq":139862}
+<- {"kind":"moduleChanged","module":"buffs","seq":139862}
+<- {"kind":"moduleChanged","module":"buffTimers","seq":1}
+<- {"kind":"moduleChanged","module":"consider","seq":139862}
+<- {"kind":"moduleChanged","module":"resist","seq":139862}
+<- {"kind":"moduleChanged","module":"eventFeed","seq":139862}
+-> {"id":8,"op":"sessionMarks.add","params":{"at":1787692443380}}
+# the game writes a /con and a loot line
+<- {"id":8,"kind":"reply","ok":true,"result":{"accepted":true,"status":"live"}}
+<- {"epoch":2,"kind":"epoch","progress":{"events":139865,"pct":100.0},"reason":"progress"}
+<- {"at":1787692442000,"chips":[{"axis":"magic","empirical":{"resisted":0,"total":0},"n":0,"nTotal":0,"npcOnly":false,"pinned":false},{"axis":"fire","empirical":{"resisted":0,"total":0},"n":0,"nTotal":0,"npcOnly":false,"pinned":false},{"axis":"cold","empirical":{"resisted":0,"total":0},"n":0,"nTotal":0,"npcOnly":false,"pinned":false},{"axis":"poison","empirical":{"resisted":0,"total":0},"n":0,"nTotal":0,"npcOnly":false,"pinned":false},{"axis":"disease","empirical":{"resisted":0,"total":0},"n":0,"nTotal":0,"npcOnly":false,"pinned":false}],"id":"a fire giant warlord","kind":"conCard","level":52,"name":"A fire giant warlord","spellData":false,"zone":"Nagafen's Lair"}
+<- {"domain":"mob","kind":"knowledgeMiss","name":"A fire giant warlord"}
+<- {"kind":"moduleChanged","module":"roster","seq":139864}
+<- {"kind":"moduleChanged","module":"loot","seq":139864}
+<- {"kind":"moduleChanged","module":"turnins","seq":139864}
+<- {"kind":"moduleChanged","module":"classUnlocks","seq":139864}
+<- {"kind":"moduleChanged","module":"kills","seq":139864}
+<- {"kind":"moduleChanged","module":"progression","seq":139864}
+<- {"kind":"moduleChanged","module":"leveling","seq":139864}
+<- {"kind":"moduleChanged","module":"outputFiles","seq":139864}
+<- {"kind":"moduleChanged","module":"spellSets","seq":139864}
+<- {"kind":"moduleChanged","module":"itemTiers","seq":139864}
+<- {"kind":"moduleChanged","module":"observedSpellRanks","seq":139864}
+<- {"kind":"moduleChanged","module":"alerts","seq":139864}
+<- {"kind":"moduleChanged","module":"buffs","seq":139864}
+<- {"kind":"moduleChanged","module":"consider","seq":139864}
+<- {"kind":"moduleChanged","module":"resist","seq":139864}
+<- {"kind":"moduleChanged","module":"eventFeed","seq":139864}
+```
+
+Nine things in that transcript are this ticket:
+
+1. **The same press, refused and then taken.** `{"accepted":false,"status":"attaching"}` at request 4
+   and `{"accepted":true,"status":"live"}` at request 8. Neither is an error; the status is what
+   makes the first one readable without a follow-up question that would race the fold — and *which*
+   not-live state it names is itself a race the ack settles honestly, because the same press against
+   the same script has answered `starting` on other runs. Any of the four is a refusal; the ack says
+   which one it was, in the same critical section as the decision.
+2. **A timer row, cut off a 139,863-event fold in 8.8 ms.** One hold, in the debuffs window, because
+   the descriptor said `{"surface":"debuffs"}` — the routing decision made engine-side and served as
+   a cell, so the two floating windows are one model filtered rather than two.
+3. **The row carries the three numbers a countdown is read from and none of the reading.**
+   `"startedTs":1787692411000`, `"durationMs":24000`, `"mode":"countdown"` — and `"endsAt"`, which is
+   `startedTs + durationMs` and is the number the early-warning offset is computed from. There is no
+   `remaining`, and there is not going to be one.
+4. **Both presentation orders are on the row.** `"order":0` and `"flat":0`: the grouped order and the
+   soonest-first order, each an index the client sorts by and never re-derives.
+5. **`"caster":null`, `"rank":null`, `"count":null`.** Absence has a spelling here for
+   `loot.ledger`'s reason: a diff needs a cell to be able to become null, and a display decision
+   about nothing is the renderer's.
+6. **Twenty dirty bits at the landing, sixteen at the next beat.** The first beat announces every
+   module, because a client that just took a fresh world holds nothing. The second announces only
+   what a `/con` and a loot line moved — and `respawn`, `character`, `combo` and `buffTimers` are
+   ABSENT from it, which is the four modules with real revision counters staying quiet while the
+   sixteen that report the fold's `seq` all move. The coarseness this README names is visible on the
+   wire.
+7. **One frame per module per beat.** Two log lines moved `loot` and fifteen others once each, not
+   once per event: the ingest holds the last cursor it announced and hands over only the difference.
+8. **The con card, fully resolved and honestly empty where it must be.** `"name":"A fire giant
+   warlord"` capped and collapsed, `"id":"a fire giant warlord"` the queue identity, `"level":52`
+   off the line, `"zone"` off the module — and five chips at `n: 0` beside `"spellData":false`,
+   which is the app's own no-spell-table branch rather than a stub. `"rare"` is ABSENT rather than
+   false, which is the payload's own shape. The historical `/con`s in nine megabytes of fixture drew
+   nothing at all.
+9. **And the frame right after it belongs to somebody else, which is the point.**
+   `{"domain":"mob","kind":"knowledgeMiss","name":"A fire giant warlord"}` is JOS-486's: the same con
+   that produced the card also asked the corpus about that creature and did not get an answer. Two
+   connection-wide frames, from two tickets, one live line — they interleave on the stream without
+   either knowing about the other, which is what "connection-wide, no id, no epoch" buys and why
+   `broadcasts.ts` routes all four of them in one place.
+
 ## Tests
 
 ```console
@@ -1180,12 +1733,36 @@ $ cd engine
 $ cargo test -p engined
 ```
 
+**`cargo test` LEAVES A DEBUG BINARY BEHIND, AND THE APP NO LONGER PICKS IT UP** (JOS-520). It used
+to: the Electron resolver probed `engine/target/debug/` before `engine/target/release/`, so the
+first `cargo test` in a checkout silently switched that machine's dev app to the unoptimized engine
+on its next restart — spell DB 4050 ms instead of 469 ms, parse ~10× slower. The dev app now
+resolves `target/release` and probes `target/debug` **only** when a launch opts in:
+
+```console
+$ EQC_ENGINE_PROFILE=debug npm run dev     # this launch, and no other, runs the debug engine
+```
+
+The opt-in is read per launch and never written down, so the next ordinary `npm run dev` is back on
+release; and whenever a non-release binary wins, the dev log carries one unmissable warning naming
+the profile and the opt-in that selected it. Full argument: `src/main/dataServer/README.md`.
+
 The integration suites spawn the built binary (`CARGO_BIN_EXE_engined`) and drive the whole contract
 through a real socket: the announce line, every op, a wrong token, a skewed `protocolVersion`, an
 unknown op, a malformed frame, four concurrent connections, a request delivered **one byte at a
 time**, and stdin EOF. `tests/harness/mod.rs` is the shared client; its stderr goes to `null`
 because the suite refuses a great many connections on purpose — when a diagnostic matters, run the
 binary by hand as above.
+
+**The knowledge surface is proven in three places, and each proves something the others cannot.**
+`cargo test -p knowledge` drives the indexes against the **committed bytes** — the real `items.json`
+keys, the mob catalog's two spellings, the roster's alias statement, the era join, the overlay and
+the at-most-once miss ledger — because a fixture would prove nothing about the corpus the product
+ships. `ops::tests` drives the op table over its own isolated corpus (the shared one is a process
+singleton, and a define in one test would be a hit in another). And `fold`'s `consider` and
+`event_feed` tests prove the half that matters to the oracle: **with no lookup installed, `knowledge`
+is absent from every row and the feed is empty** — the goldens' own claim, pinned against the one
+change that could have broken it.
 
 **The ingest is proven twice, and the two halves are different claims.**
 
@@ -1299,6 +1876,18 @@ caster's anchor, with the SAME two lines opening nothing under the shipped defau
 the reason the split exists: proving it over a socket would rest the claim on which spells share an
 emote in the committed catalog, which is a fact about the corpus rather than about the push.
 
+**And the live surfaces are proven over the socket** (`tests/live_surfaces.rs`), which is the half no
+unit test can reach — all three are about the boundary between the ingest thread and a connection
+thread while a tail is actually watching a file. A HISTORICAL `/con` draws nothing and the same shape
+appended live draws a card, header and all; a mark is refused with `status: idle` before any attach
+and taken with `status: live` once the tail owns the file, twice, because a mark is stored nowhere
+for a second press to collide with; one live loot line produces exactly ONE `moduleChanged` for
+`loot` (the coalescing, asserted rather than assumed) carrying a name, a cursor and nothing else; and
+a timer subscription over two live mezzes serves two rows in the debuffs window, with the buffs
+window's own filter answering zero for the same fold. That last test writes its log lines from the
+HOST's clock, and the reason is in its own header: a running timer is by definition recent, and a
+fixture dated last week is swept by the live tick before anybody can subscribe to it.
+
 ## Reading order
 
 * `src/main.rs` — the spawn contract, stated in full, and the accept loop.
@@ -1317,6 +1906,17 @@ emote in the committed catalog, which is a fact about the corpus rather than abo
 * `src/views/mod.rs` — **the query.** The source registry, descriptor validation, and why a query
   FIELD is not a CELL. `views/diff.rs` is the engine half of the client's `applyDiff` and is written
   against it; `views/loot.rs` argues every cell of the first product source against the renderer that
+  draws it; `views/meter.rs` is ruling 19's measurement. The other six sources each argue their own
+  cells in their own header; `views/timers.rs` is the one to read second, because it carries the two
+  arguments the rest inherit — why a clock-dependent value is served as its numbers, and why an order
+  no column sort can express is published as a FIELD.
+* `fold::modules::buff_timer_rows` — **the timer-row projection**, `src/shared/buffTimers.ts`'s model
+  half. It lives in `fold` rather than in the view layer because two callers need it: the
+  `timers.rows` source and, later, the alerts evaluator's `earlyWarnSec` (which is `timer_ends_at`
+  minus the user's offset — the half JOS-482 was missing when it compiled those defs out).
+* `src/concard.rs` — **the con card, resolved.** Boundary verdict 2 landing: what the engine can
+  state today, why the chips are the empty five and what has to move before they are not, and which
+  of the app's three refusals stay app-side and why.
   draws it; `views/combat.rs` does the same for the damage meter, against BOTH surfaces that draw
   one, and is the source whose rows edit; `views/meter.rs` is ruling 19's measurement.
 * `src/search.rs` — the fuzzy scorer behind `combat.searchFights`, ported from `shared/fuzzy.ts` and

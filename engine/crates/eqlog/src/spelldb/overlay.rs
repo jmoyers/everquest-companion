@@ -1,23 +1,15 @@
-//! THE OBSERVED-MESSAGE OVERLAY, seeded with the COMMITTED BASELINE and nothing else —
-//! `src/main/data/messageOverlay.ts`, the slice of it `effectiveSpellDb` calls before the fold.
+//! The observed-message overlay, seeded with the committed baseline and nothing else.
 //!
-//! WHY A PARSER NEEDS IT AT ALL: `deriveLandingCorrections()` registers each VERIFIED landing line
-//! as a spell's `msg_cast_on_you`, which is what puts `The symbol of Transal flashes before your
-//! eyes.` into the cast-on-you table — and therefore what turns that line into a `buffApply` rather
-//! than an `unknown`. It is parser output.
+//! A parser needs it because each verified landing line is registered as a spell's
+//! `msg_cast_on_you`, which is what turns that line into a `buffApply` rather than an `unknown`.
 //!
-//! ONLY THE BASELINE IS SEEDED, which is what `foldArm.mts` does and says: the user's own mined
-//! overlay lives in Electron's userData, and a golden recorded against a machine-local file would
-//! not be a fact about the log. So there is exactly one bucket here, no `beginSource`, no
-//! `observeCast`/`observeMessage`, and no persistence — the mining half of that module is
-//! downstream of the parser and out of phase-1 scope.
+//! Only the baseline is seeded: the user's own mined overlay lives in userData, and a golden
+//! recorded against a machine-local file would not be a fact about the log. So there is one bucket,
+//! no observation and no persistence; the mining half is downstream of the parser.
 //!
-//! THE TIE-BREAK IS CODEPOINT ORDER AND THAT IS THE POINT (JOS-465). The TS comment on `byCodepoint`
-//! says it was written for exactly this port: `localeCompare` answers from ICU and can differ
-//! between hosts, so the ordering that decides WHICH correction is emitted was moved to codepoint
-//! order "because the engine this ordering will one day be checked against compares Rust `str`s —
-//! UTF-8 bytewise, which is exactly codepoint order". So Rust's natural `Ord` on `&str` IS the
-//! comparator, and no port of `byCodepoint` is needed.
+//! The tie-break is codepoint order because `localeCompare` answers from ICU and can differ between
+//! hosts. Rust's natural `Ord` on `&str` is UTF-8 bytewise, which is exactly codepoint order, so it
+//! is the comparator.
 
 use super::SpellDb;
 use crate::names::db_canon_key;
@@ -74,17 +66,14 @@ impl Verdict {
 /// Minimum observations before a message earns a non-UNKNOWN verdict.
 const MIN_OBSERVATIONS: i64 = 2;
 
-/// `deriveLandingCorrections()`, flattened to `(messageText, spellDisplay, contradictsSpell)`.
-///
-/// The Map it returns over there is keyed by message text and each text is written at most once, so
-/// its ITERATION order cannot change what `applyOverlayCorrections` produces — but the LIST order is
-/// still the sorted one, so a reader diffing the two sides sees the same sequence.
+/// The landing corrections, as `(message text, spell display, contradicted spell)`. Each text
+/// appears at most once, so the order cannot change what the corrections produce; it is still the
+/// app's sorted order so a reader diffing the two sides sees the same sequence.
 pub fn derive_landing_corrections(db: &SpellDb) -> Vec<(String, String, Option<String>)> {
     let file: BaselineFile =
         serde_json::from_str(BASELINE_JSON).expect("messageOverlay.baseline.json is not readable");
 
-    // `merge()` into the one bucket, then `aggregate()` over the one bucket: with a single source
-    // the two are the same accumulation, so it is done once.
+    // Merge and aggregate are the same accumulation with a single source, so it is done once.
     let mut order: Vec<Record> = Vec::new();
     let mut at: HashMap<String, usize> = HashMap::new();
     for m in &file.messages {
@@ -110,7 +99,6 @@ pub fn derive_landing_corrections(db: &SpellDb) -> Vec<(String, String, Option<S
         }
     }
 
-    // `build()`
     struct Built {
         text: String,
         role: String,
@@ -146,7 +134,6 @@ pub fn derive_landing_corrections(db: &SpellDb) -> Vec<(String, String, Option<S
             .then_with(|| a.text.as_str().cmp(b.text.as_str()))
     });
 
-    // `deriveLandingCorrections()` proper.
     let mut out = Vec::new();
     for m in &messages {
         if m.role != "landing" {
@@ -168,8 +155,8 @@ pub fn derive_landing_corrections(db: &SpellDb) -> Vec<(String, String, Option<S
     out
 }
 
-/// `verdictFor` — note it reads `spells[0]` off the UNSORTED insertion order, which only matters
-/// when there is one spell, which is the only branch that reaches it.
+/// Reads the first spell off the unsorted insertion order, which only matters when there is one
+/// spell — the only branch that reaches it.
 fn verdict_for(db: &SpellDb, rec: &Record, total: i64) -> (Verdict, Option<String>) {
     if rec.by_spell.len() >= 2 {
         return (Verdict::Shared, None);
@@ -184,7 +171,6 @@ fn verdict_for(db: &SpellDb, rec: &Record, total: i64) -> (Verdict, Option<Strin
         return (Verdict::Verified, None);
     };
     if rec.role == "landing" {
-        // `landingVerdict`
         let you = db_spell.msg_cast_on_you.clone();
         if you.as_deref() == Some(rec.text.as_str()) {
             return (Verdict::Verified, None);
@@ -212,7 +198,7 @@ fn verdict_for(db: &SpellDb, rec: &Record, total: i64) -> (Verdict, Option<Strin
     (Verdict::Verified, None)
 }
 
-/// `messageMatchesOtherSuffix` — the same tail test the DB's own matcher makes.
+/// The same tail test the DB's own matcher makes.
 fn message_matches_other_suffix(text: &str, suffix: &str) -> bool {
     let tail = if suffix.starts_with("'s") {
         suffix.to_string()
@@ -222,8 +208,8 @@ fn message_matches_other_suffix(text: &str, suffix: &str) -> bool {
     text.ends_with(&tail) && text.len() > tail.len()
 }
 
-/// `looksCastOnOther` — true when a line ends with ANY DB cast-on-other suffix, so registering it as
-/// a self-landing message would fire a `buffApply { target: 'self' }` for a debuff on a mob.
+/// True when a line ends with any cast-on-other suffix, in which case registering it as a
+/// self-landing message would fire a self `buffApply` for a debuff on a mob.
 fn looks_cast_on_other(db: &SpellDb, text: &str) -> bool {
     for s in db.by_key_values() {
         let Some(msg) = s.msg_cast_on_other.as_deref() else {

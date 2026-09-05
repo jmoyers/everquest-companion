@@ -40,7 +40,7 @@ import {
 import { scrubLines } from '../../shared/logScrub'
 // REUSE, never a second timestamp parser. The log's `[Sat Aug 01 13:00:28 2026]` prefix is
 // parsed by exactly one function in this repo, and this is it.
-import { parseEqTimestamp } from '../log/parser'
+import { parseEqTimestamp } from '../../shared/spellKey'
 
 /** The memory guarantee: the most of the log we will ever read, in bytes. */
 export const TAIL_READ_CAP = 16 * 1024 * 1024

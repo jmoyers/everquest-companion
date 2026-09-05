@@ -1,33 +1,19 @@
-//! WHO ELSE IS IN THIS FIGHT — the evidence-accreting classifier behind the record-everything meter
-//! (`src/main/combat/otherCombatants.ts`), plus the ACTIVE-SPECIAL-ATTACK lane state beside it.
+//! Who else is in this fight: the evidence-accreting classifier behind the record-everything meter,
+//! plus the active-special-attack lane state beside it.
 //!
-//! ── THE RULING IT IMPLEMENTS (owner, 2026-08-20) ───────────────────────────────────────────────
+//! Any combatant the log names gets a recorded row unless one of the app's stronger models claims
+//! the name; SCOPE filters at display time rather than at admission.
 //!
-//! "Everyone" means ANY fight the log can see shows up — participation not required. Recording used
-//! to END at admission: `classify()`'s last rule was "attacker not you/pet, target not you →
-//! ignore", so with an empty roster snapshot nobody but you and your pet was ever recorded, and the
-//! Everyone scope could not show what nothing had recorded. This is the widening: a combatant the
-//! log names, that none of the app's stronger models claims, gets its own recorded row, and SCOPE
-//! filters at display time.
+//! It is a refusal ladder, not an inference. Nothing here decides that a name is a PERSON — the log
+//! cannot say that. Every rung is something the log stated (it is or was one of your pets, a charm
+//! broadcast named it, it said a pet sentence, you damaged it, it damaged you, it is somebody else's
+//! charm pet) and only then is the NAME SHAPE asked. Shape is the weakest rung and is deliberately
+//! last: it refuses every article-led mob name, but alone it would admit a proper-named mob.
 //!
-//! ── IT IS A REFUSAL LADDER, NOT AN INFERENCE ───────────────────────────────────────────────────
-//!
-//! Nothing here decides that a name is a PERSON — the log cannot say that. What it decides is far
-//! narrower: whether any model with better evidence has already claimed the name. Every rung is
-//! something the log STATED — it is or was one of your pets; a charm broadcast has named it; it said
-//! a pet sentence or named someone its leader; YOU have landed damage on it; it has landed damage on
-//! YOU; it is bound as somebody else's charm pet — and only then is the NAME SHAPE asked. Shape is
-//! the weakest thing in the ladder and is deliberately last: it refuses every article-led mob name,
-//! which is what makes the ladder cheap, but on its own it would admit a single-word proper-named
-//! mob.
-//!
-//! THE HONEST LIMIT, stated here rather than discovered in a bug report: an UNBOUND stranger's
-//! SUMMONED PET is indistinguishable from a player by name alone — EQ generates pet names from the
-//! same one-word proper-name grammar it gives players. Measured on the owner's 2,192,988-line log:
-//! of 608 distinct names this ladder records, a visible minority are other people's pets. That is
-//! why nothing here is called a "player": a recorded row says THE LOG NAMED THIS COMBATANT DEALING
-//! THIS DAMAGE, which is true of a person and of their pet alike, and the `other` source kind says
-//! exactly that and no more.
+//! The honest limit: an unbound stranger's SUMMONED PET is indistinguishable from a player by name
+//! alone, because EQ generates pet names from the same one-word proper-name grammar. That is why
+//! nothing here is called a "player" — a recorded row says only that the log named this combatant
+//! dealing this damage, and the `other` source kind says exactly that and no more.
 
 use crate::combat::spellfacts::is_player_shaped_name;
 use crate::jsmap::JsMap;
@@ -38,28 +24,20 @@ pub struct OtherCombatants {
     /// nameKey → is it shaped like a player? Cached because the SHAPE of a name cannot change and
     /// the question is asked on every mob-vs-mob line a busy raid log carries.
     shapes: HashMap<String, bool>,
-    /// Names a STRONGER MODEL has claimed as a pet — yours, somebody else's, or self-declared.
-    /// Absolute and permanent for the session: the pet models are authoritative for pet attribution,
-    /// so once one of them speaks this ladder never books the name again and the row it already
-    /// booked is RETRACTED.
+    /// Names a stronger model has claimed as a pet — yours, somebody else's, or self-declared. The
+    /// pet models are authoritative for pet attribution, so once one speaks this ladder never books
+    /// the name again and any row it already booked is retracted. Permanent for the session.
     pets: HashSet<String>,
-    /// Names that have LANDED DAMAGE ON YOU while shaped like a player.
+    /// Names that have landed damage ON YOU while shaped like a player.
     ///
-    /// THE ONE RUNG THAT IS NEW, AND THE ONE THAT NEEDED MEASURING, because world-model law 4 says
-    /// the WIDER version is wrong ("being hit is something that HAPPENS to you; hitting is something
-    /// you DO"). That law is about `note_player`, where a bad refusal DELETES real damage; here a
-    /// bad refusal only HIDES a row, so the trade differs — but it was measured anyway, twice:
+    /// The rung is deliberately this narrow. The wider "it hit anything of OURS" was measured wrong
+    /// on the owner's full log — dozens of real players marked as mobs, because other people in the
+    /// zone attack the mob YOU have charmed.
     ///
-    ///   * "it hit YOU" — 24 names on the owner's 2.19M-line log, every one of them a real
-    ///     single-word-named mob (Najena, Drelzna, Lockjaw, Gorgalosk, Bzzazzt, …). ZERO players.
-    ///   * "it hit anything of OURS" — MEASURED WRONG on the same log: 59 real players marked as
-    ///     mobs, because other people in the zone attack the mob YOU have charmed. Not shipped,
-    ///     recorded here so it is not re-derived.
-    ///
-    /// AND IT YIELDS TO THE HEAL STREAM (`clear_hostile`): a heal landing on you cannot come from a
-    /// mob, so it outranks a swing at you.
+    /// It yields to the heal stream (`clear_hostile`): a heal landing on you cannot come from a mob,
+    /// so it outranks a swing at you.
     hostiles: HashSet<String>,
-    /// Recorded name keys → the log's own spelling (world-model law 2: canonical key, raw display).
+    /// Recorded name keys → the log's own spelling (law 2: canonical key, raw display).
     /// Insertion-ordered because `names()` publishes it.
     seen: JsMap<String>,
 }
@@ -139,40 +117,24 @@ impl OtherCombatants {
     }
 }
 
-/// WHICH SPECIAL ATTACK IS LIVE IN EACH VERB LANE — `src/main/combat/specialAttacks.ts`.
+/// Which special attack is live in each verb lane.
 ///
-/// EQ Legends' upgraded specials never announce themselves in the damage line. The game states the
-/// switch ONCE — `You will now use Dragon Punch instead of Eagle Strike while attacking.` — and from
-/// then on every one of those specials lands as the GENERIC verb `strike`. The damage was always
-/// COUNTED; what could not exist was a Dragon Punch ROW. This supplies the missing half: the log's
-/// own statement of which special is live, joined to the swing by VERB.
+/// Upgraded specials never announce themselves in the damage line. The game states the switch ONCE —
+/// `You will now use Dragon Punch instead of Eagle Strike while attacking.` — and from then on every
+/// one of those specials lands as the generic verb `strike`. The damage was always counted; what
+/// could not exist was a Dragon Punch row. This joins the log's own state line to the swing by VERB.
 ///
-/// ── THE LANES, AND WHY EXACTLY THESE TWO ───────────────────────────────────────────────────────
+/// A lane earns a row only when its generic verb is EXCLUSIVE to the chain, and only two are:
+/// `strike` and `kick`. `You will now use Slam instead of Bash while attacking.` is a real state
+/// line, but Slam never prints a `slam` verb and Bash skill-ups keep ticking through Slam eras, so
+/// the shield lane is not distinguishable and gets no row.
 ///
-/// A lane earns a row only when its generic verb is EXCLUSIVE to the chain, and both were measured
-/// on the owner's own bytes:
+/// Skill-ups are not an input: `better at Tiger Claw!` keeps ticking long after Tiger Claw was
+/// replaced, so inferring the live special from them would relabel Dragon Punch swings. State comes
+/// from the state line.
 ///
-///   `strike` → Tiger Claw → Eagle Strike → Dragon Punch → Tail Rake. The player's first-ever
-///     `You strike …` line is THREE SECONDS after `You will now use Tiger Claw …`; across nine
-///     prior days and hundreds of thousands of swings he never once "struck". `Tail Rake` (JOS-102)
-///     shares Dragon Punch's SEAT rather than following it — both are MNK level 25 in the scraped
-///     class table and both displace Eagle Strike — so the chain is four names and three rungs.
-///   `kick` → Kick → Round Kick → Flying Kick. The skill-up stream partitions PERFECTLY by era:
-///     296/296, 190/190, 254/255 ticks inside their own lane's era, with the Aug 02 loadout swap as
-///     the control.
-///
-/// THE LANE THAT DID NOT EARN A ROW, which is the point of measuring: `You will now use Slam instead
-/// of Bash while attacking.` is a real state line and Slam never prints a `slam` verb (0 lines,
-/// against 39,900 `bash`), so the shield lane looks structurally identical. THE EVIDENCE REFUSES IT:
-/// 185 `You have become better at Bash!` ticks fire DURING Slam eras and there is no `better at
-/// Slam!` line anywhere. A documented non-distinguishable beats a plausible guess.
-///
-/// SKILL-UPS ARE NOT AN INPUT — `better at Tiger Claw!` keeps ticking 111 times after Tiger Claw was
-/// replaced, so inferring the live special from them would have relabelled Dragon Punch swings.
-/// State comes from the state line.
-///
-/// PRE-STATE IS HONEST BY OMISSION: until a `You will now use` line has been seen for a lane this
-/// answers nothing and the parser's ordinary skill name stands. It never seeds a lane from the
+/// Pre-state is honest by omission: until a `You will now use` line has been seen for a lane this
+/// answers nothing and the parser's ordinary skill name stands. A lane is never seeded from the
 /// table's first entry, so it cannot claim a special the log has not stated the character has.
 ///
 /// SELF ONLY. The state line has no third-person grammar, so nothing here can ever be known about a
@@ -183,9 +145,8 @@ pub struct SpecialAttacks {
     active: HashMap<String, String>,
 }
 
-/// verb → the ordered chain of specials that print with it. Order is the observed progression;
-/// nothing reads it as an ordering, and NOTHING may use it to guess the next special — membership is
-/// the whole contract.
+/// verb → the specials that print with it. The order is the observed progression, but nothing reads
+/// it as an ordering and nothing may use it to guess the next special: membership is the contract.
 const LANES: [(&str, &[&str]); 2] = [
     (
         "strike",
@@ -194,8 +155,8 @@ const LANES: [(&str, &[&str]); 2] = [
     ("kick", &["Kick", "Round Kick", "Flying Kick"]),
 ];
 
-/// The verb lane a special attack belongs to, or `None` for one we have no evidence about (Smite,
-/// Backstab, Frenzy — which print their own verb and need no attribution — and Bash/Slam).
+/// The verb lane a special attack belongs to, or `None` for one with no evidence behind it (Smite,
+/// Backstab and Frenzy print their own verb and need no attribution; Bash/Slam is the refused lane).
 pub fn lane_of_special(skill: &str) -> Option<&'static str> {
     let want = skill.trim().to_lowercase();
     LANES.iter().find_map(|(verb, skills)| {
@@ -216,11 +177,10 @@ impl SpecialAttacks {
     }
 
     /// Fold one `You will now use …` line in. Returns the lane it moved, or `None` when the named
-    /// special belongs to no lane we have evidence for.
+    /// special belongs to no lane there is evidence for.
     ///
-    /// `replaces` is NOT consulted. Using it to infer a lane would be exactly the guess this module
-    /// refuses: the bare GRANT form carries no `replaces` at all, so a `replaces`-driven model would
-    /// be blind to the one shape that RESETS a lane.
+    /// `replaces` is deliberately not consulted: the bare GRANT form carries no `replaces` at all,
+    /// so a `replaces`-driven model would be blind to the one shape that RESETS a lane.
     pub fn note(&mut self, skill: &str) -> Option<&'static str> {
         let lane = lane_of_special(skill)?;
         self.active
@@ -229,7 +189,7 @@ impl SpecialAttacks {
     }
 
     /// The lane label for a swing that printed `verb`, or `None` to leave the parser's ordinary
-    /// skill name alone — for every verb with no lane AND for a lane the log has not spoken about.
+    /// skill name alone — for a verb with no lane, and for a lane the log has not spoken about.
     pub fn lane_skill(&self, verb: Option<&str>) -> Option<&str> {
         self.active.get(verb?).map(String::as_str)
     }
@@ -250,7 +210,7 @@ mod tests {
         assert!(!o.is_recorded("scooba"));
     }
 
-    /// A stronger model claiming the name reports the FIRST claim only, so the caller retracts once.
+    /// A stronger model claiming the name reports the first claim only, so the caller retracts once.
     #[test]
     fn a_pet_claim_reports_itself_exactly_once() {
         let mut o = OtherCombatants::new();
@@ -277,7 +237,7 @@ mod tests {
         assert_eq!(s.lane_skill(Some("strike")), None);
         assert_eq!(s.note("Dragon Punch"), Some("strike"));
         assert_eq!(s.lane_skill(Some("strike")), Some("Dragon Punch"));
-        // The Iksar arm of the same chain occupies the same lane.
+        // Tail Rake shares Dragon Punch's seat rather than following it, so it is the same lane.
         assert_eq!(s.note("Tail Rake"), Some("strike"));
         assert_eq!(s.lane_skill(Some("strike")), Some("Tail Rake"));
         // Slam belongs to no lane the evidence supports.

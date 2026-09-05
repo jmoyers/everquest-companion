@@ -145,7 +145,7 @@
 import spellsJson from './spells.json'
 import { applySpellCorrections } from './spellCorrections'
 import { applySpellRemovals } from './spellRemovals'
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 import type { SpellDbFile, SpellEntry } from '../../shared/types'
 
 /**

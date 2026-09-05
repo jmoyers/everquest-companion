@@ -22,11 +22,11 @@
 import type { JSX } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import PlaceIcon from '@mui/icons-material/Place'
-import type { CharacterDelta, CharacterSnap } from '@shared/types'
+import type { CharacterSnap } from '@shared/types'
 import { useModule } from '../../lib/useModule'
 
 export function ZoneStrip(): JSX.Element {
-  const who = useModule<CharacterSnap, CharacterDelta>('character', (s, d) => ({ ...s, ...d }))
+  const who = useModule<CharacterSnap>('character')
   return (
     <Box sx={{ px: 1.25, py: 0.75, flexShrink: 0, borderRadius: 1, bgcolor: 'background.paper' }}>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>

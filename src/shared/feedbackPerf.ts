@@ -44,6 +44,15 @@ import {
   type PerfGcSample,
   type PerfSeamSample
 } from './feedbackPerfSeams'
+// …AND THE ENGINE'S HALF (JOS-502), its own file for the same factoring reason, and carrying the
+// argument for why nothing on its shape is a string.
+import {
+  foldPerfEngineField,
+  formatPerfEngine,
+  validatePerfEngineField,
+  type EngineFoldInput,
+  type FeedbackPerfEngine
+} from './feedbackPerfEngine'
 import {
   LIVE_PROBE_REPORT_MS,
   LIVE_STALL_FREEZE_MS,
@@ -75,24 +84,33 @@ export const PERF_ROWS = LIVE_TIMELINE_MS / PERF_INTERVAL_MS
  * `MAX_BODY_BYTES` — 32 KB — with the user's 4,000-character description and both attachment
  * metadata blocks.
  *
- * MEASURED, and RE-MEASURED at JOS-458 when the two attribution groups joined the block: a quiet
- * window is 5,833 bytes, one carrying all six seams and a GC reading is 6,289, and a block with
- * every field at the ceilings below is 8,087. The grid is FIXED, so the size barely varies — which
- * is the property that makes 8 KB a tripwire rather than a budget: no shape-valid block can exceed
- * it today, and the day someone adds a seventh column the unit test goes red before the 400s do.
+ * MEASURED, and RE-MEASURED every time the block grows. At JOS-458, when the two attribution
+ * groups joined it: a quiet window 5,833 bytes, one carrying all six seams and a GC reading 6,289,
+ * the adversarial ceiling 8,087 against an 8 KB cap — 105 bytes of headroom. At JOS-502, when the
+ * engine block joined it: the ceiling is 8,430, which is 338 bytes OVER that cap, so the constant
+ * is re-priced here to 9 KB. The grid is FIXED, so the size barely varies — which is the property
+ * that makes this a tripwire rather than a budget: no shape-valid block can exceed it, and the day
+ * someone adds a seventh column the unit test goes red before the 400s do.
  *
- * THE HEADROOM IS NOW 105 BYTES, and that is said out loud because it is the number the NEXT
- * person needs. The cap was deliberately NOT raised for JOS-458 — a real block is 6,289 and has
- * nearly two kilobytes to spare, so nothing a user can produce is near it — but the adversarial
- * ceiling is close enough that the next field added here must re-price this constant rather than
- * assume it fits. The block shares `MAX_BODY_BYTES` with 4,000 characters of the user's prose, so
- * raising it is a decision with a second party, not a formality.
+ * THE RE-PRICING WAS THE PREVIOUS AUTHOR'S INSTRUCTION, FOLLOWED. JOS-458 deliberately did NOT
+ * raise the cap and said why in this comment: a real block had nearly two kilobytes to spare, but
+ * the adversarial ceiling was close enough that *"the next field added here must re-price this
+ * constant rather than assume it fits"*. This is that next field, and this is that re-pricing.
+ *
+ * THE NEW HEADROOM IS 786 BYTES, and it is deliberately larger than 105 rather than the minimum
+ * that would fit. A cap with a hundred bytes of slack is one that the next honest addition trips
+ * for no reason anybody can act on, which teaches the next author to raise it by feel; nearly a
+ * kilobyte is enough for a real field and still nowhere near the envelope. The block shares
+ * `MAX_BODY_BYTES` — 32 KB — with the user's 4,000-character description and both attachment
+ * metadata blocks, and 9 KB of that is a quarter, so this remains a decision with a second party
+ * rather than a formality. A REAL block is around 6.3 KB; nothing a user can produce is near
+ * either number.
  *
  * The client OMITS an oversize block rather than shrinking it (a half-timeline is a wrong answer
  * that looks like a right one), and the validator refuses one, so a forged payload cannot use
- * this field as a 24 KB free-text channel either.
+ * this field as a 23 KB free-text channel either.
  */
-export const MAX_PERF_BYTES = 8 * 1024
+export const MAX_PERF_BYTES = 9 * 1024
 
 /** Ceilings for the whole numbers in a row. Nothing real approaches these — they exist so a
  *  forged block is bounded by the same validator that bounds every other field on this wire. */
@@ -175,6 +193,18 @@ export interface FeedbackPerf {
   seams?: FeedbackPerfSeam[]
   /** …and what V8 spent over the same window. Absent on the same terms. */
   gc?: FeedbackPerfGc
+  /**
+   * THE ENGINE'S OWN NUMBERS (owner ruling 19, JOS-502) — rates, latencies and budget verdicts from
+   * the data-server process, which `app.getAppMetrics()` structurally cannot see because the engine
+   * is not one of Chromium's processes.
+   *
+   * ABSENT MEANS NO ENGINE ANSWERED, which is a real reading and not a gap: a build without one, a
+   * supervisor between respawns, a refusal. `formatPerfEngine` says it in words rather than leaving
+   * a reader to infer it from a missing key. Additive on `optionalMeta`'s terms, like the two
+   * above. `./feedbackPerfEngine.ts` owns the shape, the fold and the bright-line argument for why
+   * nothing on it is a string.
+   */
+  engine?: FeedbackPerfEngine
 }
 
 /** One tail read cycle, as much of it as this fold needs. */
@@ -197,6 +227,10 @@ export interface PerfFoldInput {
    *  does not claim an owner, rather than one that claims there was none. */
   seams?: readonly PerfSeamSample[]
   gc?: readonly PerfGcSample[]
+  /** The three engine answers (JOS-502), OPTIONAL on the same terms as the two above: a build with
+   *  no engine, or a caller that did not ask, folds a block that simply carries no engine — never
+   *  one claiming there was none. */
+  engine?: EngineFoldInput
 }
 
 const zeroRow = (t: number): FeedbackPerfRow => ({
@@ -265,6 +299,7 @@ export function foldFeedbackPerf(input: PerfFoldInput, now: number): FeedbackPer
     { seams: input.seams ?? [], gc: input.gc ?? [] },
     { start: windowStart, spanMs: PERF_ROWS * PERF_INTERVAL_MS, rowMs: PERF_INTERVAL_MS }
   )
+  const engine = foldPerfEngineField(input.engine)
   return {
     intervalMs: PERF_INTERVAL_MS,
     rows,
@@ -275,7 +310,13 @@ export function foldFeedbackPerf(input: PerfFoldInput, now: number): FeedbackPer
       over500: late.filter((ms) => ms >= LIVE_STALL_FREEZE_MS).length
     },
     state: input.state,
-    ...owner
+    ...owner,
+    // THE ENGINE (JOS-502). Folded here rather than in `main/feedback/perf.ts` on this file's
+    // standing split — shared owns the arithmetic and the vocabulary, main owns the asking — and
+    // the three op answers arrive already asked. The field arrives as a spreadable bundle for the
+    // reason `owner` above it does: this function is at the complexity ceiling, and the omission
+    // rule belongs beside the fold that decides it (`foldPerfEngineField`).
+    ...engine
   }
 }
 
@@ -361,7 +402,8 @@ export function formatPerfBlock(perf: FeedbackPerf): string {
     `perf (last ${minutes} min, ${perf.intervalMs / 1000}s rows): ${formatPerfSummary(perf)}`,
     `  machine: ${formatPerfState(perf)}`,
     `  main late |${perfSparkline(perf)}| oldest→newest, peak ${perf.summary.maxMainMs}ms`,
-    `  owner: ${formatPerfOwner(perf.seams ?? [], perf.gc ?? null)}`
+    `  owner: ${formatPerfOwner(perf.seams ?? [], perf.gc ?? null)}`,
+    `  engine: ${formatPerfEngine(perf.engine)}`
   ].join('\n')
 }
 
@@ -542,13 +584,19 @@ export function validatePerf(raw: unknown): PerfValidated<FeedbackPerf | null> {
   // inside the startup reading.
   const owner = validatePerfOwner(raw)
   if (!owner.ok) return owner
+  // …and the engine block (JOS-502), independently optional on exactly the same terms. It is
+  // validated LAST of the sub-objects because it is the newest and the cheapest to reject: every
+  // field on it is an integer or a closed-set member, so nothing here can fail slowly.
+  const engine = validatePerfEngineField(raw.engine)
+  if (!engine.ok) return engine
 
   const value: FeedbackPerf = {
     intervalMs: PERF_INTERVAL_MS,
     rows: rows.value,
     summary: summary.value,
     state: state.value,
-    ...owner.value
+    ...owner.value,
+    ...engine.value
   }
   const bytes = perfBytes(value)
   if (bytes > MAX_PERF_BYTES)

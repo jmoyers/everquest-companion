@@ -31,7 +31,7 @@
 // resistable adjust-0 proc that carries most of the informative evidence on some mobs. So joining
 // an armed cast IS the test for "a cast spell", and an observation that joins none answers `false`.
 
-import { spellCanonKey } from '../log/parseCommon'
+import { spellCanonKey } from '../../shared/spellKey'
 import { casterClassCount } from '../../shared/resistFormula'
 import type { ResistCasterKind } from '../../shared/resistTypes'
 

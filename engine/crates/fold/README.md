@@ -31,9 +31,12 @@ away from the hard one bought nothing.
 The combat engine is not in `WIRING_ORDER` — it is not a module. It is the bus subscriber that sits
 AFTER all twenty of them (`pipeline.ts:311,326`), and `Fold` carries it in its own `combat` field
 for exactly that reason; `src/combat/mod.rs`'s header carries the submodule-vs-crate argument. Its
-port is now WHOLE for everything the snapshot publishes, and its header lists the four things that
-are absent — the classification ring, the pet nudge, the session mark and fight search — each of
-which is UNREACHABLE under the construction the recorder makes rather than a piece left undone.
+port is now WHOLE for everything the snapshot publishes, and its header lists what is absent — the
+classification ring, the session mark and fight search — each of which is UNREACHABLE under the
+construction the recorder makes rather than a piece left undone. The PET NUDGE left that list in
+JOS-488 and is real code (`combat/petnudge.rs`): the snapshot-time sweeps landed with `set_live()`,
+so the model can now be armed by a live tail, and its absence from every golden is caused by the
+gate — `!hydrating` — rather than by the model not existing.
 
 **THE REGISTRY IS PLUGGED IN** (JOS-478). `engined` builds it on its ingest thread — one
 `ClusterDeps` assembled from the parser's own catalog and clock, in `engine/crates/engined/src/
@@ -153,10 +156,17 @@ the active-state timeline, the blade coats and the per-fight timeline.
    `Asaka L`Rei`. `combat::collate` is the second spelling, and its header carries the measurement
    and the argument for why the first one was not changed instead.
 
-**AND ONE ABSENCE THAT IS A PROOF, NOT A GAP.** Four TS files are deliberately unported — the
-classification ring, the pet nudge, the session mark (`mergeSessions.ts`) and `fightSearch.ts` — and
-each is UNREACHABLE under the construction `foldArm.mts` makes rather than a piece left undone.
+**AND ONE ABSENCE THAT IS A PROOF, NOT A GAP.** Three TS files are deliberately unported — the
+classification ring, the session mark (`mergeSessions.ts`) and `fightSearch.ts` — and each is
+UNREACHABLE under the construction `foldArm.mts` makes rather than a piece left undone.
 `combat/mod.rs`'s header states each one with the golden field that agrees.
+
+**A PROOF IS ABOUT A CONSTRUCTION, SO IT EXPIRES WHEN THE CONSTRUCTION GAINS A CALLER**, and JOS-488
+is the worked example: `set_live()` had none, which is what made "the pet nudge can never arm" a
+proof and "the sweep block is never entered" a fact about every path. The engine's go-live beat gave
+it one. The nudge became code, the sweeps became reachable, and the classification ring — the same
+argument, one flag over — turned from a proof into a NAMED GAP for a live engine while staying a
+proof for the oracle. When you retire an absence, say which of the two it was.
 
 ### Two rules that are not style
 

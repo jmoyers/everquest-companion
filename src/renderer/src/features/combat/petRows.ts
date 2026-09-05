@@ -96,6 +96,7 @@ export function selfSource(entities: SourceView[]): SourceView | null {
 /** Every pet source in this segment (there is usually exactly one — the single-pet invariant
  *  retires the prior pet — but a segment spanning two pets legitimately carries both). */
 export function petSources(entities: SourceView[]): SourceView[] {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
   return entities.filter((e) => e.kind === 'pet')
 }
 
@@ -119,6 +120,7 @@ export function laneDps(total: number, activeSec: number): number {
 
 /** Sum one numeric field across a set of sources. */
 function sum(sources: SourceView[], pick: (s: SourceView) => number): number {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
   return sources.reduce((n, s) => n + pick(s), 0)
 }
 
@@ -126,6 +128,7 @@ function sum(sources: SourceView[], pick: (s: SourceView) => number): number {
  *  themselves. Mirrors `main/combat/sourceViews.ts` exactly: melee/slay/ds hits can't be
  *  resisted, so they are not casts. */
 function spellHits(s: SourceView): number {
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives CategoryView. Becomes a view descriptor when the source lands.
   return s.categories.reduce((n, c) => n + (c.category === 'spell' || c.category === 'dot' ? c.hits : 0), 0)
 }
 
@@ -196,8 +199,10 @@ export function meterSources(entities: SourceView[], combine: boolean): SourceVi
   if (!self || pets.length === 0) return entities
   const petIds = new Set(pets.map((p) => p.id))
   const kept = entities
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
     .filter((e) => !petIds.has(e.id))
     .map((e) => (e.id === self.id ? combinedSelf(self, pets) : e))
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
     .sort((a, b) => b.total - a.total)
   const max = Math.max(1, ...kept.map((e) => e.total))
   return kept.map((e) => ({ ...e, pct: (e.total / max) * 100 }))
@@ -253,6 +258,7 @@ export function ownBreakdown(entities: SourceView[], combine: boolean): OwnBreak
     self,
     pets,
     rows: nestedRows(self, pets),
+    // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
     total: (self?.total ?? 0) + pets.reduce((n, p) => n + p.total, 0)
   }
 }
@@ -384,6 +390,7 @@ function resolveSubject(entities: SourceView[], drill: MeterDrill): SourceView |
  */
 export function panelTotals(panel: MeterPanel, total: number, dps: number): { total: number; dps: number } {
   if (panel.level === 1) return { total, dps }
+  // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: no served view source answers this yet, so the renderer still derives SourceView. Becomes a view descriptor when the source lands.
   const shown = [panel.subject, ...panel.pets].reduce((n, s) => n + s.total, 0)
   return { total: shown, dps: total > 0 ? (dps * shown) / total : 0 }
 }

@@ -161,7 +161,13 @@ export async function stepRestartRehydrate(log: FixtureLog, userData: string): P
   // BEHIND the padding, so the fold reaches it last — see SNARED_LATE.
   castEnsnare(log, SNARED_LATE)
 
-  const { app, close } = await launchOnFixture(log, { userData })
+  // NO ENGINE WAIT (JOS-499). `launchOnFixture` normally holds a launch until the engine is
+  // answering, because every module-backed surface is served and a spec asserting before that reads
+  // an empty world. THIS SPEC WANTS THE OPPOSITE: its whole subject is the MID-FOLD hydrate — the
+  // overlay windows coming up while the fold is still running — and the wait guarantees the fold has
+  // landed, which is the one arrangement the defect can never appear in. Its own premise assertion
+  // below is what checks the window really was open.
+  const { app, close } = await launchOnFixture(log, { userData, waitForEngine: false })
   const consoleErrors: string[] = []
   try {
     const page = await mainWindow(app)

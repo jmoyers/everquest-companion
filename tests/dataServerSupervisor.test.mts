@@ -15,81 +15,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createEngineSupervisor,
-  type EngineSupervisorDeps,
-  type ReadyEngine
-} from '../src/main/dataServer/supervisor'
-import {
   ENGINE_ANNOUNCE_TIMEOUT_MS,
   ENGINE_HEALTH_INTERVAL_MS,
   ENGINE_QUICK_EXIT_STREAK,
   ENGINE_RESTART_BACKOFF_MS,
-  ENGINE_STOP_GRACE_MS,
-  type EngineExitLog
+  ENGINE_STOP_GRACE_MS
 } from '../src/main/dataServer/engineProtocol'
-import { FakeChild, fakeClock, scriptedChannel, type ChannelBehaviour } from './dataServerSupervisorFakes.mts'
+import { harness, launched, settle } from './dataServerSupervisorHarness.mts'
 
-/** Everything one supervisor-under-test is wired to, and everything it said. */
-function harness(opts: { binary?: string | null; behaviour?: ChannelBehaviour; spawnThrows?: Error } = {}) {
-  const clock = fakeClock()
-  const children: FakeChild[] = []
-  const reports: EngineExitLog[] = []
-  const logs: string[] = []
-  const pids: (number | null)[] = []
-  const readies: (ReadyEngine | null)[] = []
-  const tokens: string[] = []
-  let mintCount = 0
-  // MUTABLE, because a health WATCHDOG is only a watchdog if the answer can change under it: the
-  // engine that was fine a minute ago is exactly the one this has to catch.
-  let behaviour: ChannelBehaviour = opts.behaviour ?? 'ok'
-  const deps: EngineSupervisorDeps = {
-    resolveBinary: () => (opts.binary === undefined ? 'C:/repo/engine/target/debug/engined.exe' : opts.binary),
-    spawn: () => {
-      if (opts.spawnThrows) throw opts.spawnThrows
-      const child = new FakeChild()
-      children.push(child)
-      return child
-    },
-    connect: (_port) => Promise.resolve(scriptedChannel(tokens[tokens.length - 1] ?? '', behaviour)),
-    mintToken: () => {
-      mintCount += 1
-      const token = `${'a'.repeat(63)}${String(mintCount)}`
-      tokens.push(token)
-      return token
-    },
-    timer: clock.timer,
-    now: clock.now,
-    debug: (line) => logs.push(line),
-    report: (log) => reports.push(log),
-    onPid: (pid) => pids.push(pid),
-    onReady: (engine) => readies.push(engine)
-  }
-  return {
-    clock,
-    children,
-    reports,
-    logs,
-    pids,
-    readies,
-    tokens,
-    supervisor: createEngineSupervisor(deps),
-    setBehaviour: (next: ChannelBehaviour) => (behaviour = next)
-  }
-}
-
-/** Drain the microtask queue AND the macrotask turn, so an async health probe has finished. */
-async function settle(): Promise<void> {
-  await new Promise<void>((resolve) => setImmediate(resolve))
-}
-
-/** Start, announce, and wait for the health round-trip to land. The ordinary happy launch. */
-async function launched(h: ReturnType<typeof harness>): Promise<FakeChild> {
-  h.supervisor.start()
-  const child = h.children[h.children.length - 1]
-  child.announce()
-  await settle()
-  return child
-}
+// THE HARNESS AND ITS TWO WAITS LIVE NEXT DOOR (JOS-503) - dataServerSupervisorHarness.mts, split
+// out when this file passed the measured 400-code-line ceiling. Its second reader is
+// dataServerSupervisorFault.test.mts, which owns the onFault edge and the retry.
 
 // ---- 1. absence is a condition, not a crash ------------------------------------------------
 
@@ -101,6 +37,40 @@ test('NO BINARY: one log line, no error, no child, no retry storm', () => {
   assert.equal(h.reports.length, 0, 'a build with no engine is not a build with a bug')
   assert.equal(h.clock.pending(), 0, 'a binary that does not exist will not appear while we wait')
   assert.ok(h.logs.some((l) => l.includes('no engine binary')))
+})
+
+test('NO BINARY: the READY edge never fires, which is what keeps the app’s own alerts audible', () => {
+  // THE SHIPPED SILENCE THIS PINS (JOS-496). `armEngineAlerts()` used to be called from
+  // `startEngineSupervisor()` before any binary was probed for. It gates on `EQC_ENGINE_SERVE` and
+  // `EQC_ENGINE_ALERTS`, both DEFAULT-ON since JOS-495, so a checkout with no `cargo build` armed —
+  // and arming makes this process's own `AlertsModule.publish` a no-op. No binary means no client
+  // means no `fire` frame, ever, so the app silenced its own evaluator in favour of an engine that
+  // did not exist and played NO ALERTS AT ALL until quit.
+  //
+  // The handoff now hangs off `onReady`, so what this asserts IS the fix's whole foundation: on a
+  // build with no engine the edge does not fire, in either direction, so nothing is ever handed
+  // over and the TypeScript evaluator keeps the sound it has always had.
+  const h = harness({ binary: null })
+  h.supervisor.start()
+  assert.deepEqual(h.readies, [], 'a build with no engine must never announce a launch to hand off to')
+  // …and it stays that way: absence is not retried, so there is no later edge either. An hour of
+  // clock proves it, because the thing being ruled out is a timer nobody armed.
+  h.clock.advance(3_600_000)
+  assert.deepEqual(h.readies, [])
+})
+
+test('A FAILED LAUNCH ANNOUNCES ITS LOSS, so a silenced app is always given its sound back', () => {
+  // The other half of the same fix. Every way a launch can end short of a quit — a bad announce
+  // here — reaches `onReady(null)`, which is where `disarmEngineAlerts()` now hangs. Before this,
+  // a crash-looping engine left the evaluator silenced through every backoff.
+  const h = harness()
+  h.supervisor.start()
+  const child = h.children[h.children.length - 1]
+  child.stdout.emit('this is not an announce\n')
+  assert.ok(
+    h.readies.includes(null),
+    'the loss edge must fire for a launch that never became ready, or nothing gives the sound back'
+  )
 })
 
 // ---- 2. the token ---------------------------------------------------------------------------
@@ -190,9 +160,12 @@ for (const behaviour of ['refuse', 'mute', 'mismatch', 'closed'] as const) {
     h.supervisor.start()
     h.children[0].announce()
     if (behaviour === 'mute') {
-      await settle()
-      // Only a clock can see a wedge: the socket is up and nothing is coming.
-      h.clock.advance(60_000)
+      // Only a clock can see a wedge: the socket is up and nothing is coming. TWICE, because a
+      // timeout is transient and buys one confirmation — whose own budget is a second wait.
+      for (let ask = 0; ask < 2; ask += 1) {
+        await settle()
+        h.clock.advance(60_000)
+      }
     }
     await settle()
     assert.notEqual(h.supervisor.state, 'ready')
@@ -355,6 +328,23 @@ test('CLOSING STDIN IS THE SHUTDOWN, AND KILL IS ONLY THE ESCALATION', async () 
   assert.deepEqual(h.pids, [child.pid, null])
 })
 
+test('A NONZERO EXIT ON THE SHUTDOWN PATH IS ON THE RECORD — and a zero one is not', async () => {
+  // The debug narration is stdout on a process that is QUITTING, which is the one channel that
+  // cannot be read after the fact (JOS-501 integration; the engine-boots spec carries the race).
+  // So the bad ending gets a durable entry with its own name — and deliberately NOT through the
+  // exit trail: a shutdown exit is not a crash and must never count toward a restart streak.
+  const h = harness()
+  const child = await launched(h)
+  h.supervisor.stop()
+  child.exit(3)
+  assert.equal(h.supervisor.state, 'stopped')
+  assert.equal(h.reports.length, 1, 'the bad ending is durable')
+  assert.equal(h.reports[0].name, 'EngineShutdownExit')
+  assert.equal(h.reports[0].code, 3, 'the code rides the machine-readable field')
+  assert.match(h.reports[0].message, /exited 3 after the shutdown signal/)
+  assert.equal(h.children.length, 1, 'and it is still not a failure the supervisor acts on')
+})
+
 test('AN ENGINE THAT IGNORES EOF IS KILLED — a wedged child cannot veto a quit', async () => {
   const h = harness()
   const child = await launched(h)
@@ -384,13 +374,22 @@ test('a pending respawn is cancelled by stop() — a backoff must not resurrect 
   assert.equal(h.children.length, 1, 'the timer was cancelled, not merely ignored')
 })
 
-test('a child that exits AFTER we asked it to is not a failure, whatever its code says', async () => {
+test('a child that exits BADLY after we asked it to is on the record, but never acted on', async () => {
+  // THE CLAIM THIS REPLACES said the whole stopping path was silent ("we asked for this; a kill
+  // exit code is not a diagnosis"). Half survives: the supervisor still never ACTS on it — no
+  // trail, no respawn, state is stopped. What changed (JOS-501 integration): an engine that dies
+  // with an access violation while shutting down is a real defect in the only fold the product
+  // has, and the stdout narration dies with the quitting app — so the bad ending is durable now.
+  // The kill WE issue stays unreported (the escalation test below): that code is our own action.
   const h = harness()
   const child = await launched(h)
   h.supervisor.stop()
   child.exit(3221225477, 'SIGTERM')
-  assert.equal(h.reports.length, 0, 'we asked for this; a kill exit code is not a diagnosis')
+  assert.equal(h.reports.length, 1, 'the bad ending is durable')
+  assert.equal(h.reports[0].name, 'EngineShutdownExit')
+  assert.equal(h.reports[0].code, 3221225477, 'the ten-digit code rides the machine-readable field')
   assert.equal(h.supervisor.state, 'stopped')
+  assert.equal(h.children.length, 1, 'and it is still never acted on: no respawn')
 })
 
 test('start() while a launch is in flight is a no-op, not a second engine', () => {

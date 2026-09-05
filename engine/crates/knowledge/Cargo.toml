@@ -1,0 +1,24 @@
+[package]
+name = "knowledge"
+description = "The committed knowledge corpora, engine-side (JOS-486): items, mobs and quests indexed once and queried on demand, plus the runtime overlay a `knowledge.define` pushes into."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# THE SPELL CATALOG, NOT A SECOND COPY OF IT. `eqlog::spelldb::shared()` is the process's ONE
+# effective spell DB — the committed scrape with the removals, derived durations and corrections
+# already applied — and `knowledge.spell` answers off exactly that. Two loads is two answers waiting
+# to disagree after an overlay change, which is the argument `Parser::spell_db` already makes.
+eqlog = { path = "../eqlog" }
+
+# THE FOLD, for `mob_key` and the seam traits — and the direction is load-bearing. `fold` cannot
+# name this crate, so `fold::registered()` (the construction the six goldens were recorded through,
+# and the one the parity binary uses) has no way to reach a corpus even by accident, and the
+# `parity` binary does not carry 12 MB of committed JSON in its text section.
+fold = { path = "../fold" }

@@ -83,8 +83,21 @@ export function useViewFrom(client: EngineClient, descriptor: ViewDescriptor): V
   const [held, setHeld] = useState<Held>({ key, view: LOADING_VIEW })
   // The latest descriptor without making the effect depend on its identity — `key` is what decides
   // whether the subscription has to be re-opened.
+  //
+  // THE WRITE IS AN EFFECT, NOT A RENDER-PHASE ASSIGNMENT (JOS-510 item 3). It used to be
+  // `descriptorRef.current = descriptor` in the render body, which is a side effect during render:
+  // the app mounts under `React.StrictMode`, which double-invokes render, and React reserves the
+  // right to throw a render away entirely — so a ref written there can hold a descriptor from a
+  // render that was never committed. It has no dependency array on purpose (it must track EVERY
+  // commit), and it is declared ABOVE the subscription effect, which is what makes the ordering
+  // load-bearing: React runs passive effects in declaration order within one commit, so by the time
+  // the subscription below re-opens on a changed `key`, this has already written the descriptor
+  // that `key` was computed from. Mount needs no such argument — `useRef`'s own initializer has
+  // already put the first descriptor there.
   const descriptorRef = useRef(descriptor)
-  descriptorRef.current = descriptor
+  useEffect(() => {
+    descriptorRef.current = descriptor
+  })
 
   useEffect(() => {
     const handle = client.subscribe(descriptorRef.current, (view) => {

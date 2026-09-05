@@ -28,7 +28,7 @@
 // not run has established nothing. Each of those is drawn as its own words, never as a zero that
 // reads like a measurement.
 
-import type { PerfSnapshotResult } from './dataServer/protocol.generated'
+import type { PerfBudgetsResult, PerfSnapshotResult } from './dataServer/protocol.generated'
 
 /**
  * Where the supervisor is, as the panel needs to know it.
@@ -68,6 +68,18 @@ export interface EnginePerfSample {
   process: EngineProcessSay | null
   /** `null` when there is no connected client to ask, or the engine refused. */
   engine: PerfSnapshotResult | null
+  /**
+   * THE ENGINE'S OWN BUDGETS AND ITS VERDICT ON THEM (ruling 19, JOS-502) — `null` on the same
+   * terms as `engine`.
+   *
+   * IT RIDES EVERY TICK RATHER THAN BEING FETCHED ONCE, and the reason is the one moment this
+   * surface exists for: the fold-rate verdict goes `unmeasured` → judged the instant the scan
+   * finishes, which is exactly the stretch a person has the panel open watching the engine come up.
+   * A budget read once at mount would show `unmeasured` for the whole of it and then never correct
+   * itself. The extra cost is one small round trip on a connection that is already open and only
+   * while the panel is open at all (`enginePerfWatch.ts`).
+   */
+  budgets: PerfBudgetsResult | null
   /** `null` when no parity probe has run in this launch — which is NOT "everything agreed". */
   parity: EngineParitySay | null
 }
@@ -155,6 +167,57 @@ export function formatAge(ms: number): string {
   if (v < 3_600_000) return `${String(Math.round(v / 60_000))} min`
   if (v < 86_400_000) return `${String(Math.round(v / 360_000) / 10)} h`
   return `${String(Math.round(v / 8_640_000) / 10)} days`
+}
+
+/**
+ * How far the log's clock may sit from this machine's before the panel stops reporting and starts
+ * warning. The engine's own alarm, restated by value: half an hour is above every honest cause and
+ * below the smallest real zone error, which is a whole hour.
+ */
+export const CLOCK_SKEW_WARN_MS = 30 * 60 * 1000
+
+/** The clock line, or `null` when no fold has resolved a zone yet. `warning` is the panel's cue to
+ *  draw a sentence instead of a measurement. */
+export interface EngineClockLine {
+  text: string
+  warning: boolean
+}
+
+/** A signed duration a person reads, at the scale it happens to be. The sign is kept because which
+ *  way the two clocks disagree is half of what the reading says. */
+function signedAge(ms: number): string {
+  return `${ms < 0 ? '-' : ''}${formatAge(Math.abs(ms))}`
+}
+
+/** `7h 0m` — the shape a whole-number-of-hours zone error reads as, which is the whole point. */
+function hoursAndMinutes(ms: number): string {
+  const total = Math.round(Math.abs(ms) / 60_000)
+  return `${String(Math.floor(total / 60))}h ${String(total % 60)}m`
+}
+
+/**
+ * WHICH CLOCK THE FOLD IS ON, in the panel's words.
+ *
+ * Ordinarily a measurement: the zone, where the engine got it, and how far the newest live line sits
+ * from this machine's clock. Past `CLOCK_SKEW_WARN_MS` it stops being a measurement and becomes a
+ * finding, because a whole number of hours is a zone the engine resolved wrongly and every fight,
+ * buff and timer is wrong with it. The zone NAME is dropped from the warning deliberately: a person
+ * reading "fights will be wrong" does not need an IANA identifier to act on it.
+ */
+export function formatEngineClock(sample: EnginePerfSample): EngineClockLine | null {
+  const engine = sample.engine
+  const zone = engine?.clockZone
+  if (zone === undefined) return null
+  const skew = engine?.clockSkewMs
+  if (skew !== undefined && Math.abs(skew) >= CLOCK_SKEW_WARN_MS) {
+    return {
+      text: `The log's clock disagrees with this machine's by ${hoursAndMinutes(skew)}. Fights and timers will be wrong.`,
+      warning: true
+    }
+  }
+  const source = engine?.clockSource
+  const named = source === undefined ? zone : `${zone} (${source})`
+  return { text: skew === undefined ? named : `${named} · skew ${signedAge(skew)}`, warning: false }
 }
 
 /** `live · epoch 2` — the engine's state in the two terms that decide what everything else means. */
