@@ -189,6 +189,40 @@ export function compareText(entry: StatCompare): string {
   return `${label} ${mine} vs ${theirs} (${sign}${statText(entry.delta, entry.key)})`
 }
 
+// ---- the swap reading (fork, kaltinril 2026-09-05) -------------------------------------------
+// The card stopped printing COMPARISONS and started printing the SWAP: what equipping the hovered
+// item gains you and what it costs you, colored and grouped by direction ("the comparison thing…
+// it's hard to see what the heck it's trying to show"). The sentence vocabulary above survives for
+// anything that still wants prose; the three functions below are the grouped form's words, and they
+// are pure so the node tests can pin them.
+
+/** Which way the SWAP moves this key: equipping the hovered item GAINS it or LOSES it. A key both
+ *  sides state at one value never reaches here (`compareStats` drops it). */
+export type SwapDirection = 'gain' | 'loss'
+
+/** The two keys where MORE is WORSE: delay divides damage (`damageRatio`), and weight "is a COST,
+ *  not worth" (roleWeights' own census). Direction flips for them; nothing else is editorialized. */
+const LOWER_IS_BETTER: ReadonlySet<GearStatKey> = new Set(['DELAY', 'WEIGHT'])
+
+export function compareDirection(entry: StatCompare): SwapDirection {
+  const rising =
+    entry.item === undefined ? false : entry.equipped === undefined ? true : entry.item > entry.equipped
+  return rising === !LOWER_IS_BETTER.has(entry.key) ? 'gain' : 'loss'
+}
+
+/**
+ * One swap entry: `AC 10→5` — the WORN value first, the hovered item's second, because that is the
+ * direction the swap moves. `—` where a side states nothing: the sentence rule above ("none is the
+ * word") is about a PROSE line where a dash misreads as a minus; in the arrow pair the dash sits
+ * between a label and an arrow and reads as the blank cell it is.
+ */
+export function arrowText(entry: StatCompare): string {
+  const label = entry.key.replace(/_/g, ' ')
+  const worn = entry.equipped === undefined ? '—' : statText(entry.equipped, entry.key)
+  const mine = entry.item === undefined ? '—' : statText(entry.item, entry.key)
+  return `${label} ${worn}→${mine}`
+}
+
 /** `Thelvorn, Blade of Light +5` — the worn copy as the dump names it, tier and all. */
 export function hostText(host: PlannerInventoryHost): string {
   return host.tier === undefined ? host.name : `${host.name} +${String(host.tier)}`

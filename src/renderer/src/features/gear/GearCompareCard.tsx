@@ -110,21 +110,24 @@ import { outputKind } from '@shared/outputs/kinds'
 import { CARD_LABEL, CARD_MONO, CARD_TEXT, LABEL_STYLE, MoreLine, TEXT_STYLE } from '../../lib/hoverCards'
 import { Tooltip } from '../../lib/Tooltip'
 import {
+  arrowText,
+  compareDirection,
   compareStats,
-  compareText,
   dumpFreshnessText,
   equippedCells,
   equippedState,
   hostText,
   statPairText,
-  type EquippedCell
+  type EquippedCell,
+  type StatCompare
 } from './gearCompare'
 import type { GearCompareData } from './gearData'
 
 /** How many of the item's own stats the left card lists before collapsing to "+N more". */
 const MAX_STATS = 10
-/** …and how many CHANGES one equipped cell lists. Tighter: it is one line per cell, not a block. */
-const MAX_DELTAS = 8
+/** …and how many CHANGES one equipped cell lists — 12 since the swap lines (each entry is shorter
+ *  than the sentence form was, so the cap buys more stats for the same clipping budget). */
+const MAX_DELTAS = 12
 
 /** The hovered item's accent — the item green every card in this family gives an item name. */
 const ITEM_ACCENT = '#5fe08a'
@@ -216,6 +219,38 @@ function ItemStats({ row }: { row: GearRow }): JSX.Element | null {
   )
 }
 
+/** The swap's two verdict colors — semantic, not accents: green is what equipping the hovered item
+ *  GAINS you, red what it COSTS you. Distinct from the two card accents on purpose; the card
+ *  borders say whose card it is, these say which way a number moves. */
+const GAIN_COLOR = '#6ee89a'
+const LOSS_COLOR = '#e8776a'
+
+/**
+ * THE SWAP, GROUPED (fork, kaltinril 2026-09-05, replacing the sentence form): one green line of
+ * what this item gains you, one red line of what it costs, each entry `KEY worn→this` with both
+ * numbers kept (`arrowText`). Two wrapping lines rather than a row per stat, so a twenty-stat mask
+ * costs the height his prose already cost — the bottom-anchored card's clipping budget is the
+ * binding constraint (the header's guarantee-1 price).
+ */
+function SwapLines({ changes }: { changes: StatCompare[] }): JSX.Element {
+  const shown = changes.slice(0, MAX_DELTAS)
+  const groups = [
+    { word: 'gain', color: GAIN_COLOR, entries: shown.filter((c) => compareDirection(c) === 'gain') },
+    { word: 'lose', color: LOSS_COLOR, entries: shown.filter((c) => compareDirection(c) === 'loss') }
+  ]
+  return (
+    <div data-testid="gear-compare-delta">
+      {groups.map(({ word, color, entries }) =>
+        entries.length === 0 ? null : (
+          <div key={word} style={LABEL_STYLE}>
+            {word}: <span style={{ color }}>{entries.map(arrowText).join(' · ')}</span>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 /**
  * ONE PLACE THIS ITEM WOULD GO, and what is in it. One of these per cell, STACKED inside the right
  * card — an earring is two answers and the pair stays two cards.
@@ -258,9 +293,7 @@ function EquippedRow({ cell, row, data }: { cell: EquippedCell; row: GearRow; da
       )}
       {changes.length > 0 && (
         <>
-          <div style={LABEL_STYLE} data-testid="gear-compare-delta">
-            {changes.slice(0, MAX_DELTAS).map(compareText).join(' · ')}
-          </div>
+          <SwapLines changes={changes} />
           <MoreLine total={changes.length} shown={MAX_DELTAS} />
         </>
       )}

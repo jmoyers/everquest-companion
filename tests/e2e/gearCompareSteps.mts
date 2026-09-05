@@ -66,7 +66,7 @@ import type { GearRow } from '../../src/shared/planner/gear'
 import { scaleGearRow } from '../../src/shared/planner/gearScale'
 // The card's own words, so the expectation is COMPUTED from the module under test's own spelling
 // rather than typed into this file (and a change to the spelling turns the unit test red first).
-import { compareStats, compareText } from '../../src/renderer/src/features/gear/gearCompare'
+import { arrowText, compareStats } from '../../src/renderer/src/features/gear/gearCompare'
 
 const ROW = '[data-testid="gear-row"]'
 /** The three nodes the JOS-344 layout is made of — exported for the Exaltations side. */
@@ -324,7 +324,7 @@ export async function closePair(page: Page): Promise<boolean> {
  * Thelvorn is a PRIMARY item and the staged dump wears one at +5, so this single row proves the
  * whole chain AND the most useful case in it: the candidate is compared against a worn copy the
  * player has merged five times, which is why the numbers differ at all. The expected delta is
- * computed from `scaleGearRow` + the card's own `compareText`, so this spec cannot drift from
+ * computed from `scaleGearRow` + the card's own `arrowText`, so this spec cannot drift from
  * either the arithmetic or the wording.
  */
 async function stepPairOpens(page: Page, base: GearRow): Promise<boolean> {
@@ -368,7 +368,7 @@ function checkFreshness(card: PairRead): void {
  *
  * ONE CELL, because the corpus states one slot for this item — and the name in it is a line of the
  * staged dump. The delta is COMPUTED: the hovered row is at base, the worn copy is at the `+5` its
- * name states, and the expected words come from the card's own `compareText`.
+ * name states, and the expected words come from the card's own `arrowText` (the swap line).
  */
 function checkEquippedCard(card: PairRead, base: GearRow): void {
   check(
@@ -385,7 +385,7 @@ function checkEquippedCard(card: PairRead, base: GearRow): void {
 
   const worn = scaleGearRow(base, { full: 5, fraction: 0 }).stats
   const wantDmg = compareStats(base.stats, worn).find((s) => s.key === 'DMG')
-  const wanted = wantDmg === undefined ? '?' : compareText(wantDmg)
+  const wanted = wantDmg === undefined ? '?' : arrowText(wantDmg)
   check(
     'the delta line is the difference between this item and the one on your body',
     wantDmg !== undefined && (first?.delta ?? '').includes(wanted),
