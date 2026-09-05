@@ -36,6 +36,7 @@ import {
   type OwnedHaste,
   type PlanScope
 } from '../../../../shared/planner/progressionPlan'
+import { ROLE_WEAPON_POLICY, policyAdmits } from '../../../../shared/planner/roleWeights'
 import type { GearOwnershipMap } from '../gear/gearOwnership'
 
 /** The two sets — see the header for why they differ. */
@@ -159,7 +160,10 @@ export interface OwnedUpgrade {
  * everything HELD as a farm target — correctly, you do not farm what you have — but a banked
  * upgrade was falling into the silence between "go get" and "already worn". Same math as the gap
  * test on candidates: the held row's score in a slot, against that slot's bar, base against base,
- * through the same dial. A slot with NO bar is a gap and the held item fills it. Sorted best first.
+ * through the same dial — AND THROUGH THE SAME WEAPON-SLOT POLICY (fork report, minutes after it
+ * shipped without one: "it's recommending my 2h for 1h dps" — a banked two-hander is not advice a
+ * 1H focus may give about the main hand, exactly as the route may not suggest one). A slot with NO
+ * bar is a gap and the held item fills it. Sorted best first.
  */
 export function ownedUpgrades(
   keys: OwnedKeys,
@@ -169,6 +173,7 @@ export function ownedUpgrades(
 ): OwnedUpgrade[] {
   const out: { up: OwnedUpgrade; score: number }[] = []
   const ctx = { classes: scope.classes, survivability: scope.survivability }
+  const policy = ROLE_WEAPON_POLICY[scope.role]
   for (const key of keys.held) {
     if (keys.worn.has(key) || keys.wornAny.has(key)) continue
     const row = byKey.get(key)
@@ -176,6 +181,7 @@ export function ownedUpgrades(
     let bestSlot: EquipSlot | undefined
     let bestScore = -Infinity
     for (const slot of row.slots) {
+      if (!policyAdmits(policy, slot, row)) continue
       const score = roleValue(row.stats, scope.role, { ...ctx, ownedHaste: ownedHasteOutside(side.haste, slot) })
       const bar = side.bars.get(slot)
       if (bar !== undefined && score <= bar) continue

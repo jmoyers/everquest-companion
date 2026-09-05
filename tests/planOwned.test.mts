@@ -280,3 +280,29 @@ test('what you OWN but do not WEAR that beats what you wear is called out — th
   // Nothing worn, nothing advised about it: the worn tunic itself never appears.
   assert.equal(ups.some((u) => u.key === 'plain tunic'), false)
 })
+
+test('the advisory obeys the weapon-slot policy: a banked 2H is not main-hand advice on a 1H focus', () => {
+  // Fork report, minutes after the advisory shipped: "it's recommending my 2h for 1h dps :)".
+  const GREATAXE = row({
+    key: 'monsoon', name: 'Monsoon, Sword of the Swiftwind', slots: ['PRIMARY'],
+    skill: '2H Slashing', stats: { DMG: 25, DELAY: 40 }
+  })
+  const SABER = row({
+    key: 'fine saber', name: 'Fine Saber', slots: ['PRIMARY'],
+    skill: '1H Slashing', stats: { DMG: 10, DELAY: 24 }
+  })
+  const byKey = new Map([[GREATAXE.key, GREATAXE], [SABER.key, SABER]])
+  const keys = ownedKeysOf(
+    new Map([
+      ['monsoon', own({ facts: [at('bank')] })],
+      ['fine saber', own({ facts: [at('bank')] })]
+    ])
+  )
+  const oneHand = { role: 'dps1h' as const, classes: ['WAR' as const] }
+  const ups = ownedUpgrades(keys, byKey, ownedSide(keys, byKey, oneHand), oneHand)
+  assert.deepEqual(ups.map((u) => u.name), ['Fine Saber'], 'the 1H focus advises only the one-hander')
+  // …and the 2H focus advises the two-hander and never the saber — the same table, both ways.
+  const twoHand = { role: 'dps2h' as const, classes: ['WAR' as const] }
+  const ups2 = ownedUpgrades(keys, byKey, ownedSide(keys, byKey, twoHand), twoHand)
+  assert.deepEqual(ups2.map((u) => u.name), ['Monsoon, Sword of the Swiftwind'])
+})
