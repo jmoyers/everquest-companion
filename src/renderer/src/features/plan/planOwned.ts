@@ -132,6 +132,11 @@ export function ownedSide(
     // A wildcard resident is worn for HASTE (it is on the character) and absent for BARS (it
     // occupies no wiki slot) — the fork report above.
     if (keys.worn.has(key)) rows.push(row)
+    // A haste WEAPON's percentage is still haste you own — swapped out of the hand, it keeps
+    // granting from an Any Slot (fork ruling, 2026-09-05: "i could still toss the monsoon in one
+    // of the two ANY slots to gain the haste") — so every worn source counts here, weapons
+    // included. What changed is the other side: `roleValue` prices haste at NOTHING on a weapon
+    // row, so a blade never wins or loses the HAND comparison on a stat the loadout keeps anyway.
     if (row.stats.HASTE !== undefined && row.stats.HASTE > 0) haste.push({ haste: row.stats.HASTE, slots: row.slots })
   }
   const bars = new Map<EquipSlot, number>()

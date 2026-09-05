@@ -275,10 +275,35 @@ test('what you OWN but do not WEAR that beats what you wear is called out — th
   const scope = { role: 'dps' as const, classes: ['WAR' as const] }
   const ups = ownedUpgrades(keys, byKey, ownedSide(keys, byKey, scope), scope)
   assert.deepEqual(ups.map((u) => `${u.name}:${u.slot}`).sort(), ['Fine Tunic:CHEST', 'Haste Sword:PRIMARY'])
-  // Sorted best-first: the sword's ratio and haste dwarf a chest's AC.
-  assert.equal(ups[0].name, 'Haste Sword')
+  // Sorted best-first — and the sword's 36% haste buys it NOTHING here (the Fangol ruling: haste
+  // prices at zero on a weapon row), so the chest's AC outranks the sword's plain ratio.
+  assert.equal(ups[0].name, 'Fine Tunic')
   // Nothing worn, nothing advised about it: the worn tunic itself never appears.
   assert.equal(ups.some((u) => u.key === 'plain tunic'), false)
+})
+
+test('fangol clears the monsoon bar: a weapon never wins the hand on haste', () => {
+  // The sixth field case (fork, kaltinril 2026-09-05): a worn 36% haste 2H set a 144-point bar no
+  // hasteless weapon could clear — but worn haste does not stack, lives equally on belts and
+  // capes, and keeps granting from an Any Slot after the swap ("i'd obviously put a haste belt or
+  // cape on when i get the fangol" / "i could still toss the monsoon in one of the two ANY
+  // slots"). So haste prices at ZERO on a weapon row, weapons compete on damage, and the better
+  // ratio wins the hand — while the haste itself still counts as haste the player owns.
+  const MONSOON = row({
+    key: 'monsoon, sword of the swiftwind', name: 'Monsoon, Sword of the Swiftwind', slots: ['PRIMARY'],
+    skill: '2H Slashing', stats: { DMG: 30, DELAY: 45, HASTE: 36, STR: 10, STA: 9 }
+  })
+  const FANGOL = { DMG: 29, DELAY: 35, STR: 3, DEX: 10, STA: 10, SV_POISON: 5 }
+  const byKey = new Map([[MONSOON.key, MONSOON]])
+  const scope = { role: 'dps2h' as const, classes: ['WAR' as const] }
+  const keys = ownedKeysOf(new Map([[MONSOON.key, own({ facts: [at('equipped')] })]]))
+  const side = ownedSide(keys, byKey, scope)
+  const bar = side.bars.get('PRIMARY')
+  assert.ok(bar !== undefined)
+  const challenger = roleValue(FANGOL, 'dps2h', { classes: scope.classes })
+  assert.ok(challenger > bar, `the better ratio (${challenger.toFixed(1)}) clears the haste incumbent (${bar.toFixed(1)})`)
+  // …and the monsoon's 36% is still haste the player OWNS: an offered belt gets no credit past it.
+  assert.deepEqual(side.haste, [{ haste: 36, slots: ['PRIMARY'] }])
 })
 
 test('the advisory obeys the weapon-slot policy: a banked 2H is not main-hand advice on a 1H focus', () => {

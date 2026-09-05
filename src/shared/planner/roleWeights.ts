@@ -222,7 +222,10 @@ const SAVE_KEYS: readonly GearStatKey[] = GEAR_STAT_KEYS.filter((k) => k.startsW
  *     weapon-garnish damp, so a real blade still outranks a breastplate in a damage focus —
  *     see the DMG_BONUS and DEX rows and `weaponGarnish`).
  *   * HASTE — a straight multiplier on swings, and WORN HASTE DOES NOT STACK, so `roleValue`
- *     credits it only above what the player already owns (the 2026-08-22 ruling, below).
+ *     credits it only above what the player already owns (the 2026-08-22 ruling, below) — and on
+ *     a WEAPON row it prices at NOTHING (fork ruling 2026-09-05, the Fangol case, argued at the
+ *     term in `roleValue`): the loadout's haste lives in belts and capes, weapons compete on
+ *     damage, and the owned-haste ceiling likewise reads only NON-weapon sources (`planOwned`).
  *   * DMG_BONUS — a flat add per hit, applied AFTER the multiplied roll. It rides through the
  *     ratio (`gearEffectiveRatio`, at its measured 1/17th-of-a-DMG-point worth) and appears in NO
  *     `stats` row (fork decision, kaltinril 2026-09-04): weighted flat at 3 it outranked eight
@@ -547,7 +550,13 @@ export function roleValue(stats: GearStats, role: GearRole, ctx: RoleContext = {
   const weights = focusWeights(role, ctx.survivability)
   const gate = liveGate(ctx.classes ?? [])
   const ratio = gearEffectiveRatio(stats)
-  const damage = (ratio === undefined ? 0 : ratio * weights.ratio) + hasteTerm(stats, weights, gate, ctx.ownedHaste ?? 0)
+  // HASTE PRICES AT NOTHING ON A WEAPON ROW (fork ruling, kaltinril 2026-09-05: *"i'd obviously
+  // put a haste belt or cape on when i get the fangol"*). Worn haste does not stack, the same
+  // percentage lives on belts, capes and gloves, so it is a property of the LOADOUT and not of the
+  // blade — and priced flat it let a 36% incumbent set a 144-point bar no hasteless weapon could
+  // ever clear, four weapons' worth of white damage for a stat you would re-source from your waist
+  // the day you swapped. Weapons compete on damage; haste competes in the slots that carry it.
+  const damage = (ratio === undefined ? hasteTerm(stats, weights, gate, ctx.ownedHaste ?? 0) : ratio * weights.ratio)
   const garnish =
     statedTotal(stats, weights, gate) +
     manaTotal(stats, weights, gate) +
