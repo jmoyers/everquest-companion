@@ -40,7 +40,7 @@
 
 import { type JSX, useMemo, useState } from 'react'
 import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
-import CheckIcon from '@mui/icons-material/Check'
+import { HideTargetButton, TargetKilledBadge } from './cardCorners'
 import type { RaidTarget } from '@shared/types'
 import type { TargetStatus } from './bossStatus'
 import { tierLadder, type LadderRung, type TierLock } from './lockout'
@@ -115,29 +115,6 @@ function BossImage({
 }
 
 // The little tier-coloured tick in the card's top-left corner: "you have this one".
-function TargetKilledBadge({ tier }: { tier: TierStyle }): JSX.Element {
-  return (
-    <Box
-      sx={{
-        position: 'absolute',
-        top: 4,
-        left: 4,
-        zIndex: 1,
-        width: 20,
-        height: 20,
-        borderRadius: '50%',
-        bgcolor: tier.bg,
-        color: tier.fg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: 1
-      }}
-    >
-      <CheckIcon sx={{ fontSize: 14 }} />
-    </Box>
-  )
-}
 
 /**
  * What the corner chip says, and whether the card reads as "you have this one".
@@ -301,7 +278,9 @@ function TargetCard({
   flash,
   lock,
   ladder,
-  onOpen
+  onOpen,
+  hidden = false,
+  onToggleHidden
 }: {
   s: TargetStatus
   compact: boolean
@@ -314,6 +293,10 @@ function TargetCard({
    */
   ladder?: LadderRung[]
   onOpen: () => void
+  /** This target is hidden (issue #32) — the card only renders under the toolbar's peek, DIMMED,
+   *  so a peeked roster reads as two populations rather than quietly merging them back. */
+  hidden?: boolean
+  onToggleHidden?: () => void
 }): JSX.Element {
   const imgH = compact ? 70 : 120
   const chip = chipFacts(s, tierStyle(s.bestTier), lock)
@@ -339,10 +322,12 @@ function TargetCard({
             : 'none',
         transform: flash ? 'scale(1.04)' : 'none',
         transition: 'transform 200ms, box-shadow 200ms, border-color 200ms',
-        '&:hover': { transform: flash ? 'scale(1.04)' : 'translateY(-2px)' }
+        '&:hover': { transform: flash ? 'scale(1.04)' : 'translateY(-2px)' },
+        opacity: hidden ? 0.45 : 1
       }}
     >
       {chip.on && <TargetKilledBadge tier={tier} />}
+      {onToggleHidden && <HideTargetButton name={s.target.name} hidden={hidden} onToggle={onToggleHidden} />}
       <TargetCardMedia s={s} chip={chip} height={imgH} />
       <TargetCardCaption s={s} compact={compact} ladder={ladder} />
     </Paper>
@@ -363,6 +348,10 @@ interface GridProps {
    * record.
    */
   lockOf?: (s: TargetStatus) => TierLock[]
+  /** Is this target hidden (issue #32)? A hidden card renders only under the toolbar's peek. */
+  hiddenOf?: (name: string) => boolean
+  /** The card's own hide/unhide control writes through this — the one writer of the set. */
+  onToggleHidden?: (name: string) => void
 }
 
 /** Everything a section needs to draw its grid — identical for both groupings. */
@@ -384,7 +373,7 @@ function wholeRows(list: TargetStatus[]): CardRow[] {
 }
 
 /** A header plus the grid under it. The ONE grid in this feature; both groupings use it. */
-function Section({ header, rows, compact, minCol, flashing, onOpenMob, lockOf }: GridProps & { header: JSX.Element; rows: CardRow[] }): JSX.Element {
+function Section({ header, rows, compact, minCol, flashing, onOpenMob, lockOf, hiddenOf, onToggleHidden }: GridProps & { header: JSX.Element; rows: CardRow[] }): JSX.Element {
   return (
     <Box sx={{ mb: compact ? 1.5 : 2.5 }}>
       {header}
@@ -410,6 +399,8 @@ function Section({ header, rows, compact, minCol, flashing, onOpenMob, lockOf }:
             // grouping (the default) `whole` IS `s`, so nothing moves there.
             ladder={lockOf && tierLadder(lockOf(row.whole))}
             onOpen={() => onOpenMob(mobTargetForStatus(row.whole))}
+            hidden={hiddenOf?.(row.s.target.name) ?? false}
+            onToggleHidden={onToggleHidden && (() => onToggleHidden(row.s.target.name))}
           />
         ))}
       </Box>

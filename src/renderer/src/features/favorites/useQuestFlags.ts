@@ -34,7 +34,7 @@ export interface QuestFlagSet {
   size: number
 }
 
-interface QuestFlagStore {
+export interface QuestFlagStore {
   subscribe: (listener: () => void) => () => void
   snapshot: () => Set<string>
   toggle: (questKey: string) => void
@@ -50,7 +50,7 @@ function load(storageKey: string): Set<string> {
   }
 }
 
-function createQuestFlagStore(storageKey: string): QuestFlagStore {
+export function createQuestFlagStore(storageKey: string): QuestFlagStore {
   let current = load(storageKey)
   const listeners = new Set<() => void>()
   return {
@@ -86,7 +86,7 @@ const classFavoriteStore = createQuestFlagStore(CLASS_FAVORITES_KEY)
  * at length — anything that hands one of these down to a row would re-render every row on every
  * keystroke. `store.toggle` is already a module-lifetime function.
  */
-function useQuestFlagSet(store: QuestFlagStore): QuestFlagSet {
+export function useQuestFlagSet(store: QuestFlagStore): QuestFlagSet {
   const keys = useSyncExternalStore(store.subscribe, store.snapshot)
   return useMemo(
     () => ({
