@@ -62,6 +62,10 @@ import { DrillCrumb, MeterRows, crumbOf } from '../combat/MeterRows'
 import { meterPanel, panelTotals, type MeterPanel } from '../combat/petRows'
 import { scopeSources, scopeTotals } from '../combat/meterScope'
 import { useCombinePetRow, useMeterScope } from '../combat/useCombatPrefs'
+import { useModule } from '../../lib/useModule'
+import { selfMeterLabel, withSelfLabel } from '../combat/selfMeterLabel'
+import { useShowSelfName } from '../combat/useSelfMeterName'
+import type { CharacterSnap } from '@shared/types'
 import { useDrillMemory } from '../combat/useDrillMemory'
 import { AbilityExpandProvider } from '../combat/abilityExpand'
 import type { CombatFocus } from '../combat/combatFocus'
@@ -116,10 +120,11 @@ interface CardBody {
   view: ScopedView
 }
 
-function cardBody(v: ScopedView, combine: boolean, drill: Drill | null): CardBody {
-  const panel = meterPanel(v.rows, combine, meterDrill(drill))
+function cardBody(v: ScopedView, combine: boolean, drill: Drill | null, selfLabel: string | null): CardBody {
+  const rows = withSelfLabel(v.rows, selfLabel)
+  const panel = meterPanel(rows, combine, meterDrill(drill))
   const { total, dps } = panelTotals(panel, v.total, v.dps)
-  return { panel, view: { rows: v.rows, total, dps, activeDps: panelTotals(panel, v.total, v.activeDps).dps } }
+  return { panel, view: { rows, total, dps, activeDps: panelTotals(panel, v.total, v.activeDps).dps } }
 }
 
 /** total · duration · active-time DPS — the secondary stat, never the headline (law 7). */
@@ -184,6 +189,15 @@ function DpsRows({
   )
 }
 
+/**
+ * The self subject's name for the meter label, or `null` until the character module has a
+ * snapshot — the same `?.character?.name ?? null` read the Combat tab's `SegmentPanel` makes,
+ * lifted out of `DpsCard` so its branch points don't push the component past `complexity: 12`.
+ */
+function selfCharName(snap: CharacterSnap | null): string | null {
+  return snap?.character?.name ?? null
+}
+
 export function DpsCard({ snap, onOpenCombat }: DpsCardProps): JSX.Element {
   const head = fightScopeOptions(snap?.segments ?? []).head
   const seg = snap?.selected ?? null
@@ -221,7 +235,9 @@ export function DpsCard({ snap, onOpenCombat }: DpsCardProps): JSX.Element {
   // THE one row builder, called ONCE for this card — the rows below and the two figures above
   // them are now the same answer (JOS-170). It used to be called inside `DpsRows`, which is
   // exactly how the headline came to describe the fight while the rows described a drill.
-  const body = seg ? cardBody(scopedView(seg, meterScope, roster), combinePetRow, drill) : null
+  const selfName = selfCharName(useModule<CharacterSnap>('character'))
+  const selfLabel = selfMeterLabel(selfName, useShowSelfName())
+  const body = seg ? cardBody(scopedView(seg, meterScope, roster), combinePetRow, drill, selfLabel) : null
 
   return (
     // The link down is offered even with nothing to show: "there are no fights" is a thing the

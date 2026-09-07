@@ -382,9 +382,26 @@ test('WHITELIST: no machine path can appear in a settings export', () => {
 test('WHITELIST: the exportable UI keys are exactly the documented list', () => {
   assert.deepEqual(
     UI_PREF_SPECS.map((s) => s.key).sort(),
-    ['eq.bossDensity', 'eq.combat.scope', 'eq.countSource', 'eq.favorites', 'eq.profile', 'eq.selectedClasses']
+    [
+      'eq.bossDensity',
+      'eq.combat.scope',
+      'eq.combat.selfMeterName',
+      'eq.countSource',
+      'eq.favorites',
+      'eq.profile',
+      'eq.selectedClasses'
+    ]
   )
   assert.ok(!UI_PREF_SPECS.some((s) => s.key === 'eq.view'), 'the last-open tab is never exportable')
+})
+
+test('the self-meter-name pref rides the bundle', () => {
+  const body = buildSettingsBody({
+    alerts: [],
+    alertPrefs: { globalVolume: 0.5, muted: false },
+    ui: { 'eq.combat.selfMeterName': '1' }
+  })
+  assert.equal(body.ui?.['eq.combat.selfMeterName'], '1')
 })
 
 test('WHITELIST holds through a full encode: the wire bytes carry no path', () => {

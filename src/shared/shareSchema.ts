@@ -124,6 +124,11 @@ export interface UiPrefSpec {
  */
 export const UI_PREF_SPECS: readonly UiPrefSpec[] = [
   { key: 'eq.combat.scope', label: 'Combat scope (Fight / Overall)', merge: 'replace' },
+  // The self meter row's display name — "You" vs. "<character> (You)". Machine-class view pref
+  // like `eq.combat.scope` above; 'replace' because it is a scalar the importer opts into. The
+  // renderer re-derives the label from the LOCAL character's name on read, so importing '1' from
+  // a stranger's bundle shows YOUR name, never theirs.
+  { key: 'eq.combat.selfMeterName', label: 'Show my character name in the damage meter', merge: 'replace' },
   { key: 'eq.bossDensity', label: 'Raid target list density', merge: 'replace' },
   { key: 'eq.countSource', label: 'Item count source', merge: 'replace' },
   { key: 'eq.profile', label: 'Game profile (server ruleset)', merge: 'replace' },

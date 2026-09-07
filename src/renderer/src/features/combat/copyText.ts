@@ -49,8 +49,13 @@ const SLAY_LABEL = 'Slay Undead'
 /** The footer that makes a '~' in the block above mean something to someone who wasn't here. */
 const APPROX_NOTE = '~ = estimated: this fight kept only a sample of its events.'
 
-/** `Vebarn (pet)` — the text equivalent of the meter row's pet chip. */
-function sourceName(e: SourceView): string {
+/**
+ * `Vebarn (pet)` — the text equivalent of the meter row's pet chip. When `selfLabel` is given
+ * (the `eq.combat.selfMeterName` pref is on) the self row reads that label — `Drammin (You)` —
+ * exactly as the on-screen meter does, so a paste matches the meter it came from.
+ */
+function sourceName(e: SourceView, selfLabel: string | null = null): string {
+  if (e.kind === 'you' && selfLabel) return selfLabel
   return e.kind === 'pet' ? `${e.name} (pet)` : e.name
 }
 
@@ -80,7 +85,7 @@ function segmentStats(seg: SegmentView, mode: 'out' | 'in'): string[] {
 }
 
 /** The ranked source table. Optional columns appear only when some row HAS that data. */
-function sourceTable(rows: SourceView[], mode: 'out' | 'in'): string[] {
+function sourceTable(rows: SourceView[], mode: 'out' | 'in', selfLabel: string | null = null): string[] {
   const showCrit = rows.some((r) => r.crits > 0)
   const showHit = rows.some((r) => r.misses > 0)
   const showResist = rows.some((r) => r.resists > 0)
@@ -97,7 +102,7 @@ function sourceTable(rows: SourceView[], mode: 'out' | 'in'): string[] {
   return table(
     cols,
     rows.map((e, i) => {
-      const cells = [String(i + 1), sourceName(e), formatNum(e.total), formatRate(e.dps)]
+      const cells = [String(i + 1), sourceName(e, selfLabel), formatNum(e.total), formatRate(e.dps)]
       if (showCrit) cells.push(e.crits > 0 ? pctText(e.critPct) : '')
       // Same omission the meter row makes: hit% is only meaningful once a swing was avoided.
       if (showHit) cells.push(e.misses > 0 ? pctText(e.hitPct) : '')
@@ -147,7 +152,11 @@ function healFooter(seg: SegmentView): string[] {
  * outgoing numbers. Optional columns appear only when some row HAS that data — a fight with no
  * avoided swings has no Hit column at all, rather than a column of '100%'.
  */
-export function formatSegmentText(seg: SegmentView, mode: 'out' | 'in'): string {
+export function formatSegmentText(
+  seg: SegmentView,
+  mode: 'out' | 'in',
+  selfLabel: string | null = null
+): string {
   const rows = mode === 'out' ? seg.entities : seg.incoming
   const out: string[] = [subjectLine(null, seg), ...statLines(segmentStats(seg, mode))]
 
@@ -162,7 +171,7 @@ export function formatSegmentText(seg: SegmentView, mode: 'out' | 'in'): string 
     return out.join('\n')
   }
 
-  out.push('', ...sourceTable(rows, mode))
+  out.push('', ...sourceTable(rows, mode, selfLabel))
   if (mode === 'in') out.push(...healFooter(seg))
   return out.join('\n')
 }
@@ -260,8 +269,16 @@ function ownTable(rows: OwnRow[]): string[] {
  * 'Combine pet into your damage' preference is on. Passing them is what closes the gap the
  * drill wave left: the panel showed the pet as a line item and the clipboard silently dropped
  * it, so a pasted "your breakdown" was missing a row the reader could see on screen.
+ *
+ * `selfLabel` relabels the self subject line — `Drammin (You)` — when the `eq.combat.selfMeterName`
+ * pref is on, matching the meter at this drill level too.
  */
-export function formatEntityText(seg: SegmentView, entity: SourceView, pets: SourceView[] = []): string {
+export function formatEntityText(
+  seg: SegmentView,
+  entity: SourceView,
+  pets: SourceView[] = [],
+  selfLabel: string | null = null
+): string {
   const stats = [formatNum(entity.total), formatRate(entity.dps), `${entity.hits} hits`]
   if (entity.crits > 0) stats.push(`${Math.round(entity.critPct)}% crit`)
   if (entity.misses > 0) stats.push(`${Math.round(entity.hitPct)}% hit`)
@@ -269,21 +286,22 @@ export function formatEntityText(seg: SegmentView, entity: SourceView, pets: Sou
 
   const rows = pets.length > 0 ? nestedRows(entity, pets) : null
   const skills = flattenSkills(entity)
-  const out = [subjectLine(sourceName(entity), seg), ...statLines(stats)]
+  const out = [subjectLine(sourceName(entity, selfLabel), seg), ...statLines(stats)]
   if (skills.length === 0 && !rows) {
     out.push('No skill breakdown for this source.')
     return out.join('\n')
   }
-  out.push('', ...(rows ? ownTable(rows) : skillTable(skills, '')))
-
-  const r = entity.rounds
-  if (r && (r.multiHitRounds > 0 || r.maxHitsInRound > 1)) {
-    out.push(
-      '',
-      `Melee rounds: ${r.totalRounds} · avg ${r.avgHitsPerRound.toFixed(2)} hits/round · ${r.multiHitRounds} multi-hit · up to ${r.maxHitsInRound}/round`
-    )
-  }
+  out.push('', ...(rows ? ownTable(rows) : skillTable(skills, '')), ...roundsFooter(entity.rounds))
   return out.join('\n')
+}
+
+/** The melee-rounds footer, appended only when the multi-hit heuristic has something to say. */
+function roundsFooter(r: SourceView['rounds']): string[] {
+  if (!r || (r.multiHitRounds === 0 && r.maxHitsInRound <= 1)) return []
+  return [
+    '',
+    `Melee rounds: ${r.totalRounds} · avg ${r.avgHitsPerRound.toFixed(2)} hits/round · ${r.multiHitRounds} multi-hit · up to ${r.maxHitsInRound}/round`
+  ]
 }
 
 // ── Level 2b: everything you + pet landed on ONE mob ────────────────────────────────

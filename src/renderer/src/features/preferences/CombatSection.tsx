@@ -21,6 +21,7 @@ import { type JSX } from 'react'
 import { FormControlLabel, Stack, Switch, Typography } from '@mui/material'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import { useCombinePetRow } from '../combat/useCombatPrefs'
+import { useSelfMeterNameToggle } from '../combat/useSelfMeterName'
 import { MeterScopeSetting } from './MeterScopeSetting'
 import { ResistEvidenceSetting } from './ResistEvidenceSetting'
 import type { PrefSection } from './PreferencesView'
@@ -67,6 +68,37 @@ function PetNestingSetting(): JSX.Element {
   )
 }
 
+/**
+ * Show YOUR name instead of "You" on the damage meters (owner ask). OFF by default: the engine
+ * folds every self reference to "You" and that is what the meters have always shown; this only
+ * swaps the DISPLAY of the self row — `Primitive (You)` — on the Combat tab, the Overview Damage
+ * card and the floating overlay meter, and "Copy this view" matches that. The " (You)" tag stays
+ * because a group-mate could share the name. Everything else (timeline, heals, alerts) is unchanged.
+ */
+function SelfNameSetting(): JSX.Element {
+  const [on, setOn] = useSelfMeterNameToggle()
+  return (
+    <Stack spacing={1}>
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={on}
+            data-testid="pref-self-meter-name"
+            onChange={(e) => setOn(e.target.checked)}
+          />
+        }
+        label={<Typography variant="body2">Show my character name instead of “You”</Typography>}
+      />
+      <Typography variant="caption" color="text.secondary">
+        {on
+          ? 'Your row on the damage meters reads “your character’s name (You)”. Timeline, healing and alerts still say “You”.'
+          : 'Your row on the damage meters reads “You”.'}
+      </Typography>
+    </Stack>
+  )
+}
+
 /** Scope first, then layout: whose damage the meters show, and where the pet's sits inside it. */
 export function combatSection(): PrefSection {
   return {
@@ -96,6 +128,13 @@ export function combatSection(): PrefSection {
         keywords:
           'resist resists resistance evidence npc mob creature pet pets charm charmed caster casters learn mine mined data mob page con card magic fire cold poison disease sample samples',
         content: <ResistEvidenceSetting />
+      },
+      {
+        id: 'self-meter-name',
+        label: 'Show my character name instead of “You”',
+        keywords:
+          'self you your name character meter meters overlay combat dps row label who am i my name identity personal',
+        content: <SelfNameSetting />
       }
     ]
   }

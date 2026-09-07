@@ -321,6 +321,26 @@ test('formatSegmentText (incoming) uses the incoming totals and appends the heal
   assert.ok(fits(text))
 })
 
+// ── the self-name preference (eq.combat.selfMeterName) ──────────────────────────────
+
+test('a selfLabel relabels the self row at every copy level, and the default is byte-identical', () => {
+  // Pref ON: "Copy this view" threads `<Char> (You)` through so a paste matches the meter. Every
+  // `kind: 'you'` row takes it — here both YOU and the grouped ALLY fixture; the real engine emits
+  // one. The Source column is a char narrower: `Primitive (You)` (15) < `Grinn Frostbeard` (16).
+  // The self rows (1, and the grouped-ALLY fixture 3) now read `Primitive (You)`; `kind:'pet'` row 2 does not.
+  const seg = formatSegmentText(SEG, 'out', 'Primitive (You)').split('\n')
+  assert.equal(seg.slice(3, 7).join('\n'), '   Source           Total      DPS  Crit  Hit  Resist\n1  Primitive (You)  31.2k  375 dps   12%  82%     29%\n2  Vebarn (pet)      9.0k  108 dps        77%\n3  Primitive (You)   5.0k   60 dps')
+  // Entity drill: the subject line takes the label, the body is otherwise the un-labelled golden.
+  const ent = formatEntityText(SEG, YOU, [], 'Primitive (You)')
+  assert.ok(ent.startsWith('Primitive (You) - a deadly black widow +2 · 1:23\n'))
+  assert.equal(ent.split('\n').slice(1).join('\n'), formatEntityText(SEG, YOU).split('\n').slice(1).join('\n'))
+  // A non-self (`kind: 'pet'`) subject keeps its own name even when a selfLabel is passed.
+  assert.ok(formatEntityText(SEG, PET, [], 'Primitive (You)').startsWith('Vebarn (pet) - '))
+  // The default (omitted / null) path is byte-identical — every existing golden still holds.
+  assert.equal(formatSegmentText(SEG, 'out', null), formatSegmentText(SEG, 'out'))
+  assert.equal(formatEntityText(SEG, YOU, [], null), formatEntityText(SEG, YOU))
+})
+
 // ── level 2: one source ─────────────────────────────────────────────────────────────
 
 test('formatEntityText is the flat skill list, slay grouped, with the rounds footer', () => {

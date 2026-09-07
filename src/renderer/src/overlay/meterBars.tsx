@@ -16,12 +16,15 @@
 // @mui/* into this bundle. petRows/dashboardData/landEvidence are pure TS and import legally.
 
 import { type JSX, useMemo } from 'react'
-import type { OverlayDrill } from '@shared/types'
+import type { OverlayDrill, CharacterSnap } from '@shared/types'
 import { type DamageCategory, type SegmentView, type SourceView } from '@shared/combat'
 import { formatNum as fmt, formatRate } from '../lib/formatRate'
 import { type FlatSkill, type SkillRow } from '../features/combat/dashboardData'
 import { laneDps, meterPanel, type MeterPanel, type OwnRow, type PetRow } from '../features/combat/petRows'
 import { useCombinePetRow } from '../features/combat/useCombatPrefs'
+import { useOverlayModule } from './useOverlayModule'
+import { selfMeterLabel, withSelfLabel } from '../features/combat/selfMeterLabel'
+import { useShowSelfName } from '../features/combat/useSelfMeterName'
 import { scopeSources } from '../features/combat/meterScope'
 import { landEvidence } from '../features/combat/landEvidence'
 import { MeterCrumb, type CrumbTotal } from './meterCrumb'
@@ -40,6 +43,9 @@ import type { MeterScope, RosterSnap } from '@shared/roster'
  * the aggregate is the one number on this surface that is emphatically NOT yours.
  */
 const ACCENT = '#d9b25f'
+
+// The empty `character` snapshot — same shape `XpOverlay.tsx` draws until the module lands.
+const NO_CHARACTER: CharacterSnap = { character: null }
 
 const KIND_COLOR: Record<string, string> = {
   you: '#d9b25f',
@@ -373,10 +379,18 @@ export function MeterBars({
   // The SAME preference the Combat tab reads, out of the same localStorage key — one origin, one
   // store, and a 'storage' event when the other window's Preferences tab writes it.
   const [combine] = useCombinePetRow()
+  // The self row as the character's own name — the SAME pref and the SAME localStorage key the
+  // Combat tab reads (one origin, one store, a 'storage' event when Preferences writes it).
+  const selfName = useOverlayModule<CharacterSnap>('character', NO_CHARACTER).character?.name ?? null
+  const selfLabel = selfMeterLabel(selfName, useShowSelfName())
   // …and the SAME scope filter, out of the same shared module (features/combat/meterScope). It
   // returns the identical array by reference when nothing is filtered out, so a solo session
   // pays nothing and this memo does not churn.
-  const entities = useMemo(() => scopeSources(seg?.entities ?? [], scope, roster), [seg, scope, roster])
+  const scoped = useMemo(() => scopeSources(seg?.entities ?? [], scope, roster), [seg, scope, roster])
+  // The self relabel rides on top — `withSelfLabel` returns `scoped` BY REFERENCE when the label
+  // is null (pref off, or the name not known yet) or no row is the self row, so the default path
+  // is reference-stable and this memo does not churn either.
+  const entities = useMemo(() => withSelfLabel(scoped, selfLabel), [scoped, selfLabel])
   // No drill of our own ⇒ LEVEL 1, the ranked source list — the same thing `null` means on the
   // Combat tab (JOS-35). A drill that resolves to nothing renders level 1 for THIS render only:
   // `meterPanel` never touches the stored value, so a restored `pet:<instanceId>` from a past

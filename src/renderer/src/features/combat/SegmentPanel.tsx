@@ -22,6 +22,10 @@ import { SegmentHeader } from './SegmentHeader'
 import { meterPanel, panelTotals, type MeterPanel } from './petRows'
 import { scopeSources, scopeTotals } from './meterScope'
 import { useCombinePetRow } from './useCombatPrefs'
+import { useModule } from '../../lib/useModule'
+import { selfMeterLabel, withSelfLabel } from './selfMeterLabel'
+import { useShowSelfName } from './useSelfMeterName'
+import type { CharacterSnap } from '@shared/types'
 import { formatEntityText, formatSegmentText, formatTargetText } from './copyText'
 import { formatNum as fmt } from '../../lib/formatRate'
 import type { SegmentView, SourceView, TimelineView } from '@shared/combat'
@@ -304,8 +308,16 @@ export function SegmentBody({
   // persist because they are answers a user would have to re-derive; a tab is one click.)
   const [tab, setTab] = useState<MeterTab>('damage')
   const dim = scopedDimension(seg, mode, scope, roster)
-  const scoped = dim.rows
   const [combinePetRow] = useCombinePetRow()
+  // Show the self row as the tailed character's own name — `Primitive (You)` — when the user
+  // asked for it (features/combat/selfMeterLabel.ts). Off by default: `withSelfLabel` hands back
+  // `dim.rows` by reference, so this surface is byte-identical to before the feature.
+  // The relabel is applied for EVERY `mode`, not just `'out'`, on purpose: a `kind === 'you'` row
+  // on the Incoming (attackers) list is nearly impossible, and if one ever appears the
+  // `<Char> (You)` label is still the correct thing to show for it.
+  const selfName = useModule<CharacterSnap>('character')?.character?.name ?? null
+  const selfLabel = selfMeterLabel(selfName, useShowSelfName())
+  const scoped = withSelfLabel(dim.rows, selfLabel)
   // THE one row builder — the same call the floating overlay makes (petRows.meterPanel). Nesting
   // is an OUTGOING idea: the Incoming direction lists enemies, and none of them owns a pet of
   // yours, so the preference is folded into the `combine` argument rather than tested downstream.
@@ -331,14 +343,19 @@ export function SegmentBody({
   // tab happened to be open, which is exactly how a paste starts lying about the fight. Dropping
   // mitigation from the paste would also silently retire the one place JOS-354's answer is
   // shareable. The tab decides what is on SCREEN; the clipboard still gets the whole direction.
-  const copyView = (): string =>
-    panel.level !== 1
-      ? // The SAME pets the body nests into this list — `MeterPanel.pets` IS what was nested,
-        // so the clipboard can no longer drop a row the reader can see on screen.
-        formatEntityText(seg, panel.subject, panel.pets)
-      : d.targetDetail && d.targetName
-        ? formatTargetText(seg, d.targetName, d.targetDetail)
-        : formatSegmentText(seg, mode === 'in' ? 'in' : 'out')
+  const copyView = (): string => {
+    if (panel.level !== 1) {
+      // Copy carries the SAME self-label the meter shows (`<Char> (You)` when the pref is on,
+      // `You` when off) at every drill level — `sourceName` applies it to the `kind === 'you'`
+      // row regardless of the subject's `.name`, keeping `copyText` a pure function of its args.
+      // The SAME pets the body nests into this list — `MeterPanel.pets` IS what was nested, so the
+      // clipboard can no longer drop a row the reader can see on screen.
+      return formatEntityText(seg, panel.subject, panel.pets, selfLabel)
+    }
+    return d.targetDetail && d.targetName
+      ? formatTargetText(seg, d.targetName, d.targetDetail)
+      : formatSegmentText(seg, mode === 'in' ? 'in' : 'out', selfLabel)
+  }
 
   return (
     // Grid-cell sizing, exactly like DashCard's `fill`: 100% of the cell, zero intrinsic

@@ -33,6 +33,19 @@ import type { CharacterRef, OverlayKind } from '../shared/types'
 export const MODULE_READING_OVERLAYS: OverlayKind[] = ['events', 'buffs', 'debuffs', 'xp', 'respawn']
 
 /**
+ * Overlays that need the "character switched — re-hydrate" signal but NOT the ~10x/s module delta
+ * firehose (`dataServer/serveDeltas.ts` `sendToModuleOverlays(IPC.onModuleChanged, …)`): the
+ * damage-meter overlay (kind 'fight' / 'overall') reads exactly one field of the `character`
+ * module — `character.name`, for its self-row label (renderer
+ * `features/combat/selfMeterLabel.ts`) — and that changes ONLY on a character switch, a rare
+ * event. So it wants the rebuild signal `sendWorldRebuilt` carries (a mid-session switch, and the
+ * cold-start race where the mount-time snapshot resolves before `character` is populated) and
+ * nothing else. Kept a superset of `MODULE_READING_OVERLAYS` so "who is told the world was
+ * rebuilt" stays one list.
+ */
+export const CHARACTER_AWARE_OVERLAYS: OverlayKind[] = [...MODULE_READING_OVERLAYS, 'fight', 'overall']
+
+/**
  * Push to every overlay window that reads modules.
  *
  * An overlay window that reads a module needs BOTH halves of the transport the main window has
@@ -62,15 +75,28 @@ export function sendToModuleOverlays(channel: string, ...args: unknown[]): void 
 }
 
 /**
+ * Push to every overlay that is character-aware — the module-reading set PLUS the damage meter
+ * ('fight' / 'overall'). Used only for the rebuild / character-switch signal below, never for the
+ * per-cursor firehose: see `CHARACTER_AWARE_OVERLAYS`.
+ */
+export function sendToCharacterAwareOverlays(channel: string, ...args: unknown[]): void {
+  for (const kind of CHARACTER_AWARE_OVERLAYS) {
+    const w = getOverlayWindow(kind)
+    if (w && !w.isDestroyed()) w.webContents.send(channel, ...args)
+  }
+}
+
+/**
  * "The world for this character was rebuilt — re-hydrate." ONE call, every window that folds a
- * module: the main window and the module-reading overlays.
+ * module: the main window, the module-reading overlays, and the damage meter overlay, which reads
+ * `character.name` alone for its self-row label (`CHARACTER_AWARE_OVERLAYS`).
  *
  * Every `log:character` send in this process goes through here, so "who is told the world was
  * rebuilt" is answered in one place rather than at each call site — which is precisely how the
  * overlays came to be missing from it (JOS-172).
  *
  * A TIMED SEAM (JOS-458). It fires in the minute after a fold and its cost is a FAN-OUT: one
- * `webContents.send` per open module-reading window, each of which serializes the payload and
+ * `webContents.send` per open character-aware window, each of which serializes the payload and
  * wakes a renderer that immediately asks for a full snapshot back. The bracket covers OUR half
  * (the sends), never the renderers' work, so a large number here is main's own bill and nobody
  * else's.
@@ -78,7 +104,7 @@ export function sendToModuleOverlays(channel: string, ...args: unknown[]): void 
 export function sendWorldRebuilt(character: CharacterRef | null): void {
   timeSeam('worldRebuilt', () => {
     sendToMain(IPC.onCharacter, character)
-    sendToModuleOverlays(IPC.onCharacter, character)
+    sendToCharacterAwareOverlays(IPC.onCharacter, character)
   })
   // …AND ANYTHING IN-PROCESS THAT NEEDS THE SAME NEWS (JOS-479). See `setWorldRebuiltObserver`.
   worldRebuiltObserver?.(character)

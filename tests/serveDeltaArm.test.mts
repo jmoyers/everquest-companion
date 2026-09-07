@@ -183,6 +183,60 @@ test('the cursor fan-out reaches the SAME windows the increments do', () => {
 })
 
 
+// ── the character-switch signal reaches the damage-meter overlay too (self-row name) ───────
+//
+// The damage meter overlay (kind 'fight' / 'overall') reads `character.name` for its self-row
+// label (renderer features/combat/selfMeterLabel.ts, wired in overlay/meterBars.tsx). It is NOT in
+// MODULE_READING_OVERLAYS, so before this it only ever got its ONE mount-time getModuleSnapshot:
+// a character switch mid-session left it on the stale name forever, and a cold-start race left the
+// feature silently doing nothing. The fix routes the world-rebuilt / onCharacter signal — and ONLY
+// that, not the ~10x/s cursor firehose — to 'fight' + 'overall'.
+
+test('the world-rebuilt signal reaches the damage-meter overlay, without widening the cursor firehose', () => {
+  const mod = code('../src/main/worldRebuilt.ts')
+
+  // The character-aware list is the module-reading set PLUS the two meter kinds — built FROM
+  // MODULE_READING_OVERLAYS, never a hand-copied literal (JOS-172's lesson, one list).
+  assert.match(
+    mod,
+    /CHARACTER_AWARE_OVERLAYS:\s*OverlayKind\[\]\s*=\s*\[\.\.\.MODULE_READING_OVERLAYS,\s*'fight',\s*'overall'\]/,
+    'CHARACTER_AWARE_OVERLAYS must extend MODULE_READING_OVERLAYS with fight + overall'
+  )
+
+  // sendWorldRebuilt sends onCharacter through the character-aware fan-out, NOT the module set.
+  const body = /export function sendWorldRebuilt\([\s\S]*?\n\}/.exec(mod)
+  assert.ok(body, 'sendWorldRebuilt not found')
+  assert.match(body[0], /sendToCharacterAwareOverlays\(IPC\.onCharacter, character\)/)
+  assert.doesNotMatch(body[0], /sendToModuleOverlays\(/, 'the rebuild still uses the module-only fan-out')
+  assert.match(body[0], /timeSeam\('worldRebuilt'/, 'the perf seam bracket was dropped')
+
+  // The character-aware helper iterates the character-aware list; the module helper is untouched.
+  const aware = /export function sendToCharacterAwareOverlays\([\s\S]*?\n\}/.exec(mod)
+  assert.ok(aware, 'sendToCharacterAwareOverlays not found')
+  assert.match(aware[0], /for \(const kind of CHARACTER_AWARE_OVERLAYS\)/)
+  assert.match(aware[0], /getOverlayWindow\(kind\)/)
+  assert.match(aware[0], /!w\.isDestroyed\(\)/)
+  assert.match(aware[0], /w\.webContents\.send\(channel, \.\.\.args\)/)
+
+  const moduleFanout = /export function sendToModuleOverlays\([\s\S]*?\n\}/.exec(mod)
+  assert.ok(moduleFanout, 'sendToModuleOverlays not found')
+  assert.match(moduleFanout[0], /for \(const kind of MODULE_READING_OVERLAYS\)/)
+  assert.doesNotMatch(
+    moduleFanout[0],
+    /CHARACTER_AWARE_OVERLAYS|'fight'|'overall'/,
+    'the ~10x/s cursor firehose must NOT gain the meter overlay'
+  )
+})
+
+test('the ~10x/s cursor firehose still targets the module-reading set only, not the meter overlay', () => {
+  // serveDeltas.ts drives IPC.onModuleChanged (the cursor bump, up to ~10x/s). It must keep using
+  // the module-only fan-out — the meter overlay reads character.name, which never bumps a cursor.
+  const mod = code('../src/main/dataServer/serveDeltas.ts')
+  assert.match(mod, /sendToModuleOverlays\(IPC\.onModuleChanged, frame\)/)
+  assert.doesNotMatch(mod, /sendToCharacterAwareOverlays|CHARACTER_AWARE_OVERLAYS/)
+})
+
+
 test('a cursor from a replaced connection, or from an engine that is not serving reads, is not forwarded', () => {
   const host = code('../src/main/dataServer/engineClientHost.ts')
   const listener = /client\.onModuleChanged\(\(changed\) => \{([\s\S]*?)\n {2}\}\)/.exec(host)
