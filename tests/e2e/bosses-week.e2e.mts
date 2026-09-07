@@ -112,6 +112,7 @@ import {
 } from './appHarness.mjs'
 import { launchOnRealInstall, mainWindow, makeUserData, removeUserData } from './appWindow.mjs'
 import { stepLoadoutSectionsAreHonest } from './loadoutSectionSteps.mjs'
+import { stepManualClearPersists, stepManualClearSurvivedRestart } from './manualClearSteps.mjs'
 
 const NAV_BOSSES = '[data-testid="nav-bosses"]'
 const NAV_OVERVIEW = '[data-testid="nav-overview"]'
@@ -639,12 +640,6 @@ async function stepOverallSticksToo(page: Page): Promise<void> {
   check('…with no ladder on it', (await countOf(page, LADDER)) === 0)
 }
 
-/** Leave it on This week for launch 2. */
-async function stepArmRestart(page: Page): Promise<void> {
-  const picked = await setMode(page, MODE_WEEK, 'week')
-  check('the tab is left on This week for the restart check', picked === 'week', String(picked))
-}
-
 /** THE RESTART: a second process, the same userData dir, the same tab. */
 async function stepSurvivesRestart(page: Page): Promise<void> {
   if (!check('the Bosses tab opens after a restart', await openBosses(page))) return
@@ -653,6 +648,7 @@ async function stepSurvivesRestart(page: Page): Promise<void> {
   check('…and the stored choice crossed the process boundary intact', (await storedMode(page)) === 'week')
   const ladders = await settle(() => countOf(page, LADDER), (n) => n > 0, { timeoutMs: 30_000 })
   check('…and the difficulty ladders are drawn on the tab it opened on', ladders > 0, String(ladders))
+  await stepManualClearSurvivedRestart(page)
 }
 
 async function main(): Promise<void> {
@@ -664,9 +660,8 @@ async function main(): Promise<void> {
   try {
     console.log('launch 1: a fresh install - the default, the ladder, and both round trips…')
     const first = await launchOnRealInstall({ userData }, 'launch 1')
-    let page: Page | null = null
     try {
-      page = await mainWindow(first.app)
+      const page = await mainWindow(first.app)
       await page.waitForSelector(NAV_OVERVIEW, { timeout: 60_000 })
       if (!check('the Bosses tab opens', await openBosses(page))) {
         throw new Error('never reached the Bosses tab - nothing below can be asserted')
@@ -675,7 +670,11 @@ async function main(): Promise<void> {
       await stepWeekSticksAcrossTabs(page)
       await stepOverallSticksToo(page)
       await stepLoadoutSectionsAreHonest(page)
-      await stepArmRestart(page)
+      // Back to This week BEFORE the manual-clear step: the d0 rung renders only in the week
+      // view, and launch 2 needs the tab left on it too. Nothing below moves the mode.
+      const armed = await setMode(page, MODE_WEEK, 'week')
+      check('the tab is left on This week for the restart check', armed === 'week', String(armed))
+      await stepManualClearPersists(page)
       if (failures.length) await dumpArtifacts(page, 'bosses-week-FAIL')
     } finally {
       await first.close()
@@ -683,9 +682,8 @@ async function main(): Promise<void> {
 
     console.log('launch 2: the SAME userData dir, a new process - This week must still be there…')
     const second = await launchOnRealInstall({ userData }, 'launch 2')
-    let restarted: Page | null = null
     try {
-      restarted = await mainWindow(second.app)
+      const restarted = await mainWindow(second.app)
       await restarted.waitForSelector(NAV_OVERVIEW, { timeout: 60_000 })
       await stepSurvivesRestart(restarted)
       if (failures.length) await dumpArtifacts(restarted, 'bosses-week-restart-FAIL')

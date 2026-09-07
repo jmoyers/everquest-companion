@@ -244,6 +244,26 @@ mod tests {
         // …and a line that states none omits the key rather than saying zero.
         let out = parse_one(&p, "[Wed Aug 19 16:21:54 2026] You gain experience!");
         assert!(out.ends_with(r#""party":false}"#), "{out}");
+
+        // EQ Legends prints a ` (with a bonus)` infix on ~99% of real XP lines (raid log
+        // sweep 2026-09-06). It sits between `experience` and `!`; the percent, when stated,
+        // still trails. All four combinations are the same event as their plain twin.
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You gain experience (with a bonus)! (0.092%)",
+        );
+        assert!(out.starts_with(r#"{"kind":"expGain","#), "{out}");
+        assert!(out.ends_with(r#""party":false,"pct":0.092}"#), "{out}");
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You gain party experience (with a bonus)! (1%)",
+        );
+        assert!(out.ends_with(r#""party":true,"pct":1}"#), "{out}");
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You gain experience (with a bonus)!",
+        );
+        assert!(out.ends_with(r#""party":false}"#), "{out}");
     }
 
     #[test]

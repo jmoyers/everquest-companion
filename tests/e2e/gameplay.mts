@@ -68,7 +68,7 @@ function bursts(): { back: number; lines: string[] }[] {
         swing('slash', hits[7]),
         swing('crush', hits[8]),
         swing('slash', hits[9]),
-        'You gain experience!  (1.23%)',
+        'You gain experience! (1.23%)',
         `You have slain ${PULL_TARGET}!`
       ]
     }
@@ -284,5 +284,5 @@ export function playLootDrops(log: FixtureLog): number {
  * ASSERTED rather than noted.
  */
 export function playKill(log: FixtureLog): number {
-  return log.append('You gain experience!  (2.50%)', `You have slain ${PULL_TARGET}!`)
+  return log.append('You gain experience! (2.50%)', `You have slain ${PULL_TARGET}!`)
 }

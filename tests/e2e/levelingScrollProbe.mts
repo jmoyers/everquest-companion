@@ -405,7 +405,7 @@ async function runArm(
 function startAppending(log: FixtureLog): () => number {
   let written = 0
   const timer = setInterval(() => {
-    written += log.append('You gain experience!  (0.42%)', 'You have slain a fire giant warrior!')
+    written += log.append('You gain experience! (0.42%)', 'You have slain a fire giant warrior!')
   }, 250)
   return () => {
     clearInterval(timer)

@@ -3,7 +3,7 @@
 //
 // The derivation is `tierLadder` (lockout.ts), which also carries the whole argument for what the
 // log can and cannot state about a difficulty. This file is the drawing, and it makes exactly
-// three decisions of its own:
+// four decisions of its own:
 //
 // 1. ONE GREEN, NOT THE TIER PALETTE. Every other tier surface in the app paints d0..d4 in their
 //    own colours (lib/tierChip.ts), and reusing them here would be actively wrong: D0's swatch
@@ -29,35 +29,88 @@
 //    chips answer in its place. A rung with nothing to add (an open one) gets NO `title`
 //    attribute at all — `rungTitle` returns `undefined`, which React omits, where `''` would be
 //    a present-and-empty attribute that also swallows the card's own tooltip.
+//
+// 4. THE BASE RUNG IS CLICKABLE IN THE WEEK VIEW (section 2a). When a credited open-world/unknown
+//    kill of this target landed this week, BossView hands the d0 rung a `canMark` gate and an
+//    `onMark` toggle: an OPEN rung then wears a dashed border as an affordance hint and marks
+//    itself cleared on click, stopping propagation so the card's mob page stays shut. A
+//    hand-marked rung draws as an ordinary solid-green rung — `data-manual="1"` is a test tell,
+//    not a visual one (owner ruling 2).
 
-import type { JSX } from 'react'
-import { Box, Stack } from '@mui/material'
+import type { JSX, MouseEvent } from 'react'
+import { Box, Stack, type SxProps, type Theme } from '@mui/material'
 import { rungTitle, type LadderRung } from './lockout'
 import { tierStyle } from '../../lib/tierChip'
 
-function Rung({ rung, size }: { rung: LadderRung; size: number }): JSX.Element {
+// The rung's box: a yes/no fill (never the tier palette — see 1 above), plus, on an OPEN clickable
+// d0 rung, the dashed border + hover that hint the affordance. A cleared rung is solid green
+// whether it was derived or hand-marked (owner ruling 2).
+function rungSx(rung: LadderRung, size: number, clickable: boolean): SxProps<Theme> {
+  return {
+    flex: '1 1 0',
+    minWidth: 0,
+    height: size,
+    lineHeight: `${String(size - 2)}px`,
+    borderRadius: 0.5,
+    border: '1px solid',
+    borderColor: rung.cleared ? 'success.main' : 'divider',
+    bgcolor: rung.cleared ? 'success.main' : 'transparent',
+    color: rung.cleared ? 'background.default' : 'text.disabled',
+    fontWeight: 700,
+    fontSize: size > 15 ? 10 : 9,
+    textAlign: 'center',
+    letterSpacing: '-0.02em',
+    userSelect: 'none',
+    cursor: clickable ? 'pointer' : 'inherit',
+    ...(clickable && !rung.cleared
+      ? { borderStyle: 'dashed', '&:hover': { borderColor: 'success.main' } }
+      : {})
+  }
+}
+
+/**
+ * The d0 hand-mark affordance for the week view (section 2a). Absent ⇒ the base rung is inert.
+ * One object rather than a `canMark`/`onToggle` pair so the three components between here and
+ * `BossView` forward one prop, not two.
+ */
+export interface BaseRungMark {
+  /** the gate: a credited open-world/unknown kill of this target landed this lockout week. */
+  canMark: boolean
+  /** flip the mark (BossView's toggle, already bound to this target and the week). */
+  onToggle: () => void
+}
+
+function Rung({
+  rung,
+  size,
+  canMark,
+  onMark
+}: {
+  rung: LadderRung
+  size: number
+  /** the base (d0) rung only, in the week view, when a credited open-world/unknown kill of this
+      target landed this week (BossView computes it). */
+  canMark?: boolean
+  onMark?: () => void
+}): JSX.Element {
   const label = tierStyle(rung.tier).label
+  const clickable = canMark === true && onMark !== undefined
+  const onClick = clickable
+    ? (e: MouseEvent) => {
+        // the card under it opens the mob page; a rung toggle must not.
+        e.stopPropagation()
+        onMark()
+      }
+    : undefined
   return (
     <Box
       data-testid={`boss-rung-d${String(rung.tier)}`}
       data-cleared={rung.cleared ? '1' : '0'}
-      title={rungTitle(rung)}
-      sx={{
-        flex: '1 1 0',
-        minWidth: 0,
-        height: size,
-        lineHeight: `${String(size - 2)}px`,
-        borderRadius: 0.5,
-        border: '1px solid',
-        borderColor: rung.cleared ? 'success.main' : 'divider',
-        bgcolor: rung.cleared ? 'success.main' : 'transparent',
-        color: rung.cleared ? 'background.default' : 'text.disabled',
-        fontWeight: 700,
-        fontSize: size > 15 ? 10 : 9,
-        textAlign: 'center',
-        letterSpacing: '-0.02em',
-        userSelect: 'none'
-      }}
+      data-manual={rung.manual ? '1' : undefined}
+      data-can-mark={clickable ? '1' : undefined}
+      title={rungTitle(rung) ?? (clickable ? 'Click to mark this difficulty cleared this week' : undefined)}
+      onClick={onClick}
+      sx={rungSx(rung, size, clickable)}
     >
       {label}
     </Box>
@@ -70,10 +123,13 @@ function Rung({ rung, size }: { rung: LadderRung; size: number }): JSX.Element {
  */
 export default function DifficultyLadder({
   rungs,
-  compact
+  compact,
+  baseMark
 }: {
   rungs: LadderRung[]
   compact: boolean
+  /** week view only: the d0 rung may be hand-marked (see BaseRungMark). */
+  baseMark?: BaseRungMark
 }): JSX.Element {
   return (
     <Stack
@@ -83,7 +139,18 @@ export default function DifficultyLadder({
       sx={{ mt: 0.25, mb: 0.25 }}
     >
       {rungs.map((rung) => (
-        <Rung key={rung.tier} rung={rung} size={compact ? 14 : 18} />
+        <Rung
+          key={rung.tier}
+          rung={rung}
+          size={compact ? 14 : 18}
+          // d0 only, and only while the rung is still togglable: an OPEN rung (mark it), or one
+          // this store marked by hand (undo it). A rung greened by a REAL lock is not ours to
+          // clear — leaving it clickable is a dead no-op click (whole-branch review, Minor 6).
+          canMark={
+            rung.tier === 0 && (!rung.cleared || rung.manual === true) ? baseMark?.canMark : undefined
+          }
+          onMark={rung.tier === 0 ? baseMark?.onToggle : undefined}
+        />
       ))}
     </Stack>
   )

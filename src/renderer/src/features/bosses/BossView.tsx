@@ -22,8 +22,10 @@ import { getBossData } from '../../data'
 import { useBossKills } from './useBossKills'
 import type { BossKill, TargetStatus } from './bossStatus'
 import { CategorySection, LoadoutSections } from './BossSections'
-import { untilReset } from './lockout'
+import { untilReset, hasCreditedAmbiguousKill, type LockoutWindow } from './lockout'
 import { useLockoutWeek } from './useLockoutWeek'
+import { useWeekClears, type WeekClearsApi } from './useWeekClears'
+import { bossClearKey } from './weekClears'
 import { defeatedThisWeek, everDefeated, filterRoster } from './rosterFilter'
 import type { MobTarget } from '../mobs/mobTarget'
 import Confetti from '../../lib/Confetti'
@@ -156,6 +158,27 @@ function BossToolbar({
 }
 
 /**
+ * The per-card manual base-rung bundle for the week view (section 2a). Module scope so BossView's
+ * body stays inside its line budget; the component wraps it in `useMemo` for a stable identity.
+ * `canMarkBase` gates on a credited open-world/unknown kill THIS week; `baseTs` / `onToggleBase`
+ * are the live mark and its toggle, keyed by the roster's name identity.
+ */
+function weekManualClear(
+  weekClears: WeekClearsApi,
+  week: LockoutWindow
+): {
+  baseTs: (s: TargetStatus) => number | undefined
+  canMarkBase: (s: TargetStatus) => boolean
+  onToggleBase: (s: TargetStatus) => void
+} {
+  return {
+    baseTs: (s) => weekClears.liveBaseTs(bossClearKey(s.target.name), week),
+    canMarkBase: (s) => weekClears.canToggle && hasCreditedAmbiguousKill(s.tiers, week),
+    onToggleBase: (s) => weekClears.toggle(bossClearKey(s.target.name), week)
+  }
+}
+
+/**
  * @param onOpenMob  route a roster card to the app-wide mob page (the Mobs tab). This view no
  *                   longer owns a detail surface of its own — one mob, one page, everywhere.
  */
@@ -208,15 +231,17 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
   // — since JOS-237 — the "Defeated only" filter all read this same window. Idle on OVERALL.
   const { week, lockOf } = useLockoutWeek(mode === 'week')
 
+  // The manual base-rung clear (section 2a): one per-card bundle for the week view. `useMemo` only
+  // for a stable identity — the reads inside are cheap (per boss per render, fine at roster scale).
+  const weekClears = useWeekClears()
+  const manualClear = useMemo(() => (mode === 'week' ? weekManualClear(weekClears, week) : undefined), [mode, week, weekClears])
+
   /**
    * WHAT THE SWITCH FILTERS ON, and the whole of JOS-237 (rosterFilter.ts carries the argument).
    * The all-time flag is right for the OVERALL roster and wrong for the week view, which is about
    * this reset week and nothing else — so the predicate is the mode's, not the roster's.
    */
-  const defeated = useMemo(
-    () => (mode === 'week' ? defeatedThisWeek(week) : everDefeated),
-    [mode, week]
-  )
+  const defeated = useMemo(() => (mode === 'week' ? defeatedThisWeek(week) : everDefeated), [mode, week])
 
   const filtered = useMemo(
     () => filterRoster(statuses, { query, defeatedOnly, defeated }),
@@ -248,11 +273,15 @@ export default function BossView({ onOpenMob }: { onOpenMob: (t: MobTarget) => v
     minCol: compact ? 116 : 180,
     flashing,
     onOpenMob,
-    ...(mode === 'week' ? { lockOf } : {})
+    ...(mode === 'week' ? { lockOf, manualClear } : {})
   }
 
+  // `data-week-clears-ready` (week view only): whether useWeekClears has learned the character. A
+  // rung is markable only when it is `true`, so an e2e that finds no markable rung can tell
+  // "nothing eligible this week" (fine) from "the store never bootstrapped" (Critical 1 regressed).
+  const weekClearsReady = mode === 'week' ? String(weekClears.canToggle) : undefined
   return (
-    <Stack spacing={1.5} sx={{ height: '100%', position: 'relative' }}>
+    <Stack data-testid="boss-view" data-week-clears-ready={weekClearsReady} spacing={1.5} sx={{ height: '100%', position: 'relative' }}>
       {burst != null && <Confetti key={burst} onDone={() => setBurst(null)} />}
       <BossToolbar
         mode={mode}

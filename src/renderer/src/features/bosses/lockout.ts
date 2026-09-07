@@ -29,7 +29,7 @@ import type { KillTierRun } from '@shared/types'
 // RELATIVE value imports: this module is unit-tested under node/tsx, which has no `@shared` alias
 // and no bundler (the mobSearch.ts precedent - AGENTS.md, Toolchain gotchas). `formatDate` is a
 // dependency-free date formatter, so it travels here without dragging the renderer in.
-import { DIFFICULTY_TIERS, isDifficultyTier } from '../../../../shared/kills'
+import { DIFFICULTY_TIERS, TIER_OPEN_WORLD, TIER_UNKNOWN, isDifficultyTier } from '../../../../shared/kills'
 import { formatDate } from '../../lib/formatDate'
 
 /**
@@ -182,6 +182,37 @@ export function tierLocks(tiers: Record<number, KillTierRun>, w: LockoutWindow):
   return out
 }
 
+/**
+ * Is there a credited kill of this target this week that the log could NOT tier — an open-world
+ * (`TIER_OPEN_WORLD`) or unstated-zone (`TIER_UNKNOWN`) run whose most recent credited kill is
+ * inside the current window? That is the evidence a manual base-rung mark is allowed to stand on:
+ * you demonstrably killed this boss this week; the mark only adds "it was the base instance"
+ * (section 2a). A real difficulty run is not ambiguous, and a stranger's uncredited open-world
+ * kill is not yours.
+ */
+export function hasCreditedAmbiguousKill(
+  tiers: Record<number, KillTierRun>,
+  w: LockoutWindow
+): boolean {
+  for (const tier of [TIER_OPEN_WORLD, TIER_UNKNOWN]) {
+    const run = tiers[tier]
+    if (run && run.lastCreditedTs >= w.start && run.lastCreditedTs < w.next) return true
+  }
+  return false
+}
+
+/**
+ * A manual base-rung mark counts only while it was made inside the CURRENT lockout week — the same
+ * half-open Pacific week the rest of this file uses. It expires at reset with nothing to sweep:
+ * the stored value is a timestamp, and `lockoutWindow` of it either names this week or it does not.
+ */
+export function manualClearIsLiveThisWeek(
+  markedTs: number | undefined,
+  w: LockoutWindow
+): boolean {
+  return markedTs !== undefined && lockoutWindow(markedTs).start === w.start
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE DIFFICULTY LADDER (JOS-152)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,10 +265,13 @@ export { DIFFICULTY_TIERS }
 export interface LadderRung {
   /** instance difficulty tier (0 = base … 4 = Refined) */
   tier: number
-  /** a credited kill at this difficulty landed inside the current week */
+  /** a credited kill at this difficulty landed inside the current week (or a live manual mark) */
   cleared: boolean
-  /** when that kill landed (ms), or 0 when this rung is open */
+  /** when that kill landed (ms), or the manual mark's timestamp, or 0 when this rung is open */
   ts: number
+  /** the d0 rung was marked cleared by hand rather than derived from a kill (test-visible; the
+      draw is identical — see docs/plans/boss-lockout-credit-and-manual-clear.md section 2a) */
+  manual?: boolean
 }
 
 /**
@@ -249,11 +283,15 @@ export interface LadderRung {
  * five cannot reach here (`tierLocks` drops it), and the `byTier` lookup ignores one anyway
  * rather than inventing a sixth rung.
  */
-export function tierLadder(locks: TierLock[]): LadderRung[] {
+export function tierLadder(locks: TierLock[], manualBaseTs?: number): LadderRung[] {
   const byTier = new Map(locks.map((l) => [l.tier, l.ts]))
   return DIFFICULTY_TIERS.map((tier) => {
-    const ts = byTier.get(tier)
-    return { tier, cleared: ts !== undefined, ts: ts ?? 0 }
+    const lockTs = byTier.get(tier)
+    if (lockTs !== undefined) return { tier, cleared: true, ts: lockTs }
+    if (tier === 0 && manualBaseTs !== undefined) {
+      return { tier, cleared: true, ts: manualBaseTs, manual: true }
+    }
+    return { tier, cleared: false, ts: 0 }
   })
 }
 

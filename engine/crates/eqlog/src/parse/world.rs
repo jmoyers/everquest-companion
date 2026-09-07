@@ -92,7 +92,7 @@ impl WorldRes {
             offer: Regex::new(r"^You offered [0-9,]+ (.+?) to (.+?)\.$").unwrap(),
             trade_done: Regex::new(r"^You complete the trade with (.+?)\.$").unwrap(),
             level: Regex::new(r"^You have gained a level! Welcome to level ([0-9]+)!$").unwrap(),
-            exp: Regex::new(r"^You gain (party )?experience!(?: \(([0-9.]+)%\))?$").unwrap(),
+            exp: Regex::new(r"^You gain (party )?experience(?: \(with a bonus\))?!(?: \(([0-9.]+)%\))?$").unwrap(),
             aa: Regex::new(&format!(
                 r"^You have gained (an|[0-9]+) ability point(?:\(s\))?!{s}+You now have ([0-9]+) ability point"
             ))
