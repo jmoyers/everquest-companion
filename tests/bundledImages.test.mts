@@ -26,7 +26,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, join, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   BUNDLED_IMAGES_DIR_NAME,
@@ -67,7 +67,11 @@ test('bundledImageRoots drops the resources root when there is no resourcesPath'
   // would resolve against whatever the cwd happened to be. It must not be in the list at all.
   const roots = bundledImageRoots({ ...PATHS, resourcesPath: '' })
   assert.equal(roots.length, 3)
-  for (const r of roots) assert.ok(isAbsolute(r), `root is relative and would follow the cwd: ${r}`)
+  // `win32.isAbsolute`, not the platform's: PATHS is win32-shaped, and off Windows the bare
+  // `isAbsolute` reads 'C:/app/...' as relative — it would fail on the fixture, not the code.
+  // The leak this guards still reads relative under win32 rules ('wiki-images'), so it still bites.
+  for (const r of roots)
+    assert.ok(win32.isAbsolute(r), `root is relative and would follow the cwd: ${r}`)
 })
 
 test('findBundledImagesDir returns the FIRST root that exists', () => {
