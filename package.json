@@ -55,7 +55,7 @@
     "@emotion/styled": "^11.13.0",
     "@mui/icons-material": "^6.1.6",
     "@mui/material": "^6.1.6",
-    "@mui/x-data-grid": "^7.22.2",
+    "@mui/x-data-grid": "^9.11.0",
     "chokidar": "^4.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
