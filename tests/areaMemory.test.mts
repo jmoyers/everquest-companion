@@ -1,19 +1,20 @@
 // THE GEAR AREA'S FORM MEMORY — the restart split, and what every stored key does when the value
 // it reads back is rubbish (JOS-329).
 //
-// WHY THIS FILE EXISTS. The ticket persists eleven new fields across four tabs, and every one of
-// them reads from a store the user can edit, a previous build can have written, and a crash can
-// have truncated. `gearPrefs.ts` set the rule the whole area now follows — A STORED VALUE DEGRADES,
-// IT NEVER ERRORS (JOS-105) — and the only way that rule stays true across eleven keys is if each
-// one is driven through its garbage cases by something that runs in a millisecond.
+// WHY THIS FILE EXISTS. The ticket persists eleven new fields across four tabs — thirteen now that
+// the progression planner's Plan tab keeps a role and a reach — and every one of them reads from a
+// store the user can edit, a previous build can have written, and a crash can have truncated.
+// `gearPrefs.ts` set the rule the whole area now follows — A STORED VALUE DEGRADES, IT NEVER ERRORS
+// (JOS-105) — and the only way that rule stays true across thirteen keys is if each one is driven
+// through its garbage cases by something that runs in a millisecond.
 //
 // WHAT IS ASSERTED, in one sentence per claim:
 //
 //   1. THE SPLIT IS DATA. `AREA_FORM_TIER` is the ONE statement of which fields survive a restart,
 //      so the test reads it as a table rather than re-asserting the rule per call site: every
 //      search key is `session`, every structural key is `restart`, and there is no third tier.
-//   2. GARBAGE IN, DEFAULTS OUT — for all eleven keys, over one shared corpus of hostile values
-//      (`GARBAGE`), so a twelfth key added without a sanitizer cannot quietly pass by being
+//   2. GARBAGE IN, DEFAULTS OUT — for every stored key, over one shared corpus of hostile values
+//      (`GARBAGE`), so the NEXT key added without a sanitizer cannot quietly pass by being
 //      forgotten: it has to be added to a table here to be covered.
 //   3. A GOOD VALUE SURVIVES INTACT, which is the half a "never throws" test can accidentally
 //      satisfy by returning the default for everything.
@@ -32,9 +33,11 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { CLASS_ABBRS, MAX_COMBO_SLOTS } from '../src/shared/classCombo'
 import { ITEM_UPGRADE_BASE, normalizeUpgradeState } from '../src/shared/itemUpgrade'
 import { ITEM_MAX_TIER } from '../src/shared/itemStats'
+import { SURVIVABILITY_DEFAULT } from '../src/shared/planner/progressionPlan'
 import { EQUIP_SLOTS } from '../src/shared/planner/types'
 import { WEAPON_PICKS } from '../src/shared/planner/weaponType'
 import { DEFAULT_GEAR_FILTERS, DEFAULT_GEAR_SORT } from '../src/renderer/src/features/gear/gearFilter'
@@ -51,9 +54,15 @@ import {
   sanitizeGearSort,
   sanitizeItemFocus,
   sanitizeOpenGroups,
+  sanitizePlanReach,
+  sanitizePlanRole,
+  sanitizePlanSurvivability,
   sanitizeSearch,
   sanitizeUpgrade,
   tierOf,
+  PLAN_REACHES,
+  PLAN_ROLES,
+  PLAN_SURVIVABILITY_BASE,
   type AreaFormKey,
   type BrowseFormMemory
 } from '../src/renderer/src/features/gear/areaMemory'
@@ -97,7 +106,11 @@ const BROWSE_FALLBACK: BrowseFormMemory = { socket: 'proc', slot: null, trioOnly
 
 test('the restart split is a table, and every key in it is on one of exactly two tiers', () => {
   const keys = Object.keys(AREA_FORM_TIER) as AreaFormKey[]
-  assert.equal(keys.length, 11, 'eleven fields were added by JOS-329 — update this test when a twelfth is')
+  // Eleven fields arrived with JOS-329; the progression planner's two picks (`eq.plan.role`,
+  // `eq.plan.reach`) made thirteen, and its survivability dial makes fourteen. The number is here
+  // so a key added without a row in `READERS` below fails TWICE — once on the count, once on the
+  // coverage sweep.
+  assert.equal(keys.length, 14, 'fourteen fields are stored — update this test when a fifteenth is')
   for (const key of keys) {
     const tier = tierOf(key)
     assert.ok(tier === 'restart' || tier === 'session', `${key} is on an unknown tier ${tier}`)
@@ -124,7 +137,13 @@ test('WHAT YOU CHOSE IS RESTART-SCOPED — including the slider, whose old law s
     'eq.gear.sort',
     'eq.gear.classes',
     'eq.gear.upgrade',
-    'eq.planner.filters'
+    'eq.planner.filters',
+    // The Plan tab's picks. None is typed and none is poked out of a list — they are the shape you
+    // gave the route, so they come back next launch like every other closed-vocabulary pick in
+    // this area. The survivability dial rides with them: a Glass cannon plans glass next launch.
+    'eq.plan.role',
+    'eq.plan.reach',
+    'eq.plan.survivability'
   ]
   for (const key of chosen) assert.equal(tierOf(key), 'restart', `${key} must survive a restart`)
 })
@@ -144,7 +163,7 @@ test('WHAT YOU CHOSE IS RESTART-SCOPED — including the slider, whose old law s
  * opaque group ids. Every OTHER reader has a closed vocabulary and no exemptions at all, which is
  * exactly the property this table makes visible.
  *
- * Driving the table rather than writing eleven near-identical tests is what makes "a new key must
+ * Driving the table rather than writing thirteen near-identical tests is what makes "a new key must
  * be covered" a mechanical requirement instead of a habit.
  */
 interface Reader {
@@ -173,7 +192,13 @@ const READERS: Reader[] = [
   { key: 'eq.planner.open', read: sanitizeOpenGroups, fallback: [], legal: anyIdList },
   { key: 'eq.planner.search', read: sanitizeSearch, fallback: '', legal: anyString },
   { key: 'eq.wishlist.search', read: sanitizeSearch, fallback: '', legal: anyString },
-  { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString }
+  { key: 'eq.character.search', read: sanitizeSearch, fallback: '', legal: anyString },
+  // The Plan tab's two picks. Both are closed vocabularies, so both take NO `legal` exemption:
+  // 'nonsense' is not a role, and the fallback is the fold's own default in each case.
+  { key: 'eq.plan.role', read: sanitizePlanRole, fallback: 'balanced' },
+  { key: 'eq.plan.reach', read: sanitizePlanReach, fallback: 'solo' },
+  // The dps defense dial — a record for the same shape reason as `eq.gear.upgrade` above.
+  { key: 'eq.plan.survivability', read: sanitizePlanSurvivability, fallback: PLAN_SURVIVABILITY_BASE }
 ]
 
 test('every stored key has a reader in this file — a new key cannot be covered by being forgotten', () => {
@@ -360,4 +385,72 @@ test('…and the sanitizer is `normalizeUpgradeState` rather than a second opini
       )
     }
   }
+})
+
+test('the Plan tab`s two picks round-trip, and their vocabularies come from the fold`s own unions', () => {
+  // EVERY member of each vocabulary survives, which is the half a "garbage defaults" sweep cannot
+  // see: a sanitizer that returned its fallback for everything would pass that test and silently
+  // pin every player to a balanced solo route.
+  for (const role of PLAN_ROLES) assert.equal(sanitizePlanRole(role), role)
+  for (const reach of PLAN_REACHES) assert.equal(sanitizePlanReach(reach), reach)
+
+  // The vocabularies themselves are the fold`s, not a second list: `progressionPlan.ts` exports no
+  // runtime spelling of `GearRole`, so `areaMemory.ts` derives one from a `Record` the compiler
+  // checks. Pinned here so a role added to the union and forgotten in that record goes red.
+  assert.deepEqual(
+    [...PLAN_ROLES].sort(),
+    ['balanced', 'dd', 'dot', 'dps', 'dps1h', 'dps2h', 'dualwield', 'healer', 'range', 'tank']
+  )
+  assert.deepEqual([...PLAN_REACHES].sort(), ['group', 'solo'])
+
+  // A value from a build that spelled it differently DEGRADES to the shipped default rather than
+  // reaching the fold, which would read it as a role with no weights table (JOS-105).
+  assert.equal(sanitizePlanRole('TANK'), 'balanced', 'the vocabulary is case-sensitive')
+  assert.equal(sanitizePlanReach('duo'), 'solo', 'a reach nobody measured is not a reach')
+})
+
+test('the stored dial default IS the scorer`s default — two spellings, one number', () => {
+  // `areaMemory.ts` reads `progressionPlan` type-only, so it spells 0.3 rather than importing
+  // `SURVIVABILITY_DEFAULT`; this is the pin that keeps the two from drifting apart.
+  assert.equal(PLAN_SURVIVABILITY_BASE.dial, SURVIVABILITY_DEFAULT)
+})
+
+test('the survivability dial round-trips its whole range, and an off-scale number CLAMPS rather than defaults', () => {
+  // The garbage sweep proves junk defaults; this is the other half — every legal position survives,
+  // both ends included, so a stored Glass cannon does not quietly re-center itself next launch.
+  for (const dial of [0, 0.1, 0.5, 1]) assert.deepEqual(sanitizePlanSurvivability({ dial }), { dial })
+  // A finite number OUTSIDE the scale is a position, exaggerated — the nearest end, not the middle:
+  // defaulting would move a hand-edited 1.2 to the opposite half of the axis it was reaching for.
+  assert.deepEqual(sanitizePlanSurvivability({ dial: 1.2 }), { dial: 1 })
+  assert.deepEqual(sanitizePlanSurvivability({ dial: -0.3 }), { dial: 0 })
+})
+
+test('the 2026-08-15 role widening did not evict a pick anybody already had stored', () => {
+  // THE COMPATIBILITY CLAIM, pinned rather than asserted in a comment. `dps` was in the shipped
+  // vocabulary before the widening and is in this machine`s `eq.plan.role` right now; renaming it to
+  // something tidier (`dpsAny`) would have had the sanitizer answer `balanced` for the owner`s own
+  // stored pick the first time he opened the tab. The four pre-widening spellings still round-trip.
+  for (const stored of ['balanced', 'tank', 'dps', 'healer']) {
+    assert.equal(sanitizePlanRole(stored), stored, `a stored ${stored} still reads as itself`)
+  }
+
+  // …and every NEW spelling round-trips too, which is the half that proves the widening reached the
+  // sanitizer rather than only the union.
+  for (const added of ['dps1h', 'dps2h', 'dualwield', 'range', 'dd', 'dot']) {
+    assert.equal(sanitizePlanRole(added), added)
+  }
+
+  // Near-misses are still not roles. The vocabulary grew; it did not become fuzzy.
+  assert.equal(sanitizePlanRole('1h'), 'balanced')
+  assert.equal(sanitizePlanRole('dual-wield'), 'balanced')
+  assert.equal(sanitizePlanRole('DoT'), 'balanced')
+})
+
+test('the `plan` view is LABELLED Recommended (owner, 2026-08-22) while its id and keys stay `plan`', () => {
+  // Read out of the source, the `telemetryContract.test.mts` way: `appViews.ts` reads a vite define
+  // and cannot be imported under plain node. The label is the one thing the rename changed; the
+  // view id, the `eq.plan.*` keys this file's own table names, and every `plan-*` testid did not.
+  const src = readFileSync(new URL('../src/renderer/src/appViews.ts', import.meta.url), 'utf8')
+  assert.match(src, /^\s*plan: 'Recommended',?\s*$/m, 'VIEW_LABELS.plan is Recommended')
+  assert.ok(Object.keys(AREA_FORM_TIER).some((k) => k.startsWith('eq.plan.')), 'the keys are still eq.plan.*')
 })

@@ -33,6 +33,7 @@ import GearView from './features/gear/GearView'
 // plainly rather than lazily: it is a heading and two sentences, which is cheaper than the code
 // that would defer it.
 import WishlistView from './features/wishlist/WishlistView'
+import PlanView from './features/plan/PlanView'
 import BossView from './features/bosses/BossView'
 import MobsView from './features/mobs/MobsView'
 import MapsView from './features/maps/MapsView'
@@ -148,6 +149,11 @@ function PlainView({
           Exaltations tab's donor names use, so the drill's Back arrow comes home here. */}
       {view === 'wishlist' && <WishlistView key={viewKey} onOpenLoot={routing.openLoot} />}
       {view === 'buffs' && <BuffsView key={viewKey} />}
+      {/* The Plan tab (its place in the gear area's tab bar comes from appViews, not this list).
+          Its routes out (user rulings, 2026-08-18): item names to the Loot drill-down, zone chips
+          and run headings to the Maps tab, and a named witness mob's name to the mob's own page.
+          One line on purpose: this file sits at its 400-code-line ceiling and every mount pays from it. */}
+      {view === 'plan' && <PlanView key={viewKey} onOpenLoot={routing.openLoot} onOpenMob={routing.openMob} onOpenMapZone={routing.openMapZone} />}
       {/* Respawn clocks (JOS-194). Character-scoped like the rest: the remount `key` is the
           whole contract, since the watch list lives in the store and the clocks are re-derived
           by the fold the character switch kicks off. */}
