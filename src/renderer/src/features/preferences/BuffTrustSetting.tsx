@@ -12,17 +12,25 @@
 // empty state means rather than leaving it to be inferred, because "why do I not see their buffs"
 // is the question this control exists to answer.
 //
+// AND ONE SWITCH (upstream issue #69): count a debuff your held weapon or item procs as yours. The
+// game prints no line when an item procs, so the engine reads two other facts instead — your own
+// swing at that mob in the last two seconds, and the spell being a combat effect of an item your
+// latest inventory dump holds. Off by default; the caption says why, because the residual (anyone's
+// landing of that spell on a mob you are hitting reads as yours) is the user's to accept, not the
+// app's.
+//
 // ONE BORDER: PreferencesView already wraps each item in an outlined Paper, so this renders bare
 // Stacks.
 
 import { type JSX, useCallback, useState } from 'react'
-import { Button, Chip, Stack, TextField, Typography } from '@mui/material'
+import { Button, Chip, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material'
 import GroupIcon from '@mui/icons-material/Group'
 import {
   addExternalCaster,
   MAX_CASTER_NAME_CHARS,
   MAX_EXTERNAL_CASTERS,
   removeExternalCaster,
+  setProcDebuffs,
   type BuffTrustPrefs
 } from '@shared/buffTrust'
 import { recordPref, usePrefsSeed } from './prefsHydration'
@@ -109,6 +117,26 @@ export function BuffTrustSetting(): JSX.Element {
           ? 'Empty, so the bars show only spells you cast. A landing message names no caster, so without a name here there is no way to tell your work from a stranger`s in a crowded zone.'
           : 'Their casts appear on the same bars as yours. Learned durations stay separate: their spell timers come from their gear and abilities, not yours.'}
       </Typography>
+
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            data-testid="pref-buff-trust-procs"
+            checked={prefs.procDebuffs}
+            onChange={(e) => {
+              update(setProcDebuffs(prefs, e.target.checked))
+            }}
+          />
+        }
+        label="Count debuffs your weapon or item procs as yours"
+      />
+      <Typography variant="caption" color="text.secondary" data-testid="pref-buff-trust-procs-note">
+        A proc prints no cast line, so a landing counts only on a mob you swung at in the last two seconds, and only
+        for a combat effect of an item in your latest /outputfile inventory. Any landing of that spell on a mob you are
+        hitting is counted as yours, including a group member`s cast, click or proc of the same spell, which is why this
+        is off by default.
+      </Typography>
     </Stack>
   )
 }
@@ -130,7 +158,7 @@ export function buffTrustSection(): PrefSection {
         id: 'buff-trust',
         label: 'Track other casters',
         keywords:
-          'buff buffs debuff debuffs timer timers bar bars mez mesmerize charm slow snare root overlay other caster casters group party friend enchanter cleric shaman missing not showing hidden allow allowlist trust duration durations',
+          'buff buffs debuff debuffs timer timers bar bars mez mesmerize charm slow snare root overlay other caster casters group party friend enchanter cleric shaman missing not showing hidden allow allowlist trust duration durations proc procs weapon item tash tashania orb inventory',
         content: <BuffTrustSetting />
       }
     ]

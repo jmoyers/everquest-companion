@@ -24,7 +24,8 @@
 // world re-applies whatever it was last told at every attach, and a switch is one push rather than
 // a reconciliation.
 
-import { getAlerts, getBuffTrustPrefs, getComboCorrections, getRosterEdits } from '../store'
+import { heldProcSpells } from '../itemLookup'
+import { getAlerts, getBuffTrustPrefs, getComboCorrections, getProgress, getRosterEdits } from '../store'
 import { getRespawnPrefs } from '../storeRespawn'
 import { activeCharId } from '../session'
 import type { DefineOp, DefineParams } from './definePush'
@@ -45,8 +46,14 @@ export function readDefine<O extends DefineOp>(op: O): DefineParams<O> {
   switch (op) {
     case 'alerts.define':
       return { defs: getAlerts() } as unknown as DefineParams<O>
+    // The stored preference, plus the one fact the engine's proc gate needs that lives nowhere in
+    // the store: the combat effects of the items the latest inventory dump says are held (upstream
+    // issue #69). Derived here at push time so a re-read dump re-arms the gate on the next push
+    // (`loadInventoryNow`, `reloadInventory`) and nothing about a bag is ever persisted as trust.
     case 'buffTrust.define':
-      return { trust: getBuffTrustPrefs() } as unknown as DefineParams<O>
+      return {
+        trust: { ...getBuffTrustPrefs(), procSpells: [...heldProcSpells(getProgress(activeCharId()).inventory ?? {})] }
+      } as unknown as DefineParams<O>
     case 'respawn.define':
       return { prefs: getRespawnPrefs() } as unknown as DefineParams<O>
     case 'combo.define':

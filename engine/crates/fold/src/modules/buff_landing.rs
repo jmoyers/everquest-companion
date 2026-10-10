@@ -1,11 +1,15 @@
 //! The landing gate: what, if anything, does a landing sentence entitle the model to draw?
 //!
-//! Four cases, in order.
+//! Five cases, in order.
 //!
 //!   1. A named anchor wins. `You begin casting <S>.` names the spell and the rank, so a candidate
 //!      with one in window resolves to THAT CANDIDATE'S DB NAME. The rank is kept beside it as
 //!      `cast_name`; what it may not be is the spell's identity.
 //!   2. Several of your own casts sharing one sentence resolve to the most recent.
+//!      2b. A weapon or item PROC (upstream issue #69, opt-in): no cast line exists, so the anchor is
+//!      your own melee hit on the target inside the proc window, and the spell is the ONE candidate
+//!      some item you hold procs. Two held procs sharing a sentence is a coin flip and is refused,
+//!      exactly as case 3's family refuses a duration its members do not agree on.
 //!   3. A Quick Buff burst admits the landing as yours but names no spell — the AA applies many
 //!      spells at once with no cast line of their own. Two narrowings then apply, and neither
 //!      admits anything the burst has not already: a candidate you have ever cast, then one you
@@ -17,8 +21,9 @@
 //! under `spell_key`, so they are the same spell by construction and differ only in how the log
 //! wrote it down — and the DB name is the string every other surface states.
 
+use crate::event::{Event, Key};
 use crate::modules::buff_anchors::CastAnchors;
-use crate::modules::buffs_shapes::spell_key;
+use crate::modules::buffs_shapes::{spell_key, SELF_CASTER};
 use crate::spell_facts::{Nature, SpellFacts};
 
 /// A candidate spell carried by an ambiguous landing message.
@@ -27,6 +32,27 @@ pub struct Candidate {
     pub name: String,
     pub duration_ms: Option<i64>,
     pub illusion: bool,
+}
+
+/// The `buffApply` candidate shape. Here rather than in buffs.rs because the shape is this
+/// file's type, and because buffs.rs sits at the factoring bar.
+pub fn candidates_of(ev: &Event) -> Vec<Candidate> {
+    ev.candidates(Key::Candidates)
+        .into_iter()
+        .map(|(name, duration_ms, illusion)| Candidate {
+            name,
+            duration_ms,
+            illusion,
+        })
+        .collect()
+}
+
+/// The `buffWearOff` candidate shape — plain names.
+pub fn wear_off_candidates(ev: &Event) -> Vec<String> {
+    ev.arr_str(Key::Candidates)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 /// What the gate admitted.
@@ -84,6 +110,24 @@ fn named_landing(cands: &[Candidate], ts: i64, anchors: &CastAnchors) -> Option<
         best_ts = t;
     }
     best
+}
+
+/// Case 2b: the one candidate the proc gate vouches for. `target` is the landing's subject as the
+/// event spelled it; the anchors key it the way they keyed your swing.
+fn proc_landing(
+    cands: &[Candidate],
+    target: &str,
+    ts: i64,
+    anchors: &CastAnchors,
+) -> Option<AdmittedLanding> {
+    let mut vouched = cands
+        .iter()
+        .filter(|c| anchors.proc_evidence(&c.name, target, ts));
+    let one = vouched.next()?;
+    if vouched.next().is_some() {
+        return None;
+    }
+    Some(resolved(one, SELF_CASTER, None))
 }
 
 /// Burst narrowing (a): the candidate you have EVER cast, most recent first.
@@ -182,9 +226,10 @@ fn collate_key(s: &str) -> Vec<char> {
         .collect()
 }
 
-/// The gate. See this file's header for the four cases, in order.
+/// The gate. See this file's header for the five cases, in order.
 pub fn admit_landing(
     cands: &[Candidate],
+    target: &str,
     ts: i64,
     anchors: &CastAnchors,
     facts: &SpellFacts,
@@ -195,6 +240,9 @@ pub fn admit_landing(
     }
     if let Some(named) = named_landing(cands, ts, anchors) {
         return Some(named);
+    }
+    if let Some(proc) = proc_landing(cands, target, ts, anchors) {
+        return Some(proc);
     }
     // `attribute` reports `unnamed` for every candidate under a burst, so asking with the first one
     // is asking about the burst.

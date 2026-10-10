@@ -32,7 +32,7 @@ import { mirroredModuleState } from './dataServer/serveMirrors'
 // lets this file say "the directory moved" without importing the engine client — which imports this
 // file, and would be a cycle.
 import { serveCharacterList } from './dataServer/serveLogs'
-import { pushLogDir } from './dataServer/definePush'
+import { pushAppKnowledge, pushLogDir } from './dataServer/definePush'
 import { baseName } from '../shared/outputs/baseline'
 import { loadInventory } from './inventory/parseInventory'
 import { loadAchievements, watchOutputKind, type OutputKindWatch } from './outputs'
@@ -535,6 +535,9 @@ function loadInventoryNow(ref: CharacterRef, why: 'startup' | 'watch'): void {
     // construction input now and reaches it on the next attach. NAMED GAP: a dump read mid-session
     // does not re-arm the clicky classification until the engine next re-folds, where it used to
     // take effect on the tail's next line. Closing it needs a `clickies.define` command.
+    // The buff engine's proc gate (upstream issue #69) reads the same dump through `buffTrust.define`
+    // and has no such gap: the push goes out the moment the counts do.
+    pushAppKnowledge('buffTrust.define')
     logInfo(
       `[everquest-companion] Inventory ${why === 'startup' ? 'loaded at startup' : 'auto-reloaded'}: ${res.path}`
     )

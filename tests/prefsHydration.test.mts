@@ -92,7 +92,7 @@ function stubReader(over: Partial<Record<keyof PrefsReader, unknown>> = {}): {
     // OFF, which is what this stub carries. Its auto-hide is stored off-default too, and out of
     // range, so the seed has to normalize rather than pass it through.
     getConCardConfig: answer('getConCardConfig', { locked: true, conCard: { autoHideMs: 999_999 } }),
-    getBuffTrust: answer('getBuffTrust', { externals: ['Faelin'] }),
+    getBuffTrust: answer('getBuffTrust', { externals: ['Faelin'], procDebuffs: false }),
     getCursorRing: answer('getCursorRing', { enabled: true, sizePx: 60, thicknessPx: 5, color: 'white' }),
     getVoicePrefs: answer('getVoicePrefs', { engine: 'system', voice: 'x', rate: 1, volume: 1 }),
     getTelemetryPayload: answer('getTelemetryPayload', { prefs: { enabled: false }, buffered: [], lastBatch: null, endpointConfigured: false }),

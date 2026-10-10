@@ -42,7 +42,7 @@ import { writeFileDurableAsync } from './telemetry/durableWrite'
 import { normalizeItemName, parseItemWikitext } from './itemLookupParse'
 import { buildQuestItemIndex } from './questItemIndex'
 import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbEntry, type ItemDbFile } from './itemsDb'
-import { heldClickySpells as clickySpells } from './itemClickies'
+import { heldClickySpells as clickySpells, heldProcSpells as procSpells } from './itemClickies'
 import type { HeldCounts, ItemKnowledge, ItemQuestUse, PoskyData, QuestData } from '../shared/types'
 
 export { normalizeItemName, parseItemWikitext }
@@ -149,6 +149,11 @@ function itemDb(): Map<string, ItemDbEntry> {
  */
 export function heldClickySpells(counts: HeldCounts): ReadonlySet<string> {
   return clickySpells((itemsJson as unknown as ItemDbFile).items, counts)
+}
+
+/** The held-proc catalog (upstream issue #69), bound to the committed DB on the same terms. */
+export function heldProcSpells(counts: HeldCounts): ReadonlySet<string> {
+  return procSpells((itemsJson as unknown as ItemDbFile).items, counts)
 }
 
 /**

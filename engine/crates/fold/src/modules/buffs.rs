@@ -30,7 +30,8 @@
 use crate::event::{Event, Key, Kind};
 use crate::jsmap::JsMap;
 use crate::modules::buff_anchors::CastAnchors;
-use crate::modules::buff_landing::{admit_landing, Candidate};
+use crate::modules::buff_landing::{admit_landing, candidates_of, wear_off_candidates, Candidate};
+use crate::modules::buff_procs::ProcStash;
 use crate::modules::buffs_entities::PetEntities;
 use crate::modules::buffs_instances::{BuffInstances, LandingSpec};
 use crate::modules::buffs_mining::OverlayMining;
@@ -69,7 +70,7 @@ pub fn shared_core(facts: SpellFacts) -> SharedCore {
 
 pub struct BuffsModule {
     seq: i64,
-    core: SharedCore,
+    pub(crate) core: SharedCore,
     /// The pet/charm/target identity slots (the who/what).
     pets: PetEntities,
     /// The live (spell, entity) instances + every mutation over them.
@@ -78,6 +79,8 @@ pub struct BuffsModule {
     permanent_illusion_owned_ts: Option<i64>,
     /// Emote learning: recognize real landing-emote texts.
     emote_text_count: JsMap<i64>,
+    /// Landings the gate refused for want of a swing, held for the swing line that follows.
+    stash: ProcStash,
     /// Last-seen clock + the log-hole question.
     frame: SessionFrame,
     /// The observed-message overlay: which lines the miner is fed, and what it builds.
@@ -117,6 +120,7 @@ impl BuffsModule {
             inst: BuffInstances::new(),
             permanent_illusion_owned_ts: None,
             emote_text_count: JsMap::new(),
+            stash: ProcStash::default(),
             frame: SessionFrame::new(),
             mining: OverlayMining::new(
                 facts.clone(),
@@ -194,15 +198,23 @@ impl BuffsModule {
     /// anchor a stranger's buff would bind as ours. A refusal means the landing produces nothing.
     fn on_buff_apply(&mut self, ev: &Event, core: &mut BuffsCore) {
         let cands = candidates_of(ev);
-        let ts = ev.ts();
+        let target = ev.str(Key::Target).unwrap_or_default();
+        self.apply_landing(target, ev.ts(), &cands, core);
+    }
+
+    /// The landing itself, apart from the event it came on: a swing line replays a held one.
+    fn apply_landing(&mut self, target: &str, ts: i64, cands: &[Candidate], core: &mut BuffsCore) {
         let landing = {
             let inst = &self.inst;
             let has_active = |k: &str| inst.has_active_spell(k);
-            admit_landing(&cands, ts, &core.anchors, &self.facts, &has_active)
+            admit_landing(cands, target, ts, &core.anchors, &self.facts, &has_active)
         };
-        let Some(landing) = landing else { return };
+        let Some(landing) = landing else {
+            // Refused for want of a swing, maybe: the proc prints BEFORE its swing's own line.
+            return self.stash.hold(target, ts, cands, &core.anchors);
+        };
         let spec = LandingSpec {
-            target: ev.str(Key::Target).unwrap_or_default().to_string(),
+            target: target.to_string(),
             ts,
             illusion: landing.illusion,
             duration_ms: landing.duration_ms,
@@ -214,6 +226,17 @@ impl BuffsModule {
         };
         self.inst
             .apply_message_buff(&landing.spell, &spec, &mut core.stats, &mut self.pets);
+    }
+
+    /// Every line no arm above claims: a swing of YOURS is the proc gate's evidence
+    /// (`buff_procs.rs`), and the landings it was holding for that swing are applied now. Published
+    /// only when one was replayed; a swing on its own moves nothing a client can read.
+    fn on_swing(&mut self, ev: &Event, core: &mut BuffsCore) -> bool {
+        let held = self.stash.note_swing(&mut core.anchors, ev);
+        for p in &held {
+            self.apply_landing(&p.target, p.ts, &p.cands, core);
+        }
+        !held.is_empty()
     }
 
     /// A HoT tick is not a landing. `You healed <X> over time for N by <Spell>.` is printed once per
@@ -481,26 +504,6 @@ impl BuffsModule {
     }
 }
 
-/// The `buffApply` candidate shape.
-fn candidates_of(ev: &Event) -> Vec<Candidate> {
-    ev.candidates(Key::Candidates)
-        .into_iter()
-        .map(|(name, duration_ms, illusion)| Candidate {
-            name,
-            duration_ms,
-            illusion,
-        })
-        .collect()
-}
-
-/// The `buffWearOff` candidate shape — plain names.
-fn wear_off_candidates(ev: &Event) -> Vec<String> {
-    ev.arr_str(Key::Candidates)
-        .into_iter()
-        .map(str::to_string)
-        .collect()
-}
-
 impl EqModule for BuffsModule {
     fn id(&self) -> &'static str {
         "buffs"
@@ -519,6 +522,7 @@ impl EqModule for BuffsModule {
         self.frame.reset();
         self.permanent_illusion_owned_ts = None;
         self.pets.reset();
+        self.stash.clear();
         // Not reset: the message-overlay mining. It is game knowledge, and
         // `begin_overlay_source` — not `reset` — is what discards a source's bucket.
     }
@@ -695,7 +699,7 @@ impl EqModule for BuffsModule {
                 self.inst.on_zone(&core.stats, &mut self.pets);
                 true
             }
-            _ => false,
+            _ => self.on_swing(ev, &mut core),
         };
         drop(core);
         if published {
@@ -760,28 +764,5 @@ impl EqModule for BuffsModule {
     /// The persisted-overlay write seam. See `EqModule::as_buffs_mut`.
     fn as_buffs_mut(&mut self) -> Option<&mut BuffsModule> {
         Some(self)
-    }
-}
-
-impl crate::Defines for BuffsModule {
-    fn family(&self) -> &'static str {
-        "buffTrust"
-    }
-
-    /// The externals allowlist, replaced whole.
-    ///
-    /// It lands on the shared core and therefore on both modules at once, so the buff bar and the
-    /// crowd-control bar cannot end up with two ideas of whose spell just landed. `buffs` answers
-    /// for the family because it owns the core's construction; `buffTimers` clones the same handle
-    /// and needs no define of its own.
-    fn define(&mut self, payload: &Value) {
-        let Some(list) = payload.get("externals").and_then(Value::as_array) else {
-            return;
-        };
-        let names: Vec<String> = list
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect();
-        self.core.borrow_mut().anchors.set_trust(names);
     }
 }
