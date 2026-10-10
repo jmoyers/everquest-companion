@@ -176,6 +176,35 @@ export function parseMapText(text: string, layer: MapLayer): MapParseResult {
   return { layer, lines, points, skipped }
 }
 
+/**
+ * THE LABELS ALONE, and nothing else in the file is looked at (owner report 2026-09-12: the Maps
+ * tab took seconds to draw). A map file is almost entirely `L` segments - 215 MB of them across
+ * the owner's packs against about 1,500 seam labels - and the zone graph needs only the labels.
+ * `parseMapText` splits every line into fields before it knows which record it is; this walks
+ * the text by newline and touches a line only when its first character is `P`. Same `parsePoint`,
+ * same trim, so a label reads identically here and in the full parse (tests/mapPacks.test.mts
+ * pins the two equal over every fixture zone). Measured on the owner's install: the full parse of
+ * every layer the graph reads is 3.9 s; this is 0.13 s, and that is the disk read.
+ */
+export function parseMapLabels(text: string, layer: MapLayer): MapPoint[] {
+  const points: MapPoint[] = []
+  const n = text.length
+  let at = 0
+  while (at < n) {
+    let end = text.indexOf('\n', at)
+    if (end < 0) end = n
+    let head = at
+    while (head < end && (text[head] === ' ' || text[head] === '\t' || text[head] === '\r')) head += 1
+    if (text.charCodeAt(head) === 80 /* P */) {
+      const line = text.slice(head, end).trim()
+      const point = parsePoint(line.slice(1).split(','), layer)
+      if (point) points.push(point)
+    }
+    at = end + 1
+  }
+  return points
+}
+
 // ---- assembly --------------------------------------------------------------------------
 
 /** Colour-bucketing scratch state. Bundled so `paletteIndex` stays within max-params 4. */

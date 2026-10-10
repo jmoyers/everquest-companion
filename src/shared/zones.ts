@@ -87,6 +87,21 @@ export interface ZoneEntry {
    * NEVER a shorthand for "classic".
    */
   era?: ZoneEra
+  /**
+   * A PLAYER HOME CITY - guards, merchants, bankers, quest givers. Present only on the rows that
+   * are one (owner, 2026-09-14: *"we don't want to kill npcs like that"*). A city carries a level
+   * band like any hunting zone because the catalog documents its guards, so a ranking that reads
+   * the band alone will recommend farming them; this flag is how the ranking knows not to.
+   * Absent means "not a city", never "unknown": every row was read.
+   */
+  city?: true
+  /**
+   * THE LEVEL THE DOOR OPENS AT, where the game locks a zone rather than merely populating it
+   * (owner, 2026-09-14: *"plane of fear is locked to level 45"*). Absent = no lock known. Stated
+   * for the Plane of Fear on the owner's word; Live EQ of the same era gated Fear, Hate and Sky
+   * at 46, so a second plane that turns out to be locked belongs here too, not in a string rule.
+   */
+  minLevel?: number
 }
 
 // ---- the fold ------------------------------------------------------------------------------
@@ -151,24 +166,24 @@ export const ZONES: readonly ZoneEntry[] = [
   { short: 'blackburrow', name: 'Blackburrow', era: 'classic' }, // brewall only
   { short: 'butcher', name: 'Butcherblock Mountains', mobCatalogNames: ['BBM'], era: 'classic' },
   { short: 'ecommons', name: 'East Commonlands', mobCatalogNames: ['EC'], era: 'classic' },
-  { short: 'freporte', name: 'East Freeport', mobCatalogNames: ['EFP'], era: 'classic' },
+  { short: 'freporte', name: 'East Freeport', mobCatalogNames: ['EFP'], city: true, era: 'classic' },
   { short: 'erudsxing', name: "Erud's Crossing", era: 'classic' },
-  { short: 'erudnext', name: 'Erudin', era: 'classic' },
-  { short: 'erudnint', name: 'Erudin Palace', era: 'classic' },
+  { short: 'erudnext', name: 'Erudin', city: true, era: 'classic' },
+  { short: 'erudnint', name: 'Erudin Palace', city: true, era: 'classic' },
   { short: 'everfrost', name: 'Everfrost Peaks', era: 'classic' },
-  { short: 'grobb', name: 'Grobb', era: 'classic' },
+  { short: 'grobb', name: 'Grobb', city: true, era: 'classic' },
   { short: 'highpass', name: 'Highpass Hold', era: 'classic' },
   { short: 'innothule', name: 'Innothule Swamp', era: 'classic' },
   { short: 'kithicor', name: 'Kithicor Forest', era: 'classic' },
   { short: 'soldungb', name: "Nagafen's Lair", era: 'classic' }, // brewall only
   { short: 'najena', name: 'Najena', era: 'classic' },
   { short: 'nektulos', name: 'Nektulos Forest', era: 'classic' },
-  { short: 'neriakb', name: 'Neriak - Commons', era: 'classic' },
-  { short: 'neriaka', name: 'Neriak - Foreign Quarter', era: 'classic' },
+  { short: 'neriakb', name: 'Neriak - Commons', city: true, era: 'classic' },
+  { short: 'neriaka', name: 'Neriak - Foreign Quarter', city: true, era: 'classic' },
   // EQL-new; DEFAULT SET ONLY. No era: it is not a 1999-2000 expansion zone, it is content EQ
   // Legends invented — and the player has walked it, so calling it out-of-era would be a lie.
   { short: 'newsebexp', name: 'New Sebilis Expedition' },
-  { short: 'freportn', name: 'North Freeport', era: 'classic' },
+  { short: 'freportn', name: 'North Freeport', city: true, era: 'classic' },
   // KALADIM'S STEMS RUN THE OTHER WAY, AND BOTH SOURCES SAY SO (JOS-415, reported 8AX84S:
   // "When I zone into or manually select South Kaladim the North Kaladim map loads and visa
   // versa"). The `a`/`b` suffixes read like `north`/`south` and the seed table was taken on that
@@ -181,10 +196,10 @@ export const ZONES: readonly ZoneEntry[] = [
   // which the mob catalog files under `South Kaladim` (51 rows); brewall's `kaladimb_1` labels
   // Busey Nehart, Tempia Lauley, Gunlok Jure, Priestess Ghalea, the Everhot and Norkhitter
   // families — all catalog `North Kaladim` (54 rows). Pinned by tests/zones.test.mts.
-  { short: 'kaladimb', name: 'North Kaladim', era: 'classic' },
-  { short: 'qeynos2', name: 'North Qeynos', era: 'classic' },
-  { short: 'oggok', name: 'Oggok', era: 'classic' },
-  { short: 'paineel', name: 'Paineel', era: 'classic' },
+  { short: 'kaladimb', name: 'North Kaladim', city: true, era: 'classic' },
+  { short: 'qeynos2', name: 'North Qeynos', city: true, era: 'classic' },
+  { short: 'oggok', name: 'Oggok', city: true, era: 'classic' },
+  { short: 'paineel', name: 'Paineel', city: true, era: 'classic' },
   // Two log names, ONE place: `Permafrost Keep` is the open zone (ice goblins, King Thex`Ka IV),
   // `The Permafrost Caverns - Solo N` its instance (ice giants, Lady Vox) — and entering the Keep
   // logs the achievement "The Permafrost Caverns Traveler". eqlwiki's table says
@@ -199,8 +214,8 @@ export const ZONES: readonly ZoneEntry[] = [
   },
   { short: 'qeytoqrg', name: 'Qeynos Hills', era: 'classic' },
   // The other half of the JOS-415 swap — evidence beside `North Kaladim` above.
-  { short: 'kaladima', name: 'South Kaladim', era: 'classic' },
-  { short: 'qeynos', name: 'South Qeynos', era: 'classic' },
+  { short: 'kaladima', name: 'South Kaladim', city: true, era: 'classic' },
+  { short: 'qeynos', name: 'South Qeynos', city: true, era: 'classic' },
   // Guk is TWO zones and the log names them separately (see the header note under DEVIATIONS in
   // tests). Upper: the log's `The City of Guk` killed froglok ton/gaz knights + froglok sentries;
   // catalog `Upper Guk` (51 rows) carries exactly those names, and brewall's guktop_1 labels are
@@ -235,7 +250,7 @@ export const ZONES: readonly ZoneEntry[] = [
   {
     short: 'nro',
     name: 'The Northern Desert of Ro',
-    aliases: ['North Ro'],
+    aliases: ['North Ro', 'North Desert of Ro'],
     mobCatalogNames: ['North Ro'],
     era: 'classic'
   },
@@ -249,9 +264,10 @@ export const ZONES: readonly ZoneEntry[] = [
   },
   { short: 'oasis', name: 'The Oasis of Marr', era: 'classic' },
   { short: 'oot', name: 'The Ocean of Tears', era: 'classic' },
-  { short: 'fearplane', name: 'The Plane of Fear', era: 'classic' },
+  { short: 'fearplane', name: 'The Plane of Fear', minLevel: 45, era: 'classic' },
   { short: 'hateplane', name: 'The Plane of Hate', era: 'classic' }, // brewall only (hateplaneb is the revamp)
-  { short: 'airplane', name: 'The Plane of Sky', era: 'classic' },
+  // `Plane of Air` is the spell corpus's name for it (Alter Plane: Sky teleports "in Plane of Air").
+  { short: 'airplane', name: 'The Plane of Sky', aliases: ['Plane of Air'], era: 'classic' },
   { short: 'rathemtn', name: 'The Rathe Mountains', aliases: ['Mountains of Rathe'], era: 'classic' },
   {
     short: 'gukbottom',
@@ -273,7 +289,7 @@ export const ZONES: readonly ZoneEntry[] = [
   {
     short: 'sro',
     name: 'The Southern Desert of Ro',
-    aliases: ['South Ro'],
+    aliases: ['South Ro', 'South Desert of Ro'],
     mobCatalogNames: ['South Ro', 'Southern Ro'],
     era: 'classic'
   },
@@ -288,25 +304,25 @@ export const ZONES: readonly ZoneEntry[] = [
   { short: 'soltemple', name: 'The Temple of Solusek Ro', era: 'classic' },
   { short: 'tox', name: 'Toxxulia Forest', era: 'classic' }, // classic stem; `toxxulia` is the Live revamp
   { short: 'commons', name: 'West Commonlands', mobCatalogNames: ['WC'], era: 'classic' },
-  { short: 'freportw', name: 'West Freeport', mobCatalogNames: ['WFP'], era: 'classic' },
+  { short: 'freportw', name: 'West Freeport', mobCatalogNames: ['WFP'], city: true, era: 'classic' },
 
   // --- 2. CLASSIC, not yet observed. Names from eqlwiki's table, corroborated by the catalog. ---
   // Four rows in this section carry NO era on purpose — they are not classic zones at all, they
   // are Live-EQ hub zones that came with Luclin (Bazaar, Nexus) and Planes of Power (Guild Lobby,
   // and the Barter Hall which is later still). They sit in the table because the map corpus has
   // their stems, not because EQL can reach them; claiming an era for them would invent history.
-  { short: 'akanon', name: "Ak'Anon", era: 'classic' },
+  { short: 'akanon', name: "Ak'Anon", city: true, era: 'classic' },
   { short: 'arena', name: 'The Arena', era: 'classic' },
   { short: 'barter', name: 'The Barter Hall' },
   { short: 'bazaar', name: 'The Bazaar' },
   { short: 'cauldron', name: "Dagnor's Cauldron", era: 'classic' },
   { short: 'cazicthule', name: 'Cazic-Thule', era: 'classic' },
   { short: 'crushbone', name: 'Clan Crushbone', aliases: ['Crushbone'], era: 'classic' },
-  { short: 'felwithea', name: 'North Felwithe', aliases: ['Northern Felwithe'], era: 'classic' },
-  { short: 'felwitheb', name: 'South Felwithe', aliases: ['Southern Felwithe'], era: 'classic' },
+  { short: 'felwithea', name: 'North Felwithe', aliases: ['Northern Felwithe'], city: true, era: 'classic' },
+  { short: 'felwitheb', name: 'South Felwithe', aliases: ['Southern Felwithe'], city: true, era: 'classic' },
   { short: 'gfaydark', name: 'The Greater Faydark', era: 'classic' },
   { short: 'guildlobby', name: 'The Guild Lobby' },
-  { short: 'halas', name: 'Halas', era: 'classic' },
+  { short: 'halas', name: 'Halas', city: true, era: 'classic' },
   { short: 'highkeep', name: 'High Keep', aliases: ['HighKeep'], era: 'classic' },
   { short: 'kedge', name: 'Kedge Keep', era: 'classic' },
   { short: 'kerraridge', name: 'Kerra Isle', aliases: ['Kerra Island'], era: 'classic' },
@@ -321,13 +337,13 @@ export const ZONES: readonly ZoneEntry[] = [
     aliases: ['Mistmoore Castle', 'The Castle of Mistmoore'],
     era: 'classic'
   },
-  { short: 'neriakc', name: 'Neriak - Third Gate', era: 'classic' },
-  { short: 'neriakd', name: 'Neriak Palace', era: 'classic' }, // brewall only
+  { short: 'neriakc', name: 'Neriak - Third Gate', city: true, era: 'classic' },
+  { short: 'neriakd', name: 'Neriak Palace', city: true, era: 'classic' }, // brewall only
   { short: 'nexus', name: 'The Nexus' },
   { short: 'poknowledge', name: 'Plane of Knowledge' },
   { short: 'qcat', name: 'Qeynos Catacombs', aliases: ['Qeynos Aqueducts'], era: 'classic' },
-  { short: 'qrg', name: 'Surefall Glade', era: 'classic' },
-  { short: 'rivervale', name: 'Rivervale', era: 'classic' },
+  { short: 'qrg', name: 'Surefall Glade', city: true, era: 'classic' },
+  { short: 'rivervale', name: 'Rivervale', city: true, era: 'classic' },
   // Catalog spells this place three ways: `RunnyEye Citadel` (36 rows) and `Runnyeye Citadel` (4)
   // both fold onto the alias; a bare `Runnyeye` (6 rows, incl. the goblin warlord line) reaches
   // neither the name nor the alias, so it is stated as knowledge rather than left to a matcher.
@@ -360,8 +376,8 @@ export const ZONES: readonly ZoneEntry[] = [
   // links across these rows) even though EQ Legends has not opened it: exactly why the field
   // exists.
   { short: 'burningwood', name: 'The Burning Wood', aliases: ['Burning Woods'], era: 'kunark' }, // in default set
-  { short: 'cabeast', name: 'Cabilis East', aliases: ['East Cabilis'], era: 'kunark' }, // in default set
-  { short: 'cabwest', name: 'Cabilis West', aliases: ['West Cabilis'], era: 'kunark' }, // in default set
+  { short: 'cabeast', name: 'Cabilis East', aliases: ['East Cabilis'], city: true, era: 'kunark' }, // in default set
+  { short: 'cabwest', name: 'Cabilis West', aliases: ['West Cabilis'], city: true, era: 'kunark' }, // in default set
   { short: 'chardok', name: 'Chardok', era: 'kunark' },
   { short: 'charasis', name: 'Howling Stones', era: 'kunark' },
   { short: 'citymist', name: 'City of Mist', era: 'kunark' },
@@ -372,7 +388,7 @@ export const ZONES: readonly ZoneEntry[] = [
   { short: 'droga', name: 'Temple of Droga', era: 'kunark' },
   { short: 'emeraldjungle', name: 'The Emerald Jungle', era: 'kunark' }, // in default set
   { short: 'fieldofbone', name: 'The Field of Bone', era: 'kunark' }, // in default set
-  { short: 'firiona', name: 'Firiona Vie', era: 'kunark' }, // in default set
+  { short: 'firiona', name: 'Firiona Vie', city: true, era: 'kunark' }, // in default set
   { short: 'frontiermtns', name: 'Frontier Mountains', era: 'kunark' },
   { short: 'kaesora', name: 'Kaesora', era: 'kunark' },
   { short: 'karnor', name: "Karnor's Castle", era: 'kunark' },
@@ -412,7 +428,7 @@ export const ZONES: readonly ZoneEntry[] = [
   { short: 'skyshrine', name: 'Skyshrine', era: 'velious' },
   { short: 'sleeper', name: "Sleeper's Tomb", era: 'velious' },
   { short: 'templeveeshan', name: 'Temple of Veeshan', era: 'velious' },
-  { short: 'thurgadina', name: 'Thurgadin', era: 'velious' }, // in default set
+  { short: 'thurgadina', name: 'Thurgadin', city: true, era: 'velious' }, // in default set
   { short: 'thurgadinb', name: 'Icewell Keep', era: 'velious' }, // in default set
   { short: 'velketor', name: "Velketor's Labyrinth", era: 'velious' },
   { short: 'wakening', name: 'The Wakening Land', aliases: ['Wakening Lands'], era: 'velious' },
@@ -557,8 +573,12 @@ function catalogIndex(): Map<string, ZoneEntry> {
   return m
 }
 
-export function zoneShortNameFromCatalog(name: string | undefined | null): ZoneShort | null {
+export function zoneEntryFromCatalog(name: string | undefined | null): ZoneEntry | null {
   const key = zoneKey(name)
   if (key === '') return null
-  return catalogIndex().get(key)?.short ?? null
+  return catalogIndex().get(key) ?? null
+}
+
+export function zoneShortNameFromCatalog(name: string | undefined | null): ZoneShort | null {
+  return zoneEntryFromCatalog(name)?.short ?? null
 }

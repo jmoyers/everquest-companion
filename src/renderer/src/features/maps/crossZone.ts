@@ -73,6 +73,8 @@ export interface CrossZoneRow {
   at: { x: number; y: number } | null
   /** Why this row cannot open a map, or cannot point at a spot on it. Null when it can do both. */
   note: string | null
+  /** The catalog row itself (mob rows only) — pins the mob-page deep link's identity. */
+  entry?: MobEntry
   score: number
 }
 
@@ -159,6 +161,7 @@ function mobRow(entry: MobEntry, zoneRaw: string, score: number, installed: Read
     zoneName: stem == null ? zoneRaw : zoneLabel(stem),
     at: zone == null || !first ? null : { x: first.x, y: first.y },
     note: mobNote(entry, stem, zone, zoneCount),
+    entry,
     score
   }
 }

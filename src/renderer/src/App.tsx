@@ -116,8 +116,9 @@ function PlainView({
         />
       )}
       {/* Maps remounts per character rebuild like the rest: the zone it auto-opens comes from
-          the character module, which re-hydrates under the new character anyway. */}
-      {view === 'maps' && <MapsView key={viewKey} />}
+          the character module, which re-hydrates under the new character anyway. Its two routes
+          out: a pane row's page button opens the mob, a wished drop's name opens the item. */}
+      {view === 'maps' && <MapsView key={viewKey} onOpenMob={routing.openMob} onOpenLoot={routing.openLoot} />}
       {/* Leveling stays MOUNTED across a deep link like Loot and Mobs: the level a toast asked
           for arrives through the nonce, not through a remount. */}
       {view === 'leveling' && (

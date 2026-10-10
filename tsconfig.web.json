@@ -40,6 +40,8 @@
     "src/preload/windows.ts",
     // …and `roster.ts` (the group roster's user edits), likewise.
     "src/preload/roster.ts",
+    // …and `maps.ts` (the map viewer's five calls, split out at the 400-line ceiling), likewise.
+    "src/preload/maps.ts",
     // …and `graphics.ts` (the two graphics-compatibility switches), likewise.
     "src/preload/graphics.ts",
     // …and `dev.ts` (the dev-only restart button's one method, JOS-61), likewise.

@@ -96,9 +96,9 @@ export function zoneKey(zone: string | undefined | null): string {
  * numeric shape shares is that its FIRST digit run is the low end of the level, so that is what
  * we read — a range sorts by where it starts, which is what a player scanning "what can I fight
  * here" wants. Anything with no digits at all is genuinely unknown and sorts LAST rather than
- * pretending to be level 0.
+ * pretending to be level 0. The Maps tab's zone bands read levels through it too.
  */
-function sortLevel(entry: MobEntry): number | null {
+export function sortLevel(entry: MobEntry): number | null {
   const m = /\d+/.exec(entry.level ?? '')
   return m ? Number(m[0]) : null
 }
@@ -120,18 +120,22 @@ function sortLevel(entry: MobEntry): number | null {
  * independent of scrape order, the same posture mobSearch's ranking takes.
  * An unknown zone (blank) matches nothing rather than everything.
  */
-export function mobsInZone(zoneRaw: string, catalog: MobEntry[]): MobEntry[] {
+/** `keep`, when given, narrows the rows inside the one catalog pass — a caller's own gate rides
+ *  the exemption below rather than adding a second one. */
+export function mobsInZone(zoneRaw: string, catalog: MobEntry[], keep?: (m: MobEntry) => boolean): MobEntry[] {
   const key = zoneKey(zoneRaw)
   if (key === '') return []
   // Empty for the vast majority of zones (the fold already reaches them); a Set so the inner
   // test stays O(1) across 7,866 rows.
   const aliases = new Set(catalogZonesFor(zoneRaw).map(zoneKey).filter((k) => k !== ''))
   // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: MobEntry comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
-  const rows = catalog.filter((m) =>
-    m.zones?.some((z) => {
-      const zk = zoneKey(z)
-      return zk === key || aliases.has(zk)
-    })
+  const rows = catalog.filter(
+    (m) =>
+      (keep === undefined || keep(m)) &&
+      m.zones?.some((z) => {
+        const zk = zoneKey(z)
+        return zk === key || aliases.has(zk)
+      })
   )
   // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 8: MobEntry comes from a corpus still bundled in the renderer (mobs/posky/bosses JSON). Moves behind knowledge queries when that surface cuts over.
   return rows.sort((a, b) => {

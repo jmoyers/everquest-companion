@@ -47,6 +47,7 @@ import MapIcon from '@mui/icons-material/Map'
 import type { CharacterSnap } from '@shared/types'
 import type { MapBounds, MapData, MapPackPrefs, ZoneShort } from '@shared/maps'
 import { zoneShortName } from '@shared/zones'
+import type { MobTarget } from '../mobs/mobTarget'
 import { useModule } from '../../lib/useModule'
 import { trackFeature } from '../../lib/telemetry'
 import MapBody, { useSearchJump } from './MapBody'
@@ -58,6 +59,9 @@ import MapToolbar from './MapToolbar'
 import { zoneLabel } from './zoneOptions'
 import { loadPackPrefs, savePackPrefs, useMapData, useMapPacks } from './useMapData'
 import { useLocMarker } from './useLocMarker'
+import MapTravelCard from './MapTravelCard'
+import MapsTabs from './MapsTabs'
+import { useZoneTravel } from './useZoneTravel'
 import {
   loadZoneSelection,
   onCharacterZone,
@@ -355,7 +359,13 @@ function useMapOpenTracking(data: MapData | null): void {
   }, [loaded])
 }
 
-export default function MapsView(): JSX.Element {
+export default function MapsView({
+  onOpenMob,
+  onOpenLoot
+}: {
+  onOpenMob: (t: MobTarget) => void
+  onOpenLoot: (name: string) => void
+}): JSX.Element {
   // WHERE YOU ARE. The character module owns the raw display zone off the `zone` log event; it
   // is undefined until the log prints one, and that absence is a state this view renders.
   const raw = useModule<CharacterSnap>('character')?.zone
@@ -394,61 +404,77 @@ export default function MapsView(): JSX.Element {
   // filtered rows are derived ONCE and read by both the list and the surface's pins.
   const zoneName = zoneLongName(zone, raw)
   const pane = useZonePane({ vp, data, zoneName, prefs, zones })
+  // The zone's own level band and the ports that reach it — joined on the LONG name, the same key
+  // the pins use, because the bestiary spells zones that way.
+  const travel = useZoneTravel(zone, zoneName, data)
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%' }}>
-      <MapsHeader title={headerTitle(zone, raw)} zone={zone} data={data} />
-      {/* ALWAYS RENDERED, because the Zone selector inside it is how you leave the map you are
-          on. Everything else in the bar is gated on `hasMap`. */}
-      <MapToolbar
-        zones={zones}
-        zone={zone}
-        onPick={pick}
-        mode={mode}
-        onFollowCurrent={followCurrent}
-        hasMap={data != null}
-        // A map could still be drawn here ⇒ the bar holds the row its drawing controls will need,
-        // so the pane below does not move when they arrive (JOS-205; `DrawnRow` measured it).
-        reserve={reserve}
-        layers={layers}
-        onLayers={setLayers}
-        bands={bands}
-        floor={floor}
-        onFloor={setFloor}
-        packs={packs}
-        prefs={prefs}
-        onPrefs={(p) => {
-          setPrefs(p)
-          savePackPrefs(p)
-        }}
-        locMarker={loc.marker}
-        onPlaceLoc={loc.place}
-        onShowLoc={loc.show}
-        onClearLoc={loc.clear}
-        zoomedIn={vp.zoomedIn}
-        onZoom={vp.zoomBy}
-        onFit={vp.fit}
-      />
-      <MapBody
-        data={data}
-        // Nothing is claimed before the pack listing and the first fetch have answered — a
-        // panel that flashes up and vanishes reads as a bug, not as a load.
-        empty={
-          ready && !loading && <MapsEmpty raw={raw} auto={auto} zones={zones} zone={zone} error={error} />
-        }
-        vp={vp}
-        hostRef={hostRef}
-        layers={layers}
-        bands={bands}
-        floor={floor}
-        pane={pane}
-        zoneName={zoneName}
-        marker={marker}
-        locMarker={loc.marker}
-        onJump={onJump}
-      />
-      {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}
-      <MapCredits data={data} reserve={reserve} />
+      {/* THE MAP TAB HOLDS EVERYTHING BELOW, the header included (owner, 2026-09-12: *"shouldn't
+          the top section be inside the map subtab and not above the tab names?"* - it names the
+          zone on the map, so it is the map's). The advice list is the other tab. `MapsTabs` owns
+          the tab so this view stays under its complexity ceiling. */}
+      <MapsTabs onPick={pick}>
+        <MapsHeader title={headerTitle(zone, raw)} zone={zone} data={data} />
+        {/* ALWAYS RENDERED, because the Zone selector inside it is how you leave the map you are
+            on. Everything else in the bar is gated on `hasMap`. */}
+        <MapToolbar
+          zones={zones}
+          zone={zone}
+          onPick={pick}
+          mode={mode}
+          onFollowCurrent={followCurrent}
+          hasMap={data != null}
+          // A map could still be drawn here ⇒ the bar holds the row its drawing controls will need,
+          // so the pane below does not move when they arrive (JOS-205; `DrawnRow` measured it).
+          reserve={reserve}
+          layers={layers}
+          onLayers={setLayers}
+          bands={bands}
+          floor={floor}
+          onFloor={setFloor}
+          packs={packs}
+          prefs={prefs}
+          onPrefs={(p) => {
+            setPrefs(p)
+            savePackPrefs(p)
+          }}
+          locMarker={loc.marker}
+          onPlaceLoc={loc.place}
+          onShowLoc={loc.show}
+          onClearLoc={loc.clear}
+          zoomedIn={vp.zoomedIn}
+          onZoom={vp.zoomBy}
+          onFit={vp.fit}
+        />
+        {/* HOW YOU GET HERE, AND WHAT FOR (owner ask 2026-09-11). Under the toolbar rather than in
+            the sidebar: it is about the zone itself, not about finding something in it, and the
+            sidebar is the finder. Draws nothing at all when neither witness has anything to say. */}
+        <MapTravelCard travel={travel} onPick={pick} onOpenItem={onOpenLoot} />
+        <MapBody
+          data={data}
+          // Nothing is claimed before the pack listing and the first fetch have answered — a
+          // panel that flashes up and vanishes reads as a bug, not as a load.
+          empty={
+            ready && !loading && <MapsEmpty raw={raw} auto={auto} zones={zones} zone={zone} error={error} />
+          }
+          vp={vp}
+          hostRef={hostRef}
+          layers={layers}
+          bands={bands}
+          floor={floor}
+          pane={pane}
+          zoneName={zoneName}
+          marker={marker}
+          locMarker={loc.marker}
+          onJump={onJump}
+          zones={zones}
+          onOpenMob={onOpenMob}
+          onOpenLoot={onOpenLoot}
+        />
+        {/* Reserved for the same reason and on the same condition as the toolbar's row (JOS-205). */}
+        <MapCredits data={data} reserve={reserve} />
+      </MapsTabs>
     </Stack>
   )
 }

@@ -28,7 +28,7 @@
 // stored the same way and behave completely differently, so the two keys are read and written
 // together, by pure functions a node test can drive without React.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { MapData, MapPackInfo, MapPackPrefs, ZoneShort } from '@shared/maps'
 
 /** Per-layer pack preference — `{geometry?, labels?}`, JSON. Absent/corrupt ⇒ `{}` (auto). */
@@ -54,6 +54,31 @@ export function loadPaneOpen(): boolean {
 export function savePaneOpen(open: boolean): void {
   if (open) localStorage.removeItem(PANE_OPEN_KEY)
   else localStorage.setItem(PANE_OPEN_KEY, '0')
+}
+
+/**
+ * Whether the "Closest port" strip under the toolbar is open — the pane's twin (owner,
+ * 2026-09-12: *"be collapsible so someone doesn't have to use up much space on the map page if
+ * they don't want to"*). Same shape, same tier, same default: open until you close it, and only the
+ * closed state is stored, so a cleared key means the default rather than a wrong reading.
+ */
+export const TRAVEL_OPEN_KEY = 'eq.maps.travel'
+
+export function loadTravelOpen(): boolean {
+  try {
+    return localStorage.getItem(TRAVEL_OPEN_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function saveTravelOpen(open: boolean): void {
+  try {
+    if (open) localStorage.removeItem(TRAVEL_OPEN_KEY)
+    else localStorage.setItem(TRAVEL_OPEN_KEY, '0')
+  } catch {
+    // Storage refused (private window, quota): the toggle still works for this session.
+  }
 }
 
 function nonEmpty(value: unknown): string | undefined {
@@ -170,4 +195,52 @@ export function useMapData(zone: ZoneShort | null, prefs: MapPackPrefs): MapLoad
     }
   }, [zone, geometry, labels])
   return load
+}
+
+/**
+ * Whether the "Closest port" search is limited to zones the current era has - ON by default
+ * (owner, 2026-09-12: *"we need a limit to era that's on by default"*). The fold's twin: only the
+ * lifted state is stored, so a cleared key means the default.
+ *
+ * ONE LIVE VALUE, not a copy per surface. The Closest-port card's hook stays mounted above the
+ * tabs while Where to level shows the same switch, and each used to copy the stored value into its
+ * own state, so a flip in one left the other on the old value until restart. Both now read
+ * `useTravelEra`, and a save tells every reader.
+ */
+export const TRAVEL_ERA_KEY = 'eq.maps.travelEra'
+
+/** The value this session set, which outlives a refused storage write; null until the first save. */
+let travelEra: boolean | null = null
+const travelEraListeners = new Set<() => void>()
+
+export function loadTravelEra(): boolean {
+  if (travelEra !== null) return travelEra
+  try {
+    return localStorage.getItem(TRAVEL_ERA_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function saveTravelEra(on: boolean): void {
+  travelEra = on
+  try {
+    if (on) localStorage.removeItem(TRAVEL_ERA_KEY)
+    else localStorage.setItem(TRAVEL_ERA_KEY, '0')
+  } catch {
+    // Storage refused: the toggle still works for this session.
+  }
+  for (const listener of travelEraListeners) listener()
+}
+
+export function subscribeTravelEra(listener: () => void): () => void {
+  travelEraListeners.add(listener)
+  return () => {
+    travelEraListeners.delete(listener)
+  }
+}
+
+/** The era switch, live: every surface that shows it reads this and writes `saveTravelEra`. */
+export function useTravelEra(): boolean {
+  return useSyncExternalStore(subscribeTravelEra, loadTravelEra)
 }

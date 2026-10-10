@@ -21,6 +21,10 @@ import { IPC } from '../../shared/ipc'
 import { mapLibrary } from '../maps'
 import { isSafePackId } from '../security'
 import type { MapGetResult, MapPackPrefs, MapSearchOpts } from '../../shared/maps'
+import { portsInClient, zonePorts } from '../zonePorts'
+import { spellTable } from '../resist/spellTable'
+import { logError } from '../errorLog'
+import { zoneGraph } from '../zoneGraph'
 
 /** Narrow the renderer's `prefs` to validated pack ids. `false` = something unsafe was sent. */
 function safePrefs(raw: unknown): MapPackPrefs | false {
@@ -35,7 +39,26 @@ function safePrefs(raw: unknown): MapPackPrefs | false {
   }
 }
 
+/**
+ * THE GRAPH IS BUILT AT IDLE, NOT ON THE FIRST MAPS TAB (owner report 2026-09-12). Its build is
+ * about 1.5 s of disk read, yielding between zones (zoneGraph.ts), but it sat in front of the map
+ * the tab asked for, and a tab that draws its map and its port advice together needs the graph
+ * already there. A short
+ * delay after registration keeps it out of the startup path; the memo means the tab's own request
+ * then costs nothing, and a library rebuilt for a new EQ root rebuilds it on the next ask.
+ */
+const GRAPH_WARM_MS = 4_000
+
+function warmZoneGraph(): void {
+  setTimeout(() => {
+    zoneGraph().catch((err: unknown) => {
+      logError('main:zoneGraph', err)
+    })
+  }, GRAPH_WARM_MS)
+}
+
 export function registerMapsIpc(): void {
+  warmZoneGraph()
   ipcMain.handle(IPC.mapsListPacks, () => {
     const packs = mapLibrary().packs()
     // No packs is the fresh-machine state (no EQ install, or an install without `maps\`), and
@@ -58,6 +81,17 @@ export function registerMapsIpc(): void {
     if (safe === false) return { ok: false, error: 'invalid pack id' }
     return mapLibrary().get(zone.toLowerCase(), safe)
   })
+
+  // NO ARGUMENT, so nothing to validate: the table is derived from two committed corpora and is
+  // the same for every caller. Memoized in `zonePorts()`, so a second call costs a return.
+  // Awaited, not sampled: on a cold start the client table may still be parsing, and a port list
+  // read before it settles would offer the wiki's ghosts once and never again (zonePorts.ts
+  // `portsInClient`). The promise settles once per run; every later await is immediate.
+  ipcMain.handle(IPC.mapsPorts, async () => portsInClient(zonePorts(), await spellTable()))
+
+  // Likewise no argument. The first call parses every map in the default pack once (`zoneGraph`
+  // memoizes); a Map cannot cross IPC, so it goes as entries and the renderer rebuilds it.
+  ipcMain.handle(IPC.mapsGraph, async () => [...(await zoneGraph())])
 
   // `prefs` goes through the SAME `safePrefs` gate as `maps:get` — an in-zone search parses the
   // zone under the caller's preference, so both pack ids reach the same `join()` they do there.
