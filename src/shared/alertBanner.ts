@@ -27,6 +27,7 @@
 //
 // Pure + dependency-free (types only), so `npm test` exercises every rule here with no Electron.
 
+import { applyCaptures } from './alertCaptures'
 import type { AlertDef, AlertTriggerPrimitive, AppSignal } from './alertTypes'
 
 // ---- the kind's own config knobs -------------------------------------------------------
@@ -165,14 +166,19 @@ export type BannerDef = Pick<AlertDef, 'name' | 'bannerText'>
  * is exactly what a glance mid-pull can resolve. The two channels are free to differ, and the
  * override field is how you make them differ deliberately.
  *
- * No firing is needed to answer this, so none is taken: the name is the same on every landing, and
- * a parameter that is never read is a claim that it might be.
+ * THE OVERRIDE IS A TEMPLATE, LIKE THE SPOKEN PHRASE (upstream issue #53). A pattern's capture
+ * groups and the `{target}` auto token resolve in it through the same one-pass `applyCaptures`
+ * the speech resolver uses, so "Puma on {player}" prints the name the way it is spoken. The
+ * captures are the firing's; a Test or an app signal has none and every token then renders
+ * literally, which is `applyCaptures`'s documented answer for a value that is not there. The
+ * NAME is never templated: it is what the user typed to file the alert under, not a sentence.
  *
  * Returns null only when there is nothing truthful to print (a def with a blank name and no
  * override), in which case no banner is sent at all.
  */
-export function alertBannerText(def: BannerDef): string | null {
-  return cappedText(def.bannerText, MAX_BANNER_CHARS) ?? cappedText(def.name, MAX_BANNER_CHARS) ?? null
+export function alertBannerText(def: BannerDef, captures?: Record<string, string>): string | null {
+  const override = def.bannerText === undefined ? undefined : applyCaptures(def.bannerText, captures)
+  return cappedText(override, MAX_BANNER_CHARS) ?? cappedText(def.name, MAX_BANNER_CHARS) ?? null
 }
 
 /**

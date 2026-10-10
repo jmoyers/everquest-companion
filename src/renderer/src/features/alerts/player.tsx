@@ -110,7 +110,9 @@ function effectiveVolume(def: AlertDef): number {
  *
  * WHAT IT SAYS IS NOT DECIDED HERE. `alertBannerText` resolves the def's optional override and
  * otherwise prints the alert's NAME (JOS-380) — deliberately not the spoken sentence, which is
- * written for the ear. Null means there was nothing truthful to print, and nothing is sent.
+ * written for the ear. The firing's captures ride along so an override's `{token}`s resolve the
+ * way a spoken phrase's do (upstream issue #53). Null means there was nothing truthful to print,
+ * and nothing is sent.
  *
  * EVERY FIRING IS ITS OWN LINE. The queue's dedupe key carries the timestamp, so a second landing
  * of the same alert stacks a second line rather than re-clocking the first — which is what the
@@ -118,7 +120,7 @@ function effectiveVolume(def: AlertDef): number {
  */
 function showAlertBanner(def: AlertDef, firing?: Pick<FiredAlert, 'spell' | 'captures' | 'dueAt'>): void {
   if (!alertShowsOnScreen(def)) return
-  const text = alertBannerText(def)
+  const text = alertBannerText(def, firing?.captures)
   if (!text) return
   const ts = Date.now()
   const payload: AlertBannerPayload = { id: `${def.id}:${String(ts)}`, alertId: def.id, ts, text }

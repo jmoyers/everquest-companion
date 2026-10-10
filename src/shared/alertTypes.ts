@@ -422,6 +422,9 @@ export interface AlertDef {
    * `name`, which is the short thing the user wrote and already reads in the list. This field
    * exists for the case where the name is not what you want on screen — a name written to be
    * filed under ("Charm break - pet") against a line written to be seen ("CHARM BROKE").
+   *
+   * A TEMPLATE, like `speech.phrase`: the pattern's `{captures}` resolve in it through the same
+   * `applyCaptures` (upstream issue #53). The name is not templated.
    */
   bannerText?: string
   /**
