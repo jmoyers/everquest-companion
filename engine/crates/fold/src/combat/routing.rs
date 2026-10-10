@@ -25,7 +25,7 @@ use crate::combat::aggregate::{Agg, DamageEvent, MissFold, MissType, SourceKind,
 use crate::combat::ally::AllyBind;
 use crate::combat::encounter::{TimelineRaw, ACTIVE_MS};
 use crate::combat::healing::{HealInput, HealSourceKind};
-use crate::combat::lifecycle::ensure_encounter;
+use crate::combat::lifecycle::encounter_for;
 use crate::combat::procdetect::base_lane_name;
 use crate::combat::state::EngineState;
 use crate::combat::world::Resolved;
@@ -284,17 +284,17 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
         st.drain_retirements();
     }
 
-    ensure_encounter(st, ev.ts);
-    {
-        let enc = st.current.as_mut().expect("just ensured");
-        // Active-time accrual: the gap since the previous attributed hit, capped at `ACTIVE_MS`, so
-        // a long lull counts as at most one active tick. The first hit adds 0.
-        if let Some(prev) = enc.prev_damage_ts {
-            enc.active_ms += (ev.ts - prev).clamp(0, ACTIVE_MS);
-        }
-        enc.prev_damage_ts = Some(ev.ts);
-        enc.last_ts = ev.ts;
+    // A DoT tick on you can outlive its caster's fight: `encounter_for` opens nothing for it.
+    let Some(enc) = encounter_for(st, ev, &at) else {
+        return Some(at);
+    };
+    // Active-time accrual: the gap since the previous attributed hit, capped at `ACTIVE_MS`, so
+    // a long lull counts as at most one active tick. The first hit adds 0.
+    if let Some(prev) = enc.prev_damage_ts {
+        enc.active_ms += (ev.ts - prev).clamp(0, ACTIVE_MS);
     }
+    enc.prev_damage_ts = Some(ev.ts);
+    enc.last_ts = ev.ts;
     st.last_activity_ts = ev.ts;
     // Zone-session timing: first/last attributed damage in this stay.
     if st.zone_start_ts == 0 {

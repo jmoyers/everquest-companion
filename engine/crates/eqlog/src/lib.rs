@@ -227,6 +227,27 @@ mod tests {
         assert!(out.contains(r#""attacker":null"#), "{out}");
     }
 
+    /// A tick on the player is second person, `You have taken`, and always names its caster.
+    #[test]
+    fn a_dot_tick_on_the_player_is_damage_from_its_caster() {
+        let p = bare();
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You have taken 53 damage from Swarm of Pain by a spiroc revolter.",
+        );
+        assert!(out.starts_with(r#"{"kind":"damage","#), "{out}");
+        assert!(
+            out.contains(r#""attacker":"a spiroc revolter","target":"You","amount":53,"dtype":"dot","skill":"Swarm of Pain""#),
+            "{out}"
+        );
+        // …and the depot's sentence of the same opening is not damage.
+        let out = parse_one(
+            &p,
+            "[Wed Aug 19 16:21:54 2026] You have taken 914 Phosphorous Powder from your personal depot.",
+        );
+        assert!(out.starts_with(r#"{"kind":"unknown","#), "{out}");
+    }
+
     #[test]
     fn the_experience_percentage_is_the_one_float_in_the_stream() {
         let p = bare();

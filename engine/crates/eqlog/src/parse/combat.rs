@@ -67,7 +67,7 @@ impl CombatRes {
                 r"^YOU are [0-9A-Za-z_]+ by (.+?)'s (.+?) for ([0-9]+) points? of non-melee damage!$",
             )
             .unwrap(),
-            dot: Regex::new(r"^(.+?) has taken ([0-9]+) damage from (.+?)\.(?: \((.+?)\))?$")
+            dot: Regex::new(r"^(.+?) ha(?:s|ve) taken ([0-9]+) damage from (.+?)\.(?: \((.+?)\))?$")
                 .unwrap(),
             dot_nocaster: Regex::new(
                 r"^(.+?) has taken ([0-9]+) damage by (.+?)\.(?: \((.+?)\))?$",
@@ -473,7 +473,7 @@ fn taken_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
 /// Damage: melee / spell / dot / damage-shield, behind the shared substring gates.
 pub fn classify_damage(r: &CombatRes, c: &Ctx, out: &mut Ev) -> bool {
     let has_points = c.text.contains("points of") || c.text.contains("point of");
-    let has_taken = c.text.contains("has taken");
+    let has_taken = c.text.contains("has taken") || c.text.contains("have taken");
     if has_points && points_damage(r, c, out) {
         return true;
     }
