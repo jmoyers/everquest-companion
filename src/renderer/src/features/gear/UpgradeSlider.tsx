@@ -1,5 +1,9 @@
 // gear/UpgradeSlider.tsx — THE GLOBAL PLUS-STATE SELECTOR: every number in the table, at +N.
 //
+// AND THE ITEM CARD'S (fork, kaltinril 2026-09-13): the Loot drill-down mounts this same control
+// under a wearable item's window (ItemDetailDialog.tsx), where its state is local to the item
+// rather than remembered. `testId` and `wrap` are the whole difference between the two mounts.
+//
 // WHAT IT IS. `ItemUpgradeState` is the in-game item window's `Tier N   x / y` row (phase 0,
 // src/shared/itemUpgrade.ts): `full` is the tier 0..10 and `fraction` is the merge exp banked
 // toward the next one, out of `2^full`. So the control is TWO sliders and not one — a single
@@ -36,9 +40,13 @@ function fractionMax(full: number): number {
 export interface UpgradeSliderProps {
   state: ItemUpgradeState
   onChange: (next: ItemUpgradeState) => void
+  /** testid prefix: `gear` on the Gear toolbar (the e2e's spelling), `item` on the item card */
+  testId?: string
+  /** let the label and the fraction slider fall to a second line — a 340px card, not a toolbar */
+  wrap?: boolean
 }
 
-export default function UpgradeSlider({ state, onChange }: UpgradeSliderProps): JSX.Element {
+export default function UpgradeSlider({ state, onChange, testId = 'gear', wrap = false }: UpgradeSliderProps): JSX.Element {
   const max = fractionMax(state.full)
   const base = state.full === ITEM_UPGRADE_BASE.full && state.fraction === ITEM_UPGRADE_BASE.fraction
   return (
@@ -46,8 +54,9 @@ export default function UpgradeSlider({ state, onChange }: UpgradeSliderProps): 
       direction="row"
       spacing={1.5}
       alignItems="center"
-      sx={{ flexWrap: 'nowrap', minWidth: 0 }}
-      data-testid="gear-upgrade"
+      useFlexGap={wrap}
+      sx={{ flexWrap: wrap ? 'wrap' : 'nowrap', minWidth: 0 }}
+      data-testid={`${testId}-upgrade`}
     >
       <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
         Simulate upgrade
@@ -61,7 +70,7 @@ export default function UpgradeSlider({ state, onChange }: UpgradeSliderProps): 
           step={1}
           marks={TIER_MARKS}
           value={state.full}
-          data-testid="gear-tier-slider"
+          data-testid={`${testId}-tier-slider`}
           aria-label="Simulated upgrade tier"
           // The fraction is re-clamped by the TIER move, not left to drift: dropping from tier 5 to
           // tier 1 with 17 banked would state a fraction its own denominator (2) cannot hold.
@@ -74,7 +83,7 @@ export default function UpgradeSlider({ state, onChange }: UpgradeSliderProps): 
 
       <Typography
         variant="caption"
-        data-testid="gear-upgrade-label"
+        data-testid={`${testId}-upgrade-label`}
         color={base ? 'text.secondary' : 'primary.main'}
         sx={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums', minWidth: 132 }}
         title="What the table is showing: every stat scaled to this upgrade state, the way the item window reads it."
@@ -93,7 +102,7 @@ export default function UpgradeSlider({ state, onChange }: UpgradeSliderProps): 
             max={max}
             step={1}
             value={state.fraction}
-            data-testid="gear-fraction-slider"
+            data-testid={`${testId}-fraction-slider`}
             aria-label="Merge exp banked toward the next tier"
             onChange={(_e, v) => {
               onChange({ full: state.full, fraction: typeof v === 'number' ? v : v[0] })

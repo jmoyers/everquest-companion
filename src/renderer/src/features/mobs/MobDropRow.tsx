@@ -235,11 +235,14 @@ export function DropRow({
 export function ItemDrillDown({
   item,
   family,
-  onClose
+  onClose,
+  onOpenLoot
 }: {
   item: string
   family?: boolean
   onClose: () => void
+  /** the dialog's route onward to the Loot tab (fork decision, kaltinril 2026-08-17) — see ItemDetailDialog */
+  onOpenLoot?: (item: string) => void
 }): JSX.Element {
   const history = useModule<LootSnap>('loot')
   const key = itemCountKey(item)
@@ -255,6 +258,7 @@ export function ItemDrillDown({
       events={(history ?? []).filter(matches)}
       stats={itemStats[key]}
       isQuestItem={questItemNames.has(key)}
+      onOpenLoot={onOpenLoot}
     />
   )
 }

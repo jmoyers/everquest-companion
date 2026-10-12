@@ -4,7 +4,22 @@ import AutoStoriesIcon from '@mui/icons-material/AutoStories'
 import type { ItemKnowledge, ItemQuestUse, ItemRecipeUse } from '@shared/types'
 import { craftedByLabel, recipeUseLabel } from '@shared/itemKnowledge'
 import { wikiPageUrl } from '@shared/wiki'
-import { questUseWhere } from '../../lib/itemKnowledgeView'
+import { CellLink } from '../../lib/CellLink'
+import { KnownItemTooltip } from '../../lib/KnownItemTooltip'
+import { questUseOutcomes, questUseWhere } from '../../lib/itemKnowledgeView'
+
+/**
+ * The card's two routes OUT (owner, 2026-09-14: "link the quest to the Plane of Sky tab, and put
+ * the reward next to it so I don't have to jump there at all"). Both optional so the section
+ * stands alone wherever no router is in hand (the Mobs tab's dialog); absent, the chip is inert
+ * and the reward is plain text, exactly as the tooltip prints it.
+ */
+export interface KnowledgeLinks {
+  /** a Sky quest's `Class::Name` key → the Plane of Sky tab, revealed (App's `openQuest`) */
+  onOpenQuest?: (key: string) => void
+  /** a reward's name → that item's own page (the pane's in-place hop) */
+  onOpenItem?: (item: string) => void
+}
 
 // The quiet "still asking" state — shown only while the FIRST lookup for this item is in
 // flight (a re-open with cached data never flashes it).
@@ -56,17 +71,71 @@ function questUseLabel(u: ItemQuestUse): string {
   return [u.quest, role, questUseWhere(u)].filter((s): s is string => s !== undefined && s !== '').join(' · ')
 }
 
+/**
+ * ONE QUEST USE AS A UNIT: the chip, and beside it what turning the item in gets you.
+ *
+ * The chip is a LINK when the use is a Plane of Sky quest and the router is in hand: it lands on
+ * the Sky tab with the quest revealed — every filter cleared and the search box set to the quest's
+ * name (`revealQuest`, posky/useQuestList.ts), the same door the celebration toast uses, so a
+ * "hide completed" tick or a class pick can never leave the reader staring at an empty list the
+ * chip promised something in. The reward beside it is the answer to "and what do I get" without
+ * the jump: `questUseOutcomes` is the tooltip's rule for which uses have one, and each name is a
+ * `CellLink` into that item's own page when the pane can hop, plain text otherwise. Either way it
+ * hovers with the reward's item card (owner ask, 2026-10-03: no bare item names).
+ *
+ * The unit is an inline row so the outer wrap keeps working: a rune used by a dozen quests still
+ * flows across lines rather than stacking twelve rows.
+ */
+function QuestUseChip({ use, links }: { use: ItemQuestUse; links: KnowledgeLinks }): JSX.Element {
+  const key = use.poskyKey
+  const openQuest = links.onOpenQuest
+  const linked = key !== undefined && openQuest !== undefined
+  // A non-Sky use opens its wiki page instead (owner ask, 2026-10-11); a Sky use keeps the tab door.
+  const wiki = use.source === 'posky' ? undefined : wikiPageUrl(use.page ?? use.quest)
+  const outcomes = questUseOutcomes(use)
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+      <Chip
+        size="small"
+        variant="outlined"
+        data-testid="loot-quest-use"
+        color={use.source === 'posky' ? 'primary' : 'default'}
+        label={questUseLabel(use)}
+        clickable={linked || wiki !== undefined}
+        onClick={linked ? () => openQuest(key) : undefined}
+        {...(wiki !== undefined && { component: 'a', href: wiki, target: '_blank', rel: 'noreferrer', title: 'open on eqlwiki.com' })}
+        sx={{ height: 22 }}
+      />
+      {outcomes.length > 0 && (
+        <Typography variant="caption" color="text.secondary" data-testid="loot-quest-reward" sx={{ whiteSpace: 'nowrap' }}>
+          {'reward: '}
+          {outcomes.map((name, i) => (
+            <Box component="span" key={name} sx={{ color: 'text.primary' }}>
+              {i > 0 && ', '}
+              <KnownItemTooltip name={name} clickThrough>
+                <span>{links.onOpenItem ? <CellLink text={name} onOpen={() => links.onOpenItem?.(name)} /> : name}</span>
+              </KnownItemTooltip>
+            </Box>
+          ))}
+        </Typography>
+      )}
+    </Stack>
+  )
+}
+
 // The quest chips (quest · role · giver · zone), or — when the wiki flagged the item but named no
 // quest — the honest admission. That admission is worth printing ONLY when we genuinely have
 // nothing else: the recipe list below explains most QUEST-ITEM-flagged components.
 function QuestUsesBlock({
   data,
   recipes,
-  crafted
+  crafted,
+  links
 }: {
   data: ItemKnowledge
   recipes: ItemRecipeUse[]
   crafted?: string
+  links: KnowledgeLinks
 }): JSX.Element | null {
   if (data.questUses.length > 0) {
     return (
@@ -74,17 +143,9 @@ function QuestUsesBlock({
         <Typography variant="caption" color="text.secondary">
           Used in {data.questUses.length === 1 ? 'quest' : 'quests'}:
         </Typography>
-        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+        <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
           {data.questUses.map((u) => (
-            <Chip
-              key={`${u.source}:${u.quest}:${u.role ?? ''}`}
-              size="small"
-              variant="outlined"
-              data-testid="loot-quest-use"
-              color={u.source === 'posky' ? 'primary' : 'default'}
-              label={questUseLabel(u)}
-              sx={{ height: 22 }}
-            />
+            <QuestUseChip key={`${u.source}:${u.quest}:${u.role ?? ''}`} use={u} links={links} />
           ))}
         </Stack>
       </Box>
@@ -164,8 +225,10 @@ function SourceNote({ wikiUrl, questUses }: { wikiUrl?: string; questUses: ItemQ
  */
 export function KnowledgeSection({
   data,
-  loading
-}: {
+  loading,
+  onOpenQuest,
+  onOpenItem
+}: KnowledgeLinks & {
   data: ItemKnowledge | null
   loading: boolean
 }): JSX.Element | null {
@@ -192,7 +255,7 @@ export function KnowledgeSection({
   return (
     <Box sx={{ mb: 2 }}>
       <KnowledgeHeader offline={data.offline} />
-      <QuestUsesBlock data={data} recipes={recipes} crafted={crafted} />
+      <QuestUsesBlock data={data} recipes={recipes} crafted={crafted} links={{ onOpenQuest, onOpenItem }} />
       <RecipesBlock recipes={recipes} questUseCount={data.questUses.length} />
       <RecipesNote note={data.recipesNote} recipeCount={recipes.length} />
       <CraftedNote crafted={crafted} />

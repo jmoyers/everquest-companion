@@ -56,6 +56,15 @@ export const WISH_REMOVE_TITLE = 'Remove from the wish list. It comes off the ro
  */
 const LABEL = { add: 'Add to wish list', remove: 'Remove from wish list' } as const
 
+/**
+ * THE COMPACT PAIR RETURNS (fork decision, kaltinril 2026-08-15), overruling JOS-346's same-words-everywhere
+ * for ONE surface: the gear table's control moved out of the Item cell into its own `WL` column,
+ * where the header carries the words and a 168px button would be wider than the column it sits in.
+ * The donor row keeps the full pair; both use this one component, so the drift JOS-346 feared is
+ * still impossible — there is exactly one place either pair is spelled.
+ */
+const LABEL_COMPACT = { add: 'Add', remove: 'Remove' } as const
+
 export interface WishToggleProps {
   /** the item's name — the accessible label says which row this control belongs to */
   name: string
@@ -69,6 +78,8 @@ export interface WishToggleProps {
   disabled?: boolean
   /** `gear-wish` on the search row, `planner-add` on the donor row — both predate this file */
   testId: string
+  /** the `WL` column's short pair (2026-08-15) — see `LABEL_COMPACT` for the ruling */
+  compact?: boolean
   /** add when off, remove when on. The host owns which door; this control owns the reading. */
   onToggle: () => void
 }
@@ -83,8 +94,10 @@ export default function WishToggle({
   wished,
   disabled = false,
   testId,
+  compact = false,
   onToggle
 }: WishToggleProps): JSX.Element {
+  const label = compact ? LABEL_COMPACT : LABEL
   return (
     <Button
       size="small"
@@ -107,10 +120,12 @@ export default function WishToggle({
       // round trip, which clicks that name). So both give: the flex line shrinks the name and this
       // control in proportion, each keeps a legible share, and the label clips with the full
       // sentence still in `title`. Same width for both states either way, so a click never resizes.
-      sx={{ flexShrink: 1, width: 168, minWidth: 0 }}
+      // 66 is the compact pair's wider word, "Remove" — the same one-width-for-both-states rule,
+      // and small enough to sit whole inside the WL column at the 900px window minimum.
+      sx={{ flexShrink: 1, width: compact ? 66 : 168, minWidth: 0 }}
     >
       <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {wished ? LABEL.remove : LABEL.add}
+        {wished ? label.remove : label.add}
       </Box>
     </Button>
   )

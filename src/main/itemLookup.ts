@@ -44,6 +44,7 @@ import { buildQuestItemIndex } from './questItemIndex'
 import { buildItemDbIndex, itemKey, knowledgeFromDb, type ItemDbEntry, type ItemDbFile } from './itemsDb'
 import { heldClickySpells as clickySpells } from './itemClickies'
 import type { HeldCounts, ItemKnowledge, ItemQuestUse, PoskyData, QuestData } from '../shared/types'
+import { questKey } from '../shared/poskyKey'
 
 export { normalizeItemName, parseItemWikitext }
 // The COMMITTED wiki item database — the PRIMARY source (see the design note above).
@@ -186,7 +187,18 @@ function poskyByItem(): Map<string, ItemQuestUse[]> {
       // De-dupe by quest identity (className + name) — the same item appears under many quests.
       const quest = `${q.className} · ${q.name}`
       if (!uses.some((u) => u.quest === quest)) {
-        uses.push({ quest, page: q.source, source: 'posky', giver: q.giver })
+        // `items` are the quest's turn-ins by the dataset's own definition, so the role is the
+        // source's word; the reward rides along (one hop, like the quest catalog's) and the key
+        // is what lets the item page deep-link to the quest on the Plane of Sky tab.
+        uses.push({
+          quest,
+          page: q.source,
+          source: 'posky',
+          giver: q.giver,
+          role: 'required',
+          rewards: q.reward ? [q.reward] : undefined,
+          poskyKey: questKey(q)
+        })
       }
       built.set(key, uses)
     }

@@ -168,6 +168,7 @@ export function collectWishNeeds(
       quest: facts.quest,
       playerCrafted: facts.playerCrafted,
       sources,
+      // eslint-disable-next-line eqc/no-domain-munging -- JOS-459 cutover ledger item 3: ItemSource now lives in shared so the gear index can build the drop trio (fork PR #31); no served source answers this read yet
       zones: [...new Set(sources.flatMap((s) => s.zones))],
       progress: progressOf(entry.itemKey, tierRequired ?? 1)
     }

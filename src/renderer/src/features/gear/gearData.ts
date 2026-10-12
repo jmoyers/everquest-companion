@@ -27,6 +27,9 @@ import { NO_OWNERSHIP, type OwnershipPayload } from '@shared/planner/ownership'
 import { isKept } from '@shared/lootDisposition'
 import { useLootHistory } from '../loot/useLootHistory'
 import { useComboSnap } from '../profiles/ClassComboData'
+import { type Kept, kept } from '../../lib/kept'
+import { useModule } from '../../lib/useModule'
+import type { CharacterSnap } from '@shared/characterTypes'
 // JOS-338: the caller `features/planner/plannerInventory.ts` has been asking for since JOS-326 —
 // see `useGearCompare` for why this channel and not the ownership payload beside it.
 import { usePlannerInventory } from '../planner/plannerInventory'
@@ -41,8 +44,28 @@ import { sourceIndex } from '../planner/sourceIndex'
 import { sameClasses } from '../planner/plannerClasses'
 import { gearOwnershipMap, ownershipFor, type GearOwnershipMap } from './gearOwnership'
 // JOS-329: the two pieces of state below survive a tab switch now — see each one's own comment.
-import { sanitizeGearClasses, sanitizeUpgrade } from './areaMemory'
+import { sanitizeGearClassPins, sanitizeUpgrade, type GearClassPins } from './areaMemory'
 import { useRemembered } from './useAreaMemory'
+import type { ZoneShort } from '@shared/maps'
+import { gearZoneOptions } from './gearZones'
+
+/**
+ * The index row as the TABLE reads it: the drop trio's four arrays REQUIRED rather than optional
+ * (the wire omits them for a row nobody names; the cells want `[]`), and the wider search key.
+ *
+ * THE TRIO ARRIVES ON THE WIRE since 2026-08-25 (fork decision, kaltinril — data-server ruling 4,
+ * *the renderer never munges domain data*): `src/main/planner/gearIndex.ts` folds both witnesses
+ * through `shared/itemSources.dropDetails` at build. From 2026-08-15 to then this file ran that
+ * merge itself, 6,814 rows per window, over a catalog inversion only the renderer could load. What
+ * this type still ADDS is the search key, so it stays.
+ */
+export interface GearViewRow extends GearRow {
+  dropMobs: string[]
+  dropZones: string[]
+  dropLevels: string[]
+  /** `dropMobs[i]`'s catalog page title, `''` when the witness stated none — the link's pin. */
+  dropPages: string[]
+}
 
 // ---- the fetch ----------------------------------------------------------------------
 
@@ -51,13 +74,43 @@ function effectHaystack(row: GearRow): string {
   return row.effects.map((e) => `${e.name} ${e.detail ?? ''}`).join(' ')
 }
 
-/** The index row with the table's own, wider search key. Same type — only the haystack grew. */
-function toRow(row: GearRow): GearRow {
-  return { ...row, searchKey: `${row.name} ${effectHaystack(row)}`.toLowerCase() }
+/**
+ * The index row with the table's own, wider search key. Same type — only the haystack grew.
+ *
+ * WHAT THE HAYSTACK HOLDS: the name, the effects, the slots, the classes, the weapon skill, the
+ * drop mobs and zones, and `shield` for a row the index flagged. WHAT IT DOES NOT HOLD, since
+ * 2026-08-25 (fork review): the STAT VECTOR and the drop LEVELS. `ac 13 cha 15 …` folded into
+ * every key made typing `10` or `ac` match most of the corpus - a number is a threshold's question
+ * (`ac>=20`, gearFilter.ts), never a substring's, and a level text like `36-40` is the same kind
+ * of number wearing a dash.
+ */
+function toRow(row: GearRow): GearViewRow {
+  const dropMobs = row.dropMobs ?? []
+  const dropZones = row.dropZones ?? []
+  const searchParts = [
+    row.name,
+    effectHaystack(row),
+    row.slots.join(' '),
+    row.classes.join(' '),
+    row.skill ?? '',
+    dropMobs.join(' '),
+    dropZones.join(' '),
+    row.shield === true ? 'shield' : ''
+  ]
+  return {
+    ...row,
+    dropMobs,
+    dropZones,
+    dropLevels: row.dropLevels ?? [],
+    dropPages: row.dropPages ?? [],
+    searchKey: searchParts.join(' ').toLowerCase()
+  }
 }
 
 export interface GearIndexState {
-  rows: GearRow[]
+  rows: GearViewRow[]
+  /** the zones the Zones picker offers (`gearZoneOptions`) — built with the rows, once per window */
+  zones: ZoneShort[]
   /** false until the first fetch settles */
   ready: boolean
   /** the corpus's own `scrapedAt` — WHEN the data is from */
@@ -67,7 +120,7 @@ export interface GearIndexState {
   refused: boolean
 }
 
-const EMPTY: GearIndexState = { rows: [], ready: false, scrapedAt: null, stats: null, refused: false }
+const EMPTY: GearIndexState = { rows: [], zones: [], ready: false, scrapedAt: null, stats: null, refused: false }
 
 let CACHE: GearIndexState | null = null
 let INFLIGHT: Promise<GearIndexState> | null = null
@@ -78,6 +131,7 @@ async function fetchIndex(): Promise<GearIndexState> {
     payload.version === GEAR_INDEX_VERSION
       ? {
           rows: payload.rows.map(toRow),
+          zones: gearZoneOptions(payload.rows),
           ready: true,
           scrapedAt: payload.scrapedAt,
           stats: payload.stats,
@@ -116,9 +170,13 @@ export function useGearIndex(): GearIndexState {
   return state
 }
 
-/** The era verdict as the pure filter model wants it — a stable identity, so the memo can key on it. */
+/** The era verdict as the pure filter model wants it — a stable identity, so the memo can key on it.
+ *  ONE for the window since the lag sweep (2026-10-11), not one per mount: the Gear tab's kept
+ *  filter answer (`lib/kept.ts`) keys on this identity, and a per-mount closure would miss on
+ *  every re-open. */
+const ERA_HIDDEN = { eraHidden: (row: GearRow): boolean => eraHides(row, true) }
 export function useEraHidden(): { eraHidden: (row: GearRow) => boolean } {
-  return useMemo(() => ({ eraHidden: (row: GearRow) => eraHides(row, true) }), [])
+  return ERA_HIDDEN
 }
 
 // ---- the ownership join (JOS-285, phase 4) --------------------------------------------
@@ -243,11 +301,14 @@ export interface GearCompareData {
   state: ItemUpgradeState
 }
 
+const BY_KEY: Kept<Map<string, GearRow>> = { last: null }
+
 export function useGearCompare(rows: readonly GearRow[], state: ItemUpgradeState): GearCompareData {
   const { inventory, ready } = usePlannerInventory()
   // Keyed on the ARRAY identity, which `useGearIndex` holds stable for the life of the window (the
-  // fetch is cached), so this 6,766-entry map is built once per window and never per hover.
-  const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
+  // fetch is cached), so this 6,766-entry map is built once per window and never per hover — nor
+  // per re-open of the tab, since the lag sweep (2026-10-11): the slot outlives the mount.
+  const byKey = kept(BY_KEY, [rows], () => new Map(rows.map((row) => [row.key, row])))
   const equipped = useMemo(() => equippedIndex(inventory?.hosts ?? []), [inventory])
   // ONE OBJECT, MEMOIZED, because `GearLine` is `memo`'d and this is one of its props: a fresh
   // literal per render would defeat the memo on every keystroke of the search box, across a whole
@@ -389,19 +450,24 @@ export function useGearClasses(): GearClasses {
   // An unresolved slot contributes nothing, so a half-known combo yields the classes it does know
   // and nothing it does not (law 1) — the same read PlannerView makes.
   const detected = useMemo(() => (current === null ? [] : resolvedClasses(current)), [current])
-  const [pinned, setPinned] = useRemembered<ClassAbbr[] | null>('eq.gear.classes', sanitizeGearClasses)
+  // THE PIN IS PER CHARACTER (fork ask, kaltinril 2026-09-04): a twink druid and a WAR/MNK/SHM
+  // main each keep their own, keyed by name, so a character switch stops resetting the trio by
+  // hand. A character with no pin of its own reads the legacy `'*'` fallback, then detection.
+  const me = useModule<CharacterSnap>('character')?.character?.name ?? '*'
+  const [pins, setPins] = useRemembered<GearClassPins | null>('eq.gear.classes', sanitizeGearClassPins)
+  const pinned = pins === null ? null : (pins[me] ?? pins['*'] ?? null)
 
   const set = useCallback(
     (next: ClassAbbr[]) => {
-      setPinned(next)
+      setPins({ ...(pins ?? {}), [me]: next })
     },
-    [setPinned]
+    [pins, setPins, me]
   )
   // ADOPTING THE OFFER PINS, and always did: taking today's detection is accepting one answer, not
   // handing the filter back to inference forever (the `useBrowseClasses.adopt` rule, stated there).
   const adopt = useCallback(() => {
-    setPinned(detected)
-  }, [detected, setPinned])
+    setPins({ ...(pins ?? {}), [me]: detected })
+  }, [pins, detected, setPins, me])
 
   const classes = pinned ?? detected
   const offer = pinned !== null && detected.length > 0 && !sameClasses(pinned, detected) ? detected : null

@@ -61,6 +61,15 @@ import {
 } from '../../shared/planner/gear'
 import type { ItemEffect, ItemStat, ItemStatBlock } from '../../shared/itemStats'
 import type { ItemUpgradeState } from '../../shared/itemUpgrade'
+// THE DROP COLUMNS ARE BUILT HERE (fork decision, kaltinril 2026-08-25 — data-server ruling 4, the
+// renderer never munges domain data). The mob catalog is the same committed JSON `eraDerive.ts`
+// beside this file already ES-imports, so electron-vite inlines it into the main bundle once; the
+// inversion is `shared/itemSources.buildSourceIndex`, the exact fold the renderer's own singleton
+// runs, so the Loot drill-down and a Gear row can never disagree about who drops what.
+import mobsJson from '../../renderer/src/data/eqlegends/mobs.json'
+import type { MobData } from '../../shared/types'
+import { buildSourceIndex, dropDetails, mergeItemSources, type SourceIndex } from '../../shared/itemSources'
+import { isShieldLike } from '../../shared/planner/shield'
 
 /** Tier 1 — any upgraded state answers the SV VOID question identically (phase 0: it reads `full > 0`). */
 const ANY_UPGRADED: ItemUpgradeState = { full: 1, fraction: 0 }
@@ -225,6 +234,8 @@ function newAcc(derived: ReadonlyMap<string, EraDerivation>): Acc {
       socketless: 0,
       voidSynthRows: 0,
       eraDerivedRows: 0,
+      dropRows: 0,
+      shieldRows: 0,
       statValues: 0,
       percentValues: 0,
       rangeTexts: 0
@@ -318,15 +329,39 @@ function countRow(acc: Acc, row: GearRow): void {
   if (row.effects.length > 0) acc.stats.effectRows++
   if (row.voidSynth === true) acc.stats.voidSynthRows++
   if (row.eraDerived !== undefined) acc.stats.eraDerivedRows++
+  if (row.dropMobs !== undefined) acc.stats.dropRows++
+  if (row.shield === true) acc.stats.shieldRows++
+}
+
+/**
+ * What the corpus's two witnesses say about WHERE a row drops, and whether it reads as a shield —
+ * both answered once, here, and carried on the wire (`GearRow`'s four aligned arrays and `shield`;
+ * gear.ts states why). ABSENT when nobody names the item: an empty array would be this index
+ * inventing "drops from nothing" where the catalog merely stated nothing (law 1).
+ */
+function withDrops(row: GearRow, sources: SourceIndex): GearRow {
+  const drops = dropDetails(mergeItemSources(sources.get(row.key) ?? [], row.wikiSources))
+  return {
+    ...row,
+    ...(drops.dropMobs.length === 0 ? {} : drops),
+    ...(isShieldLike(row) ? { shield: true as const } : {})
+  }
+}
+
+/**
+ * The three committed tables a build reads beside the corpus, as one object: the curated layer,
+ * the spell join and — since 2026-08-25 — the mob catalog's item→mob inversion. Each defaults to
+ * the committed one in `buildGearIndex` and is injectable so a test can drive any from a fixture.
+ */
+interface BuildDeps {
+  research: ItemResearchFile
+  spells: SpellFactsIndex
+  sources: SourceIndex
 }
 
 /** One page → its row, or null when the corpus places the item in no slot at all. */
-function pageRow(
-  entry: ItemDbEntry,
-  research: ItemResearchFile,
-  spells: SpellFactsIndex,
-  acc: Acc
-): GearRow | null {
+function pageRow(entry: ItemDbEntry, deps: BuildDeps, acc: Acc): GearRow | null {
+  const { research, spells } = deps
   const k = knowledgeWithResearch(entry, research)
   // One committed page states no stats block at all. Defaulting it here rather than threading an
   // optional through every field below is the difference between a row builder and a chain of
@@ -356,7 +391,7 @@ function pageRow(
     effects: block.effects.map((e) => gearEffect(e, spells, acc)),
     ...optionalFields(k, read, synthesizesVoidSave(block, ANY_UPGRADED), acc.derived.get(itemKey(entry.page)))
   }
-  return row
+  return withDrops(row, deps.sources)
 }
 
 /**
@@ -373,14 +408,14 @@ function remember(acc: Acc, entry: ItemDbEntry, row: GearRow): void {
   if (canonical) acc.fromCanonical.add(row.key)
 }
 
-function addPage(acc: Acc, entry: ItemDbEntry, research: ItemResearchFile, spells: SpellFactsIndex): void {
+function addPage(acc: Acc, entry: ItemDbEntry, deps: BuildDeps): void {
   if (acc.seenPages.has(entry.page)) {
     acc.stats.aliasKeys++
     return
   }
   acc.seenPages.add(entry.page)
   acc.stats.pages++
-  const row = pageRow(entry, research, spells, acc)
+  const row = pageRow(entry, deps, acc)
   if (row === null) {
     acc.stats.slotless++
     return
@@ -388,19 +423,29 @@ function addPage(acc: Acc, entry: ItemDbEntry, research: ItemResearchFile, spell
   remember(acc, entry, row)
 }
 
+/** The committed catalog's inversion, built on the first index build and kept for the process. */
+let COMMITTED_SOURCES: SourceIndex | null = null
+function committedSources(): SourceIndex {
+  COMMITTED_SOURCES ??= buildSourceIndex((mobsJson as unknown as MobData).mobs)
+  return COMMITTED_SOURCES
+}
+
 /**
- * The committed file → the served payload. The curated layer and the spell join default to the
- * committed ones and are injectable so a test can drive either from a fixture.
+ * The committed file → the served payload. The curated layer, the spell join and the mob
+ * catalog's inversion default to the committed ones and are injectable so a test can drive any
+ * from a fixture.
  */
 export function buildGearIndex(
   file: ItemDbFile,
   research: ItemResearchFile = ITEMS_RESEARCH,
-  spells: SpellFactsIndex = COMMITTED_SPELL_FACTS
+  spells: SpellFactsIndex = COMMITTED_SPELL_FACTS,
+  sources: SourceIndex = committedSources()
 ): GearIndexPayload {
   const acc = newAcc(buildEraDerivations(file))
+  const deps: BuildDeps = { research, spells, sources }
   // Through the rename overlay (JOS-415) — same reasoning as `buildPlannerIndex`: a gear row is a
   // DISPLAYED name, and `addPage`'s page dedupe already absorbs the alias key.
-  for (const entry of Object.values(renamedItems(file.items ?? {}))) addPage(acc, entry, research, spells)
+  for (const entry of Object.values(renamedItems(file.items ?? {}))) addPage(acc, entry, deps)
   // The census is taken from the KEPT rows, after dedupe (see `countRow`).
   for (const row of acc.rows.values()) countRow(acc, row)
   return {

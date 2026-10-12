@@ -8,7 +8,8 @@
 //
 // THE SPLIT IS BY QUESTION, not by fit. The first row asks WHICH ITEMS — name, slots, weapon type,
 // classes, effect kind, era, owned. The second asks WHAT THEY READ, and since JOS-302 that is one
-// control: the plus-state being simulated.
+// control: the plus-state being simulated. (Since 2026-09-26 the Zones picker leads that row too,
+// and that one IS by fit — `NumbersRow` states the measurement.)
 //
 // THE SECOND ROW USED TO CARRY TWO MORE (owner ruling 2026-08-13: *drop the min-ratio and
 // stat-at-least filters completely - sorting services that need without spending toolbar real
@@ -50,14 +51,16 @@ import type { JSX } from 'react'
 import { Chip, MenuItem, Stack, TextField } from '@mui/material'
 import { CLASS_ABBRS } from '@shared/classCombo'
 import type { ItemUpgradeState } from '@shared/itemUpgrade'
+import type { ZoneShort } from '@shared/maps'
 import { EQUIP_SLOTS } from '@shared/planner/types'
-import { WEAPON_PICKS, WEAPON_PICK_LABEL } from '@shared/planner/weaponType'
+import { WEAPON_PICK_LABEL } from '@shared/planner/weaponType'
 import { classDisplayName } from '@shared/spellLevels'
 import ChipMultiSelect from '../../components/ChipMultiSelect'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
 import { SOCKET_LABEL } from '../planner/plannerGroups'
 import UpgradeSlider from './UpgradeSlider'
-import type { EffectFilter, GearFilters } from './gearFilter'
+import { GEAR_WEAPON_PICKS, type EffectFilter, type GearFilters } from './gearFilter'
+import { gearZoneLabel, zoneOptionsWith } from './gearZones'
 import type { GearControl } from './gearPrefs'
 import type { GearClasses } from './gearData'
 
@@ -106,9 +109,19 @@ export interface GearFilterBarProps {
   text: string
   setText: (v: string) => void
   classes: GearClasses
+  /** the zones at least one row drops in (`gearData.useGearIndex`) — empty until the index arrives */
+  zoneOptions: readonly ZoneShort[]
   upgrade: { state: ItemUpgradeState; set: (s: ItemUpgradeState) => void }
   /** which controls to draw (JOS-297) — `gearPrefs.controlsVisible`, the whole set by default */
   visible: ReadonlySet<GearControl>
+  /**
+   * Is anything on screen READING the derived scores (fork decision, kaltinril 2026-08-15)? The Ignore haste chip
+   * only draws while it is — a knob on EFF DMG and BEST is noise beside a table showing neither.
+   * The view computes it over the DRAWN columns AND the search thresholds, because a `best>40`
+   * token reads the flag with no column drawn, and a hidden control must never be quietly applying
+   * (the JOS-297 law — which also keeps this an honest hide: irrelevant means WITHOUT EFFECT).
+   */
+  hasteRelevant: boolean
 }
 
 /** The three closed-list narrowings of WHO a row is: its slots, its weapon kind, its effect kind. */
@@ -134,16 +147,18 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
       {/* JOS-302's third ask. The options are the CATEGORIES first and then the nine types
           (`WEAPON_PICKS`), because "the two-handers" is the common question and a category is only
           ever a union of its members — shared/planner/weaponType.ts states the whole vocabulary and
-          the corpus census it was measured from. */}
+          the corpus census it was measured from. `Shield` closes the list (fork decision, kaltinril 2026-08-15:
+          a shield is a kind of held item, so it lives in this dropdown, not as its own toggle) —
+          answered by `isShieldLike` rather than the skill fold, and unioned like every other pick. */}
       {visible.has('weapon') && (
         <ChipMultiSelect
-          options={WEAPON_PICKS}
+          options={GEAR_WEAPON_PICKS}
           value={filters.weaponTypes}
           onChange={(weaponTypes) => setFilters({ ...filters, weaponTypes })}
           label="Weapon type"
           placeholder="every kind"
           minWidth={190}
-          optionLabel={(pick) => WEAPON_PICK_LABEL[pick]}
+          optionLabel={(pick) => (pick === 'shield' ? 'Shield' : WEAPON_PICK_LABEL[pick])}
           testId="gear-weapon"
         />
       )}
@@ -170,7 +185,7 @@ function SelectRow({ filters, setFilters, visible }: Pick<GearFilterBarProps, 'f
 }
 
 /** WHICH ITEMS: name, slot, classes, effect kind, era. Search is always drawn — see the header. */
-function IdentityRow({ filters, setFilters, text, setText, classes, visible }: Omit<GearFilterBarProps, 'upgrade'>): JSX.Element {
+function IdentityRow({ filters, setFilters, text, setText, classes, visible, hasteRelevant }: Omit<GearFilterBarProps, 'upgrade' | 'zoneOptions'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
       <TextField
@@ -179,6 +194,12 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
         value={text}
         data-testid="gear-search"
         onChange={(e) => setText(e.target.value)}
+        // The ONLY hint the numeric syntax gets is the placeholder (gearFilter.ts header states the
+        // shape): it shows an example without costing width, and a tooltip on an input the user
+        // types into is what the tooltip diet forbids outright (AGENTS.md) - the three-sentence
+        // title that sat here until 2026-08-25 explained the haystack and every operator to
+        // someone mid-keystroke.
+        placeholder="name, zone, mob, ac>=20"
         sx={{ minWidth: 150, flexShrink: 1 }}
       />
 
@@ -225,6 +246,19 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
         />
       )}
 
+      {/* ON THIS ROW, NOT THE NUMBERS ROW (fork decision, kaltinril 2026-08-15, second placement): the second
+          row is the upgrade simulation, and this chip is about the SCORES — it reads better beside
+          the other verdict chips. Drawn only while something on screen reads the derived scores. */}
+      {visible.has('haste') && hasteRelevant && (
+        <ToggleChip
+          label="Ignore haste"
+          testId="gear-haste-toggle"
+          on={filters.ignoreHaste}
+          onToggle={() => setFilters({ ...filters, ignoreHaste: !filters.ignoreHaste })}
+          hint="Leave haste out of EFF DMG and BEST"
+        />
+      )}
+
       {visible.has('classes') && classes.offer !== null && (
         <Chip
           size="small"
@@ -241,27 +275,46 @@ function IdentityRow({ filters, setFilters, text, setText, classes, visible }: O
   )
 }
 
-/** WHAT THEY READ: the simulated plus-state, and — since JOS-302 — nothing else. */
-function NumbersRow({ upgrade }: Pick<GearFilterBarProps, 'upgrade'>): JSX.Element {
+/** WHAT THEY READ: the simulated plus-state. The haste knob visited this row for an hour on
+ *  2026-08-15 and moved to the identity row the same day — the user read this row as the upgrade
+ *  estimation it is, and a chip about the SCORES sat wrong beside it.
+ *
+ *  AND WHERE THEY DROP (fork decision, kaltinril 2026-09-26), which is a WHICH ITEMS question on
+ *  the wrong row ON PURPOSE: the first row is full. MEASURED in gear.e2e.mts at the default 1280px
+ *  window — a fifth picker up there put the row 60px past the content area and the era chip out
+ *  from under the pointer. The split by question yields to the `flexWrap` law it was made to serve;
+ *  this row had the room. The picker leads the row so it does not move when the fraction slider
+ *  comes and goes. The fourth multi-select, and the same control again: the picks UNION, an empty
+ *  pick is no filter, and the options are ZONES, never the wiki's spellings of them — three
+ *  spellings of Unrest are one pick (gearZones.ts holds the measurement). */
+function NumbersRow({ filters, setFilters, zoneOptions, upgrade, visible }: Omit<GearFilterBarProps, 'text' | 'setText' | 'classes' | 'hasteRelevant'>): JSX.Element {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'nowrap', minWidth: 0 }}>
-      <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />
+      {visible.has('zone') && (
+        <ChipMultiSelect
+          options={zoneOptionsWith(zoneOptions, filters.zones)}
+          value={filters.zones}
+          onChange={(zones) => setFilters({ ...filters, zones })}
+          label="Zones"
+          placeholder="every zone"
+          optionLabel={gearZoneLabel}
+          minWidth={190}
+          testId="gear-zone"
+        />
+      )}
+      {visible.has('upgrade') && <UpgradeSlider state={upgrade.state} onChange={upgrade.set} />}
     </Stack>
   )
 }
 
 /**
- * Does the WHAT THEY READ row have anything left to draw? An empty row is height with no content.
- *
- * It is a one-entry list now that the ratio and threshold controls are gone, and it stays a LIST
- * rather than collapsing into `visible.has('upgrade')` at the call site: the row is a place, and
- * the next control that belongs to "what they read" should join a named set rather than have to
- * re-derive that a row can be empty.
+ * Does the second row have anything left to draw? An empty row is height with no content.
+ * Still a LIST — the row is a place (JOS-302's survivor).
  */
-const NUMBERS_CONTROLS: readonly GearControl[] = ['upgrade']
+const NUMBERS_CONTROLS: readonly GearControl[] = ['zone', 'upgrade']
 
 export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
-  const { filters, setFilters, text, setText, classes, upgrade, visible } = props
+  const { filters, setFilters, text, setText, classes, zoneOptions, upgrade, visible, hasteRelevant } = props
   return (
     <Stack spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
       <IdentityRow
@@ -271,8 +324,11 @@ export default function GearFilterBar(props: GearFilterBarProps): JSX.Element {
         setText={setText}
         classes={classes}
         visible={visible}
+        hasteRelevant={hasteRelevant}
       />
-      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && <NumbersRow upgrade={upgrade} />}
+      {NUMBERS_CONTROLS.some((c) => visible.has(c)) && (
+        <NumbersRow filters={filters} setFilters={setFilters} zoneOptions={zoneOptions} upgrade={upgrade} visible={visible} />
+      )}
     </Stack>
   )
 }

@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useMemo, useState } from 'react'
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   Dialog,
@@ -13,15 +14,30 @@ import {
   Typography
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import { itemBaseName } from '@shared/itemStats'
+import { hasWish } from '@shared/planner/wishlist'
 import type { ItemKnowledge, LootEvent } from '@shared/types'
+import type { ZoneShort } from '@shared/maps'
 import type { Timeslice } from '@shared/timeslice'
 import { isAcquisition } from '@shared/lootDisposition'
 import { formatDate } from '../../lib/formatDate'
+import { sourceItemKey } from '../../lib/itemSources'
 import { EQ_ITEM_COLORS } from '../../lib/ItemWindow'
 import { ObservedItemWindow } from '../../lib/ObservedItemWindow'
-import { ItemDbSources, ObservedChip } from './ItemDbSources'
+// THE ONE UPGRADE CONTROL: the Gear toolbar's slider, mounted under the item card (fork decision,
+// kaltinril 2026-09-13) — same two sliders, same label, same calculator behind the numbers.
+import UpgradeSlider from '../gear/UpgradeSlider'
+import type { MobTarget } from '../mobs/mobTarget'
+// THE ONE WISH CONTROL (JOS-343/346) and the ONE gear-wish builder (wishSearch.ts) — the drill-down
+// writes the same bytes the Gear table's row control writes, through the same shared document.
+import { useWishlist } from '../wishlist/useWishlist'
+import WishToggle from '../wishlist/WishToggle'
+import { wishFromGear } from '../wishlist/wishSearch'
+import { ItemDbSources } from './ItemDbSources'
+import { DroppedByColumn, type LootTally } from './ItemDroppedBy'
 import { ItemZoneTable } from './ItemZoneTable'
-import { KnowledgeSection } from './KnowledgeSection'
+import { isWearable, itemWindowBlock, upgradeSeed, windowUpgrade } from './itemUpgradeSim'
+import { KnowledgeSection, type KnowledgeLinks } from './KnowledgeSection'
 import { useItemZoneRates, type ItemZoneRates } from './useItemZoneRates'
 
 /**
@@ -76,35 +92,6 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
         </Typography>
       )}
     </Paper>
-  )
-}
-
-function Bar({
-  label,
-  value,
-  max,
-  right
-}: {
-  label: string
-  value: number
-  max: number
-  right: string
-}): JSX.Element {
-  const pct = max > 0 ? (value / max) * 100 : 0
-  return (
-    <Box sx={{ mb: 0.75 }}>
-      <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.25 }}>
-        <Typography variant="caption" noWrap sx={{ maxWidth: 220 }}>
-          {label}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {right}
-        </Typography>
-      </Stack>
-      <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: 1 }}>
-        <Box sx={{ height: 8, width: `${pct}%`, bgcolor: 'secondary.main', borderRadius: 1 }} />
-      </Box>
-    </Box>
   )
 }
 
@@ -163,11 +150,6 @@ function Timeline({ events }: { events: LootEvent[] }): JSX.Element {
   )
 }
 
-interface LootTally {
-  name: string
-  count: number
-}
-
 interface LootBreakdown {
   sources: LootTally[]
   zones: LootTally[]
@@ -190,9 +172,48 @@ function aggregateLoot(events: LootEvent[]): LootBreakdown {
   return { sources, zones }
 }
 
+/**
+ * ADD THIS ITEM TO THE WISH LIST, from the drill-down (fork decision, kaltinril 2026-08-15: the gesture the Gear
+ * rows already have, on the surface where you are LOOKING at the item). Same control, same builder,
+ * same key: `sourceItemKey(name)` is `itemKey(name)` re-applied renderer-side, so a wish written
+ * here and one written from the Gear table are one wish — the document dedupes them by that key.
+ *
+ * NOTHING RENDERS UNTIL THE DOCUMENT HAS LOADED — the same absent-not-disabled rule the Gear
+ * table's control follows (GearTableProps.onToggleWish): before `ready`, "not wished" would be a
+ * default posing as an answer, and the control would offer the wrong action.
+ */
+function ItemWishRow({ item }: { item: string }): JSX.Element | null {
+  const wishlist = useWishlist()
+  if (!wishlist.ready) return null
+  const key = sourceItemKey(item)
+  const wished = hasWish(wishlist.list, key)
+  return (
+    <Box sx={{ mt: 1 }}>
+      <WishToggle
+        name={item}
+        wished={wished}
+        testId="item-detail-wish"
+        onToggle={() => {
+          // The BASE name, never the displayed one: a "+2" copy on a loot line is still one item,
+          // and the corpus key the list joins on is the `+N`-stripped spelling.
+          if (wished) wishlist.remove(key)
+          else wishlist.add(wishFromGear({ key, name: itemBaseName(item) }, Date.now()))
+        }}
+      />
+    </Box>
+  )
+}
+
 /* The item as the GAME shows it: wiki base data, drawn in the item-window language.
    `stats` (posky's scraped block) is the offline fallback when the wiki lookup hasn't
-   structured one yet. */
+   structured one yet.
+
+   AND AT ANY PLUS-STATE, for a WEARABLE item (fork decision, kaltinril 2026-09-13): the Gear
+   toolbar's simulate-upgrade slider sits under the card, and the window draws the item at the
+   state it reads. The slider opens where the name says the item IS (`upgradeSeed`), and the base
+   block is drawn at that tier, its meter reading the name as always; a simulation is only ever
+   tagged once the reader has asked for one (`windowUpgrade`). State is per item, not remembered:
+   the column is keyed by `item`. */
 function ItemWindowColumn({
   item,
   stats,
@@ -202,51 +223,35 @@ function ItemWindowColumn({
   stats?: string
   knowledge: ItemKnowledgeState
 }): JSX.Element {
+  const block = useMemo(
+    () => itemWindowBlock(knowledge.data?.stats, stats ?? knowledge.data?.statsBlock),
+    [knowledge.data, stats]
+  )
+  const seed = upgradeSeed(item)
+  const [upgrade, setUpgrade] = useState(seed)
+  const drawn = windowUpgrade(upgrade, seed)
   return (
     <Box sx={{ width: { xs: '100%', md: 340 }, flexShrink: 0 }}>
       <ObservedItemWindow
         name={item}
-        stats={knowledge.data?.stats}
-        rawStats={stats ?? knowledge.data?.statsBlock}
+        stats={block}
         iconId={knowledge.data?.iconId}
         flavor={knowledge.data?.summary}
+        upgrade={drawn.upgrade}
+        simulated={drawn.simulated}
       />
+      {isWearable(block) && (
+        <Box sx={{ mt: 1 }} data-testid="item-detail-upgrade">
+          <UpgradeSlider state={upgrade} onChange={setUpgrade} testId="item" wrap />
+        </Box>
+      )}
+      <ItemWishRow item={item} />
       {knowledge.loading && !knowledge.data && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, color: 'text.secondary' }}>
           <CircularProgress size={14} />
           <Typography variant="caption">Looking up this item…</Typography>
         </Stack>
       )}
-    </Box>
-  )
-}
-
-/* The observed columns are YOUR loot history — chipped `observed` since 2026-08-04, because the
-   `db` columns below them answer the same question from the committed wiki data and the two must
-   never read as one list. "You have never looted this" is now a statement about you, not about
-   the item. */
-function ObservedHead({ title, hint }: { title: string; hint?: string }): JSX.Element {
-  return (
-    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5 }}>
-      <Typography variant="subtitle2">{title}</Typography>
-      {hint !== undefined && (
-        <Typography component="span" variant="caption" color="text.secondary">
-          {hint}
-        </Typography>
-      )}
-      <ObservedChip />
-    </Stack>
-  )
-}
-
-function DroppedByColumn({ sources, max }: { sources: LootTally[]; max: number }): JSX.Element {
-  return (
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <ObservedHead title="Dropped by" hint="(times seen)" />
-      {sources.length === 0 && <Typography variant="caption">You have not looted this yet.</Typography>}
-      {sources.map((s) => (
-        <Bar key={s.name} label={s.name} value={s.count} max={max} right={`${s.count}× seen`} />
-      ))}
     </Box>
   )
 }
@@ -264,7 +269,10 @@ function ObservedColumn({
   knowledge,
   item,
   zoneRates,
-  owned
+  owned,
+  onOpenMob,
+  onOpenMapZone,
+  links
 }: {
   events: LootEvent[]
   agg: LootBreakdown
@@ -272,6 +280,10 @@ function ObservedColumn({
   item: string
   zoneRates: ItemZoneRates
   owned?: number
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
+  /** the "What it's for" card's routes out: a Sky quest's page, a reward's page */
+  links: KnowledgeLinks
 }): JSX.Element {
   return (
     <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
@@ -291,16 +303,21 @@ function ObservedColumn({
       </Stack>
 
       {/* "What it's for" (Task #53) — quest knowledge. Local posky + cached wiki. */}
-      <KnowledgeSection data={knowledge.data} loading={knowledge.loading} />
+      <KnowledgeSection data={knowledge.data} loading={knowledge.loading} {...links} />
 
       {/* WHO drops it beside WHERE — and the where half is a RATE now (JOS-78), because a zone's
           count alone cannot tell eleven-in-an-evening from eleven-over-a-fortnight. */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-        <DroppedByColumn sources={agg.sources} max={agg.sources[0]?.count ?? 1} />
-        <ItemZoneTable rows={zoneRates.rows} clipped={zoneRates.clipped} looted={events.length > 0} />
+        <DroppedByColumn sources={agg.sources} max={agg.sources[0]?.count ?? 1} onOpenMob={onOpenMob} />
+        <ItemZoneTable
+          rows={zoneRates.rows}
+          clipped={zoneRates.clipped}
+          looted={events.length > 0}
+          onOpenMapZone={onOpenMapZone}
+        />
       </Stack>
 
-      <ItemDbSources item={item} knowledge={knowledge.data} />
+      <ItemDbSources item={item} knowledge={knowledge.data} onOpenMob={onOpenMob} onOpenMapZone={onOpenMapZone} />
 
       <Divider sx={{ my: 2 }} />
       <Typography variant="subtitle2" gutterBottom>
@@ -352,8 +369,18 @@ export function ItemDetailContent({
   stats,
   active,
   slice,
-  owned
-}: Omit<ItemDetailProps, 'isQuestItem'> & { active: boolean }): JSX.Element {
+  owned,
+  onOpenMob,
+  onOpenMapZone,
+  onOpenQuest,
+  onOpenItem
+}: Omit<ItemDetailProps, 'isQuestItem'> & KnowledgeLinks & {
+  active: boolean
+  /** the source and dropped-by mobs' door to their pages (App's `openMob`); absent, plain text */
+  onOpenMob?: (t: MobTarget) => void
+  /** the stated and observed zones' door to the Maps tab (App's `openMapZone`); absent, plain text */
+  onOpenMapZone?: (zone: ZoneShort) => void
+}): JSX.Element {
   /**
    * EVERY NUMBER BELOW IS ABOUT LOOTING, so the destroys come out here (JOS-401, the census).
    * `Times looted`, `Distinct mobs`, `Zones seen`, the mob breakdown, the per-zone rates and the
@@ -373,7 +400,7 @@ export function ItemDetailContent({
   const zoneRates = useItemZoneRates(looted, slice)
   return (
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
-      <ItemWindowColumn item={item} stats={stats} knowledge={knowledge} />
+      <ItemWindowColumn key={item} item={item} stats={stats} knowledge={knowledge} />
       <ObservedColumn
         events={looted}
         agg={agg}
@@ -381,6 +408,9 @@ export function ItemDetailContent({
         item={item}
         zoneRates={zoneRates}
         owned={owned}
+        onOpenMob={onOpenMob}
+        onOpenMapZone={onOpenMapZone}
+        links={{ onOpenQuest, onOpenItem }}
       />
     </Stack>
   )
@@ -392,8 +422,20 @@ export function ItemDetailDialog({
   item,
   events,
   stats,
-  isQuestItem
-}: ItemDetailProps & { open: boolean; onClose: () => void }): JSX.Element {
+  isQuestItem,
+  onOpenLoot
+}: ItemDetailProps & {
+  open: boolean
+  onClose: () => void
+  /**
+   * The route OUT of the dialog chrome and into the Loot tab's own pane on this item (fork decision,
+   * kaltinril 2026-08-17) — the same drill the Gear and Wishlist names deep-link to, with the breadcrumb,
+   * the timeslice and the reconcile counts this dialog deliberately does not carry. Optional
+   * because the dialog's host must have the router in hand (the Mobs tab does); absent draws
+   * nothing rather than a dead button.
+   */
+  onOpenLoot?: (item: string) => void
+}): JSX.Element {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ pr: 6 }}>
@@ -402,6 +444,22 @@ export function ItemDetailDialog({
             {item}
           </Box>
           {isQuestItem && <Chip size="small" color="primary" variant="outlined" label="Plane of Sky" />}
+          {onOpenLoot !== undefined && (
+            <Button
+              size="small"
+              onClick={() => {
+                // Close first: navigation unmounts the host view, and a dialog left "open" on an
+                // unmounting page is a transition the user never asked to watch. The page itself
+                // is not lost with the view: MobsView parks its drill as it unmounts and the Loot
+                // pane's Back notes where it went (lib/navReturn.ts), so `Back to Mobs` lands on
+                // the mob whose dialog this was, not on the search list it used to.
+                onClose()
+                onOpenLoot(item)
+              }}
+            >
+              Open in Loot
+            </Button>
+          )}
         </Stack>
         <IconButton onClick={onClose} sx={{ position: 'absolute', right: 8, top: 8 }}>
           <CloseIcon />

@@ -45,7 +45,7 @@
  *      `Primitive_freeport-Inventory.txt` into the throwaway install, so `Primary  Thelvorn, Blade
  *      of Light +5` and `Secondary  Whitened Treant Fists` are facts on disk that have to travel
  *      main's parser, `equippedHosts`' cell assignment, the IPC and the renderer join to reach a
- *      hovered row. The number beside them is computed here from `scaleGearRow`, never typed.
+ *      hovered row. The expected words come from the card's own vocabulary, never typed.
  *   3. THE JOS-143 REGRESSION, WHICH IS THE STANDING RISK OF THE FEATURE. This table has carried
  *      "no popper on these dense rows" since it shipped, because twice (JOS-127, JOS-143) a card
  *      belonging to a row under a dropdown toolbar opened upward across it and ate the clicks aimed
@@ -63,10 +63,9 @@ import type { ElectronApplication, Page } from 'playwright-core'
 import { check, countOf, hoverAt, note, settle, settleGone, settleStable } from './appHarness.mjs'
 import { clearPicks, pickIn } from './gearFilterSteps.mjs'
 import type { GearRow } from '../../src/shared/planner/gear'
-import { scaleGearRow } from '../../src/shared/planner/gearScale'
 // The card's own words, so the expectation is COMPUTED from the module under test's own spelling
 // rather than typed into this file (and a change to the spelling turns the unit test red first).
-import { compareStats, compareText } from '../../src/renderer/src/features/gear/gearCompare'
+import { NO_BASE_CHANGE } from '../../src/renderer/src/features/gear/gearCompare'
 
 const ROW = '[data-testid="gear-row"]'
 /** The three nodes the JOS-344 layout is made of — exported for the Exaltations side. */
@@ -322,10 +321,10 @@ export async function closePair(page: Page): Promise<boolean> {
  * 1. THE PAIR, ON THE ROW THE HOST SPEC ALREADY PINS.
  *
  * Thelvorn is a PRIMARY item and the staged dump wears one at +5, so this single row proves the
- * whole chain AND the most useful case in it: the candidate is compared against a worn copy the
- * player has merged five times, which is why the numbers differ at all. The expected delta is
- * computed from `scaleGearRow` + the card's own `compareText`, so this spec cannot drift from
- * either the arithmetic or the wording.
+ * whole chain AND the ruling on it (2026-09-05): the card compares BASE AGAINST BASE — the route's
+ * own math — so a candidate identical to the worn copy shows NO differences and SAYS so, with the
+ * merged tier stated in the frame label. The expected words come from the card's own
+ * `NO_BASE_CHANGE`, so this spec cannot drift from the wording.
  */
 async function stepPairOpens(page: Page, base: GearRow): Promise<boolean> {
   await page.fill(SEARCH, base.name, { timeout: 15_000 })
@@ -341,7 +340,7 @@ async function stepPairOpens(page: Page, base: GearRow): Promise<boolean> {
   check('the item card states the item’s own numbers', card.stats.includes('DMG'), card.stats || '(none)')
   check('…and says nothing about a simulation, because the selector is at base', !card.simulated)
   check('the equipped card is drawn beside it, because the staged dump has been read', card.equipped)
-  checkEquippedCard(card, base)
+  checkEquippedCard(card)
   checkFreshness(card)
   await checkPairOnScreen(page, 'default size')
   return true
@@ -367,10 +366,10 @@ function checkFreshness(card: PairRead): void {
  * The card this ticket exists for, read against the file on disk.
  *
  * ONE CELL, because the corpus states one slot for this item — and the name in it is a line of the
- * staged dump. The delta is COMPUTED: the hovered row is at base, the worn copy is at the `+5` its
- * name states, and the expected words come from the card's own `compareText`.
+ * staged dump. The comparison is BASE AGAINST BASE (the 2026-09-05 ruling), so the same item shows
+ * `NO_BASE_CHANGE` — the card's own words — while the name still states the worn copy's `+5`.
  */
-function checkEquippedCard(card: PairRead, base: GearRow): void {
+function checkEquippedCard(card: PairRead): void {
   check(
     'the equipped card names the cell this item would go in, once',
     card.cells.length === 1 && card.cells[0].cell === 'PRIMARY',
@@ -383,13 +382,10 @@ function checkEquippedCard(card: PairRead, base: GearRow): void {
     first?.name ?? '(nothing)'
   )
 
-  const worn = scaleGearRow(base, { full: 5, fraction: 0 }).stats
-  const wantDmg = compareStats(base.stats, worn).find((s) => s.key === 'DMG')
-  const wanted = wantDmg === undefined ? '?' : compareText(wantDmg)
   check(
-    'the delta line is the difference between this item and the one on your body',
-    wantDmg !== undefined && (first?.delta ?? '').includes(wanted),
-    `card says "${first?.delta ?? ''}" · wanted "${wanted}"`
+    'base against base, the same item is no change — and the card says so in its own words',
+    (first?.delta ?? '').includes(NO_BASE_CHANGE),
+    `card says "${first?.delta ?? ''}" · wanted "${NO_BASE_CHANGE}"`
   )
 }
 

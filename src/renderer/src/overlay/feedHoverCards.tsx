@@ -20,6 +20,7 @@ import { type JSX, Suspense, lazy, useEffect, useState } from 'react'
 import type { ItemKnowledge } from '@shared/types'
 import { questUseOutcomes, questUseWhere } from '../lib/itemKnowledgeView'
 import { CARD_ITEM, CARD_LABEL, CARD_MONO, LABEL_STYLE, TEXT_STYLE } from '../lib/hoverCards'
+import { nameUpgrade } from '../features/loot/itemUpgradeSim'
 
 // The game-style item window is a MUI component; the overlay bundle is otherwise MUI-free by
 // design. Loading it LAZILY keeps that promise where it matters — a pinned, locked overlay (and
@@ -208,6 +209,9 @@ export function ItemHoverCard({ item, stats }: { item: string; stats?: string })
           rawStats={stats ?? data?.statsBlock}
           iconId={data?.iconId}
           flavor={data?.summary}
+          // The base block drawn at the name's own ` +N`, as the main window's hover card draws it.
+          upgrade={nameUpgrade(item)}
+          simulated={false}
           compact
         />
       </Suspense>

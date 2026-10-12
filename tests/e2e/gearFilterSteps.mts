@@ -34,6 +34,8 @@ const SEARCH = '[data-testid="gear-search"] input'
 const CLASSES = '[data-testid="gear-classes"]'
 const WEAPON = '[data-testid="gear-weapon"]'
 const SLOT = '[data-testid="gear-slot"]'
+const ZONE = '[data-testid="gear-zone"]'
+const ZONE_CELL = '[data-testid="gear-cell-zone"]'
 const MISMATCH = '[data-testid="planner-mismatch-chip"]'
 
 /** Thelvorn, Blade of Light — PAL-only, PRIMARY, `Skill: 1H Slashing`. The whole fixture, in one row. */
@@ -203,6 +205,45 @@ export async function stepGearSlotPicks(page: Page, all: number): Promise<number
   await pickIn(page, SLOT, 'PRIMARY')
   await until(async () => (await shownCount(page)) === primaries, 15_000)
   return primaries
+}
+
+/**
+ * THE ZONE PICKER (fork decision, kaltinril 2026-09-26): a pick keeps what drops in that ZONE,
+ * however the wiki spelled it, and a second pick is a union.
+ *
+ * `tests/gearZoneFilter.test.mts` owns the predicate; what needs a real app is that the OPTIONS
+ * arrive — they are derived from the index the window fetched, so an empty listbox is a failure
+ * only a window can have — and that the rows the window mounts all name the zone that was picked.
+ * Runs on an unnarrowed corpus with the drop columns drawn, and hands the picker back empty.
+ */
+export async function stepGearZonePicks(page: Page): Promise<void> {
+  const all = await search(page, '')
+  // TYPED AS THE SHORT NAME a player would type: the option reads `The Estate of Unrest`.
+  await pickIn(page, ZONE, 'Unrest')
+  const narrowed = await until(async () => (await shownCount(page)) < all, 15_000)
+  const unrest = await shownCount(page)
+  check('picking a zone narrows the table to what drops there', narrowed && unrest > 0, `${String(all)} items → ${String(unrest)} from Unrest`)
+  check(
+    'the picked zone wears the zone table`s name, never the map stem',
+    (await chipsIn(page, ZONE)).join() === 'The Estate of Unrest',
+    (await chipsIn(page, ZONE)).join()
+  )
+  const cells = await page.evaluate((sel) => [...document.querySelectorAll(sel)].map((c) => c.getAttribute('title') ?? ''), ZONE_CELL)
+  const strangers = cells.filter((t) => !t.includes('Unrest'))
+  check(
+    'every mounted row names Unrest among its zones, in whichever spelling its page used',
+    cells.length > 0 && strangers.length === 0,
+    strangers.length === 0 ? `${String(cells.length)} rows checked` : `offending rows: ${strangers.slice(0, 5).join(' | ')}`
+  )
+
+  await pickIn(page, ZONE, 'Befallen')
+  const union = await until(async () => (await shownCount(page)) > unrest, 15_000)
+  const both = await shownCount(page)
+  check('a SECOND zone is a UNION, as a second slot is', union && both < all, `${String(unrest)} → ${String(both)}, of ${String(all)}`)
+
+  await clearPicks(page, ZONE)
+  const cleared = await until(async () => (await shownCount(page)) === all, 15_000)
+  check('…and clearing the picker returns the whole corpus', cleared, `${String(await shownCount(page))} of ${String(all)}`)
 }
 
 /**
