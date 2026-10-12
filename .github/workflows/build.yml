@@ -159,7 +159,7 @@ jobs:
           npx electron-builder --win --publish never
 
       - name: Upload installer artifact (CI record)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (v4.6.2)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4 (v4.6.2)
         with:
           name: installer
           path: |
@@ -189,7 +189,7 @@ jobs:
       # auto-updates within days, so reports naming a version older than that are rare — and
       # the honest answer for one is "the maps for that build are gone", not a wrong line.
       - name: Upload sourcemaps (private, for symbolicating error reports)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (v4.6.2)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4 (v4.6.2)
         with:
           name: sourcemaps-main-${{ github.run_number }}
           path: out/**/*.map
@@ -542,7 +542,7 @@ jobs:
           Write-Host "main.yml + stable-named installer + SHA256SUMS bridged; $env:GITHUB_REF_NAME published atomically"
 
       - name: Upload installer artifact (CI record)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (v4.6.2)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4 (v4.6.2)
         with:
           name: installer
           path: |
@@ -561,7 +561,7 @@ jobs:
       # were skipped is a release whose crashes cannot be read, and that would be discovered
       # months later by somebody trying to read one.
       - name: Upload sourcemaps (private, for symbolicating error reports)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (v4.6.2)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4 (v4.6.2)
         with:
           name: sourcemaps-${{ github.ref_name }}
           path: out/**/*.map
