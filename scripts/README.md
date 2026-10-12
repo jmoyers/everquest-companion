@@ -10,6 +10,10 @@ Node on PATH (`export PATH="/c/Program Files/nodejs:$PATH"` on this machine).
 | `gen-icon.mts` | `gen:icon` | Generates `build/icon.png` + `build/icon.ico` (dark panel + gold "EQ" mark) with zero deps. Re-run after editing the glyph. |
 | `fetch-packs.mts` | `fetch:packs` | Downloads the shipped voice pack (`alan-rickman`, pinned tag — see `src/main/data/defaultPacks.ts`) into `resources/soundpacks/`, converting the source `openpeon.json` to our `manifest.json` shape. **The audio is gitignored** (it stays out of the public repo) — run this after a fresh clone before `npm run dist`. Idempotent: only missing/empty files are re-downloaded. |
 | `scrape-posky.ts` / `scrape-bosses.ts` | `scrape:posky` / `scrape:bosses` | Refresh quest / raid-target data (offline, committed output). |
+| `scrape-spells.ts --offline` | `scrape:spells -- --offline` | Re-parse the committed spell page cache into `spells.json` with zero wiki requests, after a parser change. Needs the page titles a real run records in `sources/cache/spells/index.json`. |
+| `scrape-page-era-spells.mts` | — | The spell top-up of `pageEra.json`: asks the wiki's era endpoint only for the catalog names that have no verdict yet (one request per 450 names) and merges them in. Run after a spell re-derive, on the owner's word; `--dry-run` names them and sends nothing. |
+| `data-diff.mts` | — | `npx tsx scripts/data-diff.mts [<ref>] [<file> ...]`: what a data re-derive changed, record by record and field by field, against a git ref (default HEAD). Cite its summary in the data commit. |
+| `validate-data.mts` | — | Dev-time checks on the wiki-derived data files (templates left in item summaries, drops with no item record, placeholder quest rewards, spell names that are unparsed fields or shared by pages). `--client-spells <spells_us.txt>` adds a one-time comparison against the game's own spell names; nothing in the app or the scrapers reads that file. |
 
 ## Fixture extractors (`tests/extract-*.mjs`) — run them under **tsx**
 

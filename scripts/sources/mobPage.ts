@@ -51,10 +51,13 @@ export function isMobPage(wikitext: string): boolean {
  */
 export function splitZones(zone: string | undefined): string[] {
   if (!zone) return []
-  return zone
+  const zones = zone
     .split(/\s*(?:<br\s*\/?>|,|\/)\s*/i)
     .map((z) => z.trim())
-    .filter((z) => z.length > 0 && z.length < 60)
+    .filter((z) => z.length > 0)
+  // A long "zone" is usually prose or a glued list: kept, but said out loud for the next refresh.
+  for (const z of zones) if (z.length >= 60) console.warn(`[mobs] long |zone value kept: ${z}`)
+  return zones
 }
 
 /**

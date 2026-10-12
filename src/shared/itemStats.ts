@@ -112,7 +112,11 @@ const STRUCT_KEYS = [
 
 /** Plain `KEY: value` stats that land in the attribute grid. */
 const STAT_KEYS = [
-  'STR', 'STA', 'AGI', 'DEX', 'WIS', 'INT', 'CHA', 'HP', 'MANA', 'END', 'ENDURANCE',
+  'STR', 'STA', 'AGI', 'DEX', 'WIS', 'INT', 'CHA', 'HP', 'MANA', 'END', 'ENDURANCE', 'ENDUR',
+  // A key the scanner lacks is swallowed into its neighbour's value or left as a stray extra:
+  // `HP Regen: 2 Mana Regen: 2 End Regen: 2` read as REGEN, MANA REGEN "2 End", REGEN and an `HP`
+  // (Talisman of Kejaar Kerrath, owner report 2026-10-11); five pages state one of these four.
+  'HP Regen', 'End Regen',
   'Haste', 'Attack', 'Regen', 'Mana Regen', 'Charges', 'Rec Level', 'Recommended Level',
   'Required Level', 'Req Level', 'Cast Time', 'Cooldown', 'Recast', 'Range Damage'
 ]

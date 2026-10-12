@@ -74,8 +74,23 @@ import { fileURLToPath } from 'url'
 import { notesLinkTargets, parsePageEraTag } from '../src/main/itemLookupParse'
 import { itemKey, type ItemDbEntry, type ItemDbFile } from '../src/main/itemsDb'
 import { pageEraKey, type PageEraEntry, type PageEraFile } from '../src/main/pageEraDb'
-import { eraBadge, layeredVerdict, namesEra } from '../src/shared/planner/era'
+import { eraBadge, layeredVerdict } from '../src/shared/planner/era'
 import type { SpellDbFile } from '../src/shared/types'
+import { isMain } from './sources/isMain'
+import {
+  answersSlice,
+  asRevBatch,
+  batchName,
+  batchOf,
+  categoryVerdicts,
+  legacyBatchName,
+  readTitleList,
+  retryOnError,
+  wikitextByRequested,
+  type CatPage,
+  type RevBatch,
+  type RevPage
+} from './sources/pageEraBatch'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
@@ -114,11 +129,6 @@ function retryDelayMs(res: Response, backoff: number): number {
 }
 
 let requestsSent = 0
-
-/** A maxlag deferral arrives as HTTP 200 with an error body (and a Retry-After header). */
-function isMaxlagDeferral(j: unknown): boolean {
-  return (j as { error?: { code?: string } }).error?.code === 'maxlag'
-}
 
 /**
  * One serialized request with exponential backoff on 429/5xx (honours Retry-After).
@@ -159,7 +169,8 @@ async function api<T>(params: Record<string, string>, method: 'GET' | 'POST' = '
     if (res.ok) {
       await sleep(DELAY_MS)
       const j = (await res.json()) as T
-      if (isMaxlagDeferral(j) && attempt < MAX_RETRIES) {
+      // A maxlag deferral is retried; any other error body, or maxlag past the last try, throws.
+      if (retryOnError(j, attempt, MAX_RETRIES)) {
         await sleep(retryDelayMs(res, wait))
         wait *= 2
         continue
@@ -193,19 +204,15 @@ function writeCache(name: string, data: unknown): void {
   writeFileSync(resolve(CACHE_DIR, name), JSON.stringify(data), 'utf8')
 }
 
-/** A file name a title list can own: the batch's first title, folded to something a disk likes. */
-function batchName(prefix: string, titles: readonly string[]): string {
-  const slug = titles[0].replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40)
-  return `${prefix}-${slug}-${String(titles.length)}.json`
+/** This exact slice's cached batch: its hashed file, else an older-named file that proves it is this slice. */
+function readBatch(prefix: string, slice: readonly string[]): unknown {
+  const cached = readCache(batchName(prefix, slice))
+  if (cached !== null) return cached
+  const legacy = readCache(legacyBatchName(prefix, slice))
+  return answersSlice(slice, legacy) ? legacy : null
 }
 
 // ---- step 1: which corpus pages are still silent, and what do their notes link -----------------
-
-interface RevPage {
-  title: string
-  missing?: boolean
-  revisions?: { slots?: { main?: { content?: string } } }[]
-}
 
 /** The zones an item states on its OWN page — the same read `eraDerive.ts` makes. */
 function pageZones(entry: ItemDbEntry): string[] {
@@ -234,22 +241,22 @@ async function fetchWikitext(titles: readonly string[], prefix: string): Promise
   for (let i = 0; i < titles.length; i += TITLE_BATCH) {
     const slice = titles.slice(i, i + TITLE_BATCH)
     const file = batchName(prefix, slice)
-    let pages = readCache(file) as RevPage[] | null
-    if (pages === null) {
-      const j = await api<{ query?: { pages?: RevPage[] } }>({
+    let batch = asRevBatch(readBatch(prefix, slice))
+    if (batch === null) {
+      // redirects=1: a redirect's era is its target's, resolved in this same request.
+      const j = await api<{ query?: Partial<RevBatch> }>({
         action: 'query',
         prop: 'revisions',
         rvprop: 'content',
         rvslots: 'main',
+        redirects: '1',
         titles: slice.join('|')
       })
-      pages = j.query?.pages ?? []
-      writeCache(file, pages)
+      batch = batchOf(j)
+      writeCache(file, batch)
     }
-    for (const p of pages) {
-      const wt = p.revisions?.[0]?.slots?.main?.content
-      if (wt != null) out.set(p.title, wt)
-    }
+    // Keyed by the REQUESTED spelling, so entryFor's lookup finds a title the API normalized.
+    for (const [t, wt] of wikitextByRequested(slice, batch)) out.set(t, wt)
   }
   return out
 }
@@ -331,18 +338,17 @@ interface MetaResponse {
 
 let eraRevision: number | undefined
 
-async function fetchMetadata(titles: readonly string[]): Promise<Map<string, boolean>> {
+export async function fetchMetadata(titles: readonly string[]): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>()
   for (let i = 0; i < titles.length; i += META_BATCH) {
     const slice = titles.slice(i, i + META_BATCH)
     const file = batchName('meta', slice)
-    let j = readCache(file) as MetaResponse | null
-    if (j === null) {
-      j = await api<MetaResponse>({ action: 'eqlmetadata', titles: slice.join('|') }, 'POST')
-      writeCache(file, j)
-    }
+    const cached = readBatch('meta', slice) as MetaResponse | null
+    const j = cached ?? (await api<MetaResponse>({ action: 'eqlmetadata', titles: slice.join('|') }, 'POST'))
     const rows = j.eqlmetadata?.pages
     if (rows === undefined) throw new Error(`eqlmetadata returned no pages: ${JSON.stringify(j).slice(0, 300)}`)
+    // Cached only once it has rows: a failed answer must never look cached.
+    if (cached === null) writeCache(file, j)
     eraRevision ??= j.eqlmetadata?.eraRevision
     for (const row of rows) keepRow(out, row)
   }
@@ -366,32 +372,22 @@ function keepRow(out: Map<string, boolean>, row: MetaRow): void {
  */
 async function fetchCategories(titles: readonly string[]): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>()
-  interface CatPage {
-    title: string
-    missing?: boolean
-    categories?: { title: string }[]
-  }
   for (let i = 0; i < titles.length; i += TITLE_BATCH) {
     const slice = titles.slice(i, i + TITLE_BATCH)
     const file = batchName('cats', slice)
-    let pages = readCache(file) as CatPage[] | null
-    if (pages === null) {
-      const j = await api<{ query?: { pages?: CatPage[] } }>({
+    let batch = asRevBatch<CatPage>(readBatch('cats', slice))
+    if (batch === null) {
+      const j = await api<{ query?: Partial<RevBatch<CatPage>> }>({
         action: 'query',
         prop: 'categories',
         cllimit: 'max',
+        redirects: '1',
         titles: slice.join('|')
       })
-      pages = j.query?.pages ?? []
-      writeCache(file, pages)
+      batch = batchOf(j)
+      writeCache(file, batch)
     }
-    for (const p of pages) {
-      const tokens = (p.categories ?? []).flatMap((c) => {
-        const m = /^Category:\s*(.+?)[ _]+Era$/i.exec(c.title)
-        return m === null ? [] : [m[1].replace(/[_\s]+/g, ' ').trim()]
-      })
-      out.set(pageEraKey(p.title), tokens.some((t) => namesEra(t) && eraBadge(t) === 'out'))
-    }
+    for (const [k, v] of categoryVerdicts(slice, batch)) out.set(k, v)
   }
   return out
 }
@@ -454,10 +450,13 @@ function dropperTitles(file: ItemDbFile, catalog: { mobs: { name: string; drops?
 // under a different name. The endpoint answers a redirect as happily as a page, so asking the UNION
 // costs nothing but a few titles and leaves the LOADER able to join on the only handle it has.
 
-/** Every page the spell scrape enumerates, by title. Cached — a re-run asks the wiki nothing. */
+/** Every page the spell scrape enumerates, by title. Cached (a re-run asks nothing); warns when old. */
 async function spellPageTitles(): Promise<string[]> {
-  const cached = readCache('spell-pages.json') as string[] | null
-  if (cached !== null) return cached
+  const cached = readTitleList(readCache('spell-pages.json'))
+  if (cached !== null) {
+    if (cached.warning !== undefined) console.warn(`  ${cached.warning}`)
+    return cached.titles
+  }
   const out: string[] = []
   let eicontinue: string | undefined
   for (let page = 0; page < 200; page++) {
@@ -476,12 +475,12 @@ async function spellPageTitles(): Promise<string[]> {
     eicontinue = j.continue?.eicontinue
     if (eicontinue === undefined) break
   }
-  writeCache('spell-pages.json', out)
+  writeCache('spell-pages.json', { fetchedAt: new Date().toISOString(), titles: out })
   return out
 }
 
 /** The enumeration ∪ the catalog's own names, deduped by key and sorted. */
-function spellTargets(titles: readonly string[], catalog: SpellDbFile): string[] {
+export function spellTargets(titles: readonly string[], catalog: SpellDbFile): string[] {
   const byKey = new Map<string, string>()
   for (const raw of [...titles, ...catalog.spells.map((s) => s.name)]) {
     const key = pageEraKey(raw)
@@ -516,7 +515,7 @@ function entryFor(
  * for, and nothing at all for the ones it did not. Shared by both so the two cannot come to mean
  * different things about an absent row.
  */
-function answered(titles: readonly string[], verdicts: ReadonlyMap<string, boolean>): Record<string, boolean> {
+export function answered(titles: readonly string[], verdicts: ReadonlyMap<string, boolean>): Record<string, boolean> {
   const out: Record<string, boolean> = {}
   for (const title of titles) {
     const v = verdicts.get(pageEraKey(title))
@@ -637,4 +636,5 @@ async function main(): Promise<void> {
   console.log(`  eraRevision: ${String(eraRevision)}   live requests sent this run: ${String(requestsSent)}`)
 }
 
-void main()
+// Runs only as the entry script, so a test import can never start a scrape.
+if (isMain(import.meta.url)) void main()

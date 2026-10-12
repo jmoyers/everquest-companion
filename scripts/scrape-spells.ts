@@ -56,6 +56,9 @@ import type { SpellDbFile, SpellEntry } from '../src/shared/types'
 // The one reader of the wiki's duration strings, shared with the LOADER (JOS-189) so a form this
 // script cannot read at scrape time is still understood when the committed file is loaded.
 import { parseDurationMs } from '../src/shared/spellDuration'
+import { isMain } from './sources/isMain'
+import { cachePath, indexedPages, readIndex, writeIndex } from './sources/spellCache'
+import type { CacheIndex, WikiPage } from './sources/spellCache'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (+https://github.com/jmoyers/everquest-companion) spell catalog'
@@ -68,16 +71,9 @@ const BATCH = 50
 const SCHEMA = 3
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CACHE_DIR = resolve(HERE, 'sources/cache/spells')
-const INDEX_PATH = resolve(CACHE_DIR, 'index.json')
 const OUT_PATH = resolve(HERE, '../src/main/data/spells.json')
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-interface WikiPage {
-  pageid: number
-  title: string
-}
 
 /** How many HTTP requests this run made — reported at the end so the cost is never invisible. */
 let requests = 0
@@ -117,42 +113,7 @@ async function listSpellPages(): Promise<WikiPage[]> {
   return out.sort((a, b) => a.pageid - b.pageid)
 }
 
-// ---- the revision-keyed cache -----------------------------------------------------------------
-
-/**
- * `sources/cache/spells/index.json` — pageid → the revid of the wikitext sitting in
- * `<pageid>.wikitext`. This is the whole idempotence mechanism: without it "cached" means only
- * "we fetched this once, at some unknown point", and the only honest way to refresh would be to
- * re-fetch everything. With it, the question "has this page changed?" costs 1/50th of a request.
- */
-interface CacheIndex {
-  updatedAt: string
-  /** pageid (as a string key, JSON's only kind) → revid of the cached wikitext. */
-  revs: Record<string, number>
-}
-
-function readIndex(): CacheIndex {
-  if (!existsSync(INDEX_PATH)) return { updatedAt: '', revs: {} }
-  try {
-    const j = JSON.parse(readFileSync(INDEX_PATH, 'utf8')) as CacheIndex
-    return { updatedAt: j.updatedAt ?? '', revs: j.revs ?? {} }
-  } catch {
-    // A corrupt index costs a re-fetch, never a wrong answer.
-    return { updatedAt: '', revs: {} }
-  }
-}
-
-/** Written with SORTED keys so the committed file's diff shows only the revids that moved. */
-function writeIndex(idx: CacheIndex): void {
-  const revs: Record<string, number> = {}
-  for (const k of Object.keys(idx.revs).sort((a, b) => Number(a) - Number(b))) revs[k] = idx.revs[k]
-  mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(INDEX_PATH, JSON.stringify({ updatedAt: idx.updatedAt, revs }, null, 2) + '\n')
-}
-
-function cachePath(pageid: number): string {
-  return resolve(CACHE_DIR, `${pageid}.wikitext`)
-}
+// ---- the revision-keyed cache: sources/spellCache.ts --------------------------------------------
 
 interface RevPage {
   pageid?: number
@@ -213,7 +174,7 @@ async function fetchStaleContent(stale: WikiPage[], idx: CacheIndex): Promise<nu
 /** Write one batch's wikitext to the cache and record its revids. Returns the pageids written. */
 function writeBatch(pages: RevPage[], idx: CacheIndex): Set<number> {
   const seen = new Set<number>()
-  mkdirSync(CACHE_DIR, { recursive: true })
+  mkdirSync(dirname(cachePath(0)), { recursive: true })
   for (const p of pages) {
     const rev = p.revisions?.[0]
     if (p.pageid == null || rev?.revid == null) continue
@@ -232,34 +193,54 @@ function writeBatch(pages: RevPage[], idx: CacheIndex): Set<number> {
  * Spellpage block first so nested tables/templates (SpellWhereTable, SpellSlotRow) inside
  * a field value don't get mistaken for template fields.
  */
-function parseSpellpageFields(wikitext: string): Record<string, string> {
+export function parseSpellpageFields(wikitext: string): Record<string, string> {
   const start = wikitext.indexOf('{{Spellpage')
   if (start < 0) return {}
   const block = wikitext.slice(start, templateBlockEnd(wikitext, start))
 
-  // Split on top-level "\n| " field markers (depth 0 relative to the block interior).
   const fields: Record<string, string> = {}
-  const fieldRe = /\n\s*\|\s*([a-zA-Z_0-9]+)\s*=/g
-  const marks: { name: string; valStart: number }[] = []
-  let m: RegExpExecArray | null
-  while ((m = fieldRe.exec(block)) !== null) {
-    // Only accept a marker at template depth 1 (i.e. a direct Spellpage field, not one
-    // inside a nested {{…}}).
-    if (templateDepthAt(block, m.index) === 1) {
-      marks.push({ name: m[1], valStart: m.index + m[0].length })
-    }
-  }
+  const marks = fieldMarks(block)
   for (let i = 0; i < marks.length; i++) {
     const cur = marks[i]
-    const valEnd = i + 1 < marks.length ? findFieldValueEnd(block, cur.valStart, marks[i + 1].valStart) : block.length
-    let val = block.slice(cur.valStart, valEnd)
-    // The LAST field's value runs to block end, which includes the template's closing
-    // `}}` (and any trailing categories). Strip a trailing `}}` + whitespace so it never
-    // leaks into the value (was: `msg_wears_off = Your illusion fades. }}`).
-    val = val.replace(/\}\}\s*$/, '').trim()
-    fields[cur.name.toLowerCase()] = val
+    const last = i + 1 === marks.length
+    let val = block.slice(cur.valStart, last ? block.length : marks[i + 1].at)
+    // Only the LAST field's value runs into the template's own closing `}}` (was:
+    // `msg_wears_off = Your illusion fades. }}`); any other field's trailing `}}` closes a
+    // template inside the value (`{{Era | Kunark}}`) and stays.
+    if (last) val = val.replace(/\}\}\s*$/, '')
+    fields[cur.name.toLowerCase()] = val.trim()
   }
   return fields
+}
+
+/**
+ * Every direct Spellpage field: a `|name =` (or `||name =`) at template depth 1 and outside
+ * `[[ ]]`, wherever it sits — on its own line or several to a line
+ * (`{{Spellpage||spellname=…|classes=…}}`). `at` is the pipe, `valStart` just past the `=`.
+ */
+function fieldMarks(block: string): { name: string; at: number; valStart: number }[] {
+  const marks: { name: string; at: number; valStart: number }[] = []
+  const depth = { tpl: 0, link: 0 }
+  for (let i = 0; i < block.length; i++) {
+    const m = block[i] === '|' && depth.tpl === 1 && depth.link === 0 ? /^\|+\s*([a-zA-Z_0-9]+)\s*=/.exec(block.slice(i, i + 80)) : null
+    if (m) {
+      marks.push({ name: m[1], at: i, valStart: i + m[0].length })
+      i += m[0].length - 1
+    } else {
+      i += bracketStep(block.slice(i, i + 2), depth)
+    }
+  }
+  return marks
+}
+
+/** Track `{{ }}` / `[[ ]]` nesting; returns 1 when `two` was a bracket pair to skip past. */
+function bracketStep(two: string, depth: { tpl: number; link: number }): number {
+  if (two === '{{') depth.tpl++
+  else if (two === '}}') depth.tpl--
+  else if (two === '[[') depth.link++
+  else if (two === ']]') depth.link = Math.max(0, depth.link - 1)
+  else return 0
+  return 1
 }
 
 /**
@@ -281,25 +262,6 @@ function templateBlockEnd(text: string, start: number): number {
   return text.length
 }
 
-/** Template nesting depth at `pos`, counted from the start of `block` (1 = a direct field). */
-function templateDepthAt(block: string, pos: number): number {
-  let d = 0
-  for (let i = 0; i < pos; i++) {
-    if (block[i] === '{' && block[i + 1] === '{') { d++; i++ }
-    else if (block[i] === '}' && block[i + 1] === '}') { d--; i++ }
-  }
-  return d
-}
-
-/** The value ends at the next field marker's line start (approximate but robust here). */
-function findFieldValueEnd(block: string, from: number, nextMarkerValStart: number): number {
-  // nextMarkerValStart is just past "| name =" of the following field; walk back to the
-  // start of that "\n| name =" so the current value excludes it.
-  const slice = block.slice(from, nextMarkerValStart)
-  const lastPipe = slice.lastIndexOf('\n|')
-  return lastPipe >= 0 ? from + lastPipe : nextMarkerValStart
-}
-
 /** Strip wiki markup from a short field value → plain text. */
 function clean(v: string | undefined): string | undefined {
   if (v == null) return undefined
@@ -308,6 +270,7 @@ function clean(v: string | undefined): string | undefined {
   s = s.replace(/\[\[([^\]]*)\]\]/g, '$1') // [[Page]] → Page
   s = s.replace(/'''?/g, '') // bold/italic
   s = s.replace(/<[^>]+>/g, ' ') // html tags
+  s = s.replace(/\{\{:\s*([^}|]+?)\s*\}\}/g, '$1') // {{:Page}} transclusion → Page
   s = s.replace(/\{\{[^}]*\}\}/g, ' ') // stray templates
   s = s.replace(/\s+/g, ' ').trim()
   return s || undefined
@@ -398,11 +361,40 @@ function splitTopLevel(interior: string): string[] {
 // caller ran at SCRAPE time. The loader now fills those nulls through the SAME function, so the two
 // can never disagree about what a wiki duration string means.
 
-function parseSpell(title: string, fields: Record<string, string>): SpellEntry {
-  const name = clean(fields.spellname) ?? title
+/** A page-title disambiguator, never part of the spell's name: `Spell:`/`Effect:`/`Song:` prefixes
+ *  (the game names no song `Song: …`; the three such pages duplicate pages titled plainly), a
+ *  `(Spell)`/`(Effect)` suffix, a glued `Test` (`Burst of FlameTest`). */
+export function stripTitleDecoration(title: string): string {
+  return title
+    .replace(/^(Spell|Effect|Song)\s*:\s*/i, '')
+    .replace(/\s*\((Spell|Effect)\)$/i, '')
+    .replace(/(?<=[a-z])Test$/, '')
+    .trim()
+}
+
+const foldName = (s: string): string => s.toLowerCase().replace(/[`’]/g, "'").replace(/\s+/g, ' ').trim()
+
+/**
+ * The spell's name. The PAGE TITLE wins: `|spellname` is often copy-pasted from a sibling page
+ * (57458 'Healing Water' says 'Greater Healing'), which made the real spell vanish under a
+ * duplicate, and the class tables agree with the title. When the two differ only by a title
+ * decoration, case or a backtick, the `|spellname` spelling is kept. `disagrees` marks a real
+ * conflict, for the run to print.
+ */
+export function spellName(title: string, spellname: string | undefined): { name: string; disagrees: boolean } {
+  const fromTitle = stripTitleDecoration(title)
+  if (!spellname) return { name: fromTitle, disagrees: false }
+  const stated = stripTitleDecoration(spellname)
+  if (foldName(fromTitle) === foldName(stated)) return { name: stated, disagrees: false }
+  return { name: fromTitle, disagrees: true }
+}
+
+export function parseSpell(title: string, fields: Record<string, string>): SpellEntry {
+  const name = spellName(title, clean(fields.spellname)).name
   const durationText = clean(fields.duration)
   const castRaw = clean(fields.casting_time)
-  const castSec = castRaw ? parseFloat(castRaw) : NaN
+  // `casting_time = Instant` (song/proc pages) is a stated zero, not an absent field.
+  const castSec = castRaw && /^instant$/i.test(castRaw) ? 0 : castRaw ? parseFloat(castRaw) : NaN
   // Schema 3: the re-use timer, read exactly the way casting_time is. The template writes
   // `recast_time = 1.50 sec`; a page that omits the field stays absent, never 0.
   const recastRaw = clean(fields.recast_time)
@@ -460,14 +452,51 @@ function previousScrapedAt(spells: readonly SpellEntry[]): string | undefined {
   }
 }
 
-async function main(): Promise<void> {
-  const t0 = Date.now()
-  console.log('Enumerating Template:Spellpage pages…')
-  const pages = await listSpellPages()
-  console.log(`Found ${pages.length} spell pages.`)
+/** A page the wiki has marked for deletion is not a spell, whatever template it embeds
+ *  (51190 `Kurrat's Magician Epic Guide` carries a Spellpage for Summon Orb). */
+const DELETE_MARK = /\{\{\s*Delete\b/i
 
+/** PHASE 3: every page parsed from the cache, with each page that yielded nothing, is marked for
+ *  deletion, or whose title overrode a different `|spellname`, named for the run log. */
+function parseCachedPages(pages: WikiPage[]): {
+  spells: SpellEntry[]
+  missing: number[]
+  noFields: string[]
+  deleted: string[]
+  nameConflicts: string[]
+} {
+  const out = {
+    spells: [] as SpellEntry[],
+    missing: [] as number[],
+    noFields: [] as string[],
+    deleted: [] as string[],
+    nameConflicts: [] as string[]
+  }
+  let done = 0
+  for (const p of pages) {
+    const file = cachePath(p.pageid)
+    if (!existsSync(file)) {
+      out.missing.push(p.pageid)
+      continue
+    }
+    const wikitext = readFileSync(file, 'utf8')
+    if (DELETE_MARK.test(wikitext)) {
+      out.deleted.push(`${p.pageid} ${p.title}`)
+      continue
+    }
+    const fields = parseSpellpageFields(wikitext)
+    if (Object.keys(fields).length) out.spells.push(parseSpell(p.title, fields))
+    else if (wikitext.includes('{{Spellpage')) out.noFields.push(`${p.pageid} ${p.title}`)
+    const stated = clean(fields.spellname)
+    if (spellName(p.title, stated).disagrees) out.nameConflicts.push(`${p.pageid} '${p.title}' (spellname '${stated}')`)
+    if (++done % 100 === 0) console.log(`  parsed ${done}/${pages.length}`)
+  }
+  return out
+}
+
+/** PHASES 1 and 2: which cached pages the wiki has moved past, and their fresh text. */
+async function refreshCache(pages: WikiPage[], idx: CacheIndex): Promise<{ hits: number; stale: WikiPage[]; failures: number[] }> {
   // PHASE 1 — what has changed? One cheap `rvprop=ids` question per 50 pages.
-  const idx = readIndex()
   console.log(`Checking revisions (${Math.ceil(pages.length / BATCH)} batches of ${BATCH})…`)
   const live = await fetchRevIds(pages)
   const stale = pages.filter((p) => {
@@ -482,22 +511,29 @@ async function main(): Promise<void> {
 
   // PHASE 2 — fetch only those, 50 at a time, writing per batch so a kill is resumable.
   const failures = stale.length ? await fetchStaleContent(stale, idx) : []
+  return { hits, stale, failures }
+}
+
+async function main(): Promise<void> {
+  const t0 = Date.now()
+  // `--offline` re-parses the committed cache and sends the wiki nothing: the way to re-derive
+  // spells.json after a parser change (owner, 2026-10-10). It needs the titles a real run records.
+  const offline = process.argv.includes('--offline')
+  const idx = readIndex()
+  console.log(offline ? 'Reading the cache index (offline, no requests)…' : 'Enumerating Template:Spellpage pages…')
+  const pages = offline ? indexedPages(idx) : await listSpellPages()
+  console.log(`Found ${pages.length} spell pages.`)
+
+  const { hits, stale, failures } = offline
+    ? { hits: pages.length, stale: [] as WikiPage[], failures: [] as number[] }
+    : await refreshCache(pages, idx)
 
   // PHASE 3 — parse every page from the cache. The wiki is not consulted here at all, so the
   // committed JSON is a pure function of the committed cache: same cache ⇒ byte-identical file.
-  const spells: SpellEntry[] = []
-  const missing: number[] = []
-  let done = 0
-  for (const p of pages) {
-    const file = cachePath(p.pageid)
-    if (!existsSync(file)) {
-      missing.push(p.pageid)
-      continue
-    }
-    const fields = parseSpellpageFields(readFileSync(file, 'utf8'))
-    if (Object.keys(fields).length) spells.push(parseSpell(p.title, fields))
-    if (++done % 100 === 0) console.log(`  parsed ${done}/${pages.length}`)
-  }
+  const { spells, missing, noFields, deleted, nameConflicts } = parseCachedPages(pages)
+  // Titles beside revids, so a later re-parse has the name source offline too.
+  idx.titles = Object.fromEntries(pages.map((p) => [String(p.pageid), p.title]))
+  writeIndex(idx)
 
   // By NAME, over a list already in PAGEID order — and `Array.prototype.sort` has been required to
   // be stable since ES2019, so the handful of names the wiki carries twice (era/rank duplicates
@@ -539,6 +575,9 @@ async function main(): Promise<void> {
   )
   if (failures.length) console.log(`  FETCH FAILURES (no revision returned): ${failures.join(', ')}`)
   if (missing.length) console.log(`  NOT IN CACHE (skipped): ${missing.join(', ')}`)
+  if (noFields.length) console.log(`  SPELLPAGE WITH NO FIELDS READ (skipped): ${noFields.join('; ')}`)
+  if (deleted.length) console.log(`  MARKED {{Delete}} (skipped): ${deleted.join('; ')}`)
+  for (const c of nameConflicts) console.log(`  title wins over a different |spellname: ${c}`)
 }
 
-void main()
+if (isMain(import.meta.url)) void main()

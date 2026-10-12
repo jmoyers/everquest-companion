@@ -43,7 +43,7 @@
 // that as drops would claim a vendor's stock is loot, so nothing here looks at it — a merchant
 // simply comes back with no `dropsWiki`.
 
-import { templateField } from './itemLookupParse'
+import { EXCLUDED_NS, templateField } from './itemLookupParse'
 import type { MobDrop, MobLoc, MobQuestUse, MobSeenDrop } from '../shared/types'
 import { mobKey } from '../shared/mobKey'
 
@@ -91,25 +91,45 @@ export function unlink(value: string): string {
 export function parseMobLoot(block: string): MobDrop[] {
   const drops: MobDrop[] = []
   const seen = new Set<string>()
-  const re = /\{\{:\s*([^}|]+?)\s*\}\}/g
   const marks: { item: string; end: number }[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(block)) !== null) marks.push({ item: m[1].trim(), end: re.lastIndex })
+  for (const m of block.matchAll(LOOT_ANCHOR_RE)) {
+    const item = lootAnchorItem(block, m)
+    if (item) marks.push({ item, end: m.index + m[0].length })
+  }
   for (let i = 0; i < marks.length; i++) {
     const item = marks[i].item
-    if (!item) continue
-    // Look only as far as the NEXT transclusion, so one item can never borrow another's rarity.
+    // Look only as far as the NEXT anchor, so one item can never borrow another's rarity.
     const tail = block.slice(marks[i].end, i + 1 < marks.length ? marks[i + 1].end : undefined)
     // The rarity annotation, in any of its three spellings. `[^()]*` keeps it to a single
     // parenthesized run; the leading `[^[]*?` stops the scan at a `[Overall: …]` DB span.
     const r = /^[^([{]*?\(([^()]+)\)/.exec(tail.replace(/<\/?span[^>]*>/g, ''))
-    const rarity = r ? r[1].trim() : undefined
+    // A quoted run (`("Vok Na Zov V")`) is the scroll's own name, not a rarity.
+    const rarity = r && !/^["']/.test(r[1].trim()) ? r[1].trim() : undefined
     const key = item.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
     drops.push(rarity ? { item, rarity } : { item })
   }
   return drops
+}
+
+/** A loot anchor: `{{:Item}}` / `{{:Item|Label}}`, or a `[[Item]]` / `[[Target|Label]]` link. */
+const LOOT_ANCHOR_RE = /\{\{:\s*([^}|]+?)\s*(?:\|[^}]*)?\}\}|\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g
+
+/**
+ * The item an anchor names, or null. A link counts only when it opens its list item (nothing but
+ * bullets and HTML before it on the line), so a zone named inside a note is never a drop; a spell
+ * scroll's link is read by its `Spell: X` label, the name the loot line prints.
+ */
+function lootAnchorItem(block: string, m: RegExpMatchArray): string | null {
+  const fold = (s: string): string => s.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+  if (m[1] !== undefined) return fold(m[1]) || null
+  const target = fold(m[2])
+  const label = fold(m[3] ?? '')
+  const lead = block.slice(block.lastIndexOf('\n', m.index) + 1, m.index)
+  if (!/^(\s|[*#:]|<[^>]*>)*$/.test(lead)) return null
+  if (!target || EXCLUDED_NS.test(target) || /^none$/i.test(target)) return null
+  return /^spell\s*:/i.test(label) ? label : target
 }
 
 /** `* [[Quest Page]]` bullets from `|related_quests`. The literal `* None` yields nothing. */
@@ -179,6 +199,9 @@ export function parseMobLocations(field: string): MobLoc[] {
   return out
 }
 
+/** Zone separators in a raw `|zone`: `<br>`, a newline, or two links side by side. */
+const ZONE_SEP_RE = /<br\s*\/?>|\n|(?<=\]\])\s*(?=\[\[)/i
+
 /** What a mob page states. Every field is optional — absent means "the page didn't say". */
 export interface MobPageFacts {
   /** the page's own `|name` value, for the identity check on a non-exact search hit */
@@ -199,7 +222,8 @@ export interface MobPageFacts {
 export function parseMobWikitext(wikitext: string): MobPageFacts {
   const out: MobPageFacts = {}
   const name = templateField(wikitext, 'name')
-  if (name) out.pageName = unlink(name)
+  // `a_minnow`: the page typed the spawn's DB name; the game prints spaces.
+  if (name) out.pageName = unlink(name).replace(/_/g, ' ')
   const level = templateField(wikitext, 'level')
   if (level) {
     const t = unlink(level)
@@ -207,7 +231,8 @@ export function parseMobWikitext(wikitext: string): MobPageFacts {
   }
   const zone = templateField(wikitext, 'zone')
   if (zone) {
-    const t = unlink(zone)
+    // Split BEFORE unlinking: `unlink` drops `<br>`, gluing `[[Burning Woods]]<br>[[Emerald Jungle]]`.
+    const t = zone.split(ZONE_SEP_RE).map(unlink).filter(Boolean).join(', ')
     if (t) out.zone = t
   }
   const loot = templateField(wikitext, 'known_loot')

@@ -32,11 +32,12 @@
  * scripts/sources/cache/mobs so a re-run is nearly free, and partial runs resume rather than
  * duplicating work. Output is sorted by page title, so a re-scrape produces a clean diff.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { isMobPage, parseMobPage } from './sources/mobPage'
 import type { MobData, MobEntry } from '../src/shared/types'
+import { isMain } from './sources/isMain'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
@@ -187,20 +188,27 @@ const BATCH = 50
  * template), so nothing is lost; the alias just stops producing a duplicate record — exactly how
  * scrape-items has always treated redirect pages.
  */
-interface PrefetchedPage {
+export interface PrefetchedPage {
   pageid?: number
   revisions?: { slots?: { main?: { content?: string } } }[]
 }
 
 /** One batch response → per-page cache files. A page the response carries no revision for
  *  (deleted between enumeration and fetch) writes nothing and falls to the per-page fallback. */
-function writePrefetched(pages: readonly PrefetchedPage[]): void {
+export function writePrefetched(pages: readonly PrefetchedPage[], requested: readonly number[]): number[] {
   mkdirSync(CACHE_DIR, { recursive: true })
+  const written = new Set<number>()
   for (const page of pages) {
     const wt = page.revisions?.[0]?.slots?.main?.content
     if (page.pageid === undefined || wt === undefined) continue
     writeFileSync(cachePath(`page-${page.pageid}.wikitext`), wt, 'utf8')
+    written.add(page.pageid)
   }
+  // A requested page the response did not carry must not be re-parsed from an older file
+  // (a --refresh run): drop it, so the per-page fallback asks again or the page is skipped.
+  const notCarried = requested.filter((id) => !written.has(id))
+  for (const id of notCarried) rmSync(cachePath(`page-${id}.wikitext`), { force: true })
+  return notCarried
 }
 
 async function prefetchWikitexts(pages: Member[]): Promise<void> {
@@ -208,18 +216,21 @@ async function prefetchWikitexts(pages: Member[]): Promise<void> {
   if (missing.length === 0) return
   const batches = Math.ceil(missing.length / BATCH)
   console.log(`Prefetching ${missing.length} pages in ${batches} batches of ${BATCH}…`)
+  let notCarried = 0
   for (let i = 0; i < batches; i++) {
     const slice = missing.slice(i * BATCH, (i + 1) * BATCH)
-    const j = await api<{ query?: { pages?: PrefetchedPage[] } }>({
+    const j = await api<{ query?: { pages?: PrefetchedPage[] }; continue?: unknown }>({
       action: 'query',
       prop: 'revisions',
       rvprop: 'content',
       rvslots: 'main',
       pageids: slice.map((p) => p.pageid).join('|')
     })
-    writePrefetched(j.query?.pages ?? [])
+    if (j.continue !== undefined) console.warn(`  batch ${i + 1}: response continued; pages without content fall back`)
+    notCarried += writePrefetched(j.query?.pages ?? [], slice.map((p) => p.pageid)).length
     if ((i + 1) % 25 === 0 || i + 1 === batches) console.log(`  batch ${i + 1}/${batches}`)
   }
+  if (notCarried) console.warn(`  ${notCarried} requested pages came back without content (per-page fallback)`)
 }
 
 /** Page wikitext from the prefetched per-page cache; the per-page fetch survives only as the
@@ -254,10 +265,22 @@ const MOB_CATEGORIES = [
 ]
 const MOB_TEMPLATES = ['Template:Namedmobpage', 'Template:MerchantPage']
 
+const INDEX_STALE_DAYS = 30
+
+/** Days since a cache file was written. */
+export function indexAgeDays(path: string, now = Date.now()): number {
+  return (now - statSync(path).mtimeMs) / 86_400_000
+}
+
 async function collectCandidatePages(): Promise<Member[]> {
   const cached = readCache('mob-pages.json') as Member[] | null
   if (cached) {
     console.log(`Candidate pages: ${cached.length} (cached)`)
+    const ageDays = indexAgeDays(cachePath('mob-pages.json'))
+    // The index cannot be revid-checked: only a re-enumeration finds pages created since.
+    if (ageDays > INDEX_STALE_DAYS) {
+      console.warn(`  the cached page list is ${Math.floor(ageDays)} days old; new mob pages need --refresh`)
+    }
     return cached
   }
   const byTitle = new Map<string, Member>()
@@ -374,4 +397,4 @@ async function main(): Promise<void> {
   printSummary({ mobs, pageCount: pages.length, notMob, skipped, startedAt: started })
 }
 
-void main()
+if (isMain(import.meta.url)) void main()

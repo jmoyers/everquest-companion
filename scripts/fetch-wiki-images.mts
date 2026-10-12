@@ -62,6 +62,7 @@ import {
   wikiItemIconUrl,
   type EqImgRequest
 } from '../src/main/imageCache'
+import { isMain } from './sources/isMain'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
@@ -178,17 +179,18 @@ function backoffMs(res: Response | null, attempt: number): number {
 }
 
 /** GET with exponential backoff; honours Retry-After on 429/5xx. Throws on a hard status. */
-async function fetchWithBackoff(url: string): Promise<Response> {
+export async function fetchWithBackoff(url: string): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
     let res: Response | null = null
+    // Only a network failure is caught: a hard 4xx thrown below must fail once, not be retried.
     try {
       res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'image/png,image/*;q=0.8,*/*;q=0.5' } })
-      if (res.ok) return res
-      if (res.status < 500 && res.status !== 429) throw new Error(`GET ${url} -> ${res.status} ${res.statusText}`)
-      if (attempt >= MAX_ATTEMPTS) throw new Error(`GET ${url} -> ${res.status} after ${attempt} attempts`)
     } catch (err) {
       if (attempt >= MAX_ATTEMPTS) throw err
     }
+    if (res?.ok) return res
+    if (res && res.status < 500 && res.status !== 429) throw new Error(`GET ${url} -> ${res.status} ${res.statusText}`)
+    if (res && attempt >= MAX_ATTEMPTS) throw new Error(`GET ${url} -> ${res.status} after ${attempt} attempts`)
     await sleep(backoffMs(res, attempt))
   }
 }
@@ -329,7 +331,5 @@ async function main(): Promise<void> {
   if (missingNow > 0) console.log(`[fetch-wiki-images] still missing: ${missingNow} (re-run to resume)`)
 }
 
-// Deliberately NOT importable: this module runs on load. The test that pins the manifest
-// (`tests/bundledImages.test.mts`) reads `manifest.json` and the two data files off disk
-// rather than importing anything from here, so nothing can accidentally start a scrape.
-void main()
+// Runs only as the entry script, so a test import can never start a scrape.
+if (isMain(import.meta.url)) void main()

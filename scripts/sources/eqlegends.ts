@@ -34,15 +34,30 @@ const CLASSES = [
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-async function fetchParsedHtml(title: string): Promise<string | null> {
+/** One request per second (owner ruling 2026-08-22), and a bounded retry on 429/5xx. */
+const DELAY_MS = 1000
+const MAX_ATTEMPTS = 4
+
+/** The server's Retry-After when it gave a usable one, else 2 s, 4 s, 8 s. */
+function backoffMs(res: Response, attempt: number): number {
+  const retryAfter = Number(res.headers.get('retry-after'))
+  return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt
+}
+
+/** A page's parsed HTML, or null. Only 429/5xx are retried; any other status fails at once. */
+export async function fetchParsedHtml(title: string): Promise<string | null> {
   const url = `${API}?action=parse&page=${encodeURIComponent(
     title
   )}&prop=text&format=json&formatversion=2&redirects=1`
-  const res = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!res.ok) return null
-  const json = (await res.json()) as { parse?: { text?: string }; error?: unknown }
-  if (json.error || !json.parse?.text) return null
-  return json.parse.text
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, { headers: { 'User-Agent': UA } })
+    if (res.ok) {
+      const json = (await res.json()) as { parse?: { text?: string }; error?: unknown }
+      return json.error || !json.parse?.text ? null : json.parse.text
+    }
+    if ((res.status !== 429 && res.status < 500) || attempt >= MAX_ATTEMPTS) return null
+    await sleep(backoffMs(res, attempt))
+  }
 }
 
 /** Collapse MediaWiki's doubled link text ("FooFoo" -> "Foo"). */
@@ -353,47 +368,67 @@ function itemPageTitles(all: PoskyQuest[]): Set<string> {
 }
 
 /** Fetch each unique item/reward wiki page ONCE (politely) and attach its stat block. */
-async function attachItemStats(all: PoskyQuest[]): Promise<void> {
+export async function attachItemStats(all: PoskyQuest[]): Promise<void> {
   const pages = itemPageTitles(all)
   console.log(`\nFetching stat blocks for ${pages.size} unique items...`)
   const statByPage = new Map<string, string>()
+  const failed: string[] = []
+  const noBlock: string[] = []
   let done = 0
   for (const page of pages) {
+    await sleep(DELAY_MS) // also spaces the first item from the main-page request
     const html = await fetchParsedHtml(page)
-    if (html) {
-      const stats = parseItemStats(html, page)
-      if (stats) statByPage.set(page, stats)
-    }
+    const stats = html ? parseItemStats(html, page) : undefined
+    if (stats) statByPage.set(page, stats)
+    else (html ? noBlock : failed).push(page)
     if (++done % 25 === 0) console.log(`   ${done}/${pages.size}`)
-    await sleep(110)
   }
+  applyStats(all, statByPage)
+  console.log(`Attached stats for ${statByPage.size}/${pages.size} items.`)
+  if (failed.length + noBlock.length) {
+    console.warn(
+      `  ${failed.length + noBlock.length} items without stats - fetch failed: ${failed.join(', ') || 'none'}; ` +
+        `no stat block: ${noBlock.join(', ') || 'none'}`
+    )
+  }
+}
+
+function applyStats(all: PoskyQuest[], statByPage: ReadonlyMap<string, string>): void {
   for (const q of all) {
     for (const it of q.items) if (it.page && statByPage.has(it.page)) it.stats = statByPage.get(it.page)
     if (q.rewardPage && statByPage.has(q.rewardPage)) q.rewardStats = statByPage.get(q.rewardPage)
   }
-  console.log(`Attached stats for ${statByPage.size}/${pages.size} items.`)
 }
 
-async function scrape(): Promise<PoskyData> {
+/**
+ * Every class's quests off the main page's parsed HTML. A class with none is a parser that stopped
+ * matching its block, so it throws before any item request and before posky.json is written.
+ */
+export function parseClasses(mainHtml: string, classes: readonly string[] = CLASSES): PoskyQuest[] {
+  const $main = cheerio.load(mainHtml)
   const all: PoskyQuest[] = []
-
-  // The main "Plane of Sky" page's compact per-class table is the authoritative
-  // source: quest name, giver, trigger, wind rune, required items, and reward.
-  // (The dedicated "<Class> Plane of Sky Tests" pages carry stale/older data and
-  // are intentionally NOT used.)
-  const mainHtml = await fetchParsedHtml('Plane of Sky')
-  const $main = mainHtml ? cheerio.load(mainHtml) : null
-  if (!$main) throw new Error('Could not fetch the Plane of Sky page.')
-
-  for (const cls of CLASSES) {
+  const empty: string[] = []
+  for (const cls of classes) {
     const quests = parseMainPageClass($main, cls, 'Plane of Sky')
     foldRuneItems(quests)
 
     const items = quests.reduce((s, q) => s + q.items.length, 0)
     if (quests.length) console.log(`  ✓ ${cls}: ${quests.length} quests, ${items} items`)
-    else console.warn(`  ! ${cls}: no quests found`)
+    else empty.push(cls)
     all.push(...quests)
   }
+  if (empty.length) throw new Error(`Refusing to write: no quests found for ${empty.join(', ')}`)
+  return all
+}
+
+async function scrape(): Promise<PoskyData> {
+  // The main "Plane of Sky" page's compact per-class table is the authoritative
+  // source: quest name, giver, trigger, wind rune, required items, and reward.
+  // (The dedicated "<Class> Plane of Sky Tests" pages carry stale/older data and
+  // are intentionally NOT used.)
+  const mainHtml = await fetchParsedHtml('Plane of Sky')
+  if (!mainHtml) throw new Error('Could not fetch the Plane of Sky page.')
+  const all = parseClasses(mainHtml)
 
   await attachItemStats(all)
 

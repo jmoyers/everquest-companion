@@ -32,6 +32,8 @@ import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { parseWikiRespawn, type WikiRespawn, type WikiRespawnData } from '../src/shared/respawnWiki'
 import type { MobData } from '../src/shared/types'
+import { templateField } from '../src/main/itemLookupParse'
+import { isMain } from './sources/isMain'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal quest tracker)'
@@ -74,12 +76,17 @@ async function api<T>(params: Record<string, string>): Promise<T> {
 }
 
 /**
- * The field, verbatim, off one page's wikitext. Stops at a newline or the next `|`, which is the
- * `{{Namedmobpage}}` grammar's own field terminator (the same reading `mobLookupParse.ts` does).
+ * The field, verbatim, off one page's wikitext: `|respawn_time` or `| Respawn Time`, read by the
+ * same template reader `mobLookupParse.ts` uses (so a `[[variance|+/-1]]` link stays whole), first
+ * line only.
  */
-const FIELD_RE = /\|\s*respawn_time\s*=\s*([^\n|]*)/i
+export function respawnField(wikitext: string): string {
+  // `respawn_time` first: a page stating both spellings keeps the reading it always had.
+  const firstLine = (field: string): string => (templateField(wikitext, field) ?? '').split('\n')[0].trim()
+  return firstLine('respawn_time') || firstLine('respawn time')
+}
 
-interface RevPage {
+export interface RevPage {
   title: string
   revisions?: { slots?: { main?: { content?: string } } }[]
 }
@@ -110,16 +117,29 @@ function reparse(): void {
   )
 }
 
-/** One batch's worth of rows: the pages that state a respawn, keyed by their in-game name. */
-function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>): WikiRespawn[] {
+// EQ never prints parentheses in an NPC name, so a trailing '(...)' on |name is an editor's note
+// ('the ghoul lord (Hoptor Thaggelum)', 'a kobold (Warrens)') and would never match a death line.
+const TRAILING_NOTE_RE = /\s*\([^()]*\)\s*$/
+
+/** The join key for an in-game name: lowercased, trailing parenthetical dropped. */
+export function respawnKey(name: string): string {
+  return name.replace(TRAILING_NOTE_RE, '').trim().toLowerCase()
+}
+
+/**
+ * One batch's worth of rows: the pages that state a respawn, keyed by their in-game name. A row
+ * whose key lost a parenthetical is added to `stripped`, so `dedupe` never lets it displace a
+ * page whose name already is that key.
+ */
+export function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>, stripped?: Set<WikiRespawn>): WikiRespawn[] {
   const out: WikiRespawn[] = []
   for (const p of pages) {
-    const wikitext = p.revisions?.[0]?.slots?.main?.content ?? ''
-    const m = FIELD_RE.exec(wikitext)
-    const text = m ? m[1].trim() : ''
+    const text = respawnField(p.revisions?.[0]?.slots?.main?.content ?? '')
     if (text.length === 0) continue
     const name = byTitle.get(p.title) ?? p.title
-    const row: WikiRespawn = { key: name.toLowerCase(), page: p.title, text }
+    const key = respawnKey(name)
+    const row: WikiRespawn = { key, page: p.title, text }
+    if (key !== name.trim().toLowerCase()) stripped?.add(row)
     const seconds = parseWikiRespawn(text)
     if (seconds !== null) row.seconds = seconds
     out.push(row)
@@ -130,14 +150,30 @@ function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>): WikiResp
 /**
  * Two pages can state the same in-game name (era duplicates). Keep the first PARSED one, so a
  * duplicate whose field says "Triggered" never displaces a sibling that states a number.
+ *
+ * The engine joins this file by name alone, so same-named mobs in different zones ('a bandit')
+ * still collapse to one row; every pair that disagrees is returned so the run can print it.
+ * A row in `stripped` loses to any row whose name is the key itself, and that collision is
+ * always reported.
  */
-function dedupe(rows: readonly WikiRespawn[]): WikiRespawn[] {
+export function dedupe(
+  rows: readonly WikiRespawn[],
+  stripped: ReadonlySet<WikiRespawn> = new Set()
+): { rows: WikiRespawn[]; conflicts: string[] } {
   const byKey = new Map<string, WikiRespawn>()
+  const conflicts: string[] = []
   for (const row of rows) {
     const prior = byKey.get(row.key)
+    if (prior && stripped.has(prior) !== stripped.has(row)) {
+      const [kept, lost] = stripped.has(row) ? [prior, row] : [row, prior]
+      conflicts.push(`${row.key}: '${kept.page}' kept over '${lost.page}' (key from a stripped parenthetical)`)
+      byKey.set(row.key, kept)
+      continue
+    }
+    if (prior && prior.text !== row.text) conflicts.push(`${row.key}: '${prior.page}' says ${prior.text}; '${row.page}' says ${row.text}`)
     if (!prior || (prior.seconds === undefined && row.seconds !== undefined)) byKey.set(row.key, row)
   }
-  return [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key))
+  return { rows: [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key)), conflicts }
 }
 
 async function main(): Promise<void> {
@@ -151,6 +187,7 @@ async function main(): Promise<void> {
   const byTitle = new Map(catalog.mobs.map((m) => [m.page, m.name]))
   const titles = [...byTitle.keys()]
   const rows: WikiRespawn[] = []
+  const stripped = new Set<WikiRespawn>()
 
   for (let i = 0; i < titles.length; i += BATCH) {
     const j = await api<{ query?: { pages?: RevPage[] } }>({
@@ -160,11 +197,12 @@ async function main(): Promise<void> {
       rvslots: 'main',
       titles: titles.slice(i, i + BATCH).join('|')
     })
-    rows.push(...rowsFromBatch(j.query?.pages ?? [], byTitle))
+    rows.push(...rowsFromBatch(j.query?.pages ?? [], byTitle, stripped))
     if (i % 1000 < BATCH) console.log(`  … ${String(i)}/${String(titles.length)} pages`)
   }
 
-  const out = dedupe(rows)
+  const { rows: out, conflicts } = dedupe(rows, stripped)
+  for (const c of conflicts) console.warn(`  name collision (first row kept): ${c}`)
   const data: WikiRespawnData = {
     source: 'eqlwiki.com — |respawn_time on every page in the committed mob catalog',
     scrapedAt: new Date().toISOString().slice(0, 10),
@@ -178,7 +216,7 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: unknown) => {
+if (isMain(import.meta.url)) main().catch((err: unknown) => {
   console.error(err)
   process.exitCode = 1
 })

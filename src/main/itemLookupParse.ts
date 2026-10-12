@@ -184,12 +184,53 @@ export function normalizeItemName(name: string): string {
 export function templateField(wikitext: string, field: string): string | null {
   // Match `|field = <value>` up to the next top-level `|field2 =` or the template close.
   // Values can contain newlines and bullet lists.
-  const re = new RegExp(
-    `\\|\\s*${field}\\s*=([\\s\\S]*?)(?=\\n\\s*\\|\\s*[a-zA-Z_]+\\s*=|\\n\\s*\\}\\})`,
-    'i'
-  )
-  const m = re.exec(wikitext)
-  return m ? m[1].trim() : null
+  // A field stated twice (`|notes = |notes = …`) reads as its first non-empty value.
+  let value: string | null = null
+  for (const m of wikitext.matchAll(new RegExp(`\\|\\s*${field}\\s*=`, 'gi'))) {
+    const start = m.index + m[0].length
+    const end = fieldValueEnd(wikitext, start)
+    if (end === null) continue
+    value = wikitext.slice(start, end).trim()
+    if (value) break
+  }
+  return value
+}
+
+/** `|name =` opening the next field (names may hold spaces: mob pages' `respawn time`). */
+const NEXT_FIELD_RE = /^\|+\s*[a-zA-Z_][\w ]*=/
+
+/** Does a field end at `i`? At a line start always (the old rule), mid-line only at top level. */
+function endsAt(s: string, i: number, top: boolean): boolean {
+  if (!top) return false
+  return s.startsWith('}}', i) || (s[i] === '|' && NEXT_FIELD_RE.test(s.slice(i, i + 64)))
+}
+
+/**
+ * Where a field's value ends: the next `|name =` or the template's `}}`. At a line start that
+ * holds regardless of nesting; mid-line it counts only outside nested `{{ }}` / `[[ ]]`, so a
+ * close on the value's last line (`Race: ALL<br>}}`) and a second field on the same line
+ * (`level = 22 | respawn time = 6:40`) both end it.
+ */
+function fieldValueEnd(s: string, from: number): number | null {
+  const depth = { tpl: 0, link: 0 }
+  let lineStart = false
+  for (let i = from; i < s.length; i++) {
+    if (endsAt(s, i, lineStart || (depth.tpl === 0 && depth.link === 0))) return i
+    if (s[i] === '\n') lineStart = true
+    else if (!/\s/.test(s[i])) lineStart = false
+    i += bracketStep(s.slice(i, i + 2), depth)
+  }
+  return null
+}
+
+/** Track `{{ }}` / `[[ ]]` nesting; returns 1 when `two` was a bracket pair to skip past. */
+function bracketStep(two: string, depth: { tpl: number; link: number }): number {
+  if (two === '{{') depth.tpl++
+  else if (two === '}}') depth.tpl = Math.max(0, depth.tpl - 1)
+  else if (two === '[[') depth.link++
+  else if (two === ']]') depth.link = Math.max(0, depth.link - 1)
+  else return 0
+  return 1
 }
 
 /** Parse the `* [[Page|Label]]` / `* [[Page]]` bullet links out of a relatedquests block. */
@@ -202,7 +243,7 @@ export function parseQuestLinks(block: string): ItemQuestUse[] {
     const pipe = inner.indexOf('|')
     const page = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim()
     const label = (pipe >= 0 ? inner.slice(pipe + 1) : inner).trim()
-    if (!label) continue
+    if (!label || EXCLUDED_NS.test(page)) continue
     if (!uses.some((u) => u.quest === label)) uses.push({ quest: label, page, source: 'wiki' })
   }
   return uses
@@ -212,7 +253,8 @@ export function parseQuestLinks(block: string): ItemQuestUse[] {
 
 /** First `[[Page]]` / `[[Page|Label]]` in a line, split into page + display label. */
 function firstLink(s: string): { page: string; label: string } | null {
-  const m = /\[\[([^\]]+?)\]\]/.exec(s)
+  // A Category:/File:/Special: link is page furniture, never a recipe or tradeskill.
+  const m = [...s.matchAll(/\[\[([^\]]+?)\]\]/g)].find((x) => !EXCLUDED_NS.test(x[1].trim()))
   if (!m) return null
   const inner = m[1].trim()
   const pipe = inner.indexOf('|')
@@ -700,7 +742,7 @@ export function parsePageEraTag(wikitext: string): string | undefined {
  * page's, duplicates removed.
  */
 /** The namespaces eqlwiki's own `eraFilter` skips before it asks about a link target. */
-const EXCLUDED_NS = /^(File|Image|Category|Template|Special|Help|MediaWiki|User|Talk|Media|Portal)\s*:/i
+export const EXCLUDED_NS = /^(File|Image|Category|Template|Special|Help|MediaWiki|User|Talk|Media|Portal)\s*:/i
 
 export function notesLinkTargets(wikitext: string): string[] {
   const notes = templateField(wikitext, 'notes')
@@ -714,9 +756,27 @@ export function notesLinkTargets(wikitext: string): string[] {
   return out
 }
 
+/** `{{Item Lore|X}}`/`{{Lore|X}}` → X, `{{:Page}}` → Page, `{{Loc|Zone|x, y}}` → x, y; any
+ *  other template (`{{Item Lore Missing}}`, `{{SmIcon|…}}`) says nothing in prose and is dropped. */
+const LORE_END = '\u0001'
+
+function unwrapTemplate(body: string): string {
+  const parts = body.split('|')
+  const name = parts[0].trim().toLowerCase()
+  if (name === 'lore' || /^item\s+lore$/.test(name)) return parts.slice(1).join('|').trim() + LORE_END
+  if (name === 'loc') return (parts[2] ?? '').trim()
+  return name.startsWith(':') ? parts[0].trim().slice(1) : ''
+}
+
 /** Collapse a `notes` field to a single trimmed prose line (strips wiki markup, caps length). */
 export function cleanSummary(notes: string): string | undefined {
-  const text = notes
+  let unwrapped = notes
+  for (let prev = ''; prev !== unwrapped; ) {
+    prev = unwrapped
+    unwrapped = unwrapped.replace(/\{\{([^{}]*)\}\}/g, (_m, body: string) => unwrapTemplate(body))
+  }
+  const text = unwrapped
+    .replace(/\{+|\}+/g, '') // stray braces of an unbalanced template
     .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1') // [[Page|Label]] -> Label
     .replace(/\[\[([^\]]*)\]\]/g, '$1') // [[Page]] -> Page
     .replace(/<[^>]+>/g, ' ') // strip HTML tags
@@ -725,8 +785,9 @@ export function cleanSummary(notes: string): string | undefined {
     .trim()
   if (!text) return undefined
   // First sentence / first 200 chars, whichever is shorter — a one-liner, not an essay.
-  const firstSentence = text.split(/(?<=\.)\s/)[0]
-  const s = (firstSentence.length <= 200 ? firstSentence : text.slice(0, 200)).trim()
+  // LORE_END keeps a lore line's closing period from ending the summary before the prose after it.
+  const firstSentence = text.split(/(?<=\.)\s/)[0].replaceAll(LORE_END, '')
+  const s = (firstSentence.length <= 200 ? firstSentence : text.replaceAll(LORE_END, '').slice(0, 200)).trim()
   return s || undefined
 }
 
@@ -740,6 +801,20 @@ function buildStats(statsBlock: string, focusRaw: string | null): ItemStatBlock 
     stats.effects.push({ kind: 'focus', name: focus })
   }
   return stats
+}
+
+/** A flag naming lore: `Lore`, `Lore Item`, `Lore Equipped` and its typos (`LORE EQUPPED`). */
+const LORE_FLAG_RE = /^lore(\s+(item|equ\w*))?$/i
+
+/** LORE / QUEST from the block text, plus the short forms the parsed flag line carries
+ *  (`No Trade, Quest`, `Lore`). */
+function loreQuestFlags(statsBlock: string | undefined, stats: ItemStatBlock | undefined): { lore: boolean; questFlag: boolean } {
+  const parsed = stats?.flags ?? []
+  const text = (statsBlock ?? '').toUpperCase()
+  return {
+    lore: /\bLORE (ITEM|EQUIPPED)\b/.test(text) || parsed.some((f) => LORE_FLAG_RE.test(f.trim())),
+    questFlag: /\bQUEST ITEM\b/.test(text) || parsed.some((f) => /^quest$/i.test(f.trim()))
+  }
 }
 
 /** `|lucy_img_ID` → File:Item <id>.png. A bare integer or nothing at all. */
@@ -809,15 +884,12 @@ export function parseItemWikitext(
   const craftedRaw = templateField(wikitext, 'playercrafted')
   const dropsFrom = dropSourcesField(templateField(wikitext, 'dropsfrom'))
 
-  const flags = (statsBlock ?? '').toUpperCase()
-  const lore = /\bLORE ITEM\b/.test(flags) || /\bLORE EQUIPPED\b/.test(flags)
-  const questFlag = /\bQUEST ITEM\b/.test(flags)
+  const stats: ItemStatBlock | undefined = statsBlock ? buildStats(statsBlock, focusRaw) : undefined
+  const { lore, questFlag } = loreQuestFlags(statsBlock, stats)
 
   const questUses = relatedRaw ? parseQuestLinks(relatedRaw) : []
   const quest = questFlag || questUses.length > 0
   const summary = notesRaw ? cleanSummary(notesRaw) : undefined
-
-  const stats: ItemStatBlock | undefined = statsBlock ? buildStats(statsBlock, focusRaw) : undefined
 
   const iconId = parseIconId(iconRaw)
 

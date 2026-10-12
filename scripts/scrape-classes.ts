@@ -65,6 +65,8 @@ import {
   unlockSections,
   type ClassUnlock
 } from './sources/classUnlocks'
+import { currentRevids, fetchContents, isStale, readRevIndex, writeRevIndex, type ApiGet } from './sources/revCache'
+import { isMain } from './sources/isMain'
 
 const API = 'https://eqlwiki.com/api.php'
 const UA = 'everquest-companion/0.1 (personal class-table scraper)'
@@ -73,6 +75,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/classes')
 const OUT_PATH = resolve(HERE, '../src/main/data/classes.json')
 const SPELLS_PATH = resolve(HERE, '../src/main/data/spells.json')
+const INDEX_PATH = resolve(CACHE_DIR, 'index.json')
 
 /** Politeness between LIVE fetches (cache hits never sleep). */
 const DELAY_MS = 1000
@@ -102,34 +105,45 @@ function cachePath(title: string): string {
   return resolve(CACHE_DIR, `${title.replace(/[^A-Za-z0-9]+/g, '_')}.wikitext`)
 }
 
-/** A page's raw wikitext, from disk when we already have it. */
-async function fetchWikitext(title: string): Promise<string | null> {
-  const file = cachePath(title)
-  if (existsSync(file)) return readFileSync(file, 'utf8')
-
-  const params = new URLSearchParams({
-    action: 'parse',
-    page: title,
-    prop: 'wikitext',
-    format: 'json',
-    formatversion: '2',
-    redirects: '1'
-  })
-  const res = await politeFetch(`${API}?${params.toString()}`)
-  if (!res?.ok) {
-    console.warn(`  ! ${title}: HTTP ${res ? res.status : 'no response'}`)
-    return null
-  }
-  const json = (await res.json()) as { parse?: { wikitext?: string } }
-  const wt = json.parse?.wikitext
-  if (wt == null) {
-    console.warn(`  ! ${title}: no wikitext in response`)
-    return null
-  }
-  mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(file, wt)
+/** One throttled query; an HTTP failure or an API error body throws rather than reading as empty. */
+const classApi: ApiGet = async <T>(params: Record<string, string>): Promise<T> => {
+  const q = new URLSearchParams({ format: 'json', formatversion: '2', ...params })
+  const res = await politeFetch(`${API}?${q.toString()}`)
   await sleep(DELAY_MS)
-  return wt
+  if (!res?.ok) throw new Error(`${params.action}: HTTP ${res ? res.status : 'no response'}`)
+  const j = (await res.json()) as T & { error?: { code?: string; info?: string } }
+  if (j.error) throw new Error(`${params.action}: API error ${j.error.code}: ${j.error.info ?? ''}`)
+  return j
+}
+
+/**
+ * Bring the cached copies of `titles` up to date: one `rvprop=ids` request per 50 titles, then
+ * content only for pages whose revision moved since it was cached (or that were never cached).
+ */
+export async function refreshPages(titles: string[], api: ApiGet = classApi): Promise<string[]> {
+  const revs = readRevIndex(INDEX_PATH)
+  const live = await currentRevids(api, titles)
+  const stale = titles.filter((t) => isStale(revs[t], live.get(t), existsSync(cachePath(t))))
+  if (stale.length === 0) return []
+  const got = await fetchContents(api, stale)
+  mkdirSync(CACHE_DIR, { recursive: true })
+  for (const t of stale) {
+    const page = got.get(t)
+    if (!page) {
+      console.warn(`  ! ${t}: no content returned${existsSync(cachePath(t)) ? ' — keeping the older cached copy' : ''}`)
+      continue
+    }
+    writeFileSync(cachePath(t), page.content)
+    revs[t] = page.revid
+  }
+  writeRevIndex(INDEX_PATH, revs)
+  return stale
+}
+
+/** A page's raw wikitext from the cache `refreshPages` keeps current. */
+function fetchWikitext(title: string): string | null {
+  const file = cachePath(title)
+  return existsSync(file) ? readFileSync(file, 'utf8') : null
 }
 
 // ---- cross-checks against the committed spell DB --------------------------
@@ -225,7 +239,7 @@ interface ClassPages {
 }
 
 /** Fetch every class page once; invert its Skills tables, footnotes and unlock levels. */
-async function readClassPages(names: Map<string, string>): Promise<ClassPages> {
+function readClassPages(names: Map<string, string>): ClassPages {
   const out: ClassPages = {
     skills: new Map<string, Set<string>>(),
     footnotes: new Map<string, Set<string>>(),
@@ -239,7 +253,7 @@ async function readClassPages(names: Map<string, string>): Promise<ClassPages> {
   }
   for (const abbr of [...names.keys()].sort()) {
     const title = names.get(abbr) ?? abbr
-    const wt = await fetchWikitext(title)
+    const wt = fetchWikitext(title)
     if (wt == null) {
       console.warn(`  ! ${title}: skipped (no wikitext)`)
       out.gaps.push(`${abbr}: the class page could not be fetched — it states no unlock levels here`)
@@ -292,8 +306,9 @@ function writeIfChanged(next: ClassTableFile): void {
 }
 
 async function main(): Promise<void> {
-  console.log('Fetching Character Classes…')
-  const classesWt = await fetchWikitext('Character Classes')
+  console.log('Checking revisions of the index pages…')
+  await refreshPages(['Character Classes', 'Stances & Invocations', 'Alternate Advancement', 'Disciplines'])
+  const classesWt = fetchWikitext('Character Classes')
   if (classesWt == null) throw new Error('Could not fetch Character Classes — nothing to build.')
   const names = parseClassNames(classesWt)
   const known = new Set(names.keys())
@@ -305,20 +320,18 @@ async function main(): Promise<void> {
     abbrOf.set(name.replace(/\s+/g, '').toLowerCase(), abbr) // "Shadowknight" → SHD
   }
 
-  console.log('Fetching Stances & Invocations…')
-  const siWt = await fetchWikitext('Stances & Invocations')
+  const siWt = fetchWikitext('Stances & Invocations')
   if (siWt == null) throw new Error('Could not fetch Stances & Invocations — nothing to build.')
   const si = readStanceInvocation(siWt, known, abbrOf)
 
-  console.log('Fetching the 16 class pages…')
-  const pages = await readClassPages(names)
+  console.log('Checking revisions of the class pages…')
+  await refreshPages([...names.keys()].sort().map((abbr) => names.get(abbr) ?? abbr))
+  const pages = readClassPages(names)
 
-  console.log('Fetching Alternate Advancement…')
-  const aaWt = await fetchWikitext('Alternate Advancement')
+  const aaWt = fetchWikitext('Alternate Advancement')
   const aa = aaWt == null ? new Map<string, Set<string>>() : parseAaAbilities(aaWt, abbrOf)
 
-  console.log('Fetching Disciplines…')
-  const discWt = await fetchWikitext('Disciplines')
+  const discWt = fetchWikitext('Disciplines')
   const disputed = [...si.disputed]
   if (discWt == null || !/rogue/i.test(discWt) || !/poison/i.test(discWt)) {
     disputed.push('Disciplines: could not confirm the Rogue-poison statement — poisonCoat exclusivity unverified')
@@ -364,4 +377,4 @@ async function main(): Promise<void> {
   for (const d of out.disputed) console.log(`  ~ ${d}`)
 }
 
-void main()
+if (isMain(import.meta.url)) void main()
