@@ -52,7 +52,7 @@ import type { ResistTableWorkerReply } from '../resistTableWorker'
  *      would simply not be there to read. Bumped in the SAME commit as the parser change, which is
  *      the whole lesson of 4.
  */
-export const SPELL_RESIST_CACHE_VERSION = 5
+export const SPELL_RESIST_CACHE_VERSION = 6
 
 interface CacheFile {
   version: number

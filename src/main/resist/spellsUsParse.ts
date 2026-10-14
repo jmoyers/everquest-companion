@@ -78,6 +78,7 @@
 
 import { axisFromResistType, type ResistAxis, type ResistDebuffSlot, type SpellHpSlot, type SpellResistInfo, type SpellResistTable } from '../../shared/resistTypes'
 import { spellCanonKey } from '../../shared/spellKey'
+import { spellsUsShifted, unshiftRow } from './spellsUsLayout'
 
 const F_ID = 0
 const F_NAME = 1
@@ -296,9 +297,10 @@ function prefer(existing: { info: SpellResistInfo; playable: boolean }, playable
 export function parseSpellsUs(text: string): SpellResistTable {
   const table: SpellResistTable = {}
   const seen = new Map<string, { info: SpellResistInfo; playable: boolean }>()
+  const shifted = spellsUsShifted(text)
   for (const line of text.split('\n')) {
     if (!line) continue
-    const f = line.split('^')
+    const f = unshiftRow(line.split('^'), shifted)
     if (f.length < F_SLOTS) continue
     const name = f[F_NAME]
     if (!name || !Number.isFinite(Number(f[F_ID]))) continue
