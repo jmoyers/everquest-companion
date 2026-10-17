@@ -315,7 +315,7 @@ function QuestDetailsToolbar({
   q: QuestProgress
   wikiHref?: string
   onRecordTurnIn: () => void
-  onUndoTurnIn: () => void
+  onUndoTurnIn?: () => void
 }): JSX.Element {
   return (
     <Stack direction="row" spacing={2} sx={{ mb: 1 }} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -385,8 +385,8 @@ function QuestAccordionRow({
   toggleFavorite: (name: string) => void
   /** record one more turn-in of this quest (JOS-131) */
   onRecordTurnIn: (questKey: string) => void
-  /** take back the most recent hand-recorded turn-in */
-  onUndoTurnIn: (questKey: string) => void
+  /** take back the most recent turn-in; absent until the log's turn-ins have loaded */
+  onUndoTurnIn?: (questKey: string) => void
   onSelectQuest: (name: string) => void
   /** a dropper name → the Mobs tab's page for that catalog row (App-level routing) */
   onOpenMob: (t: MobTarget) => void
@@ -458,7 +458,7 @@ function QuestAccordionRow({
           q={q}
           wikiHref={wikiHref}
           onRecordTurnIn={() => onRecordTurnIn(q.key)}
-          onUndoTurnIn={() => onUndoTurnIn(q.key)}
+          onUndoTurnIn={onUndoTurnIn && (() => onUndoTurnIn(q.key))}
         />
         {q.rewardStats && (
           <Typography variant="caption" color="text.secondary" component="pre" sx={{ whiteSpace: 'pre-wrap', mb: 1 }}>

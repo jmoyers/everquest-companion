@@ -43,9 +43,10 @@
 // was the same: the poppers go, here and in every file that draws this tab. Hover text that
 // survives is a native `title` — an OS tooltip is not in the DOM and has no hit area at all.
 
-import { type JSX, memo, useCallback, useState } from 'react'
+import { type JSX, memo, useCallback, useEffect, useState } from 'react'
 import {
   Box,
+  Button,
   Checkbox,
   FormControlLabel,
   MenuItem,
@@ -75,6 +76,69 @@ export interface QuestFilterBarProps {
    */
   inventoryLoadedAt: number | null
 }
+
+/** How long the armed reset waits for its second click before standing down. */
+const RESET_ARM_MS = 5000
+
+/**
+ * The reset, armed by one click and fired by the next (upstream issue #72: "there is no current
+ * working way to reset progress in the plane of sky tab"). Armed, it says what the second click
+ * does; left alone, it stands down, because a control that stays armed across a scroll is a
+ * control that fires by accident.
+ *
+ * DRAWN BY THE VIEW ON THE COUNTS ROW, NOT HERE ON THE BAR: it takes back the numbers that row
+ * reports, and one more control on the bar's right group made the bar wrap onto a fourth row
+ * under the dropdown's wider labels, which moved the counts line the freshness caption above it
+ * promises never to move (sky-inventory-autoload measures that promise).
+ */
+export const ResetTurnIns = memo(function ResetTurnIns({
+  onReset,
+  ready
+}: {
+  onReset: () => Promise<void>
+  /**
+   * The log's turn-ins have loaded. Until they have, a reset could not reject the detections it
+   * takes back, and the module's first snapshot would write them all straight back.
+   */
+  ready: boolean
+}): JSX.Element {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), RESET_ARM_MS)
+    return () => clearTimeout(t)
+  }, [armed])
+  const click = useCallback(() => {
+    if (!armed) {
+      setArmed(true)
+      return
+    }
+    setArmed(false)
+    // Fire and forget, the `reloadInventory` precedent: main answers by pushing `progress`, and
+    // the rows under the bar are what report the result.
+    void onReset().catch(() => undefined)
+  }, [armed, onReset])
+  return (
+    <Button
+      size="small"
+      variant={armed ? 'contained' : 'outlined'}
+      color={armed ? 'warning' : 'inherit'}
+      data-testid="posky-reset-turnins"
+      data-armed={armed ? 'true' : undefined}
+      disabled={!ready}
+      onClick={click}
+      title={
+        !ready
+          ? 'Reading the turn-ins in your log. The reset is available once they have loaded'
+          : armed
+            ? 'Click again to take back every turn-in on this tab. Turn-ins the log shows after this still count.'
+            : 'Take back every turn-in on this tab, including the ones read from your log'
+      }
+    >
+      {armed ? 'Confirm reset' : 'Reset turn-ins'}
+    </Button>
+  )
+})
 
 /**
  * WHY THE CONTROLS BELOW TAKE THEIR OWN STATE RATHER THAN `list` (JOS-206).

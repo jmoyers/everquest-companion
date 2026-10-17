@@ -203,9 +203,9 @@ export function setInventory(
  * so the list is sanitized and the downgrade mirror is written — both in `applyTurnIns`, shared
  * with the renderer so the rule has one definition on either side of the IPC.
  */
-export function setQuestTurnIns(charId: string, questKey: string, instants: number[]): ProgressState {
+export function setQuestTurnIns(charId: string, questKey: string, instants: number[], rejected?: number[]): ProgressState {
   const p = getProgress(charId)
-  return setProgress(charId, { ...p, ...applyTurnIns(p, questKey, instants) })
+  return setProgress(charId, { ...p, ...applyTurnIns(p, questKey, instants, rejected) })
 }
 
 // ----- Class-combo user corrections (docs/plans/class-combo-inference.md § 7) -----

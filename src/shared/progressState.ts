@@ -91,6 +91,23 @@ export interface ProgressState {
    * any reader needs now that consumption is windowed by SOURCE rather than by instant (JOS-141).
    */
   questTurnIns?: Record<string, number[]>
+  /**
+   * THE TURN-INS THE USER TOOK BACK (upstream issue #72): quest key → the log-detected instants
+   * the ledger must not re-assert. A detected trade can be wrong — an abandoned offer combined
+   * with the next trade to the same giver, or a trade the NPC handed straight back — and until
+   * this key existed a wrong one was permanent: undo refused it, and the next snapshot rewrote it.
+   *
+   * IT IS THE USER SUBTRACTING, NOT A DUMP. The "a dump adds, it never subtracts" promise above
+   * stands; this records a statement the player made by pressing the button, dated by the event
+   * it rejects, so the same detection stays rejected on every re-scan. Read by
+   * shared/questTurnIns.ts (`resolveTurnIns`) and by the renderer's detected list, so a rejected
+   * instant also stops windowing the dump and consuming the items it never spent.
+   *
+   * ADDITIVE and OPTIONAL — no schema bump and no migration, the `questTurnIns` precedent. An
+   * older build ignores it and shows the detection again; that is the price of a key it cannot
+   * read, paid the same way `questTurnIns` pays it.
+   */
+  rejectedTurnIns?: Record<string, number[]>
   /** metadata about the last inventory load */
   inventorySource?: InventorySource
   /**

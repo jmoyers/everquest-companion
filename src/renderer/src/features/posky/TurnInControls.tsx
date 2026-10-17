@@ -119,26 +119,47 @@ export function TurnInBadge({
   )
 }
 
-/** The undo button, with the one thing it has to say for itself when it cannot act. */
-function UndoTurnIn({ q, onUndo }: { q: QuestProgress; onUndo: () => void }): JSX.Element {
-  // A DERIVED count (issue #27, any rung of JOS-429's ladder) cannot be taken back for the same
-  // reason a log-detected one cannot: the evidence would simply re-assert it on the next read.
-  const canUndo = q.completionEvidence === undefined && q.turnIns > q.logTurnIns
+/** Why the undo control is dead while the log's turn-ins are still loading. */
+const UNDO_LOADING = 'Reading the turn-ins in your log. This can be taken back once they have loaded'
+
+/**
+ * The undo button, with the one thing it has to say for itself when it cannot act. `onUndo` is
+ * absent until the log's turn-ins have loaded: before that a detection looks hand-recorded, and
+ * taking it back would not stick (`turnInActions.ts`).
+ */
+function UndoTurnIn({ q, onUndo }: { q: QuestProgress; onUndo?: () => void }): JSX.Element {
+  // A DERIVED count (issue #27, any rung of JOS-429's ladder) cannot be taken back: the evidence
+  // would simply re-assert it on the next read. A LOG-DETECTED one can, since upstream issue #72:
+  // the hook remembers the rejection, so the next snapshot does not put it back.
+  const canUndo = q.completionEvidence === undefined && q.turnIns > 0
+  if (canUndo && onUndo === undefined) return <UndoButton title={UNDO_LOADING} />
+  const fromLog = q.turnIns <= q.logTurnIns
   return (
     // The span outlives the tooltip that needed it, for the same reason: a DISABLED button
     // swallows no mouse events, and "why is this dead" is exactly the question the words answer.
     <span
       title={
         canUndo
-          ? 'Take back the most recent turn-in you recorded by hand'
+          ? fromLog
+            ? 'Take back the most recent turn-in. This one was read from your log; taking it back tells the app the trade did not count, and it stays taken back'
+            : 'Take back the most recent turn-in you recorded by hand'
           : q.completionEvidence !== undefined
             ? EVIDENCE_UNDO[q.completionEvidence]
-            : q.turnIns === 0
-              ? 'Nothing to take back'
-              : 'This count comes from your log, so it cannot be taken back here'
+            : 'Nothing to take back'
       }
     >
       <IconButton size="small" data-testid="posky-undo-turnin" disabled={!canUndo} onClick={onUndo}>
+        <RemoveIcon fontSize="inherit" />
+      </IconButton>
+    </span>
+  )
+}
+
+/** The undo control held disabled, saying why. */
+function UndoButton({ title }: { title: string }): JSX.Element {
+  return (
+    <span title={title}>
+      <IconButton size="small" data-testid="posky-undo-turnin" data-loading="true" disabled>
         <RemoveIcon fontSize="inherit" />
       </IconButton>
     </span>
@@ -161,7 +182,8 @@ export function TurnInCounter({
 }: {
   q: QuestProgress
   onRecordTurnIn: () => void
-  onUndoTurnIn: () => void
+  /** absent until the log's turn-ins have loaded */
+  onUndoTurnIn?: () => void
 }): JSX.Element {
   return (
     <Stack direction="row" spacing={0.5} alignItems="center">
