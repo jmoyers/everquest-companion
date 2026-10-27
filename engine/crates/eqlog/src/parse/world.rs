@@ -6,6 +6,7 @@ use crate::jsstr::js_trim;
 use crate::names::{clean_mob, norm};
 use regex::Regex;
 
+use super::acquire::{sale_price, AcquireRes};
 use super::data::CONSIDER_FACTION_RUNGS;
 use super::Ctx;
 
@@ -57,27 +58,27 @@ impl WorldRes {
             .join("|");
         WorldRes {
             loot: Regex::new(
-                r"^--You have looted (?:([0-9]+) |an? )?(.+?)(?: from (.+?) corpse)?\.--$",
+                r"^--You have looted (?:([0-9]+) |an? )?(.+?)(?: from (?:(.+?) corpse|(Reward Chest)))?\.--$",
             )
             .unwrap(),
             loot_plain: Regex::new(
-                r"^You have looted (?:([0-9]+) |an? )?(.+?)(?: from (.+?) corpse)?\.$",
+                r"^You have looted (?:([0-9]+) |an? )?(.+?)(?: from (?:(.+?) corpse|(Reward Chest)))?\.$",
             )
             .unwrap(),
             loot_currency: Regex::new(
-                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?) corpse and stored it in your currency\.?$",
+                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?)(?: corpse)? and stored it in your currency\.?$",
             )
             .unwrap(),
             loot_sold: Regex::new(
-                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?) corpse and sold it for (?:free|[0-9,]+ (?:platinum|gold|silver|copper).*?)\.?$",
+                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?)(?: corpse)? and sold it for (free|[0-9,]+ (?:platinum|gold|silver|copper).*?)\.?$",
             )
             .unwrap(),
             loot_stored: Regex::new(
-                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?) corpse and stored it in your (Dragon Hoard|tradeskill depot)\.?$",
+                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?)(?: corpse)? and stored it in your (Dragon Hoard|tradeskill depot)\.?$",
             )
             .unwrap(),
             loot_combine: Regex::new(
-                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?) corpse to create (?:an? )?(.+?)\.?$",
+                r"^You looted (?:([0-9]+) |an? )?(.+?) from (.+?)(?: corpse)? to create (?:an? )?(.+?)\.?$",
             )
             .unwrap(),
             destroy: Regex::new(r"^You successfully destroyed ([0-9]+) (.+?)\.$").unwrap(),
@@ -137,6 +138,19 @@ fn loot(
     if let Some(n) = count_str {
         out.i(Key::Count, n.parse().unwrap_or(0));
     }
+}
+
+/// The `You looted … from <source>` auto-dispositions: one capture layout, the disposition named.
+fn loot_routed(c: &Ctx, out: &mut Ev, m: &regex::Captures, disposition: &str) {
+    let source = clean_mob(m.get(3).map(|g| g.as_str()));
+    loot(
+        c,
+        out,
+        &m[2],
+        source,
+        Some(disposition),
+        m.get(1).map(|g| g.as_str()),
+    );
 }
 
 pub fn classify_consider(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
@@ -247,7 +261,7 @@ pub fn classify_instance_create(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
 }
 
 /// Self-loot, the auto-disposition variants, and the destroy (which is the negative).
-pub fn classify_loot(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
+pub fn classify_loot(r: &WorldRes, a: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     let text = c.text;
     if text.starts_with("You successfully destroyed ") {
         if let Some(d) = r.destroy.captures(text) {
@@ -274,32 +288,22 @@ pub fn classify_loot(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
             c,
             out,
             &m[2],
-            clean_mob(m.get(3).map(|g| g.as_str())),
+            clean_mob(m.get(3).or(m.get(4)).map(|g| g.as_str())),
             None,
             m.get(1).map(|g| g.as_str()),
         );
         return true;
     }
     if let Some(m) = r.loot_currency.captures(text) {
-        loot(
-            c,
-            out,
-            &m[2],
-            clean_mob(m.get(3).map(|g| g.as_str())),
-            Some("currency"),
-            m.get(1).map(|g| g.as_str()),
-        );
+        loot_routed(c, out, &m, "currency");
         return true;
     }
     if let Some(m) = r.loot_sold.captures(text) {
-        loot(
-            c,
-            out,
-            &m[2],
-            clean_mob(m.get(3).map(|g| g.as_str())),
-            Some("sold"),
-            m.get(1).map(|g| g.as_str()),
-        );
+        loot_routed(c, out, &m, "sold");
+        // The sale is income, priced as a purchase is.
+        if let Some(price) = sale_price(a, &m[4]) {
+            out.coins(Key::Price, &price);
+        }
         return true;
     }
     if let Some(m) = r.loot_stored.captures(text) {
@@ -308,25 +312,11 @@ pub fn classify_loot(r: &WorldRes, c: &Ctx, out: &mut Ev) -> bool {
         } else {
             "depot"
         };
-        loot(
-            c,
-            out,
-            &m[2],
-            clean_mob(m.get(3).map(|g| g.as_str())),
-            Some(disposition),
-            m.get(1).map(|g| g.as_str()),
-        );
+        loot_routed(c, out, &m, disposition);
         return true;
     }
     if let Some(m) = r.loot_combine.captures(text) {
-        loot(
-            c,
-            out,
-            &m[2],
-            clean_mob(m.get(3).map(|g| g.as_str())),
-            Some("combined"),
-            m.get(1).map(|g| g.as_str()),
-        );
+        loot_routed(c, out, &m, "combined");
         // The shared loot fields first, then the one added key.
         out.s(Key::Created, js_trim(&m[4]));
         return true;

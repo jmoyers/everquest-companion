@@ -18,7 +18,7 @@ import type { ConsiderFaction } from './considerFaction'
 // ./acquireEvents for the same reason the consider ladder moved out: this file is long past its
 // factoring ceiling. RE-EXPORTED verbatim, so every consumer still reads them from
 // `@shared/logEvents`, and the union below carries the three new members.
-import type { CoinEvent, ItemReceivedEvent, PurchaseEvent } from './acquireEvents'
+import type { CoinEvent, Coins, ItemReceivedEvent, PurchaseEvent } from './acquireEvents'
 
 // WHAT IS IN YOUR GEMS (JOS-391) — the memorize / forget / spell-set shapes, out in
 // ./gemEvents for the same file-mass reason as the two imports above. Re-exported verbatim.
@@ -93,6 +93,11 @@ export interface LootEventE extends LogEventBase {
   count?: number
   /** The upgraded item a 'combined' loot created (`… to create a <item> +N`). */
   created?: string
+  /**
+   * 'sold' only: what the auto-sale paid, in the coin shape a purchase's price uses
+   * (`… and sold it for 1 gold, 7 silver and 9 copper.`). `free` is `{}`.
+   */
+  price?: Coins
 }
 
 /** `You offered N <item> to <NPC>.` — one per item offered. */

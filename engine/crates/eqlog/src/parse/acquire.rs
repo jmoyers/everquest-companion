@@ -92,6 +92,14 @@ fn parse_coins(r: &AcquireRes, clause: &str) -> Option<Vec<(&'static str, i64)>>
     }
 }
 
+/// An auto-sold loot's price clause: `free` is the empty price, as a free purchase is.
+pub(super) fn sale_price(r: &AcquireRes, clause: &str) -> Option<Vec<(&'static str, i64)>> {
+    if clause == "free" {
+        return Some(Vec::new());
+    }
+    parse_coins(r, clause)
+}
+
 /// The four coin sentences, tried in the order their anchors get looser.
 fn classify_coin(r: &AcquireRes, c: &Ctx, out: &mut Ev) -> bool {
     if let Some(m) = r.coin_corpse.captures(c.text) {

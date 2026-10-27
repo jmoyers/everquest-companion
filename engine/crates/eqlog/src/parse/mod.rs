@@ -138,7 +138,7 @@ impl Parser {
             || session::classify_camp(c, out)
             || session::classify_output_file(c, out)
             || group::classify_group(&self.group, c, out)
-            || world::classify_loot(&self.world, c, out)
+            || world::classify_loot(&self.world, &self.acquire, c, out)
             || world::classify_item_merge(&self.world, c, out)
             || acquire::classify_acquire(&self.acquire, c, out)
             || world::classify_turn_in(&self.world, c, out)
