@@ -13,6 +13,10 @@
  *                "You have become better at <Skill>!" → classes that train it
  *   abilities    castable things that are NOT Template:Spellpage pages
  *                (Lay on Hands, Holy Steed, …) → classes
+ *   aas          every row of the Alternate Advancement page → its table (general,
+ *                archetype, class, special), classes, whether it is clicked, and the
+ *                cast its description names when that differs (`--offline` re-derives
+ *                from the cache and sends nothing)
  *   skillUnlocks class abbr → [{name, level, kind}] for the SKILLS (and the
  *                page-footnoted innate abilities) that class gains, and when
  *   discUnlocks  class abbr → [{name, level, kind:'disc'}] for disciplines
@@ -28,11 +32,12 @@
  * Spell→class is NOT here: spells.json already carries a `classes` field and is
  * parsed at runtime by src/main/data/spellClasses.ts. No spell re-crawl.
  *
- * This file owns politeness, caching and output; the wikitext parsers live in
+ * This file owns caching and output (politeness is sources/wikiApi.ts); the wikitext parsers live in
  * scripts/sources/classWiki.ts (the eqlegends.ts precedent).
  *
  * SCRAPER ETIQUETTE (AGENTS.md, LAW):
- *  - exactly 20 pages, each fetched at most once, DELAY_MS between live fetches;
+ *  - exactly 20 pages, each fetched at most once, every request through sources/wikiApi.ts
+ *    (a second apart, maxlag=5, an API error body thrown);
  *  - 429/5xx → exponential backoff honouring Retry-After;
  *  - raw wikitext cached under scripts/sources/cache/classes, so a re-run is
  *    network-free and a partial run resumes where it stopped;
@@ -51,6 +56,7 @@ import { fileURLToPath } from 'url'
 import {
   disputes,
   parseAaAbilities,
+  parseAaTable,
   parseAbilityFootnotes,
   parseClassNames,
   parseClassSkills,
@@ -65,71 +71,51 @@ import {
   unlockSections,
   type ClassUnlock
 } from './sources/classUnlocks'
-
-const API = 'https://eqlwiki.com/api.php'
-const UA = 'everquest-companion/0.1 (personal class-table scraper)'
+import type { AaRow } from './sources/classWiki'
+import { currentRevids, fetchContents, isStale, readRevIndex, writeRevIndex, type ApiGet } from './sources/revCache'
+import { isMain } from './sources/isMain'
+import { wikiGet } from './sources/wikiApi'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/classes')
 const OUT_PATH = resolve(HERE, '../src/main/data/classes.json')
 const SPELLS_PATH = resolve(HERE, '../src/main/data/spells.json')
-
-/** Politeness between LIVE fetches (cache hits never sleep). */
-const DELAY_MS = 1000
-/** First backoff step; doubles per attempt. */
-const BACKOFF_MS = 1000
-const MAX_ATTEMPTS = 5
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const INDEX_PATH = resolve(CACHE_DIR, 'index.json')
 
 // ---- fetch layer ----------------------------------------------------------
-
-/** One request, retried with exponential backoff on 429/5xx, honouring Retry-After. */
-async function politeFetch(url: string): Promise<Response | null> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } })
-    if (res.status !== 429 && res.status < 500) return res
-    const retryAfter = Number(res.headers.get('retry-after') ?? '')
-    const waitMs =
-      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : BACKOFF_MS * 2 ** attempt
-    console.warn(`  ${res.status} — backing off ${waitMs}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`)
-    await sleep(waitMs)
-  }
-  return null
-}
 
 function cachePath(title: string): string {
   return resolve(CACHE_DIR, `${title.replace(/[^A-Za-z0-9]+/g, '_')}.wikitext`)
 }
 
-/** A page's raw wikitext, from disk when we already have it. */
-async function fetchWikitext(title: string): Promise<string | null> {
-  const file = cachePath(title)
-  if (existsSync(file)) return readFileSync(file, 'utf8')
-
-  const params = new URLSearchParams({
-    action: 'parse',
-    page: title,
-    prop: 'wikitext',
-    format: 'json',
-    formatversion: '2',
-    redirects: '1'
-  })
-  const res = await politeFetch(`${API}?${params.toString()}`)
-  if (!res?.ok) {
-    console.warn(`  ! ${title}: HTTP ${res ? res.status : 'no response'}`)
-    return null
-  }
-  const json = (await res.json()) as { parse?: { wikitext?: string } }
-  const wt = json.parse?.wikitext
-  if (wt == null) {
-    console.warn(`  ! ${title}: no wikitext in response`)
-    return null
-  }
+/**
+ * Bring the cached copies of `titles` up to date: one `rvprop=ids` request per 50 titles, then
+ * content only for pages whose revision moved since it was cached (or that were never cached).
+ */
+export async function refreshPages(titles: string[], api: ApiGet = wikiGet): Promise<string[]> {
+  const revs = readRevIndex(INDEX_PATH)
+  const live = await currentRevids(api, titles)
+  const stale = titles.filter((t) => isStale(revs[t], live.get(t), existsSync(cachePath(t))))
+  if (stale.length === 0) return []
+  const got = await fetchContents(api, stale)
   mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(file, wt)
-  await sleep(DELAY_MS)
-  return wt
+  for (const t of stale) {
+    const page = got.get(t)
+    if (!page) {
+      console.warn(`  ! ${t}: no content returned${existsSync(cachePath(t)) ? ' — keeping the older cached copy' : ''}`)
+      continue
+    }
+    writeFileSync(cachePath(t), page.content)
+    revs[t] = page.revid
+  }
+  writeRevIndex(INDEX_PATH, revs)
+  return stale
+}
+
+/** A page's raw wikitext from the cache `refreshPages` keeps current. */
+function fetchWikitext(title: string): string | null {
+  const file = cachePath(title)
+  return existsSync(file) ? readFileSync(file, 'utf8') : null
 }
 
 // ---- cross-checks against the committed spell DB --------------------------
@@ -174,6 +160,7 @@ interface ClassTableFile {
   invocations: Record<string, string[]>
   skills: Record<string, string[]>
   abilities: Record<string, string[]>
+  aas: Record<string, AaRow>
   skillUnlocks: Record<string, ClassUnlock[]>
   discUnlocks: Record<string, ClassUnlock[]>
   disputed: string[]
@@ -225,7 +212,7 @@ interface ClassPages {
 }
 
 /** Fetch every class page once; invert its Skills tables, footnotes and unlock levels. */
-async function readClassPages(names: Map<string, string>): Promise<ClassPages> {
+function readClassPages(names: Map<string, string>): ClassPages {
   const out: ClassPages = {
     skills: new Map<string, Set<string>>(),
     footnotes: new Map<string, Set<string>>(),
@@ -239,7 +226,7 @@ async function readClassPages(names: Map<string, string>): Promise<ClassPages> {
   }
   for (const abbr of [...names.keys()].sort()) {
     const title = names.get(abbr) ?? abbr
-    const wt = await fetchWikitext(title)
+    const wt = fetchWikitext(title)
     if (wt == null) {
       console.warn(`  ! ${title}: skipped (no wikitext)`)
       out.gaps.push(`${abbr}: the class page could not be fetched — it states no unlock levels here`)
@@ -278,6 +265,12 @@ function buildAbilities(
 }
 
 /** Write only when the payload actually changed, so `scrapedAt` (and the file) is stable. */
+/** The committed file's `scrapedAt`, if there is one. */
+function priorStamp(): string | undefined {
+  if (!existsSync(OUT_PATH)) return undefined
+  return (JSON.parse(readFileSync(OUT_PATH, 'utf8')) as Partial<ClassTableFile>).scrapedAt
+}
+
 function writeIfChanged(next: ClassTableFile): void {
   if (existsSync(OUT_PATH)) {
     const prev = JSON.parse(readFileSync(OUT_PATH, 'utf8')) as ClassTableFile
@@ -291,9 +284,31 @@ function writeIfChanged(next: ClassTableFile): void {
   writeFileSync(OUT_PATH, JSON.stringify(next, null, 2) + '\n')
 }
 
+/** `--offline` re-parses the committed cache and sends the wiki nothing. */
+const offline = (): boolean => process.argv.includes('--offline')
+
+/** `refreshPages`, unless offline. */
+async function refresh(titles: string[]): Promise<void> {
+  if (offline()) console.log('  (offline: the cached copies, no requests)')
+  else await refreshPages(titles)
+}
+
+/** Offline, the text is the cache's, so the file keeps the stamp of the run that fetched it. */
+function stamp(): string {
+  return (offline() ? priorStamp() : undefined) ?? new Date().toISOString()
+}
+
+/** Both reads of `Alternate Advancement`: the class-exclusive names, and every row of the page. */
+function readAa(abbrOf: Map<string, string>): { aa: Map<string, Set<string>>; aas: Map<string, AaRow> } {
+  const wt = fetchWikitext('Alternate Advancement')
+  if (wt == null) return { aa: new Map(), aas: new Map() }
+  return { aa: parseAaAbilities(wt, abbrOf), aas: parseAaTable(wt, abbrOf) }
+}
+
 async function main(): Promise<void> {
-  console.log('Fetching Character Classes…')
-  const classesWt = await fetchWikitext('Character Classes')
+  console.log('Checking revisions of the index pages…')
+  await refresh(['Character Classes', 'Stances & Invocations', 'Alternate Advancement', 'Disciplines'])
+  const classesWt = fetchWikitext('Character Classes')
   if (classesWt == null) throw new Error('Could not fetch Character Classes — nothing to build.')
   const names = parseClassNames(classesWt)
   const known = new Set(names.keys())
@@ -305,20 +320,17 @@ async function main(): Promise<void> {
     abbrOf.set(name.replace(/\s+/g, '').toLowerCase(), abbr) // "Shadowknight" → SHD
   }
 
-  console.log('Fetching Stances & Invocations…')
-  const siWt = await fetchWikitext('Stances & Invocations')
+  const siWt = fetchWikitext('Stances & Invocations')
   if (siWt == null) throw new Error('Could not fetch Stances & Invocations — nothing to build.')
   const si = readStanceInvocation(siWt, known, abbrOf)
 
-  console.log('Fetching the 16 class pages…')
-  const pages = await readClassPages(names)
+  console.log('Checking revisions of the class pages…')
+  await refresh([...names.keys()].sort().map((abbr) => names.get(abbr) ?? abbr))
+  const pages = readClassPages(names)
 
-  console.log('Fetching Alternate Advancement…')
-  const aaWt = await fetchWikitext('Alternate Advancement')
-  const aa = aaWt == null ? new Map<string, Set<string>>() : parseAaAbilities(aaWt, abbrOf)
+  const { aa, aas } = readAa(abbrOf)
 
-  console.log('Fetching Disciplines…')
-  const discWt = await fetchWikitext('Disciplines')
+  const discWt = fetchWikitext('Disciplines')
   const disputed = [...si.disputed]
   if (discWt == null || !/rogue/i.test(discWt) || !/poison/i.test(discWt)) {
     disputed.push('Disciplines: could not confirm the Rogue-poison statement — poisonCoat exclusivity unverified')
@@ -341,12 +353,13 @@ async function main(): Promise<void> {
   }
 
   const out: ClassTableFile = {
-    scrapedAt: new Date().toISOString(),
+    scrapedAt: stamp(),
     names: sortedRecord(names),
     stances: sortedRecord(si.stances),
     invocations: sortedRecord(si.invocations),
     skills: sortedRecord(new Map([...pages.skills].map(([k, v]) => [k, [...v].sort()]))),
     abilities: sortedRecord(buildAbilities(aa, pages.footnotes)),
+    aas: sortedRecord(aas),
     skillUnlocks: sortedRecord(skillUnlocks),
     discUnlocks: sortedRecord(discUnlocks),
     disputed: disputed.slice().sort()
@@ -358,10 +371,10 @@ async function main(): Promise<void> {
   console.log(
     `\nWrote ${Object.keys(out.names).length} classes · ${Object.keys(out.stances).length} stances · ` +
       `${Object.keys(out.invocations).length} invocations · ${Object.keys(out.skills).length} skills · ` +
-      `${Object.keys(out.abilities).length} abilities · ${rows(out.skillUnlocks)} skill unlocks · ` +
+      `${Object.keys(out.abilities).length} abilities · ${Object.keys(out.aas).length} AAs · ${rows(out.skillUnlocks)} skill unlocks · ` +
       `${rows(out.discUnlocks)} disc unlocks · ${out.disputed.length} disputed → ${OUT_PATH}`
   )
   for (const d of out.disputed) console.log(`  ~ ${d}`)
 }
 
-void main()
+if (isMain(import.meta.url)) void main()

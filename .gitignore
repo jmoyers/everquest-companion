@@ -67,6 +67,9 @@ scripts/sources/cache/mobs/
 # fetch is batched). The DATASET it produces — src/main/data/items.json — is committed,
 # which is what reproducibility actually needs.
 scripts/sources/cache/items/
+# RENDERED-PAGE cache (sources/renderCache.ts): Plane of Sky and boss pages as the wiki renders
+# them, by revision. Megabytes of HTML, rebuilt by the next run like the item and mob caches.
+scripts/sources/cache/rendered/
 
 # clean-machine sandbox harness writes results here; keep the folder, not the output
 scripts/sandbox/results/*

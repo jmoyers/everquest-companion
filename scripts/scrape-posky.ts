@@ -4,6 +4,10 @@
  *
  *   npm run scrape:posky                  # default source (eqlegends)
  *   npm run scrape:posky -- --source p99  # once a p99 source is implemented
+ *   npm run scrape:posky -- --offline     # from the render cache, zero requests
+ *   npm run scrape:posky -- --refresh     # render every page again (a template changed)
+ *
+ * Pages are read through sources/renderCache.ts: only the ones whose revision moved are fetched.
  */
 import { mkdirSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
@@ -25,7 +29,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Scraping with source: ${source.label}\n`)
-  const data = await source.scrape()
+  const data = await source.scrape({ offline: args.includes('--offline'), refresh: args.includes('--refresh') })
 
   // NEVER WRITE A GUTTED FILE (2026-08-22): a wiki restructure once renamed every class heading,
   // the parser found nothing, and this script overwrote the committed 95-quest dataset with an

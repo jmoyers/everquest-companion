@@ -51,6 +51,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { classAbbrForDisplayName } from '../src/shared/spellLevels'
 import type { ClassAbbr } from '../src/shared/classCombo'
+import { isMain } from './sources/isMain'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const RESEARCH = join(HERE, '..', 'docs', 'research', 'spell-lines')
@@ -76,6 +77,33 @@ const SET_CATEGORIES: ReadonlySet<string> = new Set([
   'tradeskill-summon',
   'poison-utility',
   'poison-combat'
+])
+
+/**
+ * Lines that are sets inside a MIXED category, by research line id (each unique across the
+ * thirteen files). `summon-item` and `utility` hold real ladders (Summon Drink → Abundant Drink,
+ * the hammers, the phantom armour) beside lines whose members are different things: food vs
+ * drink, arrows vs throwing daggers, a light vs a heatstone, Gate vs Shadow Step, one gem or
+ * metal vs another. Those, listed here, would otherwise say "Summon Food replaces Summon Drink".
+ */
+const SET_LINE_IDS: ReadonlySet<string> = new Set([
+  'food-line',
+  'summon-sustenance',
+  'mag-summon-food-drink',
+  'mag-summon-ammo',
+  'mag-summon-stones',
+  'mag-summon-apparel',
+  'mag-summon-misc-clickies',
+  'mag-summon-orbs',
+  'nec-travel',
+  'nec-corpse-res',
+  'wiz-shadowstep',
+  'imbue-line',
+  'imbue',
+  'enc-enchant-metal',
+  'enc-mass-enchant-metal',
+  'enc-mana-vials',
+  'enc-mass-mana-vials'
 ])
 
 interface ResearchMember {
@@ -144,7 +172,7 @@ function membersOf(line: ResearchLine): SpellLineMember[] {
 }
 
 /** One research file -> the lines this class contributes, in id order. */
-function linesOf(file: ResearchFile): SpellLine[] {
+export function linesOf(file: ResearchFile): SpellLine[] {
   const out: SpellLine[] = []
   for (const line of file.lines ?? []) {
     const members = membersOf(line)
@@ -155,13 +183,13 @@ function linesOf(file: ResearchFile): SpellLine[] {
       name: line.name,
       category,
       members,
-      ladder: !SET_CATEGORIES.has(category.toLowerCase())
+      ladder: !SET_CATEGORIES.has(category.toLowerCase()) && !SET_LINE_IDS.has(line.id)
     })
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
 }
 
-function build(): { file: SpellLinesFile; stats: string[] } {
+export function build(): { file: SpellLinesFile; stats: string[] } {
   const classes: SpellLinesFile['classes'] = {}
   const stats: string[] = []
   const names = readdirSync(RESEARCH)
@@ -188,7 +216,9 @@ function build(): { file: SpellLinesFile; stats: string[] } {
   return { file: { generatedAt: '2026-08-13', classes }, stats }
 }
 
-const { file, stats } = build()
-writeFileSync(OUT, `${JSON.stringify(file, null, 1)}\n`, 'utf8')
-for (const s of stats) console.log(s)
-console.log(`wrote ${OUT}`)
+if (isMain(import.meta.url)) {
+  const { file, stats } = build()
+  writeFileSync(OUT, `${JSON.stringify(file, null, 1)}\n`, 'utf8')
+  for (const s of stats) console.log(s)
+  console.log(`wrote ${OUT}`)
+}

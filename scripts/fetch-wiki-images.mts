@@ -35,8 +35,8 @@
 // README is ABOUT. `tests/bundledImages.test.mts` reads it back and pins it against the two
 // data files, so a scrape that adds a boss cannot silently ship without its portrait.
 //
-// ETIQUETTE (AGENTS.md LAW): sequential, delayed between requests, retried with exponential
-// backoff honouring Retry-After, and cache-skipping — a file already on disk is never
+// ETIQUETTE (AGENTS.md LAW): every request goes through scripts/sources/wikiApi.ts — sequential,
+// a second apart, retried with exponential backoff honouring Retry-After — and cache-skipping — a file already on disk is never
 // re-fetched, so a partial run resumes and a complete run is a no-op that only rewrites the
 // manifest. `--seed <dir>` goes further: it imports bytes from an existing
 // `<userData>/image-cache` (which shares this naming scheme), because the politest request is
@@ -62,19 +62,13 @@ import {
   wikiItemIconUrl,
   type EqImgRequest
 } from '../src/main/imageCache'
+import { isMain } from './sources/isMain'
+import { wikiFile } from './sources/wikiApi'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const outDir = join(root, 'resources', 'wiki-images')
 const manifestPath = join(outDir, 'manifest.json')
-
-/** Same polite identity every fetcher in this repo sends (AGENTS.md scraper etiquette). */
-const UA = 'everquest-companion/0.1 (personal quest tracker)'
-const REQUEST_DELAY_MS = 1000
-const MAX_ATTEMPTS = 4
-const RETRY_BASE_MS = 1_000
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 // ---- the work list ------------------------------------------------------------------
 
@@ -171,26 +165,12 @@ function seedFrom(seedDir: string, wanted: Wanted[]): number {
 
 // ---- network ------------------------------------------------------------------------
 
-/** Wait before the next attempt: the server's Retry-After when it gave one, else backoff. */
-function backoffMs(res: Response | null, attempt: number): number {
-  const retryAfter = Number(res?.headers.get('retry-after') ?? 0)
-  return retryAfter > 0 ? retryAfter * 1000 : RETRY_BASE_MS * 2 ** (attempt - 1)
-}
-
-/** GET with exponential backoff; honours Retry-After on 429/5xx. Throws on a hard status. */
-async function fetchWithBackoff(url: string): Promise<Response> {
-  for (let attempt = 1; ; attempt++) {
-    let res: Response | null = null
-    try {
-      res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'image/png,image/*;q=0.8,*/*;q=0.5' } })
-      if (res.ok) return res
-      if (res.status < 500 && res.status !== 429) throw new Error(`GET ${url} -> ${res.status} ${res.statusText}`)
-      if (attempt >= MAX_ATTEMPTS) throw new Error(`GET ${url} -> ${res.status} after ${attempt} attempts`)
-    } catch (err) {
-      if (attempt >= MAX_ATTEMPTS) throw err
-    }
-    await sleep(backoffMs(res, attempt))
-  }
+/**
+ * One image GET through sources/wikiApi.ts (a second apart, the shared User-Agent, Retry-After
+ * honoured on 429/5xx). Throws on a hard status, which fails once and is never retried.
+ */
+export async function fetchWithBackoff(url: string): Promise<Response> {
+  return wikiFile(url, { Accept: 'image/png,image/*;q=0.8,*/*;q=0.5' })
 }
 
 /** Fetch one image and write it under its cache name. Returns the bytes, or null if the
@@ -205,7 +185,7 @@ async function fetchOne(w: Wanted): Promise<Uint8Array | null> {
 }
 
 /**
- * Fetch everything still missing, one at a time, `REQUEST_DELAY_MS` apart. Its own function
+ * Fetch everything still missing, one at a time, a second apart (wikiApi). Its own function
  * rather than a block inside `main` so the per-file bookkeeping reads at one level: a failure
  * here is never fatal, because the manifest is rebuilt from what is actually ON DISK afterwards
  * and a partial run is a resumable run.
@@ -220,7 +200,6 @@ async function fetchMissing(missing: readonly Wanted[], limit: number): Promise<
     if (outcome === 'ok') fetched++
     else if (outcome === 'not-an-image') notImages++
     else failed++
-    await sleep(REQUEST_DELAY_MS)
   }
   console.log(`[fetch-wiki-images] fetched ${fetched}, not-an-image ${notImages}, failed ${failed}`)
 }
@@ -329,7 +308,5 @@ async function main(): Promise<void> {
   if (missingNow > 0) console.log(`[fetch-wiki-images] still missing: ${missingNow} (re-run to resume)`)
 }
 
-// Deliberately NOT importable: this module runs on load. The test that pins the manifest
-// (`tests/bundledImages.test.mts`) reads `manifest.json` and the two data files off disk
-// rather than importing anything from here, so nothing can accidentally start a scrape.
-void main()
+// Runs only as the entry script, so a test import can never start a scrape.
+if (isMain(import.meta.url)) void main()

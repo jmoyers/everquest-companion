@@ -39,84 +39,34 @@
  * the live fallback uses. The committed record is therefore the identical shape a live lookup
  * would have produced; there is no second parser to drift.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 1s delay
- * (owner ruling 2026-08-22 — fan-run servers; bulk API batching does the heavy lifting),
- * exponential backoff honouring Retry-After on 429/5xx, a disk cache under
+ * Scraper etiquette (AGENTS.md LAW): every request goes through sources/wikiApi.ts — one
+ * serialized request at a time, a second apart (owner ruling 2026-08-22 — fan-run servers; bulk
+ * API batching does the heavy lifting), maxlag=5, exponential backoff honouring Retry-After on
+ * 429/5xx, an error body thrown rather than read as empty — a disk cache under
  * scripts/sources/cache/items so a warm re-run hits the network ZERO times, and partial runs
  * resume batch-by-batch instead of duplicating work (a batch file is written only after its
  * response arrived intact). Output keys are sorted, so a re-scrape produces a clean diff.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { parseItemWikitext, templateField } from '../src/main/itemLookupParse'
 import { itemKey, type ItemDbEntry, type ItemDbFile } from '../src/main/itemsDb'
-
-const API = 'https://eqlwiki.com/api.php'
-const UA = 'everquest-companion/0.1 (personal quest tracker)'
+import { pageNotices } from '../src/shared/pageNotices'
+import { isMain } from './sources/isMain'
+import { applyItemOtherNames, cachedRedirects } from './sources/mobRedirects'
+import { createCache } from './sources/diskCache'
+import { wikiGet } from './sources/wikiApi'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/items')
 const OUT_PATH = resolve(HERE, '../src/main/data/items.json')
 
-const DELAY_MS = 1000
-const MAX_RETRIES = 5
 /** MEASURED anonymous multi-value limit (see header) — 60 ids silently returns nothing. */
 const BATCH = 50
 const SOURCE = 'eqlwiki.com — embeddedin Template:Itempage (ns0), filtered to pages opening {{Itempage}}'
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
 const refresh = process.argv.slice(2).includes('--refresh')
-
-// ---- polite API client (identical contract to scrape-quests.ts / scrape-mobs.ts) --------
-
-/** Wait before a retry: the server's Retry-After when it gave a usable one, else our backoff. */
-function retryDelayMs(res: Response, backoff: number): number {
-  const retryAfter = Number(res.headers.get('retry-after'))
-  return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff
-}
-
-/** Which request failed, for the thrown message — whichever identifying param it carried. */
-function describeRequest(params: Record<string, string>): string {
-  return `${params.action} ${params.eititle ?? params.pageids?.slice(0, 40) ?? ''}`
-}
-
-/** One serialized GET with exponential backoff on 429/5xx (honours Retry-After). */
-async function api<T>(params: Record<string, string>): Promise<T> {
-  // maxlag=5: MediaWiki's own bot-courtesy contract — the server refuses the request outright
-  // when replication lag exceeds 5s, instead of straining to serve it (owner ruling 2026-08-22).
-  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', maxlag: '5', ...params }).toString()}`
-  let wait = 1000
-  for (let attempt = 0; ; attempt++) {
-    let res: Response
-    try {
-      res = await fetch(url, { headers: { 'User-Agent': UA } })
-    } catch (err) {
-      if (attempt >= MAX_RETRIES) throw err
-      await sleep(wait)
-      wait *= 2
-      continue
-    }
-    if (res.ok) {
-      await sleep(DELAY_MS)
-      const j = (await res.json()) as T
-      // A maxlag deferral arrives as HTTP 200 with an error body and a Retry-After header.
-      if ((j as { error?: { code?: string } }).error?.code === 'maxlag' && attempt < MAX_RETRIES) {
-        await sleep(retryDelayMs(res, wait))
-        wait *= 2
-        continue
-      }
-      return j
-    }
-    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
-      await sleep(retryDelayMs(res, wait))
-      wait *= 2
-      continue
-    }
-    throw new Error(`${res.status} ${res.statusText} for ${describeRequest(params)}`)
-  }
-}
 
 interface Member {
   pageid: number
@@ -125,7 +75,7 @@ interface Member {
 }
 
 /** Every ns0 page that (directly or indirectly) transcludes a template. */
-async function embeddedIn(template: string): Promise<Member[]> {
+export async function embeddedIn(template: string): Promise<Member[]> {
   const out: Member[] = []
   let cont: string | undefined
   for (let page = 0; page < 200; page++) {
@@ -137,36 +87,17 @@ async function embeddedIn(template: string): Promise<Member[]> {
       eilimit: '500'
     }
     if (cont) params.eicontinue = cont
-    const j = await api<{ query?: { embeddedin?: Member[] }; continue?: { eicontinue?: string } }>(params)
+    const j = await wikiGet<{ query?: { embeddedin?: Member[] }; continue?: { eicontinue?: string } }>(params)
     out.push(...(j.query?.embeddedin ?? []))
     cont = j.continue?.eicontinue
-    if (!cont) break
+    if (!cont) return out
   }
-  return out
+  throw new Error(`embeddedin ${template}: still continuing after 200 pages, refusing a truncated list`)
 }
 
-// ---- disk cache --------------------------------------------------------------------
+// ---- disk cache: sources/diskCache.ts ------------------------------------------
 
-function cachePath(name: string): string {
-  return resolve(CACHE_DIR, name)
-}
-
-/** Cached JSON, or null when absent/unreadable/`--refresh`. The CALLER names the shape. */
-function readCache(name: string): unknown {
-  if (refresh) return null
-  const p = cachePath(name)
-  if (!existsSync(p)) return null
-  try {
-    return JSON.parse(readFileSync(p, 'utf8')) as unknown
-  } catch {
-    return null
-  }
-}
-
-function writeCache(name: string, data: unknown): void {
-  mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(cachePath(name), JSON.stringify(data), 'utf8')
-}
+const { read: readCache, write: writeCache } = createCache(CACHE_DIR, { refresh })
 
 /** One page of a `prop=revisions` response. `missing` pages carry no revision at all. */
 interface RevPage {
@@ -185,8 +116,9 @@ interface RevPage {
 async function fetchBatch(slice: Member[]): Promise<RevPage[]> {
   const file = `batch-${slice[0].pageid}-${slice.length}.json`
   const cached = readCache(file) as RevPage[] | null
-  if (cached) return cached
-  const j = await api<{ query?: { pages?: RevPage[] } }>({
+  // A batch left by an older page list can share the name; reuse it only if it holds exactly this slice.
+  if (Array.isArray(cached) && batchProblem(slice, cached, false) === null) return cached
+  const j = await wikiGet<{ query?: { pages?: RevPage[] }; continue?: unknown }>({
     action: 'query',
     prop: 'revisions',
     rvprop: 'content',
@@ -194,9 +126,19 @@ async function fetchBatch(slice: Member[]): Promise<RevPage[]> {
     pageids: slice.map((p) => p.pageid).join('|')
   })
   const pages = j.query?.pages ?? []
+  const problem = batchProblem(slice, pages, j.continue !== undefined)
+  if (problem) throw new Error(`batch ${file}: ${problem}; not cached`)
   // Write only AFTER a complete response: a half-written batch must never look cached.
   writeCache(file, pages)
   return pages
+}
+
+/** Why a batch response is not the whole slice (null when it is): wrong page set, or continued. */
+export function batchProblem(slice: Member[], pages: RevPage[], continued: boolean): string | null {
+  if (continued) return 'response carries continue (partial content)'
+  const want = slice.map((p) => p.pageid).sort((a, b) => a - b).join()
+  const have = pages.map((p) => p.pageid ?? -1).sort((a, b) => a - b).join()
+  return want === have ? null : `pages ${pages.length} do not match the ${slice.length} requested`
 }
 
 // ---- page → record -------------------------------------------------------------------
@@ -236,7 +178,9 @@ function compact(entry: ItemDbEntry): ItemDbEntry {
 export function toEntry(title: string, wikitext: string): ItemDbEntry | null {
   const parsed = parseItemWikitext(title, wikitext)
   const name = displayName(wikitext, title)
-  const entry = compact({ page: title, ...parsed, ...(name ? { name } : {}) })
+  // `{{DNE}}` / `{{delete}}`: the page says the item may not be in Legends (owner, 2026-10-22).
+  const notices = pageNotices(wikitext)
+  const entry = compact({ page: title, ...parsed, ...(name ? { name } : {}), ...(notices === undefined ? {} : { notices }) })
   // A record that states nothing beyond its own title is noise: a stub page with an empty
   // template. Committing it would only teach the app to stop asking the wiki about it.
   return Object.keys(entry).length > 1 ? entry : null
@@ -244,7 +188,7 @@ export function toEntry(title: string, wikitext: string): ItemDbEntry | null {
 
 // ---- main ------------------------------------------------------------------------------
 
-interface RunStats {
+export interface RunStats {
   pages: number
   entries: number
   notItem: number
@@ -265,23 +209,44 @@ interface RunStats {
  * (law 2). One of the pair is normally the filled-in page and the other a near-stub, so the
  * RICHER record wins (more serialized bytes = more fields the page actually stated); ties go
  * to the first title in sort order, which keeps the output deterministic either way.
+ *
+ * Titles are registered FIRST and an alias never takes a key a page title holds: a page whose
+ * `|itemname` was copy-pasted from another item ('Armadillo Tail' naming 'Armadillo Tooth')
+ * would otherwise evict the real page whenever its record serialized longer.
  */
-function addKeys(items: Map<string, ItemDbEntry>, entry: ItemDbEntry, stats: RunStats): void {
-  const keys = [itemKey(entry.page)]
-  if (entry.name) {
-    keys.push(itemKey(entry.name))
-    stats.aliases++
-  }
-  for (const k of keys) {
-    if (!k) continue
-    const prev = items.get(k)
-    if (prev) stats.collisions++
-    if (!prev || JSON.stringify(entry).length > JSON.stringify(prev).length) items.set(k, entry)
-  }
+function claimKey(items: Map<string, ItemDbEntry>, k: string, entry: ItemDbEntry, stats: RunStats): void {
+  const prev = items.get(k)
+  if (prev) stats.collisions++
+  if (!prev || JSON.stringify(entry).length > JSON.stringify(prev).length) items.set(k, entry)
 }
 
-/** Fold one fetched page into the index, counting exactly why it produced no record. */
-function foldPage(p: RevPage, items: Map<string, ItemDbEntry>, stats: RunStats): void {
+/** A disambiguated title's base name: `Dimensional Hole (Item)` → `Dimensional Hole`. */
+function baseTitle(page: string): string | undefined {
+  return /^(.+?)\s*\(Item\)$/i.exec(page)?.[1]
+}
+
+export function buildIndex(entries: ItemDbEntry[], stats: RunStats): Map<string, ItemDbEntry> {
+  const items = new Map<string, ItemDbEntry>()
+  for (const e of entries) {
+    const k = itemKey(e.page)
+    if (k) claimKey(items, k, e, stats)
+  }
+  const titled = new Set(items.keys())
+  for (const e of entries) {
+    if (e.name) stats.aliases++
+    const aliases = new Set([e.name, baseTitle(e.page)].map((a) => (a ? itemKey(a) : '')))
+    for (const k of aliases) if (k && !titled.has(k)) claimKey(items, k, e, stats)
+  }
+  return items
+}
+
+/** Distinct pages a key still reaches: a case-variant loser is parsed but not shipped. */
+export function reachableCount(items: Map<string, ItemDbEntry>): number {
+  return new Set(items.values()).size
+}
+
+/** Fold one fetched page into the entry list, counting exactly why it produced no record. */
+function foldPage(p: RevPage, entries: ItemDbEntry[], stats: RunStats): void {
   const wt = p.revisions?.[0]?.slots?.main?.content
   if (p.missing === true || wt == null) {
     stats.missing++
@@ -297,7 +262,7 @@ function foldPage(p: RevPage, items: Map<string, ItemDbEntry>, stats: RunStats):
     return
   }
   stats.entries++
-  addKeys(items, entry, stats)
+  entries.push(entry)
 }
 
 async function collectPages(): Promise<Member[]> {
@@ -333,22 +298,25 @@ async function main(): Promise<void> {
   const batches = Math.ceil(pages.length / BATCH)
   console.log(`\nFetching ${pages.length} pages in ${batches} batches of ${BATCH}…`)
 
-  const items = new Map<string, ItemDbEntry>()
+  const entries: ItemDbEntry[] = []
   const stats: RunStats = {
     pages: pages.length, entries: 0, notItem: 0, missing: 0, empty: 0, aliases: 0, collisions: 0
   }
   for (let i = 0; i < pages.length; i += BATCH) {
-    for (const p of await fetchBatch(pages.slice(i, i + BATCH))) foldPage(p, items, stats)
+    for (const p of await fetchBatch(pages.slice(i, i + BATCH))) foldPage(p, entries, stats)
     const n = i / BATCH + 1
     if (n % 25 === 0) console.log(`  batch ${n}/${batches}  (items so far: ${stats.entries})`)
   }
 
+  const items = buildIndex(entries, stats)
   // Sorted keys ⇒ a deterministic file ⇒ a re-scrape diffs cleanly against the wiki.
   const sorted = Object.fromEntries([...items.entries()].sort((a, b) => a[0].localeCompare(b[0])))
+  // The cached redirects that land on each page as its otherNames (owner, 2026-10-22: Halfling Blood).
+  applyItemOtherNames(sorted, cachedRedirects(), itemKey)
   const out: ItemDbFile = {
     scrapedAt: new Date().toISOString(),
     source: SOURCE,
-    count: stats.entries,
+    count: reachableCount(items),
     items: sorted
   }
   // No pretty-printing: this file is INLINED into every user's main bundle, and indentation
@@ -361,4 +329,4 @@ async function main(): Promise<void> {
   printSummary(stats, items.size, Buffer.byteLength(json), startedAt)
 }
 
-void main()
+if (isMain(import.meta.url)) void main()

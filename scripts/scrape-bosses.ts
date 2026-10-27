@@ -6,16 +6,31 @@
  *   npm run scrape:bosses
  *
  * `match` holds the exact in-log "slain" names used to detect kills.
+ *
+ * Every request goes through sources/wikiApi.ts: a second apart across both wikis, maxlag=5,
+ * retried on 429/5xx with Retry-After honoured.
+ *
+ * A PORTRAIT IS KEPT (owner, 2026-10-18: if an image exists, use it; some were picked by hand): a
+ * target the committed bosses.json already has an image for keeps it, and only a target with none
+ * is looked up. Pages are read through sources/renderCache.ts, by revision, like every other text.
+ *
+ *   npm run scrape:bosses -- --offline   from the render cache, zero requests
+ *   npm run scrape:bosses -- --refresh   render every page again
  */
-import { mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import type { BossData, RaidTarget } from '../src/shared/types'
+import { renderedPages, type RenderOptions } from './sources/renderCache'
+import type { ApiGet } from './sources/revCache'
+import { wikiGet } from './sources/wikiApi'
+
+const RENDER = { offline: process.argv.includes('--offline'), refresh: process.argv.includes('--refresh') }
 
 const EQL = 'https://eqlwiki.com'
 const P99 = 'https://wiki.project1999.com'
+/** The identity this scraper has always sent both wikis; the P99 wiki is not ours to re-test. */
 const UA = 'Mozilla/5.0 everquest-companion/0.2 (personal raid tracker)'
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 interface Curated {
   name: string
@@ -61,7 +76,9 @@ const TARGETS: Curated[] = [
   { name: 'Master of Spite', category: 'Plane of Hate', match: ['Master of Spite'], zone: 'Plane of Hate' },
   { name: 'Mistress of Scorn', category: 'Plane of Hate', match: ['Mistress of Scorn'], zone: 'Plane of Hate' },
   { name: 'High Priest M`kari', category: 'Plane of Hate', match: ['High Priest M`kari'], zone: 'Plane of Hate' },
-  { name: 'Magi P`tasa', category: 'Plane of Hate', match: ['Magi P`tasa'], zone: 'Plane of Hate' },
+  // eqlwiki titles the page with a capital T (Magi P`Tasa) and a title is case-sensitive after its
+  // first letter, so the lowercase name found no page, and no portrait, on either wiki.
+  { name: 'Magi P`tasa', category: 'Plane of Hate', page: 'Magi P`Tasa', p99: 'Magi P`Tasa', match: ['Magi P`tasa'], zone: 'Plane of Hate' },
   { name: 'Coercer T`vala', category: 'Plane of Hate', match: ['Coercer T`vala'], zone: 'Plane of Hate' },
   { name: 'Grandmaster R`Tal', category: 'Plane of Hate', match: ['Grandmaster R`Tal'], zone: 'Plane of Hate' },
   { name: 'Ashenbone Broodmaster', category: 'Plane of Hate', match: ['Ashenbone Broodmaster'], zone: 'Plane of Hate' },
@@ -92,19 +109,26 @@ const TARGETS: Curated[] = [
   { name: 'The Hand of Veeshan', category: 'Plane of Sky', page: 'The Hand of Veeshan', match: ['The Hand of Veeshan', 'the Hand of Veeshan'], zone: 'Plane of Sky — Efreeti Cycle (Island 8)' }
 ]
 
-async function pageHtml(apiBase: string, page: string): Promise<string | undefined> {
-  const url = `${apiBase}/api.php?action=parse&page=${encodeURIComponent(
-    page
-  )}&prop=text&format=json&redirects=1`
+/** One wiki's API, as the render cache's revision check asks it. */
+const apiOf = (apiBase: string): ApiGet => ((params: Record<string, string>) => wikiGet(params, `${apiBase}/api.php`, UA))
+
+/** A page's parsed HTML, or null on any failure (the next image source is tried instead). */
+async function renderPage(apiBase: string, page: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } })
-    const json = (await res.json()) as { parse?: { text?: string | { '*'?: string } }; error?: unknown }
-    if (json.error) return undefined
+    const params = { action: 'parse', page, prop: 'text', redirects: '1' }
+    const json = await wikiGet<{ parse?: { text?: string | { '*'?: string } } }>(params, `${apiBase}/api.php`, UA)
     const t = json.parse?.text
-    return typeof t === 'string' ? t : t?.['*']
+    return (typeof t === 'string' ? t : t?.['*']) ?? null
   } catch {
-    return undefined
+    return null
   }
+}
+
+/** A page's parsed HTML through the render cache (`cache/rendered/<site>`), or undefined. */
+async function pageHtml(apiBase: string, page: string): Promise<string | undefined> {
+  const site = apiBase === P99 ? 'p99' : 'eqlwiki'
+  const opts: RenderOptions = { ...RENDER, dir: `scripts/sources/cache/rendered/${site}` }
+  return (await renderedPages([page], (t) => renderPage(apiBase, t), apiOf(apiBase), opts)).get(page)
 }
 
 function imgSrcs(html: string): string[] {
@@ -121,11 +145,13 @@ async function p99Image(page: string): Promise<string | undefined> {
   return pick.startsWith('http') ? pick : P99 + pick
 }
 
-/** EQ Legends wiki fallback: first non-loot-icon image. */
+/** EQ Legends wiki fallback: the "Npc_*" portrait when the page has one, as on P99 (Phinigel
+ *  Autropos's page shows a Kedge Keep map first), else the first non-loot-icon image. */
 async function eqlImage(page: string): Promise<string | undefined> {
   const html = await pageHtml(EQL, page)
   if (!html) return undefined
-  const pick = imgSrcs(html).find((s) => !/Item_\d+/i.test(s))
+  const srcs = imgSrcs(html)
+  const pick = srcs.find((s) => /Npc_/i.test(s)) ?? srcs.find((s) => !/Item_\d+/i.test(s))
   if (!pick) return undefined
   return pick.startsWith('http') ? pick : EQL + pick
 }
@@ -135,25 +161,30 @@ async function fetchImage(t: Curated): Promise<string | undefined> {
   if (t.image) return t.image
   const p99 = await p99Image(t.p99 ?? t.name)
   if (p99) return p99
-  await sleep(80)
   return eqlImage(t.page ?? t.name)
 }
 
+/** The images the committed bosses.json already has, by target name. */
+function keptImages(path: string): Map<string, string> {
+  if (!existsSync(path)) return new Map()
+  const data = JSON.parse(readFileSync(path, 'utf8')) as BossData
+  return new Map(data.targets.flatMap((t) => (t.image ? [[t.name, t.image] as const] : [])))
+}
+
 async function main(): Promise<void> {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const outPath = resolve(here, '../src/renderer/src/data/eqlegends/bosses.json')
+  const kept = keptImages(outPath)
   const targets: RaidTarget[] = []
   let withImg = 0
   for (const t of TARGETS) {
-    const image = await fetchImage(t)
+    const image = t.image ?? kept.get(t.name) ?? (await fetchImage(t))
     if (image) withImg++
     targets.push({ name: t.name, category: t.category, match: t.match, zone: t.zone, image })
     console.log(`  ${image ? '🖼 ' : '·  '}${t.name}`)
-    await sleep(120)
   }
   const data: BossData = { scrapedAt: new Date().toISOString(), targets }
-  const here = dirname(fileURLToPath(import.meta.url))
-  const outDir = resolve(here, '../src/renderer/src/data/eqlegends')
-  mkdirSync(outDir, { recursive: true })
-  const outPath = resolve(outDir, 'bosses.json')
+  mkdirSync(dirname(outPath), { recursive: true })
   writeFileSync(outPath, JSON.stringify(data, null, 2))
   console.log(`\nWrote ${targets.length} targets (${withImg} with images) → ${outPath}`)
 }

@@ -20,7 +20,8 @@
 //   |notes         = freeform prose (lore, quirks) — our one-line summary
 //   |recipes       = recipes that CONSUME this item (see shapes below)
 //   |playercrafted = how this item is itself made (see shapes below)
-//   |merchant_value, |soldby, |bookcontents, |foraged,
+//   |foraged       = * [[Zone]] bullets (PARSED — see `parseForaged`)
+//   |merchant_value, |soldby, |bookcontents,
 //   |second_image / |third_image  (present in the template; not consumed here)
 //
 // One piece of knowledge lives OUTSIDE the template: the page-top `{{Velious Era}}` banner that
@@ -173,6 +174,8 @@ import { itemBaseName, parseStatsBlock, type ItemStatBlock } from '../shared/ite
 // The ONE question this parser asks the era tables: "is this a token you name?" — the guard on the
 // category reader below. What a token MEANS is still decided only in shared/planner/era.ts.
 import { namesEra } from '../shared/planner/era'
+import { stripFormatChars } from '../shared/wikiTitle'
+import { isUnfilledItemBlueprint } from './itemBlueprint'
 
 /** Strip a trailing ` +N` upgrade suffix. Applied before lookup + as the cache key. ONE
  *  definition of the rule for every main-side caller — see shared/itemStats.itemBaseName. */
@@ -184,12 +187,53 @@ export function normalizeItemName(name: string): string {
 export function templateField(wikitext: string, field: string): string | null {
   // Match `|field = <value>` up to the next top-level `|field2 =` or the template close.
   // Values can contain newlines and bullet lists.
-  const re = new RegExp(
-    `\\|\\s*${field}\\s*=([\\s\\S]*?)(?=\\n\\s*\\|\\s*[a-zA-Z_]+\\s*=|\\n\\s*\\}\\})`,
-    'i'
-  )
-  const m = re.exec(wikitext)
-  return m ? m[1].trim() : null
+  // A field stated twice (`|notes = |notes = …`) reads as its first non-empty value.
+  let value: string | null = null
+  for (const m of wikitext.matchAll(new RegExp(`\\|\\s*${field}\\s*=`, 'gi'))) {
+    const start = m.index + m[0].length
+    const end = fieldValueEnd(wikitext, start)
+    if (end === null) continue
+    value = wikitext.slice(start, end).trim()
+    if (value) break
+  }
+  return value
+}
+
+/** `|name =` opening the next field (names may hold spaces: mob pages' `respawn time`). */
+const NEXT_FIELD_RE = /^\|+\s*[a-zA-Z_][\w ]*=/
+
+/** Does a field end at `i`? At a line start always (the old rule), mid-line only at top level. */
+function endsAt(s: string, i: number, top: boolean): boolean {
+  if (!top) return false
+  return s.startsWith('}}', i) || (s[i] === '|' && NEXT_FIELD_RE.test(s.slice(i, i + 64)))
+}
+
+/**
+ * Where a field's value ends: the next `|name =` or the template's `}}`. At a line start that
+ * holds regardless of nesting; mid-line it counts only outside nested `{{ }}` / `[[ ]]`, so a
+ * close on the value's last line (`Race: ALL<br>}}`) and a second field on the same line
+ * (`level = 22 | respawn time = 6:40`) both end it.
+ */
+function fieldValueEnd(s: string, from: number): number | null {
+  const depth = { tpl: 0, link: 0 }
+  let lineStart = false
+  for (let i = from; i < s.length; i++) {
+    if (endsAt(s, i, lineStart || (depth.tpl === 0 && depth.link === 0))) return i
+    if (s[i] === '\n') lineStart = true
+    else if (!/\s/.test(s[i])) lineStart = false
+    i += bracketStep(s.slice(i, i + 2), depth)
+  }
+  return null
+}
+
+/** Track `{{ }}` / `[[ ]]` nesting; returns 1 when `two` was a bracket pair to skip past. */
+function bracketStep(two: string, depth: { tpl: number; link: number }): number {
+  if (two === '{{') depth.tpl++
+  else if (two === '}}') depth.tpl = Math.max(0, depth.tpl - 1)
+  else if (two === '[[') depth.link++
+  else if (two === ']]') depth.link = Math.max(0, depth.link - 1)
+  else return 0
+  return 1
 }
 
 /** Parse the `* [[Page|Label]]` / `* [[Page]]` bullet links out of a relatedquests block. */
@@ -198,11 +242,11 @@ export function parseQuestLinks(block: string): ItemQuestUse[] {
   const linkRe = /\[\[([^\]]+?)\]\]/g
   let m: RegExpExecArray | null
   while ((m = linkRe.exec(block)) !== null) {
-    const inner = m[1].trim()
+    const inner = stripFormatChars(m[1])
     const pipe = inner.indexOf('|')
     const page = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim()
     const label = (pipe >= 0 ? inner.slice(pipe + 1) : inner).trim()
-    if (!label) continue
+    if (!label || EXCLUDED_NS.test(page)) continue
     if (!uses.some((u) => u.quest === label)) uses.push({ quest: label, page, source: 'wiki' })
   }
   return uses
@@ -212,7 +256,8 @@ export function parseQuestLinks(block: string): ItemQuestUse[] {
 
 /** First `[[Page]]` / `[[Page|Label]]` in a line, split into page + display label. */
 function firstLink(s: string): { page: string; label: string } | null {
-  const m = /\[\[([^\]]+?)\]\]/.exec(s)
+  // A Category:/File:/Special: link is page furniture, never a recipe or tradeskill.
+  const m = [...s.matchAll(/\[\[([^\]]+?)\]\]/g)].find((x) => !EXCLUDED_NS.test(x[1].trim()))
   if (!m) return null
   const inner = m[1].trim()
   const pipe = inner.indexOf('|')
@@ -481,6 +526,59 @@ function dropSourcesField(raw: string | null): ItemDropSource[] | undefined {
   return sources.length > 0 ? sources : undefined
 }
 
+// ---- forage zones (`|foraged`) --------------------------------------------------
+//
+// CENSUS, measured 2026-10-21 over the cached item pages (11,595): 145 carry the field, 139 of
+// them filled, 296 `* [[Zone]]` bullets. A piped link (`[[Freeport|East Freeport]]`) keeps its
+// label, as a `|dropsfrom` zone heading does; a note after the link (`(which?)`, `?`) and a second
+// link on the bullet (`[[Dagnor's Cauldron]], possibly [[Kedge Keep]]`) are both read as zones the
+// page names. Lines naming no zone (`* Various`, `* ?`, `''This item can be foraged in most
+// zones.''`, one prose line) are kept as prose. `[[Category:Foraged]]` sits after the template
+// (137 pages); 6 fill the field without it and 4 carry it with the field empty or absent.
+// Only a bullet that opens with a link names zones (`* with the [[Forage]] skill` is prose), and an
+// HTML comment is never read. Whatever names no zone (`{{Zone|X}}` included) stays in the note.
+const FORAGED_CATEGORY_RE = /\[\[\s*Category\s*:\s*Foraged\s*(\|[^\]]*)?\]\]/i
+/** `<!-- … -->`, an unclosed one running to the end, as MediaWiki reads it. */
+const HTML_COMMENT_RE = /<!--[\s\S]*?(?:-->|$)/g
+const ZONE_BULLET_RE = /^\*+\s*\[\[/
+
+/** A zone link's name: a piped label, else the page (`_` is a space, `#anchor` dropped). */
+function forageZone(inner: string): string | undefined {
+  const pipe = inner.indexOf('|')
+  const page = (pipe >= 0 ? inner.slice(0, pipe) : inner).replace(/_/g, ' ').replace(/#.*/, '').replace(/\s+/g, ' ').trim()
+  if (!page || EXCLUDED_NS.test(page)) return undefined
+  return (pipe >= 0 ? inner.slice(pipe + 1).trim() : '') || page
+}
+
+/** Parse `|foraged`: every zone a bullet links, page order, each once (any case); the rest as prose. */
+export function parseForaged(block: string): { zones: string[]; note?: string } {
+  const zones: string[] = []
+  const prose: string[] = []
+  for (const line of bulletLines(block.replace(HTML_COMMENT_RE, ''))) {
+    const links = ZONE_BULLET_RE.test(line) ? [...line.matchAll(/\[\[([^[\]]+)\]\]/g)].map((m) => forageZone(m[1])) : []
+    const found = links.filter((z) => z !== undefined)
+    for (const z of found) if (!zones.some((x) => x.toLowerCase() === z.toLowerCase())) zones.push(z)
+    if (found.length === 0) {
+      const text = line.replace(/^\*+\s*/, '')
+      prose.push(cleanSummary(text) ?? text)
+    }
+  }
+  const note = prose.join('; ') || undefined
+  return note ? { zones, note } : { zones }
+}
+
+/** The forage half of the result; every field `undefined` unless the page stated it. */
+function foragedFields(wikitext: string): Pick<ItemKnowledge, 'foraged' | 'foragedNote' | 'foragedCategory'> {
+  const page = wikitext.replace(HTML_COMMENT_RE, '')
+  const raw = templateField(page, 'foraged')
+  const parsed = raw ? parseForaged(raw) : null
+  return {
+    foraged: parsed && parsed.zones.length > 0 ? parsed.zones : undefined,
+    foragedNote: parsed?.note,
+    foragedCategory: FORAGED_CATEGORY_RE.test(page) ? true : undefined
+  }
+}
+
 // ---- the page-top era tag (`{{Velious Era}}`) -----------------------------------
 //
 // The one era signal the wiki actually carries, and it is NOT an {{Itempage}} field: it is a
@@ -700,7 +798,7 @@ export function parsePageEraTag(wikitext: string): string | undefined {
  * page's, duplicates removed.
  */
 /** The namespaces eqlwiki's own `eraFilter` skips before it asks about a link target. */
-const EXCLUDED_NS = /^(File|Image|Category|Template|Special|Help|MediaWiki|User|Talk|Media|Portal)\s*:/i
+export const EXCLUDED_NS = /^(File|Image|Category|Template|Special|Help|MediaWiki|User|Talk|Media|Portal)\s*:/i
 
 export function notesLinkTargets(wikitext: string): string[] {
   const notes = templateField(wikitext, 'notes')
@@ -714,9 +812,27 @@ export function notesLinkTargets(wikitext: string): string[] {
   return out
 }
 
+/** `{{Item Lore|X}}`/`{{Lore|X}}` → X, `{{:Page}}` → Page, `{{Loc|Zone|x, y}}` → x, y; any
+ *  other template (`{{Item Lore Missing}}`, `{{SmIcon|…}}`) says nothing in prose and is dropped. */
+const LORE_END = '\u0001'
+
+function unwrapTemplate(body: string): string {
+  const parts = body.split('|')
+  const name = parts[0].trim().toLowerCase()
+  if (name === 'lore' || /^item\s+lore$/.test(name)) return parts.slice(1).join('|').trim() + LORE_END
+  if (name === 'loc') return (parts[2] ?? '').trim()
+  return name.startsWith(':') ? parts[0].trim().slice(1) : ''
+}
+
 /** Collapse a `notes` field to a single trimmed prose line (strips wiki markup, caps length). */
 export function cleanSummary(notes: string): string | undefined {
-  const text = notes
+  let unwrapped = notes
+  for (let prev = ''; prev !== unwrapped; ) {
+    prev = unwrapped
+    unwrapped = unwrapped.replace(/\{\{([^{}]*)\}\}/g, (_m, body: string) => unwrapTemplate(body))
+  }
+  const text = unwrapped
+    .replace(/\{+|\}+/g, '') // stray braces of an unbalanced template
     .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1') // [[Page|Label]] -> Label
     .replace(/\[\[([^\]]*)\]\]/g, '$1') // [[Page]] -> Page
     .replace(/<[^>]+>/g, ' ') // strip HTML tags
@@ -725,8 +841,9 @@ export function cleanSummary(notes: string): string | undefined {
     .trim()
   if (!text) return undefined
   // First sentence / first 200 chars, whichever is shorter — a one-liner, not an essay.
-  const firstSentence = text.split(/(?<=\.)\s/)[0]
-  const s = (firstSentence.length <= 200 ? firstSentence : text.slice(0, 200)).trim()
+  // LORE_END keeps a lore line's closing period from ending the summary before the prose after it.
+  const firstSentence = text.split(/(?<=\.)\s/)[0].replaceAll(LORE_END, '')
+  const s = (firstSentence.length <= 200 ? firstSentence : text.replaceAll(LORE_END, '').slice(0, 200)).trim()
   return s || undefined
 }
 
@@ -742,9 +859,24 @@ function buildStats(statsBlock: string, focusRaw: string | null): ItemStatBlock 
   return stats
 }
 
-/** `|lucy_img_ID` → File:Item <id>.png. A bare integer or nothing at all. */
+/** A flag naming lore: `Lore`, `Lore Item`, `Lore Equipped` and its typos (`LORE EQUPPED`). */
+const LORE_FLAG_RE = /^lore(\s+(item|equ\w*))?$/i
+
+/** LORE / QUEST from the block text, plus the short forms the parsed flag line carries
+ *  (`No Trade, Quest`, `Lore`). */
+function loreQuestFlags(statsBlock: string | undefined, stats: ItemStatBlock | undefined): { lore: boolean; questFlag: boolean } {
+  const parsed = stats?.flags ?? []
+  const text = (statsBlock ?? '').toUpperCase()
+  return {
+    lore: /\bLORE (ITEM|EQUIPPED)\b/.test(text) || parsed.some((f) => LORE_FLAG_RE.test(f.trim())),
+    questFlag: /\bQUEST ITEM\b/.test(text) || parsed.some((f) => /^quest$/i.test(f.trim()))
+  }
+}
+
+/** `|lucy_img_ID` → File:Item <id>.png. A bare integer (a pasted bidi mark aside) or nothing at all. */
 function parseIconId(iconRaw: string | null): number | undefined {
-  return iconRaw && /^\d+$/.test(iconRaw.trim()) ? Number(iconRaw.trim()) : undefined
+  const id = stripFormatChars(iconRaw ?? '')
+  return /^\d+$/.test(id) ? Number(id) : undefined
 }
 
 /**
@@ -799,7 +931,11 @@ export function parseItemWikitext(
   | 'craftedBy'
   | 'craftedNote'
   | 'eraTag'
+  | 'foraged'
+  | 'foragedNote'
+  | 'foragedCategory'
 > {
+  if (isUnfilledItemBlueprint(wikitext)) return { lore: false, quest: false, questUses: [], dropsFrom: [] }
   const statsBlock = templateField(wikitext, 'statsblock') ?? undefined
   const relatedRaw = templateField(wikitext, 'relatedquests')
   const notesRaw = templateField(wikitext, 'notes')
@@ -809,17 +945,11 @@ export function parseItemWikitext(
   const craftedRaw = templateField(wikitext, 'playercrafted')
   const dropsFrom = dropSourcesField(templateField(wikitext, 'dropsfrom'))
 
-  const flags = (statsBlock ?? '').toUpperCase()
-  const lore = /\bLORE ITEM\b/.test(flags) || /\bLORE EQUIPPED\b/.test(flags)
-  const questFlag = /\bQUEST ITEM\b/.test(flags)
+  const stats: ItemStatBlock | undefined = statsBlock ? buildStats(statsBlock, focusRaw) : undefined
+  const { lore, questFlag } = loreQuestFlags(statsBlock, stats)
 
   const questUses = relatedRaw ? parseQuestLinks(relatedRaw) : []
   const quest = questFlag || questUses.length > 0
-  const summary = notesRaw ? cleanSummary(notesRaw) : undefined
-
-  const stats: ItemStatBlock | undefined = statsBlock ? buildStats(statsBlock, focusRaw) : undefined
-
-  const iconId = parseIconId(iconRaw)
 
   // Tradeskill knowledge. `playerCrafted` is asserted only from a STRUCTURED craft recipe;
   // a prose-only `|playercrafted` ("Non-Tradeskill (Quest)") is reported as craftedNote and
@@ -832,11 +962,12 @@ export function parseItemWikitext(
     quest,
     questUses,
     dropsFrom,
-    summary,
+    summary: notesRaw ? cleanSummary(notesRaw) : undefined,
     stats,
-    iconId,
+    iconId: parseIconId(iconRaw),
     eraTag: pageEraTag(wikitext),
     ...tradeskillFields(recipeParse, craftParse),
+    ...foragedFields(wikitext),
     statsBlock: statsBlock
       ? statsBlock.replace(/<br\s*\/?>/gi, '\n').replace(/[ \t]{2,}/g, ' ').trim()
       : undefined

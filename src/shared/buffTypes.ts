@@ -334,6 +334,8 @@ export type BuffsDelta = BuffsSnap
 export interface SpellEntry {
   /** Spell name (page title / spellname field). Rank variants are separate entries. */
   name: string
+  /** the page's era banner token (`Classic`, `Kunark`); absent when the page states none */
+  eraTag?: string
   /** Raw duration text from the wiki ("27 minutes", "instant", a level formula). */
   durationText?: string
   /** Parsed duration in ms; null when durationText is unparseable/absent/instant. */

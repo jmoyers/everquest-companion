@@ -58,6 +58,10 @@ export interface MobLoc {
 export interface MobEntry {
   /** wiki page title (linkable, and the resolve key for the live fallback) */
   page: string
+  /** the page's era banner token (`Classic`, `FearHateRevamp`); absent when the page states none */
+  eraTag?: string
+  /** set when the era rules put this mob out of era (computed at data build from banner, zones) */
+  outOfEra?: true
   /** the page's own `|name` — the IN-GAME name, article and casing as the wiki writes it */
   name: string
   /** level EXACTLY as the page states it — a RANGE as often as a number ("36-40", "2 - 4") */
@@ -66,11 +70,23 @@ export interface MobEntry {
   zones?: string[]
   /** item names from `|known_loot`. Absent when the page has no loot section at all. */
   drops?: string[]
+  /** item and group names from `|common_loot`: loot the page files as shared with other mobs. */
+  commonDrops?: string[]
   /**
    * Spawn points from `|location`, in page order. Absent when the page stated no numbers at all
    * — which is the honest answer for the ~20% that say "Various" or "?" (world-model law 1).
    */
   loc?: MobLoc[]
+  /** the page is a `{{MerchantPage}}`: a vendor NPC */
+  merchant?: true
+  /** every faction the page says a kill moves, lowered or raised (`|factions`, `|opposing_factions`) */
+  factions?: string[]
+  /** what each `factions` bullet states about the hit, same order: "-30", "-30..-10?", "+" (mobFactionAmounts.ts) */
+  factionAmounts?: string[]
+  /** the image file the page names (`|imagefilename`, `npc_marda.png`); absent when it names none */
+  image?: string
+  /** the page names no image, or one the wiki has no file for (scrape-wiki-files.ts) */
+  noImage?: true
 }
 
 export interface MobData {

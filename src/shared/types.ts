@@ -632,6 +632,12 @@ export interface ItemKnowledge {
   craftedBy?: ItemCraftRecipe[]
   /** prose fallback when `|playercrafted` wasn't a structured recipe ("Non-Tradeskill (Quest)") */
   craftedNote?: string
+  /** the zones the ITEM PAGE says it is foraged in (`|foraged`), as its links show them */
+  foraged?: string[]
+  /** `|foraged` lines that name no zone, as prose (`Various`, `?`) */
+  foragedNote?: string
+  /** the page files itself under `[[Category:Foraged]]` */
+  foragedCategory?: boolean
   /** whether this result was served from cache (vs a fresh network lookup) */
   cached: boolean
   /** true when the wiki lookup was attempted but found no page (negative result) */

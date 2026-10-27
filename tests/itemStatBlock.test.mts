@@ -287,6 +287,31 @@ test('unrecognized stat-block text is preserved verbatim, never dropped or guess
   assert.deepEqual(s2.extras, ['mystery text'])
 })
 
+test('a line of several stats yields one row per `Key: value`, whichever keys it carries', () => {
+  // Owner report, 2026-10-11, with the page's own line (cache, batch-54696-50.json): the card drew
+  // "Regen 2", "Mana Regen 2 End", "Regen 2", "HP" and the Gear tab had no END REGEN for it.
+  const talisman = parseStatsBlock(
+    'Lore Equipped, No Trade<br>Slot: NECK<br>HP Regen: 2  Mana Regen: 2  End Regen: 2 <br>WT: 0.1 Size: TINY<br>Class: ALL<br>Race: ALL'
+  )
+  assert.deepEqual(talisman.stats, [
+    { key: 'HP REGEN', value: '2' },
+    { key: 'MANA REGEN', value: '2' },
+    { key: 'END REGEN', value: '2' }
+  ])
+  assert.deepEqual(talisman.extras, [])
+  assert.equal(talisman.slot, 'NECK')
+  // Kerasian Axe of Ire: the one page spelling endurance `ENDUR`, which the HP value had swallowed.
+  const axe = parseStatsBlock('STR: +15  DEX: +15  STA: +20  HP: +125 ENDUR: +100<br>Attack: +40 Haste: 40%<br>')
+  assert.deepEqual(
+    axe.stats.map((s) => `${s.key}=${s.value}`),
+    ['STR=+15', 'DEX=+15', 'STA=+20', 'HP=+125', 'ENDUR=+100', 'ATTACK=+40', 'HASTE=40%']
+  )
+  // The other three pages, one regen each: the word before `Regen` is the key, not an extra.
+  assert.deepEqual(parseStatsBlock('End Regen: 2<br>').stats, [{ key: 'END REGEN', value: '2' }])
+  assert.deepEqual(parseStatsBlock('HP Regen: +10<br>').stats, [{ key: 'HP REGEN', value: '+10' }])
+  assert.deepEqual(parseStatsBlock('HP Regen: 6  <br>').extras, [])
+})
+
 test('item tier: read from the +N name only — a base name is UNKNOWN, not tier 0', () => {
   assert.equal(itemTierFromName('Cloak of Flames +4'), 4)
   assert.equal(itemTierFromName('Brutish Breastplate +5'), 5)

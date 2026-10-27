@@ -8,10 +8,12 @@
 import * as cheerio from 'cheerio'
 import type { AnyNode } from 'domhandler'
 import type { PoskyData, PoskyItem, PoskyQuest } from '../../src/shared/types'
+import { renderedPages, type RenderOptions } from './renderCache'
 import type { QuestSource } from './types'
+import { WikiError, wikiGet } from './wikiApi'
 
-const API = 'https://eqlwiki.com/api.php'
-const UA = 'everquest-companion/0.1 (personal quest tracker)'
+/** Where the rendered Plane of Sky and item pages are cached (gitignored; sources/renderCache.ts). */
+const RENDER_DIR = 'scripts/sources/cache/rendered/eqlwiki'
 
 const CLASSES = [
   'Bard',
@@ -32,17 +34,21 @@ const CLASSES = [
   'Wizard'
 ]
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-async function fetchParsedHtml(title: string): Promise<string | null> {
-  const url = `${API}?action=parse&page=${encodeURIComponent(
-    title
-  )}&prop=text&format=json&formatversion=2&redirects=1`
-  const res = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!res.ok) return null
-  const json = (await res.json()) as { parse?: { text?: string }; error?: unknown }
-  if (json.error || !json.parse?.text) return null
-  return json.parse.text
+/**
+ * A page's parsed HTML, or null when the wiki answered with a failure (an error body, a 4xx, or a
+ * 429/5xx that outlasted wikiApi's retries). wikiApi spaces every request a second apart (owner
+ * ruling 2026-08-22); a network failure that outlasts the retries still throws.
+ */
+export async function fetchParsedHtml(title: string): Promise<string | null> {
+  try {
+    const json = await wikiGet<{ parse?: { text?: string } }>({ action: 'parse', page: title, prop: 'text', redirects: '1' })
+    const text = json.parse?.text
+    // An empty text is no page, as before.
+    return text === undefined || text === '' ? null : text
+  } catch (err) {
+    if (err instanceof WikiError) return null
+    throw err
+  }
 }
 
 /** Collapse MediaWiki's doubled link text ("FooFoo" -> "Foo"). */
@@ -315,10 +321,14 @@ function runeItems(runeText: string): PoskyItem[] {
  * Extract the EQ-style stat block from an item's wiki page: everything from the
  * item name down to the "Drops From" section (flags, slot, damage, stats, saves).
  */
-function parseItemStats(html: string, itemName: string): string | undefined {
+export function parseItemStats(html: string, itemName: string): string | undefined {
   const $ = cheerio.load(html)
   const root = $('.mw-parser-output').first()
   if (!root.length) return undefined
+  // A <br> is a line break whatever newline the HTML has after it: the Itempage template appends
+  // its own `DMG Bonus` line straight after the statsblock's last <br> (seen 2026-10-18 as
+  // `Race: ALLDMG Bonus: 15 @ lvl 50` on 25 Plane of Sky weapons).
+  root.find('br').replaceWith('\n')
   const before = root.text().split(/Drops From/i)[0] ?? ''
   const lines = before
     .split('\n')
@@ -352,50 +362,68 @@ function itemPageTitles(all: PoskyQuest[]): Set<string> {
   return pages
 }
 
-/** Fetch each unique item/reward wiki page ONCE (politely) and attach its stat block. */
-async function attachItemStats(all: PoskyQuest[]): Promise<void> {
+/** Each unique item/reward wiki page's stat block, the page read through the render cache. */
+export async function attachItemStats(all: PoskyQuest[], render: Partial<RenderOptions> = {}): Promise<void> {
   const pages = itemPageTitles(all)
-  console.log(`\nFetching stat blocks for ${pages.size} unique items...`)
+  console.log(`\nStat blocks for ${pages.size} unique items...`)
+  const html = await renderedPages([...pages], fetchParsedHtml, wikiGet, { dir: RENDER_DIR, ...render })
   const statByPage = new Map<string, string>()
-  let done = 0
+  const failed: string[] = []
+  const noBlock: string[] = []
   for (const page of pages) {
-    const html = await fetchParsedHtml(page)
-    if (html) {
-      const stats = parseItemStats(html, page)
-      if (stats) statByPage.set(page, stats)
-    }
-    if (++done % 25 === 0) console.log(`   ${done}/${pages.size}`)
-    await sleep(110)
+    const text = html.get(page)
+    const stats = text ? parseItemStats(text, page) : undefined
+    if (stats) statByPage.set(page, stats)
+    else (text ? noBlock : failed).push(page)
   }
+  applyStats(all, statByPage)
+  console.log(`Attached stats for ${statByPage.size}/${pages.size} items.`)
+  if (failed.length + noBlock.length) {
+    console.warn(
+      `  ${failed.length + noBlock.length} items without stats - fetch failed: ${failed.join(', ') || 'none'}; ` +
+        `no stat block: ${noBlock.join(', ') || 'none'}`
+    )
+  }
+}
+
+function applyStats(all: PoskyQuest[], statByPage: ReadonlyMap<string, string>): void {
   for (const q of all) {
     for (const it of q.items) if (it.page && statByPage.has(it.page)) it.stats = statByPage.get(it.page)
     if (q.rewardPage && statByPage.has(q.rewardPage)) q.rewardStats = statByPage.get(q.rewardPage)
   }
-  console.log(`Attached stats for ${statByPage.size}/${pages.size} items.`)
 }
 
-async function scrape(): Promise<PoskyData> {
+/**
+ * Every class's quests off the main page's parsed HTML. A class with none is a parser that stopped
+ * matching its block, so it throws before any item request and before posky.json is written.
+ */
+export function parseClasses(mainHtml: string, classes: readonly string[] = CLASSES): PoskyQuest[] {
+  const $main = cheerio.load(mainHtml)
   const all: PoskyQuest[] = []
-
-  // The main "Plane of Sky" page's compact per-class table is the authoritative
-  // source: quest name, giver, trigger, wind rune, required items, and reward.
-  // (The dedicated "<Class> Plane of Sky Tests" pages carry stale/older data and
-  // are intentionally NOT used.)
-  const mainHtml = await fetchParsedHtml('Plane of Sky')
-  const $main = mainHtml ? cheerio.load(mainHtml) : null
-  if (!$main) throw new Error('Could not fetch the Plane of Sky page.')
-
-  for (const cls of CLASSES) {
+  const empty: string[] = []
+  for (const cls of classes) {
     const quests = parseMainPageClass($main, cls, 'Plane of Sky')
     foldRuneItems(quests)
 
     const items = quests.reduce((s, q) => s + q.items.length, 0)
     if (quests.length) console.log(`  ✓ ${cls}: ${quests.length} quests, ${items} items`)
-    else console.warn(`  ! ${cls}: no quests found`)
+    else empty.push(cls)
     all.push(...quests)
   }
+  if (empty.length) throw new Error(`Refusing to write: no quests found for ${empty.join(', ')}`)
+  return all
+}
 
-  await attachItemStats(all)
+async function scrape(render: Omit<RenderOptions, 'dir'> = {}): Promise<PoskyData> {
+  // The main "Plane of Sky" page's compact per-class table is the authoritative
+  // source: quest name, giver, trigger, wind rune, required items, and reward.
+  // (The dedicated "<Class> Plane of Sky Tests" pages carry stale/older data and
+  // are intentionally NOT used.)
+  const mainHtml = (await renderedPages(['Plane of Sky'], fetchParsedHtml, wikiGet, { ...render, dir: RENDER_DIR })).get('Plane of Sky')
+  if (!mainHtml) throw new Error('Could not fetch the Plane of Sky page.')
+  const all = parseClasses(mainHtml)
+
+  await attachItemStats(all, render)
 
   console.log(`\nScraped ${all.length} quests across ${new Set(all.map((q) => q.className)).size} classes.`)
   return { scrapedAt: new Date().toISOString(), quests: all }

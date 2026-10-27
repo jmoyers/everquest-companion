@@ -255,10 +255,13 @@ export function parseAaAbilities(
   abbrOf: Map<string, string>
 ): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>()
-  for (const sec of headings(wt, /^===\s*(.+?)\s+Class AAs\s*===\s*$/gm)) {
+  // Bounded to the Class AAs block: the last class's section would otherwise run on into the
+  // Special AAs table and claim `Banestrike` for Wizard.
+  const block = sliceSection(wt, /^==\s*Class AAs\s*==\s*$/m, /^==\s*[^=].*==\s*$/m)
+  for (const sec of headings(block, /^===\s*(.+?)\s+Class AAs\s*===\s*$/gm)) {
     const abbr = abbrOf.get(plain(sec.name).toLowerCase())
     if (abbr === undefined) continue
-    for (const name of aaRowNames(wt.slice(sec.from, sec.to))) {
+    for (const name of aaRowNames(block.slice(sec.from, sec.to))) {
       const set = out.get(name) ?? new Set<string>()
       set.add(abbr)
       out.set(name, set)
@@ -269,11 +272,83 @@ export function parseAaAbilities(
 
 /** The Name column of each `| Name || Ranks || Cost || Description` AA row. */
 function aaRowNames(section: string): string[] {
+  return aaRows(section).map((r) => r.name)
+}
+
+/** Each AA row's Name and Description cells, and whether the wiki struck the row out (removed). */
+function aaRows(section: string): { name: string; description: string; struck: boolean }[] {
   return tableRows(section)
     .map((chunk) => rowCells(chunk)[0]?.split('||') ?? [])
     .filter((cells) => cells.length >= 3)
-    .map((cells) => plain(cells[0]))
-    .filter((name) => name.length > 0 && name.length <= 40)
+    .map((cells) => ({ name: plain(cells[0]), description: plain(cells[3] ?? ''), struck: cells[0].includes('<s>') }))
+    .filter((r) => r.name.length > 0 && r.name.length <= 40)
+}
+
+/** One row of the `Alternate Advancement` page's four tables. */
+export interface AaRow {
+  /** The table the row sits in. */
+  group: 'general' | 'archetype' | 'class' | 'special'
+  /** A Class AA: the classes whose table lists it. */
+  classes?: string[]
+  /** The description states an `Ability Activation ID`: the AA is clicked, so the log prints a cast. */
+  activated: boolean
+  /**
+   * The cast the description names when it differs from the AA's own name: `Companion's Fury`
+   * is cast as `Frenzied Burnout I`, `Bestow Divine Aura` as `Bestowed Divine Aura I`.
+   */
+  cast?: string
+  /** The level each rank needs (`Requirements: Level 1/6/11`); absent on a row the wiki struck out. */
+  levels?: number[]
+}
+
+/** The first `Requirements: Level 1/6/11` clause, one level per rank. */
+function aaLevels(description: string): number[] | undefined {
+  return /Requirements:\s*Level\s+(\d+(?:\/\d+)*)/i.exec(description)?.[1].split('/').map(Number)
+}
+
+/** `<Name> I, when activated` / `<Name> II, which when activated` → `<Name>`. */
+function aaCastName(description: string): string | undefined {
+  return /(?:^|\.\s)([A-Z][A-Za-z' :-]*?) [IVX]+,(?: which)? when activated/.exec(description)?.[1]
+}
+
+function addAaRow(out: Map<string, AaRow>, name: string, row: AaRow): void {
+  const seen = out.get(name)
+  if (seen === undefined) {
+    out.set(name, row)
+    return
+  }
+  // A Class AA several classes list: one row, every class named.
+  if (row.classes) seen.classes = [...new Set([...(seen.classes ?? []), ...row.classes])].sort()
+}
+
+/** Every AA the page lists, by name: its table, its classes, whether it is clicked, and its cast. */
+export function parseAaTable(wt: string, abbrOf: Map<string, string>): Map<string, AaRow> {
+  const out = new Map<string, AaRow>()
+  for (const sec of headings(wt, /^==\s*(General|Archetype|Class|Special) AAs\s*==\s*$/gm)) {
+    const group = sec.name.toLowerCase() as AaRow['group']
+    const block = wt.slice(sec.from, sec.to)
+    const parts =
+      group === 'class'
+        ? headings(block, /^===\s*(.+?)\s+Class AAs\s*===\s*$/gm).map((s) => ({
+            abbr: abbrOf.get(plain(s.name).toLowerCase()),
+            text: block.slice(s.from, s.to)
+          }))
+        : [{ abbr: undefined, text: block }]
+    for (const { abbr, text } of parts) {
+      for (const { name, description, struck } of aaRows(text)) {
+        const cast = aaCastName(description)
+        const levels = struck ? undefined : aaLevels(description)
+        addAaRow(out, name, {
+          group,
+          ...(abbr !== undefined ? { classes: [abbr] } : {}),
+          activated: description.includes('Activation ID'),
+          ...(cast !== undefined && cast !== name ? { cast } : {}),
+          ...(levels !== undefined ? { levels } : {})
+        })
+      }
+    }
+  }
+  return out
 }
 
 // ---- disagreement reporting ------------------------------------------------

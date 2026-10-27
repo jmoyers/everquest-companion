@@ -21,9 +21,10 @@
  * UI shows when the parse refused, and keeping it means a grammar fix in respawnWiki.ts applies
  * to the committed data without another 158 requests at the wiki's expense.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time, 1 s between them
- * (owner ruling 2026-08-22 — fan-run servers),
- * exponential backoff honouring Retry-After on 429/5xx, and revisions batched at 50 titles —
+ * Scraper etiquette (AGENTS.md LAW): every request goes through sources/wikiApi.ts — one
+ * serialized request at a time, 1 s between them (owner ruling 2026-08-22 — fan-run servers),
+ * maxlag=5, exponential backoff honouring Retry-After on 429/5xx, an error body thrown rather
+ * than read as empty — and revisions batched at 50 titles —
  * BATCH=50 is MEASURED, not tunable (>50 pageids returns HTTP 200 with zero pages and no
  * warning). Output is sorted by key, so a re-scrape produces a clean diff.
  */
@@ -32,54 +33,28 @@ import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { parseWikiRespawn, type WikiRespawn, type WikiRespawnData } from '../src/shared/respawnWiki'
 import type { MobData } from '../src/shared/types'
+import { templateField } from '../src/main/itemLookupParse'
+import { isMain } from './sources/isMain'
+import { wikiGet } from './sources/wikiApi'
 
-const API = 'https://eqlwiki.com/api.php'
-const UA = 'everquest-companion/0.1 (personal quest tracker)'
-const DELAY_MS = 1000
-const MAX_RETRIES = 5
 const BATCH = 50
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MOBS_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/mobs.json')
 const OUT_PATH = resolve(HERE, '../src/main/data/respawns.json')
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
-/** One serialized GET with exponential backoff on 429/5xx (honours Retry-After). */
-async function api<T>(params: Record<string, string>): Promise<T> {
-  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', ...params }).toString()}`
-  let wait = 1000
-  for (let attempt = 0; ; attempt++) {
-    let res: Response
-    try {
-      res = await fetch(url, { headers: { 'User-Agent': UA } })
-    } catch (err) {
-      if (attempt >= MAX_RETRIES) throw err
-      await sleep(wait)
-      wait *= 2
-      continue
-    }
-    if (res.ok) {
-      await sleep(DELAY_MS)
-      return (await res.json()) as T
-    }
-    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
-      const retryAfter = Number(res.headers.get('retry-after'))
-      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : wait)
-      wait *= 2
-      continue
-    }
-    throw new Error(`${res.status} ${res.statusText}`)
-  }
+/**
+ * The field, verbatim, off one page's wikitext: `|respawn_time` or `| Respawn Time`, read by the
+ * same template reader `mobLookupParse.ts` uses (so a `[[variance|+/-1]]` link stays whole), first
+ * line only.
+ */
+export function respawnField(wikitext: string): string {
+  // `respawn_time` first: a page stating both spellings keeps the reading it always had.
+  const firstLine = (field: string): string => (templateField(wikitext, field) ?? '').split('\n')[0].trim()
+  return firstLine('respawn_time') || firstLine('respawn time')
 }
 
-/**
- * The field, verbatim, off one page's wikitext. Stops at a newline or the next `|`, which is the
- * `{{Namedmobpage}}` grammar's own field terminator (the same reading `mobLookupParse.ts` does).
- */
-const FIELD_RE = /\|\s*respawn_time\s*=\s*([^\n|]*)/i
-
-interface RevPage {
+export interface RevPage {
   title: string
   revisions?: { slots?: { main?: { content?: string } } }[]
 }
@@ -110,16 +85,29 @@ function reparse(): void {
   )
 }
 
-/** One batch's worth of rows: the pages that state a respawn, keyed by their in-game name. */
-function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>): WikiRespawn[] {
+// EQ never prints parentheses in an NPC name, so a trailing '(...)' on |name is an editor's note
+// ('the ghoul lord (Hoptor Thaggelum)', 'a kobold (Warrens)') and would never match a death line.
+const TRAILING_NOTE_RE = /\s*\([^()]*\)\s*$/
+
+/** The join key for an in-game name: lowercased, trailing parenthetical dropped. */
+export function respawnKey(name: string): string {
+  return name.replace(TRAILING_NOTE_RE, '').trim().toLowerCase()
+}
+
+/**
+ * One batch's worth of rows: the pages that state a respawn, keyed by their in-game name. A row
+ * whose key lost a parenthetical is added to `stripped`, so `dedupe` never lets it displace a
+ * page whose name already is that key.
+ */
+export function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>, stripped?: Set<WikiRespawn>): WikiRespawn[] {
   const out: WikiRespawn[] = []
   for (const p of pages) {
-    const wikitext = p.revisions?.[0]?.slots?.main?.content ?? ''
-    const m = FIELD_RE.exec(wikitext)
-    const text = m ? m[1].trim() : ''
+    const text = respawnField(p.revisions?.[0]?.slots?.main?.content ?? '')
     if (text.length === 0) continue
     const name = byTitle.get(p.title) ?? p.title
-    const row: WikiRespawn = { key: name.toLowerCase(), page: p.title, text }
+    const key = respawnKey(name)
+    const row: WikiRespawn = { key, page: p.title, text }
+    if (key !== name.trim().toLowerCase()) stripped?.add(row)
     const seconds = parseWikiRespawn(text)
     if (seconds !== null) row.seconds = seconds
     out.push(row)
@@ -130,14 +118,30 @@ function rowsFromBatch(pages: RevPage[], byTitle: Map<string, string>): WikiResp
 /**
  * Two pages can state the same in-game name (era duplicates). Keep the first PARSED one, so a
  * duplicate whose field says "Triggered" never displaces a sibling that states a number.
+ *
+ * The engine joins this file by name alone, so same-named mobs in different zones ('a bandit')
+ * still collapse to one row; every pair that disagrees is returned so the run can print it.
+ * A row in `stripped` loses to any row whose name is the key itself, and that collision is
+ * always reported.
  */
-function dedupe(rows: readonly WikiRespawn[]): WikiRespawn[] {
+export function dedupe(
+  rows: readonly WikiRespawn[],
+  stripped: ReadonlySet<WikiRespawn> = new Set()
+): { rows: WikiRespawn[]; conflicts: string[] } {
   const byKey = new Map<string, WikiRespawn>()
+  const conflicts: string[] = []
   for (const row of rows) {
     const prior = byKey.get(row.key)
+    if (prior && stripped.has(prior) !== stripped.has(row)) {
+      const [kept, lost] = stripped.has(row) ? [prior, row] : [row, prior]
+      conflicts.push(`${row.key}: '${kept.page}' kept over '${lost.page}' (key from a stripped parenthetical)`)
+      byKey.set(row.key, kept)
+      continue
+    }
+    if (prior && prior.text !== row.text) conflicts.push(`${row.key}: '${prior.page}' says ${prior.text}; '${row.page}' says ${row.text}`)
     if (!prior || (prior.seconds === undefined && row.seconds !== undefined)) byKey.set(row.key, row)
   }
-  return [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key))
+  return { rows: [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key)), conflicts }
 }
 
 async function main(): Promise<void> {
@@ -151,20 +155,22 @@ async function main(): Promise<void> {
   const byTitle = new Map(catalog.mobs.map((m) => [m.page, m.name]))
   const titles = [...byTitle.keys()]
   const rows: WikiRespawn[] = []
+  const stripped = new Set<WikiRespawn>()
 
   for (let i = 0; i < titles.length; i += BATCH) {
-    const j = await api<{ query?: { pages?: RevPage[] } }>({
+    const j = await wikiGet<{ query?: { pages?: RevPage[] } }>({
       action: 'query',
       prop: 'revisions',
       rvprop: 'content',
       rvslots: 'main',
       titles: titles.slice(i, i + BATCH).join('|')
     })
-    rows.push(...rowsFromBatch(j.query?.pages ?? [], byTitle))
+    rows.push(...rowsFromBatch(j.query?.pages ?? [], byTitle, stripped))
     if (i % 1000 < BATCH) console.log(`  … ${String(i)}/${String(titles.length)} pages`)
   }
 
-  const out = dedupe(rows)
+  const { rows: out, conflicts } = dedupe(rows, stripped)
+  for (const c of conflicts) console.warn(`  name collision (first row kept): ${c}`)
   const data: WikiRespawnData = {
     source: 'eqlwiki.com — |respawn_time on every page in the committed mob catalog',
     scrapedAt: new Date().toISOString().slice(0, 10),
@@ -178,7 +184,7 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((err: unknown) => {
+if (isMain(import.meta.url)) main().catch((err: unknown) => {
   console.error(err)
   process.exitCode = 1
 })

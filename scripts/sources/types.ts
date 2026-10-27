@@ -9,5 +9,6 @@ export interface QuestSource {
   /** must match a profile id in src/shared/profiles.ts */
   id: string
   label: string
-  scrape(): Promise<PoskyData>
+  /** `offline`: from the page cache only; `refresh`: render every page again (sources/renderCache.ts). */
+  scrape(opts?: { offline?: boolean; refresh?: boolean }): Promise<PoskyData>
 }

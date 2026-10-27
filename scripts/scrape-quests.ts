@@ -20,80 +20,44 @@
  *     Gnome Meat / Troll Parts / Spider Legs are QUEST ITEM-flagged pages that sit in
  *     Category:Inventory Items, so filtering prose links by that category would silently
  *     drop them.
- *  3. Fetches each quest page's wikitext (disk-cached) and runs the PURE parser in
- *     ./sources/questPage.ts.
+ *  3. Asks the wiki for every page's current revid (50 pages per request), re-fetches only
+ *     pages whose revid moved (50 per request; cache/quests/index.json records the revid of
+ *     each cached file), and runs the PURE parser in ./sources/questPage.ts.
  *  4. Writes src/renderer/src/data/eqlegends/quests.json, sorted by page title
  *     (deterministic), consumed by src/main/itemLookup.ts as a local-first source.
  *
- * Scraper etiquette (AGENTS.md LAW): one serialized request at a time with a 1s delay
- * (owner ruling 2026-08-22 — fan-run servers; bulk API batching does the heavy lifting),
- * exponential backoff honouring Retry-After on 429/5xx, disk cache so a re-run is nearly
+ * Scraper etiquette (AGENTS.md LAW): every request goes through sources/wikiApi.ts — one
+ * serialized request at a time, a second apart (owner ruling 2026-08-22 — fan-run servers; bulk
+ * API batching does the heavy lifting), maxlag=5, exponential backoff honouring Retry-After on
+ * 429/5xx, an error body thrown rather than read as empty — disk cache so a re-run is nearly
  * free, and partial runs resume instead of duplicating work.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { isEmptyParse, parseQuestPage, type ParsedQuestPage } from './sources/questPage'
+import { isMain } from './sources/isMain'
+import { createCache } from './sources/diskCache'
+import { isEmptyParse, parseQuestPage, titleKey, type ParsedQuestPage } from './sources/questPage'
 import type { QuestData, QuestEntry } from '../src/shared/types'
-
-const API = 'https://eqlwiki.com/api.php'
-const UA = 'everquest-companion/0.1 (personal quest tracker)'
+import { WikiError, wikiGet } from './sources/wikiApi'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = resolve(HERE, 'sources/cache/quests')
 const OUT_PATH = resolve(HERE, '../src/renderer/src/data/eqlegends/quests.json')
 
-const DELAY_MS = 1000
-const MAX_RETRIES = 5
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
 const refresh = process.argv.slice(2).includes('--refresh')
-
-// ---- polite API client ---------------------------------------------------------
-
-/** Wait before a retry: the server's Retry-After when it gave a usable one, else our backoff. */
-function retryDelayMs(res: Response, backoff: number): number {
-  const retryAfter = Number(res.headers.get('retry-after'))
-  return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff
-}
-
-/** Which request failed, for the thrown message — whichever identifying param it carried. */
-function describeRequest(params: Record<string, string>): string {
-  return `${params.action} ${params.cmtitle ?? params.eititle ?? params.pageid ?? ''}`
-}
-
-/** One serialized GET with exponential backoff on 429/5xx (honours Retry-After). */
-async function api<T>(params: Record<string, string>): Promise<T> {
-  const url = `${API}?${new URLSearchParams({ format: 'json', formatversion: '2', ...params }).toString()}`
-  let wait = 1000
-  for (let attempt = 0; ; attempt++) {
-    let res: Response
-    try {
-      res = await fetch(url, { headers: { 'User-Agent': UA } })
-    } catch (err) {
-      if (attempt >= MAX_RETRIES) throw err
-      await sleep(wait)
-      wait *= 2
-      continue
-    }
-    if (res.ok) {
-      await sleep(DELAY_MS)
-      return (await res.json()) as T
-    }
-    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
-      await sleep(retryDelayMs(res, wait))
-      wait *= 2
-      continue
-    }
-    throw new Error(`${res.status} ${res.statusText} for ${describeRequest(params)}`)
-  }
-}
 
 interface Member {
   pageid: number
   ns: number
   title: string
+}
+
+/** A list response's `query` block. An error body or a missing block throws: it is never cached as an empty list. */
+export function queryBlock<Q>(j: { query?: Q; error?: { code?: string; info?: string } }, what: string): Q {
+  if (j.error) throw new Error(`API error ${j.error.code ?? '?'} for ${what}: ${j.error.info ?? ''}`)
+  if (!j.query) throw new Error(`no query block in the response for ${what}`)
+  return j.query
 }
 
 /** All members of a category, following cmcontinue. */
@@ -108,8 +72,12 @@ async function categoryMembers(title: string): Promise<Member[]> {
       cmlimit: '500'
     }
     if (cont) params.cmcontinue = cont
-    const j = await api<{ query?: { categorymembers?: Member[] }; continue?: { cmcontinue?: string } }>(params)
-    out.push(...(j.query?.categorymembers ?? []))
+    const j = await wikiGet<{
+      query?: { categorymembers?: Member[] }
+      error?: { code?: string; info?: string }
+      continue?: { cmcontinue?: string }
+    }>(params)
+    out.push(...(queryBlock(j, title).categorymembers ?? []))
     cont = j.continue?.cmcontinue
     if (!cont) break
   }
@@ -123,55 +91,148 @@ async function allCategories(): Promise<string[]> {
   for (let page = 0; page < 100; page++) {
     const params: Record<string, string> = { action: 'query', list: 'allcategories', aclimit: '500' }
     if (cont) params.accontinue = cont
-    const j = await api<{
+    const j = await wikiGet<{
       query?: { allcategories?: { category: string }[] }
+      error?: { code?: string; info?: string }
       continue?: { accontinue?: string }
     }>(params)
-    out.push(...(j.query?.allcategories ?? []).map((c) => c.category))
+    out.push(...(queryBlock(j, 'allcategories').allcategories ?? []).map((c) => c.category))
     cont = j.continue?.accontinue
     if (!cont) break
   }
   return out
 }
 
-// ---- disk cache ----------------------------------------------------------------
+// ---- disk cache: sources/diskCache.ts ------------------------------------------
 
-function cachePath(name: string): string {
-  return resolve(CACHE_DIR, name)
-}
+const { path: cachePath, read: readCache, write: writeCache } = createCache(CACHE_DIR, { refresh })
 
-/** Cached JSON, or null when absent/unreadable/`--refresh`. The CALLER names the shape. */
-function readCache(name: string): unknown {
-  if (refresh) return null
-  const p = cachePath(name)
-  if (!existsSync(p)) return null
+const pageFile = (pageid: number): string => cachePath(`page-${pageid}.wikitext`)
+
+/**
+ * Wikitext via action=parse, which follows a redirect (the batch read does not). An API error body
+ * (a redirect to a missing page) is null, so the run lists the page as failed and writes nothing.
+ */
+async function fetchParsed(pageid: number): Promise<string | null> {
   try {
-    return JSON.parse(readFileSync(p, 'utf8')) as unknown
-  } catch {
-    return null
+    const j = await wikiGet<{ parse?: { wikitext?: string } }>({
+      action: 'parse',
+      pageid: String(pageid),
+      prop: 'wikitext',
+      redirects: '1'
+    })
+    return j.parse?.wikitext ?? null
+  } catch (err) {
+    if (err instanceof WikiError && err.code !== undefined) return null
+    throw err
   }
 }
 
-function writeCache(name: string, data: unknown): void {
-  mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(cachePath(name), JSON.stringify(data), 'utf8')
+// ---- revision-keyed page cache --------------------------------------------------
+
+/** More than 50 pageids per request returns HTTP 200 with zero pages (AGENTS.md). */
+const BATCH = 50
+const INDEX_FILE = 'index.json'
+
+/** pageid → revid of the cached `page-<pageid>.wikitext`. */
+type RevIndex = Record<string, number>
+
+interface RevPage {
+  pageid?: number
+  revisions?: { revid?: number; slots?: { main?: { content?: string } } }[]
+}
+interface RevResponse {
+  query?: { pages?: RevPage[] }
+  error?: { code?: string; info?: string }
 }
 
-/** Page wikitext, cached per pageid so a re-run costs no requests. */
-async function fetchWikitext(pageid: number): Promise<string | null> {
-  const file = cachePath(`page-${pageid}.wikitext`)
-  if (!refresh && existsSync(file)) return readFileSync(file, 'utf8')
-  const j = await api<{ parse?: { wikitext?: string }; error?: { code?: string } }>({
-    action: 'parse',
-    pageid: String(pageid),
-    prop: 'wikitext',
-    redirects: '1'
-  })
-  const wt = j.parse?.wikitext
-  if (j.error || wt == null) return null
+function readRevIndex(): RevIndex {
+  return (readCache(INDEX_FILE) as { revs?: RevIndex } | null)?.revs ?? {}
+}
+
+/** Sorted keys, one per line, so a re-run's diff shows only the revids that moved. */
+function writeRevIndex(revs: RevIndex): void {
+  const sorted = Object.fromEntries(Object.keys(revs).sort((a, b) => Number(a) - Number(b)).map((k) => [k, revs[k]]))
   mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(file, wt, 'utf8')
-  return wt
+  writeFileSync(cachePath(INDEX_FILE), JSON.stringify({ revs: sorted }, null, 2) + '\n', 'utf8')
+}
+
+/** One `prop=revisions` request for up to 50 pages. */
+async function revisionBatch(pages: Member[], rvprop: string): Promise<RevPage[]> {
+  const params: Record<string, string> = { action: 'query', prop: 'revisions', rvprop }
+  if (rvprop.includes('content')) params.rvslots = 'main'
+  params.pageids = pages.map((p) => p.pageid).join('|')
+  return queryBlock(await wikiGet<RevResponse>(params), `revisions of ${pages[0]?.title}`).pages ?? []
+}
+
+/** Current revid per pageid, 50 pages per request. */
+async function fetchRevIds(pages: Member[]): Promise<Map<number, number>> {
+  const live = new Map<number, number>()
+  for (let i = 0; i < pages.length; i += BATCH) {
+    for (const p of await revisionBatch(pages.slice(i, i + BATCH), 'ids')) {
+      const revid = p.revisions?.[0]?.revid
+      if (p.pageid != null && revid != null) live.set(p.pageid, revid)
+    }
+  }
+  return live
+}
+
+/**
+ * Pages to re-fetch: no cached file, a revid that moved, or no index entry (cached before the
+ * index, age unknown). A page the wiki gave no revid for keeps its cached copy.
+ */
+export function stalePages(
+  pages: Member[],
+  indexed: RevIndex,
+  live: Map<number, number>,
+  hasFile: (pageid: number) => boolean
+): Member[] {
+  return pages.filter((p) => {
+    if (!hasFile(p.pageid)) return true
+    const now = live.get(p.pageid)
+    return now != null && indexed[String(p.pageid)] !== now
+  })
+}
+
+/** A batch entry's wikitext; a redirect page is re-read through action=parse, which follows it. */
+async function batchText(pageid: number, content: string | undefined): Promise<string | null> {
+  if (content == null) return null
+  return /^\s*#redirect/i.test(content) ? fetchParsed(pageid) : content
+}
+
+/**
+ * Fetch `stale` 50 pages per request, writing each file and its revid as every batch lands so a
+ * killed run resumes. Returns the titles the wiki gave nothing for.
+ */
+async function fetchStale(stale: Member[], revs: RevIndex, live: Map<number, number>): Promise<string[]> {
+  const failed: string[] = []
+  for (let i = 0; i < stale.length; i += BATCH) {
+    const slice = stale.slice(i, i + BATCH)
+    const got = new Map((await revisionBatch(slice, 'ids|content')).map((p) => [p.pageid, p.revisions?.[0]]))
+    for (const p of slice) {
+      const wt = await batchText(p.pageid, got.get(p.pageid)?.slots?.main?.content)
+      const revid = live.get(p.pageid) ?? got.get(p.pageid)?.revid
+      if (wt == null || revid == null) {
+        failed.push(p.title)
+        continue
+      }
+      writeFileSync(pageFile(p.pageid), wt, 'utf8')
+      revs[String(p.pageid)] = revid
+    }
+    writeRevIndex(revs)
+    console.log(`  fetched ${Math.min(i + BATCH, stale.length)}/${stale.length} changed pages`)
+  }
+  return failed
+}
+
+/** Bring the page cache up to date: one revid request per 50 pages, then only what moved. */
+async function syncPageCache(pages: Member[]): Promise<string[]> {
+  const revs = readRevIndex()
+  const live = await fetchRevIds(pages)
+  const stale = stalePages(pages, revs, live, (id) => existsSync(pageFile(id)))
+  console.log(`  ${pages.length - stale.length}/${pages.length} cached pages current; ${stale.length} to fetch`)
+  mkdirSync(CACHE_DIR, { recursive: true })
+  return stale.length ? fetchStale(stale, revs, live) : []
 }
 
 // ---- universe enumeration ------------------------------------------------------
@@ -273,7 +334,10 @@ async function collectItemTitles(): Promise<Set<string>> {
  * List") — no quest header at all, just hundreds of item links. Indexing those would tie
  * every listed item to a page that is not a quest.
  */
-function nonQuestReason(parsed: ParsedQuestPage): string | null {
+export function nonQuestReason(parsed: ParsedQuestPage): string | null {
+  // The class test pages are stubs over Plane of Sky, or stale copies listing rewards as turn-ins.
+  if (/ plane of sky tests$/i.test(parsed.page)) return 'Plane of Sky class tests (posky.json is the authority)'
+  if (parsed.sectionHub) return 'section-transclusion hub (lists other quests, no quest header)'
   const indexPage =
     !parsed.hasTopTable && !parsed.giver && !parsed.startZone && parsed.requiredItems.length > 40
   if (parsed.disambiguation && isEmptyParse(parsed)) return 'disambiguation hub'
@@ -322,37 +386,67 @@ function printSummary(quests: QuestEntry[], skipped: { page: string; reason: str
   }
 }
 
+interface CatalogRun {
+  quests: QuestEntry[]
+  skipped: { page: string; reason: string }[]
+  /** pages that had no wikitext: the catalog would silently lose them */
+  failed: string[]
+}
+
+/** Parse every page; a page with no wikitext is a failure, never a silent omission. */
+export function buildCatalog(
+  pages: Member[],
+  wikitext: (p: Member) => string | null,
+  isItem: (title: string) => boolean
+): CatalogRun {
+  const run: CatalogRun = { quests: [], skipped: [], failed: [] }
+  for (const p of pages) {
+    const wt = wikitext(p)
+    if (wt == null) {
+      run.failed.push(p.title)
+      continue
+    }
+    const parsed = parseQuestPage(p.title, wt, isItem)
+    const reason = nonQuestReason(parsed)
+    if (reason) run.skipped.push({ page: p.title, reason })
+    else run.quests.push(toQuestEntry(parsed))
+  }
+  run.quests.sort((a, b) => a.page.localeCompare(b.page))
+  return run
+}
+
+/** The committed file's stamp when its quests did not change, so an unchanged wiki is a no-op diff. */
+function previousScrapedAt(quests: QuestEntry[]): string | undefined {
+  try {
+    const prev = JSON.parse(readFileSync(OUT_PATH, 'utf8')) as QuestData
+    return JSON.stringify(prev.quests) === JSON.stringify(quests) ? prev.scrapedAt : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function main(): Promise<void> {
   const itemTitles = await collectItemTitles()
-  const isItem = (title: string): boolean => itemTitles.has(title.toLowerCase().replace(/\s+/g, ' ').trim())
+  const isItem = (title: string): boolean => itemTitles.has(titleKey(title))
 
   const pages = await collectQuestPages()
-  console.log(`\nFetching + parsing ${pages.length} quest pages…`)
+  console.log(`\nChecking ${pages.length} quest pages for changes…`)
+  const fetchFailed = new Set(await syncPageCache(pages))
+  const wikitext = (p: Member): string | null =>
+    fetchFailed.has(p.title) || !existsSync(pageFile(p.pageid)) ? null : readFileSync(pageFile(p.pageid), 'utf8')
 
-  const quests: QuestEntry[] = []
-  const skipped: { page: string; reason: string }[] = []
-  let done = 0
-  for (const p of pages) {
-    let wt: string | null = null
-    try {
-      wt = await fetchWikitext(p.pageid)
-    } catch (err) {
-      skipped.push({ page: p.title, reason: `fetch failed: ${(err as Error).message}` })
-    }
-    if (wt == null) {
-      if (!skipped.some((s) => s.page === p.title)) skipped.push({ page: p.title, reason: 'no wikitext' })
-    } else {
-      const parsed = parseQuestPage(p.title, wt, isItem)
-      const reason = nonQuestReason(parsed)
-      if (reason) skipped.push({ page: p.title, reason })
-      else quests.push(toQuestEntry(parsed))
-    }
-    if (++done % 100 === 0) console.log(`  ${done}/${pages.length}`)
+  const { quests, skipped, failed } = buildCatalog(pages, wikitext, isItem)
+  if (failed.length) {
+    // Writing now would drop these quests from the committed file.
+    console.error(`\n${failed.length} pages have no wikitext; ${OUT_PATH} left unchanged:`)
+    for (const t of failed) console.error(`  - ${t}`)
+    console.error('Re-run to retry; --refresh re-lists the pages if they were deleted or renamed.')
+    process.exitCode = 1
+    return
   }
-
-  quests.sort((a, b) => a.page.localeCompare(b.page))
   const out: QuestData = {
-    scrapedAt: new Date().toISOString(),
+    // Every page was just checked against its live revid, so a new stamp is honest.
+    scrapedAt: previousScrapedAt(quests) ?? new Date().toISOString(),
     source: 'eqlwiki.com — Category:Quests + quest subcategories',
     quests
   }
@@ -362,4 +456,4 @@ async function main(): Promise<void> {
   printSummary(quests, skipped)
 }
 
-void main()
+if (isMain(import.meta.url)) void main()
