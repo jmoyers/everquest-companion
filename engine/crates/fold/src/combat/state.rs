@@ -562,6 +562,13 @@ impl EngineState {
     /// damage on is a mob, a name a charm broadcast has ever named is a mob, and a name that is or
     /// was your pet is a pet. They are what catches the single-word proper-named mob the shape test
     /// cannot refuse.
+    ///
+    /// One of the three bends: a name on the roster RIGHT NOW is not a mob however many times you
+    /// have struck it. The game lets you land damage on a group member only while one of you is
+    /// charmed, so the strike says "he was charmed once", not "he is a mob" — measured on a
+    /// shadowknight riposted three times mid-fight on 2026-09-14, whose every later pet went
+    /// uncredited. The live roster rather than `admitted`, as `is_member` says: someone who left
+    /// and is now duelling you gets the refusal back.
     pub fn ally_caster_allowed(&self, name_key: &str) -> bool {
         if name_key.is_empty() || name_key == "you" || Some(name_key) == self.player_key.as_deref()
         {
@@ -570,10 +577,8 @@ impl EngineState {
         if self.pet_names.contains(name_key) || self.ever_pet.contains(name_key) {
             return false;
         }
-        if self.ever_struck.contains(name_key) || self.charm.ever_charmed(name_key) {
-            return false;
-        }
-        true
+        let struck = self.ever_struck.contains(name_key) && !self.is_member(name_key);
+        !struck && !self.charm.ever_charmed(name_key)
     }
 
     /// Is `name_key` on the friendly side of an ally charm? A bound ally pet swinging at one of

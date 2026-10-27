@@ -285,7 +285,7 @@
       "file": "crates/fold/src/combat/state.rs",
       "metric": "file-lines",
       "name": "",
-      "value": 526
+      "value": 524
     },
     {
       "file": "crates/fold/src/combat/views.rs",
