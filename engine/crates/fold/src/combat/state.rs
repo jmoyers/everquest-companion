@@ -430,9 +430,11 @@ impl EngineState {
 
     /// Record that YOU landed damage on `name_key` — the only writer of `ever_struck`. Your pet's
     /// swings are deliberately not evidence: a pet auto-attacks what it is pointed at, including a
-    /// charmed ally, so it carries no statement of intent.
-    pub fn note_struck(&mut self, name_key: &str) {
-        if name_key.is_empty() || name_key == "you" {
+    /// charmed ally, so it carries no statement of intent. Nor is a damage shield (`dtype` "ds"):
+    /// it is the defender's buff answering a swing, so it proves the TARGET attacked, not that you
+    /// chose to, and one thorns tick must not refuse a mob-charmed group-mate's leader binds forever.
+    pub fn note_struck(&mut self, name_key: &str, dtype: &str) {
+        if name_key.is_empty() || name_key == "you" || dtype == "ds" {
             return;
         }
         self.ever_struck.insert(name_key.to_string());
@@ -811,7 +813,7 @@ mod tests {
         assert!(!st.known_players.contains("a rock golem"));
 
         let mut st = EngineState::new();
-        st.note_struck("lord of loathing");
+        st.note_struck("lord of loathing", "melee");
         st.note_player(Some("lord of loathing"));
         assert!(!st.known_players.contains("lord of loathing"));
     }

@@ -247,7 +247,7 @@ pub fn route(st: &mut EngineState, ev: &DamageEvent<'_>) -> Option<Attribution> 
     // `classify`, which is pure and asked by the miss and resist probes too, so a decision that also
     // mutated state would count one swing three times.
     if at == Attribution::OutYou {
-        st.note_struck(&id_key_ref(ev.target));
+        st.note_struck(&id_key_ref(ev.target), ev.dtype);
     }
     // Before the ignore gate and the outgoing/incoming split: a bound ally pet swinging at YOU
     // classifies as `Incoming` rather than `Ignore`, and that line is the strongest soft-hostile
