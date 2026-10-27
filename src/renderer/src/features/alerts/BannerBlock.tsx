@@ -214,7 +214,8 @@ export default function BannerBlock({
             slotProps={{ inputLabel: { shrink: true } }}
           />
           <Typography variant="caption" color="text.secondary">
-            Leave it empty and the banner shows the alert&apos;s name.
+            Leave it empty and the banner shows the alert&apos;s name. The pattern&apos;s capture
+            tokens resolve here as they do in the spoken phrase.
           </Typography>
           <ColorRow value={form.bannerColor} onChange={form.setBannerColor} />
         </>
