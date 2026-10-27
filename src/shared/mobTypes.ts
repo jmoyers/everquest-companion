@@ -58,6 +58,10 @@ export interface MobLoc {
 export interface MobEntry {
   /** wiki page title (linkable, and the resolve key for the live fallback) */
   page: string
+  /** the page's era banner token (`Classic`, `FearHateRevamp`); absent when the page states none */
+  eraTag?: string
+  /** set when the era rules put this mob out of era (computed at data build from banner, zones) */
+  outOfEra?: true
   /** the page's own `|name` — the IN-GAME name, article and casing as the wiki writes it */
   name: string
   /** level EXACTLY as the page states it — a RANGE as often as a number ("36-40", "2 - 4") */
