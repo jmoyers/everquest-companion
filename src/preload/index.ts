@@ -369,10 +369,11 @@ const api = {
   /**
    * State this quest's turn-ins: the epoch-ms instants it was handed in, ascending (JOS-131).
    * An empty list means "never turned in" and clears a pre-JOS-131 completion too. Main
-   * sanitizes the list before it is persisted.
+   * sanitizes the list before it is persisted. `rejected`, when given, restates the log-detected
+   * instants this quest must not re-assert (upstream issue #72); omitted, they are left alone.
    */
-  setQuestTurnIns: (questKey: string, instants: number[]): Promise<ProgressState> =>
-    ipcRenderer.invoke(IPC.setQuestTurnIns, questKey, instants),
+  setQuestTurnIns: (questKey: string, instants: number[], rejected?: number[]): Promise<ProgressState> =>
+    ipcRenderer.invoke(IPC.setQuestTurnIns, questKey, instants, rejected),
   /**
    * State ONE item's held count by hand, or take the statement back with `count: null` (JOS-186).
    * `key` is the normalized counting key; `name` is only ever a spelling. Main dates the statement

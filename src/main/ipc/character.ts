@@ -138,8 +138,8 @@ export function registerCharacterIpc(): void {
     sendToMain(IPC.onProgress, progress)
     return { ok: true as const, path: res.path, loadedAt: res.loadedAt, progress }
   })
-  ipcMain.handle(IPC.setQuestTurnIns, (_e, questKey: string, instants: number[]) => {
-    const progress = setQuestTurnIns(activeCharId(), questKey, instants)
+  ipcMain.handle(IPC.setQuestTurnIns, (_e, questKey: string, instants: number[], rejected?: number[]) => {
+    const progress = setQuestTurnIns(activeCharId(), questKey, instants, rejected)
     // Push so a turn-in recorded in one view (or detected from the log) reaches every other
     // view without a refetch race.
     sendToMain(IPC.onProgress, progress)

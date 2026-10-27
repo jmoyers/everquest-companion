@@ -34,6 +34,8 @@ export interface QuestListProps {
   anchor: QuestAnchor | null
   recordTurnIn: (key: string) => Promise<void>
   undoTurnIn: (key: string) => Promise<void>
+  /** the log's turn-ins have loaded; until then a take-back is held off (`useProgress.turnInsReady`) */
+  turnInsReady: boolean
   /** correct one item's held count by hand (JOS-186) — the same bundle on both row-drawing tabs */
   setItemCount: (name: string, count: number | null) => Promise<void>
   onOpenMob: (t: MobTarget) => void
@@ -110,6 +112,7 @@ export function QuestList({
   anchor,
   recordTurnIn,
   undoTurnIn,
+  turnInsReady,
   setItemCount,
   onOpenMob,
   onOpenLoot
@@ -151,7 +154,7 @@ export function QuestList({
           isFavorite={list.isFavorite}
           toggleFavorite={list.toggleFavorite}
           onRecordTurnIn={onRecordTurnIn}
-          onUndoTurnIn={onUndoTurnIn}
+          onUndoTurnIn={turnInsReady ? onUndoTurnIn : undefined}
           onSetItemCount={onSetItemCount}
           onSelectQuest={list.setQuery}
           onOpenMob={onOpenMob}

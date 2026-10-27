@@ -31,12 +31,15 @@ import { useDerivedCompletions } from './derivedCompletions'
 // store so the renderer and the persisted file cannot disagree about what a count means.
 // Relative value import, per the repo's node-tested-module rule.
 import {
+  rejectedTurnIns,
   resolveTurnIns,
   turnInsToPersist,
+  withoutRejected,
   type DerivedEvidence,
   type QuestTurnIns,
   type TurnInInstants
 } from '../../../../shared/questTurnIns'
+import { useTurnInActions, type TurnInActions } from './turnInActions'
 // The hand-stated held counts (JOS-186) — same deal, same relative-import rule: the fold that
 // turns a stored list into the counting path's inputs is shared with main's store, so the two
 // cannot disagree about what a statement is.
@@ -269,12 +272,26 @@ export interface UseProgress {
   /** Record one more turn-in of this quest, dated now (JOS-131). Multiple turn-ins are the norm. */
   recordTurnIn: (key: string) => Promise<void>
   /**
-   * Take back the most recent turn-in this app did not read out of the log. A count that is
-   * entirely log-detected cannot be undone here (`QuestProgress.logTurnIns`) — the next snapshot
-   * would simply re-assert it, and a button that silently loses its effect is worse than one that
-   * says it does not apply.
+   * Take back the most recent turn-in, whoever recorded it. A hand-recorded instant is simply
+   * dropped; a LOG-DETECTED one is dropped AND remembered as rejected (`rejectedTurnIns`, upstream
+   * issue #72), because the next snapshot would otherwise re-assert it. Until that key existed a
+   * count that was entirely log-detected could not be undone at all, and a wrong detection — an
+   * abandoned offer folded into the next trade, a trade the NPC handed back — was permanent.
    */
   undoTurnIn: (key: string) => Promise<void>
+  /**
+   * Take back EVERY turn-in of every quest, the Sky tab's reset (upstream issue #72: "there is no
+   * current working way to reset progress"). Each detection the log knows today is rejected, so
+   * the store does not refill on the next snapshot; a trade the log shows AFTER this is a new
+   * event and counts. Derived completions (the achievements dump, a reward in your bags) are not
+   * turn-ins and are untouched: they say what your files say.
+   */
+  resetTurnIns: () => Promise<void>
+  /**
+   * Has the log's turn-in list loaded? Until it has, undo and reset cannot tell a log-detected
+   * turn-in from a hand-recorded one, so the tab holds both disabled (see `turnInActions.ts`).
+   */
+  turnInsReady: boolean
   /**
    * STATE ONE ITEM'S HELD COUNT BY HAND, or take the statement back with `count: null` (JOS-186).
    * Takes the item's DISPLAY name — the counting key is this module's business, not a control's —
@@ -439,7 +456,7 @@ function useHeldItems(x: {
 }
 
 /** What the turn-in ledger hands back: the counts the tab reads, and the two ways to change them. */
-interface TurnInLedger {
+interface TurnInLedger extends TurnInActions {
   turnIns: QuestTurnIns
   /**
    * THE LOG'S OWN INSTANTS, unmerged (JOS-409). `turnIns.instants` is these plus the hand-recorded
@@ -452,8 +469,8 @@ interface TurnInLedger {
   detected: TurnInInstants
   /** quest key → how many of its turn-ins the LOG accounts for */
   logCounts: Record<string, number>
-  recordTurnIn: (key: string) => Promise<void>
-  undoTurnIn: (key: string) => Promise<void>
+  /** the turn-ins module has loaded, so `detected` is the log's list rather than a placeholder */
+  turnInsReady: boolean
 }
 
 /**
@@ -488,10 +505,14 @@ function useTurnInLedger(
   }, [])
 
   // The log's own turn-ins, quest key → instants. Null until the module hydrates; an empty
-  // ledger until then, so nothing derived from it has to special-case the gap.
+  // ledger until then, so nothing derived from it has to special-case the gap. MINUS the ones the
+  // user took back (upstream issue #72): a rejected detection is absent here, so it neither
+  // counts, nor windows the dump, nor charges the items it never spent — the log's own share
+  // (`logCounts`, the reconcile window) reads this list and needs no second filter.
+  const rejected = useMemo(() => rejectedTurnIns(progress), [progress])
   const detected = useMemo<TurnInInstants>(
-    () => countTurnIns(turnInsRaw ?? [], posky.quests),
-    [turnInsRaw]
+    () => withoutRejected(countTurnIns(turnInsRaw ?? [], posky.quests), rejected),
+    [turnInsRaw, rejected]
   )
   // The log's turn-ins merged with the persisted ones, as the all-time count the rest of the tab
   // reads. No since-the-dump count any more (JOS-141): consumption is windowed by SOURCE rather
@@ -534,43 +555,11 @@ function useTurnInLedger(
     )
   }, [turnInsRaw, progress, turnIns, setProgress])
 
-  /** One more turn-in, dated NOW. `Date.now()` is the honest instant for a statement the user is
-   *  making right now, and dating it is what keeps the ledger a list of events rather than a tally
-   *  (an instant is what dedupes a detected turn-in against the stored one).
-   *
-   *  IT IS A CLICK TIME, NOT AN EVENT TIME, and JOS-409 is where that stopped being harmless: a
-   *  player who hands a quest in and records it a day later stamps TOMORROW on YESTERDAY'S event.
-   *  Nothing here can fix that — the user is telling us a thing happened, not when — so the fix is
-   *  on the reader: only `detected` (above) windows the dump. Do not "improve" this to guess an
-   *  earlier instant; a guessed event time is exactly the kind of invention law 1 forbids. */
-  const recordTurnIn = useCallback(
-    async (key: string): Promise<void> => {
-      setProgress(
-        await window.eq.setQuestTurnIns(key, [...(turnIns.instants[key] ?? []), Date.now()])
-      )
-    },
-    [turnIns, setProgress]
-  )
-
-  /**
-   * Drop the newest turn-in the LOG does not also know about. A log-detected instant is left
-   * alone: removing it would be undone by the very next snapshot, so the UI disables the control
-   * instead (it reads `QuestProgress.logTurnIns`). With no instants at all, this clears a
-   * pre-JOS-131 completion, which is the only other thing a count can come from.
-   */
-  const undoTurnIn = useCallback(
-    async (key: string): Promise<void> => {
-      const list = turnIns.instants[key] ?? []
-      const fromLog = new Set(detected[key] ?? [])
-      const cut = [...list].reverse().find((ts) => !fromLog.has(ts))
-      setProgress(
-        await window.eq.setQuestTurnIns(key, cut === undefined ? [] : list.filter((ts) => ts !== cut))
-      )
-    },
-    [turnIns, detected, setProgress]
-  )
-
-  return { turnIns, detected, logCounts, recordTurnIn, undoTurnIn }
+  // The statements — record, undo, reset — live in turnInActions.ts (upstream issue #72 added the
+  // reset and this file crossed its ceiling). They restate a quest from the ledger derived above.
+  const turnInsReady = turnInsRaw != null
+  const actions = useTurnInActions(turnIns, turnInsReady ? detected : null, rejected, setProgress)
+  return { turnIns, detected, logCounts, turnInsReady, ...actions }
 }
 
 export function useProgress(opts?: UseProgressOptions): UseProgress {
@@ -598,11 +587,8 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
     }
   }, [])
 
-  const { turnIns, detected, logCounts, recordTurnIn, undoTurnIn } = useTurnInLedger(
-    progress,
-    setProgress,
-    opts?.onQuestComplete
-  )
+  const ledger = useTurnInLedger(progress, setProgress, opts?.onQuestComplete)
+  const { turnIns, detected, logCounts, recordTurnIn, undoTurnIn, resetTurnIns, turnInsReady } = ledger
 
   const setCountSource = useCallback((s: CountSource) => {
     localStorage.setItem(COUNT_SOURCE_KEY, s)
@@ -673,6 +659,8 @@ export function useProgress(opts?: UseProgressOptions): UseProgress {
     reloadInventory,
     recordTurnIn,
     undoTurnIn,
+    resetTurnIns,
+    turnInsReady,
     setItemOverride,
     itemOverrides,
     inventoryInfo: progress?.inventorySource,
