@@ -57,6 +57,7 @@ import type { ItemKnowledge } from '@shared/types'
 import { EQ_ITEM_COLORS } from './ItemWindow'
 import { ObservedItemWindow } from './ObservedItemWindow'
 import { questUseOutcomes, questUseWhere } from './itemKnowledgeView'
+import { nameUpgrade } from '../features/loot/itemUpgradeSim'
 import { Tooltip, type TooltipProps } from './Tooltip'
 
 /** How many quest uses / recipes the card lists before collapsing to "+N more". */
@@ -310,6 +311,10 @@ function KnownItemCard({
         rawStats={data?.statsBlock ?? stats}
         iconId={data?.iconId}
         flavor={data?.summary}
+        // The lookup is the wiki's BASE block; a ` +N` name is drawn at its own tier, as the Loot
+        // drill-down's card is (`nameUpgrade`), and its meter still reads the name.
+        upgrade={nameUpgrade(name)}
+        simulated={false}
         compact
       />
       {loading && !data && (

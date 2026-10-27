@@ -28,8 +28,15 @@
 import { type JSX, useEffect, useMemo } from 'react'
 import { Box, Chip, Stack, Typography } from '@mui/material'
 import type { ItemKnowledge } from '@shared/types'
+import type { ZoneShort } from '@shared/maps'
 import { mergeItemSources, sourceIndex, sourceItemKey, sourcesFor, type ItemSource } from '../../lib/itemSources'
 import { Tooltip } from '../../lib/Tooltip'
+import { CellLink } from '../../lib/CellLink'
+// The drop trio's doors (gear/dropLinks.ts). These columns are the SAME merged sources the Gear
+// tab's Zone/Level/Mob cells draw — an item opened FROM a gear row must not be where those links
+// stop working — so the names open the same surfaces by the same refuse-over-guess rules.
+import { dropMobTarget, dropZoneTarget } from '../gear/dropLinks'
+import type { MobTarget } from '../mobs/mobTarget'
 
 /**
  * How many source rows are drawn before the rest collapse into a count. A handful of common
@@ -72,19 +79,43 @@ function zoneTally(sources: readonly ItemSource[]): { zone: string; mobs: number
     .sort((a, b) => b.mobs - a.mobs || a.zone.localeCompare(b.zone))
 }
 
+/** A zone spelling that resolves to a map opens it; the refused ones stay the text they were. */
+function ZoneName({ zone, onOpenMapZone }: { zone: string; onOpenMapZone?: OpenMapZone }): JSX.Element {
+  const stem = onOpenMapZone === undefined ? null : dropZoneTarget(zone)
+  if (stem === null || onOpenMapZone === undefined) return <>{zone}</>
+  return <CellLink text={zone} onOpen={() => { onOpenMapZone(stem) }} />
+}
+
 /** One known source: the mob, its level text VERBATIM when stated, and where it lives. */
-function SourceRow({ source }: { source: ItemSource }): JSX.Element {
+function SourceRow({
+  source,
+  onOpenMob,
+  onOpenMapZone
+}: {
+  source: ItemSource
+  onOpenMob?: OpenMob
+  onOpenMapZone?: OpenMapZone
+}): JSX.Element {
   return (
     <Box data-testid="loot-db-source" sx={{ py: 0.25 }}>
       <Typography variant="caption" sx={{ display: 'block' }}>
-        {source.mob}
+        {onOpenMob === undefined ? (
+          source.mob
+        ) : (
+          <CellLink text={source.mob} onOpen={() => { onOpenMob(dropMobTarget(source.mob, source.mobPage ?? '')) }} />
+        )}
         {source.levelText != null && (
           <Box component="span" sx={{ color: 'text.disabled' }}> · lvl {source.levelText}</Box>
         )}
       </Typography>
       {source.zones.length > 0 && (
         <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-          {source.zones.join(', ')}
+          {source.zones.map((z, i) => (
+            <Box key={z} component="span">
+              {i > 0 && ', '}
+              <ZoneName zone={z} onOpenMapZone={onOpenMapZone} />
+            </Box>
+          ))}
         </Typography>
       )}
     </Box>
@@ -100,7 +131,15 @@ function SectionHead({ title }: { title: string }): JSX.Element {
   )
 }
 
-function DropsFromColumn({ sources }: { sources: readonly ItemSource[] }): JSX.Element {
+function DropsFromColumn({
+  sources,
+  onOpenMob,
+  onOpenMapZone
+}: {
+  sources: readonly ItemSource[]
+  onOpenMob?: OpenMob
+  onOpenMapZone?: OpenMapZone
+}): JSX.Element {
   const shown = sources.slice(0, MAX_ROWS)
   return (
     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -112,7 +151,7 @@ function DropsFromColumn({ sources }: { sources: readonly ItemSource[] }): JSX.E
       )}
       <Box sx={LIST_SX}>
         {shown.map((s) => (
-          <SourceRow key={`${s.mobPage ?? ''}:${s.mob}`} source={s} />
+          <SourceRow key={`${s.mobPage ?? ''}:${s.mob}`} source={s} onOpenMob={onOpenMob} onOpenMapZone={onOpenMapZone} />
         ))}
       </Box>
       {sources.length > shown.length && (
@@ -124,7 +163,13 @@ function DropsFromColumn({ sources }: { sources: readonly ItemSource[] }): JSX.E
   )
 }
 
-function DbZonesColumn({ zones }: { zones: { zone: string; mobs: number }[] }): JSX.Element {
+function DbZonesColumn({
+  zones,
+  onOpenMapZone
+}: {
+  zones: { zone: string; mobs: number }[]
+  onOpenMapZone?: OpenMapZone
+}): JSX.Element {
   const shown = zones.slice(0, MAX_ROWS)
   return (
     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -137,7 +182,7 @@ function DbZonesColumn({ zones }: { zones: { zone: string; mobs: number }[] }): 
       <Box sx={LIST_SX}>
         {shown.map((z) => (
           <Typography key={z.zone} variant="caption" data-testid="loot-db-zone" sx={{ display: 'block', py: 0.25 }}>
-            {z.zone}
+            <ZoneName zone={z.zone} onOpenMapZone={onOpenMapZone} />
             <Box component="span" sx={{ color: 'text.disabled' }}>
               {' '}
               · {z.mobs} {z.mobs === 1 ? 'mob' : 'mobs'}
@@ -154,18 +199,26 @@ function DbZonesColumn({ zones }: { zones: { zone: string; mobs: number }[] }): 
   )
 }
 
+/** The two routes out, by their `appRouting` names. Optional everywhere: absent means plain text. */
+type OpenMob = ((t: MobTarget) => void) | undefined
+type OpenMapZone = ((zone: ZoneShort) => void) | undefined
+
 export interface ItemDbSourcesProps {
   /** the item's DISPLAY name — keyed through `sourceItemKey`, never used raw */
   item: string
   /** the knowledge record the drill-down already fetched; null while it is in flight */
   knowledge: ItemKnowledge | null
+  /** a source mob's door to its page (App's `openMob`); absent, the plain text it was */
+  onOpenMob?: (t: MobTarget) => void
+  /** a stated zone's door to the Maps tab (App's `openMapZone`); absent, plain text */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /**
  * The `db` half of "where does this come from" — always rendered, so a never-looted item still
  * gets a real answer, and an item nothing knows still gets an honest one.
  */
-export function ItemDbSources({ item, knowledge }: ItemDbSourcesProps): JSX.Element {
+export function ItemDbSources({ item, knowledge, onOpenMob, onOpenMapZone }: ItemDbSourcesProps): JSX.Element {
   // Warm the catalog inversion AFTER mount, never on the render path: the first column to ask
   // would otherwise pay the whole ~33k-link build inside a paint.
   useEffect(() => {
@@ -181,8 +234,8 @@ export function ItemDbSources({ item, knowledge }: ItemDbSourcesProps): JSX.Elem
   return (
     <Box data-testid="loot-db-sources" sx={{ mt: 2 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-        <DropsFromColumn sources={sources} />
-        <DbZonesColumn zones={zones} />
+        <DropsFromColumn sources={sources} onOpenMob={onOpenMob} onOpenMapZone={onOpenMapZone} />
+        <DbZonesColumn zones={zones} onOpenMapZone={onOpenMapZone} />
       </Stack>
     </Box>
   )

@@ -90,13 +90,18 @@ async function shownCount(page: Page): Promise<number> {
 /** Type into the search box and let the DEFERRED filter land — the count settling IS the condition. */
 async function typeAndSettle(page: Page, value: string): Promise<number> {
   await page.fill(SEARCH, value, { timeout: 15_000 })
+  // A THREE-POLL STREAK, not two equal samples (flake, 2026-08-15 — the AGENTS.md ledger has the
+  // row): the search is DEFERRED, so two polls can both read the count from BEFORE the fill
+  // flushed and report the old answer as "settled". Three consecutive equal reads spans the
+  // deferral in practice; the timeout stays the honest bound when it does not.
   let last = -1
+  let streak = 0
   await settle(
     async () => {
       const shown = await shownCount(page)
-      const stable = shown === last
+      streak = shown === last ? streak + 1 : 0
       last = shown
-      return stable
+      return streak >= 2
     },
     (ok) => ok,
     { timeoutMs: 15_000 }
@@ -217,10 +222,13 @@ async function stepPick(page: Page): Promise<boolean> {
     missing.length === 0,
     missing.length === 0 ? `${String(PICK.length)} picked, all sortable` : `no header for ${missing.join(' ')}`
   )
-  // The chip says the choice is now the user's, not the app's.
+  // The chip says the choice is now the user's, not the app's. The drop trio's headers are
+  // sortable too (2026-08-18) but they are the Drop-columns chip's, not this one's — so they and
+  // the name header come off the sortable-header count before it must match the chip.
+  const trio = (await countOf(page, '[data-testid="gear-sort-zone"]')) * 3
   check(
     'the Columns chip counts what is drawn',
-    (await textOf(page, COLUMNS_TOGGLE)).includes(String(after - 1)),
+    (await textOf(page, COLUMNS_TOGGLE)).includes(String(after - 1 - trio)),
     (await textOf(page, COLUMNS_TOGGLE)).replace(/\s+/g, ' ').trim()
   )
   return missing.length === 0

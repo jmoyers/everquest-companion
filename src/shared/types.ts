@@ -523,11 +523,18 @@ export interface ItemQuestUse {
   /**
    * What the quest HANDS OUT, for a `role: 'required'` use — i.e. the outcome of turning
    * this item in. Names only (capped; see MAX_ATTACHED_REWARDS), so the UI can offer the
-   * reward item as its own hoverable card without a second index. Present ONLY on the
-   * 'quests' source and ONLY when the catalog actually names rewards (law 1: never
-   * invented), and never on a 'reward'-role use — an item is not its own outcome.
+   * reward item as its own hoverable card without a second index. Present ONLY when the source
+   * actually names a reward (law 1: never invented) — the 'quests' catalog's reward list, or the
+   * one reward a Plane of Sky quest states — and never on a 'reward'-role use — an item is not
+   * its own outcome.
    */
   rewards?: string[]
+  /**
+   * The Plane of Sky tab's anchor for this quest — the `Class::Name` key (shared/poskyKey.ts)
+   * that appRouting's `openQuest` deep link takes. Present ONLY on 'posky' uses: the other two
+   * sources' quests have no page in this app to link to.
+   */
+  poskyKey?: string
 }
 
 /**

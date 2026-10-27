@@ -1,5 +1,3 @@
-import type { PoskyQuest } from '@shared/types'
-
-export function questKey(q: Pick<PoskyQuest, 'className' | 'name'>): string {
-  return `${q.className}::${q.name}`
-}
+// The key itself lives in src/shared/poskyKey.ts so main can spell it too; see there. Relative
+// rather than the alias because the node tests import this module (the alertSearch.ts precedent).
+export { questKey } from '../../../../shared/poskyKey'

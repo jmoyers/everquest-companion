@@ -27,10 +27,17 @@ import { type JSX } from 'react'
 import { Box, Chip, IconButton, Paper, Stack, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { Tooltip } from '../../lib/Tooltip'
+import { CellLink } from '../../lib/CellLink'
 import { DonorName, EraChip, MismatchChip, NoSlotChip, StateChip } from '../planner/PlannerChips'
 import { classesMismatch } from '../planner/plannerClasses'
 import { CURRENT_ERA_LABEL } from '../planner/plannerData'
-import { campText, costText, type FarmGroup, type FarmNeed, type FarmRow, type FarmZone } from '../planner/plannerFarm'
+import { campTail, campText, costText, type FarmGroup, type FarmNeed, type FarmRow, type FarmZone } from '../planner/plannerFarm'
+// The drop trio's two doors (gear/dropLinks.ts), reused verbatim: this tab is where the Gear
+// tab's wish column sends items, so its zone and camp names open the same surfaces, by the same
+// refuse-over-guess rules.
+import { dropMobTarget, dropZoneTarget } from '../gear/dropLinks'
+import type { MobTarget } from '../mobs/mobTarget'
+import type { ZoneShort } from '@shared/maps'
 import type { ClassAbbr } from '@shared/classCombo'
 
 const KIND_HINT: Record<FarmGroup['kind'], string> = {
@@ -47,7 +54,13 @@ const KIND_HINT: Record<FarmGroup['kind'], string> = {
  * camp this" and "another place, once the server opens it". A zone the table cannot place says
  * nothing extra: an unplaceable name is a gap in our tables, not a claim about the game (law 1).
  */
-function AlsoZones({ zones }: { zones: readonly FarmZone[] }): JSX.Element {
+function AlsoZones({
+  zones,
+  onOpenMapZone
+}: {
+  zones: readonly FarmZone[]
+  onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
+}): JSX.Element {
   return (
     <Typography
       variant="caption"
@@ -56,17 +69,24 @@ function AlsoZones({ zones }: { zones: readonly FarmZone[] }): JSX.Element {
       sx={{ display: 'block', color: 'text.disabled' }}
     >
       also:{' '}
-      {zones.map((z, i) => (
-        <Box key={z.name} component="span">
-          {i > 0 && ', '}
-          {z.name}
-          {z.outOfEra && (
-            <Box component="span" data-testid="wishlist-also-era" sx={{ ml: 0.5, opacity: 0.85 }}>
-              ({z.eraLabel})
-            </Box>
-          )}
-        </Box>
-      ))}
+      {zones.map((z, i) => {
+        const stem = onOpenMapZone === undefined ? null : dropZoneTarget(z.name)
+        return (
+          <Box key={z.name} component="span">
+            {i > 0 && ', '}
+            {stem === null || onOpenMapZone === undefined ? (
+              z.name
+            ) : (
+              <CellLink text={z.name} onOpen={() => { onOpenMapZone(stem) }} />
+            )}
+            {z.outOfEra && (
+              <Box component="span" data-testid="wishlist-also-era" sx={{ ml: 0.5, opacity: 0.85 }}>
+                ({z.eraLabel})
+              </Box>
+            )}
+          </Box>
+        )
+      })}
     </Typography>
   )
 }
@@ -102,10 +122,29 @@ export interface WishRowProps {
   imported: boolean
   onRemove: (itemKey: string) => void
   onOpenLoot?: (item: string) => void
+  /** the camp mob's door to its page; absent, the camp line is the plain text it was */
+  onOpenMob?: (t: MobTarget) => void
+  /** the "also:" zones' door to the Maps tab; absent, plain text */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
-function Row({ row, classes, imported, onRemove, onOpenLoot }: WishRowProps): JSX.Element {
-  const camp = campText(row)
+/** The camp line: the first-named mob is the door (the OverflowCell rule — one clipped line, one
+ *  honest link), the level and `+N more` tail stay plain text. */
+function CampLine({ row, onOpenMob }: { row: FarmRow; onOpenMob?: ((t: MobTarget) => void) | undefined }): JSX.Element {
+  const first = row.sources[0]
+  if (first === undefined || onOpenMob === undefined) {
+    const camp = campText(row)
+    return <>{camp === '' ? '-' : camp}</>
+  }
+  return (
+    <>
+      <CellLink text={first.mob} onOpen={() => { onOpenMob(dropMobTarget(first.mob, first.mobPage ?? '')) }} />
+      {campTail(row)}
+    </>
+  )
+}
+
+function Row({ row, classes, imported, onRemove, onOpenLoot, onOpenMob, onOpenMapZone }: WishRowProps): JSX.Element {
   return (
     <Stack
       direction="row"
@@ -124,9 +163,9 @@ function Row({ row, classes, imported, onRemove, onOpenLoot }: WishRowProps): JS
 
       <Box sx={{ minWidth: 0, flexShrink: 1, width: 240 }}>
         <Typography variant="caption" noWrap sx={{ display: 'block' }}>
-          {camp === '' ? '-' : camp}
+          <CampLine row={row} onOpenMob={onOpenMob} />
         </Typography>
-        {row.also.length > 0 && <AlsoZones zones={row.also} />}
+        {row.also.length > 0 && <AlsoZones zones={row.also} onOpenMapZone={onOpenMapZone} />}
       </Box>
 
       {/* Donor-only: the merge tier the effect extracts at, and what getting there costs. */}
@@ -176,14 +215,21 @@ function Group({
   classes,
   importedKeys,
   onRemove,
-  onOpenLoot
+  onOpenLoot,
+  onOpenMob,
+  onOpenMapZone
 }: {
   group: FarmGroup
   classes: readonly ClassAbbr[]
   importedKeys: ReadonlySet<string>
   onRemove: (itemKey: string) => void
   onOpenLoot?: (item: string) => void
+  onOpenMob?: (t: MobTarget) => void
+  onOpenMapZone?: (zone: ZoneShort) => void
 }): JSX.Element {
+  // A ZONE heading is the trip itself, so it opens that zone's map — by the same resolve-or-stay-
+  // text rule every zone name follows. The four non-zone headings are categories, not places.
+  const stem = group.kind === 'zone' && onOpenMapZone !== undefined ? dropZoneTarget(group.title) : null
   return (
     <Paper
       variant="outlined"
@@ -199,7 +245,11 @@ function Group({
       >
         <Tooltip title={KIND_HINT[group.kind]}>
           <Typography variant="subtitle2" noWrap sx={{ minWidth: 0 }}>
-            {group.title}
+            {stem === null || onOpenMapZone === undefined ? (
+              group.title
+            ) : (
+              <CellLink text={group.title} onOpen={() => { onOpenMapZone(stem) }} />
+            )}
           </Typography>
         </Tooltip>
         {/* Only reachable with the era filter OFF — with it on, a heading is always a zone you can
@@ -226,6 +276,8 @@ function Group({
           imported={importedKeys.has(row.itemKey)}
           onRemove={onRemove}
           onOpenLoot={onOpenLoot}
+          onOpenMob={onOpenMob}
+          onOpenMapZone={onOpenMapZone}
         />
       ))}
     </Paper>
@@ -238,6 +290,10 @@ export interface WishGroupsProps {
   importedKeys: ReadonlySet<string>
   onRemove: (itemKey: string) => void
   onOpenLoot?: (item: string) => void
+  /** the camp mobs' door to their pages (App's `openMob`); absent, plain text */
+  onOpenMob?: (t: MobTarget) => void
+  /** the zone headings' and "also:" zones' door to the Maps tab (App's `openMapZone`) */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
 /** The zone rollup itself. The empty state is the caller's — only it knows WHY there is nothing. */
@@ -246,7 +302,9 @@ export default function WishGroups({
   classes,
   importedKeys,
   onRemove,
-  onOpenLoot
+  onOpenLoot,
+  onOpenMob,
+  onOpenMapZone
 }: WishGroupsProps): JSX.Element {
   return (
     <>
@@ -258,6 +316,8 @@ export default function WishGroups({
           importedKeys={importedKeys}
           onRemove={onRemove}
           onOpenLoot={onOpenLoot}
+          onOpenMob={onOpenMob}
+          onOpenMapZone={onOpenMapZone}
         />
       ))}
     </>

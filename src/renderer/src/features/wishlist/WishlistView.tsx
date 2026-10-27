@@ -34,7 +34,9 @@ import { type JSX, useEffect, useMemo, useState } from 'react'
 import { Box, Stack, TextField, Typography } from '@mui/material'
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder'
 import type { ExaltPlan } from '@shared/planner/types'
+import type { ZoneShort } from '@shared/maps'
 import { seedWishes, type WishEntry, type WishList } from '@shared/planner/wishlist'
+import type { MobTarget } from '../mobs/mobTarget'
 import { useGearIndex } from '../gear/gearData'
 import { useRememberedSearch } from '../gear/useAreaMemory'
 import { useBrowseClasses } from '../planner/useBrowseClasses'
@@ -167,9 +169,13 @@ function foldWishes({ list, index, progressOf, eraOnly, text }: FoldInputs): Wis
 export interface WishlistViewProps {
   /** deep-link a wish into the Loot tab's item drill-down (App's `openLoot`) */
   onOpenLoot?: (item: string) => void
+  /** the camp mobs' door to their pages (App's `openMob`) */
+  onOpenMob?: (t: MobTarget) => void
+  /** the zone headings' and "also:" zones' door to the Maps tab (App's `openMapZone`) */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
-export default function WishlistView({ onOpenLoot }: WishlistViewProps = {}): JSX.Element {
+export default function WishlistView({ onOpenLoot, onOpenMob, onOpenMapZone }: WishlistViewProps = {}): JSX.Element {
   const wishlist = useWishlist()
   const donorsState = useDonors()
   const gearState = useGearIndex()
@@ -260,6 +266,8 @@ export default function WishlistView({ onOpenLoot }: WishlistViewProps = {}): JS
           importedKeys={importedKeys}
           onRemove={wishlist.remove}
           onOpenLoot={onOpenLoot}
+          onOpenMob={onOpenMob}
+          onOpenMapZone={onOpenMapZone}
         />
         {nothing && <NoWishes searching={text.trim() !== ''} />}
         {/* The era filter can empty a NON-empty list, and it must say so rather than letting the

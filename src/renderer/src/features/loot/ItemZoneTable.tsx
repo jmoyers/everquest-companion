@@ -20,6 +20,11 @@
 import type { JSX } from 'react'
 import { Box, Chip, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
 import type { ItemZoneRow } from '@shared/lootRates'
+import type { ZoneShort } from '@shared/maps'
+// A LOG spelling, so the log-side fold — the same lookup the Maps tab runs on your zone line —
+// and the refused ones stay the plain text they were.
+import { zoneShortName } from '@shared/zones'
+import { CellLink } from '../../lib/CellLink'
 import { formatDropRate } from '../../lib/formatRate'
 import { fmtDuration } from '../leveling/levelChartGeometry'
 import { ACTIVE_TIME_TITLE, NONE } from '../leveling/rangeStatsRows'
@@ -41,7 +46,14 @@ function RateCell({ row }: { row: ItemZoneRow }): JSX.Element {
   return <>{formatDropRate(row.dropsPerHourActive)}</>
 }
 
-function ZoneRow({ row }: { row: ItemZoneRow }): JSX.Element {
+function ZoneRow({
+  row,
+  onOpenMapZone
+}: {
+  row: ItemZoneRow
+  onOpenMapZone?: ((zone: ZoneShort) => void) | undefined
+}): JSX.Element {
+  const stem = onOpenMapZone === undefined ? null : zoneShortName(row.zone)
   return (
     <TableRow hover data-testid="item-zone-row">
       <TableCell sx={{ ...CELL_SX, width: 18, pr: 0 }}>
@@ -49,7 +61,11 @@ function ZoneRow({ row }: { row: ItemZoneRow }): JSX.Element {
       </TableCell>
       <TableCell sx={CELL_SX}>
         <Typography variant="caption" noWrap title={row.zone}>
-          {row.zone}
+          {stem === null || onOpenMapZone === undefined ? (
+            row.zone
+          ) : (
+            <CellLink text={row.zone} onOpen={() => { onOpenMapZone(stem) }} />
+          )}
         </Typography>
       </TableCell>
       <TableCell align="right" sx={CELL_SX}>
@@ -74,9 +90,11 @@ export interface ItemZoneTableProps {
   /** True once the character has ANY loot line for this item. Separates "never looted" from
    *  "looted, but the zone timeline has nothing to divide by" — two different empty states. */
   looted: boolean
+  /** a zone's door to the Maps tab (App's `openMapZone`); absent, the plain text it was */
+  onOpenMapZone?: (zone: ZoneShort) => void
 }
 
-export function ItemZoneTable({ rows, clipped, looted }: ItemZoneTableProps): JSX.Element {
+export function ItemZoneTable({ rows, clipped, looted, onOpenMapZone }: ItemZoneTableProps): JSX.Element {
   return (
     <Box sx={{ flex: 1.4, minWidth: 0 }} data-testid="item-zone-table">
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5 }} flexWrap="wrap" useFlexGap>
@@ -116,7 +134,7 @@ export function ItemZoneTable({ rows, clipped, looted }: ItemZoneTableProps): JS
             </TableHead>
             <TableBody>
               {rows.map((r) => (
-                <ZoneRow key={r.key} row={r} />
+                <ZoneRow key={r.key} row={r} onOpenMapZone={onOpenMapZone} />
               ))}
             </TableBody>
           </Table>

@@ -266,7 +266,14 @@ export function costText(tierRequired: ExtractTier): string {
  */
 export function campText(row: Pick<FarmNeed, 'sources'>): string {
   const first = row.sources[0]
+  return first ? `${first.mob}${campTail(row)}` : ''
+}
+
+/** The camp line AFTER the mob's name — split out so a surface can make the name itself a door
+ *  (WishGroups) while the level/`+N more` tail stays this module's one spelling. */
+export function campTail(row: Pick<FarmNeed, 'sources'>): string {
+  const first = row.sources[0]
   if (!first) return ''
   const extra = row.sources.length > 1 ? ` +${String(row.sources.length - 1)} more` : ''
-  return first.levelText == null ? `${first.mob}${extra}` : `${first.mob} (lvl ${first.levelText})${extra}`
+  return first.levelText == null ? extra : ` (lvl ${first.levelText})${extra}`
 }
