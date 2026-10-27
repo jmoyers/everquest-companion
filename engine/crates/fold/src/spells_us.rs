@@ -28,6 +28,10 @@ use eqlog::jsstr::js_trim;
 use eqlog::names::spell_canon_key;
 use std::collections::HashMap;
 
+/// The client file's column layout (the 2026-10-13 patch added one), and the field accessor.
+mod layout;
+use layout::field;
+
 // The field map, `spellsUsParse.ts` index for index.
 
 const F_ID: usize = 0;
@@ -511,12 +515,6 @@ fn bard_only(levels: &ClassLevels) -> bool {
             .all(|(i, &l)| i == CLASS_BARD || l == 0)
 }
 
-/// A field, as `f[i]` reads over there: `undefined` past the end, which `Number` reads as `NaN` and
-/// `Number(x) || 0` reads as 0.
-fn field<'a>(f: &[&'a str], i: usize) -> Option<&'a str> {
-    f.get(i).copied()
-}
-
 /// A category or subcategory id — `Number(x) || 0`, then absent-means-nothing.
 ///
 /// A zero is an absence and not an id: the string table's spell-category namespace starts at 1, so
@@ -597,11 +595,13 @@ pub fn parse_spells_us(text: &str) -> SpellTable {
     // `playable` per key, beside the table — the TypeScript's `seen` map, whose only extra content
     // is that flag.
     let mut playable_by_key: HashMap<String, bool> = HashMap::new();
+    // The 2026-10-13 patch's extra column, read off the file and dropped from each row (layout.rs).
+    let shifted = layout::shifted(text);
     for line in text.split('\n') {
         if line.is_empty() {
             continue;
         }
-        let f: Vec<&str> = line.split('^').collect();
+        let f = layout::unshift(line.split('^').collect(), shifted);
         if f.len() < F_SLOTS {
             continue;
         }
