@@ -8,7 +8,7 @@
 //! and a schema edit that lands without regenerating turns the protocol-codegen staleness
 //! test red on this side and tests/protocolSchema.test.mts red on the other.
 //!
-//! schema-digest: sha256:d02184bb8cfcfc641683a27d6cc3c5d0202f34ea5ffebe5e12abeeb51c85f2c8
+//! schema-digest: sha256:2b0168963e18fa438e86996844d99e8b13c8d7fb939e6293427df416155ab5f0
 #![allow(missing_docs, clippy::all, clippy::pedantic)]
 
 /// Error types.
@@ -372,20 +372,31 @@ impl ::std::convert::TryFrom<::std::string::String> for BuffTrustDefineRequestOp
         value.parse()
     }
 }
-///`src/shared/buffTrust.ts BuffTrustPrefs`. Typed because it is cheap to type: one list of display spellings, in the order the user added them.
+///`src/shared/buffTrust.ts BuffTrustPrefs` plus what the app derives for the engine at push time. Typed because it is cheap to type: one list of display spellings, in the order the user added them; the proc gate's switch; and the display names of every combat effect on an item the latest inventory dump says the player holds, which is the evidence the gate reads and is never persisted (upstream issue #69).
 ///
 /// <details><summary>JSON schema</summary>
 ///
 /// ```json
 ///{
 ///  "title": "BuffTrustPrefs",
-///  "description": "`src/shared/buffTrust.ts BuffTrustPrefs`. Typed because it is cheap to type: one list of display spellings, in the order the user added them.",
+///  "description": "`src/shared/buffTrust.ts BuffTrustPrefs` plus what the app derives for the engine at push time. Typed because it is cheap to type: one list of display spellings, in the order the user added them; the proc gate's switch; and the display names of every combat effect on an item the latest inventory dump says the player holds, which is the evidence the gate reads and is never persisted (upstream issue #69).",
 ///  "type": "object",
 ///  "required": [
-///    "externals"
+///    "externals",
+///    "procDebuffs",
+///    "procSpells"
 ///  ],
 ///  "properties": {
 ///    "externals": {
+///      "type": "array",
+///      "items": {
+///        "type": "string"
+///      }
+///    },
+///    "procDebuffs": {
+///      "type": "boolean"
+///    },
+///    "procSpells": {
 ///      "type": "array",
 ///      "items": {
 ///        "type": "string"
@@ -399,6 +410,10 @@ impl ::std::convert::TryFrom<::std::string::String> for BuffTrustDefineRequestOp
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
 pub struct BuffTrustPrefs {
     pub externals: ::std::vec::Vec<::std::string::String>,
+    #[serde(rename = "procDebuffs")]
+    pub proc_debuffs: bool,
+    #[serde(rename = "procSpells")]
+    pub proc_spells: ::std::vec::Vec<::std::string::String>,
 }
 ///A row's fields by name. Open by design — the field set is the VIEW's contract, not the protocol's, so a new column is not a protocol change.
 ///

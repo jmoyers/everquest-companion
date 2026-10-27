@@ -53,7 +53,7 @@
       "message": {
         "id": 2,
         "op": "buffTrust.define",
-        "params": { "trust": { "externals": ["Dranix"] } }
+        "params": { "trust": { "externals": ["Dranix"], "procDebuffs": false, "procSpells": [] } }
       }
     },
     {

@@ -8,7 +8,7 @@
 // schema edit that lands without regenerating turns tests/protocolSchema.test.mts red on the
 // TypeScript side and the protocol-codegen staleness test red on the Rust side.
 //
-// schema-digest: sha256:d02184bb8cfcfc641683a27d6cc3c5d0202f34ea5ffebe5e12abeeb51c85f2c8
+// schema-digest: sha256:2b0168963e18fa438e86996844d99e8b13c8d7fb939e6293427df416155ab5f0
 
 /**
  * Anything that can travel the wire, in either direction. The transport adapters are generic over exactly this: a transport moves ProtocolMessages and knows nothing else about the protocol.
@@ -374,10 +374,12 @@ export interface BuffTrustDefineParams {
   trust: BuffTrustPrefs
 }
 /**
- * `src/shared/buffTrust.ts BuffTrustPrefs`. Typed because it is cheap to type: one list of display spellings, in the order the user added them.
+ * `src/shared/buffTrust.ts BuffTrustPrefs` plus what the app derives for the engine at push time. Typed because it is cheap to type: one list of display spellings, in the order the user added them; the proc gate's switch; and the display names of every combat effect on an item the latest inventory dump says the player holds, which is the evidence the gate reads and is never persisted (upstream issue #69).
  */
 export interface BuffTrustPrefs {
   externals: string[]
+  procDebuffs: boolean
+  procSpells: string[]
   [k: string]: unknown
 }
 /**

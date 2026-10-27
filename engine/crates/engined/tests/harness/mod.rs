@@ -681,6 +681,8 @@ pub fn buff_trust_define(id: i64, externals: &[&str]) -> ClientMessage {
         params: protocol::generated::BuffTrustDefineParams {
             trust: protocol::generated::BuffTrustPrefs {
                 externals: externals.iter().map(|n| (*n).to_owned()).collect(),
+                proc_debuffs: false,
+                proc_spells: Vec::new(),
             },
         },
     })

@@ -1231,7 +1231,7 @@
     },
     "BuffTrustPrefs": {
       "title": "BuffTrustPrefs",
-      "description": "`src/shared/buffTrust.ts BuffTrustPrefs`. Typed because it is cheap to type: one list of display spellings, in the order the user added them.",
+      "description": "`src/shared/buffTrust.ts BuffTrustPrefs` plus what the app derives for the engine at push time. Typed because it is cheap to type: one list of display spellings, in the order the user added them; the proc gate's switch; and the display names of every combat effect on an item the latest inventory dump says the player holds, which is the evidence the gate reads and is never persisted (upstream issue #69).",
       "type": "object",
       "properties": {
         "externals": {
@@ -1239,10 +1239,21 @@
           "items": {
             "type": "string"
           }
+        },
+        "procDebuffs": {
+          "type": "boolean"
+        },
+        "procSpells": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
-        "externals"
+        "externals",
+        "procDebuffs",
+        "procSpells"
       ],
       "additionalProperties": true
     },

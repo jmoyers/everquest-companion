@@ -101,6 +101,9 @@ interface ClickyIndex {
   byItem: Map<string, string[]>
   /** Canonical keys of every spell some item grants as a COMBAT effect (a weapon proc). */
   combat: Set<string>
+  /** `itemKey` → the combat-effect spells that item procs, DISPLAY names as the catalog spells them
+   *  (upstream issue #69): the engine keys them under its own rule, so no key rule is shared. */
+  procsByItem: Map<string, string[]>
 }
 
 /** The last DB walked, and its index. Memoized on the DB's IDENTITY rather than a boolean, so the
@@ -112,12 +115,27 @@ let cached: { items: unknown; index: ClickyIndex } | undefined
  *  count nor the nesting depth of `index()` depends on how many effect kinds there are. */
 function fileEffects(entry: { page: string; stats?: { effects: ItemEffect[] } }, into: ClickyIndex): void {
   for (const e of entry.stats?.effects ?? []) {
-    const name = e.name.trim()
+    const name = effectSpellName(e.name)
     if (!name) continue
     const spell = spellCanonKey(name)
-    if (e.kind === 'combat' || e.kind === 'proc') into.combat.add(spell)
-    else if (e.kind === 'click' && INSTANT.test(e.detail ?? '')) push(into.byItem, itemKey(entry.page), spell)
+    if (e.kind === 'combat' || e.kind === 'proc') {
+      into.combat.add(spell)
+      push(into.procsByItem, itemKey(entry.page), name)
+    } else if (e.kind === 'click' && INSTANT.test(e.detail ?? '')) push(into.byItem, itemKey(entry.page), spell)
   }
+}
+
+/**
+ * The spell an effect line names, with the wiki's level tail cut off: two combat effects in the
+ * committed DB read `Frost Strike  Level 51` and `Frost Strike  at lvl 5` (measured 2026-09-25,
+ * the only two of 453 whose spelling failed to resolve), and a name that resolves to nothing arms
+ * nothing, silently. A double space or a level suffix begins the tail; no spell name has either.
+ */
+function effectSpellName(raw: string): string {
+  return raw
+    .replace(/\s{2,}.*$/, '')
+    .replace(/\s+(?:at\s+)?l(?:vl|evel)\s*\d+$/i, '')
+    .trim()
 }
 
 function push(m: Map<string, string[]>, key: string, value: string): void {
@@ -129,7 +147,7 @@ function push(m: Map<string, string[]>, key: string, value: string): void {
 /** Walk one item DB into the two tables, once per DB. */
 function index(items: ItemDb): ClickyIndex {
   if (cached?.items === items) return cached.index
-  const built: ClickyIndex = { byItem: new Map(), combat: new Set() }
+  const built: ClickyIndex = { byItem: new Map(), combat: new Set(), procsByItem: new Map() }
   for (const entry of Object.values(items)) fileEffects(entry, built)
   cached = { items, index: built }
   return built
@@ -173,6 +191,31 @@ export function heldClickySpells(items: ItemDb, counts: HeldCounts): ReadonlySet
     for (const spell of byItem.get(heldItemKey(raw)) ?? []) {
       // A spell some weapon procs is never attributed to a click, however many of them you own.
       if (!combat.has(spell)) out.add(spell)
+    }
+  }
+  return out
+}
+
+/**
+ * THE HELD-PROC CATALOG (upstream issue #69) — the combat effects of every item the dump says you
+ * hold, as display names, one spelling per spell. The buff engine's proc gate reads this as half of
+ * its evidence (the other half is your own melee hit on the mob), under the `procDebuffs` switch in
+ * shared/buffTrust.ts. The same ownership argument as the clicky gate above: a catalog-only rule
+ * would call any Tash landing a proc, and a snapshot of YOUR bags cannot name somebody else's item.
+ *
+ * Empty without a dump, exactly like `heldClickySpells`, and an empty set admits nothing.
+ */
+export function heldProcSpells(items: ItemDb, counts: HeldCounts): ReadonlySet<string> {
+  const { procsByItem } = index(items)
+  const seen = new Set<string>()
+  const out = new Set<string>()
+  for (const [raw, n] of Object.entries(counts)) {
+    if (n <= 0) continue
+    for (const name of procsByItem.get(heldItemKey(raw)) ?? []) {
+      const key = spellCanonKey(name)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.add(name)
     }
   }
   return out

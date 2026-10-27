@@ -9,12 +9,32 @@
 //! only the first carries a RANK. `You activate Quick Buff.` names a window rather than a spell, so
 //! a landing it admits stays a family. The shared `Rc<RefCell<…>>` borrow never nests: the two
 //! modules are adjacent in the wiring order and neither reaches into the other during a delivery.
+//!
+//! A FOURTH FORM, OFF BY DEFAULT (upstream issue #69): a weapon or item proc. EQ prints nothing
+//! when an item procs — only the landing — so an Orb of Tishan's Tashania on a mob has no cast line
+//! and was dropped on purpose. The evidence that stands in for the cast line comes from outside the
+//! sentence: YOU swung at that mob inside `PROC_MELEE_WINDOW_MS`, and the spell is a combat effect
+//! of an item the inventory dump says you hold. Both halves are required and the gate is a
+//! preference (`buffTrust.define`, `procDebuffs`), because anyone's landing of the same sentence on
+//! a mob you are hitting — a group-mate's cast, click or proc — reads the same; that residual is
+//! what the user opts into. A SWING is a melee hit, a miss (procs fire on misses: measured over
+//! the owner's log, 3.2% of 5,769 Puma Maw landings had only miss lines in window) or the damage
+//! line of a held proc itself. The landing prints BEFORE its swing's own line (5,769 of 5,769 in
+//! that log), so `buff_procs.rs` holds a refused landing for the swing that follows it.
 
 use crate::jsmap::JsMap;
+use crate::modules::buff_procs::SAME_SECOND_MS;
 use crate::modules::buffs_shapes::{
     caster_key, caster_trusted, spell_key, OWN_CAST_WINDOW_MS, QUICK_BUFF_WINDOW_MS, SELF_CASTER,
 };
 use eqlog::jsstr::js_trim;
+use eqlog::names::id_key;
+
+/// How long after YOUR OWN swing at a mob a cast-less landing on it may still be a proc of the
+/// weapon that swung. EQ stamps to the second and a proc lands in the swing's own second, so two
+/// seconds is one second of slack; a melee round is longer than that only when you are not
+/// swinging, which is when a landing is somebody else's.
+pub const PROC_MELEE_WINDOW_MS: i64 = 2_000;
 
 /// One remembered cast line. `display` is the ranked name exactly as the log spelled it; the map is
 /// keyed by the rank-STRIPPED line, so a rank upgrade replaces its predecessor. `rank_changed`
@@ -68,6 +88,15 @@ pub struct CastAnchors {
     /// nobody else. Not cleared by `reset`, because it is a user preference rather than log state;
     /// the anchors it produced are cleared, because those are log state.
     externals: std::collections::HashSet<String>,
+    /// The proc gate's switch. A preference like `externals`, so `reset` keeps it.
+    proc_debuffs: bool,
+    /// Spell keys of every combat effect on an item the player holds, from the app's read of the
+    /// latest inventory dump. Empty without a dump, and an empty set is the gate closed: the
+    /// catalog is never consulted on its own (`itemClickies.ts` measured why — absence from an
+    /// 11,375-page scrape is not evidence).
+    proc_spells: std::collections::HashSet<String>,
+    /// Newest ts YOU landed a melee hit, per target key. Log state: cleared by `reset`.
+    melee: JsMap<i64>,
 }
 
 impl CastAnchors {
@@ -79,6 +108,7 @@ impl CastAnchors {
         self.by_line.clear();
         self.ever_cast.clear();
         self.quick_buff_ts = 0;
+        self.melee.clear();
     }
 
     /// `You begin casting <S>.` / `You begin singing <S>.` — the self anchor.
@@ -90,6 +120,46 @@ impl CastAnchors {
     /// nothing already landed is retro-admitted, which is why `by_line` is untouched.
     pub fn set_trust(&mut self, externals: impl IntoIterator<Item = String>) {
         self.externals = externals.into_iter().map(|n| caster_key(&n)).collect();
+    }
+
+    /// Replace the proc gate, whole: the switch and the held combat effects, as DISPLAY names the
+    /// app read off the item catalog, keyed here so the app's key rule never has to match this one.
+    pub fn set_proc_trust(&mut self, enabled: bool, spells: impl IntoIterator<Item = String>) {
+        self.proc_debuffs = enabled;
+        self.proc_spells = spells.into_iter().map(|s| spell_key(&s)).collect();
+    }
+
+    /// A swing YOU made at `target` — the swing a proc rides on.
+    pub fn note_melee(&mut self, target: &str, ts: i64) {
+        self.melee.insert(id_key(target), ts);
+    }
+
+    /// Switched on, and this spell is a combat effect of something you hold.
+    pub fn is_held_proc(&self, spell: &str) -> bool {
+        self.proc_debuffs && self.proc_spells.contains(&spell_key(spell))
+    }
+
+    /// Could the gate ever vouch for a landing with these candidates, given a swing? The test
+    /// `buff_procs.rs` asks before holding a refused landing for one.
+    pub fn proc_possible<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> bool {
+        names.into_iter().any(|n| self.is_held_proc(n))
+    }
+
+    /// The proc gate for ONE spell: switched on, a combat effect of something you hold, and a swing
+    /// of yours at `target` inside the window. It says nothing about uniqueness — the landing gate
+    /// asks per candidate and refuses a sentence two held procs could both explain.
+    ///
+    /// The swing may also come up to `SAME_SECOND_MS` AFTER the landing: that is the held landing
+    /// `buff_procs.rs` replays at its own ts once the swing that follows it arrives, one second
+    /// boundary later at most. A landing folded live never sees a later swing here — the swing has
+    /// not been read yet — so the slack only reaches the replay (and a log clock stepping back).
+    pub fn proc_evidence(&self, spell: &str, target: &str, ts: i64) -> bool {
+        if !self.is_held_proc(spell) {
+            return false;
+        }
+        self.melee
+            .get(&id_key(target))
+            .is_some_and(|&hit| hit - ts <= SAME_SECOND_MS && ts - hit <= PROC_MELEE_WINDOW_MS)
     }
 
     /// Trusted against this world's allowlist: you, plus whoever the user named.
@@ -243,5 +313,47 @@ mod tests {
         a.note_other_cast("Dranix", "Clarity", 1000);
         assert!(a.attribute("Clarity", 2000).is_none());
         assert_eq!(a.last_cast_ts("Clarity"), None);
+    }
+
+    /// The proc gate needs all three: the switch, the held item, and your own swing in window.
+    #[test]
+    fn a_proc_needs_the_switch_the_held_item_and_a_swing_in_window() {
+        let mut a = CastAnchors::new();
+        a.note_melee("a Kunark goblin", 1000);
+        // Shipped default: nothing held, switch off.
+        assert!(!a.proc_evidence("Tashania", "a Kunark goblin", 1500));
+        // The held item alone is not the switch.
+        a.set_proc_trust(false, ["Tashania".to_string()]);
+        assert!(!a.proc_evidence("Tashania", "a Kunark goblin", 1500));
+        a.set_proc_trust(true, ["Tashania".to_string()]);
+        assert!(a.proc_evidence("Tashania", "a Kunark goblin", 1500));
+        assert!(
+            a.proc_evidence("Tashania", "A Kunark Goblin", 3000),
+            "the target key is case-folded"
+        );
+        // A landing before its swing, inside one second boundary: the replay of a held landing.
+        assert!(a.proc_evidence("Tashania", "a Kunark goblin", 1000 - SAME_SECOND_MS));
+        // A spell the held items do not proc, a mob you did not swing at, a stale swing, and a
+        // landing further before the swing than that: none of them.
+        assert!(!a.proc_evidence("Tashani", "a Kunark goblin", 1500));
+        assert!(!a.proc_evidence("Tashania", "a froglok", 1500));
+        assert!(!a.proc_evidence(
+            "Tashania",
+            "a Kunark goblin",
+            1000 + PROC_MELEE_WINDOW_MS + 1
+        ));
+        assert!(!a.proc_evidence("Tashania", "a Kunark goblin", 1000 - SAME_SECOND_MS - 1));
+    }
+
+    /// `reset` clears the swings, which are log state, and keeps the gate, which is a preference.
+    #[test]
+    fn reset_forgets_the_swings_and_keeps_the_gate() {
+        let mut a = CastAnchors::new();
+        a.set_proc_trust(true, ["Tashania".to_string()]);
+        a.note_melee("a Kunark goblin", 1000);
+        a.reset();
+        assert!(!a.proc_evidence("Tashania", "a Kunark goblin", 1500));
+        a.note_melee("a Kunark goblin", 2000);
+        assert!(a.proc_evidence("Tashania", "a Kunark goblin", 2500));
     }
 }

@@ -36,6 +36,15 @@
 // the committed spell DB has no rank VI+ rows at all, so a per-rank key would start every upgrade
 // back at the DB floor and re-learn from zero on every level.
 //
+// THE PROC GATE (upstream issue #69), the one widening of the anchor rule that names no person. A
+// weapon or item proc prints no cast line at all — only the landing — so an Orb of Tishan's
+// Tashania on a mob was dropped by the rule above, correctly and uselessly. `procDebuffs` lets the
+// engine take two other facts as the anchor: YOUR OWN melee hit on that mob in the last two seconds,
+// and the spell being a combat effect of an item the latest inventory dump says you hold (the app
+// derives that list at push time — `dataServer/appKnowledge.ts` — and it is never persisted here).
+// Off by default, because a group-mate swinging the same weapon at the same mob prints the identical
+// sentence; the reporter's use is solo and instanced play, where that residual is nobody.
+//
 // Lives in shared/ because both ends need it: main folds it into the model, the renderer's
 // Preferences card edits it, and the normalizer must be the same code in both places.
 
@@ -57,10 +66,12 @@ export const MAX_CASTER_NAME_CHARS = 32
  */
 export interface BuffTrustPrefs {
   externals: string[]
+  /** Count a debuff your held weapon or item procs on a mob you are hitting as yours. Off by default. */
+  procDebuffs: boolean
 }
 
-/** Nobody but you. The shipped default, and the one this app is designed around. */
-export const DEFAULT_BUFF_TRUST_PREFS: BuffTrustPrefs = { externals: [] }
+/** Nobody but you, and no procs. The shipped default, and the one this app is designed around. */
+export const DEFAULT_BUFF_TRUST_PREFS: BuffTrustPrefs = { externals: [], procDebuffs: false }
 
 /** A caster name folded to its comparison key (world-model law 2). */
 export function casterKey(name: string): string {
@@ -87,9 +98,12 @@ function storableName(raw: unknown): string | null {
  * a hand-edited settings file must not be able to stop the app folding buffs.
  */
 export function normalizeBuffTrustPrefs(raw: unknown): BuffTrustPrefs {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { externals: [] }
-  const list = (raw as { externals?: unknown }).externals
-  if (!Array.isArray(list)) return { externals: [] }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_BUFF_TRUST_PREFS }
+  const { externals: list, procDebuffs: flag } = raw as { externals?: unknown; procDebuffs?: unknown }
+  // Only a literal `true` switches the gate on: an absent key is an older store, anything else is
+  // a hand edit, and both read as the shipped default.
+  const procDebuffs = flag === true
+  if (!Array.isArray(list)) return { externals: [], procDebuffs }
   const seen = new Set<string>()
   const externals: string[] = []
   for (const entry of list) {
@@ -101,12 +115,12 @@ export function normalizeBuffTrustPrefs(raw: unknown): BuffTrustPrefs {
     externals.push(name)
     if (externals.length >= MAX_EXTERNAL_CASTERS) break
   }
-  return { externals }
+  return { externals, procDebuffs }
 }
 
 /** Add a name, preserving order and refusing duplicates. Returns the same object when nothing changed. */
 export function addExternalCaster(prefs: BuffTrustPrefs, name: string): BuffTrustPrefs {
-  const next = normalizeBuffTrustPrefs({ externals: [...prefs.externals, name] })
+  const next = normalizeBuffTrustPrefs({ ...prefs, externals: [...prefs.externals, name] })
   return next.externals.length === prefs.externals.length ? prefs : next
 }
 
@@ -114,7 +128,12 @@ export function addExternalCaster(prefs: BuffTrustPrefs, name: string): BuffTrus
 export function removeExternalCaster(prefs: BuffTrustPrefs, name: string): BuffTrustPrefs {
   const key = casterKey(name)
   const externals = prefs.externals.filter((n) => casterKey(n) !== key)
-  return externals.length === prefs.externals.length ? prefs : { externals }
+  return externals.length === prefs.externals.length ? prefs : { ...prefs, externals }
+}
+
+/** Switch the proc gate. Returns the same object when it already read that way. */
+export function setProcDebuffs(prefs: BuffTrustPrefs, procDebuffs: boolean): BuffTrustPrefs {
+  return prefs.procDebuffs === procDebuffs ? prefs : { ...prefs, procDebuffs }
 }
 
 /**
