@@ -31,6 +31,7 @@ import {
   discoverPacks,
   resolveZoneLayers,
   splitMapFileName,
+  type LabelMemo,
   type MapLibrary
 } from '../src/main/maps/packs'
 
@@ -422,5 +423,37 @@ test('an in-zone search ranks over the SAME zone resolution get() returns for th
     // The CORPUS index is deliberately default-prefs (one index, not one per preference), so it
     // is unaffected by the option — stated here so a future change to that is a failing test.
     assert.deepEqual(lib.search('my own', { prefs }), [])
+  })
+})
+
+test('labels() reads the same points get() parses, zone for zone, without the geometry', () => {
+  // The zone graph's reader (zoneGraph.ts). It must agree with the full parse on every label or
+  // the closest-port search sees a different world than the map on screen. Same layers, same
+  // parsePoint, same trim; only the L records are skipped.
+  withLibrary((lib) => {
+    for (const zone of lib.zones()) {
+      const full = lib.get(zone)
+      assert.ok(full.ok, zone)
+      assert.deepEqual(lib.labels(zone), full.data.points, zone)
+    }
+    assert.equal(lib.labels('nosuchzone'), null)
+  })
+})
+
+test('labels() through a memo answers the same, and reads each file once per walk', () => {
+  // The zone graph asks every zone once per pack, and the packs share files (the base layer
+  // resolves to one file whichever label pack is preferred). The memo is keyed by file path.
+  withLibrary((lib) => {
+    const memo: LabelMemo = new Map()
+    const packIds = lib.packs().map((p) => p.id)
+    for (const zone of lib.zones()) {
+      for (const labels of packIds) {
+        assert.deepEqual(lib.labels(zone, { labels }, memo), lib.labels(zone, { labels }), zone)
+      }
+    }
+    assert.ok(memo.size > 0)
+    // A path already in the memo is not read again: poison every entry and the answer follows it.
+    for (const path of memo.keys()) memo.set(path, [])
+    for (const zone of lib.zones()) assert.deepEqual(lib.labels(zone, {}, memo), [], zone)
   })
 })

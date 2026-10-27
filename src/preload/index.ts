@@ -6,6 +6,9 @@ import { rosterApi } from './roster'
 import { soundsBridge } from './sounds'
 // "What IS this" — the spell/item/mob lookups, split out at the 400-line ceiling (preload/knowledge.ts).
 import { knowledgeBridge } from './knowledge'
+// The map viewer's calls, split out at the same ceiling for the same reason (owner ask 2026-09-11
+// added a fifth and the file crossed 400 code lines).
+import { mapsBridge } from './maps'
 // The log-stream pushes — line / character rebuild / quiet-switch offer (preload/logStream.ts).
 import { logStreamBridge } from './logStream'
 import type {
@@ -52,14 +55,6 @@ import type { CharacterSheet } from '../shared/characterSheet'
 // The `/outputfile` registry's one IPC shape (JOS-44) — command, why-clause, and the dump's own
 // mtime, per kind. Every surface fed by an export command reads this and nothing else.
 import type { OutputFileStatus } from '../shared/outputs/kinds'
-import type {
-  MapGetResult,
-  MapPackListResult,
-  MapPackPrefs,
-  MapSearchHit,
-  MapSearchOpts,
-  ZoneShort
-} from '../shared/maps'
 // Presence-driven prefs live beside their normalizers, not in shared/types.ts — see the note at
 // the bottom of that file.
 import type { CursorRingPrefs, OverlayAutoHidePrefs } from '../shared/presencePrefs'
@@ -471,24 +466,8 @@ const api = {
    *  main owns the capped ring and pushes it on to the 'events' overlay. */
   reportFeedEvent: (report: FeedReport): void => ipcRenderer.send(IPC.feedReport, report),
 
-  // ---- map viewer (docs/plans/map-viewer.md §4.3) ----
-  // Main reads and parses `<eqRoot>\maps`; the renderer never sees a path. `zone` is a map-file
-  // STEM ('airplane'), not the log's long name — fold that through `shared/zones.ts` first.
-  /** The installed map packs. Empty list + `error` prose on a machine with no EQ maps dir. */
-  listMapPacks: (): Promise<MapPackListResult> => ipcRenderer.invoke(IPC.mapsListPacks),
-  /** Zone stems, ascending — across every pack, or within one when `packId` is given. */
-  listMapZones: (packId?: string): Promise<ZoneShort[]> =>
-    ipcRenderer.invoke(IPC.mapsListZones, packId),
-  /** One zone's parsed map. `prefs` picks the pack PER LAYER (geometry and labels routinely
-   *  come from different packs); what was actually used comes back in `data.sources`. */
-  getMapData: (zone: string, prefs?: MapPackPrefs): Promise<MapGetResult> =>
-    ipcRenderer.invoke(IPC.mapsGet, zone, prefs),
-  /** Fuzzy label search: one zone (`opts.zone`) or the whole corpus. Same scorer as every
-   *  other search box in the app (`shared/fuzzy.ts`). Empty query resolves to no hits.
-   *  Pass the viewer's `opts.prefs` for an in-zone search so the hits rank over the SAME pack
-   *  resolution `getMapData` drew; the corpus index is default-prefs by construction. */
-  searchMapPoints: (q: string, opts?: MapSearchOpts): Promise<MapSearchHit[]> =>
-    ipcRenderer.invoke(IPC.mapsSearch, q, opts),
+  /** The map viewer's five calls, split out at the 400-line ceiling: preload/maps.ts. */
+  ...mapsBridge,
 
   // ---- settings / alert sharing ("profiles" — src/shared/profiles.ts) ----
   // The renderer owns the localStorage half of a bundle, so it passes its whitelisted

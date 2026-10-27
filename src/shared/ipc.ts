@@ -641,6 +641,12 @@ export const IPC = {
   // renderer -> main: fuzzy label search — one zone (opts.zone) or the whole corpus.
   // Args: (query, opts?). Returns MapSearchHit[].
   mapsSearch: 'maps:search',
+  /** The static port table (owner ask 2026-09-11) — derived from the committed spell and item
+   *  corpora, which main owns. Takes no argument, so it opens no validation surface. */
+  mapsPorts: 'maps:ports',
+  /** Every zone's stated exits, read once off every map in the default pack (owner ask
+   *  2026-09-12: the closest port, not the closest within one hop). No argument. */
+  mapsGraph: 'maps:graph',
 
   // ---- settings / alert sharing ("profiles" — src/shared/profiles.ts) ----
   // Every call carries the renderer's whitelisted localStorage prefs (UI_PREF_SPECS): main
