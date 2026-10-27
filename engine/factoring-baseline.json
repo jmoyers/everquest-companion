@@ -273,7 +273,7 @@
       "file": "crates/fold/src/combat/routing.rs",
       "metric": "file-lines",
       "name": "",
-      "value": 1064
+      "value": 1063
     },
     {
       "file": "crates/fold/src/combat/spellfacts.rs",

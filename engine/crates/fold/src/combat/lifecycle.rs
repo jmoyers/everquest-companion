@@ -9,12 +9,13 @@
 //!
 //! `activeSec` is `min(dur, activeMs / 1000)`: a fight cannot be active for longer than it lasted.
 
-use crate::combat::aggregate::Agg;
+use crate::combat::aggregate::{Agg, DamageEvent};
 use crate::combat::encounter::{
     encounter_name, Encounter, StanceRaw, ACTIVE_MS, FALLBACK_IDLE_MS, LINGER_MS, PRESENCE_GONE_MS,
     SLOW_SAMPLE_CAP, TIMELINE_HISTORY_CAP,
 };
 use crate::combat::poisons::is_slow_capable;
+use crate::combat::routing::Attribution;
 use crate::combat::state::EngineState;
 use serde::Serialize;
 
@@ -96,6 +97,23 @@ pub fn ensure_encounter(st: &mut EngineState, ts: i64) {
     enc.coat_at_engage = st.coat_utility.clone();
     enc.combat_at_engage = st.coat_combat.clone();
     st.current = Some(enc);
+}
+
+/// The fight a routed damage line lands in, opened for it when none is — except a DoT tick on YOU.
+/// A tick keeps printing after its caster died and the fight closed (`You have taken 53 damage
+/// from Swarm of Pain by a spiroc revolter.`), and opening a fight for it would resolve the dead
+/// caster to a fresh instance and engage it: a phantom fight against `<mob>#2`. Inside an open
+/// fight a tick is booked like any other hit.
+pub fn encounter_for<'a>(
+    st: &'a mut EngineState,
+    ev: &DamageEvent<'_>,
+    at: &Attribution,
+) -> Option<&'a mut Encounter> {
+    if st.current.is_none() && *at == Attribution::Incoming && ev.dtype == "dot" {
+        return None;
+    }
+    ensure_encounter(st, ev.ts);
+    st.current.as_mut()
 }
 
 /// Is every engaged hostile instance gone? Two standards, because the evidence differs:
